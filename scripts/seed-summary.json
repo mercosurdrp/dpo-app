@@ -1,0 +1,45 @@
+{
+  "generated": "2026-03-27T14:12:54.949Z",
+  "totals": {
+    "questions": 168,
+    "blocks": 62,
+    "mandatory": 43
+  },
+  "pilares": {
+    "Seguridad": {
+      "questions": 66,
+      "blocks": 18,
+      "mandatory": 18
+    },
+    "Gente": {
+      "questions": 16,
+      "blocks": 9,
+      "mandatory": 6
+    },
+    "Gestión": {
+      "questions": 18,
+      "blocks": 6,
+      "mandatory": 6
+    },
+    "Entrega": {
+      "questions": 14,
+      "blocks": 7,
+      "mandatory": 0
+    },
+    "Flota": {
+      "questions": 15,
+      "blocks": 6,
+      "mandatory": 3
+    },
+    "Almacén": {
+      "questions": 22,
+      "blocks": 9,
+      "mandatory": 4
+    },
+    "Planeamiento": {
+      "questions": 17,
+      "blocks": 7,
+      "mandatory": 6
+    }
+  }
+}
