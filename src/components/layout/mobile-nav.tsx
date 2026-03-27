@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@/types/database"
+import type { PilarNav } from "./sidebar"
 
 interface NavItem {
   label: string
@@ -29,7 +30,7 @@ const navItems: NavItem[] = [
     icon: <LayoutDashboard className="size-5" />,
   },
   {
-    label: "Auditorías",
+    label: "Auditorias",
     href: "/auditorias",
     icon: <ClipboardCheck className="size-5" />,
   },
@@ -38,6 +39,9 @@ const navItems: NavItem[] = [
     href: "/acciones",
     icon: <ListTodo className="size-5" />,
   },
+]
+
+const adminItems: NavItem[] = [
   {
     label: "Usuarios",
     href: "/admin/usuarios",
@@ -48,15 +52,12 @@ const navItems: NavItem[] = [
 
 interface MobileNavProps {
   role: UserRole
+  pilares?: PilarNav[]
 }
 
-export function MobileNav({ role }: MobileNavProps) {
+export function MobileNav({ role, pilares = [] }: MobileNavProps) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
-
-  const filteredItems = navItems.filter(
-    (item) => !item.adminOnly || role === "admin"
-  )
 
   return (
     <>
@@ -85,7 +86,7 @@ export function MobileNav({ role }: MobileNavProps) {
       {/* Drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200 md:hidden",
+          "fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200 md:hidden overflow-y-auto",
           open ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ backgroundColor: "#0a1628" }}
@@ -99,7 +100,7 @@ export function MobileNav({ role }: MobileNavProps) {
             <div>
               <h1 className="text-base font-bold text-white">DPO</h1>
               <p className="text-[10px] text-slate-400">
-                Mercosur Región Pampeana
+                Mercosur Region Pampeana
               </p>
             </div>
           </div>
@@ -112,37 +113,102 @@ export function MobileNav({ role }: MobileNavProps) {
         </div>
 
         {/* Nav */}
-        <nav className="space-y-1 px-2 py-4">
-          {filteredItems.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href)
+        <nav className="px-2 py-4">
+          {/* Main nav items */}
+          <div className="space-y-1">
+            {navItems.map((item) => {
+              const isActive =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href)
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-white/10 text-white"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-white/10 text-white"
+                      : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  )}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
 
+          {/* Pilares section */}
+          {pilares.length > 0 && (
+            <div className="mt-5">
+              <div className="px-3 pb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Pilares
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                {pilares.map((pilar) => {
+                  const pilarPath = `/pilares/${pilar.id}`
+                  const isActive = pathname.startsWith(pilarPath)
+
+                  return (
+                    <Link
+                      key={pilar.id}
+                      href={`${pilarPath}/checklist`}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
+                        isActive
+                          ? "bg-white/10 text-white"
+                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: pilar.color }}
+                      />
+                      <span className="truncate text-[13px]">{pilar.nombre}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Admin section */}
           {role === "admin" && (
-            <div className="px-3 pt-4 pb-1">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <Settings className="size-3" />
-                Admin
-              </p>
+            <div className="mt-5">
+              <div className="px-3 pb-2">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <Settings className="size-3" />
+                  Admin
+                </p>
+              </div>
+              <div className="space-y-1">
+                {adminItems.map((item) => {
+                  const isActive = pathname.startsWith(item.href)
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-white/10 text-white"
+                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
           )}
         </nav>
