@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
@@ -72,7 +73,14 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
         >
           <Menu className="size-5" />
         </button>
-        <span className="text-base font-bold text-white">DPO</span>
+        <Image
+          src="/logo-mercosur-blanco.png"
+          alt="Mercosur Region Pampeana"
+          width={100}
+          height={17}
+          className="h-4 w-auto"
+          priority
+        />
       </div>
 
       {/* Overlay */}
@@ -93,16 +101,17 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
-              D
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-white">DPO</h1>
-              <p className="text-[10px] text-slate-400">
-                Mercosur Region Pampeana
-              </p>
-            </div>
+          <div>
+            <Image
+              src="/logo-mercosur-blanco.png"
+              alt="Mercosur Region Pampeana"
+              width={120}
+              height={20}
+              className="h-5 w-auto"
+            />
+            <p className="mt-1 text-[10px] text-slate-400">
+              DPO
+            </p>
           </div>
           <button
             onClick={() => setOpen(false)}

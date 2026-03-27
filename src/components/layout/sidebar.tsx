@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 import {
@@ -74,16 +75,22 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
-          D
-        </div>
-        {!collapsed && (
+        {collapsed ? (
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
+            D
+          </div>
+        ) : (
           <div className="overflow-hidden">
-            <h1 className="text-lg font-bold tracking-tight text-white">
+            <Image
+              src="/logo-mercosur-blanco.png"
+              alt="Mercosur Region Pampeana"
+              width={140}
+              height={24}
+              className="h-6 w-auto"
+              priority
+            />
+            <p className="mt-1 truncate text-[11px] text-slate-400">
               DPO
-            </h1>
-            <p className="truncate text-[11px] text-slate-400">
-              Mercosur Region Pampeana
             </p>
           </div>
         )}

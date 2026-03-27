@@ -947,7 +947,8 @@ export function PreguntaGestionClient({
   pilar: Pilar
   pregunta: PreguntaGestionFull
 }) {
-  const [reqOpen, setReqOpen] = useState(false)
+  const [guiaOpen, setGuiaOpen] = useState(false)
+  const [verificarOpen, setVerificarOpen] = useState(false)
 
   const criterio = pregunta.puntaje_criterio as Record<string, string> | null
   const puntaje = pregunta.puntaje_actual
@@ -1001,75 +1002,96 @@ export function PreguntaGestionClient({
         </div>
       </div>
 
-      {/* Requirements collapsible */}
+      {/* DPO Requirements - always visible */}
       <Card size="sm">
-        <CardHeader
-          className="cursor-pointer select-none"
-          onClick={() => setReqOpen((v) => !v)}
-        >
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">
-              Que requiere DPO
-            </CardTitle>
-            {reqOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </div>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            Que requiere DPO
+          </CardTitle>
         </CardHeader>
-        {reqOpen && (
-          <CardContent className="space-y-3 border-t pt-3">
-            {pregunta.requerimiento && (
-              <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-600">
-                  Requerimientos
-                </p>
-                <p className="whitespace-pre-wrap">{pregunta.requerimiento}</p>
+        <CardContent className="space-y-3 border-t pt-3">
+          {/* Requerimientos - always visible */}
+          {pregunta.requerimiento && (
+            <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-blue-500">
+                Requerimientos
+              </p>
+              <p className="whitespace-pre-line leading-relaxed">{pregunta.requerimiento}</p>
+            </div>
+          )}
+
+          {/* Criterio de Puntaje - always visible */}
+          {criterio && Object.keys(criterio).length > 0 && (
+            <div className="rounded-md bg-slate-50 p-3 text-sm">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Criterio de Puntaje
+              </p>
+              <div className="space-y-2">
+                {Object.entries(criterio).map(([key, desc]) => {
+                  const numericKey = parseInt(key, 10)
+                  const color = SCORE_COLORS[numericKey] ?? "#6B7280"
+                  return (
+                    <div key={key} className="flex gap-2">
+                      <span
+                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        style={{ backgroundColor: color }}
+                      >
+                        {key}
+                      </span>
+                      <p className="text-slate-700 leading-relaxed">{desc}</p>
+                    </div>
+                  )
+                })}
               </div>
-            )}
-            {criterio && Object.keys(criterio).length > 0 && (
-              <div className="rounded-md bg-slate-50 p-3 text-sm">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Criterio de Puntaje
-                </p>
-                <div className="space-y-2">
-                  {Object.entries(criterio).map(([key, desc]) => {
-                    const numericKey = parseInt(key, 10)
-                    const color = SCORE_COLORS[numericKey] ?? "#6B7280"
-                    return (
-                      <div key={key} className="flex gap-2">
-                        <span
-                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                          style={{ backgroundColor: color }}
-                        >
-                          {key}
-                        </span>
-                        <p className="text-slate-700">{desc}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-            {pregunta.guia && (
-              <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-900">
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-blue-600">
+            </div>
+          )}
+
+          {/* Guia - collapsible */}
+          {pregunta.guia && (
+            <div className="rounded-md bg-blue-50/50 p-3 text-sm text-blue-900">
+              <button
+                type="button"
+                onClick={() => setGuiaOpen((v) => !v)}
+                className="flex w-full items-center justify-between"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
                   Guia
                 </p>
-                <p className="whitespace-pre-wrap">{pregunta.guia}</p>
-              </div>
-            )}
-            {pregunta.como_verificar && (
-              <div className="rounded-md bg-green-50 p-3 text-sm text-green-900">
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-green-600">
+                {guiaOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-blue-400" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-blue-400" />
+                )}
+              </button>
+              {guiaOpen && (
+                <p className="mt-2 whitespace-pre-line leading-relaxed">{pregunta.guia}</p>
+              )}
+            </div>
+          )}
+
+          {/* Como verificar - collapsible */}
+          {pregunta.como_verificar && (
+            <div className="rounded-md bg-green-50 p-3 text-sm text-green-900">
+              <button
+                type="button"
+                onClick={() => setVerificarOpen((v) => !v)}
+                className="flex w-full items-center justify-between"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-green-600">
                   Como verificar
                 </p>
-                <p className="whitespace-pre-wrap">{pregunta.como_verificar}</p>
-              </div>
-            )}
-          </CardContent>
-        )}
+                {verificarOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-green-400" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-green-400" />
+                )}
+              </button>
+              {verificarOpen && (
+                <p className="mt-2 whitespace-pre-line leading-relaxed">{pregunta.como_verificar}</p>
+              )}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* 3 Management tabs */}
