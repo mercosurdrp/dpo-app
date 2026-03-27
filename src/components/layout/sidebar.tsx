@@ -135,7 +135,7 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
                 return (
                   <Link
                     key={pilar.id}
-                    href={`${pilarPath}/checklist`}
+                    href={pilarPath}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
                       isActive

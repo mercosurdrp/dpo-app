@@ -28,6 +28,7 @@ export interface Bloque {
   pilar_id: string
   nombre: string
   orden: number
+  categoria: CategoriaBloque | null
 }
 
 export interface Pregunta {
@@ -77,6 +78,58 @@ export interface Accion {
   created_at: string
   updated_at: string
 }
+
+// Indicador (KPI per question)
+export type Tendencia = "mejora" | "estable" | "deterioro" | "neutral"
+
+export interface Indicador {
+  id: string
+  pregunta_id: string
+  nombre: string
+  meta: number
+  actual: number
+  unidad: string
+  tendencia: Tendencia
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Evidencia (evidence per question)
+export type TipoEvidencia = "documento" | "foto" | "link" | "nota"
+
+export interface Evidencia {
+  id: string
+  pregunta_id: string
+  titulo: string
+  descripcion: string | null
+  url: string | null
+  tipo: TipoEvidencia
+  created_by: string | null
+  created_at: string
+}
+
+// Plan de Accion (action plan per question)
+export type EstadoPlan = "pendiente" | "en_progreso" | "completado"
+export type PrioridadPlan = "alta" | "media" | "baja"
+
+export interface PlanAccion {
+  id: string
+  pregunta_id: string
+  descripcion: string
+  responsable: string
+  fecha_inicio: string | null
+  fecha_limite: string | null
+  estado: EstadoPlan
+  prioridad: PrioridadPlan
+  notas: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Bloque categoria
+export type CategoriaBloque = "fundamentales" | "mantener" | "mejorar"
 
 // Joined/extended types
 export interface BloqueConPreguntas extends Bloque {

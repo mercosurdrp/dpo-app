@@ -157,7 +157,7 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
                   return (
                     <Link
                       key={pilar.id}
-                      href={`${pilarPath}/checklist`}
+                      href={pilarPath}
                       onClick={() => setOpen(false)}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",

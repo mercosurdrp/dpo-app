@@ -27,7 +27,6 @@ import {
   CheckCircle,
   PlusCircle,
   ArrowRight,
-  BarChart3,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -238,25 +237,16 @@ function PillarCard({
           </p>
         )}
 
-        {/* Action buttons */}
+        {/* Action button */}
         <div className="flex gap-2 pt-1">
           <Button
             variant="default"
             size="sm"
             className="flex-1"
-            render={<Link href={`/pilares/${pilar.id}/checklist`} />}
+            render={<Link href={`/pilares/${pilar.id}`} />}
           >
             <ClipboardList className="mr-1.5 h-3.5 w-3.5" />
-            Checklist
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            render={<Link href={`/pilares/${pilar.id}/gestion`} />}
-          >
-            <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
-            Gestion
+            Ver Pilar
           </Button>
         </div>
       </CardContent>

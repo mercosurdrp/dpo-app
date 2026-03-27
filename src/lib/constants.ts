@@ -56,3 +56,52 @@ export const ESTADO_ACCION_LABELS: Record<string, string> = {
   en_progreso: "En Progreso",
   completado: "Completado",
 }
+
+// Plan de accion estado colors
+export const ESTADO_PLAN_COLORS: Record<string, string> = {
+  pendiente: "#EF4444",
+  en_progreso: "#F59E0B",
+  completado: "#10B981",
+}
+
+export const ESTADO_PLAN_LABELS: Record<string, string> = {
+  pendiente: "Pendiente",
+  en_progreso: "En Progreso",
+  completado: "Completado",
+}
+
+// Prioridad colors
+export const PRIORIDAD_COLORS: Record<string, string> = {
+  alta: "#EF4444",
+  media: "#F59E0B",
+  baja: "#3B82F6",
+}
+
+export const PRIORIDAD_LABELS: Record<string, string> = {
+  alta: "Alta",
+  media: "Media",
+  baja: "Baja",
+}
+
+// Tendencia labels/icons
+export const TENDENCIA_LABELS: Record<string, string> = {
+  mejora: "Mejora",
+  estable: "Estable",
+  deterioro: "Deterioro",
+  neutral: "Neutral",
+}
+
+// Tipo evidencia labels
+export const TIPO_EVIDENCIA_LABELS: Record<string, string> = {
+  documento: "Documento",
+  foto: "Foto",
+  link: "Link",
+  nota: "Nota",
+}
+
+// Categoria bloque config
+export const CATEGORIA_CONFIG: Record<string, { label: string; color: string }> = {
+  fundamentales: { label: "Fundamentales", color: "#3B82F6" },
+  mantener: { label: "Gestion para Mantener", color: "#F59E0B" },
+  mejorar: { label: "Gestion para Mejorar", color: "#10B981" },
+}
