@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { getPilarGestion } from "@/actions/gestion"
+import { getSopsByPilar } from "@/actions/sops"
 import type { Pilar } from "@/types/database"
 import { PilarClient } from "./pilar-client"
 
@@ -41,10 +42,15 @@ export default async function PilarPage({
     )
   }
 
+  // Get SOPs
+  const sopsResult = await getSopsByPilar(id)
+  const sops = "data" in sopsResult ? sopsResult.data : []
+
   return (
     <PilarClient
       pilar={pilar as Pilar}
       categorias={gestionResult.data}
+      sops={sops}
     />
   )
 }

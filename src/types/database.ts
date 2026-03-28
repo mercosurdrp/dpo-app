@@ -203,6 +203,39 @@ export interface PlanAccionFull extends PlanAccion {
   evidencias: Evidencia[]
 }
 
+// SOP (Standard Operating Procedure)
+export interface Sop {
+  id: string
+  pilar_id: string
+  nombre: string
+  descripcion: string | null
+  file_path: string
+  file_name: string
+  file_type: string
+  file_size: number
+  version: number
+  uploaded_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SopVersion {
+  id: string
+  sop_id: string
+  version: number
+  file_path: string
+  file_name: string
+  file_size: number
+  notas: string | null
+  uploaded_by: string
+  created_at: string
+}
+
+export interface SopConVersiones extends Sop {
+  versiones: SopVersion[]
+  uploaded_by_nombre: string
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string

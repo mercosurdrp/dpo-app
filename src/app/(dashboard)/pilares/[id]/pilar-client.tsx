@@ -21,14 +21,16 @@ import {
   ChevronUp,
   BookOpen,
   Eye,
+  FileText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { CATEGORIA_CONFIG, SCORE_LEVELS } from "@/lib/constants"
-import type { Pilar } from "@/types/database"
+import type { Pilar, SopConVersiones } from "@/types/database"
 import type { CategoriaGroup, PreguntaConCounts, BloqueConPreguntasGestion } from "@/actions/gestion"
+import { SopsTab } from "./sops-tab"
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   "shield-check": ShieldCheck,
@@ -320,9 +322,11 @@ function CategoriaContent({
 export function PilarClient({
   pilar,
   categorias,
+  sops = [],
 }: {
   pilar: Pilar
   categorias: CategoriaGroup[]
+  sops?: SopConVersiones[]
 }) {
   const IconComp = iconMap[pilar.icono] ?? ClipboardList
 
@@ -383,7 +387,7 @@ export function PilarClient({
         )}
       </div>
 
-      {/* 3 Category Tabs */}
+      {/* Category Tabs + SOPs */}
       <Tabs defaultValue="fundamentales">
         <TabsList variant="line" className="w-full overflow-x-auto">
           {(["fundamentales", "mantener", "mejorar"] as const).map((cat) => {
@@ -412,6 +416,13 @@ export function PilarClient({
               </TabsTrigger>
             )
           })}
+          <TabsTrigger value="sops">
+            <FileText className="mr-1 h-3.5 w-3.5" />
+            SOPs
+            <span className="ml-1 text-[10px] text-muted-foreground">
+              ({sops.length})
+            </span>
+          </TabsTrigger>
         </TabsList>
 
         {(["fundamentales", "mantener", "mejorar"] as const).map((cat) => {
@@ -425,6 +436,10 @@ export function PilarClient({
             </TabsContent>
           )
         })}
+
+        <TabsContent value="sops">
+          <SopsTab pilarId={pilar.id} sops={sops} />
+        </TabsContent>
       </Tabs>
     </div>
   )
