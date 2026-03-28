@@ -104,6 +104,7 @@ export interface Evidencia {
   titulo: string
   descripcion: string | null
   url: string | null
+  file_path: string | null
   tipo: TipoEvidencia
   created_by: string | null
   created_at: string
@@ -122,10 +123,39 @@ export interface PlanAccion {
   fecha_limite: string | null
   estado: EstadoPlan
   prioridad: PrioridadPlan
+  progreso: number
   notas: string | null
   created_by: string | null
   created_at: string
   updated_at: string
+}
+
+// Evidencia-Plan junction
+export interface EvidenciaPlan {
+  id: string
+  evidencia_id: string
+  plan_id: string
+  created_at: string
+}
+
+// Plan comments (timeline)
+export interface PlanComentario {
+  id: string
+  plan_id: string
+  texto: string
+  foto_url: string | null
+  created_by: string
+  created_at: string
+}
+
+// Plan state change history
+export interface PlanHistorial {
+  id: string
+  plan_id: string
+  estado_anterior: EstadoPlan
+  estado_nuevo: EstadoPlan
+  changed_by: string
+  changed_at: string
 }
 
 // Bloque categoria
@@ -146,4 +176,39 @@ export interface RespuestaConPregunta extends Respuesta {
 
 export interface AccionConRespuesta extends Accion {
   respuesta: RespuestaConPregunta
+}
+
+// Plan detail (full page)
+export interface PlanComentarioConAutor extends PlanComentario {
+  autor_nombre: string
+}
+
+export interface PlanHistorialConAutor extends PlanHistorial {
+  autor_nombre: string
+}
+
+export interface EvidenciaConPlanes extends Evidencia {
+  plan_ids: string[]
+}
+
+export interface PlanAccionFull extends PlanAccion {
+  pregunta_numero: string
+  pregunta_texto: string
+  bloque_nombre: string
+  pilar_id: string
+  pilar_nombre: string
+  pilar_color: string
+  comentarios: PlanComentarioConAutor[]
+  historial: PlanHistorialConAutor[]
+  evidencias: Evidencia[]
+}
+
+// Plan list item (for /planes page)
+export interface PlanAccionListItem extends PlanAccion {
+  pregunta_numero: string
+  pregunta_texto: string
+  pilar_nombre: string
+  pilar_color: string
+  comentarios_count: number
+  evidencias_count: number
 }

@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ClipboardCheck,
   ListTodo,
+  ClipboardList,
   Users,
   Settings,
   Menu,
@@ -39,6 +40,11 @@ const navItems: NavItem[] = [
     label: "Acciones",
     href: "/acciones",
     icon: <ListTodo className="size-5" />,
+  },
+  {
+    label: "Planes",
+    href: "/planes",
+    icon: <ClipboardList className="size-5" />,
   },
 ]
 

@@ -25,6 +25,7 @@ import {
   StickyNote,
   ExternalLink,
   AlertCircle,
+  Eye,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -648,6 +649,14 @@ function PlanesTab({
                       <Button
                         variant="ghost"
                         size="icon-xs"
+                        render={<Link href={`/planes/${plan.id}`} />}
+                        title="Ver detalle"
+                      >
+                        <Eye className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
                         onClick={() => openEdit(plan)}
                       >
                         <Pencil className="h-3 w-3" />
@@ -730,9 +739,11 @@ function PlanesTab({
 function EvidenciasTab({
   preguntaId,
   evidencias: initialEvidencias,
+  planes,
 }: {
   preguntaId: string
   evidencias: Evidencia[]
+  planes: PlanAccion[]
 }) {
   const [evidencias, setEvidencias] = useState(initialEvidencias)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -742,10 +753,18 @@ function EvidenciasTab({
     url: "",
     tipo: "documento" as TipoEvidencia,
   })
+  const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
   function resetForm() {
     setForm({ titulo: "", descripcion: "", url: "", tipo: "documento" })
+    setSelectedPlanIds([])
+  }
+
+  function togglePlanId(id: string) {
+    setSelectedPlanIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    )
   }
 
   async function handleSave() {
@@ -760,6 +779,7 @@ function EvidenciasTab({
       descripcion: form.descripcion || undefined,
       url: form.url || undefined,
       tipo: form.tipo,
+      plan_ids: selectedPlanIds.length > 0 ? selectedPlanIds : undefined,
     })
     if ("error" in result) {
       toast.error(result.error)
@@ -862,6 +882,29 @@ function EvidenciasTab({
                   placeholder="https://..."
                 />
               </div>
+              {planes.length > 0 && (
+                <div>
+                  <Label>Vincular a Planes (opcional)</Label>
+                  <div className="mt-1 max-h-32 overflow-y-auto space-y-1 rounded-md border p-2">
+                    {planes.map((p) => (
+                      <label
+                        key={p.id}
+                        className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPlanIds.includes(p.id)}
+                          onChange={() => togglePlanId(p.id)}
+                          className="rounded"
+                        />
+                        <span className="text-xs text-slate-700 line-clamp-1">
+                          {p.descripcion}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <DialogClose render={<Button variant="outline" />}>
@@ -1138,6 +1181,7 @@ export function PreguntaGestionClient({
           <EvidenciasTab
             preguntaId={pregunta.id}
             evidencias={pregunta.evidencias}
+            planes={pregunta.planes_accion}
           />
         </TabsContent>
       </Tabs>

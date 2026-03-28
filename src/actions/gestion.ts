@@ -372,6 +372,7 @@ export async function createPlanAccion(data: {
   fecha_inicio?: string
   fecha_limite?: string
   prioridad?: PrioridadPlan
+  progreso?: number
   notas?: string
 }): Promise<{ data: PlanAccion } | { error: string }> {
   try {
@@ -388,6 +389,7 @@ export async function createPlanAccion(data: {
         fecha_limite: data.fecha_limite ?? null,
         estado: "pendiente",
         prioridad: data.prioridad ?? "media",
+        progreso: data.progreso ?? 0,
         notas: data.notas ?? null,
         created_by: profile.id,
       })
@@ -410,12 +412,31 @@ export async function updatePlanAccion(
     fecha_limite?: string
     estado?: EstadoPlan
     prioridad?: PrioridadPlan
+    progreso?: number
     notas?: string
   }
 ): Promise<{ data: PlanAccion } | { error: string }> {
   try {
-    await requireAuth()
+    const profile = await requireAuth()
     const supabase = await createClient()
+
+    // If estado is changing, log history
+    if (data.estado) {
+      const { data: current } = await supabase
+        .from("planes_accion")
+        .select("estado")
+        .eq("id", id)
+        .single()
+
+      if (current && current.estado !== data.estado) {
+        await supabase.from("plan_historial").insert({
+          plan_id: id,
+          estado_anterior: current.estado,
+          estado_nuevo: data.estado,
+          changed_by: profile.id,
+        })
+      }
+    }
 
     const { data: plan, error } = await supabase
       .from("planes_accion")
@@ -453,7 +474,9 @@ export async function createEvidencia(data: {
   titulo: string
   descripcion?: string
   url?: string
+  file_path?: string
   tipo: TipoEvidencia
+  plan_ids?: string[]
 }): Promise<{ data: Evidencia } | { error: string }> {
   try {
     const profile = await requireAuth()
@@ -466,6 +489,7 @@ export async function createEvidencia(data: {
         titulo: data.titulo,
         descripcion: data.descripcion ?? null,
         url: data.url ?? null,
+        file_path: data.file_path ?? null,
         tipo: data.tipo,
         created_by: profile.id,
       })
@@ -473,6 +497,16 @@ export async function createEvidencia(data: {
       .single()
 
     if (error) return { error: error.message }
+
+    // Link to planes if provided
+    if (data.plan_ids && data.plan_ids.length > 0) {
+      const links = data.plan_ids.map((plan_id) => ({
+        evidencia_id: evidencia.id,
+        plan_id,
+      }))
+      await supabase.from("evidencia_planes").insert(links)
+    }
+
     return { data: evidencia as Evidencia }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error creating evidencia" }
