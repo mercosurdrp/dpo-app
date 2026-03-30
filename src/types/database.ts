@@ -236,6 +236,68 @@ export interface SopConVersiones extends Sop {
   uploaded_by_nombre: string
 }
 
+// Registros de Vehículos (TML)
+export type TipoRegistroVehiculo = "ingreso" | "egreso"
+
+export interface RegistroVehiculo {
+  id: string
+  tipo: TipoRegistroVehiculo
+  fecha: string
+  dominio: string
+  chofer: string
+  ayudante1: string | null
+  ayudante2: string | null
+  odometro: number | null
+  hora: string // TIME as "HH:MM:SS"
+  semana: number
+  tml_minutos: number | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface CatalogoChofer {
+  id: string
+  nombre: string
+  active: boolean
+  created_at: string
+}
+
+export interface CatalogoVehiculo {
+  id: string
+  dominio: string
+  descripcion: string | null
+  active: boolean
+  created_at: string
+}
+
+// KPI aggregated types
+export interface TmlDiario {
+  fecha: string
+  promedio_tml: number
+  total_egresos: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+export interface TmlSemanal {
+  semana: number
+  year: number
+  promedio_tml: number
+  total_egresos: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+export interface TmlMensual {
+  mes: number
+  year: number
+  promedio_tml: number
+  total_egresos: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string
