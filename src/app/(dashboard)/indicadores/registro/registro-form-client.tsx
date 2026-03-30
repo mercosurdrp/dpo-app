@@ -39,6 +39,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
   const [saved, setSaved] = useState(false)
 
   const [tipo, setTipo] = useState<"egreso">("egreso")
+  const [horaEntrada, setHoraEntrada] = useState<6 | 7>(7)
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
   const [dominio, setDominio] = useState("")
   const [chofer, setChofer] = useState("")
@@ -55,7 +56,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
   const tmlPreview = (() => {
     if (tipo !== "egreso" || !hora) return null
     const [h, m] = hora.split(":").map(Number)
-    const tml = h * 60 + m - 7 * 60
+    const tml = h * 60 + m - horaEntrada * 60
     return tml
   })()
 
@@ -75,6 +76,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
       ayudante2: ayudante2 && ayudante2 !== "SIN AYUDANTE" ? ayudante2 : undefined,
       odometro: odometro ? parseInt(odometro) : undefined,
       hora,
+      horaEntrada,
       observaciones: observaciones || undefined,
     })
     setLoading(false)
@@ -93,6 +95,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
 
     // Reset for next entry
     setTimeout(() => {
+      setHoraEntrada(7)
       setDominio("")
       setChofer("")
       setAyudante1("")
@@ -156,6 +159,35 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                   <LogIn className="h-4 w-4" />
                   Ingreso (pronto)
                 </button>
+              </div>
+
+              {/* Horario de entrada */}
+              <div className="space-y-2">
+                <Label>Horario de entrada</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setHoraEntrada(7)}
+                    className={`rounded-lg border-2 p-2.5 text-sm font-semibold transition-all ${
+                      horaEntrada === 7
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-500 hover:border-blue-300"
+                    }`}
+                  >
+                    07:00 hs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHoraEntrada(6)}
+                    className={`rounded-lg border-2 p-2.5 text-sm font-semibold transition-all ${
+                      horaEntrada === 6
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-500 hover:border-blue-300"
+                    }`}
+                  >
+                    06:00 hs
+                  </button>
+                </div>
               </div>
 
               {/* Fecha + Hora */}
@@ -313,7 +345,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                       {tmlPreview} min
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Hora salida: {hora} — Hora entrada: 07:00
+                      Hora salida: {hora} — Hora entrada: {horaEntrada === 6 ? "06:00" : "07:00"}
                     </p>
                     <div className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
                       tmlPreview <= 30
@@ -347,7 +379,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Hora de entrada</span>
-                    <span className="font-medium">07:00 hs</span>
+                    <span className="font-medium">06:00 / 07:00 hs</span>
                   </div>
                 </div>
               </CardContent>

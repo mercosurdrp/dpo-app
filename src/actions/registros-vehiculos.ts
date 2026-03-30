@@ -12,11 +12,10 @@ import type {
 } from "@/types/database"
 
 const TML_META_MINUTOS = 30
-const HORA_ENTRADA = 7 * 60 // 07:00 en minutos
 
-function calcTml(hora: string): number {
+function calcTml(hora: string, horaEntrada: number): number {
   const [h, m] = hora.split(":").map(Number)
-  return h * 60 + m - HORA_ENTRADA
+  return h * 60 + m - horaEntrada * 60
 }
 
 // ==================== CREAR REGISTRO ====================
@@ -30,6 +29,7 @@ interface CreateRegistroInput {
   ayudante2?: string
   odometro?: number
   hora: string // "HH:MM"
+  horaEntrada?: number // 6 o 7 (default 7)
   observaciones?: string
 }
 
@@ -40,7 +40,8 @@ export async function createRegistroVehiculo(
     const profile = await requireAuth()
     const supabase = await createClient()
 
-    const tml = input.tipo === "egreso" ? calcTml(input.hora) : null
+    const horaEntrada = input.horaEntrada ?? 7
+    const tml = input.tipo === "egreso" ? calcTml(input.hora, horaEntrada) : null
 
     // Calculate week number
     const date = new Date(input.fecha + "T12:00:00")
@@ -60,6 +61,7 @@ export async function createRegistroVehiculo(
         odometro: input.odometro || null,
         hora: input.hora + ":00",
         semana,
+        hora_entrada: horaEntrada,
         tml_minutos: tml,
         observaciones: input.observaciones?.trim() || null,
         created_by: profile.id,

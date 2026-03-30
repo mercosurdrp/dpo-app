@@ -250,6 +250,7 @@ export interface RegistroVehiculo {
   odometro: number | null
   hora: string // TIME as "HH:MM:SS"
   semana: number
+  hora_entrada: number // 6 o 7
   tml_minutos: number | null
   observaciones: string | null
   created_by: string | null
