@@ -299,6 +299,56 @@ export interface TmlMensual {
   pct_dentro_meta: number
 }
 
+// Capacitaciones
+export type EstadoCapacitacion = "programada" | "en_curso" | "completada" | "cancelada"
+export type ResultadoCapacitacion = "aprobado" | "desaprobado" | "pendiente"
+
+export interface Empleado {
+  id: string
+  profile_id: string | null
+  legajo: number
+  nombre: string
+  numero_id: string
+  activo: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Capacitacion {
+  id: string
+  titulo: string
+  descripcion: string | null
+  instructor: string
+  fecha: string
+  duracion_horas: number
+  lugar: string | null
+  material_url: string | null
+  estado: EstadoCapacitacion
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Asistencia {
+  id: string
+  capacitacion_id: string
+  empleado_id: string
+  presente: boolean
+  nota: number | null
+  resultado: ResultadoCapacitacion
+  observaciones: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AsistenciaConEmpleado extends Asistencia {
+  empleado: Empleado
+}
+
+export interface CapacitacionFull extends Capacitacion {
+  asistencias: AsistenciaConEmpleado[]
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string

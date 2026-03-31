@@ -10,6 +10,7 @@ import {
   ListTodo,
   ClipboardList,
   BarChart3,
+  GraduationCap,
   Users,
   Settings,
   ChevronLeft,
@@ -50,6 +51,11 @@ const navItems: NavItem[] = [
     label: "Indicadores",
     href: "/indicadores",
     icon: <BarChart3 className="size-5" />,
+  },
+  {
+    label: "Capacitaciones",
+    href: "/capacitaciones",
+    icon: <GraduationCap className="size-5" />,
   },
 ]
 

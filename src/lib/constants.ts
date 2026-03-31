@@ -99,6 +99,33 @@ export const TIPO_EVIDENCIA_LABELS: Record<string, string> = {
   nota: "Nota",
 }
 
+// Capacitacion estado colors
+export const ESTADO_CAPACITACION_COLORS: Record<string, string> = {
+  programada: "#3B82F6",
+  en_curso: "#F59E0B",
+  completada: "#10B981",
+  cancelada: "#6B7280",
+}
+
+export const ESTADO_CAPACITACION_LABELS: Record<string, string> = {
+  programada: "Programada",
+  en_curso: "En Curso",
+  completada: "Completada",
+  cancelada: "Cancelada",
+}
+
+export const RESULTADO_COLORS: Record<string, string> = {
+  aprobado: "#10B981",
+  desaprobado: "#EF4444",
+  pendiente: "#94A3B8",
+}
+
+export const RESULTADO_LABELS: Record<string, string> = {
+  aprobado: "Aprobado",
+  desaprobado: "Desaprobado",
+  pendiente: "Pendiente",
+}
+
 // Categoria bloque config
 export const CATEGORIA_CONFIG: Record<string, { label: string; color: string }> = {
   fundamentales: { label: "Fundamentales", color: "#3B82F6" },
