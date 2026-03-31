@@ -260,9 +260,28 @@ export function CapacitacionDetailClient({
             <Calendar className="size-5 text-blue-500" />
             <div>
               <p className="text-xs text-slate-500">Fecha</p>
-              <p className="text-sm font-medium">
-                {new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}
-              </p>
+              {canEdit ? (
+                <Input
+                  type="date"
+                  className="h-7 w-36 text-sm"
+                  value={cap.fecha}
+                  onChange={async (e) => {
+                    const newFecha = e.target.value
+                    if (!newFecha) return
+                    setCap((prev) => ({ ...prev, fecha: newFecha }))
+                    const result = await updateCapacitacion(cap.id, { fecha: newFecha })
+                    if ("error" in result) {
+                      toast.error(result.error)
+                    } else {
+                      toast.success("Fecha actualizada")
+                    }
+                  }}
+                />
+              ) : (
+                <p className="text-sm font-medium">
+                  {new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
