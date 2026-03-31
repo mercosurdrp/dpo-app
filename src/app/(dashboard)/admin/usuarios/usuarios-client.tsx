@@ -49,9 +49,10 @@ const ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
   admin: { label: "Admin", color: "#3B82F6" },
   auditor: { label: "Auditor", color: "#8B5CF6" },
   viewer: { label: "Viewer", color: "#64748B" },
+  empleado: { label: "Empleado", color: "#F59E0B" },
 }
 
-const ROLES: UserRole[] = ["admin", "auditor", "viewer"]
+const ROLES: UserRole[] = ["admin", "auditor", "viewer", "empleado"]
 
 function formatDate(iso: string): string {
   const d = new Date(iso)

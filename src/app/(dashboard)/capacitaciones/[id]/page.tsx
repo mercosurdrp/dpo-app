@@ -1,4 +1,4 @@
-import { getCapacitacion, getEmpleados } from "@/actions/capacitaciones"
+import { getCapacitacion, getEmpleados, getCapacitacionPreguntas } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
 import { CapacitacionDetailClient } from "./capacitacion-detail-client"
 
@@ -8,9 +8,10 @@ export default async function CapacitacionDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [result, empleadosResult, profile] = await Promise.all([
+  const [result, empleadosResult, preguntasResult, profile] = await Promise.all([
     getCapacitacion(id),
     getEmpleados(),
+    getCapacitacionPreguntas(id),
     getProfile(),
   ])
 
@@ -24,12 +25,14 @@ export default async function CapacitacionDetailPage({
   }
 
   const empleados = "error" in empleadosResult ? [] : empleadosResult.data
+  const preguntas = "error" in preguntasResult ? [] : preguntasResult.data
   const canEdit = profile?.role === "admin" || profile?.role === "auditor"
 
   return (
     <CapacitacionDetailClient
       capacitacion={result.data}
       empleados={empleados}
+      preguntas={preguntas}
       canEdit={canEdit}
     />
   )

@@ -1,5 +1,5 @@
 // Enum types
-export type UserRole = "admin" | "auditor" | "viewer"
+export type UserRole = "admin" | "auditor" | "viewer" | "empleado"
 export type EstadoAuditoria = "borrador" | "en_progreso" | "completada" | "archivada"
 export type EstadoAccion = "pendiente" | "en_progreso" | "completado"
 
@@ -347,6 +347,26 @@ export interface AsistenciaConEmpleado extends Asistencia {
 
 export interface CapacitacionFull extends Capacitacion {
   asistencias: AsistenciaConEmpleado[]
+}
+
+export interface CapacitacionPregunta {
+  id: string
+  capacitacion_id: string
+  texto: string
+  opciones: string[]
+  respuesta_correcta: number
+  orden: number
+  created_at: string
+}
+
+export interface CapacitacionRespuesta {
+  id: string
+  capacitacion_id: string
+  empleado_id: string
+  pregunta_id: string
+  respuesta_elegida: number
+  es_correcta: boolean
+  created_at: string
 }
 
 // Plan list item (for /planes page)

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { requireAuth, getProfile } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -12,6 +13,17 @@ export default async function DashboardLayout({
   await requireAuth()
   const profile = await getProfile()
   const role = profile?.role ?? "viewer"
+
+  // Empleados get redirected to their own section
+  if (role === "empleado") {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <main className="mx-auto max-w-4xl p-4 md:p-6">
+          {children}
+        </main>
+      </div>
+    )
+  }
 
   // Fetch pilares for sidebar navigation
   const supabase = await createClient()

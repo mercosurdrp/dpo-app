@@ -31,8 +31,20 @@ export default function LoginPage() {
       return
     }
 
+    // Check role to redirect empleados
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+      .single()
+
     toast.success("Bienvenido")
-    router.push("/")
+
+    if (profile?.role === "empleado") {
+      router.push("/mis-capacitaciones")
+    } else {
+      router.push("/")
+    }
   }
 
   return (

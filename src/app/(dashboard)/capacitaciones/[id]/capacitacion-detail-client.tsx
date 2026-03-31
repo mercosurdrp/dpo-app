@@ -10,6 +10,7 @@ import {
   MapPin,
   User,
   UserPlus,
+  Plus,
   Check,
   X,
   Save,
@@ -50,14 +51,19 @@ import {
   RESULTADO_COLORS,
   RESULTADO_LABELS,
 } from "@/lib/constants"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import {
   updateCapacitacion,
   addAsistentes,
   removeAsistente,
   updateAsistencia,
+  createCapacitacionPregunta,
+  deleteCapacitacionPregunta,
 } from "@/actions/capacitaciones"
 import type {
   CapacitacionFull,
+  CapacitacionPregunta,
   Empleado,
   AsistenciaConEmpleado,
   EstadoCapacitacion,
@@ -67,12 +73,14 @@ import type {
 interface Props {
   capacitacion: CapacitacionFull
   empleados: Empleado[]
+  preguntas: CapacitacionPregunta[]
   canEdit: boolean
 }
 
 export function CapacitacionDetailClient({
   capacitacion: initial,
   empleados,
+  preguntas: initialPreguntas,
   canEdit,
 }: Props) {
   const router = useRouter()
@@ -80,6 +88,8 @@ export function CapacitacionDetailClient({
   const [cap, setCap] = useState(initial)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [selectedEmpleados, setSelectedEmpleados] = useState<string[]>([])
+  const [examPreguntas, setExamPreguntas] = useState(initialPreguntas)
+  const [addPreguntaOpen, setAddPreguntaOpen] = useState(false)
 
   // Empleados not yet enrolled
   const availableEmpleados = useMemo(() => {
@@ -421,6 +431,247 @@ export function CapacitacionDetailClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Exam questions section */}
+      {canEdit && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg">
+              Preguntas del Examen ({examPreguntas.length})
+            </CardTitle>
+            <Button size="sm" onClick={() => setAddPreguntaOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Agregar Pregunta
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {examPreguntas.length === 0 ? (
+              <p className="text-center text-sm text-slate-400 py-8">
+                No hay preguntas cargadas. Agrega preguntas para que los empleados puedan rendir el examen.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {examPreguntas.map((preg, idx) => {
+                  const opciones = parseOpciones(preg.opciones)
+                  return (
+                    <div
+                      key={preg.id}
+                      className="rounded-lg border p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">
+                            <span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                              {idx + 1}
+                            </span>
+                            {preg.texto}
+                          </p>
+                          <div className="mt-2 ml-8 space-y-1">
+                            {opciones.map((op, opIdx) => (
+                              <p
+                                key={opIdx}
+                                className={`text-sm ${
+                                  opIdx === preg.respuesta_correcta
+                                    ? "font-medium text-green-600"
+                                    : "text-slate-500"
+                                }`}
+                              >
+                                {String.fromCharCode(65 + opIdx)}. {op}
+                                {opIdx === preg.respuesta_correcta && " ✓"}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-7 shrink-0 p-0 text-slate-400 hover:text-red-500"
+                          onClick={async () => {
+                            const result = await deleteCapacitacionPregunta(preg.id)
+                            if ("error" in result) {
+                              toast.error(result.error)
+                            } else {
+                              setExamPreguntas((prev) =>
+                                prev.filter((p) => p.id !== preg.id)
+                              )
+                              toast.success("Pregunta eliminada")
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add pregunta dialog */}
+      {addPreguntaOpen && (
+        <AddPreguntaDialog
+          capacitacionId={cap.id}
+          orden={examPreguntas.length}
+          onClose={() => setAddPreguntaOpen(false)}
+          onCreated={(preg) => {
+            setExamPreguntas((prev) => [...prev, preg])
+            setAddPreguntaOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Parse opciones helper
+function parseOpciones(opciones: string[] | string): string[] {
+  if (Array.isArray(opciones)) return opciones
+  try {
+    return JSON.parse(opciones)
+  } catch {
+    return []
+  }
+}
+
+// Dialog to add a new exam question
+function AddPreguntaDialog({
+  capacitacionId,
+  orden,
+  onClose,
+  onCreated,
+}: {
+  capacitacionId: string
+  orden: number
+  onClose: () => void
+  onCreated: (preg: CapacitacionPregunta) => void
+}) {
+  const [isPending, startTransition] = useTransition()
+  const [texto, setTexto] = useState("")
+  const [opciones, setOpciones] = useState(["", "", "", ""])
+  const [correcta, setCorrecta] = useState(0)
+
+  function updateOpcion(idx: number, value: string) {
+    setOpciones((prev) => prev.map((o, i) => (i === idx ? value : o)))
+  }
+
+  function addOpcion() {
+    setOpciones((prev) => [...prev, ""])
+  }
+
+  function removeOpcion(idx: number) {
+    if (opciones.length <= 2) return
+    setOpciones((prev) => prev.filter((_, i) => i !== idx))
+    if (correcta >= opciones.length - 1) setCorrecta(0)
+  }
+
+  async function handleCreate() {
+    if (!texto.trim()) {
+      toast.error("Escribe la pregunta")
+      return
+    }
+    const filledOpciones = opciones.filter((o) => o.trim())
+    if (filledOpciones.length < 2) {
+      toast.error("Agrega al menos 2 opciones")
+      return
+    }
+
+    startTransition(async () => {
+      const result = await createCapacitacionPregunta({
+        capacitacion_id: capacitacionId,
+        texto: texto.trim(),
+        opciones: filledOpciones,
+        respuesta_correcta: correcta,
+        orden,
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+      } else {
+        toast.success("Pregunta agregada")
+        onCreated(result.data)
+      }
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="mx-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+        <h3 className="text-lg font-semibold">Nueva Pregunta</h3>
+        <div className="mt-4 space-y-4">
+          <div>
+            <Label>Pregunta *</Label>
+            <Textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="Escribe la pregunta..."
+              rows={2}
+            />
+          </div>
+
+          <div>
+            <Label>Opciones (marca la correcta)</Label>
+            <div className="mt-2 space-y-2">
+              {opciones.map((op, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCorrecta(idx)}
+                    className={`flex size-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors ${
+                      correcta === idx
+                        ? "border-green-500 bg-green-500 text-white"
+                        : "border-slate-300 text-slate-400 hover:border-green-300"
+                    }`}
+                  >
+                    {String.fromCharCode(65 + idx)}
+                  </button>
+                  <Input
+                    value={op}
+                    onChange={(e) => updateOpcion(idx, e.target.value)}
+                    placeholder={`Opcion ${String.fromCharCode(65 + idx)}`}
+                    className="flex-1"
+                  />
+                  {opciones.length > 2 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-7 p-0 text-slate-400 hover:text-red-500"
+                      onClick={() => removeOpcion(idx)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {opciones.length < 6 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2"
+                onClick={addOpcion}
+              >
+                + Agregar opcion
+              </Button>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleCreate}
+              disabled={isPending}
+            >
+              {isPending ? "Creando..." : "Crear Pregunta"}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
