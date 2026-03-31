@@ -16,6 +16,9 @@ import {
   Save,
   ExternalLink,
   Trash2,
+  Upload,
+  Sparkles,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -439,10 +442,19 @@ export function CapacitacionDetailClient({
             <CardTitle className="text-lg">
               Preguntas del Examen ({examPreguntas.length})
             </CardTitle>
-            <Button size="sm" onClick={() => setAddPreguntaOpen(true)}>
-              <Plus className="mr-2 size-4" />
-              Agregar Pregunta
-            </Button>
+            <div className="flex gap-2">
+              <GenerarExamenButton
+                capacitacionId={cap.id}
+                onGenerated={(count) => {
+                  toast.success(`${count} preguntas generadas con IA`)
+                  router.refresh()
+                }}
+              />
+              <Button size="sm" onClick={() => setAddPreguntaOpen(true)}>
+                <Plus className="mr-2 size-4" />
+                Manual
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {examPreguntas.length === 0 ? (
@@ -672,6 +684,85 @@ function AddPreguntaDialog({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Generate exam from uploaded document via AI
+function GenerarExamenButton({
+  capacitacionId,
+  onGenerated,
+}: {
+  capacitacionId: string
+  onGenerated: (count: number) => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const fileInputRef = useState<HTMLInputElement | null>(null)
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const ext = file.name.split(".").pop()?.toLowerCase()
+    if (!["pdf", "docx", "doc"].includes(ext ?? "")) {
+      toast.error("Solo se aceptan archivos PDF o DOCX")
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("El archivo no puede superar 10MB")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("capacitacion_id", capacitacionId)
+
+      const res = await fetch("/api/generar-examen", {
+        method: "POST",
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || "Error generando examen")
+      } else {
+        onGenerated(data.preguntas_generadas)
+      }
+    } catch {
+      toast.error("Error de conexion")
+    } finally {
+      setLoading(false)
+      // Reset input
+      e.target.value = ""
+    }
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="file"
+        accept=".pdf,.docx,.doc"
+        onChange={handleFileSelect}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        disabled={loading}
+      />
+      <Button size="sm" variant="outline" disabled={loading}>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 size-4 animate-spin" />
+            Generando...
+          </>
+        ) : (
+          <>
+            <Sparkles className="mr-2 size-4" />
+            Generar con IA
+          </>
+        )}
+      </Button>
     </div>
   )
 }
