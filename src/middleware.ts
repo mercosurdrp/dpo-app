@@ -58,6 +58,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Restrict empleados to only /mis-capacitaciones
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single()
+
+  if (profile?.role === "empleado" && !pathname.startsWith("/mis-capacitaciones")) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/mis-capacitaciones"
+    return NextResponse.redirect(url)
+  }
+
   return supabaseResponse
 }
 
