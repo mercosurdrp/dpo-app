@@ -15,8 +15,10 @@ import {
   Settings,
   Menu,
   X,
+  LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
 import type { UserRole } from "@/types/database"
 import type { PilarNav } from "./sidebar"
 
@@ -238,6 +240,21 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
               </div>
             </div>
           )}
+
+          {/* Logout */}
+          <div className="mt-5 border-t border-white/10 pt-3">
+            <button
+              onClick={async () => {
+                const supabase = createClient()
+                await supabase.auth.signOut()
+                window.location.href = "/login"
+              }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+            >
+              <LogOut className="size-5" />
+              <span>Cerrar sesion</span>
+            </button>
+          </div>
         </nav>
       </div>
     </>

@@ -15,8 +15,10 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
 import type { UserRole } from "@/types/database"
 
 interface NavItem {
@@ -218,17 +220,30 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
         )}
       </nav>
 
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center border-t border-white/10 py-3 text-slate-400 hover:text-white transition-colors"
-      >
-        {collapsed ? (
-          <ChevronRight className="size-4" />
-        ) : (
-          <ChevronLeft className="size-4" />
-        )}
-      </button>
+      {/* Logout + Collapse */}
+      <div className="border-t border-white/10">
+        <button
+          onClick={async () => {
+            const supabase = createClient()
+            await supabase.auth.signOut()
+            window.location.href = "/login"
+          }}
+          className="flex w-full items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+        >
+          <LogOut className="size-4 shrink-0" />
+          {!collapsed && <span>Cerrar sesion</span>}
+        </button>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex w-full items-center justify-center border-t border-white/10 py-3 text-slate-400 hover:text-white transition-colors"
+        >
+          {collapsed ? (
+            <ChevronRight className="size-4" />
+          ) : (
+            <ChevronLeft className="size-4" />
+          )}
+        </button>
+      </div>
     </aside>
   )
 }
