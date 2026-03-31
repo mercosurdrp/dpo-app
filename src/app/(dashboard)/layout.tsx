@@ -14,7 +14,7 @@ export default async function DashboardLayout({
   const profile = await getProfile()
   const role = profile?.role ?? "viewer"
 
-  // Empleados get redirected to their own section
+  // Empleados: clean layout, no sidebar
   if (role === "empleado") {
     return (
       <div className="min-h-screen bg-slate-50">
