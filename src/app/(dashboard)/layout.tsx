@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation"
 import { requireAuth, getProfile } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
+import { EmpleadoGuard } from "@/components/layout/empleado-guard"
 import type { Pilar } from "@/types/database"
 
 export default async function DashboardLayout({
@@ -14,14 +14,16 @@ export default async function DashboardLayout({
   const profile = await getProfile()
   const role = profile?.role ?? "viewer"
 
-  // Empleados: clean layout, no sidebar
+  // Empleados: no sidebar, redirect to /mis-capacitaciones if on any other route
   if (role === "empleado") {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <main className="mx-auto max-w-4xl p-4 md:p-6">
-          {children}
-        </main>
-      </div>
+      <EmpleadoGuard>
+        <div className="min-h-screen bg-slate-50">
+          <main className="mx-auto max-w-4xl p-4 md:p-6">
+            {children}
+          </main>
+        </div>
+      </EmpleadoGuard>
     )
   }
 
