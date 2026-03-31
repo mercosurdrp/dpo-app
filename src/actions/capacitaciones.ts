@@ -75,6 +75,7 @@ export async function createCapacitacion(data: {
   duracion_horas: number
   lugar?: string
   material_url?: string
+  pilar?: string
 }): Promise<{ data: Capacitacion } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "auditor"])
@@ -90,6 +91,7 @@ export async function createCapacitacion(data: {
         duracion_horas: data.duracion_horas,
         lugar: data.lugar ?? null,
         material_url: data.material_url ?? null,
+        pilar: data.pilar ?? null,
         estado: "programada",
         created_by: profile.id,
       })

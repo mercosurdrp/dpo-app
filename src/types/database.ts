@@ -323,6 +323,7 @@ export interface Capacitacion {
   duracion_horas: number
   lugar: string | null
   material_url: string | null
+  pilar: string | null
   estado: EstadoCapacitacion
   created_by: string | null
   created_at: string

@@ -47,12 +47,33 @@ interface Props {
 }
 
 const estadoOptions: { value: string; label: string }[] = [
-  { value: "all", label: "Todos" },
+  { value: "all", label: "Todos los estados" },
   { value: "programada", label: "Programada" },
   { value: "en_curso", label: "En Curso" },
   { value: "completada", label: "Completada" },
   { value: "cancelada", label: "Cancelada" },
 ]
+
+const PILAR_OPTIONS = [
+  { value: "all", label: "Todos los pilares" },
+  { value: "Seguridad", label: "Seguridad" },
+  { value: "Gente", label: "Gente" },
+  { value: "Gestion", label: "Gestion" },
+  { value: "Entrega", label: "Entrega" },
+  { value: "Flota", label: "Flota" },
+  { value: "Almacen", label: "Almacen" },
+  { value: "Planeamiento", label: "Planeamiento" },
+]
+
+const PILAR_COLORS: Record<string, string> = {
+  Seguridad: "#EF4444",
+  Gente: "#3B82F6",
+  Gestion: "#8B5CF6",
+  Entrega: "#F59E0B",
+  Flota: "#10B981",
+  Almacen: "#6366F1",
+  Planeamiento: "#EC4899",
+}
 
 export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props) {
   const router = useRouter()
@@ -60,6 +81,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
   const [capacitaciones, setCapacitaciones] = useState(initial)
   const [search, setSearch] = useState("")
   const [filterEstado, setFilterEstado] = useState("all")
+  const [filterPilar, setFilterPilar] = useState("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -72,12 +94,16 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     duracion_horas: "1",
     lugar: "",
     material_url: "",
+    pilar: "",
   })
 
   const filtered = useMemo(() => {
     let list = capacitaciones
     if (filterEstado !== "all") {
       list = list.filter((c) => c.estado === filterEstado)
+    }
+    if (filterPilar !== "all") {
+      list = list.filter((c) => c.pilar === filterPilar)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -88,7 +114,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       )
     }
     return list
-  }, [capacitaciones, search, filterEstado])
+  }, [capacitaciones, search, filterEstado, filterPilar])
 
   // Stats
   const stats = useMemo(() => {
@@ -113,6 +139,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
         duracion_horas: parseFloat(form.duracion_horas) || 1,
         lugar: form.lugar.trim() || undefined,
         material_url: form.material_url.trim() || undefined,
+        pilar: form.pilar || undefined,
       })
 
       if ("error" in result) {
@@ -128,6 +155,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           duracion_horas: "1",
           lugar: "",
           material_url: "",
+          pilar: "",
         })
         setDialogOpen(false)
       }
@@ -179,6 +207,25 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                     onChange={(e) => setForm({ ...form, titulo: e.target.value })}
                     placeholder="Ej: Seguridad e Higiene"
                   />
+                </div>
+                <div>
+                  <Label>Pilar</Label>
+                  <Select
+                    value={form.pilar || "none"}
+                    onValueChange={(v) => setForm({ ...form, pilar: v === "none" ? "" : (v ?? "") })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar pilar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin pilar</SelectItem>
+                      {PILAR_OPTIONS.filter((o) => o.value !== "all").map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Descripcion</Label>
@@ -275,6 +322,24 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <Select value={filterPilar} onValueChange={(v) => setFilterPilar(v ?? "all")}>
+          <SelectTrigger className="w-full sm:w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PILAR_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.value !== "all" && (
+                  <span
+                    className="mr-2 inline-block size-2.5 rounded-full"
+                    style={{ backgroundColor: PILAR_COLORS[o.value] }}
+                  />
+                )}
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={filterEstado} onValueChange={(v) => setFilterEstado(v ?? "all")}>
           <SelectTrigger className="w-full sm:w-44">
             <SelectValue />
@@ -317,6 +382,17 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm text-slate-500">
+                  {cap.pilar && (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}
+                      />
+                      <span className="font-medium" style={{ color: PILAR_COLORS[cap.pilar] ?? "#94A3B8" }}>
+                        {cap.pilar}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <Calendar className="size-3.5" />
                     <span>{new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}</span>
