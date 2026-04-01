@@ -32,11 +32,11 @@ const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "
 
 function formatHora(fecha: string | null): string {
   if (!fecha) return "—"
-  // Las horas ya vienen ajustadas a Argentina desde el server
-  const d = new Date(fecha)
-  const h = d.getUTCHours().toString().padStart(2, "0")
-  const m = d.getUTCMinutes().toString().padStart(2, "0")
-  return `${h}:${m}`
+  return new Date(fecha).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
 }
 
 function HorasBadge({ horas }: { horas: number | null }) {
