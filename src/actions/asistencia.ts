@@ -175,10 +175,11 @@ export async function getResumenMensual(
         if (entradas.length > 0) {
           diasTrabajados++
 
-          // Check tardanza
+          // Check tardanza (en hora Argentina)
           const primeraEntrada = new Date(entradas[0].fecha_marca)
-          if (primeraEntrada.getHours() > horaEntradaEsperada ||
-              (primeraEntrada.getHours() === horaEntradaEsperada && primeraEntrada.getMinutes() > 10)) {
+          const horaAR = new Date(primeraEntrada.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" }))
+          if (horaAR.getHours() > horaEntradaEsperada ||
+              (horaAR.getHours() === horaEntradaEsperada && horaAR.getMinutes() > 10)) {
             tardanzas++
           }
 

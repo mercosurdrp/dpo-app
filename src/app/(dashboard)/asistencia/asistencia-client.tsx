@@ -32,7 +32,12 @@ const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "
 
 function formatHora(fecha: string | null): string {
   if (!fecha) return "—"
-  return new Date(fecha).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
+  // Mostrar en hora Argentina (UTC-3)
+  return new Date(fecha).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
 }
 
 function HorasBadge({ horas }: { horas: number | null }) {
@@ -349,7 +354,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
                     <TableBody>
                       {ultimas.map((m) => (
                         <TableRow key={m.id}>
-                          <TableCell className="text-sm">{new Date(m.fecha_marca).toLocaleDateString("es-AR")}</TableCell>
+                          <TableCell className="text-sm">{new Date(m.fecha_marca).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}</TableCell>
                           <TableCell className="font-mono text-sm">{formatHora(m.fecha_marca)}</TableCell>
                           <TableCell className="font-mono text-sm">{m.legajo}</TableCell>
                           <TableCell className="font-medium">{m.nombre_empleado}</TableCell>
