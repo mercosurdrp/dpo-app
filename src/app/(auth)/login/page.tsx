@@ -11,6 +11,9 @@ import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
+  const [mode, setMode] = useState<"empleado" | "admin">("empleado")
+  const [legajo, setLegajo] = useState("")
+  const [dni, setDni] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -20,18 +23,26 @@ export default function LoginPage() {
     setLoading(true)
 
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
+
+    // Build credentials based on mode
+    const credentials =
+      mode === "empleado"
+        ? { email: `${legajo.trim()}@dpo.local`, password: dni.trim() }
+        : { email: email.trim(), password }
+
+    const { error } = await supabase.auth.signInWithPassword(credentials)
 
     if (error) {
-      toast.error("Credenciales inválidas")
+      toast.error(
+        mode === "empleado"
+          ? "Legajo o DNI incorrecto"
+          : "Credenciales inválidas"
+      )
       setLoading(false)
       return
     }
 
-    // Check role to redirect empleados
+    // Check role to redirect
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
@@ -58,42 +69,104 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {/* Mode Toggle */}
+        <div className="mb-4 flex rounded-lg border border-white/10 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMode("empleado")}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              mode === "empleado"
+                ? "bg-blue-600 text-white"
+                : "bg-white/5 text-slate-400 hover:text-white"
+            }`}
+          >
+            Empleado
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("admin")}
+            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+              mode === "admin"
+                ? "bg-blue-600 text-white"
+                : "bg-white/5 text-slate-400 hover:text-white"
+            }`}
+          >
+            Administrador
+          </button>
+        </div>
+
         {/* Card */}
         <form
           onSubmit={handleSubmit}
           className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm"
         >
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm text-slate-300">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
-              />
-            </div>
+          {mode === "empleado" ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="legajo" className="text-sm text-slate-300">
+                  Legajo
+                </Label>
+                <Input
+                  id="legajo"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="Ej: 30"
+                  value={legajo}
+                  onChange={(e) => setLegajo(e.target.value)}
+                  required
+                  className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm text-slate-300">
-                Contraseña
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
-              />
+              <div className="space-y-2">
+                <Label htmlFor="dni" className="text-sm text-slate-300">
+                  DNI
+                </Label>
+                <Input
+                  id="dni"
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="Tu número de documento"
+                  value={dni}
+                  onChange={(e) => setDni(e.target.value)}
+                  required
+                  className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm text-slate-300">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm text-slate-300">
+                  Contraseña
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus-visible:border-blue-500 focus-visible:ring-blue-500/30"
+                />
+              </div>
+            </div>
+          )}
 
           <Button
             type="submit"
