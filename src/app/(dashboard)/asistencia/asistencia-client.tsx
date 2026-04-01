@@ -155,9 +155,9 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Sector:</span>
-          <Select value={sectorFilter} onValueChange={(v) => { if (v) setSectorFilter(v) }}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue />
+          <Select defaultValue="todos" value={sectorFilter} onValueChange={(v) => { if (v) setSectorFilter(v) }}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filtrar sector" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
