@@ -4,12 +4,8 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
 
-// Las marcas del reloj son hora Argentina pero se guardan como UTC.
-// Sumamos 3hs para mostrar correctamente.
 function ajustarArgentina(fecha: string): string {
-  const d = new Date(fecha)
-  d.setHours(d.getHours() + 3)
-  return d.toISOString()
+  return new Date(fecha).toISOString()
 }
 
 export interface MiFichajeHoy {
@@ -128,9 +124,11 @@ export async function getMiDashboard(): Promise<
       if (entradas.length > 0) {
         diasTrabajados++
 
-        const primeraEntrada = new Date(ajustarArgentina(entradas[0].fecha_marca))
-        if (primeraEntrada.getUTCHours() > 8 ||
-            (primeraEntrada.getUTCHours() === 8 && primeraEntrada.getUTCMinutes() > 10)) {
+        // Hora Argentina = UTC-3, así que 8:10 AR = 11:10 UTC
+        const primeraEntrada = new Date(entradas[0].fecha_marca)
+        const hUTC = primeraEntrada.getUTCHours()
+        const mUTC = primeraEntrada.getUTCMinutes()
+        if (hUTC > 11 || (hUTC === 11 && mUTC > 10)) {
           tardanzas++
         }
 
