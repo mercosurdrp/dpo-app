@@ -2,9 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server"
 
-// Pasar fecha a ISO sin alterar (las marcas ya vienen con TZ correcto desde el PHP)
+// Las marcas del reloj son hora Argentina pero se guardan como UTC.
+// Sumamos 3hs para mostrar correctamente.
 function ajustarArgentina(fecha: string): string {
-  return new Date(fecha).toISOString()
+  const d = new Date(fecha)
+  d.setHours(d.getHours() + 3)
+  return d.toISOString()
 }
 
 // ---------- Types ----------
