@@ -32,12 +32,11 @@ const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "
 
 function formatHora(fecha: string | null): string {
   if (!fecha) return "—"
-  // Mostrar en hora Argentina (UTC-3)
-  return new Date(fecha).toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Argentina/Buenos_Aires",
-  })
+  // Las horas ya vienen ajustadas a Argentina desde el server
+  const d = new Date(fecha)
+  const h = d.getUTCHours().toString().padStart(2, "0")
+  const m = d.getUTCMinutes().toString().padStart(2, "0")
+  return `${h}:${m}`
 }
 
 function HorasBadge({ horas }: { horas: number | null }) {
@@ -354,7 +353,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
                     <TableBody>
                       {ultimas.map((m) => (
                         <TableRow key={m.id}>
-                          <TableCell className="text-sm">{new Date(m.fecha_marca).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}</TableCell>
+                          <TableCell className="text-sm">{m.fecha_marca.slice(0, 10)}</TableCell>
                           <TableCell className="font-mono text-sm">{formatHora(m.fecha_marca)}</TableCell>
                           <TableCell className="font-mono text-sm">{m.legajo}</TableCell>
                           <TableCell className="font-medium">{m.nombre_empleado}</TableCell>

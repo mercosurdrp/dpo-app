@@ -2,6 +2,14 @@
 
 import { createClient } from "@/lib/supabase/server"
 
+// Ajuste UTC → Argentina (UTC-3): las marcas del reloj son hora local
+// pero Supabase las guarda como UTC. Sumamos 3hs para corregir la visualización.
+function ajustarArgentina(fecha: string): string {
+  const d = new Date(fecha)
+  d.setHours(d.getHours() + 3)
+  return d.toISOString()
+}
+
 // ---------- Types ----------
 
 export interface MarcaAsistencia {
@@ -80,8 +88,8 @@ export async function getMarcasDiarias(
       const entradas = marcasEmp.filter((m) => m.tipo_marca === "E")
       const salidas = marcasEmp.filter((m) => m.tipo_marca === "S")
 
-      const primeraEntrada = entradas.length > 0 ? entradas[0].fecha_marca : null
-      const ultimaSalida = salidas.length > 0 ? salidas[salidas.length - 1].fecha_marca : null
+      const primeraEntrada = entradas.length > 0 ? ajustarArgentina(entradas[0].fecha_marca) : null
+      const ultimaSalida = salidas.length > 0 ? ajustarArgentina(salidas[salidas.length - 1].fecha_marca) : null
 
       let horasTrabajadas: number | null = null
       if (primeraEntrada && ultimaSalida) {
@@ -96,7 +104,7 @@ export async function getMarcasDiarias(
         primera_entrada: primeraEntrada,
         ultima_salida: ultimaSalida,
         horas_trabajadas: horasTrabajadas,
-        marcas: marcasEmp,
+        marcas: marcasEmp.map((m) => ({ ...m, fecha_marca: ajustarArgentina(m.fecha_marca) })),
       }
     })
 
@@ -175,11 +183,10 @@ export async function getResumenMensual(
         if (entradas.length > 0) {
           diasTrabajados++
 
-          // Check tardanza (en hora Argentina)
-          const primeraEntrada = new Date(entradas[0].fecha_marca)
-          const horaAR = new Date(primeraEntrada.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" }))
-          if (horaAR.getHours() > horaEntradaEsperada ||
-              (horaAR.getHours() === horaEntradaEsperada && horaAR.getMinutes() > 10)) {
+          // Check tardanza (ajustada a Argentina)
+          const primeraEntrada = new Date(ajustarArgentina(entradas[0].fecha_marca))
+          if (primeraEntrada.getUTCHours() > horaEntradaEsperada ||
+              (primeraEntrada.getUTCHours() === horaEntradaEsperada && primeraEntrada.getUTCMinutes() > 10)) {
             tardanzas++
           }
 
@@ -243,6 +250,7 @@ export async function getUltimasMarcas(
 
     const result = marcasArr.map((m) => ({
       ...m,
+      fecha_marca: ajustarArgentina(m.fecha_marca),
       nombre_empleado: nombreMap.get(m.legajo) ?? `Legajo ${m.legajo}`,
     }))
 
