@@ -134,8 +134,8 @@ export async function getMiDashboard(): Promise<
         }
 
         if (salidas.length > 0) {
-          const ultimaSalida = new Date(ajustarArgentina(salidas[salidas.length - 1].fecha_marca))
-          const diff = ultimaSalida.getTime() - primeraEntrada.getTime()
+          const ultimaSalida = new Date(salidas[salidas.length - 1].fecha_marca)
+          const diff = ultimaSalida.getTime() - new Date(entradas[0].fecha_marca).getTime()
           horasTotales += diff / 3600000
         }
       }
