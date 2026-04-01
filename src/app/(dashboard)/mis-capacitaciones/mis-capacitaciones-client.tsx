@@ -50,11 +50,7 @@ interface Props {
 
 function formatHoraAR(fecha: string | null): string {
   if (!fecha) return "—"
-  return new Date(fecha).toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Argentina/Buenos_Aires",
-  })
+  return fecha  // Ya viene como "HH:MM" desde el server
 }
 
 function formatFecha(fecha: string): string {

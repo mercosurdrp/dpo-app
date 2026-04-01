@@ -4,8 +4,11 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
 
-function ajustarArgentina(fecha: string): string {
-  return new Date(fecha).toISOString()
+// Extraer HH:MM directo del string de la DB sin conversión de timezone
+function extraerHora(fecha: string): string {
+  // fecha viene como "2026-04-01T07:03:20+00:00" o "2026-04-01 07:03:20"
+  const match = fecha.match(/(\d{2}):(\d{2})/)
+  return match ? `${match[1]}:${match[2]}` : "—"
 }
 
 export interface MiFichajeHoy {
@@ -73,12 +76,12 @@ export async function getMiDashboard(): Promise<
     const entradasHoy = marcasHoyArr.filter((m) => m.tipo_marca === "E")
     const salidasHoy = marcasHoyArr.filter((m) => m.tipo_marca === "S")
 
-    const entradaHoy = entradasHoy.length > 0 ? ajustarArgentina(entradasHoy[0].fecha_marca) : null
-    const salidaHoy = salidasHoy.length > 0 ? ajustarArgentina(salidasHoy[salidasHoy.length - 1].fecha_marca) : null
+    const entradaHoy = entradasHoy.length > 0 ? extraerHora(entradasHoy[0].fecha_marca) : null
+    const salidaHoy = salidasHoy.length > 0 ? extraerHora(salidasHoy[salidasHoy.length - 1].fecha_marca) : null
 
     let horasHoy: number | null = null
-    if (entradaHoy && salidaHoy) {
-      const diff = new Date(salidaHoy).getTime() - new Date(entradaHoy).getTime()
+    if (entradasHoy.length > 0 && salidasHoy.length > 0) {
+      const diff = new Date(salidasHoy[salidasHoy.length - 1].fecha_marca).getTime() - new Date(entradasHoy[0].fecha_marca).getTime()
       horasHoy = Math.round((diff / 3600000) * 100) / 100
     }
 
@@ -124,11 +127,9 @@ export async function getMiDashboard(): Promise<
       if (entradas.length > 0) {
         diasTrabajados++
 
-        // Hora Argentina = UTC-3, así que 8:10 AR = 11:10 UTC
-        const primeraEntrada = new Date(entradas[0].fecha_marca)
-        const hUTC = primeraEntrada.getUTCHours()
-        const mUTC = primeraEntrada.getUTCMinutes()
-        if (hUTC > 11 || (hUTC === 11 && mUTC > 10)) {
+        const horaStr = extraerHora(entradas[0].fecha_marca)
+        const [hh, mm] = horaStr.split(":").map(Number)
+        if (hh > 8 || (hh === 8 && mm > 10)) {
           tardanzas++
         }
 
@@ -172,12 +173,12 @@ export async function getMiDashboard(): Promise<
       const entradas = marcasDia.filter((m) => m.tipo_marca === "E")
       const salidas = marcasDia.filter((m) => m.tipo_marca === "S")
 
-      const entrada = entradas.length > 0 ? ajustarArgentina(entradas[0].fecha_marca) : null
-      const salida = salidas.length > 0 ? ajustarArgentina(salidas[salidas.length - 1].fecha_marca) : null
+      const entrada = entradas.length > 0 ? extraerHora(entradas[0].fecha_marca) : null
+      const salida = salidas.length > 0 ? extraerHora(salidas[salidas.length - 1].fecha_marca) : null
 
       let horas: number | null = null
-      if (entrada && salida) {
-        const diff = new Date(salida).getTime() - new Date(entrada).getTime()
+      if (entradas.length > 0 && salidas.length > 0) {
+        const diff = new Date(salidas[salidas.length - 1].fecha_marca).getTime() - new Date(entradas[0].fecha_marca).getTime()
         horas = Math.round((diff / 3600000) * 100) / 100
       }
 
