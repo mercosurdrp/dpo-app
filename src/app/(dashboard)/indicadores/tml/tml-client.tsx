@@ -94,7 +94,7 @@ function Tendencia({ mensual }: { mensual: TmlMensual[] }) {
   )
 }
 
-export function IndicadoresClient({ kpis, registros }: Props) {
+export function TmlClient({ kpis, registros }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -123,7 +123,7 @@ export function IndicadoresClient({ kpis, registros }: Props) {
             KPIs de Tiempo Medio de Liberación (TML) — Pilar Entrega 1.1
           </p>
         </div>
-        <Link href="/indicadores/registro">
+        <Link href="/indicadores/tml/registro">
           <Button>
             <Plus className="mr-2 h-4 w-4" /> Nuevo Registro
           </Button>
@@ -350,7 +350,7 @@ export function IndicadoresClient({ kpis, registros }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Últimos Registros</CardTitle>
-          <Link href="/indicadores/registro">
+          <Link href="/indicadores/tml/registro">
             <Button variant="outline" size="sm">
               <Plus className="mr-1 h-4 w-4" /> Registrar
             </Button>
