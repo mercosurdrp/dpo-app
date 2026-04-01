@@ -11,6 +11,7 @@ import {
   ClipboardList,
   BarChart3,
   Fingerprint,
+  Hand,
   GraduationCap,
   Users,
   Settings,
@@ -59,6 +60,11 @@ const navItems: NavItem[] = [
     label: "Asistencia",
     href: "/asistencia",
     icon: <Fingerprint className="size-5" />,
+  },
+  {
+    label: "Reunión Pre-Ruta",
+    href: "/reunion-preruta",
+    icon: <Hand className="size-5" />,
   },
   {
     label: "Capacitaciones",

@@ -1,9 +1,14 @@
 import { getMisCapacitaciones } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
+import { getEstadoReunionHoy } from "@/actions/reunion-preruta"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
-  const [result, profile] = await Promise.all([getMisCapacitaciones(), getProfile()])
+  const [result, profile, reunionRes] = await Promise.all([
+    getMisCapacitaciones(),
+    getProfile(),
+    getEstadoReunionHoy(),
+  ])
 
   if ("error" in result) {
     return (
@@ -14,10 +19,13 @@ export default async function MisCapacitacionesPage() {
     )
   }
 
+  const reunion = "data" in reunionRes ? reunionRes.data : { marcado: false, hora_checkin: null, minutos: null }
+
   return (
     <MisCapacitacionesClient
       capacitaciones={result.data}
       nombre={profile?.nombre ?? ""}
+      reunion={reunion}
     />
   )
 }
