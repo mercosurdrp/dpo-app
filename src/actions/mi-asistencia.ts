@@ -4,10 +4,9 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
 
+// Pasar fecha sin ajuste — el frontend formatea con timezone Argentina
 function ajustarArgentina(fecha: string): string {
-  const d = new Date(fecha)
-  d.setHours(d.getHours() + 3)
-  return d.toISOString()
+  return fecha
 }
 
 export interface MiFichajeHoy {
@@ -126,9 +125,11 @@ export async function getMiDashboard(): Promise<
       if (entradas.length > 0) {
         diasTrabajados++
 
-        const primeraEntrada = new Date(ajustarArgentina(entradas[0].fecha_marca))
-        if (primeraEntrada.getUTCHours() > 8 ||
-            (primeraEntrada.getUTCHours() === 8 && primeraEntrada.getUTCMinutes() > 10)) {
+        const primeraEntrada = new Date(entradas[0].fecha_marca)
+        // 8:10 Argentina = 11:10 UTC
+        const horaUTC = primeraEntrada.getUTCHours()
+        const minUTC = primeraEntrada.getUTCMinutes()
+        if (horaUTC > 11 || (horaUTC === 11 && minUTC > 10)) {
           tardanzas++
         }
 

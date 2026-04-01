@@ -50,8 +50,11 @@ interface Props {
 
 function formatHoraAR(fecha: string | null): string {
   if (!fecha) return "—"
-  const d = new Date(fecha)
-  return d.getUTCHours().toString().padStart(2, "0") + ":" + d.getUTCMinutes().toString().padStart(2, "0")
+  return new Date(fecha).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
 }
 
 function formatFecha(fecha: string): string {
