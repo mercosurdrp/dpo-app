@@ -22,19 +22,33 @@ export interface MarcaAsistencia {
   created_at: string
 }
 
+export type TipoNovedad = "vacaciones" | "licencia_medica" | "ausente" | "pergamino"
+
+export interface NovedadAsistencia {
+  id: string
+  legajo: number
+  fecha: string
+  tipo: TipoNovedad
+  observaciones: string | null
+  created_at: string
+}
+
 export interface ResumenDiarioEmpleado {
   legajo: number
   nombre: string
+  sector: string
   fecha: string
   primera_entrada: string | null
   ultima_salida: string | null
   horas_trabajadas: number | null
+  novedad: TipoNovedad | null
   marcas: MarcaAsistencia[]
 }
 
 export interface ResumenMensualEmpleado {
   legajo: number
   nombre: string
+  sector: string
   dias_trabajados: number
   horas_totales: number
   promedio_horas: number
@@ -68,11 +82,22 @@ export async function getMarcasDiarias(
     // Get all empleados
     const { data: empleados } = await supabase
       .from("empleados")
-      .select("legajo, nombre")
+      .select("legajo, nombre, sector")
       .eq("activo", true)
       .order("nombre")
 
-    const empleadosArr = empleados ?? []
+    const empleadosArr = (empleados ?? []) as { legajo: number; nombre: string; sector: string }[]
+
+    // Get novedades for the date
+    const { data: novedades } = await supabase
+      .from("asistencia_novedades")
+      .select("*")
+      .eq("fecha", fecha)
+
+    const novedadMap = new Map<number, TipoNovedad>()
+    for (const n of (novedades ?? []) as NovedadAsistencia[]) {
+      novedadMap.set(n.legajo, n.tipo)
+    }
 
     // Group marcas by legajo
     const marcasPorLegajo = new Map<number, MarcaAsistencia[]>()
@@ -100,10 +125,12 @@ export async function getMarcasDiarias(
       return {
         legajo: emp.legajo,
         nombre: emp.nombre,
+        sector: emp.sector ?? "Distribución",
         fecha,
         primera_entrada: primeraEntrada,
         ultima_salida: ultimaSalida,
         horas_trabajadas: horasTrabajadas,
+        novedad: novedadMap.get(emp.legajo) ?? null,
         marcas: marcasEmp.map((m) => ({ ...m, fecha_marca: ajustarArgentina(m.fecha_marca) })),
       }
     })
@@ -143,11 +170,11 @@ export async function getResumenMensual(
     // Get all empleados
     const { data: empleados } = await supabase
       .from("empleados")
-      .select("legajo, nombre")
+      .select("legajo, nombre, sector")
       .eq("activo", true)
       .order("nombre")
 
-    const empleadosArr = empleados ?? []
+    const empleadosArr = (empleados ?? []) as { legajo: number; nombre: string; sector: string }[]
 
     // Count business days in the month (Mon-Sat)
     let diasLaborales = 0
@@ -202,6 +229,7 @@ export async function getResumenMensual(
       return {
         legajo: emp.legajo,
         nombre: emp.nombre,
+        sector: emp.sector ?? "Distribución",
         dias_trabajados: diasTrabajados,
         horas_totales: Math.round(horasTotales * 100) / 100,
         promedio_horas: diasTrabajados > 0
@@ -256,6 +284,56 @@ export async function getUltimasMarcas(
 
     return { data: result }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Error loading marcas" }
+    return { error: err instanceof Error ? err.message : "Error loading ultimas marcas" }
+  }
+}
+
+// ---------- Novedades CRUD ----------
+
+export async function setNovedad(data: {
+  legajo: number
+  fecha: string
+  tipo: TipoNovedad
+  observaciones?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from("asistencia_novedades")
+      .upsert(
+        {
+          legajo: data.legajo,
+          fecha: data.fecha,
+          tipo: data.tipo,
+          observaciones: data.observaciones ?? null,
+        },
+        { onConflict: "legajo,fecha" }
+      )
+
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error saving novedad" }
+  }
+}
+
+export async function removeNovedad(
+  legajo: number,
+  fecha: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from("asistencia_novedades")
+      .delete()
+      .eq("legajo", legajo)
+      .eq("fecha", fecha)
+
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error removing novedad" }
   }
 }

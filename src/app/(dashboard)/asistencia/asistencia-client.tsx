@@ -6,6 +6,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -23,12 +30,25 @@ import {
   UserX,
   ChevronLeft,
   ChevronRight,
-  ArrowDownUp,
 } from "lucide-react"
-import type { ResumenDiarioEmpleado, ResumenMensualEmpleado, MarcaAsistencia } from "@/actions/asistencia"
-import { getMarcasDiarias, getResumenMensual } from "@/actions/asistencia"
+import type { ResumenDiarioEmpleado, ResumenMensualEmpleado, MarcaAsistencia, TipoNovedad } from "@/actions/asistencia"
+import { getMarcasDiarias, getResumenMensual, setNovedad, removeNovedad } from "@/actions/asistencia"
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+const NOVEDAD_LABELS: Record<string, string> = {
+  vacaciones: "Vacaciones",
+  licencia_medica: "Licencia Médica",
+  ausente: "Ausente",
+  pergamino: "Pergamino",
+}
+
+const NOVEDAD_COLORS: Record<string, string> = {
+  vacaciones: "bg-blue-100 text-blue-700",
+  licencia_medica: "bg-purple-100 text-purple-700",
+  ausente: "bg-red-100 text-red-700",
+  pergamino: "bg-slate-100 text-slate-700",
+}
 
 function formatHora(fecha: string | null): string {
   if (!fecha) return "—"
@@ -51,6 +71,16 @@ function TipoMarcaBadge({ tipo }: { tipo: string }) {
   return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">Salida</Badge>
 }
 
+function EstadoBadge({ emp }: { emp: ResumenDiarioEmpleado }) {
+  if (emp.novedad) {
+    return <Badge className={`${NOVEDAD_COLORS[emp.novedad]} hover:${NOVEDAD_COLORS[emp.novedad]}`}>{NOVEDAD_LABELS[emp.novedad]}</Badge>
+  }
+  if (emp.primera_entrada !== null) {
+    return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Presente</Badge>
+  }
+  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Ausente</Badge>
+}
+
 interface Props {
   diaria: ResumenDiarioEmpleado[]
   mensual: ResumenMensualEmpleado[]
@@ -67,11 +97,16 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
   const [anio, setAnio] = useState(anioInicial)
   const [diariaData, setDiariaData] = useState(diaria)
   const [mensualData, setMensualData] = useState(mensual)
+  const [sectorFilter, setSectorFilter] = useState<string>("todos")
   const [isPending, startTransition] = useTransition()
 
-  const presentesHoy = diariaData.filter((d) => d.primera_entrada !== null).length
-  const ausentesHoy = diariaData.filter((d) => d.primera_entrada === null).length
-  const totalEmpleados = diariaData.length
+  const filteredDiaria = sectorFilter === "todos" ? diariaData : diariaData.filter((d) => d.sector === sectorFilter)
+  const filteredMensual = sectorFilter === "todos" ? mensualData : mensualData.filter((d) => d.sector === sectorFilter)
+
+  const presentesHoy = filteredDiaria.filter((d) => d.primera_entrada !== null || d.novedad === "pergamino").length
+  const conNovedad = filteredDiaria.filter((d) => d.novedad && d.novedad !== "pergamino").length
+  const ausentesHoy = filteredDiaria.filter((d) => d.primera_entrada === null && !d.novedad).length
+  const totalEmpleados = filteredDiaria.length
 
   function cambiarFecha(delta: number) {
     const d = new Date(fecha)
@@ -97,14 +132,40 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
     })
   }
 
+  async function handleNovedad(legajo: number, value: string) {
+    if (value === "none") {
+      await removeNovedad(legajo, fecha)
+    } else {
+      await setNovedad({ legajo, fecha, tipo: value as TipoNovedad })
+    }
+    // Refresh
+    const res = await getMarcasDiarias(fecha)
+    if ("data" in res) setDiariaData(res.data)
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Asistencia</h1>
-        <p className="text-sm text-muted-foreground">
-          Control de fichadas del reloj biométrico
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Asistencia</h1>
+          <p className="text-sm text-muted-foreground">
+            Control de fichadas del reloj biométrico
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Sector:</span>
+          <Select value={sectorFilter} onValueChange={(v) => { if (v) setSectorFilter(v) }}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="Depósito">Depósito</SelectItem>
+              <SelectItem value="Distribución">Distribución</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -142,13 +203,18 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Ausentes Hoy</p>
+                <p className="text-sm text-muted-foreground">Ausentes</p>
                 <p className="text-3xl font-bold text-red-600">{ausentesHoy}</p>
               </div>
               <div className="rounded-full bg-red-100 p-3">
                 <UserX className="h-5 w-5 text-red-600" />
               </div>
             </div>
+            {conNovedad > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                + {conNovedad} con novedad
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -157,7 +223,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
               <div>
                 <p className="text-sm text-muted-foreground">Tardanzas (mes)</p>
                 <p className="text-3xl font-bold text-amber-600">
-                  {mensualData.reduce((s, e) => s + e.tardanzas, 0)}
+                  {filteredMensual.reduce((s, e) => s + e.tardanzas, 0)}
                 </p>
               </div>
               <div className="rounded-full bg-amber-100 p-3">
@@ -180,7 +246,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
         <TabsContent value="diaria">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <CalendarDays className="h-5 w-5" />
                   Asistencia del día
@@ -208,7 +274,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
               </div>
             </CardHeader>
             <CardContent>
-              {diariaData.length === 0 ? (
+              {filteredDiaria.length === 0 ? (
                 <p className="py-8 text-center text-muted-foreground">No hay empleados registrados</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -217,28 +283,48 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
                       <TableRow>
                         <TableHead>Legajo</TableHead>
                         <TableHead>Empleado</TableHead>
+                        <TableHead>Sector</TableHead>
                         <TableHead>Entrada</TableHead>
                         <TableHead>Salida</TableHead>
                         <TableHead className="text-right">Horas</TableHead>
                         <TableHead className="text-center">Estado</TableHead>
+                        <TableHead className="text-center">Novedad</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {diariaData.map((emp) => (
-                        <TableRow key={emp.legajo} className={emp.primera_entrada === null ? "opacity-50" : ""}>
+                      {filteredDiaria.map((emp) => (
+                        <TableRow key={emp.legajo} className={emp.primera_entrada === null && !emp.novedad ? "opacity-50" : ""}>
                           <TableCell className="font-mono text-sm">{emp.legajo}</TableCell>
                           <TableCell className="font-medium">{emp.nombre}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {emp.sector}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="font-mono text-sm">{formatHora(emp.primera_entrada)}</TableCell>
                           <TableCell className="font-mono text-sm">{formatHora(emp.ultima_salida)}</TableCell>
                           <TableCell className="text-right">
                             <HorasBadge horas={emp.horas_trabajadas} />
                           </TableCell>
                           <TableCell className="text-center">
-                            {emp.primera_entrada !== null ? (
-                              <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Presente</Badge>
-                            ) : (
-                              <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Ausente</Badge>
-                            )}
+                            <EstadoBadge emp={emp} />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Select
+                              value={emp.novedad ?? "none"}
+                              onValueChange={(v) => { if (v) handleNovedad(emp.legajo, v) }}
+                            >
+                              <SelectTrigger className="w-[140px] h-8 text-xs">
+                                <SelectValue placeholder="Sin novedad" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Sin novedad</SelectItem>
+                                <SelectItem value="vacaciones">Vacaciones</SelectItem>
+                                <SelectItem value="licencia_medica">Licencia Médica</SelectItem>
+                                <SelectItem value="ausente">Ausente</SelectItem>
+                                <SelectItem value="pergamino">Pergamino</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -273,7 +359,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
               </div>
             </CardHeader>
             <CardContent>
-              {mensualData.length === 0 ? (
+              {filteredMensual.length === 0 ? (
                 <p className="py-8 text-center text-muted-foreground">No hay datos para este mes</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -282,6 +368,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
                       <TableRow>
                         <TableHead>Legajo</TableHead>
                         <TableHead>Empleado</TableHead>
+                        <TableHead>Sector</TableHead>
                         <TableHead className="text-center">Días Trabajados</TableHead>
                         <TableHead className="text-right">Horas Totales</TableHead>
                         <TableHead className="text-right">Prom. Hs/Día</TableHead>
@@ -290,10 +377,15 @@ export function AsistenciaClient({ diaria, mensual, ultimas, fechaInicial, mesIn
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {mensualData.map((emp) => (
+                      {filteredMensual.map((emp) => (
                         <TableRow key={emp.legajo}>
                           <TableCell className="font-mono text-sm">{emp.legajo}</TableCell>
                           <TableCell className="font-medium">{emp.nombre}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {emp.sector}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-center">{emp.dias_trabajados}</TableCell>
                           <TableCell className="text-right font-mono">{emp.horas_totales}h</TableCell>
                           <TableCell className="text-right">
