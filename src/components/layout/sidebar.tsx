@@ -10,6 +10,7 @@ import {
   ListTodo,
   ClipboardList,
   BarChart3,
+  Fingerprint,
   GraduationCap,
   Users,
   Settings,
@@ -53,6 +54,11 @@ const navItems: NavItem[] = [
     label: "Indicadores",
     href: "/indicadores",
     icon: <BarChart3 className="size-5" />,
+  },
+  {
+    label: "Asistencia",
+    href: "/asistencia",
+    icon: <Fingerprint className="size-5" />,
   },
   {
     label: "Capacitaciones",
