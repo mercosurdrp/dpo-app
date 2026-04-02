@@ -82,6 +82,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          <Link href="/indicadores/puntualidad">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-green-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-green-100 text-green-600 group-hover:bg-green-200 transition-colors">
+                  <Clock className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    % Puntualidad Pre-Ruta
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Entrada &le; 07:00 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </div>
 
