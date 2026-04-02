@@ -406,6 +406,7 @@ export function AsistenciaMatinalClient({
                           ? new Date(d.hora_fichaje).toLocaleTimeString("es-AR", {
                               hour: "2-digit",
                               minute: "2-digit",
+                              timeZone: "America/Argentina/Buenos_Aires",
                             })
                           : "—"}
                       </TableCell>
@@ -414,6 +415,7 @@ export function AsistenciaMatinalClient({
                           ? new Date(d.hora_checkin).toLocaleTimeString("es-AR", {
                               hour: "2-digit",
                               minute: "2-digit",
+                              timeZone: "America/Argentina/Buenos_Aires",
                             })
                           : "—"}
                       </TableCell>

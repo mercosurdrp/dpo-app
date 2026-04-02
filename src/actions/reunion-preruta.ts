@@ -157,12 +157,6 @@ export async function getEstadoReunionHoy(): Promise<
 // ---------- getReunionKpis ----------
 // Para el dashboard admin
 
-function ajustarArgentina(fecha: string): string {
-  const d = new Date(fecha)
-  d.setHours(d.getHours() + 3)
-  return d.toISOString()
-}
-
 export async function getReunionKpis(
   fecha: string
 ): Promise<{ data: ReunionKpis } | { error: string }> {
@@ -196,8 +190,8 @@ export async function getReunionKpis(
         legajo: emp.legajo,
         nombre: emp.nombre,
         sector: emp.sector ?? "Distribución",
-        hora_fichaje: checkin?.hora_fichaje ? ajustarArgentina(checkin.hora_fichaje) : null,
-        hora_checkin: checkin?.hora_checkin ? ajustarArgentina(checkin.hora_checkin) : null,
+        hora_fichaje: checkin?.hora_fichaje ?? null,
+        hora_checkin: checkin?.hora_checkin ?? null,
         minutos_fichaje_reunion: checkin?.minutos_fichaje_reunion ?? null,
         asistio: !!checkin,
       }
