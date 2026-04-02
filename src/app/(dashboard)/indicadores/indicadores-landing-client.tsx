@@ -65,6 +65,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          <Link href="/indicadores/asistencia-matinal">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-blue-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-blue-100 text-blue-600 group-hover:bg-blue-200 transition-colors">
+                  <Users className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    % Asistencia Matinal
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Reunión Pre Ruta — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </div>
 
