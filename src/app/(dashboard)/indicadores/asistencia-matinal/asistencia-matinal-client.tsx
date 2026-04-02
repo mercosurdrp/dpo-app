@@ -303,10 +303,7 @@ export function AsistenciaMatinalClient({
                   <XAxis dataKey="name" fontSize={11} />
                   <YAxis fontSize={11} unit="%" domain={[0, 100]} />
                   <Tooltip
-                    formatter={(value: number, name: string) => {
-                      if (name === "pct") return [`${value}%`, "Asistencia"]
-                      return [value, name]
-                    }}
+                    formatter={(value) => [`${value}%`, "Asistencia"]}
                     labelFormatter={(label) => `Día ${label}`}
                   />
                   <ReferenceLine
@@ -350,7 +347,7 @@ export function AsistenciaMatinalClient({
                   <XAxis dataKey="name" fontSize={11} />
                   <YAxis fontSize={11} unit="%" domain={[0, 100]} />
                   <Tooltip
-                    formatter={(value: number) => [`${value}%`, "Asistencia"]}
+                    formatter={(value) => [`${value}%`, "Asistencia"]}
                     labelFormatter={(label) => `Día ${label}`}
                   />
                   <ReferenceLine
