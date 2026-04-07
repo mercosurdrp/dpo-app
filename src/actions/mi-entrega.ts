@@ -101,12 +101,12 @@ export async function getMiEntrega(): Promise<
     const ultimaFecha = `${anio}-${String(mes).padStart(2, "0")}-${ultimoDia}`
 
     // 4. Fetch data in parallel
-    // 4a. TML records (via chofer name) — for dominio + tml_minutos
+    // 4a. TML records (via chofer name OR ayudante) — for dominio + tml_minutos
     const tmlPromise = nombreChofer
       ? admin
           .from("registros_vehiculos")
           .select("fecha, dominio, tml_minutos, tipo")
-          .eq("chofer", nombreChofer)
+          .or(`chofer.eq.${nombreChofer},ayudante1.eq.${nombreChofer},ayudante2.eq.${nombreChofer}`)
           .gte("fecha", primerDia)
           .lte("fecha", ultimaFecha)
           .order("fecha", { ascending: false })
