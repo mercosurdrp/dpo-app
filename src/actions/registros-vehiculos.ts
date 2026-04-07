@@ -117,6 +117,69 @@ export async function getRegistrosVehiculos(
   }
 }
 
+// ==================== UPDATE REGISTRO ====================
+
+interface UpdateRegistroInput {
+  id: string
+  hora?: string // "HH:MM"
+  dominio?: string
+  chofer?: string
+  ayudante1?: string | null
+  ayudante2?: string | null
+  odometro?: number | null
+  horaEntrada?: number
+  observaciones?: string | null
+}
+
+export async function updateRegistroVehiculo(
+  input: UpdateRegistroInput
+): Promise<{ data: RegistroVehiculo } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const updates: Record<string, unknown> = {}
+
+    if (input.dominio !== undefined) updates.dominio = input.dominio.trim().toUpperCase()
+    if (input.chofer !== undefined) updates.chofer = input.chofer.trim().toUpperCase()
+    if (input.ayudante1 !== undefined) updates.ayudante1 = input.ayudante1?.trim().toUpperCase() || null
+    if (input.ayudante2 !== undefined) updates.ayudante2 = input.ayudante2?.trim().toUpperCase() || null
+    if (input.odometro !== undefined) updates.odometro = input.odometro
+    if (input.observaciones !== undefined) updates.observaciones = input.observaciones?.trim() || null
+
+    if (input.hora !== undefined) {
+      updates.hora = input.hora + ":00"
+      // Recalculate TML
+      const horaEntrada = input.horaEntrada ?? 7
+      updates.tml_minutos = calcTml(input.hora, horaEntrada)
+      updates.hora_entrada = horaEntrada
+    } else if (input.horaEntrada !== undefined) {
+      // Need to recalc TML with existing hora — fetch current record
+      const { data: current } = await supabase
+        .from("registros_vehiculos")
+        .select("hora")
+        .eq("id", input.id)
+        .single()
+      if (current) {
+        updates.hora_entrada = input.horaEntrada
+        updates.tml_minutos = calcTml(current.hora.slice(0, 5), input.horaEntrada)
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("registros_vehiculos")
+      .update(updates)
+      .eq("id", input.id)
+      .select()
+      .single()
+
+    if (error) return { error: error.message }
+    return { data: data as RegistroVehiculo }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ==================== DELETE REGISTRO ====================
 
 export async function deleteRegistroVehiculo(

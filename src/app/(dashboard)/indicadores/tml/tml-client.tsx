@@ -1,10 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
@@ -13,6 +17,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   BarChart,
@@ -43,7 +62,11 @@ import {
   Truck,
   BarChart3,
   Minus,
+  Pencil,
+  Trash2,
+  Loader2,
 } from "lucide-react"
+import { updateRegistroVehiculo, deleteRegistroVehiculo } from "@/actions/registros-vehiculos"
 
 interface KpiData {
   totalEgresos: number
@@ -94,7 +117,7 @@ function Tendencia({ mensual }: { mensual: TmlMensual[] }) {
   )
 }
 
-export function TmlClient({ kpis, registros }: Props) {
+export function TmlClient({ kpis, registros, choferes, vehiculos }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -347,6 +370,94 @@ export function TmlClient({ kpis, registros }: Props) {
       </Tabs>
 
       {/* Recent records table */}
+      <RegistrosTable
+        registros={registros}
+        choferes={choferes}
+        vehiculos={vehiculos}
+      />
+    </div>
+  )
+}
+
+// ==================== REGISTROS TABLE WITH EDIT/DELETE ====================
+
+function RegistrosTable({
+  registros,
+  choferes,
+  vehiculos,
+}: {
+  registros: RegistroVehiculo[]
+  choferes: CatalogoChofer[]
+  vehiculos: CatalogoVehiculo[]
+}) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [editRecord, setEditRecord] = useState<RegistroVehiculo | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Edit form state
+  const [editHora, setEditHora] = useState("")
+  const [editDominio, setEditDominio] = useState("")
+  const [editChofer, setEditChofer] = useState("")
+  const [editAyudante1, setEditAyudante1] = useState("")
+  const [editAyudante2, setEditAyudante2] = useState("")
+  const [editOdometro, setEditOdometro] = useState("")
+  const [editHoraEntrada, setEditHoraEntrada] = useState<6 | 7>(7)
+
+  function openEdit(r: RegistroVehiculo) {
+    setEditRecord(r)
+    setEditHora(r.hora.slice(0, 5))
+    setEditDominio(r.dominio)
+    setEditChofer(r.chofer)
+    setEditAyudante1(r.ayudante1 || "SIN AYUDANTE")
+    setEditAyudante2(r.ayudante2 || "SIN AYUDANTE")
+    setEditOdometro(r.odometro?.toString() || "")
+    setEditHoraEntrada(r.hora_entrada as 6 | 7)
+  }
+
+  async function handleSaveEdit() {
+    if (!editRecord) return
+    setSaving(true)
+    const result = await updateRegistroVehiculo({
+      id: editRecord.id,
+      hora: editHora,
+      dominio: editDominio,
+      chofer: editChofer,
+      ayudante1: editAyudante1 !== "SIN AYUDANTE" ? editAyudante1 : null,
+      ayudante2: editAyudante2 !== "SIN AYUDANTE" ? editAyudante2 : null,
+      odometro: editOdometro ? parseInt(editOdometro) : null,
+      horaEntrada: editHoraEntrada,
+    })
+    if ("error" in result) {
+      toast.error(result.error)
+    } else {
+      toast.success("Registro actualizado")
+      setEditRecord(null)
+      startTransition(() => router.refresh())
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return
+    setDeleting(true)
+    const result = await deleteRegistroVehiculo(deleteId)
+    if ("error" in result) {
+      toast.error(result.error)
+    } else {
+      toast.success("Registro eliminado")
+      setDeleteId(null)
+      startTransition(() => router.refresh())
+    }
+    setDeleting(false)
+  }
+
+  const personasOptions = choferes.map((c) => c.nombre)
+
+  return (
+    <>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Últimos Registros</CardTitle>
@@ -371,8 +482,10 @@ export function TmlClient({ kpis, registros }: Props) {
                     <TableHead>Dominio</TableHead>
                     <TableHead>Chofer</TableHead>
                     <TableHead>Ayudante 1</TableHead>
+                    <TableHead>Ayudante 2</TableHead>
                     <TableHead>Odómetro</TableHead>
                     <TableHead className="text-right">TML</TableHead>
+                    <TableHead className="text-right w-24">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -383,9 +496,32 @@ export function TmlClient({ kpis, registros }: Props) {
                       <TableCell className="font-medium">{r.dominio}</TableCell>
                       <TableCell className="text-sm">{r.chofer}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{r.ayudante1 || "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{r.ayudante2 || "—"}</TableCell>
                       <TableCell className="text-sm font-mono">{r.odometro || "—"}</TableCell>
                       <TableCell className="text-right">
                         {r.tml_minutos != null ? <TmlBadge tml={r.tml_minutos} /> : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => openEdit(r)}
+                            disabled={isPending}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                            onClick={() => setDeleteId(r.id)}
+                            disabled={isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -395,6 +531,138 @@ export function TmlClient({ kpis, registros }: Props) {
           )}
         </CardContent>
       </Card>
-    </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editRecord} onOpenChange={(open) => !open && setEditRecord(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Registro</DialogTitle>
+            <DialogDescription>
+              {editRecord?.fecha} — {editRecord?.dominio}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Hora salida</Label>
+                <Input
+                  type="time"
+                  value={editHora}
+                  onChange={(e) => setEditHora(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Hora entrada</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={editHoraEntrada === 7 ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setEditHoraEntrada(7)}
+                  >
+                    07:00
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={editHoraEntrada === 6 ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setEditHoraEntrada(6)}
+                  >
+                    06:00
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Dominio</Label>
+                <Select value={editDominio} onValueChange={(v: string | null) => setEditDominio(v ?? "")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {vehiculos.map((v) => (
+                      <SelectItem key={v.id} value={v.dominio}>{v.dominio}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Chofer</Label>
+                <Select value={editChofer} onValueChange={(v: string | null) => setEditChofer(v ?? "")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {personasOptions.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ayudante 1</Label>
+                <Select value={editAyudante1} onValueChange={(v: string | null) => setEditAyudante1(v ?? "SIN AYUDANTE")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SIN AYUDANTE">Sin ayudante</SelectItem>
+                    {personasOptions.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Ayudante 2</Label>
+                <Select value={editAyudante2} onValueChange={(v: string | null) => setEditAyudante2(v ?? "SIN AYUDANTE")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SIN AYUDANTE">Sin ayudante</SelectItem>
+                    {personasOptions.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Odómetro</Label>
+              <Input
+                type="number"
+                placeholder="Km"
+                value={editOdometro}
+                onChange={(e) => setEditOdometro(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRecord(null)}>Cancelar</Button>
+            <Button onClick={handleSaveEdit} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar Registro</DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminará el registro de egreso.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
