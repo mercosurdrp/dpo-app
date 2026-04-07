@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 
 // ---------- Types ----------
@@ -60,15 +61,16 @@ export async function getMiEntrega(): Promise<
 
     if (!empleado) return { error: "No se encontró tu legajo" }
 
-    // 2. Get mappings
+    // 2. Get mappings (use admin client to bypass RLS on mapping tables)
+    const admin = createAdminClient()
     const [choferRes, fleteroRes] = await Promise.all([
-      supabase
+      admin
         .from("mapeo_empleado_chofer")
         .select("nombre_chofer")
         .eq("empleado_id", empleado.id)
         .limit(1)
-        .single(),
-      supabase
+        .maybeSingle(),
+      admin
         .from("mapeo_empleado_fletero")
         .select("ds_fletero_carga")
         .eq("empleado_id", empleado.id),
@@ -101,7 +103,7 @@ export async function getMiEntrega(): Promise<
     // 4. Fetch data in parallel
     // 4a. TML records (via chofer name) — for dominio + tml_minutos
     const tmlPromise = nombreChofer
-      ? supabase
+      ? admin
           .from("registros_vehiculos")
           .select("fecha, dominio, tml_minutos, tipo")
           .eq("chofer", nombreChofer)
@@ -129,7 +131,7 @@ export async function getMiEntrega(): Promise<
 
     // 4c. Ventas diarias for all plates this month
     const ventasPromise = platesArr.length > 0
-      ? supabase
+      ? admin
           .from("ventas_diarias")
           .select("fecha, ds_fletero_carga, total_bultos, total_hl, viajes")
           .in("ds_fletero_carga", platesArr)
@@ -139,7 +141,7 @@ export async function getMiEntrega(): Promise<
 
     // 4d. Rechazos for all plates this month
     const rechazosPromise = platesArr.length > 0
-      ? supabase
+      ? admin
           .from("rechazos")
           .select("fecha, ds_fletero_carga, bultos_rechazados")
           .in("ds_fletero_carga", platesArr)
