@@ -28,11 +28,11 @@ const MESES = [
 ]
 
 const CAT_COLORS: Record<string, string> = {
-  Operativo: "#E67E22",
-  Comercial: "#3498DB",
-  Cliente: "#95A5A6",
-  Interno: "#BDC3C7",
-  Otro: "#8B5CF6",
+  "Logística": "#E67E22",
+  "Ventas": "#3498DB",
+  "Cliente": "#95A5A6",
+  "Interno": "#BDC3C7",
+  "Otro": "#8B5CF6",
 }
 
 function colorPct(pct: number) {
@@ -72,6 +72,8 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [verTodosClientes, setVerTodosClientes] = useState(false)
+  const [catSeleccionada, setCatSeleccionada] = useState<string | null>(null)
+  const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
 
   const cambiarMes = useCallback((delta: number) => {
     let nuevoMes = mes + delta
@@ -272,7 +274,7 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
               </div>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Operativo + Comercial
+              Logística + Ventas
             </p>
           </CardContent>
         </Card>
@@ -395,7 +397,14 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
         {/* Donut categorías (2/5) */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Por Responsabilidad</CardTitle>
+            <CardTitle className="text-base">
+              Por Responsabilidad
+              {catSeleccionada && (
+                <Badge className="ml-2 text-xs cursor-pointer" variant="outline" onClick={() => setCatSeleccionada(null)}>
+                  {catSeleccionada} ✕
+                </Badge>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {categoriasData.length === 0 ? (
@@ -418,40 +427,89 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
                         }
                         labelLine={false}
                         fontSize={11}
+                        className="cursor-pointer"
+                        onClick={(_: unknown, index: number) => {
+                          const cat = categoriasData[index]?.name
+                          setCatSeleccionada(catSeleccionada === cat ? null : cat ?? null)
+                        }}
                       >
                         {categoriasData.map((e, i) => (
-                          <Cell key={i} fill={e.fill} />
+                          <Cell
+                            key={i}
+                            fill={e.fill}
+                            opacity={catSeleccionada && catSeleccionada !== e.name ? 0.3 : 1}
+                            stroke={catSeleccionada === e.name ? "#1E293B" : undefined}
+                            strokeWidth={catSeleccionada === e.name ? 2 : 0}
+                          />
                         ))}
                       </Pie>
                       <Tooltip formatter={(value) => [`${fmt(Number(value))} bultos`, "Rechazados"]} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Categoría</TableHead>
-                      <TableHead className="text-right">Bultos</TableHead>
-                      <TableHead className="text-right">%</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {categoriasData.map((c) => (
-                      <TableRow key={c.name}>
-                        <TableCell className="text-sm">
-                          <span className="inline-block h-2.5 w-2.5 rounded-sm mr-2" style={{ backgroundColor: c.fill }} />
-                          {c.name}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">{fmt(c.value)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {acum.total_bultos_rechazados > 0
-                            ? Math.round((c.value / acum.total_bultos_rechazados) * 100)
-                            : 0}%
-                        </TableCell>
+                {/* Drill-down: motivos de la categoría seleccionada */}
+                {catSeleccionada ? (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Motivos en &quot;{catSeleccionada}&quot;
+                    </p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Motivo</TableHead>
+                          <TableHead className="text-right">Bultos</TableHead>
+                          <TableHead className="text-right">Casos</TableHead>
+                          <TableHead className="text-right">%</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {acum.por_motivo
+                          .filter((m) => m.categoria === catSeleccionada)
+                          .map((m) => (
+                            <TableRow key={m.ds_rechazo}>
+                              <TableCell className="text-sm">{m.ds_rechazo}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{fmt(m.bultos)}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{m.cantidad}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{m.pct_del_total}%</TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Categoría</TableHead>
+                        <TableHead className="text-right">Bultos</TableHead>
+                        <TableHead className="text-right">%</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {categoriasData.map((c) => (
+                        <TableRow
+                          key={c.name}
+                          className="cursor-pointer hover:bg-slate-50"
+                          onClick={() => setCatSeleccionada(catSeleccionada === c.name ? null : c.name)}
+                        >
+                          <TableCell className="text-sm">
+                            <span className="inline-block h-2.5 w-2.5 rounded-sm mr-2" style={{ backgroundColor: c.fill }} />
+                            {c.name}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm">{fmt(c.value)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">
+                            {acum.total_bultos_rechazados > 0
+                              ? Math.round((c.value / acum.total_bultos_rechazados) * 100)
+                              : 0}%
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                <p className="text-[10px] text-muted-foreground text-center">
+                  Hacé clic en el gráfico o la tabla para ver motivos
+                </p>
               </div>
             )}
           </CardContent>
@@ -538,7 +596,14 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
         {/* Daily trend (secondary) */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Evolución Diaria — {MESES[mes]}</CardTitle>
+            <CardTitle className="text-base">
+              Evolución Diaria — {MESES[mes]}
+              {diaSeleccionado && (
+                <Badge className="ml-2 text-xs cursor-pointer" variant="outline" onClick={() => setDiaSeleccionado(null)}>
+                  Día {parseInt(diaSeleccionado.slice(-2), 10)} ✕
+                </Badge>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {dailyData.length === 0 ? (
@@ -547,7 +612,21 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
               <>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={dailyData}>
+                    <BarChart
+                      data={dailyData}
+                      onClick={(state) => {
+                        if (state?.activeLabel) {
+                          const diaNum = state.activeLabel
+                          const fechaMatch = acum.por_dia.find(
+                            (d) => parseInt(d.fecha.slice(-2), 10).toString() === diaNum
+                          )
+                          if (fechaMatch) {
+                            setDiaSeleccionado(diaSeleccionado === fechaMatch.fecha ? null : fechaMatch.fecha)
+                          }
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" fontSize={11} />
                       <YAxis fontSize={11} unit="%" domain={[0, "auto"]} />
@@ -557,42 +636,110 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
                           if (name === "pct") return [`${v}%`, "% Rechazo"]
                           return [fmt(v), name === "rechazados" ? "Rechazados" : "Entregados"]
                         }}
-                        labelFormatter={(label) => `Día ${label}`}
+                        labelFormatter={(label) => `Día ${label} — clic para ver detalle`}
                       />
                       <ReferenceLine y={META} stroke="#10B981" strokeDasharray="5 5"
                         label={{ value: `Meta ${META}%`, position: "right", fontSize: 10 }}
                       />
                       <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
-                        {dailyData.map((entry, i) => (
-                          <Cell key={i} fill={barColor(entry.pct)} />
-                        ))}
+                        {dailyData.map((entry, i) => {
+                          const fechaMatch = acum.por_dia.find(
+                            (d) => parseInt(d.fecha.slice(-2), 10).toString() === entry.name
+                          )
+                          const isSelected = diaSeleccionado && fechaMatch?.fecha === diaSeleccionado
+                          return (
+                            <Cell
+                              key={i}
+                              fill={barColor(entry.pct)}
+                              opacity={diaSeleccionado && !isSelected ? 0.3 : 1}
+                              stroke={isSelected ? "#1E293B" : undefined}
+                              strokeWidth={isSelected ? 2 : 0}
+                            />
+                          )
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                {/* Resumen día */}
-                <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs text-muted-foreground">
-                  <div>
-                    <p className="font-medium text-slate-900">{acum.por_dia.length}</p>
-                    <p>Días con datos</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-slate-900">
-                      {acum.por_dia.length > 0
-                        ? Math.round(acum.por_dia.reduce((s, d) => s + d.pct_rechazo, 0) / acum.por_dia.length * 100) / 100
-                        : 0}%
+
+                {/* Drill-down: rechazos del día seleccionado */}
+                {diaSeleccionado ? (() => {
+                  const rechDia = acum.detalle.filter((d) => d.fecha === diaSeleccionado)
+                  // Agrupar por cliente
+                  const clienteMap = new Map<string, { id_cliente: number | null; nombre: string; bultos: number; motivos: Set<string> }>()
+                  for (const r of rechDia) {
+                    const key = r.nombre_cliente ?? "SIN CLIENTE"
+                    const c = clienteMap.get(key) ?? { id_cliente: r.id_cliente, nombre: key, bultos: 0, motivos: new Set() }
+                    c.bultos += r.bultos_rechazados
+                    c.motivos.add(r.ds_rechazo)
+                    clienteMap.set(key, c)
+                  }
+                  const clientes = [...clienteMap.values()].sort((a, b) => b.bultos - a.bultos)
+
+                  return (
+                    <div className="mt-4">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">
+                        Rechazos del {diaSeleccionado} — {rechDia.length} registros, {clientes.length} clientes
+                      </p>
+                      <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Cód.</TableHead>
+                              <TableHead>Cliente</TableHead>
+                              <TableHead className="text-right">Bultos</TableHead>
+                              <TableHead>Motivo(s)</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {clientes.map((c) => (
+                              <TableRow key={c.nombre}>
+                                <TableCell className="font-mono text-xs">{c.id_cliente ?? "—"}</TableCell>
+                                <TableCell className="text-sm max-w-[180px] truncate">{c.nombre}</TableCell>
+                                <TableCell className="text-right font-mono text-sm">{fmt(c.bultos)}</TableCell>
+                                <TableCell className="text-xs">
+                                  <div className="flex flex-wrap gap-1">
+                                    {[...c.motivos].map((m) => (
+                                      <Badge key={m} variant="outline" className="text-[10px] px-1.5 py-0">{m}</Badge>
+                                    ))}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )
+                })() : (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs text-muted-foreground">
+                      <div>
+                        <p className="font-medium text-slate-900">{acum.por_dia.length}</p>
+                        <p>Días con datos</p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900">
+                          {acum.por_dia.length > 0
+                            ? Math.round(acum.por_dia.reduce((s, d) => s + d.pct_rechazo, 0) / acum.por_dia.length * 100) / 100
+                            : 0}%
+                        </p>
+                        <p>Promedio diario</p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900">
+                          {acum.por_dia.length > 0
+                            ? Math.max(...acum.por_dia.map((d) => d.pct_rechazo))
+                            : 0}%
+                        </p>
+                        <p>Peor día</p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground text-center mt-2">
+                      Hacé clic en una barra para ver clientes y motivos del día
                     </p>
-                    <p>Promedio diario</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-slate-900">
-                      {acum.por_dia.length > 0
-                        ? Math.max(...acum.por_dia.map((d) => d.pct_rechazo))
-                        : 0}%
-                    </p>
-                    <p>Peor día</p>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </CardContent>
@@ -656,9 +803,9 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
                             <Badge key={m} variant="outline" className="text-[10px] px-1.5 py-0"
                               style={{ borderColor: CAT_COLORS[(() => {
                                 const cats: Record<string, string> = {
-                                  "ERROR DE CARGA": "Operativo", "ERROR DE DISTRIBUCIÓN": "Operativo",
-                                  "PRODUCTO NO APTO": "Operativo", "SIN STOCK": "Operativo",
-                                  "ERROR DE PREVENTA": "Comercial", "SIN ENVASES": "Comercial",
+                                  "ERROR DE CARGA": "Logística", "ERROR DE DISTRIBUCIÓN": "Logística",
+                                  "PRODUCTO NO APTO": "Logística", "SIN STOCK": "Logística",
+                                  "ERROR DE PREVENTA": "Ventas", "SIN ENVASES": "Ventas",
                                   "CERRADO": "Cliente", "SIN DINERO": "Cliente",
                                   "DEV X TRÁMITES INTERNOS": "Interno",
                                 }

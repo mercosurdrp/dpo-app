@@ -14,6 +14,7 @@ import {
   CarFront,
   Warehouse,
   CalendarClock,
+  PackageX,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 
@@ -94,6 +95,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Entrada &le; 07:00 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/indicadores/rechazos">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-red-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-red-100 text-red-600 group-hover:bg-red-200 transition-colors">
+                  <PackageX className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    % Rechazos
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Bultos rechazados vs entregados — Meta 1.5%
                   </p>
                 </div>
               </CardContent>

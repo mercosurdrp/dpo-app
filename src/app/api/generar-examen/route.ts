@@ -3,29 +3,6 @@ export const maxDuration = 60
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import OpenAI from "openai"
-import * as pdfParse from "pdf-parse"
-import * as mammoth from "mammoth"
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
-async function extractText(buffer: Buffer, filename: string): Promise<string> {
-  const ext = filename.toLowerCase().split(".").pop()
-
-  if (ext === "pdf") {
-    const parsePdf = (pdfParse as unknown as { default: (buf: Buffer) => Promise<{ text: string }> }).default ?? pdfParse
-    const data = await (parsePdf as (buf: Buffer) => Promise<{ text: string }>)(buffer)
-    return data.text
-  }
-
-  if (ext === "docx" || ext === "doc") {
-    const result = await mammoth.extractRawText({ buffer })
-    return result.value
-  }
-
-  // Plain text fallback
-  return buffer.toString("utf-8")
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,17 +39,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Extract text from document
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    let text = await extractText(buffer, file.name)
+    const ext = file.name.toLowerCase().split(".").pop()
 
-    // Truncate to ~12000 chars to fit in context
-    if (text.length > 12000) {
-      text = text.substring(0, 12000)
+    // Extract text from document
+    let text = ""
+
+    if (ext === "docx" || ext === "doc") {
+      const mammoth = await import("mammoth")
+      const result = await mammoth.extractRawText({ buffer })
+      text = result.value
+    } else if (ext === "pdf") {
+      // For PDF, convert to base64 and let OpenAI read it directly
+      // We'll handle this in the OpenAI call below
+      text = "__PDF_BASE64__"
+    } else {
+      text = buffer.toString("utf-8")
     }
 
-    if (text.trim().length < 50) {
+    if (text !== "__PDF_BASE64__" && text.trim().length < 50) {
       return NextResponse.json(
         { error: "No se pudo extraer texto suficiente del documento" },
         { status: 400 }
@@ -89,14 +75,7 @@ export async function POST(request: NextRequest) {
     const titulo = cap?.titulo ?? "Capacitacion"
     const pilar = cap?.pilar ?? ""
 
-    // Generate questions with OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.7,
-      messages: [
-        {
-          role: "system",
-          content: `Sos un experto en capacitacion laboral para distribuidoras de bebidas en Argentina.
+    const systemPrompt = `Sos un experto en capacitacion laboral para distribuidoras de bebidas en Argentina.
 Genera exactamente 10 preguntas de multiple choice basadas en el material proporcionado.
 Cada pregunta debe tener exactamente 4 opciones (A, B, C, D) y una sola respuesta correcta.
 Las preguntas deben evaluar comprension del material, no solo memoria.
@@ -109,21 +88,62 @@ Formato exacto:
     "respuesta_correcta": 0
   }
 ]
-donde respuesta_correcta es el indice (0-3) de la opcion correcta.`,
-        },
-        {
-          role: "user",
-          content: `Capacitacion: "${titulo}" (Pilar: ${pilar})
+donde respuesta_correcta es el indice (0-3) de la opcion correcta.`
 
-Material de estudio:
-${text}
+    const userPrompt = `Capacitacion: "${titulo}" (Pilar: ${pilar})\n\nGenera 10 preguntas de examen basadas en el material adjunto.`
 
-Genera 10 preguntas de examen basadas en este material.`,
-        },
-      ],
-    })
+    // Build OpenAI request body manually to avoid type issues
+    const OpenAI = (await import("openai")).default
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const content = completion.choices[0]?.message?.content ?? ""
+    let requestBody: Record<string, unknown>
+
+    if (text === "__PDF_BASE64__") {
+      // Send PDF as base64 to OpenAI vision
+      const base64 = buffer.toString("base64")
+      const dataUrl = `data:application/pdf;base64,${base64}`
+
+      requestBody = {
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              {
+                type: "file",
+                file: {
+                  filename: file.name,
+                  file_data: dataUrl,
+                },
+              },
+              { type: "text", text: userPrompt },
+            ],
+          },
+        ],
+      }
+    } else {
+      // Truncate text
+      if (text.length > 12000) text = text.substring(0, 12000)
+
+      requestBody = {
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `${userPrompt}\n\nMaterial de estudio:\n${text}`,
+          },
+        ],
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const completion = await (openai.chat.completions.create as any)(requestBody)
+
+    const content = (completion as { choices: { message: { content: string } }[] }).choices[0]?.message?.content ?? ""
 
     // Parse JSON response
     let preguntas: {
@@ -133,7 +153,6 @@ Genera 10 preguntas de examen basadas en este material.`,
     }[]
 
     try {
-      // Try to extract JSON from response (might have markdown wrapping)
       const jsonMatch = content.match(/\[[\s\S]*\]/)
       if (!jsonMatch) throw new Error("No JSON found")
       preguntas = JSON.parse(jsonMatch[0])
@@ -173,8 +192,7 @@ Genera 10 preguntas de examen basadas en este material.`,
       )
     }
 
-    // Also upload file to storage for reference
-    const ext = file.name.split(".").pop()
+    // Upload file to storage
     const storagePath = `capacitaciones/${capacitacionId}/material.${ext}`
     await adminClient.storage
       .from("evidencias")
@@ -183,7 +201,6 @@ Genera 10 preguntas de examen basadas en este material.`,
         upsert: true,
       })
 
-    // Save material URL on capacitacion
     const { data: urlData } = adminClient.storage
       .from("evidencias")
       .getPublicUrl(storagePath)

@@ -11,6 +11,7 @@ export interface RechazoDetalle {
   ds_rechazo: string
   ds_articulo: string
   bultos_rechazados: number
+  id_cliente: number | null
   nombre_cliente: string | null
   ds_vendedor: string | null
 }
@@ -53,12 +54,12 @@ export async function getMetaRechazo() { return 1.5 }
 // ---------- Categorización de motivos ----------
 
 const CATEGORIA_MOTIVO: Record<string, string> = {
-  "ERROR DE CARGA": "Operativo",
-  "ERROR DE DISTRIBUCIÓN": "Operativo",
-  "PRODUCTO NO APTO": "Operativo",
-  "SIN STOCK": "Operativo",
-  "ERROR DE PREVENTA": "Comercial",
-  "SIN ENVASES": "Comercial",
+  "ERROR DE CARGA": "Logística",
+  "ERROR DE DISTRIBUCIÓN": "Logística",
+  "PRODUCTO NO APTO": "Logística",
+  "SIN STOCK": "Logística",
+  "ERROR DE PREVENTA": "Ventas",
+  "SIN ENVASES": "Ventas",
   "CERRADO": "Cliente",
   "SIN DINERO": "Cliente",
   "DEV X TRÁMITES INTERNOS": "Interno",
@@ -70,8 +71,9 @@ function getCategoria(motivo: string): string {
 
 function esControlable(motivo: string): boolean {
   const cat = getCategoria(motivo)
-  return cat === "Operativo" || cat === "Comercial"
+  return cat === "Logística" || cat === "Ventas"
 }
+
 
 // ---------- Types for acumulado ----------
 
@@ -255,6 +257,7 @@ export async function getRechazosAcumulado(
         ds_rechazo: r.ds_rechazo,
         ds_articulo: r.ds_articulo,
         bultos_rechazados: bultos,
+        id_cliente: r.id_cliente ?? null,
         nombre_cliente: r.nombre_cliente,
         ds_vendedor: r.ds_vendedor,
       })
@@ -422,6 +425,7 @@ export async function getRechazosDelDia(
         ds_rechazo: r.ds_rechazo,
         ds_articulo: r.ds_articulo,
         bultos_rechazados: Number(r.bultos_rechazados),
+        id_cliente: r.id_cliente,
         nombre_cliente: r.nombre_cliente,
         ds_vendedor: r.ds_vendedor,
       })

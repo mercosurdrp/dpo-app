@@ -200,6 +200,7 @@ export async function getResumenMensual(
       const porFecha = marcasPorLegajo.get(emp.legajo) ?? new Map()
 
       let diasTrabajados = 0
+      let diasConHoras = 0
       let horasTotales = 0
       let tardanzas = 0
 
@@ -222,6 +223,7 @@ export async function getResumenMensual(
             const ultimaSalida = new Date(salidas[salidas.length - 1].fecha_marca)
             const diff = ultimaSalida.getTime() - primeraEntrada.getTime()
             horasTotales += diff / 3600000
+            diasConHoras++
           }
         }
       }
@@ -232,8 +234,8 @@ export async function getResumenMensual(
         sector: emp.sector ?? "Distribución",
         dias_trabajados: diasTrabajados,
         horas_totales: Math.round(horasTotales * 100) / 100,
-        promedio_horas: diasTrabajados > 0
-          ? Math.round((horasTotales / diasTrabajados) * 100) / 100
+        promedio_horas: diasConHoras > 0
+          ? Math.round((horasTotales / diasConHoras) * 100) / 100
           : 0,
         tardanzas,
         ausencias: Math.max(0, diasLaborales - diasTrabajados),

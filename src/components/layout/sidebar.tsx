@@ -13,6 +13,7 @@ import {
   Fingerprint,
   GraduationCap,
   Users,
+  Link2,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -72,6 +73,12 @@ const adminItems: NavItem[] = [
     label: "Usuarios",
     href: "/admin/usuarios",
     icon: <Users className="size-5" />,
+    adminOnly: true,
+  },
+  {
+    label: "Mapeo Empleados",
+    href: "/admin/mapeo-empleados",
+    icon: <Link2 className="size-5" />,
     adminOnly: true,
   },
 ]

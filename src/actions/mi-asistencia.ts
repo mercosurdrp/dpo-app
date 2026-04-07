@@ -120,6 +120,7 @@ export async function getMiDashboard(): Promise<
       if (dayOfWeek !== 0) diasLaborales++
     }
 
+    let diasConHoras = 0
     for (const [, marcasDia] of porFecha) {
       const entradas = marcasDia.filter((m) => m.tipo_marca === "E")
       const salidas = marcasDia.filter((m) => m.tipo_marca === "S")
@@ -137,6 +138,7 @@ export async function getMiDashboard(): Promise<
           const ultimaSalida = new Date(salidas[salidas.length - 1].fecha_marca)
           const diff = ultimaSalida.getTime() - new Date(entradas[0].fecha_marca).getTime()
           horasTotales += diff / 3600000
+          diasConHoras++
         }
       }
     }
@@ -197,7 +199,7 @@ export async function getMiDashboard(): Promise<
         resumen_mes: {
           dias_trabajados: diasTrabajados,
           horas_totales: Math.round(horasTotales * 100) / 100,
-          promedio_horas: diasTrabajados > 0 ? Math.round((horasTotales / diasTrabajados) * 100) / 100 : 0,
+          promedio_horas: diasConHoras > 0 ? Math.round((horasTotales / diasConHoras) * 100) / 100 : 0,
           tardanzas,
           dias_laborales: diasLaborales,
         },

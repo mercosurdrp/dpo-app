@@ -370,6 +370,37 @@ export interface CapacitacionRespuesta {
   created_at: string
 }
 
+// Mapeo empleado → identidades externas
+export interface MapeoEmpleadoFletero {
+  id: string
+  empleado_id: string
+  id_fletero_carga: number | null
+  ds_fletero_carga: string
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface MapeoEmpleadoChofer {
+  id: string
+  empleado_id: string
+  nombre_chofer: string
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EmpleadoCompleto {
+  empleado_id: string
+  legajo: number
+  nombre: string
+  sector: string
+  activo: boolean
+  id_fletero_carga: number | null
+  ds_fletero_carga: string | null
+  nombre_chofer: string | null
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string
