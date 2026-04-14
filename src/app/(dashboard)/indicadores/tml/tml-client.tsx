@@ -52,7 +52,9 @@ import type {
   TmlMensual,
   CatalogoChofer,
   CatalogoVehiculo,
+  TmlPlanResumen,
 } from "@/types/database"
+import { TmlPlanAccionSection } from "./tml-plan-accion-section"
 import {
   Plus,
   Clock,
@@ -85,6 +87,7 @@ interface Props {
   registros: RegistroVehiculo[]
   choferes: CatalogoChofer[]
   vehiculos: CatalogoVehiculo[]
+  planesResumen: TmlPlanResumen[]
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -119,7 +122,7 @@ function Tendencia({ mensual }: { mensual: TmlMensual[] }) {
   )
 }
 
-export function TmlClient({ kpis, registros, choferes, vehiculos }: Props) {
+export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -389,6 +392,9 @@ export function TmlClient({ kpis, registros, choferes, vehiculos }: Props) {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Plan de Acción R1.1.4 */}
+      <TmlPlanAccionSection resumen={planesResumen} />
 
       {/* Recent records table */}
       <RegistrosTable

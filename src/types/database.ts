@@ -564,6 +564,49 @@ export interface OwdItemStats {
   pct_cumplimiento: number
 }
 
+// Plan de Acción TML (R1.1.4)
+export type PlanTmlEstado = "abierto" | "en_progreso" | "cerrado"
+export type PlanTmlItemEstado = "pendiente" | "en_progreso" | "completado"
+
+export interface TmlPlanAccion {
+  id: string
+  mes: number
+  year: number
+  promedio_tml_mes: number
+  pct_dentro_meta_mes: number
+  causa_raiz: string
+  estado: PlanTmlEstado
+  fecha_cierre: string | null
+  resultado_cierre: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TmlPlanAccionItem {
+  id: string
+  plan_id: string
+  accion: string
+  responsable: string
+  fecha_compromiso: string
+  estado: PlanTmlItemEstado
+  fecha_completado: string | null
+  observaciones: string | null
+  orden: number
+  created_at: string
+}
+
+export interface TmlPlanResumen {
+  year: number
+  mes: number
+  promedio_tml: number
+  pct_dentro_meta: number
+  fuera_meta: boolean
+  plan: TmlPlanAccion | null
+  items_total: number
+  items_completados: number
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string
