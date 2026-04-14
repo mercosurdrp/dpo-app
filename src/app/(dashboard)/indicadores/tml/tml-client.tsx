@@ -60,6 +60,7 @@ import {
   TrendingUp,
   TrendingDown,
   Truck,
+  Users,
   BarChart3,
   Minus,
   Pencil,
@@ -71,6 +72,7 @@ import { updateRegistroVehiculo, deleteRegistroVehiculo } from "@/actions/regist
 interface KpiData {
   totalEgresos: number
   promedioTml: number
+  promedioFte: number
   dentroMeta: number
   pctDentroMeta: number
   metaMinutos: number
@@ -154,7 +156,7 @@ export function TmlClient({ kpis, registros, choferes, vehiculos }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -199,6 +201,25 @@ export function TmlClient({ kpis, registros, choferes, vehiculos }: Props) {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Meta: ≥ 65% — {kpis.dentroMeta}/{kpis.totalEgresos} egresos
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">FTE Promedio</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {kpis.promedioFte.toFixed(2)}
+                </p>
+              </div>
+              <div className="rounded-full bg-blue-100 p-3">
+                <Users className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Chofer + ayudantes / viaje
             </p>
           </CardContent>
         </Card>

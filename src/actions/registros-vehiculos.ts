@@ -210,6 +210,7 @@ export async function getTmlKpis(filters?: {
   data: {
     totalEgresos: number
     promedioTml: number
+    promedioFte: number
     dentroMeta: number
     pctDentroMeta: number
     metaMinutos: number
@@ -243,6 +244,7 @@ export async function getTmlKpis(filters?: {
         data: {
           totalEgresos: 0,
           promedioTml: 0,
+          promedioFte: 0,
           dentroMeta: 0,
           pctDentroMeta: 0,
           metaMinutos: TML_META_MINUTOS,
@@ -258,6 +260,13 @@ export async function getTmlKpis(filters?: {
     const promedioTml = Math.round(tmls.reduce((a, b) => a + b, 0) / totalEgresos)
     const dentroMeta = tmls.filter((t) => t <= TML_META_MINUTOS).length
     const pctDentroMeta = Math.round((dentroMeta / totalEgresos) * 100)
+
+    // FTE Promedio: 1 chofer + ayudantes por viaje, promediado sobre el total de viajes
+    const totalFte = registros.reduce(
+      (acc, r) => acc + 1 + (r.ayudante1 ? 1 : 0) + (r.ayudante2 ? 1 : 0),
+      0,
+    )
+    const promedioFte = Math.round((totalFte / totalEgresos) * 100) / 100
 
     // Group by week
     const semanalMap = new Map<string, { tmls: number[]; year: number; semana: number }>()
@@ -305,6 +314,7 @@ export async function getTmlKpis(filters?: {
       data: {
         totalEgresos,
         promedioTml,
+        promedioFte,
         dentroMeta,
         pctDentroMeta,
         metaMinutos: TML_META_MINUTOS,
