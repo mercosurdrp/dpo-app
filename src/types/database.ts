@@ -325,6 +325,7 @@ export interface Capacitacion {
   material_url: string | null
   pilar: string | null
   estado: EstadoCapacitacion
+  visible: boolean
   created_by: string | null
   created_at: string
   updated_at: string
@@ -399,6 +400,168 @@ export interface EmpleadoCompleto {
   id_fletero_carga: number | null
   ds_fletero_carga: string | null
   nombre_chofer: string | null
+}
+
+// Checklist Vehículos
+export type TipoChecklist = "liberacion" | "retorno"
+export type ResultadoChecklist = "aprobado" | "rechazado"
+export type TipoRespuestaChecklist = "ok_nook" | "bueno_regular_malo" | "ok_regular_nook"
+
+export interface ChecklistItem {
+  id: string
+  categoria: string
+  nombre: string
+  descripcion: string | null
+  critico: boolean
+  tipo_respuesta: TipoRespuestaChecklist
+  orden: number
+  active: boolean
+  created_at: string
+}
+
+export interface ChecklistVehiculo {
+  id: string
+  tipo: TipoChecklist
+  fecha: string
+  dominio: string
+  chofer: string
+  hora: string // TIMESTAMPTZ
+  resultado: ResultadoChecklist
+  observaciones: string | null
+  tiempo_ruta_minutos: number | null
+  odometro: number | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface ChecklistRespuesta {
+  id: string
+  checklist_id: string
+  item_id: string
+  valor: string // 'ok', 'nook', 'bueno', 'regular', 'malo'
+  comentario: string | null
+  created_at: string
+}
+
+export interface ChecklistVehiculoConRespuestas extends ChecklistVehiculo {
+  respuestas: (ChecklistRespuesta & { item: ChecklistItem })[]
+}
+
+// KPI Tiempo en Ruta
+export interface TiempoRutaSemanal {
+  semana: number
+  year: number
+  promedio_minutos: number
+  total_retornos: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+export interface TiempoRutaMensual {
+  mes: number
+  year: number
+  promedio_minutos: number
+  total_retornos: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+// Registro Combustible
+export interface RegistroCombustible {
+  id: string
+  fecha: string
+  dominio: string
+  chofer: string
+  odometro: number
+  litros: number
+  km_recorridos: number | null
+  rendimiento: number | null
+  tipo_combustible: string
+  proveedor: string | null
+  numero_remito: string | null
+  costo_total: number | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface RendimientoSemanal {
+  semana: number
+  year: number
+  promedio_rendimiento: number
+  total_litros: number
+  total_km: number
+  total_cargas: number
+}
+
+export interface RendimientoMensual {
+  mes: number
+  year: number
+  promedio_rendimiento: number
+  total_litros: number
+  total_km: number
+  total_cargas: number
+}
+
+// OWD Pre-Ruta
+export type OwdResultado = "ok" | "nook" | "na"
+
+export interface OwdItem {
+  id: string
+  version: number
+  etapa: string
+  orden: number
+  texto: string
+  descripcion: string | null
+  critico: boolean
+  active: boolean
+  created_at: string
+}
+
+export interface OwdObservacion {
+  id: string
+  fecha: string
+  hora: string
+  supervisor: string
+  empleado_observado: string
+  rol_empleado: string | null
+  dominio: string | null
+  template_version: number
+  total_items: number
+  total_ok: number
+  total_nook: number
+  total_na: number
+  pct_cumplimiento: number
+  accion_correctiva: string | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface OwdRespuesta {
+  id: string
+  observacion_id: string
+  item_id: string
+  resultado: OwdResultado
+  comentario: string | null
+  created_at: string
+}
+
+export interface OwdMensual {
+  mes: number
+  year: number
+  total_observaciones: number
+  promedio_cumplimiento: number
+}
+
+export interface OwdItemStats {
+  item_id: string
+  etapa: string
+  texto: string
+  total_ok: number
+  total_nook: number
+  total_na: number
+  pct_cumplimiento: number
 }
 
 // Plan list item (for /planes page)

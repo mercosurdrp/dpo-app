@@ -15,6 +15,7 @@ import {
   Warehouse,
   CalendarClock,
   PackageX,
+  ClipboardCheck,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 
@@ -95,6 +96,40 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Entrada &le; 07:00 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/indicadores/owd-pre-ruta">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-teal-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-teal-100 text-teal-600 group-hover:bg-teal-200 transition-colors">
+                  <ClipboardCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    OWD Pre-Ruta
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Checklist SOP 1.1 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/indicadores/tiempo-ruta">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-purple-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-purple-100 text-purple-600 group-hover:bg-purple-200 transition-colors">
+                  <Activity className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Tiempo en Ruta
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Puerta a puerta — Pilar Entrega 1.2
                   </p>
                 </div>
               </CardContent>
