@@ -829,6 +829,81 @@ export interface FoxtrotSyncLog {
   ok: boolean
 }
 
+// ===== Gestión documental DPO (evidencia) =====
+export type DpoActividadTipo =
+  | "archivo_subido"
+  | "archivo_version_nueva"
+  | "archivo_editado"
+  | "archivo_eliminado"
+  | "plan_creado"
+  | "plan_actualizado"
+  | "plan_cerrado"
+  | "owd_creada"
+  | "cert_subida"
+  | "sop_actualizado"
+  | "sync_foxtrot"
+  | "registro_tml"
+  | "otro"
+
+export interface DpoArchivo {
+  id: string
+  pilar_codigo: string
+  punto_codigo: string
+  requisito_codigo: string | null
+  titulo: string
+  descripcion: string | null
+  categoria: string | null
+  file_name: string
+  file_ext: string
+  mime_type: string
+  current_version: number
+  current_file_path: string
+  current_file_size: number
+  uploaded_by: string | null
+  archivado: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DpoArchivoVersion {
+  id: string
+  archivo_id: string
+  version: number
+  file_path: string
+  file_name: string
+  file_size: number
+  notas: string | null
+  uploaded_by: string | null
+  created_at: string
+}
+
+export interface DpoActividad {
+  id: string
+  tipo: DpoActividadTipo
+  pilar_codigo: string | null
+  punto_codigo: string | null
+  requisito_codigo: string | null
+  archivo_id: string | null
+  referencia_id: string | null
+  referencia_tipo: string | null
+  titulo: string
+  descripcion: string | null
+  user_id: string | null
+  user_nombre: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface DpoPuntoResumen {
+  pilar_codigo: string
+  punto_codigo: string
+  titulo: string
+  total_archivos: number
+  total_actividad: number
+  ultimo_archivo: string | null
+  ultima_actividad: string | null
+}
+
 export interface FoxtrotKpis {
   totalRutasMes: number
   pctTrackingActivoMes: number

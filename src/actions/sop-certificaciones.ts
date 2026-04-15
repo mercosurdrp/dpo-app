@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { registerActivity } from "@/lib/dpo-activity"
 import type {
   SopCertificacion,
   SkapMatriz,
@@ -165,6 +166,7 @@ export async function upsertCertificacion(
       .eq("fecha_certificacion", input.fechaCertificacion)
       .maybeSingle()
 
+    let result: SopCertificacion
     if (existing?.id) {
       const { data, error } = await supabase
         .from("sop_certificaciones")
@@ -181,17 +183,38 @@ export async function upsertCertificacion(
         .select("*")
         .single()
       if (error) return { error: error.message }
-      return { data: data as SopCertificacion }
+      result = data as SopCertificacion
+    } else {
+      const { data, error } = await supabase
+        .from("sop_certificaciones")
+        .insert(payload)
+        .select("*")
+        .single()
+
+      if (error) return { error: error.message }
+      result = data as SopCertificacion
     }
 
-    const { data, error } = await supabase
-      .from("sop_certificaciones")
-      .insert(payload)
-      .select("*")
-      .single()
+    const { data: emp } = await supabase
+      .from("empleados")
+      .select("legajo, nombre")
+      .eq("id", input.empleadoId)
+      .maybeSingle()
 
-    if (error) return { error: error.message }
-    return { data: data as SopCertificacion }
+    await registerActivity(supabase, {
+      tipo: "cert_subida",
+      titulo: `Certificación SOP ${payload.sop_codigo} — legajo ${emp?.legajo ?? "?"}`,
+      descripcion: emp?.nombre ?? undefined,
+      pilar_codigo: "entrega",
+      punto_codigo: payload.sop_codigo,
+      referencia_id: result.id,
+      referencia_tipo: "sop_certificacion",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: { aprobado: payload.aprobado, score: payload.score },
+    })
+
+    return { data: result }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

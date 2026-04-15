@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { registerActivity } from "@/lib/dpo-activity"
 import { syncFoxtrotDay } from "@/lib/foxtrot-sync"
 import type {
   FoxtrotRoute,
@@ -212,6 +213,18 @@ export async function syncFoxtrotNow(
   const targetFecha = fecha ?? new Date().toISOString().slice(0, 10)
   try {
     const log = await syncFoxtrotDay(supabase, targetFecha)
+
+    await registerActivity(supabase, {
+      tipo: "sync_foxtrot",
+      titulo: `Sincronización Foxtrot — ${targetFecha}`,
+      pilar_codigo: "entrega",
+      punto_codigo: "1.2",
+      requisito_codigo: "R1.2.4",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: { rutas_sincronizadas: log.rutas_sincronizadas, ok: log.ok },
+    })
+
     return { data: log }
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }

@@ -29,8 +29,11 @@ import {
   Target,
   Clock,
   ShieldCheck,
+  Download,
 } from "lucide-react"
 import type { PackAuditoria11 } from "@/actions/pack-auditoria"
+import { getDownloadUrl } from "@/actions/dpo-evidencia"
+import type { DpoArchivo } from "@/types/database"
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -50,9 +53,10 @@ function EstadoBadge({ estado }: { estado: "cumple" | "parcial" | "no_cumple" })
 
 interface Props {
   pack: PackAuditoria11
+  archivos: DpoArchivo[]
 }
 
-export function PackAuditoria11Client({ pack }: Props) {
+export function PackAuditoria11Client({ pack, archivos }: Props) {
   const fechaGen = new Date(pack.generado_en).toLocaleString("es-AR")
 
   const tmlMensualChart = pack.r1_1_5_tml.mensual.map((m) => ({
@@ -568,6 +572,51 @@ export function PackAuditoria11Client({ pack }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {archivos.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Archivos de evidencia ({archivos.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {archivos.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between rounded-md border bg-slate-50 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-slate-500 flex-shrink-0" />
+                      <p className="text-sm font-medium">{a.titulo}</p>
+                      {a.categoria && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {a.categoria}
+                        </Badge>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">v{a.current_version}</span>
+                    </div>
+                    {a.descripcion && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{a.descripcion}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      const res = await getDownloadUrl({ archivo_id: a.id })
+                      if ("error" in res) return
+                      window.open(res.data.url, "_blank")
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

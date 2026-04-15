@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { registerActivity } from "@/lib/dpo-activity"
 import type {
   TmlPlanAccion,
   TmlPlanAccionItem,
@@ -150,6 +151,36 @@ export async function createTmlPlan(
       }
     }
 
+    const MESES = [
+      "ENERO",
+      "FEBRERO",
+      "MARZO",
+      "ABRIL",
+      "MAYO",
+      "JUNIO",
+      "JULIO",
+      "AGOSTO",
+      "SEPTIEMBRE",
+      "OCTUBRE",
+      "NOVIEMBRE",
+      "DICIEMBRE",
+    ]
+    await registerActivity(supabase, {
+      tipo: "plan_creado",
+      titulo: `Plan Acción TML — ${MESES[input.mes - 1]} ${input.year}`,
+      pilar_codigo: "entrega",
+      punto_codigo: "1.1",
+      requisito_codigo: "R1.1.4",
+      referencia_id: plan.id,
+      referencia_tipo: "tml_plan",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: {
+        promedio_tml: input.promedioTmlMes,
+        pct_dentro_meta: input.pctDentroMetaMes,
+      },
+    })
+
     return { data: plan as TmlPlanAccion }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -191,13 +222,27 @@ export async function updateTmlPlanCausaRaiz(
   causaRaiz: string,
 ): Promise<{ success: true } | { error: string }> {
   try {
-    await requireAuth()
+    const profile = await requireAuth()
     const supabase = await createClient()
     const { error } = await supabase
       .from("tml_plan_accion")
       .update({ causa_raiz: causaRaiz.trim() })
       .eq("id", id)
     if (error) return { error: error.message }
+
+    await registerActivity(supabase, {
+      tipo: "plan_actualizado",
+      titulo: "Plan Acción TML actualizado",
+      descripcion: "Causa raíz actualizada",
+      pilar_codigo: "entrega",
+      punto_codigo: "1.1",
+      requisito_codigo: "R1.1.4",
+      referencia_id: id,
+      referencia_tipo: "tml_plan",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+    })
+
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -210,7 +255,7 @@ export async function cerrarTmlPlan(
   evidenciaCierreUrl?: string | null,
 ): Promise<{ success: true } | { error: string }> {
   try {
-    await requireAuth()
+    const profile = await requireAuth()
     const supabase = await createClient()
     const update: Record<string, unknown> = {
       estado: "cerrado" as PlanTmlEstado,
@@ -226,6 +271,20 @@ export async function cerrarTmlPlan(
       .update(update)
       .eq("id", id)
     if (error) return { error: error.message }
+
+    await registerActivity(supabase, {
+      tipo: "plan_cerrado",
+      titulo: "Plan Acción TML cerrado",
+      descripcion: resultadoCierre.trim(),
+      pilar_codigo: "entrega",
+      punto_codigo: "1.1",
+      requisito_codigo: "R1.1.4",
+      referencia_id: id,
+      referencia_tipo: "tml_plan",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+    })
+
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

@@ -17,6 +17,7 @@ import {
   PackageX,
   ClipboardCheck,
   Radio,
+  FolderOpen,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 
@@ -63,6 +64,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Evidencia compilada para auditor — Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/evidencia">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-orange-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-orange-100 text-orange-600 group-hover:bg-orange-200 transition-colors">
+                  <FolderOpen className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Evidencia DPO
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Gestión documental — SOPs, planes, evidencia
                   </p>
                 </div>
               </CardContent>

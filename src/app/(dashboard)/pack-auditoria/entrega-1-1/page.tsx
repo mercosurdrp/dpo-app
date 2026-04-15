@@ -1,10 +1,15 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getPackAuditoria11 } from "@/actions/pack-auditoria"
+import { getArchivos } from "@/actions/dpo-evidencia"
 import { PackAuditoria11Client } from "./pack-client"
 
 export default async function PackAuditoria11Page() {
-  const res = await getPackAuditoria11()
+  const [res, archivosRes] = await Promise.all([
+    getPackAuditoria11(),
+    getArchivos({ pilar_codigo: "entrega", punto_codigo: "1.1", archivado: false }),
+  ])
+  const archivos = "data" in archivosRes ? archivosRes.data : []
 
   if ("error" in res) {
     return (
@@ -23,7 +28,7 @@ export default async function PackAuditoria11Page() {
       >
         <ArrowLeft className="h-4 w-4" /> Volver
       </Link>
-      <PackAuditoria11Client pack={res.data} />
+      <PackAuditoria11Client pack={res.data} archivos={archivos} />
     </div>
   )
 }

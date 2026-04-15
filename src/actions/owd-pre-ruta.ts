@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { registerActivity } from "@/lib/dpo-activity"
 import type {
   OwdItem,
   OwdObservacion,
@@ -99,6 +100,20 @@ export async function createObservacion(
       await supabase.from("owd_observaciones").delete().eq("id", obs.id)
       return { error: errResp.message }
     }
+
+    await registerActivity(supabase, {
+      tipo: "owd_creada",
+      titulo: `OWD Pre-Ruta — ${input.empleadoObservado}`,
+      descripcion: `${totalOk} OK, ${totalNook} NO OK (${pct.toFixed(0)}%)`,
+      pilar_codigo: "entrega",
+      punto_codigo: "1.1",
+      requisito_codigo: "R1.1.2",
+      referencia_id: obs.id,
+      referencia_tipo: "owd_observacion",
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: { supervisor: input.supervisor, pct_cumplimiento: pct },
+    })
 
     return { data: obs as OwdObservacion }
   } catch (e) {
