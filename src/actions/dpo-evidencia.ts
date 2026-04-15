@@ -26,6 +26,169 @@ function tituloPunto(pilar: string, punto: string): string {
   return `Punto ${punto}`
 }
 
+// El browser sube el archivo directo al bucket de Supabase Storage (bypass
+// Vercel, que tiene límite de 4.5MB en el body). Esta action recibe solo
+// los metadatos chicos y registra todo en la DB.
+interface RegisterArchivoInput {
+  pilar_codigo: string
+  punto_codigo: string
+  requisito_codigo?: string | null
+  titulo: string
+  descripcion?: string | null
+  categoria?: string | null
+  file_name: string
+  file_path: string
+  file_size: number
+  mime_type: string
+}
+
+export async function registerArchivoUpload(
+  input: RegisterArchivoInput,
+): Promise<Result<DpoArchivo>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!input.pilar_codigo || !input.punto_codigo || !input.titulo || !input.file_path) {
+      return { error: "Faltan datos requeridos" }
+    }
+
+    const archivo_id = crypto.randomUUID()
+    const file_ext = extractExt(input.file_name)
+
+    const { data: archivo, error: errArch } = await supabase
+      .from("dpo_archivos")
+      .insert({
+        id: archivo_id,
+        pilar_codigo: input.pilar_codigo,
+        punto_codigo: input.punto_codigo,
+        requisito_codigo: input.requisito_codigo?.trim() || null,
+        titulo: input.titulo,
+        descripcion: input.descripcion?.trim() || null,
+        categoria: input.categoria?.trim() || null,
+        file_name: input.file_name,
+        file_ext,
+        mime_type: input.mime_type || "application/octet-stream",
+        current_version: 1,
+        current_file_path: input.file_path,
+        current_file_size: input.file_size,
+        uploaded_by: profile.id,
+        archivado: false,
+      })
+      .select("*")
+      .single()
+
+    if (errArch) {
+      await supabase.storage.from(BUCKET).remove([input.file_path])
+      return { error: errArch.message }
+    }
+
+    const { error: errVer } = await supabase.from("dpo_archivo_versiones").insert({
+      archivo_id,
+      version: 1,
+      file_path: input.file_path,
+      file_name: input.file_name,
+      file_size: input.file_size,
+      notas: null,
+      uploaded_by: profile.id,
+    })
+
+    if (errVer) {
+      await supabase.storage.from(BUCKET).remove([input.file_path])
+      await supabase.from("dpo_archivos").delete().eq("id", archivo_id)
+      return { error: errVer.message }
+    }
+
+    await registerActivity(supabase, {
+      tipo: "archivo_subido",
+      titulo: input.titulo,
+      pilar_codigo: input.pilar_codigo,
+      punto_codigo: input.punto_codigo,
+      requisito_codigo: input.requisito_codigo ?? undefined,
+      archivo_id,
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: { file_name: input.file_name, file_size: input.file_size },
+    })
+
+    return { data: archivo as DpoArchivo }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+interface RegisterVersionInput {
+  archivo_id: string
+  file_name: string
+  file_path: string
+  file_size: number
+  mime_type: string
+  notas?: string | null
+}
+
+export async function registerNuevaVersion(
+  input: RegisterVersionInput,
+): Promise<Result<DpoArchivo>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: existing, error: errEx } = await supabase
+      .from("dpo_archivos")
+      .select("*")
+      .eq("id", input.archivo_id)
+      .single()
+
+    if (errEx || !existing) return { error: "Archivo no encontrado" }
+
+    const nextVersion = (existing.current_version as number) + 1
+
+    const { error: errVer } = await supabase.from("dpo_archivo_versiones").insert({
+      archivo_id: input.archivo_id,
+      version: nextVersion,
+      file_path: input.file_path,
+      file_name: input.file_name,
+      file_size: input.file_size,
+      notas: input.notas?.trim() || null,
+      uploaded_by: profile.id,
+    })
+    if (errVer) return { error: errVer.message }
+
+    const file_ext = extractExt(input.file_name)
+    const { data: updated, error: errUpd } = await supabase
+      .from("dpo_archivos")
+      .update({
+        current_version: nextVersion,
+        current_file_path: input.file_path,
+        current_file_size: input.file_size,
+        file_name: input.file_name,
+        file_ext,
+        mime_type: input.mime_type || "application/octet-stream",
+      })
+      .eq("id", input.archivo_id)
+      .select("*")
+      .single()
+
+    if (errUpd) return { error: errUpd.message }
+
+    await registerActivity(supabase, {
+      tipo: "archivo_version_nueva",
+      titulo: `${existing.titulo} v${nextVersion}`,
+      descripcion: input.notas ?? undefined,
+      pilar_codigo: existing.pilar_codigo as string,
+      punto_codigo: existing.punto_codigo as string,
+      archivo_id: input.archivo_id,
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: { version: nextVersion, file_size: input.file_size },
+    })
+
+    return { data: updated as DpoArchivo }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function uploadArchivo(formData: FormData): Promise<Result<DpoArchivo>> {
   try {
     const profile = await requireAuth()

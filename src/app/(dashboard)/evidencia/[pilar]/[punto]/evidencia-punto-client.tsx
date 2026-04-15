@@ -38,15 +38,31 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  uploadArchivo,
-  nuevaVersion,
+  registerArchivoUpload,
+  registerNuevaVersion,
   editArchivoMeta,
   archivarArchivo,
   deleteArchivo,
   getArchivoById,
   getDownloadUrl,
 } from "@/actions/dpo-evidencia"
+import { createClient } from "@/lib/supabase/client"
 import type { DpoArchivo, DpoArchivoVersion } from "@/types/database"
+
+const BUCKET = "dpo-evidencia"
+
+function buildStoragePath(pilar: string, punto: string, version: number, filename: string): string {
+  const archivo_id = crypto.randomUUID()
+  return `${pilar}/${punto}/${archivo_id}/v${version}-${filename}`
+}
+
+function buildVersionPath(existingPath: string, version: number, filename: string): string {
+  // Reemplaza el prefix v{N}- por el nuevo. existingPath es algo como
+  // "entrega/1.1/{uuid}/v1-xxx.pdf"; extraemos el dir y armamos nuevo nombre.
+  const parts = existingPath.split("/")
+  const dir = parts.slice(0, -1).join("/")
+  return `${dir}/v${version}-${filename}`
+}
 
 const CATEGORIAS = [
   "SOP",
@@ -147,25 +163,50 @@ export function EvidenciaPuntoClient({
       toast.error("El título es obligatorio")
       return
     }
-    const fd = new FormData()
-    fd.append("file", file)
-    fd.append("pilar_codigo", pilarCodigo)
-    fd.append("punto_codigo", puntoCodigo)
-    fd.append("titulo", titulo)
-    if (descripcion) fd.append("descripcion", descripcion)
-    if (categoria) fd.append("categoria", categoria)
-    if (requisito) fd.append("requisito_codigo", requisito)
 
     startTransition(async () => {
-      const res = await uploadArchivo(fd)
-      if ("error" in res) {
-        toast.error(res.error)
-        return
+      try {
+        const supabase = createClient()
+        const path = buildStoragePath(pilarCodigo, puntoCodigo, 1, file.name)
+
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, {
+            contentType: file.type || "application/octet-stream",
+            upsert: false,
+          })
+
+        if (upErr) {
+          toast.error(`Error al subir: ${upErr.message}`)
+          return
+        }
+
+        const res = await registerArchivoUpload({
+          pilar_codigo: pilarCodigo,
+          punto_codigo: puntoCodigo,
+          requisito_codigo: requisito || null,
+          titulo,
+          descripcion: descripcion || null,
+          categoria: categoria || null,
+          file_name: file.name,
+          file_path: path,
+          file_size: file.size,
+          mime_type: file.type || "application/octet-stream",
+        })
+
+        if ("error" in res) {
+          await supabase.storage.from(BUCKET).remove([path])
+          toast.error(res.error)
+          return
+        }
+
+        toast.success("Archivo subido")
+        setUploadOpen(false)
+        resetUploadForm()
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error desconocido")
       }
-      toast.success("Archivo subido")
-      setUploadOpen(false)
-      resetUploadForm()
-      router.refresh()
     })
   }
 
@@ -254,26 +295,52 @@ export function EvidenciaPuntoClient({
       toast.error("Seleccioná un archivo")
       return
     }
-    const fd = new FormData()
-    fd.append("file", nvFile)
-    fd.append("archivo_id", selected.id)
-    if (nvNotas) fd.append("notas", nvNotas)
     startTransition(async () => {
-      const res = await nuevaVersion(fd)
-      if ("error" in res) {
-        toast.error(res.error)
-        return
+      try {
+        const supabase = createClient()
+        const nextVersion = selected.current_version + 1
+        const path = buildVersionPath(selected.current_file_path, nextVersion, nvFile.name)
+
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, nvFile, {
+            contentType: nvFile.type || "application/octet-stream",
+            upsert: false,
+          })
+
+        if (upErr) {
+          toast.error(`Error al subir: ${upErr.message}`)
+          return
+        }
+
+        const res = await registerNuevaVersion({
+          archivo_id: selected.id,
+          file_name: nvFile.name,
+          file_path: path,
+          file_size: nvFile.size,
+          mime_type: nvFile.type || "application/octet-stream",
+          notas: nvNotas || null,
+        })
+
+        if ("error" in res) {
+          await supabase.storage.from(BUCKET).remove([path])
+          toast.error(res.error)
+          return
+        }
+
+        toast.success("Nueva versión subida")
+        setNewVersionOpen(false)
+        setNvFile(null)
+        setNvNotas("")
+        const refreshed = await getArchivoById(selected.id)
+        if ("data" in refreshed) {
+          setVersiones(refreshed.data.versiones)
+          setSelected(refreshed.data.archivo)
+        }
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error desconocido")
       }
-      toast.success("Nueva versión subida")
-      setNewVersionOpen(false)
-      setNvFile(null)
-      setNvNotas("")
-      const refreshed = await getArchivoById(selected.id)
-      if ("data" in refreshed) {
-        setVersiones(refreshed.data.versiones)
-        setSelected(refreshed.data.archivo)
-      }
-      router.refresh()
     })
   }
 
