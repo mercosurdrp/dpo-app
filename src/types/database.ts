@@ -765,3 +765,84 @@ export interface TmlMesComparado {
   pct_dentro_meta_anterior: number | null
   delta_tml: number | null
 }
+
+// ===== Foxtrot integration =====
+export interface FoxtrotRoute {
+  route_id: string
+  dc_id: string
+  fecha: string
+  driver_id: string
+  driver_name: string
+  vehicle_id: string | null
+  dominio: string | null
+  start_time: string | null
+  end_time: string | null
+  completion_type: string | null
+  is_active: boolean | null
+  is_finalized: boolean | null
+  total_waypoints: number
+  total_deliveries: number
+  deliveries_successful: number
+  deliveries_failed: number
+  deliveries_visit_later: number
+  deliveries_attempted: number
+  tiempo_ruta_minutos: number | null
+  driver_click_score: number | null
+  adherencia_secuencia: number | null
+  pct_tracking_activo: number | null
+  raw_data: unknown
+  last_synced: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FoxtrotDriverLocation {
+  id: string
+  driver_id: string
+  driver_name: string
+  fecha: string
+  timestamp: string
+  latitud: number
+  longitud: number
+  created_at: string
+}
+
+export interface FoxtrotDriverMapping {
+  id: string
+  foxtrot_driver_id: string
+  foxtrot_driver_name: string
+  empleado_id: string | null
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FoxtrotSyncLog {
+  id: string
+  started_at: string
+  finished_at: string | null
+  fecha: string
+  rutas_sincronizadas: number
+  posiciones_sincronizadas: number
+  errores: number
+  error_detalle: string | null
+  ok: boolean
+}
+
+export interface FoxtrotKpis {
+  totalRutasMes: number
+  pctTrackingActivoMes: number
+  tiempoRutaPromedioMinutos: number
+  tiempoRutaDentroMeta: number
+  tiempoRutaPctDentroMeta: number
+  rutasHoy: number
+  rutasActivasAhora: number
+  ultimaSincronizacion: string | null
+  mensual: Array<{
+    year: number
+    mes: number
+    total_rutas: number
+    promedio_tiempo_ruta: number
+    pct_tracking: number
+  }>
+}

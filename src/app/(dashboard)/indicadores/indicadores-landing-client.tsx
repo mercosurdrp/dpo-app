@@ -16,6 +16,7 @@ import {
   CalendarClock,
   PackageX,
   ClipboardCheck,
+  Radio,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 
@@ -147,6 +148,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Checklist SOP 1.1 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/indicadores/foxtrot-tracking">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-pink-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-pink-100 text-pink-600 group-hover:bg-pink-200 transition-colors">
+                  <Radio className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Foxtrot Tracking
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Integración Foxtrot — Pilar Entrega 1.2
                   </p>
                 </div>
               </CardContent>
