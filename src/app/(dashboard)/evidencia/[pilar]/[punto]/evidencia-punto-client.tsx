@@ -51,17 +51,35 @@ import type { DpoArchivo, DpoArchivoVersion } from "@/types/database"
 
 const BUCKET = "dpo-evidencia"
 
+// Supabase Storage no permite tildes, espacios ni caracteres especiales en
+// el key. Se preserva el nombre original en la DB (file_name) pero el path
+// del bucket usa la versión sanitizada.
+function sanitizeFilename(name: string): string {
+  const dotIdx = name.lastIndexOf(".")
+  const base = dotIdx >= 0 ? name.slice(0, dotIdx) : name
+  const ext = dotIdx >= 0 ? name.slice(dotIdx) : ""
+  const safeBase = base
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+  const safeExt = ext
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9.]+/g, "")
+  return (safeBase || "archivo") + safeExt.toLowerCase()
+}
+
 function buildStoragePath(pilar: string, punto: string, version: number, filename: string): string {
   const archivo_id = crypto.randomUUID()
-  return `${pilar}/${punto}/${archivo_id}/v${version}-${filename}`
+  return `${pilar}/${punto}/${archivo_id}/v${version}-${sanitizeFilename(filename)}`
 }
 
 function buildVersionPath(existingPath: string, version: number, filename: string): string {
-  // Reemplaza el prefix v{N}- por el nuevo. existingPath es algo como
-  // "entrega/1.1/{uuid}/v1-xxx.pdf"; extraemos el dir y armamos nuevo nombre.
   const parts = existingPath.split("/")
   const dir = parts.slice(0, -1).join("/")
-  return `${dir}/v${version}-${filename}`
+  return `${dir}/v${version}-${sanitizeFilename(filename)}`
 }
 
 const CATEGORIAS = [
