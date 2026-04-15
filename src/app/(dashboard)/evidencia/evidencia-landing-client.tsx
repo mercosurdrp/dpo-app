@@ -1,19 +1,33 @@
 "use client"
 
+import { useMemo, useState } from "react"
 import Link from "next/link"
-import { FolderOpen, Clock, Activity } from "lucide-react"
+import { FolderOpen, Clock, Activity, Search } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import type { DpoPuntoResumen } from "@/types/database"
 
-const PUNTOS_CONOCIDOS: Array<{
-  pilar_codigo: string
-  punto_codigo: string
-  titulo: string
-}> = [
-  { pilar_codigo: "entrega", punto_codigo: "1.1", titulo: "Entrega 1.1 — PRE RUTA" },
-  { pilar_codigo: "entrega", punto_codigo: "1.2", titulo: "Entrega 1.2 — EN RUTA" },
-]
+const PILAR_LABELS: Record<string, string> = {
+  seguridad: "Seguridad",
+  gente: "Gente",
+  gestion: "Gestión",
+  entrega: "Entrega",
+  flota: "Flota",
+  almacen: "Almacén",
+  planeamiento: "Planeamiento",
+}
+
+const PILAR_COLORS: Record<string, string> = {
+  seguridad: "bg-red-100 text-red-700",
+  gente: "bg-blue-100 text-blue-700",
+  gestion: "bg-slate-100 text-slate-700",
+  entrega: "bg-amber-100 text-amber-700",
+  flota: "bg-indigo-100 text-indigo-700",
+  almacen: "bg-teal-100 text-teal-700",
+  planeamiento: "bg-purple-100 text-purple-700",
+}
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "sin actividad"
@@ -32,35 +46,42 @@ function relativeTime(iso: string | null): string {
 }
 
 function puntoToSlug(punto_codigo: string): string {
-  return punto_codigo.replace(".", "-")
+  return punto_codigo.replace(/\./g, "-")
 }
 
 export function EvidenciaLandingClient({ puntos }: { puntos: DpoPuntoResumen[] }) {
-  const map = new Map<string, DpoPuntoResumen>()
-  for (const p of puntos) {
-    map.set(`${p.pilar_codigo}|${p.punto_codigo}`, p)
-  }
-  for (const k of PUNTOS_CONOCIDOS) {
-    const key = `${k.pilar_codigo}|${k.punto_codigo}`
-    if (!map.has(key)) {
-      map.set(key, {
-        pilar_codigo: k.pilar_codigo,
-        punto_codigo: k.punto_codigo,
-        titulo: k.titulo,
-        total_archivos: 0,
-        total_actividad: 0,
-        ultimo_archivo: null,
-        ultima_actividad: null,
-      })
+  const [search, setSearch] = useState("")
+  const [pilarFilter, setPilarFilter] = useState<string>("all")
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return puntos.filter((p) => {
+      if (pilarFilter !== "all" && p.pilar_codigo !== pilarFilter) return false
+      if (!q) return true
+      return (
+        p.titulo.toLowerCase().includes(q) ||
+        p.punto_codigo.toLowerCase().includes(q) ||
+        p.pilar_codigo.toLowerCase().includes(q)
+      )
+    })
+  }, [puntos, search, pilarFilter])
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, DpoPuntoResumen[]>()
+    for (const p of filtered) {
+      if (!map.has(p.pilar_codigo)) map.set(p.pilar_codigo, [])
+      map.get(p.pilar_codigo)!.push(p)
     }
-  }
+    return Array.from(map.entries())
+  }, [filtered])
 
-  const rows = Array.from(map.values()).sort((a, b) => {
-    if (a.pilar_codigo !== b.pilar_codigo) return a.pilar_codigo.localeCompare(b.pilar_codigo)
-    return a.punto_codigo.localeCompare(b.punto_codigo)
-  })
+  const pilaresUnicos = useMemo(() => {
+    const s = new Set(puntos.map((p) => p.pilar_codigo))
+    return Array.from(s).sort()
+  }, [puntos])
 
-  const isEmpty = puntos.length === 0
+  const totalArchivos = puntos.reduce((acc, p) => acc + p.total_archivos, 0)
+  const totalEventos = puntos.reduce((acc, p) => acc + p.total_actividad, 0)
 
   return (
     <div className="space-y-6">
@@ -68,7 +89,8 @@ export function EvidenciaLandingClient({ puntos }: { puntos: DpoPuntoResumen[] }
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Evidencia DPO</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Gestión documental por punto del manual DPO 2.0
+            Gestión documental por punto del manual DPO 2.0 · {puntos.length} puntos ·{" "}
+            {totalArchivos} archivos · {totalEventos} eventos
           </p>
         </div>
         <Link href="/evidencia/timeline">
@@ -79,50 +101,108 @@ export function EvidenciaLandingClient({ puntos }: { puntos: DpoPuntoResumen[] }
         </Link>
       </div>
 
-      {isEmpty && (
+      {/* Filtros */}
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar punto o título..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={pilarFilter === "all" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setPilarFilter("all")}
+          >
+            Todos
+          </Button>
+          {pilaresUnicos.map((p) => (
+            <Button
+              key={p}
+              variant={pilarFilter === p ? "default" : "outline"}
+              size="sm"
+              onClick={() => setPilarFilter(p)}
+            >
+              {PILAR_LABELS[p] ?? p}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {puntos.length === 0 && (
         <Card className="border-dashed p-6 text-sm text-muted-foreground">
-          Sin archivos cargados. Subí el primero a{" "}
-          <Link href="/evidencia/entrega/1-1" className="font-medium text-slate-900 underline">
-            /evidencia/entrega/1-1
-          </Link>
+          Cargando puntos del DPO... Si no aparecen, verificá que las tablas `pilares` y
+          `preguntas` tengan datos.
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {rows.map((p) => {
-          const href = `/evidencia/${p.pilar_codigo}/${puntoToSlug(p.punto_codigo)}`
-          return (
-            <Link key={`${p.pilar_codigo}-${p.punto_codigo}`} href={href}>
-              <Card className="h-full p-5 transition-colors hover:border-slate-400">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
-                    <FolderOpen className="size-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-semibold text-slate-900">{p.titulo}</h3>
-                    <p className="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">
-                      {p.pilar_codigo} · {p.punto_codigo}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Archivos</div>
-                    <div className="font-semibold text-slate-900">{p.total_archivos}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Eventos</div>
-                    <div className="font-semibold text-slate-900">{p.total_actividad}</div>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="size-3.5" />
-                  {relativeTime(p.ultima_actividad ?? p.ultimo_archivo)}
-                </div>
-              </Card>
-            </Link>
-          )
-        })}
+      {filtered.length === 0 && puntos.length > 0 && (
+        <Card className="border-dashed p-6 text-sm text-muted-foreground">
+          Sin resultados para los filtros aplicados.
+        </Card>
+      )}
+
+      <div className="space-y-6">
+        {grouped.map(([pilarCod, lista]) => (
+          <div key={pilarCod}>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                {PILAR_LABELS[pilarCod] ?? pilarCod}
+              </h2>
+              <Badge variant="outline" className="text-[10px]">
+                {lista.length} puntos
+              </Badge>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {lista.map((p) => {
+                const href = `/evidencia/${p.pilar_codigo}/${puntoToSlug(p.punto_codigo)}`
+                const hasActivity = p.total_archivos > 0 || p.total_actividad > 0
+                return (
+                  <Link key={`${p.pilar_codigo}-${p.punto_codigo}`} href={href}>
+                    <Card
+                      className={`h-full p-4 transition-all hover:shadow-md hover:border-slate-400 ${
+                        hasActivity ? "border-slate-300" : "border-dashed"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div
+                          className={`rounded-lg p-2 ${
+                            PILAR_COLORS[p.pilar_codigo] ?? "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          <FolderOpen className="size-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-xs font-bold text-slate-900">
+                              {p.punto_codigo}
+                            </span>
+                          </div>
+                          <h3 className="mt-1 line-clamp-2 text-sm font-medium text-slate-800">
+                            {p.titulo.replace(/^[^—]+— /, "")}
+                          </h3>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">
+                          {p.total_archivos} archivos · {p.total_actividad} eventos
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Clock className="size-3" />
+                        {relativeTime(p.ultima_actividad ?? p.ultimo_archivo)}
+                      </div>
+                    </Card>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

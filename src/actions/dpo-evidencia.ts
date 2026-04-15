@@ -460,21 +460,36 @@ export async function getDownloadUrl(args: {
   }
 }
 
+function pilarSlug(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+}
+
 export async function getResumenPuntos(): Promise<Result<DpoPuntoResumen[]>> {
   try {
     await requireAuth()
     const supabase = await createClient()
 
-    const [archRes, actRes] = await Promise.all([
+    const [archRes, actRes, pilaresRes, preguntasRes] = await Promise.all([
       supabase
         .from("dpo_archivos")
         .select("pilar_codigo, punto_codigo, updated_at")
         .eq("archivado", false),
       supabase.from("dpo_actividad").select("pilar_codigo, punto_codigo, created_at"),
+      supabase.from("pilares").select("id, nombre, orden").order("orden"),
+      supabase
+        .from("preguntas")
+        .select("pilar_id, numero, pregunta")
+        .order("numero"),
     ])
 
     if (archRes.error) return { error: archRes.error.message }
     if (actRes.error) return { error: actRes.error.message }
+    if (pilaresRes.error) return { error: pilaresRes.error.message }
+    if (preguntasRes.error) return { error: preguntasRes.error.message }
 
     type Agg = {
       pilar_codigo: string
@@ -502,6 +517,29 @@ export async function getResumenPuntos(): Promise<Result<DpoPuntoResumen[]>> {
       return map.get(k)!
     }
 
+    // Pre-crear todos los puntos oficiales del DPO desde preguntas+pilares,
+    // así el landing muestra TODOS los puntos aunque todavía no tengan
+    // archivos/actividad cargados.
+    const pilarById = new Map<string, { slug: string; nombre: string; orden: number }>()
+    for (const p of pilaresRes.data || []) {
+      pilarById.set(p.id as string, {
+        slug: pilarSlug(p.nombre as string),
+        nombre: p.nombre as string,
+        orden: (p.orden as number) ?? 0,
+      })
+    }
+    const tituloOficial = new Map<string, { titulo: string; orden: number }>()
+    for (const q of preguntasRes.data || []) {
+      const pilar = pilarById.get(q.pilar_id as string)
+      if (!pilar) continue
+      const numero = String(q.numero ?? "").trim()
+      if (!numero) continue
+      const textoCorto = String(q.pregunta ?? "").split(/[\n\r]/)[0].slice(0, 80)
+      const titulo = `${pilar.nombre} ${numero}${textoCorto ? " — " + textoCorto : ""}`
+      ensure(pilar.slug, numero)
+      tituloOficial.set(keyOf(pilar.slug, numero), { titulo, orden: pilar.orden })
+    }
+
     for (const r of archRes.data || []) {
       if (!r.pilar_codigo || !r.punto_codigo) continue
       const g = ensure(r.pilar_codigo as string, r.punto_codigo as string)
@@ -517,14 +555,20 @@ export async function getResumenPuntos(): Promise<Result<DpoPuntoResumen[]>> {
       if (!g.ultima_actividad || ts > g.ultima_actividad) g.ultima_actividad = ts
     }
 
-    const out: DpoPuntoResumen[] = Array.from(map.values()).map((g) => ({
-      ...g,
-      titulo: tituloPunto(g.pilar_codigo, g.punto_codigo),
-    }))
+    const out: DpoPuntoResumen[] = Array.from(map.values()).map((g) => {
+      const meta = tituloOficial.get(keyOf(g.pilar_codigo, g.punto_codigo))
+      return {
+        ...g,
+        titulo: meta?.titulo ?? tituloPunto(g.pilar_codigo, g.punto_codigo),
+      }
+    })
 
     out.sort((a, b) => {
+      const oa = tituloOficial.get(keyOf(a.pilar_codigo, a.punto_codigo))?.orden ?? 99
+      const ob = tituloOficial.get(keyOf(b.pilar_codigo, b.punto_codigo))?.orden ?? 99
+      if (oa !== ob) return oa - ob
       if (a.pilar_codigo !== b.pilar_codigo) return a.pilar_codigo.localeCompare(b.pilar_codigo)
-      return a.punto_codigo.localeCompare(b.punto_codigo)
+      return a.punto_codigo.localeCompare(b.punto_codigo, undefined, { numeric: true })
     })
 
     return { data: out }
