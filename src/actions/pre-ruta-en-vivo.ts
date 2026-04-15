@@ -48,11 +48,20 @@ const hhmmFormatter = new Intl.DateTimeFormat("es-AR", {
   timeZone: AR_TZ,
 })
 
+// Para timestamps reales en UTC (reunion_preruta, checklist_vehiculos)
 function hhmm(iso: string | null): string | null {
   if (!iso) return null
   const d = new Date(iso)
   if (isNaN(d.getTime())) return null
   return hhmmFormatter.format(d)
+}
+
+// Para asistencia_marcas.fecha_marca: el valor se importó como hora AR
+// etiquetada como "+00:00" naive. Tomamos HH:MM directo del string ISO.
+function hhmmNaive(iso: string | null): string | null {
+  if (!iso) return null
+  const match = iso.match(/T(\d{2}:\d{2})/)
+  return match ? match[1] : null
 }
 
 function diffMinutes(aIso: string, bIso: string): number {
@@ -160,12 +169,17 @@ export async function getPreRutaEnVivo(
       const checklistHecho = !!chk
       const horaLiberacionIso = chk?.hora ?? null
 
+      // horaIngresoIso viene de asistencia_marcas: hora AR guardada con sufijo +00:00 (naive).
+      // Para comparar contra timestamps UTC reales (liberación / now), compenso +3h.
+      const ingresoShifted = horaIngresoIso
+        ? new Date(new Date(horaIngresoIso).getTime() + 3 * 60 * 60 * 1000).toISOString()
+        : null
+
       let tmlMin: number | null = null
-      if (horaIngresoIso && horaLiberacionIso) {
-        tmlMin = diffMinutes(horaIngresoIso, horaLiberacionIso)
-      } else if (horaIngresoIso && isHoy) {
-        // proyectado en vivo
-        tmlMin = diffMinutes(horaIngresoIso, nowIso)
+      if (ingresoShifted && horaLiberacionIso) {
+        tmlMin = diffMinutes(ingresoShifted, horaLiberacionIso)
+      } else if (ingresoShifted && isHoy) {
+        tmlMin = diffMinutes(ingresoShifted, nowIso)
       }
 
       let estado: PreRutaEquipoLive["tml_estado"] = "pendiente"
@@ -185,7 +199,7 @@ export async function getPreRutaEnVivo(
         chofer: e.nombre,
         legajo: e.legajo,
         presente,
-        hora_ingreso: hhmm(horaIngresoIso),
+        hora_ingreso: hhmmNaive(horaIngresoIso),
         matinal_marcada: matinalMarcada,
         hora_matinal: hhmm(horaMatinalIso),
         checklist_liberacion_hecho: checklistHecho,
