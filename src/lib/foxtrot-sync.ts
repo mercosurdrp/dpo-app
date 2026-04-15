@@ -166,13 +166,31 @@ export async function syncFoxtrotDay(
           attempted: 0,
         }
 
+        const visitPayload: Record<string, unknown>[] = []
+        const attemptPayload: Record<string, unknown>[] = []
+
         for (const wp of waypoints) {
           if (!wp.waypoint_id) continue
+
+          visitPayload.push({
+            route_id: route.id,
+            waypoint_id: wp.waypoint_id,
+            customer_id: wp.customer_id ?? null,
+            fecha,
+            status: wp.status ?? null,
+            completed_timestamp: wp.completed_timestamp
+              ? new Date(wp.completed_timestamp).toISOString()
+              : null,
+            estimated_time_of_arrival: wp.estimated_time_of_arrival
+              ? new Date(wp.estimated_time_of_arrival).toISOString()
+              : null,
+            waiting_time_seconds: wp.waiting_time_seconds ?? null,
+            waypoints_ahead: wp.waypoints_ahead ?? null,
+          })
+
           const dRes = await getWaypointDeliveries(dc.id, route.id, wp.waypoint_id)
-          if ("error" in dRes) {
-            // 404 en un waypoint suele ser el warehouse, sin deliveries — no es error real
-            continue
-          }
+          if ("error" in dRes) continue
+
           for (const delivery of dRes.data) {
             stats.total++
             const c = countAttempts(delivery.attempts)
@@ -180,8 +198,33 @@ export async function syncFoxtrotDay(
             if (c.successful) stats.successful++
             if (c.failed) stats.failed++
             if (c.visitLater) stats.visitLater++
+
+            if (delivery.attempts && delivery.attempts.length > 0) {
+              for (const a of delivery.attempts) {
+                attemptPayload.push({
+                  route_id: route.id,
+                  waypoint_id: wp.waypoint_id,
+                  customer_id: wp.customer_id ?? null,
+                  fecha,
+                  delivery_id: delivery.id,
+                  delivery_name: delivery.name ?? null,
+                  delivery_quantity: delivery.quantity ?? null,
+                  attempt_id:
+                    (a as unknown as { id?: string }).id ??
+                    `${delivery.id}-${a.timestamp ?? Date.now()}`,
+                  attempt_status: a.attempt_status,
+                  attempt_timestamp: a.timestamp
+                    ? new Date(a.timestamp).toISOString()
+                    : null,
+                  driver_notes: a.driver_notes ?? null,
+                  delivery_code: a.delivery_code ?? null,
+                  delivery_message: a.delivery_message ?? null,
+                })
+              }
+            }
           }
         }
+
 
         // Preferir el timestamp real del inicio de la ruta por encima del planificado
         const startedRealMs = route.started_timestamp
@@ -239,6 +282,27 @@ export async function syncFoxtrotDay(
           errorMessages.push(`upsert route ${route.id}: ${upErr.message}`)
         } else {
           rutas++
+
+          if (visitPayload.length > 0) {
+            await supabase.from("foxtrot_waypoints_visita").delete().eq("route_id", route.id)
+            const { error: wpErr } = await supabase
+              .from("foxtrot_waypoints_visita")
+              .insert(visitPayload)
+            if (wpErr) {
+              errores++
+              errorMessages.push(`insert visits ${route.id}: ${wpErr.message}`)
+            }
+          }
+          if (attemptPayload.length > 0) {
+            await supabase.from("foxtrot_delivery_attempts").delete().eq("route_id", route.id)
+            const { error: attErr } = await supabase
+              .from("foxtrot_delivery_attempts")
+              .insert(attemptPayload)
+            if (attErr) {
+              errores++
+              errorMessages.push(`insert attempts ${route.id}: ${attErr.message}`)
+            }
+          }
         }
       }
 

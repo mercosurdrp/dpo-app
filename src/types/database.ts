@@ -904,6 +904,93 @@ export interface DpoPuntoResumen {
   ultima_actividad: string | null
 }
 
+export interface FoxtrotWaypointVisita {
+  id: string
+  route_id: string
+  waypoint_id: string
+  customer_id: string | null
+  fecha: string
+  status: string | null
+  completed_timestamp: string | null
+  estimated_time_of_arrival: string | null
+  waiting_time_seconds: number | null
+  waypoints_ahead: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FoxtrotDeliveryAttempt {
+  id: string
+  route_id: string
+  waypoint_id: string
+  customer_id: string | null
+  fecha: string
+  delivery_id: string
+  delivery_name: string | null
+  delivery_quantity: number | null
+  attempt_id: string | null
+  attempt_status: string
+  attempt_timestamp: string | null
+  driver_notes: string | null
+  delivery_code: string | null
+  delivery_message: string | null
+  created_at: string
+}
+
+export interface FoxtrotRechazoAgregado {
+  key: string
+  label: string
+  count: number
+  ejemplos: FoxtrotDeliveryAttempt[]
+}
+
+export interface FoxtrotDriverRow {
+  driver_id: string
+  driver_name: string
+  dc_id: string
+  rutas: number
+  tiempo_productivo_minutos: number
+  visitas_planeadas: number
+  visitas_hechas: number
+  visitas_exitosas: number
+  visitas_fracasos: number
+  visitas_reintentos: number
+  tiempo_total_minutos: number
+  ultima_ubicacion: { latitud: number; longitud: number; timestamp: string } | null
+  route_ids: string[]
+}
+
+export interface FoxtrotDashboardMarker {
+  customer_id: string | null
+  latitud: number
+  longitud: number
+  status: "OK" | "FAIL" | "PENDING"
+  driver_name: string
+  delivery_count: number
+}
+
+export interface FoxtrotDashboardData {
+  fecha: string
+  kpis: {
+    choferes: number
+    rutas: number
+    visitas: number
+    exitosas: number
+    reintentos: number
+    rechazadas: number
+    fracasadas_total: number
+    visitas_planeadas: number
+  }
+  drivers: FoxtrotDriverRow[]
+  driverLocations: FoxtrotDriverLocation[]
+  warehousesLocation: { latitud: number; longitud: number } | null
+  customersSummary: {
+    total_clientes: number
+    clientes_visitados: number
+    clientes_pendientes: number
+  }
+}
+
 export interface FoxtrotKpis {
   totalRutasMes: number
   pctTrackingActivoMes: number
