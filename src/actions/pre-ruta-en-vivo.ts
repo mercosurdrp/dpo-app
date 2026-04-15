@@ -40,6 +40,13 @@ interface MapeoRow {
   nombre_chofer: string
 }
 
+interface RegistroRow {
+  dominio: string
+  chofer: string
+  ayudante1: string | null
+  ayudante2: string | null
+}
+
 const AR_TZ = "America/Argentina/Buenos_Aires"
 const hhmmFormatter = new Intl.DateTimeFormat("es-AR", {
   hour: "2-digit",
@@ -85,7 +92,7 @@ export async function getPreRutaEnVivo(
     const isHoy = f === new Date().toISOString().slice(0, 10)
     const nowIso = new Date().toISOString()
 
-    const [empRes, marcasRes, reunionRes, checklistRes, mapeoRes] = await Promise.all([
+    const [empRes, marcasRes, reunionRes, checklistRes, mapeoRes, registrosRes] = await Promise.all([
       supabase.from("empleados").select("id,legajo,nombre,sector,activo").eq("activo", true),
       supabase
         .from("asistencia_marcas")
@@ -102,6 +109,11 @@ export async function getPreRutaEnVivo(
         .eq("fecha", f)
         .eq("tipo", "liberacion"),
       supabase.from("mapeo_empleado_chofer").select("empleado_id,nombre_chofer"),
+      supabase
+        .from("registros_vehiculos")
+        .select("dominio,chofer,ayudante1,ayudante2")
+        .eq("fecha", f)
+        .eq("tipo", "egreso"),
     ])
 
     if (empRes.error) return { error: empRes.error.message }
@@ -109,12 +121,14 @@ export async function getPreRutaEnVivo(
     if (reunionRes.error) return { error: reunionRes.error.message }
     if (checklistRes.error) return { error: checklistRes.error.message }
     if (mapeoRes.error) return { error: mapeoRes.error.message }
+    if (registrosRes.error) return { error: registrosRes.error.message }
 
     const empleados = (empRes.data || []) as EmpleadoRow[]
     const marcas = (marcasRes.data || []) as MarcaRow[]
     const reuniones = (reunionRes.data || []) as ReunionRow[]
     const checklists = (checklistRes.data || []) as ChecklistRow[]
     const mapeos = (mapeoRes.data || []) as MapeoRow[]
+    const registros = (registrosRes.data || []) as RegistroRow[]
 
     // Filtrar set del día: sector reparto. Si no hay sector confiable, heurística por mapeo.
     const mapeoByEmp = new Map<string, string>()
@@ -152,6 +166,16 @@ export async function getPreRutaEnVivo(
       }
     }
 
+    // Asignación del día (chofer + ayudantes) por persona desde registros_vehiculos.
+    // Permite que un ayudante herede el dominio y el checklist de su chofer.
+    const asignacionByPersona = new Map<string, { dominio: string; chofer: string }>()
+    for (const r of registros) {
+      const info = { dominio: r.dominio, chofer: r.chofer }
+      if (r.chofer) asignacionByPersona.set(normaliza(r.chofer), info)
+      if (r.ayudante1) asignacionByPersona.set(normaliza(r.ayudante1), info)
+      if (r.ayudante2) asignacionByPersona.set(normaliza(r.ayudante2), info)
+    }
+
     const equipos: PreRutaEquipoLive[] = setDia.map((e) => {
       const horaIngresoIso = entradasByLeg.get(e.legajo) ?? null
       const presente = !!horaIngresoIso
@@ -160,12 +184,22 @@ export async function getPreRutaEnVivo(
       const matinalMarcada = !!horaMatinalIso
 
       const nombreNorm = normaliza(e.nombre)
+      const alias = mapeoByEmp.get(e.id) ?? null
+
+      // Chofer directo: match exacto o vía mapeo
       let chk = checklistByChofer.get(nombreNorm) ?? null
-      if (!chk) {
-        const alias = mapeoByEmp.get(e.id)
-        if (alias) chk = checklistByChofer.get(alias) ?? null
+      if (!chk && alias) chk = checklistByChofer.get(alias) ?? null
+
+      // Ayudante o chofer sin checklist propio: heredar del chofer asignado hoy
+      const asignacion =
+        asignacionByPersona.get(nombreNorm) ??
+        (alias ? asignacionByPersona.get(alias) : undefined) ??
+        null
+      if (!chk && asignacion) {
+        chk = checklistByChofer.get(normaliza(asignacion.chofer)) ?? null
       }
 
+      const dominioAsignado = chk?.dominio ?? asignacion?.dominio ?? null
       const checklistHecho = !!chk
       const horaLiberacionIso = chk?.hora ?? null
 
@@ -195,7 +229,7 @@ export async function getPreRutaEnVivo(
       }
 
       return {
-        dominio: chk?.dominio ?? null,
+        dominio: dominioAsignado,
         chofer: e.nombre,
         legajo: e.legajo,
         presente,
