@@ -39,6 +39,7 @@ import {
   RotateCcw,
   ClipboardCheck,
   Eye,
+  Pencil,
   Trash2,
   Loader2,
   Clock,
@@ -51,6 +52,17 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { updateChecklist } from "@/actions/checklist-vehiculos"
 import {
   BarChart,
   Bar,
@@ -140,6 +152,54 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const [deleteType, setDeleteType] = useState<"checklist" | "combustible">("checklist")
   const [deleting, setDeleting] = useState(false)
   const [alertasExpanded, setAlertasExpanded] = useState(false)
+  const [editChk, setEditChk] = useState<ChecklistVehiculo | null>(null)
+  const [editFecha, setEditFecha] = useState("")
+  const [editHora, setEditHora] = useState("")
+  const [editDominio, setEditDominio] = useState("")
+  const [editChofer, setEditChofer] = useState("")
+  const [editResultado, setEditResultado] = useState<"aprobado" | "rechazado">("aprobado")
+  const [editOdometro, setEditOdometro] = useState("")
+  const [editObs, setEditObs] = useState("")
+  const [editSaving, setEditSaving] = useState(false)
+
+  function openEditChk(c: ChecklistVehiculo) {
+    setEditChk(c)
+    setEditFecha(c.fecha)
+    const d = new Date(c.hora)
+    const hh = d.getHours().toString().padStart(2, "0")
+    const mm = d.getMinutes().toString().padStart(2, "0")
+    setEditHora(`${hh}:${mm}`)
+    setEditDominio(c.dominio)
+    setEditChofer(c.chofer)
+    setEditResultado(c.resultado as "aprobado" | "rechazado")
+    setEditOdometro(c.odometro?.toString() || "")
+    setEditObs(c.observaciones || "")
+  }
+
+  async function handleSaveEditChk() {
+    if (!editChk) return
+    setEditSaving(true)
+    const result = await updateChecklist({
+      id: editChk.id,
+      fecha: editFecha,
+      dominio: editDominio,
+      chofer: editChofer,
+      hora: editHora,
+      resultado: editResultado,
+      odometro: editOdometro ? parseInt(editOdometro) : null,
+      observaciones: editObs || null,
+    })
+    setEditSaving(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Checklist actualizado")
+    setEditChk(null)
+    startTransition(() => router.refresh())
+  }
+
+  const personasOpts = choferes.map((c) => c.nombre)
 
   const enBase = estadoVehiculos.filter((v) => v.estado === "en_base").length
   const enRuta = estadoVehiculos.filter((v) => v.estado === "en_ruta").length
@@ -592,7 +652,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                         <TableHead>Chofer</TableHead>
                         <TableHead>Resultado</TableHead>
                         <TableHead className="text-right">T. Ruta</TableHead>
-                        <TableHead className="text-right w-20">Acciones</TableHead>
+                        <TableHead className="text-right w-28">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -633,6 +693,15 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                                   <Eye className="h-3.5 w-3.5" />
                                 </Button>
                               </Link>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => openEditChk(c)}
+                                disabled={isPending}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -737,6 +806,103 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Checklist Dialog */}
+      <Dialog open={!!editChk} onOpenChange={(open) => !open && setEditChk(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Checklist</DialogTitle>
+            <DialogDescription>
+              {editChk?.tipo === "liberacion" ? "Liberación" : "Retorno"} · {editChk?.fecha}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Fecha</Label>
+                <Input
+                  type="date"
+                  value={editFecha}
+                  onChange={(e) => setEditFecha(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Hora</Label>
+                <Input
+                  type="time"
+                  value={editHora}
+                  onChange={(e) => setEditHora(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Dominio</Label>
+                <Select value={editDominio} onValueChange={(v: string | null) => setEditDominio(v ?? "")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {vehiculos.map((v) => (
+                      <SelectItem key={v.id} value={v.dominio}>{v.dominio}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Chofer</Label>
+                <Select value={editChofer} onValueChange={(v: string | null) => setEditChofer(v ?? "")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {personasOpts.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Resultado</Label>
+                <Select
+                  value={editResultado}
+                  onValueChange={(v: string | null) =>
+                    setEditResultado((v as "aprobado" | "rechazado") ?? "aprobado")
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="aprobado">Aprobado</SelectItem>
+                    <SelectItem value="rechazado">Rechazado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Odómetro</Label>
+                <Input
+                  type="number"
+                  placeholder="Km"
+                  value={editOdometro}
+                  onChange={(e) => setEditOdometro(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observaciones</Label>
+              <Textarea
+                rows={3}
+                value={editObs}
+                onChange={(e) => setEditObs(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditChk(null)}>Cancelar</Button>
+            <Button onClick={handleSaveEditChk} disabled={editSaving}>
+              {editSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
