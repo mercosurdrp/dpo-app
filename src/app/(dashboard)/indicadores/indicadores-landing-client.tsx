@@ -50,6 +50,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
           KPIs Operativos
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link href="/pack-auditoria/entrega-1-1">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-slate-400 border-2 border-dashed">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-slate-100 text-slate-700 group-hover:bg-slate-200 transition-colors">
+                  <BarChart3 className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Pack Auditoría 1.1
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Evidencia compilada para auditor — Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/indicadores/pre-ruta-en-vivo">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-indigo-300">
               <CardContent className="flex items-center gap-4 pt-6">
