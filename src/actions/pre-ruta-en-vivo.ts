@@ -40,11 +40,19 @@ interface MapeoRow {
   nombre_chofer: string
 }
 
+const AR_TZ = "America/Argentina/Buenos_Aires"
+const hhmmFormatter = new Intl.DateTimeFormat("es-AR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: AR_TZ,
+})
+
 function hhmm(iso: string | null): string | null {
   if (!iso) return null
   const d = new Date(iso)
   if (isNaN(d.getTime())) return null
-  return d.toTimeString().slice(0, 5)
+  return hhmmFormatter.format(d)
 }
 
 function diffMinutes(aIso: string, bIso: string): number {
