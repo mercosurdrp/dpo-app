@@ -87,6 +87,7 @@ const CATEGORIAS = [
   "Examen",
   "Plan de Acción",
   "Evidencia OWD",
+  "Archivos para capacitación",
   "Reporte",
   "Foto",
   "Otro",
