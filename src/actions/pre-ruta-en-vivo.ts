@@ -41,6 +41,7 @@ interface MapeoRow {
 }
 
 interface RegistroRow {
+  fecha: string
   dominio: string
   chofer: string
   ayudante1: string | null
@@ -111,9 +112,11 @@ export async function getPreRutaEnVivo(
       supabase.from("mapeo_empleado_chofer").select("empleado_id,nombre_chofer"),
       supabase
         .from("registros_vehiculos")
-        .select("dominio,chofer,ayudante1,ayudante2")
-        .eq("fecha", f)
-        .eq("tipo", "egreso"),
+        .select("fecha,dominio,chofer,ayudante1,ayudante2")
+        .gte("fecha", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+        .lte("fecha", f)
+        .eq("tipo", "egreso")
+        .order("fecha", { ascending: false }),
     ])
 
     if (empRes.error) return { error: empRes.error.message }
@@ -166,14 +169,20 @@ export async function getPreRutaEnVivo(
       }
     }
 
-    // Asignación del día (chofer + ayudantes) por persona desde registros_vehiculos.
-    // Permite que un ayudante herede el dominio y el checklist de su chofer.
+    // Asignación por persona desde registros_vehiculos tipo egreso.
+    // Se intenta primero con el registro de hoy; si no hay, se usa el último
+    // egreso de los últimos 14 días (equipos suelen mantenerse estables).
+    // `registros` viene ordenado por fecha desc, así que la primera asignación
+    // que se setea para cada persona es la más reciente.
     const asignacionByPersona = new Map<string, { dominio: string; chofer: string }>()
+    function setIfAbsent(key: string, info: { dominio: string; chofer: string }) {
+      if (!asignacionByPersona.has(key)) asignacionByPersona.set(key, info)
+    }
     for (const r of registros) {
       const info = { dominio: r.dominio, chofer: r.chofer }
-      if (r.chofer) asignacionByPersona.set(normaliza(r.chofer), info)
-      if (r.ayudante1) asignacionByPersona.set(normaliza(r.ayudante1), info)
-      if (r.ayudante2) asignacionByPersona.set(normaliza(r.ayudante2), info)
+      if (r.chofer) setIfAbsent(normaliza(r.chofer), info)
+      if (r.ayudante1) setIfAbsent(normaliza(r.ayudante1), info)
+      if (r.ayudante2) setIfAbsent(normaliza(r.ayudante2), info)
     }
 
     const equipos: PreRutaEquipoLive[] = setDia.map((e) => {
