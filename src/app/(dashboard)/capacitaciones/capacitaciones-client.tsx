@@ -12,6 +12,9 @@ import {
   User,
   GraduationCap,
   Trash2,
+  Eye,
+  EyeOff,
+  ClipboardCheck,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -38,7 +41,7 @@ import {
   ESTADO_CAPACITACION_COLORS,
   ESTADO_CAPACITACION_LABELS,
 } from "@/lib/constants"
-import { createCapacitacion, deleteCapacitacion } from "@/actions/capacitaciones"
+import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { Capacitacion, EstadoCapacitacion } from "@/types/database"
 
 interface Props {
@@ -185,6 +188,13 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
             Gestiona las capacitaciones del personal
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Link href="/capacitaciones/matriz-skap">
+            <Button variant="outline">
+              <ClipboardCheck className="mr-2 size-4" />
+              Matriz SKAP SOP 1.1
+            </Button>
+          </Link>
         {canEdit && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger
@@ -301,6 +311,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
             </DialogContent>
           </Dialog>
         )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -412,7 +423,30 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                     </div>
                   )}
                   {canEdit && (
-                    <div className="flex justify-end pt-1">
+                    <div className="flex justify-end gap-1 pt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`size-7 p-0 ${cap.visible ? "text-green-500 hover:text-green-700" : "text-slate-300 hover:text-slate-500"}`}
+                        title={cap.visible ? "Visible para empleados — click para ocultar" : "Oculta — click para hacer visible"}
+                        onClick={async (e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const result = await toggleCapacitacionVisible(cap.id, !cap.visible)
+                          if ("error" in result) {
+                            toast.error(result.error)
+                          } else {
+                            setCapacitaciones((prev) =>
+                              prev.map((c) =>
+                                c.id === cap.id ? { ...c, visible: !c.visible } : c
+                              )
+                            )
+                            toast.success(cap.visible ? "Oculta para empleados" : "Visible para empleados")
+                          }
+                        }}
+                      >
+                        {cap.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

@@ -50,6 +50,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
           KPIs Operativos
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link href="/indicadores/pre-ruta-en-vivo">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-indigo-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200 transition-colors">
+                  <Activity className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Pre-Ruta en Vivo
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Tablero operativo 07:00 — Pilar Entrega 1.1
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/indicadores/tml">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-amber-300">
               <CardContent className="flex items-center gap-4 pt-6">

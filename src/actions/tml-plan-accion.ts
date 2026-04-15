@@ -207,17 +207,23 @@ export async function updateTmlPlanCausaRaiz(
 export async function cerrarTmlPlan(
   id: string,
   resultadoCierre: string,
+  evidenciaCierreUrl?: string | null,
 ): Promise<{ success: true } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
+    const update: Record<string, unknown> = {
+      estado: "cerrado" as PlanTmlEstado,
+      fecha_cierre: new Date().toISOString().slice(0, 10),
+      resultado_cierre: resultadoCierre.trim(),
+    }
+    if (evidenciaCierreUrl !== undefined) {
+      const trimmed = evidenciaCierreUrl?.trim() || null
+      update.evidencia_cierre_url = trimmed
+    }
     const { error } = await supabase
       .from("tml_plan_accion")
-      .update({
-        estado: "cerrado" as PlanTmlEstado,
-        fecha_cierre: new Date().toISOString().slice(0, 10),
-        resultado_cierre: resultadoCierre.trim(),
-      })
+      .update(update)
       .eq("id", id)
     if (error) return { error: error.message }
     return { success: true }

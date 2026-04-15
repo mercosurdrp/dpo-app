@@ -380,6 +380,7 @@ function PlanDetailDialog({
     year: number
     fecha_cierre: string | null
     resultado_cierre: string | null
+    evidencia_cierre_url: string | null
   } | null>(null)
   const [items, setItems] = useState<TmlPlanAccionItem[]>([])
   const [editingCausa, setEditingCausa] = useState(false)
@@ -390,6 +391,7 @@ function PlanDetailDialog({
   const [busy, setBusy] = useState(false)
   const [closingMode, setClosingMode] = useState(false)
   const [resultadoCierre, setResultadoCierre] = useState("")
+  const [evidenciaCierre, setEvidenciaCierre] = useState("")
 
   async function reload() {
     setLoading(true)
@@ -406,6 +408,7 @@ function PlanDetailDialog({
       year: res.data.plan.year,
       fecha_cierre: res.data.plan.fecha_cierre,
       resultado_cierre: res.data.plan.resultado_cierre,
+      evidencia_cierre_url: res.data.plan.evidencia_cierre_url,
     })
     setItems(res.data.items)
     setCausaEdit(res.data.plan.causa_raiz)
@@ -476,7 +479,7 @@ function PlanDetailDialog({
       return
     }
     setBusy(true)
-    const r = await cerrarTmlPlan(planId, resultadoCierre)
+    const r = await cerrarTmlPlan(planId, resultadoCierre, evidenciaCierre || null)
     setBusy(false)
     if ("error" in r) {
       toast.error(r.error)
@@ -669,6 +672,16 @@ function PlanDetailDialog({
                   Cerrado el {plan.fecha_cierre}
                 </p>
                 <p className="mt-1 text-sm">{plan.resultado_cierre}</p>
+                {plan.evidencia_cierre_url && (
+                  <a
+                    href={plan.evidencia_cierre_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-sm font-medium text-green-700 underline hover:text-green-800"
+                  >
+                    Ver evidencia
+                  </a>
+                )}
               </div>
             ) : closingMode ? (
               <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
@@ -678,6 +691,13 @@ function PlanDetailDialog({
                   placeholder="Qué se logró con el plan, qué mejoró"
                   value={resultadoCierre}
                   onChange={(e) => setResultadoCierre(e.target.value)}
+                />
+                <Label>Evidencia (URL opcional)</Label>
+                <Input
+                  type="url"
+                  placeholder="https://..."
+                  value={evidenciaCierre}
+                  onChange={(e) => setEvidenciaCierre(e.target.value)}
                 />
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setClosingMode(false)}>

@@ -53,6 +53,7 @@ import type {
   CatalogoChofer,
   CatalogoVehiculo,
   TmlPlanResumen,
+  TmlMesComparado,
 } from "@/types/database"
 import { TmlPlanAccionSection } from "./tml-plan-accion-section"
 import {
@@ -80,6 +81,7 @@ interface KpiData {
   metaMinutos: number
   semanal: TmlSemanal[]
   mensual: TmlMensual[]
+  comparadoYoY: TmlMesComparado[]
 }
 
 interface Props {
@@ -392,6 +394,57 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Comparativo YoY */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">TML vs año anterior — últimos 12 meses</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={kpis.comparadoYoY}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="mes_label" fontSize={11} />
+                <YAxis fontSize={11} unit=" min" />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const label = name === "promedio_tml_actual" ? "Año actual" : "Año anterior"
+                    if (value == null) return ["—", label]
+                    return [`${value} min`, label]
+                  }}
+                />
+                <ReferenceLine
+                  y={30}
+                  stroke="#10B981"
+                  strokeDasharray="5 5"
+                  label={{ value: "Meta 30min", position: "right", fontSize: 10 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="promedio_tml_actual"
+                  stroke="#3B82F6"
+                  strokeWidth={2}
+                  dot={{ fill: "#3B82F6", r: 3 }}
+                  connectNulls
+                />
+                <Line
+                  type="monotone"
+                  dataKey="promedio_tml_anterior"
+                  stroke="#94A3B8"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={{ fill: "#94A3B8", r: 3 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Línea azul: año actual · línea gris dashed: año anterior · línea verde: meta 30 min
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Plan de Acción R1.1.4 */}
       <TmlPlanAccionSection resumen={planesResumen} />

@@ -578,6 +578,7 @@ export interface TmlPlanAccion {
   estado: PlanTmlEstado
   fecha_cierre: string | null
   resultado_cierre: string | null
+  evidencia_cierre_url: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -679,4 +680,88 @@ export interface AlertaVehiculo {
   descripcion: string
   valor?: string | number
   fecha?: string
+}
+
+// ===== Matriz SKAP / Certificaciones SOP (R1.1.3) =====
+export interface SopCertificacion {
+  id: string
+  empleado_id: string
+  sop_codigo: string
+  sop_titulo: string
+  fecha_certificacion: string
+  score: number | null
+  aprobado: boolean
+  vencimiento: string | null
+  evidencia_url: string | null
+  notas: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type EstadoCertificacion = "vigente" | "por_vencer" | "vencida" | "sin_certificar"
+
+export interface SkapEmpleadoRow {
+  empleado_id: string
+  legajo: number
+  nombre: string
+  sector: string | null
+  certificacion: SopCertificacion | null
+  estado: EstadoCertificacion
+  dias_para_vencer: number | null
+}
+
+export interface SkapMatriz {
+  sop_codigo: string
+  sop_titulo: string
+  total_empleados: number
+  vigentes: number
+  por_vencer: number
+  vencidas: number
+  sin_certificar: number
+  pct_cobertura: number
+  rows: SkapEmpleadoRow[]
+}
+
+// ===== Pre-Ruta en Vivo (operativo SDR) =====
+export interface PreRutaEquipoLive {
+  dominio: string | null
+  chofer: string
+  legajo: number | null
+  presente: boolean
+  hora_ingreso: string | null
+  matinal_marcada: boolean
+  hora_matinal: string | null
+  checklist_liberacion_hecho: boolean
+  hora_liberacion: string | null
+  resultado_checklist: "aprobado" | "rechazado" | null
+  tml_minutos: number | null
+  tml_estado: "ok" | "en_riesgo" | "fuera_meta" | "pendiente"
+}
+
+export interface PreRutaEnVivo {
+  fecha: string
+  resumen: {
+    total_esperados: number
+    presentes: number
+    matinal_ok: number
+    checklists_ok: number
+    salidos: number
+    en_riesgo: number
+    fuera_meta: number
+  }
+  equipos: PreRutaEquipoLive[]
+  meta_minutos: number
+  ventana_pct: number
+}
+
+// ===== TML comparativo YoY =====
+export interface TmlMesComparado {
+  mes: number
+  mes_label: string
+  promedio_tml_actual: number | null
+  promedio_tml_anterior: number | null
+  pct_dentro_meta_actual: number | null
+  pct_dentro_meta_anterior: number | null
+  delta_tml: number | null
 }

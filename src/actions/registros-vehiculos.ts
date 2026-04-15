@@ -9,7 +9,10 @@ import type {
   CatalogoVehiculo,
   TmlSemanal,
   TmlMensual,
+  TmlMesComparado,
 } from "@/types/database"
+
+const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 const TML_META_MINUTOS = 30
 
@@ -216,6 +219,7 @@ export async function getTmlKpis(filters?: {
     metaMinutos: number
     semanal: TmlSemanal[]
     mensual: TmlMensual[]
+    comparadoYoY: TmlMesComparado[]
   }
 } | { error: string }> {
   try {
@@ -250,6 +254,7 @@ export async function getTmlKpis(filters?: {
           metaMinutos: TML_META_MINUTOS,
           semanal: [],
           mensual: [],
+          comparadoYoY: [],
         },
       }
     }
@@ -310,6 +315,31 @@ export async function getTmlKpis(filters?: {
       }
     })
 
+    // YoY: últimos 12 meses calendario vs mismo mes año anterior
+    const today = new Date()
+    const ventana: Array<{ year: number; mes: number }> = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      ventana.push({ year: d.getFullYear(), mes: d.getMonth() + 1 })
+    }
+    const mensualByKey = new Map<string, TmlMensual>()
+    for (const m of mensual) mensualByKey.set(`${m.year}-${m.mes}`, m)
+    const comparadoYoY: TmlMesComparado[] = ventana.map(({ year, mes }) => {
+      const cur = mensualByKey.get(`${year}-${mes}`)
+      const prev = mensualByKey.get(`${year - 1}-${mes}`)
+      const curTml = cur ? cur.promedio_tml : null
+      const prevTml = prev ? prev.promedio_tml : null
+      return {
+        mes,
+        mes_label: MES_LABELS[mes - 1],
+        promedio_tml_actual: curTml,
+        promedio_tml_anterior: prevTml,
+        pct_dentro_meta_actual: cur ? cur.pct_dentro_meta : null,
+        pct_dentro_meta_anterior: prev ? prev.pct_dentro_meta : null,
+        delta_tml: curTml != null && prevTml != null ? curTml - prevTml : null,
+      }
+    })
+
     return {
       data: {
         totalEgresos,
@@ -320,6 +350,7 @@ export async function getTmlKpis(filters?: {
         metaMinutos: TML_META_MINUTOS,
         semanal,
         mensual,
+        comparadoYoY,
       },
     }
   } catch (e) {
