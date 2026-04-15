@@ -97,7 +97,27 @@ export async function syncFoxtrotDay(
       return await finalize(false, errorMessages.join(" | "))
     }
 
-    for (const dc of dcsRes.data) {
+    // Foxtrot devuelve DCs de todo el mundo. Filtramos solo los de
+    // Mercosur Región Pampeana. Configurable por env var si hace falta
+    // agregar otros (ej: eldorado, iguazu, lujan).
+    const configIds = process.env.FOXTROT_DC_IDS
+    const allowedIds = new Set(
+      (configIds?.split(",").map((s) => s.trim()).filter(Boolean)) ?? [
+        "ramallo",
+        "pergamino",
+      ],
+    )
+    const filteredDcs = dcsRes.data.filter((dc) => allowedIds.has(dc.id))
+
+    if (filteredDcs.length === 0) {
+      errores++
+      errorMessages.push(
+        `Ningún DC de la lista ${Array.from(allowedIds).join(",")} se encontró en Foxtrot`,
+      )
+      return await finalize(false, errorMessages.join(" | "))
+    }
+
+    for (const dc of filteredDcs) {
       const routesRes = await findRoutesByDate(dc.id, fecha)
       if ("error" in routesRes) {
         errores++
