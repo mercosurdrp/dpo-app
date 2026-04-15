@@ -28,6 +28,8 @@ export interface FoxtrotRouteRaw {
   name?: string
   assigned_driver_id?: string
   start_time?: number
+  started_timestamp?: string | null
+  finalized_timestamp?: string | null
   start_warehouse_id?: string
   end_warehouse_id?: string
   vehicle_id?: string | null
@@ -43,9 +45,13 @@ export interface FoxtrotCompletionTime {
 }
 
 export interface FoxtrotWaypoint {
-  id: string
-  location?: { latitude: number; longitude: number }
-  service_time_minutes?: number
+  waypoint_id: string
+  customer_id?: string
+  status?: "PENDING" | "COMPLETED" | "SKIPPED" | string
+  completed_timestamp?: number | null
+  estimated_time_of_arrival?: number | null
+  waiting_time_seconds?: number
+  waypoints_ahead?: number | null
 }
 
 export type FoxtrotAttemptStatus = "SUCCESSFUL" | "FAILED" | "VISIT_LATER"
@@ -221,14 +227,22 @@ export async function getRouteCompletionTime(
   dcId: string,
   routeId: string
 ): Promise<FoxtrotResult<FoxtrotCompletionTime | null>> {
-  const r = await request<FoxtrotCompletionTime>(
-    `/dcs/${dcId}/routes/${routeId}/completion-time`
-  )
+  const r = await request<
+    { completion_time?: FoxtrotCompletionTime } | FoxtrotCompletionTime
+  >(`/dcs/${dcId}/routes/${routeId}/completion-time`)
   if ("error" in r) {
     if (r.error.startsWith("Foxtrot 404")) return { data: null }
     return r
   }
-  return { data: r.data ?? null }
+  const raw = r.data as unknown
+  if (raw && typeof raw === "object") {
+    const wrapped = (raw as { completion_time?: FoxtrotCompletionTime }).completion_time
+    if (wrapped) return { data: wrapped }
+    if ("timestamp" in (raw as Record<string, unknown>)) {
+      return { data: raw as FoxtrotCompletionTime }
+    }
+  }
+  return { data: null }
 }
 
 export async function getRouteWaypoints(

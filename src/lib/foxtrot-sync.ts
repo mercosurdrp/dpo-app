@@ -167,10 +167,10 @@ export async function syncFoxtrotDay(
         }
 
         for (const wp of waypoints) {
-          const dRes = await getWaypointDeliveries(dc.id, route.id, wp.id)
+          if (!wp.waypoint_id) continue
+          const dRes = await getWaypointDeliveries(dc.id, route.id, wp.waypoint_id)
           if ("error" in dRes) {
-            errores++
-            errorMessages.push(`deliveries(${route.id}/${wp.id}): ${dRes.error}`)
+            // 404 en un waypoint suele ser el warehouse, sin deliveries — no es error real
             continue
           }
           for (const delivery of dRes.data) {
@@ -183,9 +183,21 @@ export async function syncFoxtrotDay(
           }
         }
 
-        const startMs = route.start_time ?? null
+        // Preferir el timestamp real del inicio de la ruta por encima del planificado
+        const startedRealMs = route.started_timestamp
+          ? new Date(route.started_timestamp).getTime()
+          : null
+        const startMs = startedRealMs ?? route.start_time ?? null
+        // Si la ruta está finalizada y el endpoint completion-time no respondió,
+        // caer al finalized_timestamp del response de find_by_date
+        const endFallbackMs = route.finalized_timestamp
+          ? new Date(route.finalized_timestamp).getTime()
+          : null
+        const effectiveEndMs = endTimeMs ?? endFallbackMs
         const tiempoRutaMin =
-          startMs && endTimeMs ? Math.round((endTimeMs - startMs) / 60000) : null
+          startMs && effectiveEndMs && effectiveEndMs > startMs
+            ? Math.round((effectiveEndMs - startMs) / 60000)
+            : null
         const pctTracking =
           stats.total > 0 ? Number(((stats.attempted / stats.total) * 100).toFixed(2)) : null
 
@@ -202,7 +214,7 @@ export async function syncFoxtrotDay(
             vehicle_id: route.vehicle_id ?? null,
             dominio: null,
             start_time: startMs ? new Date(startMs).toISOString() : null,
-            end_time: endTimeMs ? new Date(endTimeMs).toISOString() : null,
+            end_time: effectiveEndMs ? new Date(effectiveEndMs).toISOString() : null,
             completion_type: completionType,
             is_active: route.is_active ?? null,
             is_finalized: route.is_finalized ?? null,
