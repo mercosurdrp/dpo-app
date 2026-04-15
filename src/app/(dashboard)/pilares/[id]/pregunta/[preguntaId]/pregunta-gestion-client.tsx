@@ -26,7 +26,16 @@ import {
   ExternalLink,
   AlertCircle,
   Eye,
+  FolderOpen,
 } from "lucide-react"
+
+function pilarSlug(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+}
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1043,6 +1052,19 @@ export function PreguntaGestionClient({
             {pregunta.texto}
           </h1>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+          render={
+            <Link
+              href={`/evidencia/${pilarSlug(pilar.nombre)}/${pregunta.numero.replace(/\./g, "-")}`}
+            />
+          }
+        >
+          <FolderOpen className="mr-1.5 h-4 w-4" />
+          Subir archivos
+        </Button>
       </div>
 
       {/* DPO Requirements - always visible */}
