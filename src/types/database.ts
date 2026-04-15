@@ -616,3 +616,67 @@ export interface PlanAccionListItem extends PlanAccion {
   comentarios_count: number
   evidencias_count: number
 }
+
+// Vehículos analytics
+export interface VehiculoKmDia {
+  dominio: string
+  fecha: string
+  km: number
+  lecturas: number
+  odometro_min: number
+  odometro_max: number
+}
+
+export interface KmFlotaResumen {
+  kmHoy: number
+  kmAyer: number
+  kmMesActual: number
+  promedioDiarioMes: number
+  topVehiculosMes: { dominio: string; km: number }[]
+  bottomVehiculosMes: { dominio: string; km: number }[]
+  serieDiariaMes: { fecha: string; km: number }[]
+}
+
+export interface VehiculoTimelineEvento {
+  tipo: "egreso" | "retorno" | "liberacion" | "retorno_chk" | "combustible" | "checklist_nook"
+  fecha: string
+  hora: string
+  descripcion: string
+  chofer: string | null
+  odometro: number | null
+  link: string | null
+}
+
+export interface VehiculoDetalle {
+  vehiculo: CatalogoVehiculo
+  kpis: {
+    kmMes: number
+    kmYTD: number
+    kmHistorico: number
+    rendimientoPromedio: number
+    costoMes: number
+    costoTotalHistorico: number
+    tmlPromedio: number
+    totalEgresosMes: number
+    ultimoOdometro: number | null
+    ultimaActividad: string | null
+  }
+  kmUltimos30Dias: { fecha: string; km: number }[]
+  rendimientoUltimas10Cargas: { fecha: string; rendimiento: number; km: number; litros: number }[]
+  timeline: VehiculoTimelineEvento[]
+  proximaAlerta: AlertaVehiculo | null
+}
+
+export type AlertaSeveridad = "info" | "warning" | "danger"
+export type AlertaTipo = "sin_movimiento" | "retroceso_odometro" | "rendimiento_bajo" | "sin_liberacion"
+
+export interface AlertaVehiculo {
+  id: string
+  tipo: AlertaTipo
+  severidad: AlertaSeveridad
+  dominio: string
+  titulo: string
+  descripcion: string
+  valor?: string | number
+  fecha?: string
+}
