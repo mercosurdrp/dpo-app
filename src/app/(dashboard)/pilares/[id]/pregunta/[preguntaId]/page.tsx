@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { getPreguntaGestion } from "@/actions/gestion"
+import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
 import type { Pilar } from "@/types/database"
 import { PreguntaGestionClient } from "./pregunta-gestion-client"
 
@@ -28,8 +29,11 @@ export default async function PreguntaPage({
     )
   }
 
-  // Get pregunta with all gestion data
-  const result = await getPreguntaGestion(preguntaId)
+  // Get pregunta with all gestion data + linked capacitaciones
+  const [result, capsResult] = await Promise.all([
+    getPreguntaGestion(preguntaId),
+    getCapacitacionesForPregunta(preguntaId),
+  ])
 
   if ("error" in result) {
     return (
@@ -39,10 +43,13 @@ export default async function PreguntaPage({
     )
   }
 
+  const capacitaciones = "error" in capsResult ? [] : capsResult.data
+
   return (
     <PreguntaGestionClient
       pilar={pilar as Pilar}
       pregunta={result.data}
+      capacitaciones={capacitaciones}
     />
   )
 }

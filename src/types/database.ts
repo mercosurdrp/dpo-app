@@ -371,6 +371,35 @@ export interface CapacitacionRespuesta {
   created_at: string
 }
 
+// Capacitacion ↔ DPO Puntos (junction)
+export interface CapacitacionDpoPunto {
+  id: string
+  capacitacion_id: string
+  pregunta_id: string
+  created_at: string
+}
+
+export interface CapacitacionDpoPuntoFull extends CapacitacionDpoPunto {
+  pregunta_numero: string
+  pregunta_texto: string
+  bloque_nombre: string
+  pilar_id: string
+  pilar_nombre: string
+  pilar_color: string
+}
+
+export interface CapacitacionParaPregunta {
+  id: string
+  titulo: string
+  instructor: string
+  fecha: string
+  estado: EstadoCapacitacion
+  duracion_horas: number
+  total_asistentes: number
+  presentes: number
+  aprobados: number
+}
+
 // Mapeo empleado → identidades externas
 export interface MapeoEmpleadoFletero {
   id: string

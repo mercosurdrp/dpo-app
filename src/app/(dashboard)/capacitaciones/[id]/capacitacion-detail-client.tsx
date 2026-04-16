@@ -19,6 +19,12 @@ import {
   Upload,
   Sparkles,
   Loader2,
+  Eye,
+  EyeOff,
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Search,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -58,25 +64,41 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
   updateCapacitacion,
+  toggleCapacitacionVisible,
   addAsistentes,
   removeAsistente,
   updateAsistencia,
   createCapacitacionPregunta,
   deleteCapacitacionPregunta,
+  saveDpoPuntos,
 } from "@/actions/capacitaciones"
 import type {
   CapacitacionFull,
   CapacitacionPregunta,
+  CapacitacionDpoPuntoFull,
   Empleado,
   AsistenciaConEmpleado,
   EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
 
+interface DpoHierarchyPilar {
+  id: string
+  nombre: string
+  color: string
+  bloques: {
+    id: string
+    nombre: string
+    preguntas: { id: string; numero: string; texto: string }[]
+  }[]
+}
+
 interface Props {
   capacitacion: CapacitacionFull
   empleados: Empleado[]
   preguntas: CapacitacionPregunta[]
+  dpoPuntos: CapacitacionDpoPuntoFull[]
+  dpoHierarchy: DpoHierarchyPilar[]
   canEdit: boolean
 }
 
@@ -84,6 +106,8 @@ export function CapacitacionDetailClient({
   capacitacion: initial,
   empleados,
   preguntas: initialPreguntas,
+  dpoPuntos: initialDpoPuntos,
+  dpoHierarchy,
   canEdit,
 }: Props) {
   const router = useRouter()
@@ -93,6 +117,8 @@ export function CapacitacionDetailClient({
   const [selectedEmpleados, setSelectedEmpleados] = useState<string[]>([])
   const [examPreguntas, setExamPreguntas] = useState(initialPreguntas)
   const [addPreguntaOpen, setAddPreguntaOpen] = useState(false)
+  const [dpoPuntos, setDpoPuntos] = useState(initialDpoPuntos)
+  const [dpoDialogOpen, setDpoDialogOpen] = useState(false)
 
   // Empleados not yet enrolled
   const availableEmpleados = useMemo(() => {
@@ -233,23 +259,42 @@ export function CapacitacionDetailClient({
           )}
         </div>
         {canEdit && (
-          <Select
-            value={cap.estado}
-            onValueChange={(v) => handleEstadoChange(v as EstadoCapacitacion)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(
-                ["programada", "en_curso", "completada", "cancelada"] as const
-              ).map((e) => (
-                <SelectItem key={e} value={e}>
-                  {ESTADO_CAPACITACION_LABELS[e]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className={cap.visible ? "border-green-300 text-green-600" : "border-slate-200 text-slate-400"}
+              onClick={async () => {
+                const result = await toggleCapacitacionVisible(cap.id, !cap.visible)
+                if ("error" in result) {
+                  toast.error(result.error)
+                } else {
+                  setCap((prev) => ({ ...prev, visible: !prev.visible }))
+                  toast.success(cap.visible ? "Oculta para empleados" : "Visible para empleados")
+                }
+              }}
+            >
+              {cap.visible ? <Eye className="mr-2 size-4" /> : <EyeOff className="mr-2 size-4" />}
+              {cap.visible ? "Visible" : "Oculta"}
+            </Button>
+            <Select
+              value={cap.estado}
+              onValueChange={(v) => handleEstadoChange(v as EstadoCapacitacion)}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(
+                  ["programada", "en_curso", "completada", "cancelada"] as const
+                ).map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {ESTADO_CAPACITACION_LABELS[e]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
@@ -335,6 +380,72 @@ export function CapacitacionDetailClient({
         <StatCard label="Aprobados" value={stats.aprobados} color="#10B981" />
         <StatCard label="Desaprobados" value={stats.desaprobados} color="#EF4444" />
       </div>
+
+      {/* Puntos DPO vinculados */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <BookOpen className="size-5 text-purple-500" />
+            Puntos DPO vinculados ({dpoPuntos.length})
+          </CardTitle>
+          {canEdit && (
+            <Button size="sm" variant="outline" onClick={() => setDpoDialogOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              Vincular puntos
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {dpoPuntos.length === 0 ? (
+            <p className="text-center text-sm text-slate-400 py-6">
+              No hay puntos DPO vinculados. {canEdit ? "Vincula esta capacitacion a puntos del checklist DPO." : ""}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {dpoPuntos.map((punto) => (
+                <Link
+                  key={punto.id}
+                  href={`/pilares/${punto.pilar_id}/pregunta/${punto.pregunta_id}`}
+                  className="group"
+                >
+                  <Badge
+                    variant="secondary"
+                    className="cursor-pointer transition-colors hover:opacity-80"
+                    style={{
+                      backgroundColor: punto.pilar_color + "15",
+                      color: punto.pilar_color,
+                      borderColor: punto.pilar_color + "30",
+                    }}
+                  >
+                    <span
+                      className="mr-1.5 inline-block size-2 rounded-full"
+                      style={{ backgroundColor: punto.pilar_color }}
+                    />
+                    {punto.pilar_nombre} — {punto.pregunta_numero}
+                    <span className="ml-1 max-w-48 truncate text-xs opacity-70">
+                      {punto.pregunta_texto}
+                    </span>
+                  </Badge>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* DPO selector dialog */}
+      {dpoDialogOpen && (
+        <DpoPuntosSelector
+          hierarchy={dpoHierarchy}
+          selected={dpoPuntos.map((p) => p.pregunta_id)}
+          capacitacionId={cap.id}
+          onClose={() => setDpoDialogOpen(false)}
+          onSaved={(newPuntos) => {
+            setDpoPuntos(newPuntos)
+            setDpoDialogOpen(false)
+          }}
+        />
+      )}
 
       {/* Asistentes section */}
       <Card>
@@ -889,6 +1000,269 @@ function AsistenciaRow({
         </TableCell>
       )}
     </TableRow>
+  )
+}
+
+// DPO Points hierarchical selector dialog
+function DpoPuntosSelector({
+  hierarchy,
+  selected: initialSelected,
+  capacitacionId,
+  onClose,
+  onSaved,
+}: {
+  hierarchy: DpoHierarchyPilar[]
+  selected: string[]
+  capacitacionId: string
+  onClose: () => void
+  onSaved: (puntos: CapacitacionDpoPuntoFull[]) => void
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelected))
+  const [expandedPilares, setExpandedPilares] = useState<Set<string>>(new Set())
+  const [expandedBloques, setExpandedBloques] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const q = search.toLowerCase().trim()
+
+  function togglePregunta(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function togglePilar(pilarId: string) {
+    setExpandedPilares((prev) => {
+      const next = new Set(prev)
+      if (next.has(pilarId)) next.delete(pilarId)
+      else next.add(pilarId)
+      return next
+    })
+  }
+
+  function toggleBloque(bloqueId: string) {
+    setExpandedBloques((prev) => {
+      const next = new Set(prev)
+      if (next.has(bloqueId)) next.delete(bloqueId)
+      else next.add(bloqueId)
+      return next
+    })
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    const result = await saveDpoPuntos(capacitacionId, [...selectedIds])
+    if ("error" in result) {
+      toast.error(result.error)
+      setSaving(false)
+      return
+    }
+
+    // Build the CapacitacionDpoPuntoFull array from hierarchy data
+    const puntosFull: CapacitacionDpoPuntoFull[] = []
+    for (const pilar of hierarchy) {
+      for (const bloque of pilar.bloques) {
+        for (const preg of bloque.preguntas) {
+          if (selectedIds.has(preg.id)) {
+            puntosFull.push({
+              id: "",
+              capacitacion_id: capacitacionId,
+              pregunta_id: preg.id,
+              created_at: new Date().toISOString(),
+              pregunta_numero: preg.numero,
+              pregunta_texto: preg.texto,
+              bloque_nombre: bloque.nombre,
+              pilar_id: pilar.id,
+              pilar_nombre: pilar.nombre,
+              pilar_color: pilar.color,
+            })
+          }
+        }
+      }
+    }
+
+    toast.success(`${selectedIds.size} punto(s) DPO vinculados`)
+    onSaved(puntosFull)
+  }
+
+  // Filter hierarchy based on search
+  const filteredHierarchy = useMemo(() => {
+    if (!q) return hierarchy
+    return hierarchy
+      .map((pilar) => ({
+        ...pilar,
+        bloques: pilar.bloques
+          .map((bloque) => ({
+            ...bloque,
+            preguntas: bloque.preguntas.filter(
+              (p) =>
+                p.numero.toLowerCase().includes(q) ||
+                p.texto.toLowerCase().includes(q) ||
+                bloque.nombre.toLowerCase().includes(q) ||
+                pilar.nombre.toLowerCase().includes(q)
+            ),
+          }))
+          .filter((b) => b.preguntas.length > 0),
+      }))
+      .filter((p) => p.bloques.length > 0)
+  }, [hierarchy, q])
+
+  // Auto-expand when searching
+  const isSearching = q.length > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="mx-4 flex w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" style={{ maxHeight: "85vh" }}>
+        {/* Header */}
+        <div className="border-b p-4">
+          <h3 className="text-lg font-semibold">Vincular Puntos DPO</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Selecciona los puntos del checklist DPO que cubre esta capacitacion
+          </p>
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              className="pl-10"
+              placeholder="Buscar por numero o texto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {selectedIds.size > 0 && (
+            <p className="mt-2 text-sm font-medium text-purple-600">
+              {selectedIds.size} punto(s) seleccionados
+            </p>
+          )}
+        </div>
+
+        {/* Hierarchy tree */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {filteredHierarchy.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">
+              No se encontraron puntos
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {filteredHierarchy.map((pilar) => {
+                const pilarExpanded = isSearching || expandedPilares.has(pilar.id)
+                const pilarSelectedCount = pilar.bloques.reduce(
+                  (acc, b) => acc + b.preguntas.filter((p) => selectedIds.has(p.id)).length,
+                  0
+                )
+
+                return (
+                  <div key={pilar.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-50"
+                      onClick={() => togglePilar(pilar.id)}
+                    >
+                      {pilarExpanded ? (
+                        <ChevronDown className="size-4 text-slate-400" />
+                      ) : (
+                        <ChevronRight className="size-4 text-slate-400" />
+                      )}
+                      <span
+                        className="size-3 rounded-full"
+                        style={{ backgroundColor: pilar.color }}
+                      />
+                      <span className="text-sm font-semibold" style={{ color: pilar.color }}>
+                        {pilar.nombre}
+                      </span>
+                      {pilarSelectedCount > 0 && (
+                        <span className="ml-auto rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                          {pilarSelectedCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {pilarExpanded && (
+                      <div className="ml-4 space-y-0.5">
+                        {pilar.bloques.map((bloque) => {
+                          const bloqueExpanded = isSearching || expandedBloques.has(bloque.id)
+                          const bloqueSelectedCount = bloque.preguntas.filter((p) =>
+                            selectedIds.has(p.id)
+                          ).length
+
+                          return (
+                            <div key={bloque.id}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-slate-50"
+                                onClick={() => toggleBloque(bloque.id)}
+                              >
+                                {bloqueExpanded ? (
+                                  <ChevronDown className="size-3.5 text-slate-300" />
+                                ) : (
+                                  <ChevronRight className="size-3.5 text-slate-300" />
+                                )}
+                                <span className="text-xs font-medium text-slate-600">
+                                  {bloque.nombre}
+                                </span>
+                                {bloqueSelectedCount > 0 && (
+                                  <span className="ml-auto text-xs text-purple-500">
+                                    {bloqueSelectedCount}
+                                  </span>
+                                )}
+                              </button>
+
+                              {bloqueExpanded && (
+                                <div className="ml-5 space-y-0.5">
+                                  {bloque.preguntas.map((preg) => {
+                                    const isSelected = selectedIds.has(preg.id)
+                                    return (
+                                      <label
+                                        key={preg.id}
+                                        className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition-colors ${
+                                          isSelected
+                                            ? "bg-purple-50"
+                                            : "hover:bg-slate-50"
+                                        }`}
+                                      >
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={() => togglePregunta(preg.id)}
+                                          className="mt-0.5"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <span className="text-xs font-mono font-semibold text-slate-500">
+                                            {preg.numero}
+                                          </span>
+                                          <p className="text-xs text-slate-700 leading-relaxed line-clamp-2">
+                                            {preg.texto}
+                                          </p>
+                                        </div>
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t p-4">
+          <Button variant="outline" className="flex-1" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button className="flex-1" onClick={handleSave} disabled={saving}>
+            {saving ? "Guardando..." : `Guardar (${selectedIds.size} puntos)`}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

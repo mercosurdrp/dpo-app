@@ -27,6 +27,11 @@ import {
   AlertCircle,
   Eye,
   FolderOpen,
+  GraduationCap,
+  Calendar,
+  User,
+  Users,
+  CheckCircle,
 } from "lucide-react"
 
 function pilarSlug(nombre: string): string {
@@ -67,6 +72,8 @@ import {
   PRIORIDAD_LABELS,
   TENDENCIA_LABELS,
   TIPO_EVIDENCIA_LABELS,
+  ESTADO_CAPACITACION_COLORS,
+  ESTADO_CAPACITACION_LABELS,
 } from "@/lib/constants"
 import {
   createIndicador,
@@ -88,6 +95,7 @@ import type {
   TipoEvidencia,
   EstadoPlan,
   PrioridadPlan,
+  CapacitacionParaPregunta,
 } from "@/types/database"
 
 const SCORE_COLORS: Record<number, string> = {
@@ -990,14 +998,108 @@ function EvidenciasTab({
   )
 }
 
+// ==================== CAPACITACIONES TAB ====================
+
+function CapacitacionesTab({
+  capacitaciones,
+}: {
+  capacitaciones: CapacitacionParaPregunta[]
+}) {
+  if (capacitaciones.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+        <GraduationCap className="mb-2 h-8 w-8 opacity-40" />
+        <p className="text-sm">Sin capacitaciones vinculadas</p>
+        <p className="text-xs">
+          Vincula capacitaciones desde la seccion Capacitaciones
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3 pt-4">
+      <p className="text-sm text-muted-foreground">
+        {capacitaciones.length} capacitacion{capacitaciones.length !== 1 ? "es" : ""} vinculada{capacitaciones.length !== 1 ? "s" : ""}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {capacitaciones.map((cap) => {
+          const pctAprobados = cap.total_asistentes > 0
+            ? Math.round((cap.aprobados / cap.total_asistentes) * 100)
+            : 0
+
+          return (
+            <Link key={cap.id} href={`/capacitaciones/${cap.id}`}>
+              <Card size="sm" className="group cursor-pointer transition-shadow hover:shadow-md">
+                <CardContent className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-slate-800 group-hover:text-blue-600">
+                      {cap.titulo}
+                    </p>
+                    <Badge
+                      variant="secondary"
+                      className="shrink-0 text-[10px]"
+                      style={{
+                        backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estado] + "20",
+                        color: ESTADO_CAPACITACION_COLORS[cap.estado],
+                      }}
+                    >
+                      {ESTADO_CAPACITACION_LABELS[cap.estado]}
+                    </Badge>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {cap.instructor}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                    </span>
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="flex items-center gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs">
+                    <span className="flex items-center gap-1 text-slate-600">
+                      <Users className="h-3 w-3" />
+                      {cap.total_asistentes} inscriptos
+                    </span>
+                    <span className="flex items-center gap-1 text-slate-600">
+                      {cap.presentes} presentes
+                    </span>
+                    <span className="flex items-center gap-1 font-medium" style={{
+                      color: cap.estado === "completada" && cap.total_asistentes > 0
+                        ? pctAprobados >= 80 ? "#22C55E" : pctAprobados >= 50 ? "#F59E0B" : "#EF4444"
+                        : "#64748B"
+                    }}>
+                      <CheckCircle className="h-3 w-3" />
+                      {cap.aprobados} aprobados
+                      {cap.total_asistentes > 0 && (
+                        <span className="text-[10px] opacity-70">({pctAprobados}%)</span>
+                      )}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ==================== MAIN COMPONENT ====================
 
 export function PreguntaGestionClient({
   pilar,
   pregunta,
+  capacitaciones = [],
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
+  capacitaciones?: CapacitacionParaPregunta[]
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
@@ -1185,6 +1287,14 @@ export function PreguntaGestionClient({
               ({pregunta.evidencias.length})
             </span>
           </TabsTrigger>
+          <TabsTrigger value="capacitaciones">
+            <GraduationCap className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Capacitaciones</span>
+            <span className="sm:hidden">Cap.</span>
+            <span className="ml-1 text-[10px] text-muted-foreground">
+              ({capacitaciones.length})
+            </span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="indicadores">
@@ -1205,6 +1315,9 @@ export function PreguntaGestionClient({
             evidencias={pregunta.evidencias}
             planes={pregunta.planes_accion}
           />
+        </TabsContent>
+        <TabsContent value="capacitaciones">
+          <CapacitacionesTab capacitaciones={capacitaciones} />
         </TabsContent>
       </Tabs>
     </div>

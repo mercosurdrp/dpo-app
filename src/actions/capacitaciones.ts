@@ -7,6 +7,8 @@ import type {
   CapacitacionFull,
   CapacitacionPregunta,
   CapacitacionRespuesta,
+  CapacitacionDpoPuntoFull,
+  CapacitacionParaPregunta,
   Empleado,
   Asistencia,
   AsistenciaConEmpleado,
@@ -380,6 +382,29 @@ export async function deleteCapacitacionPregunta(
 // EMPLOYEE exam taking
 // ═══════════════════════════════════════════
 
+// ─── Toggle visible ───
+export async function toggleCapacitacionVisible(
+  id: string,
+  visible: boolean
+): Promise<{ data: Capacitacion } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const supabase = await createClient()
+
+    const { data: cap, error } = await supabase
+      .from("capacitaciones")
+      .update({ visible })
+      .eq("id", id)
+      .select()
+      .single()
+
+    if (error) return { error: error.message }
+    return { data: cap as Capacitacion }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error toggling visible" }
+  }
+}
+
 // ─── Get capacitaciones for current empleado ───
 export async function getMisCapacitaciones(): Promise<
   { data: (Capacitacion & { asistencia: Asistencia | null })[] } | { error: string }
@@ -406,13 +431,16 @@ export async function getMisCapacitaciones(): Promise<
 
     if (error) return { error: error.message }
 
-    const result = (asistencias ?? []).map((a: Record<string, unknown>) => {
-      const { capacitacion, ...asistencia } = a
-      return {
-        ...(capacitacion as Capacitacion),
-        asistencia: asistencia as unknown as Asistencia,
-      }
-    })
+    // Only show visible capacitaciones to employees
+    const result = (asistencias ?? [])
+      .map((a: Record<string, unknown>) => {
+        const { capacitacion, ...asistencia } = a
+        return {
+          ...(capacitacion as Capacitacion),
+          asistencia: asistencia as unknown as Asistencia,
+        }
+      })
+      .filter((c) => c.visible)
 
     return { data: result }
   } catch (err) {
@@ -511,6 +539,253 @@ export async function submitExamen(
     return { data: { nota, correctas, total: preguntas.length } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error submitting examen" }
+  }
+}
+
+// ═══════════════════════════════════════════
+// DPO PUNTOS LINKING
+// ═══════════════════════════════════════════
+
+// ─── Get DPO puntos linked to a capacitacion ───
+export async function getDpoPuntosForCapacitacion(
+  capacitacionId: string
+): Promise<{ data: CapacitacionDpoPuntoFull[] } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    const { data: links, error } = await supabase
+      .from("capacitacion_dpo_puntos")
+      .select("*")
+      .eq("capacitacion_id", capacitacionId)
+
+    if (error) return { error: error.message }
+    if (!links || links.length === 0) return { data: [] }
+
+    // Get pregunta details with bloque and pilar info
+    const preguntaIds = links.map((l: { pregunta_id: string }) => l.pregunta_id)
+
+    const { data: preguntas, error: pregErr } = await supabase
+      .from("preguntas")
+      .select("id, numero, texto, bloque_id")
+      .in("id", preguntaIds)
+
+    if (pregErr) return { error: pregErr.message }
+
+    const bloqueIds = [...new Set((preguntas ?? []).map((p: { bloque_id: string }) => p.bloque_id))]
+
+    const { data: bloques } = await supabase
+      .from("bloques")
+      .select("id, nombre, pilar_id")
+      .in("id", bloqueIds)
+
+    const pilarIds = [...new Set((bloques ?? []).map((b: { pilar_id: string }) => b.pilar_id))]
+
+    const { data: pilares } = await supabase
+      .from("pilares")
+      .select("id, nombre, color")
+      .in("id", pilarIds)
+
+    // Build maps
+    const pilarMap = new Map((pilares ?? []).map((p: { id: string; nombre: string; color: string }) => [p.id, p]))
+    const bloqueMap = new Map(
+      (bloques ?? []).map((b: { id: string; nombre: string; pilar_id: string }) => [b.id, b])
+    )
+    const preguntaMap = new Map(
+      (preguntas ?? []).map((p: { id: string; numero: string; texto: string; bloque_id: string }) => [p.id, p])
+    )
+
+    const result: CapacitacionDpoPuntoFull[] = links.map(
+      (link: { id: string; capacitacion_id: string; pregunta_id: string; created_at: string }) => {
+        const preg = preguntaMap.get(link.pregunta_id)
+        const bloque = preg ? bloqueMap.get(preg.bloque_id) : null
+        const pilar = bloque ? pilarMap.get(bloque.pilar_id) : null
+
+        return {
+          id: link.id,
+          capacitacion_id: link.capacitacion_id,
+          pregunta_id: link.pregunta_id,
+          created_at: link.created_at,
+          pregunta_numero: preg?.numero ?? "",
+          pregunta_texto: preg?.texto ?? "",
+          bloque_nombre: bloque?.nombre ?? "",
+          pilar_id: pilar?.id ?? "",
+          pilar_nombre: pilar?.nombre ?? "",
+          pilar_color: pilar?.color ?? "#94A3B8",
+        }
+      }
+    )
+
+    return { data: result }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error loading DPO puntos" }
+  }
+}
+
+// ─── Save DPO puntos for a capacitacion (replace all) ───
+export async function saveDpoPuntos(
+  capacitacionId: string,
+  preguntaIds: string[]
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const supabase = await createClient()
+
+    // Delete existing
+    const { error: delError } = await supabase
+      .from("capacitacion_dpo_puntos")
+      .delete()
+      .eq("capacitacion_id", capacitacionId)
+
+    if (delError) return { error: delError.message }
+
+    // Insert new
+    if (preguntaIds.length > 0) {
+      const rows = preguntaIds.map((preguntaId) => ({
+        capacitacion_id: capacitacionId,
+        pregunta_id: preguntaId,
+      }))
+
+      const { error: insError } = await supabase
+        .from("capacitacion_dpo_puntos")
+        .insert(rows)
+
+      if (insError) return { error: insError.message }
+    }
+
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error saving DPO puntos" }
+  }
+}
+
+// ─── Get all pilares → bloques → preguntas hierarchy (for selector) ───
+export async function getDpoHierarchy(): Promise<
+  {
+    data: {
+      id: string
+      nombre: string
+      color: string
+      bloques: {
+        id: string
+        nombre: string
+        preguntas: { id: string; numero: string; texto: string }[]
+      }[]
+    }[]
+  } | { error: string }
+> {
+  try {
+    const supabase = await createClient()
+
+    const [pilaresRes, bloquesRes, preguntasRes] = await Promise.all([
+      supabase.from("pilares").select("id, nombre, color").order("orden"),
+      supabase.from("bloques").select("id, nombre, pilar_id").order("orden"),
+      supabase.from("preguntas").select("id, numero, texto, bloque_id").order("numero"),
+    ])
+
+    if (pilaresRes.error) return { error: pilaresRes.error.message }
+    if (bloquesRes.error) return { error: bloquesRes.error.message }
+    if (preguntasRes.error) return { error: preguntasRes.error.message }
+
+    // Group preguntas by bloque
+    const pregsByBloque = new Map<string, { id: string; numero: string; texto: string }[]>()
+    for (const p of preguntasRes.data ?? []) {
+      const list = pregsByBloque.get(p.bloque_id) ?? []
+      list.push({ id: p.id, numero: p.numero, texto: p.texto })
+      pregsByBloque.set(p.bloque_id, list)
+    }
+
+    // Group bloques by pilar
+    const bloquesByPilar = new Map<
+      string,
+      { id: string; nombre: string; preguntas: { id: string; numero: string; texto: string }[] }[]
+    >()
+    for (const b of bloquesRes.data ?? []) {
+      const list = bloquesByPilar.get(b.pilar_id) ?? []
+      list.push({
+        id: b.id,
+        nombre: b.nombre,
+        preguntas: pregsByBloque.get(b.id) ?? [],
+      })
+      bloquesByPilar.set(b.pilar_id, list)
+    }
+
+    const hierarchy = (pilaresRes.data ?? []).map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      color: p.color,
+      bloques: bloquesByPilar.get(p.id) ?? [],
+    }))
+
+    return { data: hierarchy }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error loading DPO hierarchy" }
+  }
+}
+
+// ─── Get capacitaciones linked to a pregunta (for pregunta detail view) ───
+export async function getCapacitacionesForPregunta(
+  preguntaId: string
+): Promise<{ data: CapacitacionParaPregunta[] } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Get capacitacion IDs linked to this pregunta
+    const { data: links, error: linkErr } = await supabase
+      .from("capacitacion_dpo_puntos")
+      .select("capacitacion_id")
+      .eq("pregunta_id", preguntaId)
+
+    if (linkErr) return { error: linkErr.message }
+    if (!links || links.length === 0) return { data: [] }
+
+    const capIds = links.map((l: { capacitacion_id: string }) => l.capacitacion_id)
+
+    // Get capacitaciones
+    const { data: caps, error: capErr } = await supabase
+      .from("capacitaciones")
+      .select("id, titulo, instructor, fecha, estado, duracion_horas")
+      .in("id", capIds)
+      .order("fecha", { ascending: false })
+
+    if (capErr) return { error: capErr.message }
+
+    // Get asistencia stats for each
+    const { data: asistencias } = await supabase
+      .from("asistencias")
+      .select("capacitacion_id, presente, resultado")
+      .in("capacitacion_id", capIds)
+
+    // Aggregate stats
+    const statsMap = new Map<string, { total: number; presentes: number; aprobados: number }>()
+    for (const a of asistencias ?? []) {
+      const key = a.capacitacion_id as string
+      const s = statsMap.get(key) ?? { total: 0, presentes: 0, aprobados: 0 }
+      s.total++
+      if (a.presente) s.presentes++
+      if (a.resultado === "aprobado") s.aprobados++
+      statsMap.set(key, s)
+    }
+
+    const result: CapacitacionParaPregunta[] = (caps ?? []).map(
+      (c: { id: string; titulo: string; instructor: string; fecha: string; estado: EstadoCapacitacion; duracion_horas: number }) => {
+        const s = statsMap.get(c.id) ?? { total: 0, presentes: 0, aprobados: 0 }
+        return {
+          id: c.id,
+          titulo: c.titulo,
+          instructor: c.instructor,
+          fecha: c.fecha,
+          estado: c.estado,
+          duracion_horas: c.duracion_horas,
+          total_asistentes: s.total,
+          presentes: s.presentes,
+          aprobados: s.aprobados,
+        }
+      }
+    )
+
+    return { data: result }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error loading capacitaciones for pregunta" }
   }
 }
 
