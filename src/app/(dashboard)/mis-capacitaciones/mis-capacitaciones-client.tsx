@@ -21,6 +21,8 @@ import {
   Truck,
   Ban,
   Gauge,
+  ClipboardCheck,
+  Fuel,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -315,6 +317,67 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
           </CardContent>
         </Card>
       )}
+
+      {/* Acciones Vehículo */}
+      {entrega?.vinculado && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Link href="/vehiculos/checklist">
+            <Card className="group cursor-pointer border-blue-200 bg-blue-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-blue-100 p-3 group-hover:bg-blue-200 transition-colors">
+                  <ClipboardCheck className="size-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Checklist Liberación</p>
+                  <p className="text-sm text-blue-600">Salida a ruta</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/vehiculos/checklist">
+            <Card className="group cursor-pointer border-green-200 bg-green-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-green-100 p-3 group-hover:bg-green-200 transition-colors">
+                  <ClipboardCheck className="size-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Checklist Retorno</p>
+                  <p className="text-sm text-green-600">Vuelta de ruta</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/vehiculos/combustible">
+            <Card className="group cursor-pointer border-amber-200 bg-amber-50 transition-shadow hover:shadow-md">
+              <CardContent className="flex items-center gap-4 py-5">
+                <div className="rounded-xl bg-amber-100 p-3 group-hover:bg-amber-200 transition-colors">
+                  <Fuel className="size-6 text-amber-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Carga Combustible</p>
+                  <p className="text-sm text-amber-600">Registrar carga</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
+
+      {/* Reporte de Seguridad — visible siempre */}
+      <Link href="/reportes-seguridad">
+        <Card className="group cursor-pointer border-red-200 bg-red-50 transition-shadow hover:shadow-md">
+          <CardContent className="flex items-center gap-4 py-5">
+            <div className="rounded-xl bg-red-100 p-3 group-hover:bg-red-200 transition-colors">
+              <AlertTriangle className="size-6 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-slate-900">Reportar incidente / acto inseguro</p>
+              <p className="text-sm text-red-600">Accidente, acto inseguro, ruta de riesgo o reconocimiento</p>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+
 
       {/* Resumen Entregas del Mes */}
       {entrega?.vinculado && entrega.resumen_mes.dias_con_entrega > 0 && (
