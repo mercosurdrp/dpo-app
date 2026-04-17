@@ -1037,3 +1037,96 @@ export interface FoxtrotKpis {
     pct_tracking: number
   }>
 }
+
+// ===== Sugerencias y Mejoras =====
+export type SugerenciaTipo = "bug" | "dato_incorrecto" | "mejora_ux" | "feature_request"
+export type SugerenciaEstado =
+  | "nuevo"
+  | "en_analisis"
+  | "en_desarrollo"
+  | "en_testeo"
+  | "ok"
+  | "rechazado"
+export type SugerenciaPrioridad = "baja" | "media" | "alta"
+
+export interface Sugerencia {
+  id: string
+  titulo: string
+  descripcion: string
+  tipo: SugerenciaTipo
+  estado: SugerenciaEstado
+  prioridad: SugerenciaPrioridad
+  modulo: string | null
+  creado_por: string
+  asignado_a: string | null
+  motivo_rechazo: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SugerenciaComentario {
+  id: string
+  sugerencia_id: string
+  autor_id: string
+  texto: string
+  created_at: string
+}
+
+// Listado enriquecido con nombre del autor
+export interface SugerenciaConAutor extends Sugerencia {
+  autor_nombre: string
+  asignado_nombre: string | null
+}
+
+export interface SugerenciaComentarioConAutor extends SugerenciaComentario {
+  autor_nombre: string
+}
+
+export interface SugerenciaDetalle extends SugerenciaConAutor {
+  comentarios: SugerenciaComentarioConAutor[]
+}
+
+// Labels en español
+export const SUGERENCIA_ESTADO_LABELS: Record<SugerenciaEstado, string> = {
+  nuevo: "Nuevo",
+  en_analisis: "En análisis",
+  en_desarrollo: "En desarrollo",
+  en_testeo: "En testeo",
+  ok: "OK",
+  rechazado: "Rechazado",
+}
+
+export const SUGERENCIA_ESTADO_COLORS: Record<SugerenciaEstado, string> = {
+  nuevo: "#64748B",
+  en_analisis: "#3B82F6",
+  en_desarrollo: "#8B5CF6",
+  en_testeo: "#F59E0B",
+  ok: "#10B981",
+  rechazado: "#EF4444",
+}
+
+export const SUGERENCIA_TIPO_LABELS: Record<SugerenciaTipo, string> = {
+  bug: "Bug",
+  dato_incorrecto: "Dato incorrecto",
+  mejora_ux: "Mejora UX",
+  feature_request: "Feature request",
+}
+
+export const SUGERENCIA_TIPO_COLORS: Record<SugerenciaTipo, string> = {
+  bug: "#EF4444",
+  dato_incorrecto: "#F97316",
+  mejora_ux: "#3B82F6",
+  feature_request: "#8B5CF6",
+}
+
+export const SUGERENCIA_PRIORIDAD_LABELS: Record<SugerenciaPrioridad, string> = {
+  baja: "Baja",
+  media: "Media",
+  alta: "Alta",
+}
+
+export const SUGERENCIA_PRIORIDAD_COLORS: Record<SugerenciaPrioridad, string> = {
+  baja: "#3B82F6",
+  media: "#F59E0B",
+  alta: "#EF4444",
+}

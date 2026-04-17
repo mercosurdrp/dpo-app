@@ -12,8 +12,10 @@ import {
   BarChart3,
   Fingerprint,
   GraduationCap,
+  Truck,
   Users,
   Settings,
+  Lightbulb,
   Menu,
   X,
   LogOut,
@@ -62,9 +64,19 @@ const navItems: NavItem[] = [
     icon: <Fingerprint className="size-5" />,
   },
   {
+    label: "Vehículos",
+    href: "/vehiculos",
+    icon: <Truck className="size-5" />,
+  },
+  {
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Sugerencias",
+    href: "/sugerencias",
+    icon: <Lightbulb className="size-5" />,
   },
 ]
 
