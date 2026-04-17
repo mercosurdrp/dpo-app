@@ -472,7 +472,7 @@ export async function getMyEmpleado(): Promise<
 export async function submitExamen(
   capacitacionId: string,
   respuestas: { pregunta_id: string; respuesta_elegida: number }[]
-): Promise<{ data: { nota: number; correctas: number; total: number } } | { error: string }> {
+): Promise<{ data: { nota: number; correctas: number; total: number; intento_n: number } } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
@@ -485,6 +485,18 @@ export async function submitExamen(
       .single()
 
     if (!empleado) return { error: "No se encontro tu registro de empleado" }
+
+    // Bloquear retake si ya aprobó
+    const { data: asistenciaActual } = await supabase
+      .from("asistencias")
+      .select("resultado")
+      .eq("capacitacion_id", capacitacionId)
+      .eq("empleado_id", empleado.id)
+      .maybeSingle()
+
+    if (asistenciaActual?.resultado === "aprobado") {
+      return { error: "Ya aprobaste este examen, no se puede volver a rendir" }
+    }
 
     // Get correct answers
     const { data: preguntas, error: pregError } = await supabase
@@ -513,7 +525,7 @@ export async function submitExamen(
       }
     })
 
-    // Upsert responses
+    // Upsert responses (sobreescribe respuestas previas)
     const { error: respError } = await supabase
       .from("capacitacion_respuestas")
       .upsert(rows, {
@@ -526,6 +538,32 @@ export async function submitExamen(
     const nota = Math.round((correctas / preguntas.length) * 100)
     const resultado = nota >= 80 ? "aprobado" : "desaprobado"
 
+    // Calcular el número del nuevo intento
+    const { data: ultimoIntento } = await supabase
+      .from("examen_intentos")
+      .select("intento_n")
+      .eq("capacitacion_id", capacitacionId)
+      .eq("empleado_id", empleado.id)
+      .order("intento_n", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const intento_n = (ultimoIntento?.intento_n ?? 0) + 1
+
+    // Insertar el intento en el historial
+    const { error: intentoError } = await supabase
+      .from("examen_intentos")
+      .insert({
+        capacitacion_id: capacitacionId,
+        empleado_id: empleado.id,
+        intento_n,
+        nota,
+        correctas,
+        total: preguntas.length,
+      })
+
+    if (intentoError) return { error: intentoError.message }
+
     // Update asistencia: mark present + set nota + resultado
     const { error: asistError } = await supabase
       .from("asistencias")
@@ -535,9 +573,61 @@ export async function submitExamen(
 
     if (asistError) return { error: asistError.message }
 
-    return { data: { nota, correctas, total: preguntas.length } }
+    return { data: { nota, correctas, total: preguntas.length, intento_n } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error submitting examen" }
+  }
+}
+
+// ─── Listar intentos de un empleado en una capacitación ───
+export async function getMisIntentos(
+  capacitacionId: string
+): Promise<{ data: { intento_n: number; nota: number; correctas: number | null; total: number | null; created_at: string }[] } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: empleado } = await supabase
+      .from("empleados")
+      .select("id")
+      .eq("profile_id", profile.id)
+      .single()
+
+    if (!empleado) return { data: [] }
+
+    const { data, error } = await supabase
+      .from("examen_intentos")
+      .select("intento_n, nota, correctas, total, created_at")
+      .eq("capacitacion_id", capacitacionId)
+      .eq("empleado_id", empleado.id)
+      .order("intento_n", { ascending: true })
+
+    if (error) return { error: error.message }
+    return { data: data ?? [] }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error obteniendo intentos" }
+  }
+}
+
+// ─── Listar intentos de TODOS los empleados de una capacitación (admin) ───
+export async function getIntentosCapacitacion(
+  capacitacionId: string
+): Promise<{ data: { empleado_id: string; intento_n: number; nota: number; correctas: number | null; total: number | null; created_at: string }[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("examen_intentos")
+      .select("empleado_id, intento_n, nota, correctas, total, created_at")
+      .eq("capacitacion_id", capacitacionId)
+      .order("empleado_id", { ascending: true })
+      .order("intento_n", { ascending: true })
+
+    if (error) return { error: error.message }
+    return { data: data ?? [] }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error obteniendo intentos" }
   }
 }
 

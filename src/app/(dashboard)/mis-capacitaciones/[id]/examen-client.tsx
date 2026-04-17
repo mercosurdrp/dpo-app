@@ -10,6 +10,7 @@ import {
   Send,
   Trophy,
   AlertTriangle,
+  RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -22,11 +23,20 @@ import type {
   AsistenciaConEmpleado,
 } from "@/types/database"
 
+interface IntentoHistorial {
+  intento_n: number
+  nota: number
+  correctas: number | null
+  total: number | null
+  created_at: string
+}
+
 interface Props {
   capacitacion: CapacitacionFull
   preguntas: CapacitacionPregunta[]
   misRespuestas: CapacitacionRespuesta[]
   asistencia: AsistenciaConEmpleado | null
+  intentos: IntentoHistorial[]
 }
 
 export function ExamenClient({
@@ -34,6 +44,7 @@ export function ExamenClient({
   preguntas,
   misRespuestas,
   asistencia,
+  intentos,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -42,10 +53,19 @@ export function ExamenClient({
     nota: number
     correctas: number
     total: number
+    intento_n: number
   } | null>(null)
+  const [retrying, setRetrying] = useState(false)
 
-  const yaCompletado = misRespuestas.length > 0
+  const yaCompletado = misRespuestas.length > 0 && !retrying
   const nota = asistencia?.nota
+  const ultimoIntentoN = resultado?.intento_n ?? intentos[intentos.length - 1]?.intento_n ?? 1
+
+  function handleRetry() {
+    setAnswers({})
+    setResultado(null)
+    setRetrying(true)
+  }
 
   // Parse opciones (might be string or array)
   function parseOpciones(opciones: string[] | string): string[] {
@@ -58,7 +78,7 @@ export function ExamenClient({
   }
 
   function handleSelect(preguntaId: string, index: number) {
-    if (yaCompletado || resultado) return
+    if ((yaCompletado || resultado) && !retrying) return
     setAnswers((prev) => ({ ...prev, [preguntaId]: index }))
   }
 
@@ -134,12 +154,55 @@ export function ExamenClient({
             {finalNota}%
           </p>
           <p className="text-sm text-slate-500">
-            {isAprobado ? "Aprobado" : "Desaprobado"} -{" "}
-            {resultado
-              ? `${resultado.correctas}/${resultado.total} correctas`
-              : ""}
+            {isAprobado ? "Aprobado" : "Desaprobado"} - Intento #{ultimoIntentoN}
+            {resultado && ` - ${resultado.correctas}/${resultado.total} correctas`}
           </p>
+
+          {!isAprobado && (
+            <div className="mt-6">
+              <Button
+                onClick={handleRetry}
+                size="lg"
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <RotateCcw className="mr-2 size-4" />
+                Rendir nuevamente
+              </Button>
+              <p className="mt-2 text-xs text-slate-500">
+                Necesitás 80% o más para aprobar
+              </p>
+            </div>
+          )}
         </div>
+
+        {intentos.length > 1 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Historial de intentos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {intentos.map((it) => (
+                  <div
+                    key={it.intento_n}
+                    className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium">Intento #{it.intento_n}</span>
+                    <span className="text-slate-500">
+                      {new Date(it.created_at).toLocaleDateString("es-AR")}
+                    </span>
+                    <span
+                      className="font-bold"
+                      style={{ color: it.nota >= 80 ? "#10B981" : "#EF4444" }}
+                    >
+                      {it.nota}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Show answers review */}
         <div className="space-y-4">

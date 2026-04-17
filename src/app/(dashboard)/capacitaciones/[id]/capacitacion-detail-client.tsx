@@ -93,12 +93,22 @@ interface DpoHierarchyPilar {
   }[]
 }
 
+interface IntentoExamen {
+  empleado_id: string
+  intento_n: number
+  nota: number
+  correctas: number | null
+  total: number | null
+  created_at: string
+}
+
 interface Props {
   capacitacion: CapacitacionFull
   empleados: Empleado[]
   preguntas: CapacitacionPregunta[]
   dpoPuntos: CapacitacionDpoPuntoFull[]
   dpoHierarchy: DpoHierarchyPilar[]
+  intentos: IntentoExamen[]
   canEdit: boolean
 }
 
@@ -108,6 +118,7 @@ export function CapacitacionDetailClient({
   preguntas: initialPreguntas,
   dpoPuntos: initialDpoPuntos,
   dpoHierarchy,
+  intentos,
   canEdit,
 }: Props) {
   const router = useRouter()
@@ -515,6 +526,7 @@ export function CapacitacionDetailClient({
                     <TableHead>Nombre</TableHead>
                     <TableHead className="text-center">Presente</TableHead>
                     <TableHead className="text-center">Nota</TableHead>
+                    <TableHead className="text-center">Intentos</TableHead>
                     <TableHead className="text-center">Resultado</TableHead>
                     {canEdit && <TableHead className="w-10" />}
                   </TableRow>
@@ -528,6 +540,7 @@ export function CapacitacionDetailClient({
                       <AsistenciaRow
                         key={asistencia.id}
                         asistencia={asistencia}
+                        intentos={intentos.filter((i) => i.empleado_id === asistencia.empleado_id)}
                         canEdit={canEdit}
                         isPending={isPending}
                         onTogglePresencia={() =>
@@ -877,17 +890,22 @@ function GenerarExamenButton({
 
 function AsistenciaRow({
   asistencia,
+  intentos,
   canEdit,
   isPending,
   onTogglePresencia,
   onRemove,
 }: {
   asistencia: AsistenciaConEmpleado
+  intentos: IntentoExamen[]
   canEdit: boolean
   isPending: boolean
   onTogglePresencia: () => void
   onRemove: () => void
 }) {
+  const intentosTooltip = intentos
+    .map((i) => `Intento #${i.intento_n}: ${i.nota}%`)
+    .join("\n")
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">
@@ -913,6 +931,19 @@ function AsistenciaRow({
         <span className="text-sm">
           {asistencia.nota !== null ? asistencia.nota : "-"}
         </span>
+      </TableCell>
+      <TableCell className="text-center">
+        {intentos.length > 0 ? (
+          <Badge
+            variant="secondary"
+            title={intentosTooltip}
+            className={intentos.length > 1 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}
+          >
+            {intentos.length}
+          </Badge>
+        ) : (
+          <span className="text-xs text-slate-400">-</span>
+        )}
       </TableCell>
       <TableCell className="text-center">
         <Badge

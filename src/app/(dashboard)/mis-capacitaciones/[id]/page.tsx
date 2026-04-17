@@ -3,6 +3,7 @@ import {
   getMisRespuestas,
   getCapacitacion,
   getMyEmpleado,
+  getMisIntentos,
 } from "@/actions/capacitaciones"
 import { ExamenClient } from "./examen-client"
 
@@ -13,11 +14,12 @@ export default async function ExamenPage({
 }) {
   const { id } = await params
 
-  const [capResult, pregResult, respResult, empResult] = await Promise.all([
+  const [capResult, pregResult, respResult, empResult, intentosResult] = await Promise.all([
     getCapacitacion(id),
     getCapacitacionPreguntas(id),
     getMisRespuestas(id),
     getMyEmpleado(),
+    getMisIntentos(id),
   ])
 
   if ("error" in capResult) {
@@ -32,6 +34,7 @@ export default async function ExamenPage({
   const preguntas = "error" in pregResult ? [] : pregResult.data
   const misRespuestas = "error" in respResult ? [] : respResult.data
   const empleado = "error" in empResult ? null : empResult.data
+  const intentos = "error" in intentosResult ? [] : intentosResult.data
 
   // Find my asistencia
   const miAsistencia = empleado
@@ -44,6 +47,7 @@ export default async function ExamenPage({
       preguntas={preguntas}
       misRespuestas={misRespuestas}
       asistencia={miAsistencia ?? null}
+      intentos={intentos}
     />
   )
 }

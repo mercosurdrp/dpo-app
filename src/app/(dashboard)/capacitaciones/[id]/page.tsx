@@ -1,4 +1,4 @@
-import { getCapacitacion, getEmpleados, getCapacitacionPreguntas, getDpoPuntosForCapacitacion, getDpoHierarchy } from "@/actions/capacitaciones"
+import { getCapacitacion, getEmpleados, getCapacitacionPreguntas, getDpoPuntosForCapacitacion, getDpoHierarchy, getIntentosCapacitacion } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
 import { CapacitacionDetailClient } from "./capacitacion-detail-client"
 
@@ -8,12 +8,13 @@ export default async function CapacitacionDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [result, empleadosResult, preguntasResult, dpoPuntosResult, dpoHierarchyResult, profile] = await Promise.all([
+  const [result, empleadosResult, preguntasResult, dpoPuntosResult, dpoHierarchyResult, intentosResult, profile] = await Promise.all([
     getCapacitacion(id),
     getEmpleados(),
     getCapacitacionPreguntas(id),
     getDpoPuntosForCapacitacion(id),
     getDpoHierarchy(),
+    getIntentosCapacitacion(id),
     getProfile(),
   ])
 
@@ -30,6 +31,7 @@ export default async function CapacitacionDetailPage({
   const preguntas = "error" in preguntasResult ? [] : preguntasResult.data
   const dpoPuntos = "error" in dpoPuntosResult ? [] : dpoPuntosResult.data
   const dpoHierarchy = "error" in dpoHierarchyResult ? [] : dpoHierarchyResult.data
+  const intentos = "error" in intentosResult ? [] : intentosResult.data
   const canEdit = profile?.role === "admin" || profile?.role === "auditor"
 
   return (
@@ -39,6 +41,7 @@ export default async function CapacitacionDetailPage({
       preguntas={preguntas}
       dpoPuntos={dpoPuntos}
       dpoHierarchy={dpoHierarchy}
+      intentos={intentos}
       canEdit={canEdit}
     />
   )
