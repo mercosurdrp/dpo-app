@@ -575,35 +575,46 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
               const resultado = cap.asistencia?.resultado ?? "pendiente"
               const nota = cap.asistencia?.nota
               const isAprobado = resultado === "aprobado"
+              const puedeReintentar = resultado === "desaprobado"
+              const borderClass = puedeReintentar
+                ? "border-red-300 bg-red-50 hover:shadow-md transition-shadow"
+                : "border-slate-200 hover:shadow-md transition-shadow"
 
               return (
-                <Card key={cap.id} className="border-slate-200">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="text-base leading-tight">{cap.titulo}</CardTitle>
-                      <Badge variant="secondary" style={{
-                        backgroundColor: RESULTADO_COLORS[resultado] + "20",
-                        color: RESULTADO_COLORS[resultado],
-                      }}>
-                        {RESULTADO_LABELS[resultado]}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm text-slate-500">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="size-3.5" />
-                      <span>{new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}</span>
-                    </div>
-                    {nota !== null && nota !== undefined && (
-                      <div className="flex items-center gap-2">
-                        {isAprobado ? <CheckCircle className="size-4 text-green-500" /> : <XCircle className="size-4 text-red-500" />}
-                        <span className="text-lg font-bold" style={{ color: isAprobado ? "#10B981" : "#EF4444" }}>
-                          {nota}%
-                        </span>
+                <Link key={cap.id} href={`/mis-capacitaciones/${cap.id}`}>
+                  <Card className={`group cursor-pointer ${borderClass}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <CardTitle className="text-base leading-tight group-hover:text-blue-600">{cap.titulo}</CardTitle>
+                        <Badge variant="secondary" style={{
+                          backgroundColor: RESULTADO_COLORS[resultado] + "20",
+                          color: RESULTADO_COLORS[resultado],
+                        }}>
+                          {RESULTADO_LABELS[resultado]}
+                        </Badge>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm text-slate-500">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="size-3.5" />
+                        <span>{new Date(cap.fecha + "T12:00:00").toLocaleDateString("es-AR")}</span>
+                      </div>
+                      {nota !== null && nota !== undefined && (
+                        <div className="flex items-center gap-2">
+                          {isAprobado ? <CheckCircle className="size-4 text-green-500" /> : <XCircle className="size-4 text-red-500" />}
+                          <span className="text-lg font-bold" style={{ color: isAprobado ? "#10B981" : "#EF4444" }}>
+                            {nota}%
+                          </span>
+                        </div>
+                      )}
+                      {puedeReintentar && (
+                        <Button size="sm" className="mt-2 w-full bg-blue-600 hover:bg-blue-700">
+                          Rendir nuevamente
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
               )
             })}
           </div>
