@@ -111,6 +111,12 @@ export function CincoSClient({
     return m
   }, [responsables])
 
+  const empleadosItems = useMemo(() => {
+    const o: Record<string, string> = {}
+    for (const e of empleados) o[e.id] = e.nombre
+    return o
+  }, [empleados])
+
   function handleAsignarNombreSector(sector: number, nombre: string) {
     const actual = respBySector.get(sector)
     if (!actual) {
@@ -371,6 +377,7 @@ export function CincoSClient({
                               v && handleAsignarResponsable(sector, v)
                             }
                             disabled={isPending}
+                            items={empleadosItems}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Seleccionar empleado" />

@@ -50,6 +50,13 @@ export function NuevaAlmacenDialog({
     return responsables.find((r) => r.sector_numero === n)
   }
 
+  const sectorItems: Record<string, string> = {
+    "1": respBySector(1)?.nombre ? `Sector 1 — ${respBySector(1)!.nombre}` : "Sector 1",
+    "2": respBySector(2)?.nombre ? `Sector 2 — ${respBySector(2)!.nombre}` : "Sector 2",
+    "3": respBySector(3)?.nombre ? `Sector 3 — ${respBySector(3)!.nombre}` : "Sector 3",
+    "4": respBySector(4)?.nombre ? `Sector 4 — ${respBySector(4)!.nombre}` : "Sector 4",
+  }
+
   function reset() {
     setForm({ fecha: hoyISO(), sectorNumero: "1" })
   }
@@ -103,6 +110,7 @@ export function NuevaAlmacenDialog({
               onValueChange={(v) =>
                 setForm({ ...form, sectorNumero: v ?? "1" })
               }
+              items={sectorItems}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />

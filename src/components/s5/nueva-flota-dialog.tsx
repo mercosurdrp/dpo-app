@@ -63,6 +63,18 @@ export function NuevaFlotaDialog({
     [empleados]
   )
 
+  const vehiculosItems = useMemo(() => {
+    const o: Record<string, string> = {}
+    for (const v of vehiculos) o[v.id] = v.dominio
+    return o
+  }, [vehiculos])
+
+  const empleadosItems = useMemo(() => {
+    const o: Record<string, string> = {}
+    for (const e of empleados) o[e.id] = e.nombre
+    return o
+  }, [empleados])
+
   function reset() {
     setForm({
       fecha: hoyISO(),
@@ -134,6 +146,7 @@ export function NuevaFlotaDialog({
               onValueChange={(v) =>
                 setForm({ ...form, vehiculoId: v ?? "" })
               }
+              items={vehiculosItems}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Seleccionar vehículo" />
@@ -184,6 +197,7 @@ export function NuevaFlotaDialog({
               onValueChange={(v) =>
                 setForm({ ...form, choferEmpleadoId: v ?? "" })
               }
+              items={empleadosItems}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Seleccionar empleado" />
@@ -209,6 +223,7 @@ export function NuevaFlotaDialog({
                 onValueChange={(v) =>
                   setForm({ ...form, ayudante1EmpleadoId: v ?? "" })
                 }
+                items={empleadosItems}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Empleado" />
@@ -232,6 +247,7 @@ export function NuevaFlotaDialog({
                 onValueChange={(v) =>
                   setForm({ ...form, ayudante2EmpleadoId: v ?? "" })
                 }
+                items={empleadosItems}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Empleado" />
