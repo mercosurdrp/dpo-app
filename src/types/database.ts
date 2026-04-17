@@ -1286,6 +1286,7 @@ export interface S5SectorResponsable {
   periodo: string // DATE (YYYY-MM-01)
   sector_numero: number
   empleado_id: string
+  nombre: string | null
   asignado_por: string | null
   created_at: string
   updated_at: string

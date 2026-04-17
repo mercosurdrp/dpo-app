@@ -90,6 +90,7 @@ export async function getSectorResponsables(
         periodo: row.periodo,
         sector_numero: row.sector_numero,
         empleado_id: row.empleado_id,
+        nombre: row.nombre ?? null,
         asignado_por: row.asignado_por,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -109,7 +110,8 @@ export async function getSectorResponsables(
 export async function upsertSectorResponsable(
   periodo: string,
   sectorNumero: number,
-  empleadoId: string
+  empleadoId: string,
+  nombre?: string | null
 ): Promise<{ data: S5SectorResponsableFull } | { error: string }> {
   try {
     const profile = await requireAuth()
@@ -128,6 +130,7 @@ export async function upsertSectorResponsable(
           periodo,
           sector_numero: sectorNumero,
           empleado_id: empleadoId,
+          nombre: nombre?.trim() || null,
           asignado_por: profile.id,
         },
         { onConflict: "periodo,sector_numero" }
@@ -146,6 +149,7 @@ export async function upsertSectorResponsable(
       periodo: row.periodo,
       sector_numero: row.sector_numero,
       empleado_id: row.empleado_id,
+      nombre: row.nombre ?? null,
       asignado_por: row.asignado_por,
       created_at: row.created_at,
       updated_at: row.updated_at,

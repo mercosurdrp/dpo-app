@@ -110,9 +110,12 @@ export function NuevaAlmacenDialog({
               <SelectContent>
                 {[1, 2, 3, 4].map((n) => {
                   const r = respBySector(n)
+                  const label = r?.nombre
+                    ? `Sector ${n} — ${r.nombre}`
+                    : `Sector ${n}`
                   return (
-                    <SelectItem key={n} value={String(n)}>
-                      Sector {n}
+                    <SelectItem key={n} value={String(n)} label={label}>
+                      {label}
                       {r && (
                         <span className="ml-2 text-xs text-muted-foreground">
                           · Resp: {r.empleado_nombre}

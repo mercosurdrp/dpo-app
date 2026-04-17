@@ -35,20 +35,22 @@ export function NuevaFlotaDialog({
   onOpenChange,
   vehiculos,
   pendientes,
+  empleados,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   vehiculos: { id: string; dominio: string; descripcion: string | null }[]
   pendientes: S5VehiculoPendiente[]
+  empleados: { id: string; legajo: number; nombre: string }[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [form, setForm] = useState({
     fecha: hoyISO(),
     vehiculoId: "",
-    choferNombre: "",
-    ayudante1: "",
-    ayudante2: "",
+    choferEmpleadoId: "",
+    ayudante1EmpleadoId: "",
+    ayudante2EmpleadoId: "",
   })
 
   const pendientesSet = useMemo(
@@ -56,13 +58,18 @@ export function NuevaFlotaDialog({
     [pendientes]
   )
 
+  const empleadoById = useMemo(
+    () => new Map(empleados.map((e) => [e.id, e])),
+    [empleados]
+  )
+
   function reset() {
     setForm({
       fecha: hoyISO(),
       vehiculoId: "",
-      choferNombre: "",
-      ayudante1: "",
-      ayudante2: "",
+      choferEmpleadoId: "",
+      ayudante1EmpleadoId: "",
+      ayudante2EmpleadoId: "",
     })
   }
 
@@ -75,13 +82,16 @@ export function NuevaFlotaDialog({
       toast.error("Ingresá la fecha")
       return
     }
+    const chofer = empleadoById.get(form.choferEmpleadoId)
+    const ay1 = empleadoById.get(form.ayudante1EmpleadoId)
+    const ay2 = empleadoById.get(form.ayudante2EmpleadoId)
     startTransition(async () => {
       const res = await crearAuditoriaFlota({
         fecha: form.fecha,
         vehiculoId: form.vehiculoId,
-        choferNombre: form.choferNombre || undefined,
-        ayudante1: form.ayudante1 || undefined,
-        ayudante2: form.ayudante2 || undefined,
+        choferNombre: chofer?.nombre,
+        ayudante1: ay1?.nombre,
+        ayudante2: ay2?.nombre,
       })
       if ("error" in res) {
         toast.error(res.error)
@@ -135,7 +145,7 @@ export function NuevaFlotaDialog({
                       Pendientes este mes
                     </div>
                     {vehiculosOrdenados.pend.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
+                      <SelectItem key={v.id} value={v.id} label={v.dominio}>
                         {v.dominio}
                         {v.descripcion && (
                           <span className="ml-1 text-xs text-muted-foreground">
@@ -152,7 +162,7 @@ export function NuevaFlotaDialog({
                       Todos
                     </div>
                     {vehiculosOrdenados.resto.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
+                      <SelectItem key={v.id} value={v.id} label={v.dominio}>
                         {v.dominio}
                         {v.descripcion && (
                           <span className="ml-1 text-xs text-muted-foreground">
@@ -169,33 +179,74 @@ export function NuevaFlotaDialog({
 
           <div>
             <Label>Chofer</Label>
-            <Input
-              value={form.choferNombre}
-              onChange={(e) =>
-                setForm({ ...form, choferNombre: e.target.value })
+            <Select
+              value={form.choferEmpleadoId}
+              onValueChange={(v) =>
+                setForm({ ...form, choferEmpleadoId: v ?? "" })
               }
-              placeholder="Nombre del chofer"
-            />
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Seleccionar empleado" />
+              </SelectTrigger>
+              <SelectContent>
+                {empleados.map((e) => (
+                  <SelectItem key={e.id} value={e.id} label={e.nombre}>
+                    {e.nombre}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      · #{e.legajo}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Ayudante 1</Label>
-              <Input
-                value={form.ayudante1}
-                onChange={(e) =>
-                  setForm({ ...form, ayudante1: e.target.value })
+              <Select
+                value={form.ayudante1EmpleadoId}
+                onValueChange={(v) =>
+                  setForm({ ...form, ayudante1EmpleadoId: v ?? "" })
                 }
-              />
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Empleado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {empleados.map((e) => (
+                    <SelectItem key={e.id} value={e.id} label={e.nombre}>
+                      {e.nombre}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        · #{e.legajo}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Ayudante 2</Label>
-              <Input
-                value={form.ayudante2}
-                onChange={(e) =>
-                  setForm({ ...form, ayudante2: e.target.value })
+              <Select
+                value={form.ayudante2EmpleadoId}
+                onValueChange={(v) =>
+                  setForm({ ...form, ayudante2EmpleadoId: v ?? "" })
                 }
-              />
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Empleado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {empleados.map((e) => (
+                    <SelectItem key={e.id} value={e.id} label={e.nombre}>
+                      {e.nombre}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        · #{e.legajo}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -8,6 +8,7 @@ import { Plus, Target, Truck, Warehouse, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -109,6 +110,27 @@ export function CincoSClient({
     for (const r of responsables) m.set(r.sector_numero, r)
     return m
   }, [responsables])
+
+  function handleAsignarNombreSector(sector: number, nombre: string) {
+    const actual = respBySector.get(sector)
+    if (!actual) {
+      toast.error("Primero asigná un responsable")
+      return
+    }
+    startTransition(async () => {
+      const res = await upsertSectorResponsable(
+        periodoActual,
+        sector,
+        actual.empleado_id,
+        nombre
+      )
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
 
   function handleAsignarResponsable(sector: number, empleadoId: string) {
     if (!canEdit) return
@@ -331,35 +353,58 @@ export function CincoSClient({
                   return (
                     <div
                       key={sector}
-                      className="rounded-lg border bg-muted/20 p-3"
+                      className="rounded-lg border bg-muted/20 p-3 space-y-2"
                     >
                       <p className="text-sm font-semibold text-slate-800">
                         Sector {sector}
+                        {actual?.nombre ? (
+                          <span className="ml-2 font-normal text-muted-foreground">
+                            — {actual.nombre}
+                          </span>
+                        ) : null}
                       </p>
                       {canEdit ? (
-                        <Select
-                          value={actual?.empleado_id ?? ""}
-                          onValueChange={(v) =>
-                            v && handleAsignarResponsable(sector, v)
-                          }
-                          disabled={isPending}
-                        >
-                          <SelectTrigger className="mt-2 w-full">
-                            <SelectValue placeholder="Seleccionar empleado" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {empleados.map((e) => (
-                              <SelectItem key={e.id} value={e.id}>
-                                {e.nombre}{" "}
-                                <span className="text-xs text-muted-foreground">
-                                  · #{e.legajo}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <>
+                          <Select
+                            value={actual?.empleado_id ?? ""}
+                            onValueChange={(v) =>
+                              v && handleAsignarResponsable(sector, v)
+                            }
+                            disabled={isPending}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Seleccionar empleado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {empleados.map((e) => (
+                                <SelectItem
+                                  key={e.id}
+                                  value={e.id}
+                                  label={e.nombre}
+                                >
+                                  {e.nombre}
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    · #{e.legajo}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            placeholder="Nombre del sector (opcional)"
+                            defaultValue={actual?.nombre ?? ""}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim()
+                              const current = (actual?.nombre ?? "").trim()
+                              if (v !== current && actual) {
+                                handleAsignarNombreSector(sector, v)
+                              }
+                            }}
+                            disabled={isPending || !actual}
+                          />
+                        </>
                       ) : (
-                        <p className="mt-2 text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                           {actual?.empleado_nombre ?? "Sin asignar"}
                         </p>
                       )}
@@ -455,6 +500,7 @@ export function CincoSClient({
         onOpenChange={setOpenNuevaFlota}
         vehiculos={vehiculosActivos}
         pendientes={vehiculosPendientes}
+        empleados={empleados}
       />
       <NuevaAlmacenDialog
         open={openNuevaAlmacen}
