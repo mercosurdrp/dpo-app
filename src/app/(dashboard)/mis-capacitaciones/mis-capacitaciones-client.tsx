@@ -364,7 +364,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
       )}
 
       {/* Reporte de Seguridad — visible siempre */}
-      <Link href="/reportes-seguridad">
+      <Link href="/reportar-seguridad">
         <Card className="group cursor-pointer border-red-200 bg-red-50 transition-shadow hover:shadow-md">
           <CardContent className="flex items-center gap-4 py-5">
             <div className="rounded-xl bg-red-100 p-3 group-hover:bg-red-200 transition-colors">
