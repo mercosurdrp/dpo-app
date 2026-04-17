@@ -7,10 +7,17 @@ import {
   getVehiculosActivos,
   getVehiculosPendientesMes,
 } from "@/actions/s5"
+import type { S5Tipo } from "@/types/database"
 import { CincoSClient } from "./cinco-s-client"
 
-export default async function CincoSPage() {
+export default async function CincoSPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tipo?: string }>
+}) {
   const profile = await getProfile()
+  const sp = await searchParams
+  const tipoInicial: S5Tipo = sp.tipo === "almacen" ? "almacen" : "flota"
 
   if (!profile) {
     return (
@@ -59,6 +66,7 @@ export default async function CincoSPage() {
   return (
     <CincoSClient
       periodoActual={periodoActual}
+      tipoInicial={tipoInicial}
       currentRole={profile.role}
       auditoriasFlota={auditoriasFlota.data}
       auditoriasAlmacen={auditoriasAlmacen.data}

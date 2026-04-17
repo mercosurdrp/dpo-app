@@ -1411,3 +1411,44 @@ export const S5_AUDITORIA_ESTADO_COLORS: Record<S5AuditoriaEstado, string> = {
   borrador: "#64748B",
   completada: "#10B981",
 }
+
+// ===== 5S Indicadores =====
+export interface S5KpisMes {
+  promedio_nota: number | null
+  total_auditorias: number
+  pendientes: number
+  promedio_mes_anterior: number | null
+  mejor_nombre: string | null
+  mejor_nota: number | null
+  peor_nombre: string | null
+  peor_nota: number | null
+  items_criticos_count: number
+}
+
+export interface S5TendenciaMes {
+  periodo: string // YYYY-MM-01
+  mes_label: string
+  organizacion: number | null
+  orden: number | null
+  limpieza: number | null
+  estandarizacion: number | null
+  disciplina: number | null
+  total: number | null
+}
+
+export interface S5RankingRow {
+  id: string
+  nombre: string
+  nota_total: number
+  estado: S5AuditoriaEstado
+}
+
+export interface S5ItemCriticoRow {
+  item_id: string
+  numero: number
+  titulo: string
+  categoria: S5Categoria
+  promedio_pct: number
+  veces_evaluado: number
+  observacion_comun: string | null
+}

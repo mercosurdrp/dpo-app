@@ -14,6 +14,10 @@ import type {
   S5AuditoriaItemConCatalogo,
   S5SectorResponsableFull,
   S5VehiculoPendiente,
+  S5KpisMes,
+  S5TendenciaMes,
+  S5RankingRow,
+  S5ItemCriticoRow,
 } from "@/types/database"
 import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
 
@@ -717,4 +721,462 @@ export async function finalizarAuditoria(
 
 export async function getPeriodoActual(): Promise<string> {
   return firstDayOfMonth(new Date())
+}
+
+// ===================================================
+// Indicadores 5S
+// ===================================================
+
+function addMonths(periodo: string, delta: number): string {
+  const [y, m] = periodo.split("-").map((n) => parseInt(n, 10))
+  const d = new Date(y, m - 1 + delta, 1)
+  return firstDayOfMonth(d)
+}
+
+const MES_LABELS_CORTOS = [
+  "Ene",
+  "Feb",
+  "Mar",
+  "Abr",
+  "May",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dic",
+]
+
+function formatMesCorto(periodo: string): string {
+  const [y, m] = periodo.split("-").map((n) => parseInt(n, 10))
+  const yy = String(y).slice(-2)
+  return `${MES_LABELS_CORTOS[m - 1]} ${yy}`
+}
+
+async function computePromedioMes(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  tipo: S5Tipo,
+  periodo: string
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("s5_auditorias")
+    .select("nota_total")
+    .eq("tipo", tipo)
+    .eq("periodo", periodo)
+    .eq("estado", "completada")
+    .not("nota_total", "is", null)
+
+  if (error) return null
+  const rows = (data ?? []) as { nota_total: number | null }[]
+  if (rows.length === 0) return null
+  const sum = rows.reduce((acc, r) => acc + Number(r.nota_total ?? 0), 0)
+  return Number((sum / rows.length).toFixed(2))
+}
+
+export async function getS5KpisMes(
+  tipo: S5Tipo,
+  periodo: string
+): Promise<{ data: S5KpisMes } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    // Auditorías completadas del período
+    const { data: audRaw, error: errAud } = await supabase
+      .from("s5_auditorias")
+      .select(
+        "id, nota_total, vehiculo_id, sector_numero, estado, vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+      )
+      .eq("tipo", tipo)
+      .eq("periodo", periodo)
+      .eq("estado", "completada")
+
+    if (errAud) return { error: errAud.message }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auditorias = (audRaw ?? []) as any[]
+
+    // Total auditorías del mes (completadas + borrador)
+    const { count: totalAuditorias } = await supabase
+      .from("s5_auditorias")
+      .select("id", { count: "exact", head: true })
+      .eq("tipo", tipo)
+      .eq("periodo", periodo)
+
+    // Pendientes
+    let pendientes = 0
+    if (tipo === "flota") {
+      const { count: activos } = await supabase
+        .from("catalogo_vehiculos")
+        .select("id", { count: "exact", head: true })
+        .eq("active", true)
+      pendientes = Math.max((activos ?? 0) - auditorias.length, 0)
+    } else {
+      pendientes = Math.max(4 - auditorias.length, 0)
+    }
+
+    // Promedio
+    const promedio =
+      auditorias.length > 0
+        ? Number(
+            (
+              auditorias.reduce(
+                (acc, a) => acc + Number(a.nota_total ?? 0),
+                0
+              ) / auditorias.length
+            ).toFixed(2)
+          )
+        : null
+
+    // Promedio mes anterior
+    const periodoAnterior = addMonths(periodo, -1)
+    const promedioMesAnterior = await computePromedioMes(
+      supabase,
+      tipo,
+      periodoAnterior
+    )
+
+    // Mejor / peor performer
+    let mejor: { nombre: string; nota: number } | null = null
+    let peor: { nombre: string; nota: number } | null = null
+
+    if (auditorias.length > 0) {
+      // Resolver nombre sector con responsables si tipo = almacen
+      let respBySector: Map<number, string> | null = null
+      if (tipo === "almacen") {
+        const { data: resp } = await supabase
+          .from("s5_sector_responsables")
+          .select("sector_numero, nombre")
+          .eq("periodo", periodo)
+        respBySector = new Map<number, string>()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of (resp ?? []) as any[]) {
+          if (r.nombre) respBySector.set(r.sector_numero, r.nombre)
+        }
+      }
+
+      const rows = auditorias.map((a) => {
+        let nombre = "—"
+        if (tipo === "flota") {
+          nombre = a.vehiculo?.dominio ?? "—"
+        } else {
+          const base = `Sector ${a.sector_numero}`
+          const nom = respBySector?.get(a.sector_numero)
+          nombre = nom ? `${base} — ${nom}` : base
+        }
+        return { nombre, nota: Number(a.nota_total ?? 0) }
+      })
+
+      const ordenAsc = [...rows].sort((a, b) => a.nota - b.nota)
+      peor = ordenAsc[0] ?? null
+      mejor = ordenAsc[ordenAsc.length - 1] ?? null
+    }
+
+    // Ítems críticos: promedio puntaje < 50% del máximo
+    const maxPuntaje = S5_MAX_PUNTAJE[tipo]
+    let itemsCriticos = 0
+    if (auditorias.length > 0) {
+      const audIds = auditorias.map((a) => a.id as string)
+      const { data: itemsRaw } = await supabase
+        .from("s5_auditoria_items")
+        .select("item_id, puntaje")
+        .in("auditoria_id", audIds)
+        .not("puntaje", "is", null)
+
+      const acum = new Map<string, { sum: number; n: number }>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (itemsRaw ?? []) as any[]) {
+        const id = r.item_id as string
+        const p = Number(r.puntaje ?? 0)
+        const cur = acum.get(id) ?? { sum: 0, n: 0 }
+        cur.sum += p
+        cur.n += 1
+        acum.set(id, cur)
+      }
+
+      for (const v of acum.values()) {
+        if (v.n === 0) continue
+        const avg = v.sum / v.n
+        if (avg / maxPuntaje < 0.5) itemsCriticos += 1
+      }
+    }
+
+    return {
+      data: {
+        promedio_nota: promedio,
+        total_auditorias: totalAuditorias ?? 0,
+        pendientes,
+        promedio_mes_anterior: promedioMesAnterior,
+        mejor_nombre: mejor?.nombre ?? null,
+        mejor_nota: mejor?.nota ?? null,
+        peor_nombre: peor?.nombre ?? null,
+        peor_nota: peor?.nota ?? null,
+        items_criticos_count: itemsCriticos,
+      },
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error calculando KPIs 5S",
+    }
+  }
+}
+
+export async function getS5TendenciaMensual(
+  tipo: S5Tipo,
+  periodoFin: string,
+  meses: number = 12
+): Promise<{ data: S5TendenciaMes[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const periodos: string[] = []
+    for (let i = meses - 1; i >= 0; i--) {
+      periodos.push(addMonths(periodoFin, -i))
+    }
+    const inicio = periodos[0]
+
+    const { data: audRaw, error } = await supabase
+      .from("s5_auditorias")
+      .select("periodo, nota_total, notas_por_s")
+      .eq("tipo", tipo)
+      .eq("estado", "completada")
+      .gte("periodo", inicio)
+      .lte("periodo", periodoFin)
+
+    if (error) return { error: error.message }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (audRaw ?? []) as any[]
+
+    // Agrupar por período
+    const acumByPeriodo = new Map<
+      string,
+      {
+        total: { sum: number; n: number }
+        porCat: Record<S5Categoria, { sum: number; n: number }>
+      }
+    >()
+
+    for (const r of rows) {
+      const p = r.periodo as string
+      if (!acumByPeriodo.has(p)) {
+        acumByPeriodo.set(p, {
+          total: { sum: 0, n: 0 },
+          porCat: {
+            organizacion: { sum: 0, n: 0 },
+            orden: { sum: 0, n: 0 },
+            limpieza: { sum: 0, n: 0 },
+            estandarizacion: { sum: 0, n: 0 },
+            disciplina: { sum: 0, n: 0 },
+          },
+        })
+      }
+      const slot = acumByPeriodo.get(p)!
+      if (r.nota_total !== null && r.nota_total !== undefined) {
+        slot.total.sum += Number(r.nota_total)
+        slot.total.n += 1
+      }
+      const notas = (r.notas_por_s ?? null) as Record<
+        S5Categoria,
+        number
+      > | null
+      if (notas) {
+        for (const cat of S5_CATEGORIA_ORDEN) {
+          const v = notas[cat]
+          if (v !== null && v !== undefined) {
+            slot.porCat[cat].sum += Number(v)
+            slot.porCat[cat].n += 1
+          }
+        }
+      }
+    }
+
+    const out: S5TendenciaMes[] = periodos.map((p) => {
+      const slot = acumByPeriodo.get(p)
+      const avg = (s: { sum: number; n: number }) =>
+        s.n > 0 ? Number((s.sum / s.n).toFixed(2)) : null
+      return {
+        periodo: p,
+        mes_label: formatMesCorto(p),
+        organizacion: slot ? avg(slot.porCat.organizacion) : null,
+        orden: slot ? avg(slot.porCat.orden) : null,
+        limpieza: slot ? avg(slot.porCat.limpieza) : null,
+        estandarizacion: slot ? avg(slot.porCat.estandarizacion) : null,
+        disciplina: slot ? avg(slot.porCat.disciplina) : null,
+        total: slot ? avg(slot.total) : null,
+      }
+    })
+
+    return { data: out }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando tendencia 5S",
+    }
+  }
+}
+
+export async function getS5Ranking(
+  tipo: S5Tipo,
+  periodo: string
+): Promise<{ data: S5RankingRow[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: audRaw, error } = await supabase
+      .from("s5_auditorias")
+      .select(
+        "id, estado, nota_total, vehiculo_id, sector_numero, vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+      )
+      .eq("tipo", tipo)
+      .eq("periodo", periodo)
+      .eq("estado", "completada")
+      .not("nota_total", "is", null)
+
+    if (error) return { error: error.message }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auditorias = (audRaw ?? []) as any[]
+
+    let respBySector: Map<number, string> | null = null
+    if (tipo === "almacen") {
+      const { data: resp } = await supabase
+        .from("s5_sector_responsables")
+        .select("sector_numero, nombre")
+        .eq("periodo", periodo)
+      respBySector = new Map<number, string>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (resp ?? []) as any[]) {
+        if (r.nombre) respBySector.set(r.sector_numero, r.nombre)
+      }
+    }
+
+    const rows: S5RankingRow[] = auditorias.map((a) => {
+      let id = ""
+      let nombre = "—"
+      if (tipo === "flota") {
+        id = (a.vehiculo_id as string) ?? a.id
+        nombre = a.vehiculo?.dominio ?? "—"
+      } else {
+        id = String(a.sector_numero ?? "")
+        const base = `Sector ${a.sector_numero}`
+        const nom = respBySector?.get(a.sector_numero)
+        nombre = nom ? `${base} — ${nom}` : base
+      }
+      return {
+        id,
+        nombre,
+        nota_total: Number(a.nota_total ?? 0),
+        estado: a.estado,
+      }
+    })
+
+    rows.sort((a, b) => a.nota_total - b.nota_total)
+    return { data: rows }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando ranking 5S",
+    }
+  }
+}
+
+export async function getS5TopItemsCriticos(
+  tipo: S5Tipo,
+  periodo: string,
+  limit: number = 5
+): Promise<{ data: S5ItemCriticoRow[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: audRaw, error: errAud } = await supabase
+      .from("s5_auditorias")
+      .select("id")
+      .eq("tipo", tipo)
+      .eq("periodo", periodo)
+      .eq("estado", "completada")
+
+    if (errAud) return { error: errAud.message }
+    const audIds = ((audRaw ?? []) as { id: string }[]).map((a) => a.id)
+
+    if (audIds.length === 0) return { data: [] }
+
+    const { data: itemsRaw, error: errItems } = await supabase
+      .from("s5_auditoria_items")
+      .select(
+        "item_id, puntaje, observaciones, catalogo:s5_items_catalogo!s5_auditoria_items_item_id_fkey(id, numero, titulo, categoria, tipo)"
+      )
+      .in("auditoria_id", audIds)
+      .not("puntaje", "is", null)
+
+    if (errItems) return { error: errItems.message }
+
+    const maxPuntaje = S5_MAX_PUNTAJE[tipo]
+
+    interface Acum {
+      sum: number
+      n: number
+      numero: number
+      titulo: string
+      categoria: S5Categoria
+      obs: Map<string, number>
+    }
+
+    const acum = new Map<string, Acum>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (itemsRaw ?? []) as any[]) {
+      const cat = r.catalogo
+      if (!cat || cat.tipo !== tipo) continue
+      const id = r.item_id as string
+      const cur: Acum =
+        acum.get(id) ?? {
+          sum: 0,
+          n: 0,
+          numero: cat.numero,
+          titulo: cat.titulo,
+          categoria: cat.categoria,
+          obs: new Map<string, number>(),
+        }
+      cur.sum += Number(r.puntaje ?? 0)
+      cur.n += 1
+      const obs = (r.observaciones as string | null)?.trim()
+      if (obs) cur.obs.set(obs, (cur.obs.get(obs) ?? 0) + 1)
+      acum.set(id, cur)
+    }
+
+    const list: S5ItemCriticoRow[] = []
+    for (const [item_id, v] of acum.entries()) {
+      if (v.n === 0) continue
+      const avgPct = Number(((v.sum / v.n / maxPuntaje) * 100).toFixed(2))
+      let obsComun: string | null = null
+      let maxCount = 1
+      for (const [txt, c] of v.obs.entries()) {
+        if (c > maxCount) {
+          maxCount = c
+          obsComun = txt
+        }
+      }
+      list.push({
+        item_id,
+        numero: v.numero,
+        titulo: v.titulo,
+        categoria: v.categoria,
+        promedio_pct: avgPct,
+        veces_evaluado: v.n,
+        observacion_comun: obsComun,
+      })
+    }
+
+    list.sort((a, b) => a.promedio_pct - b.promedio_pct)
+    return { data: list.slice(0, limit) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error cargando ítems críticos 5S",
+    }
+  }
 }

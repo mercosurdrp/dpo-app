@@ -4,7 +4,14 @@ import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Plus, Target, Truck, Warehouse, ChevronRight } from "lucide-react"
+import {
+  Plus,
+  Target,
+  Truck,
+  Warehouse,
+  ChevronRight,
+  BarChart3,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +40,7 @@ import {
   S5_AUDITORIA_ESTADO_LABELS,
   type S5AuditoriaConMeta,
   type S5SectorResponsableFull,
+  type S5Tipo,
   type S5VehiculoPendiente,
   type UserRole,
 } from "@/types/database"
@@ -49,6 +57,7 @@ function formatMes(periodo: string) {
 
 export function CincoSClient({
   periodoActual,
+  tipoInicial = "flota",
   currentRole,
   auditoriasFlota,
   auditoriasAlmacen,
@@ -58,6 +67,7 @@ export function CincoSClient({
   empleados,
 }: {
   periodoActual: string
+  tipoInicial?: S5Tipo
   currentRole: UserRole
   auditoriasFlota: S5AuditoriaConMeta[]
   auditoriasAlmacen: S5AuditoriaConMeta[]
@@ -70,6 +80,7 @@ export function CincoSClient({
   const [openNuevaFlota, setOpenNuevaFlota] = useState(false)
   const [openNuevaAlmacen, setOpenNuevaAlmacen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [tipo, setTipo] = useState<S5Tipo>(tipoInicial)
 
   const canEdit = currentRole === "admin" || currentRole === "auditor"
 
@@ -171,9 +182,21 @@ export function CincoSClient({
             </span>
           </p>
         </div>
+        <Link href={`/5s/indicadores?tipo=${tipo}`}>
+          <Button variant="outline" size="sm">
+            <BarChart3 className="mr-1.5 size-4" />
+            Indicadores
+          </Button>
+        </Link>
       </div>
 
-      <Tabs defaultValue="flota" className="space-y-4">
+      <Tabs
+        value={tipo}
+        onValueChange={(v) => {
+          if (v === "flota" || v === "almacen") setTipo(v)
+        }}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="flota">
             <Truck className="mr-1.5 size-4" />
