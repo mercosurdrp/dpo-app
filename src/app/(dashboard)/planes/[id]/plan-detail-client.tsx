@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -26,6 +26,8 @@ import {
   StickyNote,
   Unlink,
   LinkIcon as Link2Icon,
+  Paperclip,
+  Download,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -71,7 +73,11 @@ import {
   linkEvidenciaToPlan,
   unlinkEvidenciaFromPlan,
   getUnlinkedEvidencias,
+  linkArchivoToPlan,
+  unlinkArchivoFromPlan,
+  searchArchivos,
 } from "@/actions/planes"
+import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import { createEvidencia } from "@/actions/gestion"
 import { createClient } from "@/lib/supabase/client"
 import type {
@@ -81,6 +87,7 @@ import type {
   Evidencia,
   EstadoPlan,
   TipoEvidencia,
+  DpoArchivo,
 } from "@/types/database"
 
 const TIPO_EVIDENCIA_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -1054,6 +1061,199 @@ export function PlanDetailClient({ plan: initialPlan }: { plan: PlanAccionFull }
         preguntaId={plan.pregunta_id}
         evidencias={plan.evidencias}
       />
+
+      {/* Archivos DPO vinculados */}
+      <ArchivosDpoSection
+        planId={plan.id}
+        archivos={plan.archivos_dpo}
+      />
     </div>
+  )
+}
+
+function ArchivosDpoSection({
+  planId,
+  archivos: initialArchivos,
+}: {
+  planId: string
+  archivos: DpoArchivo[]
+}) {
+  const router = useRouter()
+  const [archivos, setArchivos] = useState(initialArchivos)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<DpoArchivo[]>([])
+  const [searching, setSearching] = useState(false)
+  const [linking, startLinking] = useTransition()
+
+  async function runSearch(q: string) {
+    setSearching(true)
+    const r = await searchArchivos(q, planId)
+    setSearching(false)
+    if ("error" in r) {
+      toast.error(r.error)
+      return
+    }
+    setResults(r.data)
+  }
+
+  function handleOpen(v: boolean) {
+    setPickerOpen(v)
+    if (v) {
+      setQuery("")
+      runSearch("")
+    }
+  }
+
+  function handleLink(arch: DpoArchivo) {
+    startLinking(async () => {
+      const r = await linkArchivoToPlan(planId, arch.id)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      setArchivos((prev) => [arch, ...prev])
+      setResults((prev) => prev.filter((a) => a.id !== arch.id))
+      toast.success("Evidencia vinculada")
+    })
+  }
+
+  function handleUnlink(archivoId: string) {
+    if (!confirm("¿Desvincular esta evidencia del plan?")) return
+    startLinking(async () => {
+      const r = await unlinkArchivoFromPlan(planId, archivoId)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      setArchivos((prev) => prev.filter((a) => a.id !== archivoId))
+      toast.success("Evidencia desvinculada")
+    })
+  }
+
+  async function handleDownload(archivoId: string) {
+    const r = await getDownloadUrl({ archivo_id: archivoId })
+    if ("error" in r) {
+      toast.error(r.error)
+      return
+    }
+    window.open(r.data.url, "_blank")
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4" />
+            Evidencias DPO vinculadas ({archivos.length})
+          </span>
+          <Button size="sm" variant="outline" onClick={() => handleOpen(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Vincular evidencia
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="border-t pt-4">
+        {archivos.length === 0 ? (
+          <p className="text-center text-sm text-slate-400 py-6">
+            No hay evidencias DPO vinculadas a este plan
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {archivos.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <div className="flex flex-1 items-center gap-3 min-w-0">
+                  <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-medium">{a.titulo}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {a.pilar_codigo} · {a.punto_codigo}
+                      {a.requisito_codigo ? ` · ${a.requisito_codigo}` : ""}
+                      {a.categoria ? ` · ${a.categoria}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDownload(a.id)}
+                    title="Descargar"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleUnlink(a.id)}
+                    disabled={linking}
+                    title="Desvincular"
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={pickerOpen} onOpenChange={handleOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vincular evidencia DPO</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Buscar por título, archivo o categoría..."
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                runSearch(e.target.value)
+              }}
+            />
+            <p className="text-xs text-slate-500">
+              ¿No la ves?{" "}
+              <Link href="/evidencia" className="text-blue-600 hover:underline">
+                Subila desde Evidencia
+              </Link>{" "}
+              y volvé a vincularla.
+            </p>
+            <div className="max-h-80 space-y-1 overflow-y-auto">
+              {searching ? (
+                <p className="py-4 text-center text-sm text-slate-400">Buscando...</p>
+              ) : results.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-400">
+                  No se encontraron archivos
+                </p>
+              ) : (
+                results.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => handleLink(a)}
+                    disabled={linking}
+                    className="flex w-full items-start gap-3 rounded-md border border-slate-200 p-2 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate font-medium">{a.titulo}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {a.pilar_codigo} · {a.punto_codigo}
+                        {a.requisito_codigo ? ` · ${a.requisito_codigo}` : ""}
+                        {a.categoria ? ` · ${a.categoria}` : ""}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
   )
 }

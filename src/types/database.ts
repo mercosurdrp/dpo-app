@@ -201,6 +201,7 @@ export interface PlanAccionFull extends PlanAccion {
   comentarios: PlanComentarioConAutor[]
   historial: PlanHistorialConAutor[]
   evidencias: Evidencia[]
+  archivos_dpo: DpoArchivo[]
 }
 
 // SOP (Standard Operating Procedure)

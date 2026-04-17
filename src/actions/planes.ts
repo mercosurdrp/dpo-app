@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { revalidatePath } from "next/cache"
 import type {
   PlanAccion,
   PlanAccionFull,
@@ -11,6 +12,7 @@ import type {
   PlanHistorialConAutor,
   Evidencia,
   EstadoPlan,
+  DpoArchivo,
 } from "@/types/database"
 
 // ---------- getPlanDetail ----------
@@ -129,6 +131,26 @@ export async function getPlanDetail(
       evidencias = (evData ?? []) as Evidencia[]
     }
 
+    // Get linked dpo_archivos via dpo_archivo_planes junction
+    const { data: archivosLinks } = await supabase
+      .from("dpo_archivo_planes")
+      .select("archivo_id")
+      .eq("plan_id", planId)
+
+    const archivoIds = (archivosLinks ?? []).map((l: { archivo_id: string }) => l.archivo_id)
+    let archivos_dpo: DpoArchivo[] = []
+
+    if (archivoIds.length > 0) {
+      const { data: archivosData } = await supabase
+        .from("dpo_archivos")
+        .select("*")
+        .in("id", archivoIds)
+        .eq("archivado", false)
+        .order("created_at", { ascending: false })
+
+      archivos_dpo = (archivosData ?? []) as DpoArchivo[]
+    }
+
     const result: PlanAccionFull = {
       ...(plan as PlanAccion),
       pregunta_numero: pregunta?.numero ?? "",
@@ -140,6 +162,7 @@ export async function getPlanDetail(
       comentarios,
       historial,
       evidencias,
+      archivos_dpo,
     }
 
     return { data: result }
@@ -462,5 +485,95 @@ export async function getUnlinkedEvidencias(
     return { data: unlinked as Evidencia[] }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error loading evidencias" }
+  }
+}
+
+// ---------- DPO archivos linking ----------
+
+export async function linkArchivoToPlan(
+  planId: string,
+  archivoId: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from("dpo_archivo_planes")
+      .insert({ plan_id: planId, archivo_id: archivoId, created_by: profile.id })
+
+    if (error) {
+      // Si ya existe, lo tratamos como éxito (idempotente)
+      if (error.code === "23505") return { success: true }
+      return { error: error.message }
+    }
+
+    revalidatePath(`/planes/${planId}`)
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error vinculando archivo" }
+  }
+}
+
+export async function unlinkArchivoFromPlan(
+  planId: string,
+  archivoId: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from("dpo_archivo_planes")
+      .delete()
+      .eq("plan_id", planId)
+      .eq("archivo_id", archivoId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath(`/planes/${planId}`)
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error desvinculando archivo" }
+  }
+}
+
+export async function searchArchivos(
+  query: string,
+  planId?: string
+): Promise<{ data: DpoArchivo[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    // Excluir los ya vinculados al plan (si se pasa planId)
+    let excluidos: string[] = []
+    if (planId) {
+      const { data: links } = await supabase
+        .from("dpo_archivo_planes")
+        .select("archivo_id")
+        .eq("plan_id", planId)
+      excluidos = (links ?? []).map((l: { archivo_id: string }) => l.archivo_id)
+    }
+
+    let q = supabase
+      .from("dpo_archivos")
+      .select("*")
+      .eq("archivado", false)
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    if (query.trim()) {
+      q = q.or(`titulo.ilike.%${query}%,file_name.ilike.%${query}%,categoria.ilike.%${query}%`)
+    }
+
+    const { data, error } = await q
+
+    if (error) return { error: error.message }
+
+    const filtered = (data ?? []).filter((a: DpoArchivo) => !excluidos.includes(a.id))
+    return { data: filtered as DpoArchivo[] }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error buscando archivos" }
   }
 }
