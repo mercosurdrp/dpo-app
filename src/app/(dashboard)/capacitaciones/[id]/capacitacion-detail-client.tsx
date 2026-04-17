@@ -201,25 +201,6 @@ export function CapacitacionDetailClient({
     })
   }
 
-  async function handleNotaChange(asistenciaId: string, nota: number | null) {
-    startTransition(async () => {
-      const resultado: ResultadoCapacitacion =
-        nota === null ? "pendiente" : nota >= 60 ? "aprobado" : "desaprobado"
-
-      const result = await updateAsistencia(asistenciaId, { nota, resultado })
-      if ("error" in result) {
-        toast.error(result.error)
-      } else {
-        setCap((prev) => ({
-          ...prev,
-          asistencias: prev.asistencias.map((a) =>
-            a.id === asistenciaId ? { ...a, nota, resultado } : a
-          ),
-        }))
-      }
-    })
-  }
-
   async function handleRemoveAsistente(asistenciaId: string) {
     startTransition(async () => {
       const result = await removeAsistente(asistenciaId)
@@ -551,9 +532,6 @@ export function CapacitacionDetailClient({
                         isPending={isPending}
                         onTogglePresencia={() =>
                           handleTogglePresencia(asistencia)
-                        }
-                        onNotaChange={(nota) =>
-                          handleNotaChange(asistencia.id, nota)
                         }
                         onRemove={() => handleRemoveAsistente(asistencia.id)}
                       />
@@ -902,33 +880,14 @@ function AsistenciaRow({
   canEdit,
   isPending,
   onTogglePresencia,
-  onNotaChange,
   onRemove,
 }: {
   asistencia: AsistenciaConEmpleado
   canEdit: boolean
   isPending: boolean
   onTogglePresencia: () => void
-  onNotaChange: (nota: number | null) => void
   onRemove: () => void
 }) {
-  const [notaInput, setNotaInput] = useState(
-    asistencia.nota !== null ? String(asistencia.nota) : ""
-  )
-  const [dirty, setDirty] = useState(false)
-
-  function handleNotaBlur() {
-    if (!dirty) return
-    const val = notaInput.trim()
-    const nota = val === "" ? null : parseFloat(val)
-    if (nota !== null && (isNaN(nota) || nota < 0 || nota > 100)) {
-      toast.error("La nota debe ser entre 0 y 100")
-      return
-    }
-    onNotaChange(nota)
-    setDirty(false)
-  }
-
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">
@@ -951,29 +910,9 @@ function AsistenciaRow({
         )}
       </TableCell>
       <TableCell className="text-center">
-        {canEdit ? (
-          <Input
-            type="number"
-            min="0"
-            max="100"
-            className="mx-auto h-8 w-20 text-center text-sm"
-            value={notaInput}
-            onChange={(e) => {
-              setNotaInput(e.target.value)
-              setDirty(true)
-            }}
-            onBlur={handleNotaBlur}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleNotaBlur()
-            }}
-            disabled={isPending}
-            placeholder="-"
-          />
-        ) : (
-          <span className="text-sm">
-            {asistencia.nota !== null ? asistencia.nota : "-"}
-          </span>
-        )}
+        <span className="text-sm">
+          {asistencia.nota !== null ? asistencia.nota : "-"}
+        </span>
       </TableCell>
       <TableCell className="text-center">
         <Badge

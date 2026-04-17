@@ -218,13 +218,12 @@ export async function removeAsistente(
   }
 }
 
-// ─── Update asistencia (attendance + grade) ───
+// ─── Update asistencia (attendance + observaciones)
+// nota/resultado son inmutables: solo se setean al rendir el examen
 export async function updateAsistencia(
   asistenciaId: string,
   data: {
     presente?: boolean
-    nota?: number | null
-    resultado?: ResultadoCapacitacion
     observaciones?: string | null
   }
 ): Promise<{ data: Asistencia } | { error: string }> {
@@ -525,7 +524,7 @@ export async function submitExamen(
 
     // Calculate nota
     const nota = Math.round((correctas / preguntas.length) * 100)
-    const resultado = nota >= 60 ? "aprobado" : "desaprobado"
+    const resultado = nota >= 80 ? "aprobado" : "desaprobado"
 
     // Update asistencia: mark present + set nota + resultado
     const { error: asistError } = await supabase

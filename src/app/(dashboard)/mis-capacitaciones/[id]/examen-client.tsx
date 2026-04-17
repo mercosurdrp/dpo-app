@@ -83,7 +83,7 @@ export function ExamenClient({
         toast.error(result.error)
       } else {
         setResultado(result.data)
-        if (result.data.nota >= 60) {
+        if (result.data.nota >= 80) {
           toast.success(`Aprobaste con ${result.data.nota}%`)
         } else {
           toast.error(`No aprobaste: ${result.data.nota}%`)
@@ -95,7 +95,7 @@ export function ExamenClient({
   // Show result screen
   if (yaCompletado || resultado) {
     const finalNota = resultado?.nota ?? nota ?? 0
-    const isAprobado = finalNota >= 60
+    const isAprobado = finalNota >= 80
 
     // Build a map of previous answers
     const prevAnswers = new Map(
