@@ -24,14 +24,14 @@ type Result<T> = { data: T } | { error: string }
 // Tipos de input
 // ===================================================
 
-export interface ReporteSeguridadFilters {
+interface ReporteSeguridadFilters {
   tipo?: ReporteSeguridadTipo
   localidad?: ReporteSeguridadLocalidad
   fecha_desde?: string
   fecha_hasta?: string
 }
 
-export interface CreateReporteInput {
+interface CreateReporteInput {
   tipo: ReporteSeguridadTipo
   fecha: string // YYYY-MM-DD
   hora?: string | null // HH:MM
@@ -341,5 +341,3 @@ export async function deleteReporte(
   }
 }
 
-// Re-export de ReporteSeguridad para consumidores tipados directos
-export type { ReporteSeguridad }
