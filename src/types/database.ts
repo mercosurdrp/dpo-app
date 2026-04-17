@@ -1257,3 +1257,156 @@ export interface Notificacion {
   leida: boolean
   created_at: string
 }
+
+// ===== 5S (Cinco eses) =====
+export type S5Tipo = "flota" | "almacen"
+
+export type S5Categoria =
+  | "organizacion"
+  | "orden"
+  | "limpieza"
+  | "estandarizacion"
+  | "disciplina"
+
+export type S5AuditoriaEstado = "borrador" | "completada"
+
+export interface S5ItemCatalogo {
+  id: string
+  tipo: S5Tipo
+  categoria: S5Categoria
+  numero: number
+  titulo: string
+  descripcion: string
+  orden: number
+  activo: boolean
+}
+
+export interface S5SectorResponsable {
+  id: string
+  periodo: string // DATE (YYYY-MM-01)
+  sector_numero: number
+  empleado_id: string
+  asignado_por: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface S5SectorResponsableFull extends S5SectorResponsable {
+  empleado_nombre: string
+  empleado_legajo: number | null
+}
+
+export interface S5Auditoria {
+  id: string
+  tipo: S5Tipo
+  periodo: string
+  fecha: string
+  auditor_id: string
+  vehiculo_id: string | null
+  chofer_nombre: string | null
+  ayudante_1: string | null
+  ayudante_2: string | null
+  sector_numero: number | null
+  estado: S5AuditoriaEstado
+  nota_total: number | null
+  notas_por_s: Record<S5Categoria, number> | null
+  observaciones_generales: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface S5AuditoriaItem {
+  id: string
+  auditoria_id: string
+  item_id: string
+  puntaje: number | null
+  observaciones: string | null
+}
+
+export interface S5AuditoriaItemConCatalogo extends S5AuditoriaItem {
+  catalogo: S5ItemCatalogo
+}
+
+export interface S5AuditoriaConMeta extends S5Auditoria {
+  auditor_nombre: string
+  vehiculo_dominio: string | null
+}
+
+export interface S5AuditoriaFull extends S5AuditoriaConMeta {
+  items: S5AuditoriaItemConCatalogo[]
+}
+
+export interface S5VehiculoPendiente {
+  id: string
+  dominio: string
+  descripcion: string | null
+}
+
+// Labels / colors
+export const S5_TIPO_LABELS: Record<S5Tipo, string> = {
+  flota: "Flota",
+  almacen: "Almacén",
+}
+
+export const S5_CATEGORIA_LABELS: Record<S5Categoria, string> = {
+  organizacion: "Organización",
+  orden: "Orden",
+  limpieza: "Limpieza",
+  estandarizacion: "Estandarización",
+  disciplina: "Disciplina",
+}
+
+// Nombres S japoneses
+export const S5_CATEGORIA_S_LABELS: Record<S5Categoria, string> = {
+  organizacion: "1ra S - Seiri",
+  orden: "2da S - Seiton",
+  limpieza: "3ra S - Seiso",
+  estandarizacion: "4ta S - Seiketsu",
+  disciplina: "5ta S - Shitsuke",
+}
+
+export const S5_CATEGORIA_COLORS: Record<S5Categoria, string> = {
+  organizacion: "#3B82F6",
+  orden: "#10B981",
+  limpieza: "#06B6D4",
+  estandarizacion: "#8B5CF6",
+  disciplina: "#F59E0B",
+}
+
+export const S5_CATEGORIA_ORDEN: S5Categoria[] = [
+  "organizacion",
+  "orden",
+  "limpieza",
+  "estandarizacion",
+  "disciplina",
+]
+
+// Puntajes válidos por tipo
+export const S5_PUNTAJES_ALMACEN: { valor: number; label: string }[] = [
+  { valor: 0, label: "Muy Malo" },
+  { valor: 1, label: "Malo" },
+  { valor: 2, label: "Regular" },
+  { valor: 3, label: "Bueno" },
+  { valor: 4, label: "Muy Bueno" },
+]
+
+export const S5_PUNTAJES_FLOTA: { valor: number; label: string }[] = [
+  { valor: 0, label: "No OK" },
+  { valor: 1, label: "Precisa acciones" },
+  { valor: 3, label: "OK" },
+]
+
+export const S5_MAX_PUNTAJE: Record<S5Tipo, number> = {
+  flota: 3,
+  almacen: 4,
+}
+
+export const S5_AUDITORIA_ESTADO_LABELS: Record<S5AuditoriaEstado, string> = {
+  borrador: "Borrador",
+  completada: "Completada",
+}
+
+export const S5_AUDITORIA_ESTADO_COLORS: Record<S5AuditoriaEstado, string> = {
+  borrador: "#64748B",
+  completada: "#10B981",
+}

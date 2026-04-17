@@ -17,6 +17,7 @@ import {
   Settings,
   Lightbulb,
   ShieldAlert,
+  Target,
   Menu,
   X,
   LogOut,
@@ -32,6 +33,7 @@ interface NavItem {
   href: string
   icon: React.ReactNode
   adminOnly?: boolean
+  hideForEmpleado?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -79,6 +81,12 @@ const navItems: NavItem[] = [
     label: "Reportes de Seguridad",
     href: "/reportes-seguridad",
     icon: <ShieldAlert className="size-5" />,
+  },
+  {
+    label: "5S",
+    href: "/5s",
+    icon: <Target className="size-5" />,
+    hideForEmpleado: true,
   },
   {
     label: "Sugerencias",
@@ -170,7 +178,9 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
         <nav className="px-2 py-4">
           {/* Main nav items */}
           <div className="space-y-1">
-            {navItems.map((item) => {
+            {navItems
+              .filter((item) => !(item.hideForEmpleado && role === "empleado"))
+              .map((item) => {
               const isActive =
                 item.href === "/"
                   ? pathname === "/"
