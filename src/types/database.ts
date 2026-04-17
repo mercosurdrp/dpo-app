@@ -1130,3 +1130,129 @@ export const SUGERENCIA_PRIORIDAD_COLORS: Record<SugerenciaPrioridad, string> = 
   media: "#F59E0B",
   alta: "#EF4444",
 }
+
+// ===== Reportes de Seguridad =====
+export type ReporteSeguridadTipo =
+  | "accidente"
+  | "incidente"
+  | "acto_inseguro"
+  | "ruta_riesgo"
+  | "acto_seguro"
+
+export type ReporteSeguridadLocalidad =
+  | "san_nicolas"
+  | "ramallo"
+  | "pergamino"
+  | "colon"
+  | "otro"
+
+export type ReporteSeguridadArea =
+  | "deposito"
+  | "distribucion"
+  | "ventas"
+  | "administracion"
+
+export type ReporteSeguridadPuesto =
+  | "ayudante_distribucion"
+  | "chofer_distribucion"
+  | "operario_deposito"
+  | "promotor_ventas"
+  | "repositor"
+  | "administracion"
+  | "mando_medio"
+  | "otro"
+
+export interface ReporteSeguridad {
+  id: string
+  tipo: ReporteSeguridadTipo
+  fecha: string
+  hora: string | null
+  descripcion: string
+  accion_tomada: string | null
+  lugar: string | null
+  localidad: ReporteSeguridadLocalidad | null
+  area: ReporteSeguridadArea | null
+  damnificado_nombre: string | null
+  damnificado_puesto: ReporteSeguridadPuesto | null
+  dentro_cd: boolean | null
+  sif: boolean | null
+  quien_que: string | null
+  creado_por: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReporteSeguridadAdjunto {
+  id: string
+  reporte_id: string
+  storage_path: string
+  mime_type: string
+  tamaño_bytes: number
+  created_at: string
+}
+
+export interface ReporteSeguridadConAutor extends ReporteSeguridad {
+  autor_nombre: string
+}
+
+export interface ReporteSeguridadDetalle extends ReporteSeguridadConAutor {
+  adjuntos: (ReporteSeguridadAdjunto & { url: string })[]
+}
+
+// Labels + colors
+export const REPORTE_SEGURIDAD_TIPO_LABELS: Record<ReporteSeguridadTipo, string> = {
+  accidente: "Accidente",
+  incidente: "Incidente",
+  acto_inseguro: "Acto / condición insegura",
+  ruta_riesgo: "Ruta de riesgo",
+  acto_seguro: "Acto seguro",
+}
+
+export const REPORTE_SEGURIDAD_TIPO_COLORS: Record<ReporteSeguridadTipo, string> = {
+  accidente: "#DC2626",
+  incidente: "#F97316",
+  acto_inseguro: "#F59E0B",
+  ruta_riesgo: "#8B5CF6",
+  acto_seguro: "#10B981",
+}
+
+export const REPORTE_SEGURIDAD_LOCALIDAD_LABELS: Record<
+  ReporteSeguridadLocalidad,
+  string
+> = {
+  san_nicolas: "San Nicolás",
+  ramallo: "Ramallo",
+  pergamino: "Pergamino",
+  colon: "Colón",
+  otro: "Otro",
+}
+
+export const REPORTE_SEGURIDAD_AREA_LABELS: Record<ReporteSeguridadArea, string> = {
+  deposito: "Depósito",
+  distribucion: "Distribución",
+  ventas: "Ventas",
+  administracion: "Administración",
+}
+
+export const REPORTE_SEGURIDAD_PUESTO_LABELS: Record<ReporteSeguridadPuesto, string> = {
+  ayudante_distribucion: "Ayudante distribución",
+  chofer_distribucion: "Chofer distribución",
+  operario_deposito: "Operario depósito",
+  promotor_ventas: "Promotor / ventas",
+  repositor: "Repositor",
+  administracion: "Administración",
+  mando_medio: "Mando medio",
+  otro: "Otro",
+}
+
+// ===== Notificaciones =====
+export interface Notificacion {
+  id: string
+  user_id: string
+  tipo: string
+  titulo: string
+  mensaje: string | null
+  link: string | null
+  leida: boolean
+  created_at: string
+}

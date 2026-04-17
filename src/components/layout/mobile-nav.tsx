@@ -16,12 +16,14 @@ import {
   Users,
   Settings,
   Lightbulb,
+  ShieldAlert,
   Menu,
   X,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 import type { PilarNav } from "./sidebar"
 
@@ -72,6 +74,11 @@ const navItems: NavItem[] = [
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Reportes de Seguridad",
+    href: "/reportes-seguridad",
+    icon: <ShieldAlert className="size-5" />,
   },
   {
     label: "Sugerencias",
@@ -259,15 +266,16 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
             </div>
           )}
 
-          {/* Logout */}
+          {/* Notificaciones + Logout */}
           <div className="mt-5 border-t border-white/10 pt-3">
+            <NotificacionesBell />
             <button
               onClick={async () => {
                 const supabase = createClient()
                 await supabase.auth.signOut()
                 window.location.href = "/login"
               }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
             >
               <LogOut className="size-5" />
               <span>Cerrar sesion</span>

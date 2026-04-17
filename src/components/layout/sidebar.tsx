@@ -17,12 +17,14 @@ import {
   Link2,
   Settings,
   Lightbulb,
+  ShieldAlert,
   ChevronLeft,
   ChevronRight,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 
 interface NavItem {
@@ -72,6 +74,11 @@ const navItems: NavItem[] = [
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Reportes de Seguridad",
+    href: "/reportes-seguridad",
+    icon: <ShieldAlert className="size-5" />,
   },
   {
     label: "Sugerencias",
@@ -245,15 +252,16 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
         )}
       </nav>
 
-      {/* Logout + Collapse */}
+      {/* Notificaciones + Logout + Collapse */}
       <div className="border-t border-white/10">
+        <NotificacionesBell collapsed={collapsed} />
         <button
           onClick={async () => {
             const supabase = createClient()
             await supabase.auth.signOut()
             window.location.href = "/login"
           }}
-          className="flex w-full items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+          className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
         >
           <LogOut className="size-4 shrink-0" />
           {!collapsed && <span>Cerrar sesion</span>}
