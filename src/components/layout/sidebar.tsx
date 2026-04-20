@@ -18,6 +18,7 @@ import {
   Settings,
   Lightbulb,
   ShieldAlert,
+  ShieldCheck,
   Target,
   ChevronLeft,
   ChevronRight,
@@ -81,6 +82,12 @@ const navItems: NavItem[] = [
     label: "Reportes de Seguridad",
     href: "/reportes-seguridad",
     icon: <ShieldAlert className="size-5" />,
+  },
+  {
+    label: "Línea Ética",
+    href: "/compliance/linea-etica",
+    icon: <ShieldCheck className="size-5" />,
+    hideForEmpleado: true,
   },
   {
     label: "5S",

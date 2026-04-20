@@ -1452,3 +1452,96 @@ export interface S5ItemCriticoRow {
   veces_evaluado: number
   observacion_comun: string | null
 }
+
+// ===== Línea Ética =====
+export type LineaEticaTipo =
+  | "conducta_indebida"
+  | "acoso"
+  | "discriminacion"
+  | "corrupcion"
+  | "fraude"
+  | "conflicto_interes"
+  | "represalia"
+  | "otro"
+
+export type LineaEticaEstado =
+  | "nueva"
+  | "en_revision"
+  | "en_tratamiento"
+  | "cerrada"
+
+export interface DenunciaLineaEtica {
+  id: string
+  tipo: LineaEticaTipo
+  descripcion: string
+  lugar: string | null
+  area: ReporteSeguridadArea | null
+  localidad: ReporteSeguridadLocalidad | null
+  fecha_hecho: string | null
+  identificarse: boolean
+  denunciante_nombre: string | null
+  denunciante_contacto: string | null
+  estado: LineaEticaEstado
+  resumen_tratamiento: string | null
+  cerrada_por: string | null
+  cerrada_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LineaEticaAdjunto {
+  id: string
+  denuncia_id: string
+  origen: "denuncia" | "tratamiento"
+  storage_path: string
+  mime_type: string
+  tamaño_bytes: number
+  subido_por: string | null
+  created_at: string
+}
+
+export interface LineaEticaPlanAccion {
+  id: string
+  denuncia_id: string
+  plan_id: string
+  created_at: string
+  created_by: string | null
+}
+
+export interface DenunciaLineaEticaDetalle extends DenunciaLineaEtica {
+  adjuntos: (LineaEticaAdjunto & { url: string })[]
+  planes: {
+    id: string
+    plan_id: string
+    descripcion: string
+    responsable: string
+    fecha_limite: string | null
+    estado: string
+    progreso: number
+  }[]
+}
+
+export const LINEA_ETICA_TIPO_LABELS: Record<LineaEticaTipo, string> = {
+  conducta_indebida: "Conducta indebida",
+  acoso: "Acoso",
+  discriminacion: "Discriminación",
+  corrupcion: "Corrupción / soborno",
+  fraude: "Fraude",
+  conflicto_interes: "Conflicto de interés",
+  represalia: "Represalia",
+  otro: "Otro",
+}
+
+export const LINEA_ETICA_ESTADO_LABELS: Record<LineaEticaEstado, string> = {
+  nueva: "Nueva",
+  en_revision: "En revisión",
+  en_tratamiento: "En tratamiento",
+  cerrada: "Cerrada",
+}
+
+export const LINEA_ETICA_ESTADO_COLORS: Record<LineaEticaEstado, string> = {
+  nueva: "#DC2626",
+  en_revision: "#F59E0B",
+  en_tratamiento: "#3B82F6",
+  cerrada: "#10B981",
+}
