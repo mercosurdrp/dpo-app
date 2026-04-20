@@ -881,6 +881,9 @@ export type DpoActividadTipo =
   | "archivo_subido"
   | "archivo_version_nueva"
   | "archivo_editado"
+  | "archivo_metadata_editada"
+  | "archivo_archivado"
+  | "archivo_desarchivado"
   | "archivo_eliminado"
   | "plan_creado"
   | "plan_actualizado"
@@ -908,6 +911,10 @@ export interface DpoArchivo {
   current_file_size: number
   uploaded_by: string | null
   archivado: boolean
+  archived_at: string | null
+  archived_by: string | null
+  deleted_at: string | null
+  deleted_by: string | null
   created_at: string
   updated_at: string
 }

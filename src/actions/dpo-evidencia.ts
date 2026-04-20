@@ -378,6 +378,7 @@ interface EditArchivoMetaInput {
   descripcion?: string | null
   categoria?: string | null
   requisito_codigo?: string | null
+  motivo?: string | null
 }
 
 export async function editArchivoMeta(
@@ -387,23 +388,46 @@ export async function editArchivoMeta(
     const profile = await requireAuth()
     const supabase = await createClient()
 
+    // Leer estado actual para capturar before/after en el audit log
+    const { data: before, error: errBefore } = await supabase
+      .from("dpo_archivos")
+      .select("*")
+      .eq("id", input.id)
+      .single()
+    if (errBefore || !before) {
+      return { error: errBefore?.message ?? "Archivo no encontrado" }
+    }
+
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
-    const changedKeys: string[] = []
-    if (input.titulo !== undefined) {
+    const changed: Record<string, { from: unknown; to: unknown }> = {}
+    if (input.titulo !== undefined && input.titulo.trim() !== before.titulo) {
       update.titulo = input.titulo.trim()
-      changedKeys.push("titulo")
+      changed.titulo = { from: before.titulo, to: update.titulo }
     }
     if (input.descripcion !== undefined) {
-      update.descripcion = input.descripcion?.toString().trim() || null
-      changedKeys.push("descripcion")
+      const next = input.descripcion?.toString().trim() || null
+      if (next !== before.descripcion) {
+        update.descripcion = next
+        changed.descripcion = { from: before.descripcion, to: next }
+      }
     }
     if (input.categoria !== undefined) {
-      update.categoria = input.categoria?.toString().trim() || null
-      changedKeys.push("categoria")
+      const next = input.categoria?.toString().trim() || null
+      if (next !== before.categoria) {
+        update.categoria = next
+        changed.categoria = { from: before.categoria, to: next }
+      }
     }
     if (input.requisito_codigo !== undefined) {
-      update.requisito_codigo = input.requisito_codigo?.toString().trim() || null
-      changedKeys.push("requisito_codigo")
+      const next = input.requisito_codigo?.toString().trim() || null
+      if (next !== before.requisito_codigo) {
+        update.requisito_codigo = next
+        changed.requisito_codigo = { from: before.requisito_codigo, to: next }
+      }
+    }
+
+    if (Object.keys(changed).length === 0) {
+      return { data: before as DpoArchivo }
     }
 
     const { data, error } = await supabase
@@ -417,15 +441,16 @@ export async function editArchivoMeta(
 
     const archivo = data as DpoArchivo
     await registerActivity(supabase, {
-      tipo: "archivo_editado",
+      tipo: "archivo_metadata_editada",
       titulo: archivo.titulo,
+      descripcion: input.motivo?.trim() || undefined,
       pilar_codigo: archivo.pilar_codigo,
       punto_codigo: archivo.punto_codigo,
       requisito_codigo: archivo.requisito_codigo ?? undefined,
       archivo_id: archivo.id,
       user_id: profile.id,
       user_nombre: profile.nombre,
-      metadata: { changed: changedKeys },
+      metadata: { changed, motivo: input.motivo?.trim() || null },
     })
 
     return { data: archivo }
@@ -434,14 +459,22 @@ export async function editArchivoMeta(
   }
 }
 
-export async function archivarArchivo(id: string): Promise<Result<DpoArchivo>> {
+export async function archivarArchivo(
+  id: string,
+  motivo?: string | null,
+): Promise<Result<DpoArchivo>> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
     const { data, error } = await supabase
       .from("dpo_archivos")
-      .update({ archivado: true, updated_at: new Date().toISOString() })
+      .update({
+        archivado: true,
+        archived_at: new Date().toISOString(),
+        archived_by: profile.id,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id)
       .select("*")
       .single()
@@ -450,16 +483,16 @@ export async function archivarArchivo(id: string): Promise<Result<DpoArchivo>> {
 
     const archivo = data as DpoArchivo
     await registerActivity(supabase, {
-      tipo: "archivo_editado",
+      tipo: "archivo_archivado",
       titulo: archivo.titulo,
-      descripcion: "Archivado",
+      descripcion: motivo?.trim() || undefined,
       pilar_codigo: archivo.pilar_codigo,
       punto_codigo: archivo.punto_codigo,
       requisito_codigo: archivo.requisito_codigo ?? undefined,
       archivo_id: archivo.id,
       user_id: profile.id,
       user_nombre: profile.nombre,
-      metadata: { archivado: true },
+      metadata: { motivo: motivo?.trim() || null },
     })
 
     return { data: archivo }
@@ -468,11 +501,52 @@ export async function archivarArchivo(id: string): Promise<Result<DpoArchivo>> {
   }
 }
 
-export async function deleteArchivo(id: string): Promise<{ success: true } | { error: string }> {
+export async function desarchivarArchivo(id: string): Promise<Result<DpoArchivo>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("dpo_archivos")
+      .update({
+        archivado: false,
+        archived_at: null,
+        archived_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    const archivo = data as DpoArchivo
+    await registerActivity(supabase, {
+      tipo: "archivo_desarchivado",
+      titulo: archivo.titulo,
+      pilar_codigo: archivo.pilar_codigo,
+      punto_codigo: archivo.punto_codigo,
+      requisito_codigo: archivo.requisito_codigo ?? undefined,
+      archivo_id: archivo.id,
+      user_id: profile.id,
+      user_nombre: profile.nombre,
+      metadata: {},
+    })
+
+    return { data: archivo }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function deleteArchivo(
+  id: string,
+  motivo?: string | null,
+): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireAuth()
     if (profile.role !== "admin") {
-      return { error: "Solo admin puede eliminar archivos" }
+      return { error: "Solo admin puede eliminar archivos definitivamente" }
     }
     const supabase = await createClient()
 
@@ -502,12 +576,13 @@ export async function deleteArchivo(id: string): Promise<{ success: true } | { e
     await registerActivity(supabase, {
       tipo: "archivo_eliminado",
       titulo: arch.titulo,
+      descripcion: motivo?.trim() || undefined,
       pilar_codigo: arch.pilar_codigo,
       punto_codigo: arch.punto_codigo,
       requisito_codigo: arch.requisito_codigo ?? undefined,
       user_id: profile.id,
       user_nombre: profile.nombre,
-      metadata: { file_name: arch.file_name },
+      metadata: { file_name: arch.file_name, motivo: motivo?.trim() || null },
     })
 
     return { success: true }

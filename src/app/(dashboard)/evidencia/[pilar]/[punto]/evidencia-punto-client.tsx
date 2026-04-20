@@ -14,7 +14,10 @@ import {
   Trash2,
   Pencil,
   Archive,
+  ArchiveRestore,
   Plus,
+  EyeOff,
+  Eye,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -42,6 +45,7 @@ import {
   registerNuevaVersion,
   editArchivoMeta,
   archivarArchivo,
+  desarchivarArchivo,
   deleteArchivo,
   getArchivoById,
   getDownloadUrl,
@@ -139,8 +143,10 @@ export function EvidenciaPuntoClient({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState<string | null>(null)
   const [newVersionOpen, setNewVersionOpen] = useState(false)
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
 
   const [selected, setSelected] = useState<DpoArchivo | null>(null)
   const [versiones, setVersiones] = useState<DpoArchivoVersion[]>([])
@@ -150,10 +156,16 @@ export function EvidenciaPuntoClient({
   const [descripcion, setDescripcion] = useState("")
   const [categoria, setCategoria] = useState<string>("Otro")
   const [requisito, setRequisito] = useState("")
+  const [motivo, setMotivo] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [nvFile, setNvFile] = useState<File | null>(null)
   const [nvNotas, setNvNotas] = useState("")
+
+  const archivosVisibles = archivos.filter((a) =>
+    mostrarArchivados ? true : !a.archivado
+  )
+  const cantArchivados = archivos.filter((a) => a.archivado).length
 
   function resetUploadForm() {
     setFile(null)
@@ -256,6 +268,7 @@ export function EvidenciaPuntoClient({
     setDescripcion(a.descripcion ?? "")
     setCategoria(a.categoria ?? "Otro")
     setRequisito(a.requisito_codigo ?? "")
+    setMotivo("")
     setEditOpen(true)
     setActionsOpen(null)
   }
@@ -270,6 +283,7 @@ export function EvidenciaPuntoClient({
         descripcion,
         categoria,
         requisito_codigo: requisito || undefined,
+        motivo: motivo || undefined,
       })
       if ("error" in res) {
         toast.error(res.error)
@@ -277,18 +291,41 @@ export function EvidenciaPuntoClient({
       }
       toast.success("Metadata actualizada")
       setEditOpen(false)
+      setMotivo("")
       router.refresh()
     })
   }
 
-  async function handleArchive(a: DpoArchivo) {
+  function openArchive(a: DpoArchivo) {
+    setSelected(a)
+    setMotivo("")
+    setArchiveOpen(true)
+    setActionsOpen(null)
+  }
+
+  function handleArchiveConfirm() {
+    if (!selected) return
     startTransition(async () => {
-      const res = await archivarArchivo(a.id)
+      const res = await archivarArchivo(selected.id, motivo || null)
       if ("error" in res) {
         toast.error(res.error)
         return
       }
       toast.success("Archivado")
+      setArchiveOpen(false)
+      setMotivo("")
+      router.refresh()
+    })
+  }
+
+  async function handleDesarchivar(a: DpoArchivo) {
+    startTransition(async () => {
+      const res = await desarchivarArchivo(a.id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Desarchivado")
       setActionsOpen(null)
       router.refresh()
     })
@@ -297,12 +334,13 @@ export function EvidenciaPuntoClient({
   async function handleDelete() {
     if (!selected) return
     startTransition(async () => {
-      const res = await deleteArchivo(selected.id)
+      const res = await deleteArchivo(selected.id, motivo || null)
       if ("error" in res) {
         toast.error(res.error)
         return
       }
       toast.success("Eliminado")
+      setMotivo("")
       setDeleteOpen(false)
       router.refresh()
     })
@@ -374,16 +412,35 @@ export function EvidenciaPuntoClient({
             Archivos de evidencia, SOPs, planes de acción y reportes asociados al punto.
           </p>
         </div>
-        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-          <DialogTrigger
-            render={
-              <Button>
-                <Upload className="mr-2 size-4" />
-                Subir archivo
-              </Button>
-            }
-          />
-          <DialogContent className="max-w-lg">
+        <div className="flex items-center gap-2">
+          {cantArchivados > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMostrarArchivados((v) => !v)}
+              title={mostrarArchivados ? "Ocultar archivados" : `Mostrar ${cantArchivados} archivados`}
+            >
+              {mostrarArchivados ? (
+                <>
+                  <EyeOff className="mr-1 size-4" /> Ocultar archivados
+                </>
+              ) : (
+                <>
+                  <Eye className="mr-1 size-4" /> Ver archivados ({cantArchivados})
+                </>
+              )}
+            </Button>
+          )}
+          <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+            <DialogTrigger
+              render={
+                <Button>
+                  <Upload className="mr-2 size-4" />
+                  Subir archivo
+                </Button>
+              }
+            />
+            <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Subir nuevo archivo</DialogTitle>
             </DialogHeader>
@@ -467,18 +524,24 @@ export function EvidenciaPuntoClient({
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
-      {archivos.length === 0 ? (
+      {archivosVisibles.length === 0 ? (
         <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
-          Sin archivos cargados para este punto. Subí el primero con el botón de arriba.
+          {archivos.length === 0
+            ? "Sin archivos cargados para este punto. Subí el primero con el botón de arriba."
+            : "No hay archivos vigentes. Activá 'Ver archivados' para mostrar los archivados."}
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {archivos.map((a) => {
+          {archivosVisibles.map((a) => {
             const Icon = iconForExt(a.file_ext)
             return (
-              <Card key={a.id} className="flex h-full flex-col p-4">
+              <Card
+                key={a.id}
+                className={`flex h-full flex-col p-4 ${a.archivado ? "border-slate-200 bg-slate-50/60 opacity-75" : ""}`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
                     <Icon className="size-5" />
@@ -493,6 +556,15 @@ export function EvidenciaPuntoClient({
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {a.archivado && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-50 text-amber-700"
+                    >
+                      <Archive className="mr-1 size-3" />
+                      Archivado
+                    </Badge>
+                  )}
                   {a.categoria && <Badge variant="secondary">{a.categoria}</Badge>}
                   <Badge variant="outline">v{a.current_version}</Badge>
                   {a.requisito_codigo && (
@@ -503,23 +575,38 @@ export function EvidenciaPuntoClient({
                   <span>{formatBytes(a.current_file_size)}</span>
                   <span>{formatDate(a.updated_at)}</span>
                 </div>
-                <div className="mt-3 flex items-center gap-1 border-t pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-1 border-t pt-3">
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => handleDownload(a.id)}
-                    title="Descargar"
                   >
-                    <Download className="size-4" />
+                    <Download className="mr-1 size-4" />
+                    Descargar
                   </Button>
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => openHistory(a)}
-                    title="Historial de versiones"
                   >
-                    <History className="size-4" />
+                    <History className="mr-1 size-4" />
+                    Historial
                   </Button>
+                  {!a.archivado && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelected(a)
+                        setNvFile(null)
+                        setNvNotas("")
+                        setNewVersionOpen(true)
+                      }}
+                    >
+                      <Plus className="mr-1 size-4" />
+                      Nueva versión
+                    </Button>
+                  )}
                   <div className="relative ml-auto">
                     <Button
                       size="sm"
@@ -532,33 +619,52 @@ export function EvidenciaPuntoClient({
                       <MoreVertical className="size-4" />
                     </Button>
                     {actionsOpen === a.id && (
-                      <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-md border bg-white p-1 shadow-md">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
-                          onClick={() => openEdit(a)}
-                        >
-                          <Pencil className="size-4" /> Editar metadata
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
-                          onClick={() => handleArchive(a)}
-                        >
-                          <Archive className="size-4" /> Archivar
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50"
-                          onClick={() => {
-                            setSelected(a)
-                            setActionsOpen(null)
-                            setDeleteOpen(true)
-                          }}
-                        >
-                          <Trash2 className="size-4" /> Eliminar
-                        </button>
-                      </div>
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setActionsOpen(null)}
+                        />
+                        <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-md border bg-white p-1 shadow-md">
+                          {!a.archivado && (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                              onClick={() => openEdit(a)}
+                            >
+                              <Pencil className="size-4" /> Editar metadata
+                            </button>
+                          )}
+                          {a.archivado ? (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                              onClick={() => handleDesarchivar(a)}
+                            >
+                              <ArchiveRestore className="size-4" /> Desarchivar
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                              onClick={() => openArchive(a)}
+                            >
+                              <Archive className="size-4" /> Archivar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              setSelected(a)
+                              setMotivo("")
+                              setActionsOpen(null)
+                              setDeleteOpen(true)
+                            }}
+                          >
+                            <Trash2 className="size-4" /> Eliminar
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -695,6 +801,15 @@ export function EvidenciaPuntoClient({
               <Label>Requisito</Label>
               <Input value={requisito} onChange={(e) => setRequisito(e.target.value)} />
             </div>
+            <div>
+              <Label>Motivo del cambio (opcional)</Label>
+              <Textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                rows={2}
+                placeholder="Queda en el historial"
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
                 Cancelar
@@ -707,6 +822,35 @@ export function EvidenciaPuntoClient({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Archivar archivo</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Archivar{" "}
+            <span className="font-medium text-slate-900">{selected?.titulo}</span>. Se va a ocultar del listado pero queda disponible en "Ver archivados".
+          </p>
+          <div>
+            <Label>Motivo (opcional)</Label>
+            <Textarea
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={2}
+              placeholder="Ej: documento reemplazado por versión nueva"
+            />
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setArchiveOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleArchiveConfirm} disabled={isPending}>
+              {isPending ? "Archivando…" : "Archivar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -714,10 +858,18 @@ export function EvidenciaPuntoClient({
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             ¿Seguro que querés eliminar{" "}
-            <span className="font-medium text-slate-900">{selected?.titulo}</span>? Esta
-            acción no se puede deshacer.
+            <span className="font-medium text-slate-900">{selected?.titulo}</span>? Se borran todas las versiones del storage. Esta acción no se puede deshacer.
           </p>
-          <div className="mt-4 flex justify-end gap-2">
+          <div>
+            <Label>Motivo (opcional pero recomendado)</Label>
+            <Textarea
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={2}
+              placeholder="Queda registrado en el audit log"
+            />
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>
               Cancelar
             </Button>

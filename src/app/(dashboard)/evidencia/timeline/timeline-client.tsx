@@ -49,6 +49,24 @@ const TIPO_META: Record<
     fg: "text-indigo-600",
   },
   archivo_editado: { icon: Pencil, label: "Archivo editado", bg: "bg-amber-100", fg: "text-amber-600" },
+  archivo_metadata_editada: {
+    icon: Pencil,
+    label: "Metadata editada",
+    bg: "bg-amber-100",
+    fg: "text-amber-600",
+  },
+  archivo_archivado: {
+    icon: Pencil,
+    label: "Archivo archivado",
+    bg: "bg-slate-100",
+    fg: "text-slate-600",
+  },
+  archivo_desarchivado: {
+    icon: Pencil,
+    label: "Archivo desarchivado",
+    bg: "bg-emerald-100",
+    fg: "text-emerald-600",
+  },
   archivo_eliminado: { icon: Trash2, label: "Archivo eliminado", bg: "bg-red-100", fg: "text-red-600" },
   plan_creado: { icon: Target, label: "Plan creado", bg: "bg-purple-100", fg: "text-purple-600" },
   plan_cerrado: {

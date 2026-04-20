@@ -16,7 +16,6 @@ export default async function EvidenciaPuntoPage({
   const res = await getArchivos({
     pilar_codigo: pilar,
     punto_codigo: puntoCodigo,
-    archivado: false,
   })
   const archivos = "data" in res ? res.data : []
 
