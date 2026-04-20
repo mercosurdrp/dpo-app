@@ -9,7 +9,8 @@ import {
   Target,
   Truck,
   Warehouse,
-  ChevronRight,
+  Pencil,
+  Trash2,
   BarChart3,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/table"
 import { NuevaFlotaDialog } from "@/components/s5/nueva-flota-dialog"
 import { NuevaAlmacenDialog } from "@/components/s5/nueva-almacen-dialog"
-import { upsertSectorResponsable } from "@/actions/s5"
+import { upsertSectorResponsable, eliminarAuditoria } from "@/actions/s5"
 import {
   S5_AUDITORIA_ESTADO_COLORS,
   S5_AUDITORIA_ESTADO_LABELS,
@@ -162,6 +163,21 @@ export function CincoSClient({
         return
       }
       toast.success(`Sector ${sector} asignado a ${res.data.empleado_nombre}`)
+      router.refresh()
+    })
+  }
+
+  function handleEliminarAuditoria(id: string, etiqueta: string) {
+    if (!confirm(`¿Eliminar la auditoría ${etiqueta}? Se borran también sus ítems.`)) {
+      return
+    }
+    startTransition(async () => {
+      const res = await eliminarAuditoria(id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Auditoría eliminada")
       router.refresh()
     })
   }
@@ -298,11 +314,30 @@ export function CincoSClient({
                               : "—"}
                           </TableCell>
                           <TableCell>
-                            <Link href={`/5s/auditoria/${a.id}`}>
-                              <Button size="sm" variant="ghost">
-                                <ChevronRight className="size-4" />
-                              </Button>
-                            </Link>
+                            <div className="flex items-center justify-end gap-1">
+                              <Link href={`/5s/auditoria/${a.id}`}>
+                                <Button size="sm" variant="ghost" title="Editar">
+                                  <Pencil className="size-4" />
+                                </Button>
+                              </Link>
+                              {canEdit && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleEliminarAuditoria(
+                                      a.id,
+                                      `${formatFecha(a.fecha)} — ${a.vehiculo_dominio ?? "sin patente"}`
+                                    )
+                                  }
+                                  disabled={isPending}
+                                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -507,11 +542,30 @@ export function CincoSClient({
                               : "—"}
                           </TableCell>
                           <TableCell>
-                            <Link href={`/5s/auditoria/${a.id}`}>
-                              <Button size="sm" variant="ghost">
-                                <ChevronRight className="size-4" />
-                              </Button>
-                            </Link>
+                            <div className="flex items-center justify-end gap-1">
+                              <Link href={`/5s/auditoria/${a.id}`}>
+                                <Button size="sm" variant="ghost" title="Editar">
+                                  <Pencil className="size-4" />
+                                </Button>
+                              </Link>
+                              {canEdit && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleEliminarAuditoria(
+                                      a.id,
+                                      `${formatFecha(a.fecha)} — Sector ${a.sector_numero}`
+                                    )
+                                  }
+                                  disabled={isPending}
+                                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

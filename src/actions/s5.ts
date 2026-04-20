@@ -1180,3 +1180,36 @@ export async function getS5TopItemsCriticos(
     }
   }
 }
+
+// ===================================================
+// Eliminar auditoría (borra items + auditoría)
+// ===================================================
+export async function eliminarAuditoria(
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin" && profile.role !== "auditor") {
+      return { error: "Sin permisos para eliminar auditorías" }
+    }
+
+    const supabase = await createClient()
+
+    const { error: errItems } = await supabase
+      .from("s5_auditoria_items")
+      .delete()
+      .eq("auditoria_id", id)
+    if (errItems) return { error: errItems.message }
+
+    const { error } = await supabase.from("s5_auditorias").delete().eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath("/5s")
+    return { success: true }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error eliminando auditoría",
+    }
+  }
+}
