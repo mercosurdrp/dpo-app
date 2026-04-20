@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Shield, Filter, FileWarning, Eye, Calendar, MapPin } from "lucide-react"
+import {
+  Shield,
+  Filter,
+  FileWarning,
+  Eye,
+  Calendar,
+  MapPin,
+  QrCode,
+} from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -102,6 +110,16 @@ export function LineaEticaListClient({
             Denuncias anónimas del canal de compliance. Revisá y dales tratamiento.
           </p>
         </div>
+        <a
+          href="/api/linea-etica/qr"
+          download="qr-linea-etica.pdf"
+          className="shrink-0"
+        >
+          <Button variant="outline">
+            <QrCode className="mr-2 size-4" />
+            Descargar QR (PDF)
+          </Button>
+        </a>
       </div>
 
       {/* KPIs */}
