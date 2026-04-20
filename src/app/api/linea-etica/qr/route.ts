@@ -3,11 +3,11 @@ export const runtime = "nodejs"
 
 import { NextRequest, NextResponse } from "next/server"
 import QRCode from "qrcode"
-import PDFDocument from "pdfkit"
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
-  // Auth check — sólo autenticados pueden descargar
+  // Auth check — sólo autenticados
   const supabase = await createClient()
   const {
     data: { user },
@@ -20,78 +20,108 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin
   const targetUrl = `${origin}/linea-etica`
 
+  // Generar QR como PNG
   const qrBuffer = await QRCode.toBuffer(targetUrl, {
-    width: 500,
+    width: 600,
     margin: 1,
     errorCorrectionLevel: "H",
     color: { dark: "#0F172A", light: "#FFFFFF" },
   })
 
-  const doc = new PDFDocument({ size: "A4", margin: 40 })
-  const chunks: Buffer[] = []
-  doc.on("data", (c) => chunks.push(c as Buffer))
-  const done = new Promise<Buffer>((resolve) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)))
+  // Construir PDF A4 (595 x 842 pt)
+  const pdfDoc = await PDFDocument.create()
+  const page = pdfDoc.addPage([595, 842])
+  const { width, height } = page.getSize()
+
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const regular = await pdfDoc.embedFont(StandardFonts.Helvetica)
+
+  const slate900 = rgb(0.06, 0.09, 0.16)
+  const slate500 = rgb(0.42, 0.45, 0.5)
+  const slate400 = rgb(0.58, 0.64, 0.72)
+
+  // Banda header (80pt)
+  page.drawRectangle({
+    x: 0,
+    y: height - 80,
+    width,
+    height: 80,
+    color: slate900,
+  })
+  const title = "LÍNEA ÉTICA"
+  const titleW = bold.widthOfTextAtSize(title, 26)
+  page.drawText(title, {
+    x: (width - titleW) / 2,
+    y: height - 50,
+    size: 26,
+    font: bold,
+    color: rgb(1, 1, 1),
+  })
+  const sub = "Mercosur Región Pampeana — canal de compliance"
+  const subW = regular.widthOfTextAtSize(sub, 11)
+  page.drawText(sub, {
+    x: (width - subW) / 2,
+    y: height - 70,
+    size: 11,
+    font: regular,
+    color: slate400,
   })
 
-  const pageW = doc.page.width
-  const m = 40
-
-  // Header banda
-  doc.rect(0, 0, pageW, 80).fill("#0F172A")
-  doc
-    .fillColor("#FFFFFF")
-    .fontSize(24)
-    .text("LÍNEA ÉTICA", m, 28, { align: "center", width: pageW - 2 * m })
-  doc
-    .fontSize(12)
-    .fillColor("#94A3B8")
-    .text("Mercosur Región Pampeana — canal de compliance", m, 58, {
-      align: "center",
-      width: pageW - 2 * m,
-    })
-
   // Subtítulo
-  doc
-    .fillColor("#0F172A")
-    .fontSize(16)
-    .text("Reportá con total confidencialidad", m, 110, {
-      align: "center",
-      width: pageW - 2 * m,
-    })
-  doc
-    .fontSize(11)
-    .fillColor("#475569")
-    .text(
-      "Escaneá el código con la cámara de tu celular. La denuncia es anónima, no te pedimos datos.",
-      m,
-      135,
-      { align: "center", width: pageW - 2 * m }
-    )
+  const h2 = "Reportá con total confidencialidad"
+  const h2W = bold.widthOfTextAtSize(h2, 16)
+  page.drawText(h2, {
+    x: (width - h2W) / 2,
+    y: height - 115,
+    size: 16,
+    font: bold,
+    color: slate900,
+  })
+  const lead = "Escaneá el código con la cámara de tu celular."
+  const leadW = regular.widthOfTextAtSize(lead, 11)
+  page.drawText(lead, {
+    x: (width - leadW) / 2,
+    y: height - 135,
+    size: 11,
+    font: regular,
+    color: slate500,
+  })
+  const lead2 = "La denuncia es anónima, no te pedimos datos."
+  const lead2W = regular.widthOfTextAtSize(lead2, 11)
+  page.drawText(lead2, {
+    x: (width - lead2W) / 2,
+    y: height - 150,
+    size: 11,
+    font: regular,
+    color: slate500,
+  })
 
-  // QR grande centrado
+  // QR (embed PNG) — 360pt centrado
+  const qrImage = await pdfDoc.embedPng(qrBuffer)
   const qrSize = 360
-  const qrX = (pageW - qrSize) / 2
-  doc.image(qrBuffer, qrX, 180, { width: qrSize, height: qrSize })
+  const qrX = (width - qrSize) / 2
+  const qrY = height - 180 - qrSize
+  page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize })
 
-  // URL debajo
-  doc
-    .fontSize(12)
-    .fillColor("#0F172A")
-    .text(targetUrl, m, 180 + qrSize + 20, {
-      align: "center",
-      width: pageW - 2 * m,
-    })
+  // URL debajo del QR
+  const urlW = regular.widthOfTextAtSize(targetUrl, 11)
+  page.drawText(targetUrl, {
+    x: (width - urlW) / 2,
+    y: qrY - 20,
+    size: 11,
+    font: regular,
+    color: slate900,
+  })
 
-  // Bloque "qué podés reportar"
-  const bloqueY = 180 + qrSize + 60
-  doc
-    .fillColor("#0F172A")
-    .fontSize(13)
-    .text("¿Qué podés reportar?", m + 20, bloqueY, {
-      width: pageW - 2 * (m + 20),
-    })
-
+  // Bloque "¿Qué podés reportar?"
+  const bloqueY = qrY - 55
+  page.drawText("¿Qué podés reportar?", {
+    x: 60,
+    y: bloqueY,
+    size: 13,
+    font: bold,
+    color: slate900,
+  })
   const items = [
     "Conductas indebidas o acoso",
     "Discriminación",
@@ -99,28 +129,32 @@ export async function GET(request: NextRequest) {
     "Conflictos de interés",
     "Represalias",
   ]
-  let y = bloqueY + 22
-  doc.fontSize(11).fillColor("#334155")
+  let y = bloqueY - 22
   for (const it of items) {
-    doc.text(`•  ${it}`, m + 30, y, { width: pageW - 2 * (m + 30) })
-    y += 16
+    page.drawText(`•  ${it}`, {
+      x: 75,
+      y,
+      size: 11,
+      font: regular,
+      color: rgb(0.2, 0.25, 0.33),
+    })
+    y -= 16
   }
 
   // Footer
-  doc
-    .fontSize(9)
-    .fillColor("#94A3B8")
-    .text(
-      "Tu identidad no queda registrada salvo que elijas identificarte voluntariamente.",
-      m,
-      800,
-      { align: "center", width: pageW - 2 * m }
-    )
+  const foot = "Tu identidad no queda registrada salvo que elijas identificarte voluntariamente."
+  const footW = regular.widthOfTextAtSize(foot, 9)
+  page.drawText(foot, {
+    x: (width - footW) / 2,
+    y: 40,
+    size: 9,
+    font: regular,
+    color: slate400,
+  })
 
-  doc.end()
-  const pdfBuffer = await done
+  const pdfBytes = await pdfDoc.save()
 
-  return new NextResponse(new Uint8Array(pdfBuffer), {
+  return new NextResponse(new Uint8Array(pdfBytes), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
