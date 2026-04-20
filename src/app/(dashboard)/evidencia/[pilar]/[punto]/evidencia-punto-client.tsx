@@ -18,6 +18,7 @@ import {
   Plus,
   EyeOff,
   Eye,
+  ExternalLink,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -162,6 +163,13 @@ export function EvidenciaPuntoClient({
   const [nvFile, setNvFile] = useState<File | null>(null)
   const [nvNotas, setNvNotas] = useState("")
 
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewData, setPreviewData] = useState<{
+    url: string
+    mime: string
+    titulo: string
+  } | null>(null)
+
   const archivosVisibles = archivos.filter((a) =>
     mostrarArchivados ? true : !a.archivado
   )
@@ -241,13 +249,49 @@ export function EvidenciaPuntoClient({
     })
   }
 
+  // Abrir en nueva pestaña sin gatillar el bloqueador de popups
+  // (window.open despues de await queda bloqueado en la mayoria de navegadores).
+  function openUrlInNewTab(url: string) {
+    const a = document.createElement("a")
+    a.href = url
+    a.target = "_blank"
+    a.rel = "noopener noreferrer"
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
   async function handleDownload(archivo_id: string, version_id?: string) {
     const res = await getDownloadUrl({ archivo_id, version_id })
     if ("error" in res) {
       toast.error(res.error)
       return
     }
-    window.open(res.data.url, "_blank")
+    openUrlInNewTab(res.data.url)
+  }
+
+  async function handlePreview(a: DpoArchivo) {
+    const res = await getDownloadUrl({ archivo_id: a.id })
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    setPreviewData({
+      url: res.data.url,
+      mime: a.mime_type || "",
+      titulo: a.titulo,
+    })
+    setPreviewOpen(true)
+  }
+
+  function isPreviewable(mime: string, ext: string): boolean {
+    const m = (mime || "").toLowerCase()
+    const e = (ext || "").toLowerCase().replace(".", "")
+    return (
+      m.startsWith("image/") ||
+      m === "application/pdf" ||
+      ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(e)
+    )
   }
 
   async function openHistory(a: DpoArchivo) {
@@ -576,6 +620,16 @@ export function EvidenciaPuntoClient({
                   <span>{formatDate(a.updated_at)}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1 border-t pt-3">
+                  {isPreviewable(a.mime_type, a.file_ext) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handlePreview(a)}
+                    >
+                      <Eye className="mr-1 size-4" />
+                      Ver
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -848,6 +902,47 @@ export function EvidenciaPuntoClient({
               {isPending ? "Archivando…" : "Archivar"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{previewData?.titulo ?? "Vista previa"}</DialogTitle>
+          </DialogHeader>
+          {previewData ? (
+            <div className="space-y-3">
+              {previewData.mime.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewData.url}
+                  alt={previewData.titulo}
+                  className="mx-auto max-h-[70vh] w-auto rounded border"
+                />
+              ) : (
+                <iframe
+                  src={previewData.url}
+                  title={previewData.titulo}
+                  className="h-[70vh] w-full rounded border"
+                />
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => openUrlInNewTab(previewData.url)}
+                >
+                  <ExternalLink className="mr-1 size-4" />
+                  Abrir en nueva pestaña
+                </Button>
+                <Button
+                  onClick={() => openUrlInNewTab(previewData.url)}
+                >
+                  <Download className="mr-1 size-4" />
+                  Descargar
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 
