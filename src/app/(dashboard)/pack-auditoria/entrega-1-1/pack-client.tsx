@@ -87,7 +87,7 @@ export function PackAuditoria11Client({ pack, archivos }: Props) {
               Pilar {pack.pilar} — Punto {pack.punto}: {pack.titulo}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Generado el {fechaGen} · Mercosur Región Pampeana
+              Generado el {fechaGen} · {process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Región Pampeana"}
             </p>
           </div>
         </div>

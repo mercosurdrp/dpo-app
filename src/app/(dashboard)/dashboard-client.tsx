@@ -296,7 +296,7 @@ export function DashboardClient({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-            DPO Mercosur Region Pampeana
+            DPO {process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Region Pampeana"}
           </h1>
           {auditoria && (
             <div className="mt-1.5 flex flex-wrap items-center gap-2">

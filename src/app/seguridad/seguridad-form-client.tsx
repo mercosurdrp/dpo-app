@@ -96,7 +96,7 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
           <ShieldCheck className="h-6 w-6" />
           <h1 className="text-xl font-bold">Registro de Vehículos</h1>
         </div>
-        <p className="text-sm text-muted-foreground">Seguridad — Mercosur Región Pampeana</p>
+        <p className="text-sm text-muted-foreground">Seguridad — {process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Región Pampeana"}</p>
       </div>
 
       {/* TML Preview */}

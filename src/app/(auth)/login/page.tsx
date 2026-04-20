@@ -65,7 +65,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <h1 className="text-5xl font-bold tracking-tight text-white">DPO</h1>
           <p className="mt-2 text-sm text-slate-400">
-            Mercosur Región Pampeana
+            {process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Región Pampeana"}
           </p>
         </div>
 

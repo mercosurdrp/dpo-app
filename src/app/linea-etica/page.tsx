@@ -1,8 +1,11 @@
 import { LineaEticaFormClient } from "./linea-etica-form-client"
 
+const EMPRESA = process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Región Pampeana"
+const EMPRESA_CORTO = process.env.NEXT_PUBLIC_EMPRESA_NOMBRE_CORTO ?? "Mercosur"
+
 export const metadata = {
-  title: "Línea Ética - Mercosur",
-  description: "Canal de denuncias anónimo de Mercosur Región Pampeana",
+  title: `Línea Ética - ${EMPRESA_CORTO}`,
+  description: `Canal de denuncias anónimo de ${EMPRESA}`,
 }
 
 export default function LineaEticaPublicPage() {

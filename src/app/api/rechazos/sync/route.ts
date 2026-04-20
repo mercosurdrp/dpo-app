@@ -3,11 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { calcularKpisConClient } from "@/lib/dpo-kpis-calc"
 import https from "node:https"
 
-const API_KEY = process.env.ASISTENCIA_API_KEY ?? "mercosur-dpo-sync-2026"
-
-const CHESS_BASE = "https://mercosurpampeana.chesserp.com/AR910/web/api/chess/v1"
-const CHESS_USER = process.env.CHESS_API_USER ?? "dcepeda1"
-const CHESS_PASS = process.env.CHESS_API_PASS ?? "1234"
+const API_KEY = process.env.ASISTENCIA_API_KEY
+const CHESS_BASE = process.env.CHESS_API_BASE_URL
+const CHESS_USER = process.env.CHESS_API_USER
+const CHESS_PASS = process.env.CHESS_API_PASS
 
 // Agent that accepts self-signed certificates
 const insecureAgent = new https.Agent({ rejectUnauthorized: false })
@@ -87,6 +86,16 @@ async function fetchVentasDia(sessionId: string, fecha: string): Promise<ChessVe
 }
 
 export async function POST(request: NextRequest) {
+  if (!API_KEY || !CHESS_BASE || !CHESS_USER || !CHESS_PASS) {
+    return NextResponse.json(
+      {
+        error:
+          "Integración Chess no configurada en este deploy. Setear ASISTENCIA_API_KEY, CHESS_API_BASE_URL, CHESS_API_USER y CHESS_API_PASS.",
+      },
+      { status: 503 }
+    )
+  }
+
   const authHeader = request.headers.get("x-api-key")
   if (authHeader !== API_KEY) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

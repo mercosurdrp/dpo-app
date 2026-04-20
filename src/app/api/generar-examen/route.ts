@@ -92,6 +92,15 @@ donde respuesta_correcta es el indice (0-3) de la opcion correcta.`
 
     const userPrompt = `Capacitacion: "${titulo}" (Pilar: ${pilar})\n\nGenera 10 preguntas de examen basadas en el material adjunto.`
 
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        {
+          error:
+            "Generador de exámenes no disponible (falta OPENAI_API_KEY en este deploy).",
+        },
+        { status: 503 }
+      )
+    }
     // Build OpenAI request body manually to avoid type issues
     const OpenAI = (await import("openai")).default
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })

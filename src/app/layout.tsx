@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { Toaster } from "sonner"
+import { EMPRESA_NOMBRE } from "@/lib/empresa"
 import "./globals.css"
 
 const inter = Inter({
@@ -9,7 +10,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: "DPO - Mercosur Región Pampeana",
+  title: `DPO - ${EMPRESA_NOMBRE}`,
   description: "Plataforma de gestión DPO",
 }
 

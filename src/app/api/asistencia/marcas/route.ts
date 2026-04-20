@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 
-const API_KEY = process.env.ASISTENCIA_API_KEY ?? "mercosur-dpo-sync-2026"
+const API_KEY = process.env.ASISTENCIA_API_KEY
 
 interface MarcaInput {
   codigo_empresa: string
@@ -12,6 +12,12 @@ interface MarcaInput {
 }
 
 export async function POST(request: NextRequest) {
+  if (!API_KEY) {
+    return NextResponse.json(
+      { error: "Integración asistencia no configurada (falta ASISTENCIA_API_KEY)." },
+      { status: 503 }
+    )
+  }
   // Validate API key
   const authHeader = request.headers.get("x-api-key")
   if (authHeader !== API_KEY) {

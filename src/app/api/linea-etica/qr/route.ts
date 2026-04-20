@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
     font: bold,
     color: rgb(1, 1, 1),
   })
-  const sub = "Mercosur Región Pampeana — canal de compliance"
+  const empresa = process.env.NEXT_PUBLIC_EMPRESA_NOMBRE ?? "Mercosur Región Pampeana"
+  const sub = `${empresa} — canal de compliance`
   const subW = regular.widthOfTextAtSize(sub, 11)
   page.drawText(sub, {
     x: (width - subW) / 2,
