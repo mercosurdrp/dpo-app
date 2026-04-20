@@ -73,7 +73,7 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { deleteChecklist } from "@/actions/checklist-vehiculos"
-import { deleteRegistroCombustible } from "@/actions/combustible"
+import { deleteRegistroCombustible, updateRegistroCombustible } from "@/actions/combustible"
 
 interface EstadoVehiculo {
   dominio: string
@@ -161,6 +161,66 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const [editOdometro, setEditOdometro] = useState("")
   const [editObs, setEditObs] = useState("")
   const [editSaving, setEditSaving] = useState(false)
+
+  const [editCmb, setEditCmb] = useState<RegistroCombustible | null>(null)
+  const [cmbFecha, setCmbFecha] = useState("")
+  const [cmbDominio, setCmbDominio] = useState("")
+  const [cmbChofer, setCmbChofer] = useState("")
+  const [cmbOdometro, setCmbOdometro] = useState("")
+  const [cmbLitros, setCmbLitros] = useState("")
+  const [cmbProveedor, setCmbProveedor] = useState("")
+  const [cmbRemito, setCmbRemito] = useState("")
+  const [cmbCosto, setCmbCosto] = useState("")
+  const [cmbObs, setCmbObs] = useState("")
+  const [cmbSaving, setCmbSaving] = useState(false)
+
+  function openEditCmb(c: RegistroCombustible) {
+    setEditCmb(c)
+    setCmbFecha(c.fecha)
+    setCmbDominio(c.dominio)
+    setCmbChofer(c.chofer)
+    setCmbOdometro(c.odometro.toString())
+    setCmbLitros(Number(c.litros).toString())
+    setCmbProveedor(c.proveedor ?? "")
+    setCmbRemito(c.numero_remito ?? "")
+    setCmbCosto(c.costo_total != null ? String(c.costo_total) : "")
+    setCmbObs(c.observaciones ?? "")
+  }
+
+  async function handleSaveEditCmb() {
+    if (!editCmb) return
+    const odom = parseInt(cmbOdometro, 10)
+    const litros = parseFloat(cmbLitros)
+    if (!cmbDominio || !cmbChofer) {
+      toast.error("Dominio y chofer son obligatorios")
+      return
+    }
+    if (!Number.isFinite(odom) || !Number.isFinite(litros)) {
+      toast.error("Odómetro y litros deben ser números")
+      return
+    }
+    setCmbSaving(true)
+    const result = await updateRegistroCombustible({
+      id: editCmb.id,
+      fecha: cmbFecha,
+      dominio: cmbDominio,
+      chofer: cmbChofer,
+      odometro: odom,
+      litros,
+      proveedor: cmbProveedor || null,
+      numero_remito: cmbRemito || null,
+      costo_total: cmbCosto ? parseFloat(cmbCosto) : null,
+      observaciones: cmbObs || null,
+    })
+    setCmbSaving(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Registro actualizado")
+    setEditCmb(null)
+    startTransition(() => router.refresh())
+  }
 
   function openEditChk(c: ChecklistVehiculo) {
     setEditChk(c)
@@ -786,15 +846,28 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                              onClick={() => { setDeleteId(c.id); setDeleteType("combustible") }}
-                              disabled={isPending}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700"
+                                onClick={() => openEditCmb(c)}
+                                disabled={isPending}
+                                title="Editar"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => { setDeleteId(c.id); setDeleteType("combustible") }}
+                                disabled={isPending}
+                                title="Eliminar"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -898,6 +971,106 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
             <Button variant="outline" onClick={() => setEditChk(null)}>Cancelar</Button>
             <Button onClick={handleSaveEditChk} disabled={editSaving}>
               {editSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Combustible Dialog */}
+      <Dialog open={!!editCmb} onOpenChange={(open) => !open && setEditCmb(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar carga de combustible</DialogTitle>
+            <DialogDescription>
+              {editCmb?.dominio} · {editCmb?.fecha}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Fecha</Label>
+                <Input
+                  type="date"
+                  value={cmbFecha}
+                  onChange={(e) => setCmbFecha(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Dominio</Label>
+                <Input
+                  value={cmbDominio}
+                  onChange={(e) => setCmbDominio(e.target.value.toUpperCase())}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Chofer</Label>
+              <Input
+                value={cmbChofer}
+                onChange={(e) => setCmbChofer(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Odómetro (km)</Label>
+                <Input
+                  type="number"
+                  value={cmbOdometro}
+                  onChange={(e) => setCmbOdometro(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Litros cargados</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={cmbLitros}
+                  onChange={(e) => setCmbLitros(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Proveedor</Label>
+                <Input
+                  value={cmbProveedor}
+                  onChange={(e) => setCmbProveedor(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>N° Remito</Label>
+                <Input
+                  value={cmbRemito}
+                  onChange={(e) => setCmbRemito(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Costo total ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={cmbCosto}
+                  onChange={(e) => setCmbCosto(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observaciones</Label>
+              <Textarea
+                rows={3}
+                value={cmbObs}
+                onChange={(e) => setCmbObs(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Km recorridos y rendimiento se recalculan automáticamente en base al registro anterior del mismo vehículo.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditCmb(null)}>Cancelar</Button>
+            <Button onClick={handleSaveEditCmb} disabled={cmbSaving}>
+              {cmbSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Guardar
             </Button>
           </DialogFooter>
