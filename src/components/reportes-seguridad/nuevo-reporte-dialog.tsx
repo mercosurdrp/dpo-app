@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Paperclip, X } from "lucide-react"
@@ -21,17 +21,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { createReporte } from "@/actions/reportes-seguridad"
+import { createClient } from "@/lib/supabase/client"
+import { createReporte, updateReporte } from "@/actions/reportes-seguridad"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
   REPORTE_SEGURIDAD_PUESTO_LABELS,
+  type ReporteSeguridad,
   type ReporteSeguridadTipo,
   type ReporteSeguridadLocalidad,
   type ReporteSeguridadArea,
   type ReporteSeguridadPuesto,
 } from "@/types/database"
+
+const BUCKET = "reportes-seguridad"
 
 const TIPOS: ReporteSeguridadTipo[] = [
   "accidente",
@@ -67,7 +71,7 @@ const PUESTOS: ReporteSeguridadPuesto[] = [
   "otro",
 ]
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
+const MAX_FILE_BYTES = 25 * 1024 * 1024 // 25MB por archivo
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -82,19 +86,31 @@ function todayISO(): string {
   ).padStart(2, "0")}`
 }
 
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 120)
+}
+
 type DentroCD = "" | "dentro" | "fuera"
 type SifValue = "" | "si" | "no"
 
 export function NuevoReporteDialog({
   open,
   onOpenChange,
+  reporte,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
+  /** Si viene, el diálogo funciona en modo "editar". */
+  reporte?: ReporteSeguridad | null
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const isEdit = !!reporte
 
   const [tipo, setTipo] = useState<ReporteSeguridadTipo>("incidente")
   const [fecha, setFecha] = useState<string>(todayISO())
@@ -105,7 +121,6 @@ export function NuevoReporteDialog({
   const [descripcion, setDescripcion] = useState<string>("")
   const [accionTomada, setAccionTomada] = useState<string>("")
 
-  // accidente / incidente
   const [damnificadoNombre, setDamnificadoNombre] = useState<string>("")
   const [damnificadoPuesto, setDamnificadoPuesto] = useState<
     ReporteSeguridadPuesto | ""
@@ -113,14 +128,44 @@ export function NuevoReporteDialog({
   const [dentroCD, setDentroCD] = useState<DentroCD>("")
   const [sif, setSif] = useState<SifValue>("")
 
-  // acto inseguro / ruta riesgo / acto seguro
   const [quienQue, setQuienQue] = useState<string>("")
 
   const [files, setFiles] = useState<File[]>([])
 
   const esAccIncid = tipo === "accidente" || tipo === "incidente"
 
-  function reset() {
+  // Cuando se abre, precargar datos en modo editar.
+  useEffect(() => {
+    if (!open) return
+    if (reporte) {
+      setTipo(reporte.tipo)
+      setFecha(reporte.fecha)
+      setHora(reporte.hora ?? "")
+      setLugar(reporte.lugar ?? "")
+      setLocalidad(reporte.localidad ?? "")
+      setArea(reporte.area ?? "")
+      setDescripcion(reporte.descripcion)
+      setAccionTomada(reporte.accion_tomada ?? "")
+      setDamnificadoNombre(reporte.damnificado_nombre ?? "")
+      setDamnificadoPuesto(reporte.damnificado_puesto ?? "")
+      setDentroCD(
+        reporte.dentro_cd === true
+          ? "dentro"
+          : reporte.dentro_cd === false
+            ? "fuera"
+            : ""
+      )
+      setSif(
+        reporte.sif === true ? "si" : reporte.sif === false ? "no" : ""
+      )
+      setQuienQue(reporte.quien_que ?? "")
+      setFiles([])
+    } else {
+      resetFields()
+    }
+  }, [open, reporte])
+
+  function resetFields() {
     setTipo("incidente")
     setFecha(todayISO())
     setHora("")
@@ -144,7 +189,7 @@ export function NuevoReporteDialog({
     const validos: File[] = []
     for (const f of arr) {
       if (f.size > MAX_FILE_BYTES) {
-        toast.error(`"${f.name}" supera 10MB`)
+        toast.error(`"${f.name}" supera 25MB`)
         continue
       }
       validos.push(f)
@@ -155,6 +200,40 @@ export function NuevoReporteDialog({
 
   function removeFile(idx: number) {
     setFiles((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  async function uploadFiles(reporteId: string) {
+    if (files.length === 0) return []
+    const supabase = createClient()
+    const uploaded: {
+      storage_path: string
+      mime_type: string
+      tamano_bytes: number
+    }[] = []
+
+    for (const file of files) {
+      const safeName = sanitizeFileName(file.name || "archivo")
+      const path = `${reporteId}/${crypto.randomUUID()}-${safeName}`
+      const mime = file.type || "application/octet-stream"
+      const { error } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, file, { contentType: mime, upsert: false })
+      if (error) {
+        // Rollback de lo ya subido
+        if (uploaded.length > 0) {
+          await supabase.storage
+            .from(BUCKET)
+            .remove(uploaded.map((u) => u.storage_path))
+        }
+        throw new Error(`"${file.name}": ${error.message}`)
+      }
+      uploaded.push({
+        storage_path: path,
+        mime_type: mime,
+        tamano_bytes: file.size,
+      })
+    }
+    return uploaded
   }
 
   function handleSubmit() {
@@ -191,20 +270,78 @@ export function NuevoReporteDialog({
       quien_que: !esAccIncid ? quienQue || null : null,
     }
 
-    const formData = new FormData()
-    formData.append("input", JSON.stringify(input))
-    for (const f of files) formData.append("files", f)
-
     startTransition(async () => {
-      const res = await createReporte(formData)
-      if ("error" in res) {
-        toast.error(res.error)
-        return
+      try {
+        if (isEdit && reporte) {
+          // Editar: primero actualizamos datos; si hay archivos nuevos, los
+          // subimos al bucket bajo el id del reporte y los registramos.
+          const res = await updateReporte(reporte.id, input)
+          if ("error" in res) {
+            toast.error(res.error)
+            return
+          }
+          if (files.length > 0) {
+            const uploaded = await uploadFiles(reporte.id)
+            const supabase = createClient()
+            if (uploaded.length > 0) {
+              const rows = uploaded.map((a) => ({
+                reporte_id: reporte.id,
+                storage_path: a.storage_path,
+                mime_type: a.mime_type,
+                "tamaño_bytes": a.tamano_bytes,
+              }))
+              const { error } = await supabase
+                .from("reporte_seguridad_adjuntos")
+                .insert(rows)
+              if (error) {
+                await supabase.storage
+                  .from(BUCKET)
+                  .remove(uploaded.map((u) => u.storage_path))
+                toast.error(`Error registrando adjuntos: ${error.message}`)
+                return
+              }
+            }
+          }
+          toast.success("Reporte actualizado")
+        } else {
+          // Crear: primero el reporte, después subimos archivos bajo su id.
+          const res = await createReporte(input)
+          if ("error" in res) {
+            toast.error(res.error)
+            return
+          }
+          const reporteId = res.data.id
+          if (files.length > 0) {
+            const uploaded = await uploadFiles(reporteId)
+            const supabase = createClient()
+            const rows = uploaded.map((a) => ({
+              reporte_id: reporteId,
+              storage_path: a.storage_path,
+              mime_type: a.mime_type,
+              "tamaño_bytes": a.tamano_bytes,
+            }))
+            const { error } = await supabase
+              .from("reporte_seguridad_adjuntos")
+              .insert(rows)
+            if (error) {
+              await supabase.storage
+                .from(BUCKET)
+                .remove(uploaded.map((u) => u.storage_path))
+              toast.error(`Error registrando adjuntos: ${error.message}`)
+              return
+            }
+          }
+          toast.success("Reporte creado")
+        }
+
+        resetFields()
+        onOpenChange(false)
+        router.refresh()
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Error al procesar el reporte"
+        )
       }
-      toast.success("Reporte creado")
-      reset()
-      onOpenChange(false)
-      router.refresh()
     })
   }
 
@@ -212,7 +349,9 @@ export function NuevoReporteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nuevo reporte de seguridad</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Editar reporte de seguridad" : "Nuevo reporte de seguridad"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -413,7 +552,11 @@ export function NuevoReporteDialog({
 
           {/* Adjuntos */}
           <div className="space-y-2">
-            <Label>Adjuntos (imagen / audio / video, máx 10MB c/u)</Label>
+            <Label>
+              {isEdit
+                ? "Agregar adjuntos (imagen / audio / video, máx 25MB c/u)"
+                : "Adjuntos (imagen / audio / video, máx 25MB c/u)"}
+            </Label>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -469,7 +612,7 @@ export function NuevoReporteDialog({
             <Button
               variant="outline"
               onClick={() => {
-                reset()
+                resetFields()
                 onOpenChange(false)
               }}
               disabled={isPending}
@@ -477,7 +620,13 @@ export function NuevoReporteDialog({
               Cancelar
             </Button>
             <Button onClick={handleSubmit} disabled={isPending}>
-              {isPending ? "Creando..." : "Crear reporte"}
+              {isPending
+                ? isEdit
+                  ? "Guardando..."
+                  : "Creando..."
+                : isEdit
+                  ? "Guardar cambios"
+                  : "Crear reporte"}
             </Button>
           </div>
         </div>

@@ -1213,8 +1213,25 @@ export interface ReporteSeguridadConAutor extends ReporteSeguridad {
   autor_nombre: string
 }
 
+export interface ReporteSeguridadPlan {
+  id: string
+  reporte_id: string
+  descripcion: string
+  foto_path: string | null
+  fecha_planificada: string | null
+  fecha_completado: string | null
+  creado_por: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReporteSeguridadPlanConFoto extends ReporteSeguridadPlan {
+  foto_url: string | null
+}
+
 export interface ReporteSeguridadDetalle extends ReporteSeguridadConAutor {
   adjuntos: (ReporteSeguridadAdjunto & { url: string })[]
+  plan: ReporteSeguridadPlanConFoto | null
 }
 
 // Labels + colors

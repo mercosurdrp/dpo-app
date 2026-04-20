@@ -135,7 +135,7 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "hidden md:flex flex-col h-screen sticky top-0 transition-all duration-200",
+        "hidden md:flex flex-col h-screen sticky top-0 z-40 transition-all duration-200",
         collapsed ? "w-16" : "w-60"
       )}
       style={{ backgroundColor: "#0a1628" }}
