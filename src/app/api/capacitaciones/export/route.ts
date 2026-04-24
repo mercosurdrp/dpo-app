@@ -61,18 +61,27 @@ export async function GET(_req: NextRequest) {
 
     const caps = (capsData ?? []) as Capacitacion[]
 
-    let asistencias: AsistenciaConEmpleado[] = []
+    const asistencias: AsistenciaConEmpleado[] = []
     if (caps.length > 0) {
       const capIds = caps.map((c) => c.id)
-      const { data: asistData, error: asistError } = await supabase
-        .from("asistencias")
-        .select("*, empleado:empleados(*)")
-        .in("capacitacion_id", capIds)
+      const PAGE_SIZE = 1000
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from("asistencias")
+          .select("*, empleado:empleados(*)")
+          .in("capacitacion_id", capIds)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1)
 
-      if (asistError) {
-        return NextResponse.json({ error: asistError.message }, { status: 500 })
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        const batch = (data ?? []) as AsistenciaConEmpleado[]
+        asistencias.push(...batch)
+        if (batch.length < PAGE_SIZE) break
+        from += PAGE_SIZE
       }
-      asistencias = (asistData ?? []) as AsistenciaConEmpleado[]
     }
 
     const asistByCap = new Map<string, AsistenciaConEmpleado[]>()
