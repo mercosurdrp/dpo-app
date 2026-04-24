@@ -4,10 +4,10 @@ import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
+import { estadoDerivado } from "@/lib/capacitacion-estado"
 import type {
   Capacitacion,
   AsistenciaConEmpleado,
-  EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
 
@@ -94,9 +94,25 @@ export async function GET(_req: NextRequest) {
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
 
+    const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
+      const list = asistByCap.get(c.id) ?? []
+      const presentes = list.filter((a) => a.presente).length
+      const rendidos = list.filter((a) => a.resultado && a.resultado !== "pendiente").length
+      const pendientes = list.filter((a) => !a.resultado || a.resultado === "pendiente").length
+      const estadoReal = estadoDerivado(
+        {
+          estado: c.estado,
+          fecha: c.fecha,
+          total_asistentes: list.length,
+          presentes,
+          rendidos,
+          pendientes,
+        },
+        today
+      )
       const estadoLabel =
-        ESTADO_CAPACITACION_LABELS[c.estado as EstadoCapacitacion] ?? c.estado
+        ESTADO_CAPACITACION_LABELS[estadoReal] ?? estadoReal
       const base = {
         Capacitación: c.titulo,
         Pilar: c.pilar ?? "",
@@ -109,7 +125,6 @@ export async function GET(_req: NextRequest) {
         Visible: fmtBool(c.visible),
       }
 
-      const list = asistByCap.get(c.id) ?? []
       if (list.length === 0) {
         rows.push({
           ...base,
@@ -190,7 +205,6 @@ export async function GET(_req: NextRequest) {
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
 
-    const today = new Date().toISOString().slice(0, 10)
     const filename = `capacitaciones_${today}.xlsx`
 
     return new Response(new Uint8Array(buf), {

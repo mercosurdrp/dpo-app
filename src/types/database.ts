@@ -370,6 +370,13 @@ export interface CapacitacionFull extends Capacitacion {
   asistencias: AsistenciaConEmpleado[]
 }
 
+export interface CapacitacionConResumen extends Capacitacion {
+  total_asistentes: number
+  presentes: number
+  rendidos: number
+  pendientes: number
+}
+
 export interface CapacitacionPregunta {
   id: string
   capacitacion_id: string

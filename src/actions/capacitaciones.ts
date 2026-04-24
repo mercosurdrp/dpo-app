@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import type {
   Capacitacion,
+  CapacitacionConResumen,
   CapacitacionFull,
   CapacitacionPregunta,
   CapacitacionRespuesta,
@@ -16,19 +17,70 @@ import type {
   ResultadoCapacitacion,
 } from "@/types/database"
 
-// ─── List capacitaciones ───
+// ─── List capacitaciones + resumen de asistencias ───
 export async function getCapacitaciones(): Promise<
-  { data: Capacitacion[] } | { error: string }
+  { data: CapacitacionConResumen[] } | { error: string }
 > {
   try {
     const supabase = await createClient()
-    const { data, error } = await supabase
+    const { data: capsData, error } = await supabase
       .from("capacitaciones")
       .select("*")
       .order("fecha", { ascending: false })
 
     if (error) return { error: error.message }
-    return { data: data as Capacitacion[] }
+    const caps = (capsData ?? []) as Capacitacion[]
+    if (caps.length === 0) return { data: [] }
+
+    const capIds = caps.map((c) => c.id)
+    type AsistRow = { capacitacion_id: string; presente: boolean; resultado: ResultadoCapacitacion }
+    const asistencias: AsistRow[] = []
+    const PAGE_SIZE = 1000
+    let from = 0
+    while (true) {
+      const { data, error: asistError } = await supabase
+        .from("asistencias")
+        .select("capacitacion_id, presente, resultado")
+        .in("capacitacion_id", capIds)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1)
+      if (asistError) return { error: asistError.message }
+      const batch = (data ?? []) as AsistRow[]
+      asistencias.push(...batch)
+      if (batch.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+
+    const resumen = new Map<
+      string,
+      { total: number; presentes: number; rendidos: number; pendientes: number }
+    >()
+    for (const a of asistencias) {
+      const r = resumen.get(a.capacitacion_id) ?? {
+        total: 0,
+        presentes: 0,
+        rendidos: 0,
+        pendientes: 0,
+      }
+      r.total++
+      if (a.presente) r.presentes++
+      if (a.resultado === "pendiente") r.pendientes++
+      else r.rendidos++
+      resumen.set(a.capacitacion_id, r)
+    }
+
+    const enriched: CapacitacionConResumen[] = caps.map((c) => {
+      const r = resumen.get(c.id) ?? { total: 0, presentes: 0, rendidos: 0, pendientes: 0 }
+      return {
+        ...c,
+        total_asistentes: r.total,
+        presentes: r.presentes,
+        rendidos: r.rendidos,
+        pendientes: r.pendientes,
+      }
+    })
+
+    return { data: enriched }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error loading capacitaciones" }
   }

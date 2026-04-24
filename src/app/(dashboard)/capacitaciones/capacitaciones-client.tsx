@@ -43,10 +43,11 @@ import {
   ESTADO_CAPACITACION_LABELS,
 } from "@/lib/constants"
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
-import type { Capacitacion, EstadoCapacitacion } from "@/types/database"
+import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
+import { estadoDerivado } from "@/lib/capacitacion-estado"
 
 interface Props {
-  capacitaciones: Capacitacion[]
+  capacitaciones: CapacitacionConResumen[]
   canEdit: boolean
 }
 
@@ -101,10 +102,15 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     pilar: "",
   })
 
+  const withDerived = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c, today) }))
+  }, [capacitaciones])
+
   const filtered = useMemo(() => {
-    let list = capacitaciones
+    let list = withDerived
     if (filterEstado !== "all") {
-      list = list.filter((c) => c.estado === filterEstado)
+      list = list.filter((c) => c.estadoReal === filterEstado)
     }
     if (filterPilar !== "all") {
       list = list.filter((c) => c.pilar === filterPilar)
@@ -118,15 +124,27 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       )
     }
     return list
-  }, [capacitaciones, search, filterEstado, filterPilar])
+  }, [withDerived, search, filterEstado, filterPilar])
 
-  // Stats
+  // Stats (basado en estado derivado real)
   const stats = useMemo(() => {
-    const programadas = capacitaciones.filter((c) => c.estado === "programada").length
-    const enCurso = capacitaciones.filter((c) => c.estado === "en_curso").length
-    const completadas = capacitaciones.filter((c) => c.estado === "completada").length
-    return { total: capacitaciones.length, programadas, enCurso, completadas }
-  }, [capacitaciones])
+    const programadas = withDerived.filter((c) => c.estadoReal === "programada").length
+    const enCurso = withDerived.filter((c) => c.estadoReal === "en_curso").length
+    const completadas = withDerived.filter((c) => c.estadoReal === "completada").length
+    const total = withDerived.length
+    const pctRealizadas = total > 0 ? Math.round((completadas / total) * 100) : 0
+    return { total, programadas, enCurso, completadas, pctRealizadas }
+  }, [withDerived])
+
+  const realizadasList = useMemo(
+    () =>
+      withDerived
+        .filter((c) => c.estadoReal === "completada")
+        .sort((a, b) => (b.fecha > a.fecha ? 1 : -1)),
+    [withDerived]
+  )
+
+  const [realizadasOpen, setRealizadasOpen] = useState(false)
 
   async function handleCreate() {
     if (!form.titulo.trim() || !form.instructor.trim() || !form.fecha) {
@@ -150,7 +168,14 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
         toast.error(result.error)
       } else {
         toast.success("Capacitacion creada")
-        setCapacitaciones((prev) => [result.data, ...prev])
+        const nueva: CapacitacionConResumen = {
+          ...result.data,
+          total_asistentes: 0,
+          presentes: 0,
+          rendidos: 0,
+          pendientes: 0,
+        }
+        setCapacitaciones((prev) => [nueva, ...prev])
         setForm({
           titulo: "",
           descripcion: "",
@@ -327,12 +352,97 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total" value={stats.total} color="#6366F1" />
         <StatCard label="Programadas" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
         <StatCard label="En Curso" value={stats.enCurso} color={ESTADO_CAPACITACION_COLORS.en_curso} />
         <StatCard label="Completadas" value={stats.completadas} color={ESTADO_CAPACITACION_COLORS.completada} />
+        <button
+          type="button"
+          onClick={() => setRealizadasOpen(true)}
+          className="text-left outline-none"
+          aria-label="Ver capacitaciones realizadas"
+        >
+          <Card className="transition-shadow hover:shadow-md">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div
+                className="flex size-10 items-center justify-center rounded-lg text-sm font-bold text-white"
+                style={{ backgroundColor: "#0EA5E9" }}
+              >
+                {stats.pctRealizadas}%
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-slate-600">Realizadas</span>
+                <span className="text-xs text-slate-400">Ver listado</span>
+              </div>
+            </CardContent>
+          </Card>
+        </button>
       </div>
+
+      {/* Dialog: lista de capacitaciones realizadas */}
+      <Dialog open={realizadasOpen} onOpenChange={setRealizadasOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Capacitaciones realizadas ({realizadasList.length} de {stats.total} · {stats.pctRealizadas}%)
+            </DialogTitle>
+          </DialogHeader>
+          {realizadasList.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">
+              Todavía no hay capacitaciones realizadas.
+            </p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <th className="py-2 pr-2">Capacitación</th>
+                    <th className="py-2 pr-2">Fecha</th>
+                    <th className="py-2 pr-2">Instructor</th>
+                    <th className="py-2">Pilar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {realizadasList.map((c) => (
+                    <tr key={c.id} className="border-b last:border-0">
+                      <td className="py-2 pr-2 font-medium text-slate-900">
+                        <Link
+                          href={`/capacitaciones/${c.id}`}
+                          className="hover:text-blue-600"
+                          onClick={() => setRealizadasOpen(false)}
+                        >
+                          {c.titulo}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-2 text-slate-600">
+                        {new Date(c.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                      </td>
+                      <td className="py-2 pr-2 text-slate-600">{c.instructor}</td>
+                      <td className="py-2">
+                        {c.pilar ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 text-xs font-medium"
+                            style={{ color: PILAR_COLORS[c.pilar] ?? "#64748B" }}
+                          >
+                            <span
+                              className="size-2 rounded-full"
+                              style={{ backgroundColor: PILAR_COLORS[c.pilar] ?? "#94A3B8" }}
+                            />
+                            {c.pilar}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -396,11 +506,11 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                     <Badge
                       variant="secondary"
                       style={{
-                        backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estado] + "20",
-                        color: ESTADO_CAPACITACION_COLORS[cap.estado],
+                        backgroundColor: ESTADO_CAPACITACION_COLORS[cap.estadoReal] + "20",
+                        color: ESTADO_CAPACITACION_COLORS[cap.estadoReal],
                       }}
                     >
-                      {ESTADO_CAPACITACION_LABELS[cap.estado]}
+                      {ESTADO_CAPACITACION_LABELS[cap.estadoReal]}
                     </Badge>
                   </div>
                 </CardHeader>
