@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   ClipboardCheck,
+  FileDown,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -195,6 +196,17 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
               Matriz SKAP SOP 1.1
             </Button>
           </Link>
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                window.location.href = "/api/capacitaciones/export"
+              }}
+            >
+              <FileDown className="mr-2 size-4" />
+              Descargar Excel
+            </Button>
+          )}
         {canEdit && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger

@@ -1,0 +1,205 @@
+export const maxDuration = 60
+
+import { NextRequest, NextResponse } from "next/server"
+import * as XLSX from "xlsx"
+import { createClient } from "@/lib/supabase/server"
+import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
+import type {
+  Capacitacion,
+  AsistenciaConEmpleado,
+  EstadoCapacitacion,
+  ResultadoCapacitacion,
+} from "@/types/database"
+
+const RESULTADO_LABELS: Record<ResultadoCapacitacion, string> = {
+  aprobado: "Aprobado",
+  desaprobado: "Desaprobado",
+  pendiente: "Pendiente",
+}
+
+function fmtBool(v: boolean | null | undefined): string {
+  if (v === true) return "Sí"
+  if (v === false) return "No"
+  return ""
+}
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return ""
+  return iso.length >= 10 ? iso.slice(0, 10) : iso
+}
+
+export async function GET(_req: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+
+    if (!profile || !["admin", "auditor"].includes(profile.role)) {
+      return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+    }
+
+    const { data: capsData, error: capsError } = await supabase
+      .from("capacitaciones")
+      .select("*")
+      .order("fecha", { ascending: false })
+
+    if (capsError) {
+      return NextResponse.json({ error: capsError.message }, { status: 500 })
+    }
+
+    const caps = (capsData ?? []) as Capacitacion[]
+
+    let asistencias: AsistenciaConEmpleado[] = []
+    if (caps.length > 0) {
+      const capIds = caps.map((c) => c.id)
+      const { data: asistData, error: asistError } = await supabase
+        .from("asistencias")
+        .select("*, empleado:empleados(*)")
+        .in("capacitacion_id", capIds)
+
+      if (asistError) {
+        return NextResponse.json({ error: asistError.message }, { status: 500 })
+      }
+      asistencias = (asistData ?? []) as AsistenciaConEmpleado[]
+    }
+
+    const asistByCap = new Map<string, AsistenciaConEmpleado[]>()
+    for (const a of asistencias) {
+      const arr = asistByCap.get(a.capacitacion_id) ?? []
+      arr.push(a)
+      asistByCap.set(a.capacitacion_id, arr)
+    }
+
+    type Row = Record<string, string | number | null>
+    const rows: Row[] = []
+
+    for (const c of caps) {
+      const estadoLabel =
+        ESTADO_CAPACITACION_LABELS[c.estado as EstadoCapacitacion] ?? c.estado
+      const base = {
+        Capacitación: c.titulo,
+        Pilar: c.pilar ?? "",
+        Instructor: c.instructor,
+        Fecha: fmtDate(c.fecha),
+        "Duración (h)": c.duracion_horas ?? "",
+        Estado: estadoLabel,
+        Lugar: c.lugar ?? "",
+        Descripción: c.descripcion ?? "",
+        Visible: fmtBool(c.visible),
+      }
+
+      const list = asistByCap.get(c.id) ?? []
+      if (list.length === 0) {
+        rows.push({
+          ...base,
+          Empleado: "",
+          Legajo: "",
+          Sector: "",
+          Presente: "",
+          Nota: "",
+          Resultado: "",
+          Observaciones: "",
+        })
+        continue
+      }
+
+      list.sort((a, b) =>
+        (a.empleado?.nombre ?? "").localeCompare(b.empleado?.nombre ?? "")
+      )
+
+      for (const a of list) {
+        rows.push({
+          ...base,
+          Empleado: a.empleado?.nombre ?? "",
+          Legajo: a.empleado?.legajo ?? "",
+          Sector: a.empleado?.sector ?? "",
+          Presente: fmtBool(a.presente),
+          Nota: a.nota ?? "",
+          Resultado: a.resultado
+            ? RESULTADO_LABELS[a.resultado as ResultadoCapacitacion] ??
+              a.resultado
+            : "",
+          Observaciones: a.observaciones ?? "",
+        })
+      }
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: [
+        "Capacitación",
+        "Pilar",
+        "Instructor",
+        "Fecha",
+        "Duración (h)",
+        "Estado",
+        "Lugar",
+        "Descripción",
+        "Visible",
+        "Empleado",
+        "Legajo",
+        "Sector",
+        "Presente",
+        "Nota",
+        "Resultado",
+        "Observaciones",
+      ],
+    })
+
+    ws["!cols"] = [
+      { wch: 38 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 40 },
+      { wch: 8 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 10 },
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 40 },
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Capacitaciones")
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
+
+    const today = new Date().toISOString().slice(0, 10)
+    const filename = `capacitaciones_${today}.xlsx`
+
+    return new Response(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    })
+  } catch (err) {
+    console.error("Export capacitaciones error:", err)
+    return NextResponse.json(
+      {
+        error: err instanceof Error ? err.message : "Error exportando",
+      },
+      { status: 500 }
+    )
+  }
+}

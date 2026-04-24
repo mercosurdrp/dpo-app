@@ -327,6 +327,7 @@ export interface Empleado {
   legajo: number
   nombre: string
   numero_id: string
+  sector: string
   activo: boolean
   created_at: string
   updated_at: string
