@@ -1,10 +1,17 @@
 import { requireRole } from "@/lib/session"
-import { getUsers } from "@/actions/admin"
+import { getUsersWithStats } from "@/actions/admin"
+import { createClient } from "@/lib/supabase/server"
 import { UsuariosClient } from "./usuarios-client"
 
 export default async function UsuariosPage() {
   await requireRole(["admin"])
-  const result = await getUsers()
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const result = await getUsersWithStats()
 
   if ("error" in result) {
     return (
@@ -15,5 +22,7 @@ export default async function UsuariosPage() {
     )
   }
 
-  return <UsuariosClient users={result.data} />
+  return (
+    <UsuariosClient users={result.data} currentUserId={user?.id ?? ""} />
+  )
 }

@@ -1586,3 +1586,8 @@ export const LINEA_ETICA_ESTADO_COLORS: Record<LineaEticaEstado, string> = {
   en_tratamiento: "#3B82F6",
   cerrada: "#10B981",
 }
+
+export type UserWithStats = Profile & {
+  last_sign_in_at: string | null
+  email_confirmed_at: string | null
+}
