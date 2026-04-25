@@ -32,7 +32,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
-import type { Auditoria, Pilar } from "@/types/database"
+import { DpoArchivosResumen } from "@/components/dashboard/dpo-archivos-resumen"
+import type { Auditoria, DpoPuntoResumen, Pilar } from "@/types/database"
 import { ESTADO_AUDITORIA_LABELS } from "@/lib/constants"
 
 // ---------- Types ----------
@@ -259,9 +260,11 @@ function PillarCard({
 export function DashboardClient({
   data,
   pilares,
+  resumenPuntos,
 }: {
   data: DashboardData
   pilares: Pilar[]
+  resumenPuntos: DpoPuntoResumen[]
 }) {
   const {
     auditoria,
@@ -430,6 +433,9 @@ export function DashboardClient({
           </CardContent>
         </Card>
       )}
+
+      {/* Archivos DPO por punto */}
+      <DpoArchivosResumen resumenPuntos={resumenPuntos} />
 
       {/* Link to auditorias */}
       {auditoria && (

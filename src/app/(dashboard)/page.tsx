@@ -1,19 +1,18 @@
 import { getDashboardData } from "@/actions/dashboard"
+import { getResumenPuntos } from "@/actions/dpo-evidencia"
 import { createClient } from "@/lib/supabase/server"
-import type { Pilar } from "@/types/database"
+import type { DpoPuntoResumen, Pilar } from "@/types/database"
 import { DashboardClient } from "./dashboard-client"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  // Fetch all pilares
-  const { data: pilares } = await supabase
-    .from("pilares")
-    .select("*")
-    .order("orden")
-
-  // Fetch dashboard data (includes latest audit scores)
-  const data = await getDashboardData()
+  // Fetch in parallel: pilares list, dashboard data (audit scores), resumen por punto
+  const [pilaresRes, data, resumenRes] = await Promise.all([
+    supabase.from("pilares").select("*").order("orden"),
+    getDashboardData(),
+    getResumenPuntos(),
+  ])
 
   if ("error" in data) {
     return (
@@ -24,10 +23,14 @@ export default async function DashboardPage() {
     )
   }
 
+  const resumenPuntos: DpoPuntoResumen[] =
+    "data" in resumenRes ? resumenRes.data : []
+
   return (
     <DashboardClient
       data={data}
-      pilares={(pilares ?? []) as Pilar[]}
+      pilares={(pilaresRes.data ?? []) as Pilar[]}
+      resumenPuntos={resumenPuntos}
     />
   )
 }

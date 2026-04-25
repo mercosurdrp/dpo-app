@@ -15,7 +15,6 @@ import {
   Pencil,
   Archive,
   ArchiveRestore,
-  Plus,
   EyeOff,
   Eye,
   ExternalLink,
@@ -591,7 +590,16 @@ export function EvidenciaPuntoClient({
                     <Icon className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-semibold text-slate-900">{a.titulo}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="truncate font-semibold text-slate-900">{a.titulo}</h3>
+                      <Badge
+                        className="shrink-0 border-blue-300 bg-blue-50 font-mono text-blue-700"
+                        variant="outline"
+                        title={`Versión actual: v${a.current_version}`}
+                      >
+                        v{a.current_version}
+                      </Badge>
+                    </div>
                     {a.descripcion && (
                       <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                         {a.descripcion}
@@ -610,7 +618,6 @@ export function EvidenciaPuntoClient({
                     </Badge>
                   )}
                   {a.categoria && <Badge variant="secondary">{a.categoria}</Badge>}
-                  <Badge variant="outline">v{a.current_version}</Badge>
                   {a.requisito_codigo && (
                     <Badge variant="outline">{a.requisito_codigo}</Badge>
                   )}
@@ -620,6 +627,21 @@ export function EvidenciaPuntoClient({
                   <span>{formatDate(a.updated_at)}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1 border-t pt-3">
+                  {!a.archivado && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSelected(a)
+                        setNvFile(null)
+                        setNvNotas("")
+                        setNewVersionOpen(true)
+                      }}
+                      title={`Sobrescribir el archivo actual (v${a.current_version} → v${a.current_version + 1})`}
+                    >
+                      <Upload className="mr-1 size-4" />
+                      Nueva versión
+                    </Button>
+                  )}
                   {isPreviewable(a.mime_type, a.file_ext) && (
                     <Button
                       size="sm"
@@ -642,25 +664,11 @@ export function EvidenciaPuntoClient({
                     size="sm"
                     variant="outline"
                     onClick={() => openHistory(a)}
+                    title="Ver historial de versiones (solo lectura)"
                   >
                     <History className="mr-1 size-4" />
-                    Historial
+                    Ver historial
                   </Button>
-                  {!a.archivado && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setSelected(a)
-                        setNvFile(null)
-                        setNvNotas("")
-                        setNewVersionOpen(true)
-                      }}
-                    >
-                      <Plus className="mr-1 size-4" />
-                      Nueva versión
-                    </Button>
-                  )}
                   <div className="relative ml-auto">
                     <Button
                       size="sm"
@@ -736,10 +744,27 @@ export function EvidenciaPuntoClient({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setNewVersionOpen(true)}>
-                <Plus className="mr-1 size-4" /> Subir nueva versión
-              </Button>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Listado de versiones anteriores. Para subir una nueva versión, usá el botón
+                <span className="mx-1 inline-flex items-center gap-1 rounded border bg-slate-50 px-1.5 py-0.5 font-medium text-slate-700">
+                  <Upload className="size-3" /> Nueva versión
+                </span>
+                en la tarjeta del archivo.
+              </p>
+              {!selected?.archivado && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setNvFile(null)
+                    setNvNotas("")
+                    setNewVersionOpen(true)
+                  }}
+                >
+                  <Upload className="mr-1 size-4" /> Subir nueva versión
+                </Button>
+              )}
             </div>
             {versiones.length === 0 ? (
               <p className="text-sm text-muted-foreground">Cargando o sin versiones…</p>
@@ -786,6 +811,28 @@ export function EvidenciaPuntoClient({
           <DialogHeader>
             <DialogTitle>Subir nueva versión</DialogTitle>
           </DialogHeader>
+          {selected && (
+            <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3 text-sm">
+              <p className="text-slate-900">
+                Reemplazando:{" "}
+                <span className="font-semibold">{selected.titulo}</span>{" "}
+                <Badge
+                  variant="outline"
+                  className="ml-1 border-blue-300 bg-white font-mono text-blue-700"
+                >
+                  actual: v{selected.current_version}
+                </Badge>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Esta acción mantiene el archivo anterior como historial; al subir
+                queda como{" "}
+                <span className="font-semibold text-slate-900">
+                  v{selected.current_version + 1}
+                </span>
+                .
+              </p>
+            </div>
+          )}
           <form onSubmit={handleNuevaVersion} className="space-y-4">
             <div>
               <Label>Archivo *</Label>
@@ -793,13 +840,21 @@ export function EvidenciaPuntoClient({
                 type="file"
                 onChange={(e) => setNvFile(e.target.files?.[0] ?? null)}
               />
+              {nvFile && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Seleccionado:{" "}
+                  <span className="font-medium text-slate-900">{nvFile.name}</span>{" "}
+                  · {formatBytes(nvFile.size)}
+                </p>
+              )}
             </div>
             <div>
-              <Label>Notas</Label>
+              <Label>Notas del cambio (opcional)</Label>
               <Textarea
                 value={nvNotas}
                 onChange={(e) => setNvNotas(e.target.value)}
                 rows={3}
+                placeholder="Ej: actualizada con datos Q2"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -811,7 +866,11 @@ export function EvidenciaPuntoClient({
                 Cancelar
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Subiendo…" : "Subir"}
+                {isPending
+                  ? "Subiendo…"
+                  : selected
+                    ? `Subir v${selected.current_version + 1}`
+                    : "Subir"}
               </Button>
             </div>
           </form>
