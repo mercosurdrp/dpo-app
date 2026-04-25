@@ -184,12 +184,36 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
     setReunionMes(nuevoMes)
     setReunionAnio(nuevoAnio)
     startTransition(async () => {
-      const res = await getReunionResumenMensual(nuevoMes, nuevoAnio)
+      const sector = sectorFilter === "todos" ? undefined : sectorFilter
+      const res = await getReunionResumenMensual(nuevoMes, nuevoAnio, sector)
       if ("data" in res) setReunionMensualData(res.data)
     })
   }
 
-  const pctAsistenciaReunion = reunionKpisData?.pct_asistencia ?? 0
+  function handleSectorChange(v: string | null) {
+    if (!v) return
+    setSectorFilter(v)
+    startTransition(async () => {
+      const sector = v === "todos" ? undefined : v
+      const res = await getReunionResumenMensual(reunionMes, reunionAnio, sector)
+      if ("data" in res) setReunionMensualData(res.data)
+    })
+  }
+
+  const reunionDetalleFiltrado = reunionKpisData
+    ? sectorFilter === "todos"
+      ? reunionKpisData.detalle
+      : reunionKpisData.detalle.filter((d) => d.sector === sectorFilter)
+    : []
+  const reunionTotalEmpleados = reunionDetalleFiltrado.length
+  const reunionAsistieron = reunionDetalleFiltrado.filter((d) => d.asistio).length
+  const reunionConMinutos = reunionDetalleFiltrado.filter((d) => d.minutos_fichaje_reunion !== null)
+  const reunionPromedioMinutos = reunionConMinutos.length > 0
+    ? Math.round(reunionConMinutos.reduce((s, d) => s + (d.minutos_fichaje_reunion ?? 0), 0) / reunionConMinutos.length)
+    : null
+  const pctAsistenciaReunion = reunionTotalEmpleados > 0
+    ? Math.round((reunionAsistieron / reunionTotalEmpleados) * 100)
+    : 0
 
   return (
     <div className="space-y-6">
@@ -203,7 +227,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Sector:</span>
-          <Select defaultValue="todos" value={sectorFilter} onValueChange={(v) => { if (v) setSectorFilter(v) }}>
+          <Select defaultValue="todos" value={sectorFilter} onValueChange={handleSectorChange}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtrar sector" />
             </SelectTrigger>
@@ -523,7 +547,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Total Empleados</p>
-                      <p className="text-3xl font-bold text-slate-900">{reunionKpisData?.total_empleados ?? 0}</p>
+                      <p className="text-3xl font-bold text-slate-900">{reunionTotalEmpleados}</p>
                     </div>
                     <div className="rounded-full bg-slate-100 p-3">
                       <Users className="h-5 w-5 text-slate-600" />
@@ -537,7 +561,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                     <div>
                       <p className="text-sm text-muted-foreground">Asistieron</p>
                       <p className={`text-3xl font-bold ${pctAsistenciaReunion >= 80 ? "text-green-600" : pctAsistenciaReunion >= 60 ? "text-amber-600" : "text-red-600"}`}>
-                        {reunionKpisData?.asistieron ?? 0}
+                        {reunionAsistieron}
                       </p>
                     </div>
                     <div className={`rounded-full p-3 ${pctAsistenciaReunion >= 80 ? "bg-green-100" : pctAsistenciaReunion >= 60 ? "bg-amber-100" : "bg-red-100"}`}>
@@ -555,10 +579,10 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                     <div>
                       <p className="text-sm text-muted-foreground">Prom. Fichaje→Reunión</p>
                       <p className={`text-3xl font-bold ${
-                        (reunionKpisData?.promedio_minutos ?? 99) <= 15 ? "text-green-600" :
-                        (reunionKpisData?.promedio_minutos ?? 99) <= 30 ? "text-amber-600" : "text-red-600"
+                        (reunionPromedioMinutos ?? 99) <= 15 ? "text-green-600" :
+                        (reunionPromedioMinutos ?? 99) <= 30 ? "text-amber-600" : "text-red-600"
                       }`}>
-                        {reunionKpisData?.promedio_minutos ?? "—"}{reunionKpisData?.promedio_minutos !== null ? " min" : ""}
+                        {reunionPromedioMinutos ?? "—"}{reunionPromedioMinutos !== null ? " min" : ""}
                       </p>
                     </div>
                     <div className="rounded-full bg-slate-100 p-3">
@@ -620,7 +644,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {!reunionKpisData || reunionKpisData.detalle.length === 0 ? (
+                    {reunionDetalleFiltrado.length === 0 ? (
                       <p className="py-8 text-center text-muted-foreground">No hay datos para este día</p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -637,7 +661,7 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {reunionKpisData.detalle.map((emp) => (
+                            {reunionDetalleFiltrado.map((emp) => (
                               <TableRow key={emp.legajo} className={!emp.asistio ? "opacity-50" : ""}>
                                 <TableCell className="font-mono text-sm">{emp.legajo}</TableCell>
                                 <TableCell className="font-medium">{emp.nombre}</TableCell>

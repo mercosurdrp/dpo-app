@@ -230,7 +230,8 @@ export interface ReunionResumenMensual {
 
 export async function getReunionResumenMensual(
   mes: number,
-  anio: number
+  anio: number,
+  sector?: string
 ): Promise<{ data: ReunionResumenMensual[] } | { error: string }> {
   try {
     const supabase = await createClient()
@@ -247,17 +248,22 @@ export async function getReunionResumenMensual(
       .lte("fecha", fechaHasta)
       .order("fecha")
 
-    // Get total active empleados
-    const { data: empleados } = await supabase
+    // Get active empleados (filtered by sector if provided)
+    let empleadosQuery = supabase
       .from("empleados")
-      .select("legajo")
+      .select("legajo, sector")
       .eq("activo", true)
+    if (sector) empleadosQuery = empleadosQuery.eq("sector", sector)
+    const { data: empleados } = await empleadosQuery
 
-    const totalEmpleados = (empleados ?? []).length
+    const empleadosArr = (empleados ?? []) as { legajo: number; sector: string }[]
+    const totalEmpleados = empleadosArr.length
+    const legajosValidos = new Set(empleadosArr.map((e) => e.legajo))
 
-    // Group by date
+    // Group by date, restricting check-ins to empleados within the sector
     const porFecha = new Map<string, ReunionCheckIn[]>()
     for (const c of (checkins ?? []) as ReunionCheckIn[]) {
+      if (!legajosValidos.has(c.legajo)) continue
       const list = porFecha.get(c.fecha) ?? []
       list.push(c)
       porFecha.set(c.fecha, list)
