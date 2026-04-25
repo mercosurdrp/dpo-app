@@ -119,8 +119,8 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       const q = search.toLowerCase()
       list = list.filter(
         (c) =>
-          c.titulo.toLowerCase().includes(q) ||
-          c.instructor.toLowerCase().includes(q)
+          (c.titulo ?? "").toLowerCase().includes(q) ||
+          (c.instructor ?? "").toLowerCase().includes(q)
       )
     }
     return list
