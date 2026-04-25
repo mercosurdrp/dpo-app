@@ -353,17 +353,60 @@ export function CapacitacionDetailClient({
         )}
       </div>
 
-      {cap.material_url && (
-        <a
-          href={cap.material_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
-        >
-          <ExternalLink className="size-3.5" />
-          Ver material de capacitacion
-        </a>
-      )}
+      <Card>
+        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3">
+            <ExternalLink className="size-5 text-blue-500" />
+            <div className="text-xs font-medium text-slate-500">Material</div>
+          </div>
+          {canEdit ? (
+            <div className="flex flex-1 items-center gap-2">
+              <Input
+                type="url"
+                placeholder="https://… enlace al sitio con el material de la capacitación"
+                defaultValue={cap.material_url ?? ""}
+                className="h-9 text-sm"
+                onBlur={async (e) => {
+                  const newUrl = e.target.value.trim()
+                  if ((newUrl || null) === (cap.material_url ?? null)) return
+                  const result = await updateCapacitacion(cap.id, {
+                    material_url: newUrl || null,
+                  })
+                  if ("error" in result) {
+                    toast.error(result.error)
+                  } else {
+                    setCap((prev) => ({ ...prev, material_url: newUrl || null }))
+                    toast.success("Link de material actualizado")
+                  }
+                }}
+              />
+              {cap.material_url && (
+                <a
+                  href={cap.material_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                  title="Abrir material"
+                >
+                  <ExternalLink className="size-4" />
+                </a>
+              )}
+            </div>
+          ) : cap.material_url ? (
+            <a
+              href={cap.material_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
+            >
+              Ver material de capacitación
+              <ExternalLink className="size-3.5" />
+            </a>
+          ) : (
+            <span className="text-sm text-slate-400">Sin material cargado</span>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

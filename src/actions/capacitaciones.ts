@@ -169,7 +169,7 @@ export async function updateCapacitacion(
     fecha?: string
     duracion_horas?: number
     lugar?: string
-    material_url?: string
+    material_url?: string | null
     estado?: EstadoCapacitacion
   }
 ): Promise<{ data: Capacitacion } | { error: string }> {
