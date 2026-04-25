@@ -3,7 +3,14 @@
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
 
-const ALLOWED_PATHS = ["/mis-capacitaciones", "/vehiculos/checklist", "/vehiculos/combustible", "/reportar-seguridad"]
+const ALLOWED_PATHS = [
+  "/mis-capacitaciones",
+  "/mis-tareas",
+  "/planes",
+  "/vehiculos/checklist",
+  "/vehiculos/combustible",
+  "/reportar-seguridad",
+]
 
 function isAllowed(pathname: string) {
   return ALLOWED_PATHS.some((p) => pathname.startsWith(p))
