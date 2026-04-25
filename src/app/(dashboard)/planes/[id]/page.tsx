@@ -1,4 +1,5 @@
 import { getPlanDetail } from "@/actions/planes"
+import { getProfile } from "@/lib/session"
 import { PlanDetailClient } from "./plan-detail-client"
 
 export default async function PlanDetailPage({
@@ -7,7 +8,7 @@ export default async function PlanDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const result = await getPlanDetail(id)
+  const [result, profile] = await Promise.all([getPlanDetail(id), getProfile()])
 
   if ("error" in result) {
     return (
@@ -17,5 +18,10 @@ export default async function PlanDetailPage({
     )
   }
 
-  return <PlanDetailClient plan={result.data} />
+  return (
+    <PlanDetailClient
+      plan={result.data}
+      currentRole={profile?.role ?? "viewer"}
+    />
+  )
 }

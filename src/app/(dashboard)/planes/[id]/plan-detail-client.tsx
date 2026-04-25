@@ -28,6 +28,9 @@ import {
   LinkIcon as Link2Icon,
   Paperclip,
   Download,
+  Users,
+  CalendarClock,
+  ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -80,14 +83,19 @@ import {
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import { createEvidencia } from "@/actions/gestion"
 import { createClient } from "@/lib/supabase/client"
+import { ResponsablesMultiPicker } from "@/components/planes/responsables-multi-picker"
+import { ReprogramarDialog } from "@/components/planes/reprogramar-dialog"
+import { CerrarPlanDialog } from "@/components/planes/cerrar-plan-dialog"
 import type {
   PlanAccionFull,
   PlanComentarioConAutor,
   PlanHistorialConAutor,
+  PlanReprogramacionConAutor,
   Evidencia,
   EstadoPlan,
   TipoEvidencia,
   DpoArchivo,
+  UserRole,
 } from "@/types/database"
 
 const TIPO_EVIDENCIA_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -965,9 +973,23 @@ function EstadoDropdown({
 
 // ==================== MAIN COMPONENT ====================
 
-export function PlanDetailClient({ plan: initialPlan }: { plan: PlanAccionFull }) {
+export function PlanDetailClient({
+  plan: initialPlan,
+  currentRole,
+}: {
+  plan: PlanAccionFull
+  currentRole: UserRole
+}) {
   const router = useRouter()
   const [plan, setPlan] = useState(initialPlan)
+  const [reprogramarOpen, setReprogramarOpen] = useState(false)
+  const [cerrarOpen, setCerrarOpen] = useState(false)
+
+  const canEditResponsables =
+    currentRole === "admin" || currentRole === "auditor"
+  const isAdmin = currentRole === "admin"
+  const totalEvidencias =
+    (plan.evidencias?.length ?? 0) + (plan.archivos_dpo?.length ?? 0)
 
   async function handleEstadoChange(nuevoEstado: EstadoPlan) {
     const result = await updatePlanEstado(plan.id, nuevoEstado)
@@ -1046,6 +1068,102 @@ export function PlanDetailClient({ plan: initialPlan }: { plan: PlanAccionFull }
         onNotasChange={handleNotasChange}
       />
 
+      {/* Responsables */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Users className="h-4 w-4" />
+            Responsables ({plan.responsables?.length ?? 0})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="border-t pt-4">
+          <ResponsablesMultiPicker
+            planId={plan.id}
+            responsables={plan.responsables ?? []}
+            canEdit={canEditResponsables}
+            onChange={() => router.refresh()}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Acciones del plan */}
+      <Card>
+        <CardContent className="space-y-3 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-slate-800">
+                Acciones del plan
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Reprogramar fecha límite o cerrar el plan.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReprogramarOpen(true)}
+              >
+                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                Reprogramar
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setCerrarOpen(true)}
+                disabled={plan.estado === "completado"}
+              >
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                {plan.estado === "completado" ? "Plan cerrado" : "Cerrar plan"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Evidencia obligatoria switch (solo admin, deshabilitado por ahora) */}
+          {isAdmin && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2"
+              title="Próximamente"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-slate-500" />
+                <div>
+                  <p className="text-xs font-medium text-slate-700">
+                    Evidencia obligatoria
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {plan.evidencia_obligatoria
+                      ? "Activada — no se puede cerrar sin evidencia"
+                      : "Desactivada — se puede cerrar sin evidencia"}
+                  </p>
+                </div>
+              </div>
+              {/* TODO: implementar togglePlanEvidenciaObligatoria server action */}
+              <label
+                className="inline-flex cursor-not-allowed items-center gap-2 opacity-60"
+                title="Próximamente"
+              >
+                <span className="text-[11px] text-muted-foreground">
+                  Próximamente
+                </span>
+                <span
+                  role="switch"
+                  aria-checked={plan.evidencia_obligatoria}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    plan.evidencia_obligatoria ? "bg-blue-500" : "bg-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      plan.evidencia_obligatoria ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                  />
+                </span>
+              </label>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Comentarios */}
       <ComentariosSection
         planId={plan.id}
@@ -1054,6 +1172,9 @@ export function PlanDetailClient({ plan: initialPlan }: { plan: PlanAccionFull }
 
       {/* Historial */}
       <HistorialSection historial={plan.historial} />
+
+      {/* Historial de reprogramaciones */}
+      <ReprogramacionesSection reprogramaciones={plan.reprogramaciones ?? []} />
 
       {/* Evidencias */}
       <EvidenciasSection
@@ -1067,7 +1188,93 @@ export function PlanDetailClient({ plan: initialPlan }: { plan: PlanAccionFull }
         planId={plan.id}
         archivos={plan.archivos_dpo}
       />
+
+      {/* Dialogs */}
+      <ReprogramarDialog
+        planId={plan.id}
+        fechaActual={plan.fecha_limite}
+        open={reprogramarOpen}
+        onOpenChange={setReprogramarOpen}
+        onDone={() => router.refresh()}
+      />
+      <CerrarPlanDialog
+        planId={plan.id}
+        evidenciaObligatoria={plan.evidencia_obligatoria}
+        totalEvidencias={totalEvidencias}
+        esAdmin={isAdmin}
+        open={cerrarOpen}
+        onOpenChange={setCerrarOpen}
+        onDone={() => router.refresh()}
+      />
     </div>
+  )
+}
+
+// ==================== REPROGRAMACIONES SECTION ====================
+
+function ReprogramacionesSection({
+  reprogramaciones,
+}: {
+  reprogramaciones: PlanReprogramacionConAutor[]
+}) {
+  if (reprogramaciones.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <CalendarClock className="h-4 w-4" />
+            Historial de reprogramaciones
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="border-t pt-4">
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Sin reprogramaciones registradas
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <CalendarClock className="h-4 w-4" />
+          Historial de reprogramaciones ({reprogramaciones.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="border-t pt-4">
+        <div className="space-y-3">
+          {reprogramaciones.map((r) => (
+            <div
+              key={r.id}
+              className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded bg-white px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                  {r.fecha_anterior
+                    ? format(new Date(r.fecha_anterior), "dd/MM/yyyy")
+                    : "—"}
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">
+                  {format(new Date(r.fecha_nueva), "dd/MM/yyyy")}
+                </span>
+              </div>
+              {r.motivo && (
+                <p className="mt-2 text-xs text-slate-700 whitespace-pre-line">
+                  {r.motivo}
+                </p>
+              )}
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {r.autor_nombre} ·{" "}
+                {format(new Date(r.reprogramado_at), "dd/MM/yyyy HH:mm")}
+              </p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

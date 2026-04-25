@@ -125,9 +125,44 @@ export interface PlanAccion {
   prioridad: PrioridadPlan
   progreso: number
   notas: string | null
+  evidencia_obligatoria: boolean
+  cerrado_sin_evidencia_motivo: string | null
   created_by: string | null
   created_at: string
   updated_at: string
+}
+
+// Multi-responsables (M2M plan ↔ profile con rol)
+export type PlanResponsableRol = "responsable_principal" | "coresponsable"
+
+export interface PlanResponsable {
+  id: string
+  plan_id: string
+  profile_id: string
+  rol: PlanResponsableRol
+  asignado_por: string | null
+  asignado_at: string
+}
+
+export interface PlanResponsableConProfile extends PlanResponsable {
+  profile_nombre: string
+  profile_email: string | null
+  profile_role: UserRole
+}
+
+// Reprogramaciones del plan
+export interface PlanReprogramacion {
+  id: string
+  plan_id: string
+  fecha_anterior: string | null
+  fecha_nueva: string
+  motivo: string | null
+  reprogramado_por: string
+  reprogramado_at: string
+}
+
+export interface PlanReprogramacionConAutor extends PlanReprogramacion {
+  autor_nombre: string
 }
 
 // Evidencia-Plan junction
@@ -202,6 +237,20 @@ export interface PlanAccionFull extends PlanAccion {
   historial: PlanHistorialConAutor[]
   evidencias: Evidencia[]
   archivos_dpo: DpoArchivo[]
+  responsables: PlanResponsableConProfile[]
+  reprogramaciones: PlanReprogramacionConAutor[]
+}
+
+// Mis tareas: item para la lista consolidada del usuario logueado
+export interface MisTareasItem extends PlanAccion {
+  pregunta_numero: string
+  pregunta_texto: string
+  pilar_nombre: string
+  pilar_color: string
+  rol_usuario: PlanResponsableRol
+  is_overdue: boolean
+  dias_para_vencer: number | null
+  evidencias_count: number
 }
 
 // SOP (Standard Operating Procedure)
