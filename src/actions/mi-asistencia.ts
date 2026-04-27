@@ -4,11 +4,24 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
 
-// Extraer HH:MM directo del string de la DB sin conversión de timezone
+// Cómo interpretar las marcas almacenadas:
+// - false (default): la marca está en UTC verdadero (ej: 10:03 UTC = 07:03 Argentina).
+// - true: el reloj guardó hora Argentina pero la etiquetó como UTC. En ese caso
+//   los HH:MM del string YA son hora Argentina y no hay que restar 3.
+const MARCAS_EN_HORA_ARGENTINA = process.env.MARCAS_EN_HORA_ARGENTINA === "true"
+
+// Devuelve "HH:MM" en hora Argentina (UTC-3, sin DST).
 function extraerHora(fecha: string): string {
-  // fecha viene como "2026-04-01T07:03:20+00:00" o "2026-04-01 07:03:20"
-  const match = fecha.match(/(\d{2}):(\d{2})/)
-  return match ? `${match[1]}:${match[2]}` : "—"
+  if (MARCAS_EN_HORA_ARGENTINA) {
+    // El reloj almacenó hora Argentina disfrazada de UTC: usar HH:MM literal.
+    const match = fecha.match(/(\d{2}):(\d{2})/)
+    return match ? `${match[1]}:${match[2]}` : "—"
+  }
+  // UTC verdadero: convertir a Argentina restando 3 horas.
+  const d = new Date(fecha)
+  const hh = (d.getUTCHours() - 3 + 24) % 24
+  const mm = d.getUTCMinutes()
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`
 }
 
 export interface MiFichajeHoy {
@@ -130,7 +143,8 @@ export async function getMiDashboard(): Promise<
 
         const horaStr = extraerHora(entradas[0].fecha_marca)
         const [hh, mm] = horaStr.split(":").map(Number)
-        if (hh > 8 || (hh === 8 && mm > 10)) {
+        // Tardanza estricta: cualquier entrada > 7:00 hora Argentina (UTC-3)
+        if (hh > 7 || (hh === 7 && mm > 0)) {
           tardanzas++
         }
 

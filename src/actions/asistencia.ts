@@ -2,12 +2,27 @@
 
 import { createClient } from "@/lib/supabase/server"
 
-// Las marcas del reloj son hora Argentina pero se guardan como UTC.
-// Sumamos 3hs para mostrar correctamente.
-function ajustarArgentina(fecha: string): string {
+// Cómo interpretar las marcas almacenadas:
+// - false (default): la marca está en UTC verdadero (ej: 10:03 UTC = 07:03 Argentina).
+// - true: el reloj guardó hora Argentina pero la etiquetó como UTC (caso histórico
+//   en algunos tenants). En ese caso hay que sumar 3hs para obtener UTC verdadero
+//   antes de pasarla al frontend, que aplica timeZone "America/Argentina/Buenos_Aires".
+const MARCAS_EN_HORA_ARGENTINA = process.env.MARCAS_EN_HORA_ARGENTINA === "true"
+
+// Devuelve un timestamp ISO en UTC verdadero, normalizado para que el frontend
+// lo pueda mostrar correctamente con toLocaleTimeString({ timeZone: "...Argentina..." }).
+function normalizarUtc(fecha: string): string {
+  if (!MARCAS_EN_HORA_ARGENTINA) return fecha
   const d = new Date(fecha)
-  d.setHours(d.getHours() + 3)
+  d.setTime(d.getTime() + 3 * 3600 * 1000)
   return d.toISOString()
+}
+
+// Hora Argentina (UTC-3, sin DST) extraída de la marca.
+function horaArgentina(fecha: string): { hh: number; mm: number } {
+  const d = new Date(normalizarUtc(fecha))
+  const hh = (d.getUTCHours() - 3 + 24) % 24
+  return { hh, mm: d.getUTCMinutes() }
 }
 
 // ---------- Types ----------
@@ -113,8 +128,8 @@ export async function getMarcasDiarias(
       const entradas = marcasEmp.filter((m) => m.tipo_marca === "E")
       const salidas = marcasEmp.filter((m) => m.tipo_marca === "S")
 
-      const primeraEntrada = entradas.length > 0 ? ajustarArgentina(entradas[0].fecha_marca) : null
-      const ultimaSalida = salidas.length > 0 ? ajustarArgentina(salidas[salidas.length - 1].fecha_marca) : null
+      const primeraEntrada = entradas.length > 0 ? normalizarUtc(entradas[0].fecha_marca) : null
+      const ultimaSalida = salidas.length > 0 ? normalizarUtc(salidas[salidas.length - 1].fecha_marca) : null
 
       let horasTrabajadas: number | null = null
       if (primeraEntrada && ultimaSalida) {
@@ -131,7 +146,7 @@ export async function getMarcasDiarias(
         ultima_salida: ultimaSalida,
         horas_trabajadas: horasTrabajadas,
         novedad: novedadMap.get(emp.legajo) ?? null,
-        marcas: marcasEmp.map((m) => ({ ...m, fecha_marca: ajustarArgentina(m.fecha_marca) })),
+        marcas: marcasEmp.map((m) => ({ ...m, fecha_marca: normalizarUtc(m.fecha_marca) })),
       }
     })
 
@@ -146,7 +161,7 @@ export async function getMarcasDiarias(
 export async function getResumenMensual(
   mes: number,
   anio: number,
-  horaEntradaEsperada: number = 8 // hora esperada de entrada (8:00)
+  horaEntradaEsperada: number = 7 // hora esperada de entrada (7:00 estricto, hora Argentina UTC-3)
 ): Promise<{ data: ResumenMensualEmpleado[] } | { error: string }> {
   try {
     const supabase = await createClient()
@@ -211,15 +226,15 @@ export async function getResumenMensual(
         if (entradas.length > 0) {
           diasTrabajados++
 
-          // Check tardanza (ajustada a Argentina)
-          const primeraEntrada = new Date(ajustarArgentina(entradas[0].fecha_marca))
-          if (primeraEntrada.getUTCHours() > horaEntradaEsperada ||
-              (primeraEntrada.getUTCHours() === horaEntradaEsperada && primeraEntrada.getUTCMinutes() > 10)) {
+          // Check tardanza estricta (cualquier entrada > 7:00 hora Argentina, UTC-3)
+          const { hh, mm } = horaArgentina(entradas[0].fecha_marca)
+          if (hh > horaEntradaEsperada || (hh === horaEntradaEsperada && mm > 0)) {
             tardanzas++
           }
 
-          // Calculate hours
+          // Calculate hours (la diff entre dos timestamps es independiente de la TZ)
           if (salidas.length > 0) {
+            const primeraEntrada = new Date(entradas[0].fecha_marca)
             const ultimaSalida = new Date(salidas[salidas.length - 1].fecha_marca)
             const diff = ultimaSalida.getTime() - primeraEntrada.getTime()
             horasTotales += diff / 3600000
@@ -280,7 +295,7 @@ export async function getUltimasMarcas(
 
     const result = marcasArr.map((m) => ({
       ...m,
-      fecha_marca: ajustarArgentina(m.fecha_marca),
+      fecha_marca: normalizarUtc(m.fecha_marca),
       nombre_empleado: nombreMap.get(m.legajo) ?? `Legajo ${m.legajo}`,
     }))
 
