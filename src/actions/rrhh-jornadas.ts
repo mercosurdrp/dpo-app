@@ -318,5 +318,3 @@ export async function obtenerJornadaEsperada(
   }
 }
 
-// Re-export para evitar warnings de TypeScript si no se usa el tipo en otro lado.
-export type { RrhhJornadaAsignacion }
