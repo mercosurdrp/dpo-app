@@ -2,13 +2,21 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { GraduationCap, ClipboardList, ShieldAlert, Truck, LogOut } from "lucide-react"
+import {
+  GraduationCap,
+  ClipboardList,
+  ShieldAlert,
+  Truck,
+  LogOut,
+  CalendarRange,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 
 const items = [
   { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
+  { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: CalendarRange },
   { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   { label: "Vehículos", href: "/vehiculos/checklist", icon: Truck },
 ]

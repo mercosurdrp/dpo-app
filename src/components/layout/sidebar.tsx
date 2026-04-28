@@ -23,6 +23,10 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  CalendarRange,
+  UserCog,
+  Briefcase,
+  ClockAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -35,6 +39,20 @@ interface NavItem {
   icon: React.ReactNode
   adminOnly?: boolean
   hideForEmpleado?: boolean
+  /**
+   * Si está presente, sólo se muestra a estos roles. Tiene prioridad sobre
+   * adminOnly y hideForEmpleado.
+   */
+  roles?: UserRole[]
+}
+
+interface NavSection {
+  title: string
+  items: NavItem[]
+  /**
+   * Si se setea, la sección entera sólo se muestra si el rol está en esta lista.
+   */
+  visibleFor?: UserRole[]
 }
 
 const navItems: NavItem[] = [
@@ -119,6 +137,58 @@ const adminItems: NavItem[] = [
     href: "/admin/mapeo-empleados",
     icon: <Link2 className="size-5" />,
     adminOnly: true,
+  },
+]
+
+// ===== Secciones RRHH (visibles según rol) =====
+const rrhhSections: NavSection[] = [
+  {
+    title: "Mi área",
+    visibleFor: ["empleado", "supervisor", "admin", "admin_rrhh"],
+    items: [
+      {
+        label: "Mis vacaciones",
+        href: "/rrhh/mis-solicitudes",
+        icon: <CalendarRange className="size-5" />,
+      },
+    ],
+  },
+  {
+    title: "Personal a cargo",
+    visibleFor: ["supervisor", "admin", "admin_rrhh"],
+    items: [
+      {
+        label: "Mi equipo",
+        href: "/rrhh/mi-equipo",
+        icon: <Briefcase className="size-5" />,
+      },
+    ],
+  },
+  {
+    title: "Admin RRHH",
+    visibleFor: ["admin", "admin_rrhh"],
+    items: [
+      {
+        label: "Personal",
+        href: "/rrhh/personal",
+        icon: <UserCog className="size-5" />,
+      },
+      {
+        label: "Licencias y vacaciones",
+        href: "/rrhh/licencias",
+        icon: <CalendarRange className="size-5" />,
+      },
+      {
+        label: "Jornadas",
+        href: "/rrhh/jornadas",
+        icon: <ClockAlert className="size-5" />,
+      },
+      {
+        label: "Configuración RRHH",
+        href: "/rrhh/configuracion",
+        icon: <Settings className="size-5" />,
+      },
+    ],
   },
 ]
 
@@ -237,6 +307,41 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
             </div>
           </div>
         )}
+
+        {/* RRHH sections (filtran por rol) */}
+        {rrhhSections
+          .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
+          .map((sec) => (
+            <div key={sec.title} className="mt-5">
+              {!collapsed && (
+                <div className="px-3 pb-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    {sec.title}
+                  </p>
+                </div>
+              )}
+              <div className="space-y-1">
+                {sec.items.map((item) => {
+                  const isActive = pathname.startsWith(item.href)
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-white/10 text-white"
+                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      <span className="shrink-0">{item.icon}</span>
+                      {!collapsed && <span>{item.label}</span>}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
 
         {/* Admin section */}
         {role === "admin" && (

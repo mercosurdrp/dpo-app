@@ -1,5 +1,11 @@
 // Enum types
-export type UserRole = "admin" | "auditor" | "viewer" | "empleado"
+export type UserRole =
+  | "admin"
+  | "auditor"
+  | "viewer"
+  | "empleado"
+  | "supervisor"
+  | "admin_rrhh"
 export type EstadoAuditoria = "borrador" | "en_progreso" | "completada" | "archivada"
 export type EstadoAccion = "pendiente" | "en_progreso" | "completado"
 
@@ -380,6 +386,172 @@ export interface Empleado {
   activo: boolean
   created_at: string
   updated_at: string
+  // RRHH (migración 037)
+  supervisor_id: string | null
+  area: string | null
+  departamento: string | null
+  puesto: string | null
+  fecha_ingreso: string | null
+  tipo_contrato: TipoContrato | null
+  cuil: string | null
+  telefono: string | null
+  email_personal: string | null
+}
+
+export type TipoContrato = "planta_permanente" | "plazo_fijo" | "eventual"
+
+export const TIPO_CONTRATO_LABELS: Record<TipoContrato, string> = {
+  planta_permanente: "Planta permanente",
+  plazo_fijo: "Plazo fijo",
+  eventual: "Eventual",
+}
+
+// ===== RRHH: Licencias =====
+export interface RrhhTipoLicencia {
+  id: string
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  computa_dias_anuales: boolean
+  requiere_certificado: boolean
+  novedad_asistencia_tipo: string
+  activo: boolean
+  created_at: string
+}
+
+export interface RrhhSaldoVacaciones {
+  id: string
+  empleado_id: string
+  anio: number
+  dias_otorgados: number
+  dias_usados: number
+  observaciones: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type RrhhSolicitudEstado =
+  | "pendiente_supervisor"
+  | "pendiente_rrhh"
+  | "aprobada"
+  | "rechazada"
+  | "cancelada"
+
+export const RRHH_SOLICITUD_ESTADO_LABELS: Record<RrhhSolicitudEstado, string> = {
+  pendiente_supervisor: "Pendiente supervisor",
+  pendiente_rrhh: "Pendiente RRHH",
+  aprobada: "Aprobada",
+  rechazada: "Rechazada",
+  cancelada: "Cancelada",
+}
+
+export const RRHH_SOLICITUD_ESTADO_COLORS: Record<RrhhSolicitudEstado, string> = {
+  pendiente_supervisor: "#F59E0B",
+  pendiente_rrhh: "#3B82F6",
+  aprobada: "#10B981",
+  rechazada: "#EF4444",
+  cancelada: "#64748B",
+}
+
+export interface RrhhSolicitudLicencia {
+  id: string
+  empleado_id: string
+  tipo_licencia_id: string
+  fecha_desde: string
+  fecha_hasta: string
+  dias_solicitados: number
+  motivo: string | null
+  certificado_path: string | null
+  estado: RrhhSolicitudEstado
+  supervisor_id: string | null
+  supervisor_decision_at: string | null
+  supervisor_observacion: string | null
+  rrhh_user_id: string | null
+  rrhh_decision_at: string | null
+  rrhh_observacion: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RrhhSolicitudConDetalle extends RrhhSolicitudLicencia {
+  empleado_nombre: string
+  empleado_legajo: number
+  tipo_licencia_codigo: string
+  tipo_licencia_nombre: string
+  certificado_url: string | null
+}
+
+// ===== RRHH: Jornadas =====
+export interface RrhhJornadaPlantilla {
+  id: string
+  nombre: string
+  hora_entrada: string // HH:MM:SS
+  hora_salida: string
+  tolerancia_minutos: number
+  horas_esperadas: number
+  activo: boolean
+  created_at: string
+}
+
+export interface RrhhJornadaAsignacion {
+  id: string
+  empleado_id: string
+  jornada_id: string
+  vigente_desde: string
+  vigente_hasta: string | null
+  dias_semana: number[]
+  created_at: string
+}
+
+export interface RrhhJornadaAsignacionConPlantilla extends RrhhJornadaAsignacion {
+  plantilla: RrhhJornadaPlantilla
+  empleado_nombre: string
+  empleado_legajo: number
+}
+
+export interface RrhhJornadaExcepcion {
+  id: string
+  empleado_id: string
+  fecha: string
+  hora_entrada: string | null
+  hora_salida: string | null
+  motivo: string | null
+  no_laborable: boolean
+  created_by: string | null
+  created_at: string
+}
+
+// ===== RRHH: Reportes derivados =====
+export interface RrhhInasistenciaRow {
+  legajo: number
+  nombre: string
+  fecha: string
+  motivo: "sin_marca" | "novedad" | "no_laborable"
+  novedad_tipo: string | null
+}
+
+export interface RrhhTotalHorasRow {
+  legajo: number
+  nombre: string
+  dias_trabajados: number
+  horas_trabajadas: number
+  horas_esperadas: number
+  diferencia_horas: number
+}
+
+export interface RrhhPausaRow {
+  legajo: number
+  fecha: string
+  pausa_inicio: string
+  pausa_fin: string
+  duracion_minutos: number
+}
+
+// ===== RRHH: Empleado con jerarquía / contexto =====
+export interface EmpleadoConSupervisor extends Empleado {
+  supervisor_nombre: string | null
+  supervisor_legajo: number | null
 }
 
 export interface Capacitacion {

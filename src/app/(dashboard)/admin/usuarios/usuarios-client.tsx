@@ -69,9 +69,18 @@ const ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
   auditor: { label: "Auditor", color: "#8B5CF6" },
   viewer: { label: "Viewer", color: "#64748B" },
   empleado: { label: "Empleado", color: "#F59E0B" },
+  supervisor: { label: "Supervisor", color: "#0EA5E9" },
+  admin_rrhh: { label: "Admin RRHH", color: "#10B981" },
 }
 
-const ROLES: UserRole[] = ["admin", "auditor", "viewer", "empleado"]
+const ROLES: UserRole[] = [
+  "admin",
+  "admin_rrhh",
+  "auditor",
+  "supervisor",
+  "viewer",
+  "empleado",
+]
 
 type FilterTab = "todos" | "activos" | "inactivos"
 

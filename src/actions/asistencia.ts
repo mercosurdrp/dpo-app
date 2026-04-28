@@ -1,6 +1,11 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import type {
+  RrhhInasistenciaRow,
+  RrhhTotalHorasRow,
+  RrhhPausaRow,
+} from "@/types/database"
 
 // Cómo interpretar las marcas almacenadas:
 // - false (default): la marca está en UTC verdadero (ej: 10:03 UTC = 07:03 Argentina).
@@ -352,5 +357,314 @@ export async function removeNovedad(
     return { success: true }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error removing novedad" }
+  }
+}
+
+// ===================================================
+// Reportes RRHH derivados (cruzan marcas × jornadas × novedades)
+// ===================================================
+
+interface ReporteFiltros {
+  desde: string // YYYY-MM-DD
+  hasta: string
+  legajo?: number
+}
+
+// Inasistencias: días laborables (jornada esperada vigente, no_laborable=false)
+// sin marca de entrada y sin novedad justificada.
+export async function reporteInasistenciasMes(
+  filtros: ReporteFiltros
+): Promise<{ data: RrhhInasistenciaRow[] } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Empleados activos (filtrados opcionalmente por legajo).
+    let qEmpleados = supabase
+      .from("empleados")
+      .select("id, legajo, nombre")
+      .eq("activo", true)
+    if (filtros.legajo) qEmpleados = qEmpleados.eq("legajo", filtros.legajo)
+    const { data: empleados, error: errEmp } = await qEmpleados
+    if (errEmp) return { error: errEmp.message }
+
+    // Marcas E del rango (días con presencia).
+    let qMarcas = supabase
+      .from("asistencia_marcas")
+      .select("legajo, fecha_marca, tipo_marca")
+      .eq("tipo_marca", "E")
+      .gte("fecha_marca", `${filtros.desde}T00:00:00Z`)
+      .lte("fecha_marca", `${filtros.hasta}T23:59:59Z`)
+    if (filtros.legajo) qMarcas = qMarcas.eq("legajo", filtros.legajo)
+    const { data: marcas, error: errMar } = await qMarcas
+    if (errMar) return { error: errMar.message }
+
+    const presenteSet = new Set<string>()
+    for (const m of (marcas ?? []) as { legajo: number; fecha_marca: string }[]) {
+      const d = new Date(normalizarUtc(m.fecha_marca))
+      // Para fecha local Argentina, restamos 3h y tomamos YYYY-MM-DD UTC.
+      d.setTime(d.getTime() - 3 * 3600 * 1000)
+      const fechaStr = d.toISOString().slice(0, 10)
+      presenteSet.add(`${m.legajo}_${fechaStr}`)
+    }
+
+    // Novedades del rango.
+    let qNov = supabase
+      .from("asistencia_novedades")
+      .select("legajo, fecha, tipo")
+      .gte("fecha", filtros.desde)
+      .lte("fecha", filtros.hasta)
+    if (filtros.legajo) qNov = qNov.eq("legajo", filtros.legajo)
+    const { data: novedades, error: errNov } = await qNov
+    if (errNov) return { error: errNov.message }
+
+    const novMap = new Map<string, string>()
+    for (const n of (novedades ?? []) as { legajo: number; fecha: string; tipo: string }[]) {
+      novMap.set(`${n.legajo}_${n.fecha}`, n.tipo)
+    }
+
+    // Iterar días en el rango y consultar jornada esperada (RPC).
+    const out: RrhhInasistenciaRow[] = []
+    const empleadosArr = (empleados ?? []) as { id: string; legajo: number; nombre: string }[]
+
+    const desde = new Date(filtros.desde + "T00:00:00Z")
+    const hasta = new Date(filtros.hasta + "T00:00:00Z")
+
+    for (const emp of empleadosArr) {
+      for (
+        let d = new Date(desde);
+        d.getTime() <= hasta.getTime();
+        d.setUTCDate(d.getUTCDate() + 1)
+      ) {
+        const fechaStr = d.toISOString().slice(0, 10)
+        const key = `${emp.legajo}_${fechaStr}`
+        const nov = novMap.get(key)
+        const presente = presenteSet.has(key)
+
+        // Saltamos días con marca presente y sin novedad — todo OK.
+        if (presente && !nov) continue
+
+        // Consultamos la jornada esperada del día.
+        const { data: jor } = await supabase.rpc("rrhh_jornada_esperada", {
+          p_empleado_id: emp.id,
+          p_fecha: fechaStr,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row = ((jor ?? []) as any[])[0]
+
+        // Sin jornada vigente o explícitamente no_laborable → no inasistencia.
+        if (!row || row.no_laborable) continue
+
+        if (nov) {
+          out.push({
+            legajo: emp.legajo,
+            nombre: emp.nombre,
+            fecha: fechaStr,
+            motivo: "novedad",
+            novedad_tipo: nov,
+          })
+        } else if (!presente) {
+          out.push({
+            legajo: emp.legajo,
+            nombre: emp.nombre,
+            fecha: fechaStr,
+            motivo: "sin_marca",
+            novedad_tipo: null,
+          })
+        }
+      }
+    }
+
+    return { data: out }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error generando reporte" }
+  }
+}
+
+// Total horas: por empleado en el rango, suma horas trabajadas (parejas E/S
+// del mismo día) vs horas esperadas según jornada.
+export async function reporteTotalHoras(
+  filtros: ReporteFiltros
+): Promise<{ data: RrhhTotalHorasRow[] } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    let qEmpleados = supabase
+      .from("empleados")
+      .select("id, legajo, nombre")
+      .eq("activo", true)
+    if (filtros.legajo) qEmpleados = qEmpleados.eq("legajo", filtros.legajo)
+    const { data: empleados, error: errEmp } = await qEmpleados
+    if (errEmp) return { error: errEmp.message }
+
+    let qMarcas = supabase
+      .from("asistencia_marcas")
+      .select("legajo, fecha_marca, tipo_marca")
+      .gte("fecha_marca", `${filtros.desde}T00:00:00Z`)
+      .lte("fecha_marca", `${filtros.hasta}T23:59:59Z`)
+      .order("fecha_marca", { ascending: true })
+    if (filtros.legajo) qMarcas = qMarcas.eq("legajo", filtros.legajo)
+    const { data: marcas, error: errMar } = await qMarcas
+    if (errMar) return { error: errMar.message }
+
+    // Agrupar marcas por legajo+fecha local y sumar horas E→S.
+    type Bucket = { legajoNombre: string; horas: number; dias: Set<string> }
+    const buckets = new Map<number, Bucket>()
+    const empleadosMap = new Map<number, { id: string; nombre: string }>(
+      (empleados ?? []).map((e) => [e.legajo, { id: e.id, nombre: e.nombre }])
+    )
+
+    // Index por legajo → array de marcas en orden.
+    const porLegajo = new Map<
+      number,
+      { fechaMs: number; fechaLocal: string; tipo: "E" | "S" }[]
+    >()
+    for (const m of (marcas ?? []) as {
+      legajo: number
+      fecha_marca: string
+      tipo_marca: "E" | "S"
+    }[]) {
+      const utc = normalizarUtc(m.fecha_marca)
+      const d = new Date(utc)
+      const local = new Date(d.getTime() - 3 * 3600 * 1000)
+      const fechaLocal = local.toISOString().slice(0, 10)
+      if (!porLegajo.has(m.legajo)) porLegajo.set(m.legajo, [])
+      porLegajo.get(m.legajo)!.push({
+        fechaMs: d.getTime(),
+        fechaLocal,
+        tipo: m.tipo_marca,
+      })
+    }
+
+    for (const [legajo, ms] of porLegajo.entries()) {
+      const emp = empleadosMap.get(legajo)
+      if (!emp) continue
+      const bucket: Bucket = { legajoNombre: emp.nombre, horas: 0, dias: new Set() }
+      // Empareja E→S consecutivo el mismo día.
+      let abierto: { fechaMs: number; fechaLocal: string } | null = null
+      for (const ev of ms) {
+        if (ev.tipo === "E") {
+          abierto = { fechaMs: ev.fechaMs, fechaLocal: ev.fechaLocal }
+        } else if (abierto && ev.tipo === "S" && ev.fechaLocal === abierto.fechaLocal) {
+          const diffH = (ev.fechaMs - abierto.fechaMs) / (1000 * 3600)
+          bucket.horas += diffH
+          bucket.dias.add(abierto.fechaLocal)
+          abierto = null
+        }
+      }
+      buckets.set(legajo, bucket)
+    }
+
+    // Calcular horas esperadas: días laborables × horas_esperadas (asume 8 si no hay jornada vigente).
+    const out: RrhhTotalHorasRow[] = []
+    for (const emp of (empleados ?? []) as { id: string; legajo: number; nombre: string }[]) {
+      const bucket = buckets.get(emp.legajo) ?? {
+        legajoNombre: emp.nombre,
+        horas: 0,
+        dias: new Set<string>(),
+      }
+      // Estimación rápida: mismo cálculo que asistencia diaria, 8h × días con jornada NO no_laborable.
+      let horasEsperadas = 0
+      const desde = new Date(filtros.desde + "T00:00:00Z")
+      const hasta = new Date(filtros.hasta + "T00:00:00Z")
+      for (
+        let d = new Date(desde);
+        d.getTime() <= hasta.getTime();
+        d.setUTCDate(d.getUTCDate() + 1)
+      ) {
+        const fechaStr = d.toISOString().slice(0, 10)
+        const { data: jor } = await supabase.rpc("rrhh_jornada_esperada", {
+          p_empleado_id: emp.id,
+          p_fecha: fechaStr,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row = ((jor ?? []) as any[])[0]
+        if (!row) continue
+        if (row.no_laborable) continue
+        // Diff hora_salida - hora_entrada.
+        if (row.hora_entrada && row.hora_salida) {
+          const [eh, em] = (row.hora_entrada as string).split(":").map(Number)
+          const [sh, sm] = (row.hora_salida as string).split(":").map(Number)
+          horasEsperadas += sh + sm / 60 - (eh + em / 60)
+        } else {
+          horasEsperadas += 8
+        }
+      }
+
+      out.push({
+        legajo: emp.legajo,
+        nombre: emp.nombre,
+        dias_trabajados: bucket.dias.size,
+        horas_trabajadas: Math.round(bucket.horas * 100) / 100,
+        horas_esperadas: Math.round(horasEsperadas * 100) / 100,
+        diferencia_horas: Math.round((bucket.horas - horasEsperadas) * 100) / 100,
+      })
+    }
+
+    return { data: out }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error generando reporte" }
+  }
+}
+
+// Pausas: pares S→E del mismo día con duración > 30 minutos.
+export async function reportePausasLaborales(
+  filtros: ReporteFiltros
+): Promise<{ data: RrhhPausaRow[] } | { error: string }> {
+  try {
+    const supabase = await createClient()
+    let q = supabase
+      .from("asistencia_marcas")
+      .select("legajo, fecha_marca, tipo_marca")
+      .gte("fecha_marca", `${filtros.desde}T00:00:00Z`)
+      .lte("fecha_marca", `${filtros.hasta}T23:59:59Z`)
+      .order("fecha_marca", { ascending: true })
+    if (filtros.legajo) q = q.eq("legajo", filtros.legajo)
+    const { data, error } = await q
+    if (error) return { error: error.message }
+
+    const porLegajo = new Map<
+      number,
+      { fechaMs: number; fechaLocal: string; tipo: "E" | "S"; iso: string }[]
+    >()
+    for (const m of (data ?? []) as {
+      legajo: number
+      fecha_marca: string
+      tipo_marca: "E" | "S"
+    }[]) {
+      const utc = normalizarUtc(m.fecha_marca)
+      const d = new Date(utc)
+      const local = new Date(d.getTime() - 3 * 3600 * 1000)
+      const fechaLocal = local.toISOString().slice(0, 10)
+      if (!porLegajo.has(m.legajo)) porLegajo.set(m.legajo, [])
+      porLegajo.get(m.legajo)!.push({
+        fechaMs: d.getTime(),
+        fechaLocal,
+        tipo: m.tipo_marca,
+        iso: utc,
+      })
+    }
+
+    const out: RrhhPausaRow[] = []
+    for (const [legajo, ms] of porLegajo.entries()) {
+      for (let i = 0; i < ms.length - 1; i++) {
+        const a = ms[i]
+        const b = ms[i + 1]
+        if (a.tipo === "S" && b.tipo === "E" && a.fechaLocal === b.fechaLocal) {
+          const dur = (b.fechaMs - a.fechaMs) / (1000 * 60)
+          if (dur > 30) {
+            out.push({
+              legajo,
+              fecha: a.fechaLocal,
+              pausa_inicio: a.iso,
+              pausa_fin: b.iso,
+              duracion_minutos: Math.round(dur),
+            })
+          }
+        }
+      }
+    }
+    return { data: out }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error generando reporte" }
   }
 }

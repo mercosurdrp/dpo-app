@@ -38,6 +38,7 @@ import type { ResumenDiarioEmpleado, ResumenMensualEmpleado, MarcaAsistencia, Ti
 import { getMarcasDiarias, getResumenMensual, setNovedad, removeNovedad } from "@/actions/asistencia"
 import type { ReunionKpis, ReunionResumenMensual } from "@/actions/reunion-preruta"
 import { getReunionKpis, getReunionResumenMensual } from "@/actions/reunion-preruta"
+import { ReportesRrhhTab } from "@/components/asistencia/reportes-rrhh-tab"
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
@@ -315,6 +316,10 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
           <TabsTrigger value="reunion" className="flex items-center gap-1.5">
             <Hand className="h-4 w-4" />
             Reunión Pre-Ruta
+          </TabsTrigger>
+          <TabsTrigger value="reportes-rrhh" className="flex items-center gap-1.5">
+            <TrendingUp className="h-4 w-4" />
+            Reportes RRHH
           </TabsTrigger>
         </TabsList>
 
@@ -755,6 +760,11 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
               </TabsContent>
             </Tabs>
           </div>
+        </TabsContent>
+
+        {/* Reportes RRHH (inasistencias, total horas, pausas) */}
+        <TabsContent value="reportes-rrhh">
+          <ReportesRrhhTab mesInicial={mes} anioInicial={anio} />
         </TabsContent>
       </Tabs>
     </div>

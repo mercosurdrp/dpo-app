@@ -50,3 +50,51 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
 
   return profile
 }
+
+/**
+ * Devuelve el `empleado_id` del usuario autenticado (NULL si su profile no
+ * está linkeado a un empleado). Para módulos de RRHH donde la lógica vive
+ * a nivel de empleado, no de profile.
+ */
+export async function getEmpleadoIdFromAuth(): Promise<string | null> {
+  const profile = await getProfile()
+  if (!profile) return null
+
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("profiles")
+    .select("empleado_id")
+    .eq("id", profile.id)
+    .single()
+
+  return (data?.empleado_id as string | null) ?? null
+}
+
+/**
+ * Asegura que el usuario es supervisor directo del empleado dado, o admin/admin_rrhh.
+ * Devuelve el profile o redirige a / si no tiene permiso.
+ */
+export async function requireSupervisorOf(empleadoId: string): Promise<Profile> {
+  const profile = await requireAuth()
+  if (profile.role === "admin" || profile.role === "admin_rrhh") return profile
+
+  if (profile.role !== "supervisor") {
+    redirect("/")
+  }
+
+  const supabase = await createClient()
+  const miEmpleadoId = await getEmpleadoIdFromAuth()
+  if (!miEmpleadoId) redirect("/")
+
+  const { data: target } = await supabase
+    .from("empleados")
+    .select("supervisor_id")
+    .eq("id", empleadoId)
+    .single()
+
+  if (target?.supervisor_id !== miEmpleadoId) {
+    redirect("/")
+  }
+
+  return profile
+}
