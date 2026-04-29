@@ -159,6 +159,36 @@ export async function unlinkUserFromEmpleado(
   }
 }
 
+export const EMPLEADO_SECTORES = ["Distribución", "Depósito", "Sin asignar"] as const
+export type EmpleadoSector = (typeof EMPLEADO_SECTORES)[number]
+
+export async function updateEmpleadoSector(
+  empleadoId: string,
+  sector: EmpleadoSector
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+
+    if (!empleadoId) return { error: "empleadoId es requerido" }
+    if (!EMPLEADO_SECTORES.includes(sector)) {
+      return { error: "Sector inválido" }
+    }
+
+    const adminClient = createAdminClient()
+    const { error } = await adminClient
+      .from("empleados")
+      .update({ sector })
+      .eq("id", empleadoId)
+
+    if (error) return { error: error.message }
+    return { ok: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando sector",
+    }
+  }
+}
+
 /**
  * Get the empleado currently linked to a user. Returns null if none.
  */

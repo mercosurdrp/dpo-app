@@ -11,8 +11,18 @@ import {
   linkUserToEmpleado,
   unlinkUserFromEmpleado,
   getUserEmpleado,
+  updateEmpleadoSector,
+  EMPLEADO_SECTORES,
   type EmpleadoOption,
+  type EmpleadoSector,
 } from "@/actions/admin-empleado-link"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type Props = {
   userId: string
@@ -30,6 +40,7 @@ export function EmpleadoPicker({ userId, currentEmpleadoId, onLinked }: Props) {
   const [current, setCurrent] = useState<EmpleadoOption | null>(null)
   const [query, setQuery] = useState("")
   const [isPending, startTransition] = useTransition()
+  const [savingSector, startSectorTransition] = useTransition()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
 
@@ -119,6 +130,22 @@ export function EmpleadoPicker({ userId, currentEmpleadoId, onLinked }: Props) {
       setCurrent(option)
       setQuery("")
       setOpen(false)
+      onLinked?.()
+    })
+  }
+
+  function handleSectorChange(next: EmpleadoSector) {
+    if (!current) return
+    const prev = current
+    setCurrent({ ...current, sector: next })
+    startSectorTransition(async () => {
+      const res = await updateEmpleadoSector(current.id, next)
+      if ("error" in res) {
+        toast.error(res.error)
+        setCurrent(prev)
+        return
+      }
+      toast.success(`Sector actualizado: ${next}`)
       onLinked?.()
     })
   }
@@ -265,6 +292,34 @@ export function EmpleadoPicker({ userId, currentEmpleadoId, onLinked }: Props) {
           </div>
         ) : null}
       </div>
+
+      {current ? (
+        <div className="space-y-1.5">
+          <Label>Sector</Label>
+          <Select
+            value={current.sector ?? "Sin asignar"}
+            onValueChange={(v) => handleSectorChange(v as EmpleadoSector)}
+            disabled={savingSector}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EMPLEADO_SECTORES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {savingSector && (
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Guardando…
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

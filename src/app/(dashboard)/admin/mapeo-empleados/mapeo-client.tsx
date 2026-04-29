@@ -10,8 +10,13 @@ import {
   User,
   Loader2,
   Check,
+  Plus,
+  Pencil,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -35,16 +40,56 @@ import {
 } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   upsertMapeoChofer,
   upsertMapeoFletero,
+  createEmpleado,
+  updateEmpleado,
 } from "@/actions/mapeo-empleados"
+import {
+  SECTORES_EMPLEADO,
+  type SectorEmpleado,
+} from "@/actions/mapeo-empleados.types"
 import type { EmpleadoCompleto } from "@/types/database"
+
+type EmpleadoLite = {
+  id: string
+  legajo: number
+  nombre: string
+  sector: string
+  numero_id: string
+  activo: boolean
+}
 
 interface Props {
   mapeos: EmpleadoCompleto[]
   unmappedChoferes: { id: string; nombre: string }[]
   unmappedFleteros: string[]
-  empleados: { id: string; legajo: number; nombre: string; sector: string }[]
+  empleados: EmpleadoLite[]
+  empleadosTodos: EmpleadoLite[]
+}
+
+type EmpleadoFormState = {
+  legajo: string
+  nombre: string
+  numero_id: string
+  sector: SectorEmpleado
+  activo: boolean
+}
+
+const EMPTY_FORM: EmpleadoFormState = {
+  legajo: "",
+  nombre: "",
+  numero_id: "",
+  sector: "Distribución",
+  activo: true,
 }
 
 export function MapeoClient({
@@ -52,11 +97,18 @@ export function MapeoClient({
   unmappedChoferes,
   unmappedFleteros,
   empleados,
+  empleadosTodos,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [savingChofer, setSavingChofer] = useState<string | null>(null)
   const [savingFletero, setSavingFletero] = useState<string | null>(null)
+
+  // Dialog state for create/edit empleado
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<EmpleadoFormState>(EMPTY_FORM)
+  const [savingEmpleado, setSavingEmpleado] = useState(false)
 
   // Track selected empleado for each unmapped item
   const [choferSelections, setChoferSelections] = useState<
@@ -72,6 +124,74 @@ export function MapeoClient({
   const totalSinMapear = mapeos.filter(
     (m) => !m.ds_fletero_carga && !m.nombre_chofer
   ).length
+
+  const empleadosById = new Map(empleadosTodos.map((e) => [e.id, e]))
+
+  function openCreateDialog() {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setDialogOpen(true)
+  }
+
+  function openEditDialog(empleadoId: string) {
+    const emp = empleadosById.get(empleadoId)
+    if (!emp) {
+      toast.error("Empleado no encontrado")
+      return
+    }
+    setEditingId(empleadoId)
+    setForm({
+      legajo: String(emp.legajo),
+      nombre: emp.nombre,
+      numero_id: emp.numero_id ?? "",
+      sector: (SECTORES_EMPLEADO.includes(emp.sector as SectorEmpleado)
+        ? emp.sector
+        : "Distribución") as SectorEmpleado,
+      activo: emp.activo,
+    })
+    setDialogOpen(true)
+  }
+
+  async function handleSaveEmpleado() {
+    const legajoNum = Number(form.legajo)
+    if (!Number.isInteger(legajoNum) || legajoNum <= 0) {
+      toast.error("Legajo debe ser un entero positivo")
+      return
+    }
+    if (!form.nombre.trim()) {
+      toast.error("Nombre es obligatorio")
+      return
+    }
+    if (!form.numero_id.trim()) {
+      toast.error("Número de documento es obligatorio")
+      return
+    }
+
+    setSavingEmpleado(true)
+    const payload = {
+      legajo: legajoNum,
+      nombre: form.nombre.trim(),
+      numero_id: form.numero_id.trim(),
+      sector: form.sector,
+      activo: form.activo,
+    }
+
+    const result = editingId
+      ? await updateEmpleado(editingId, payload)
+      : await createEmpleado(payload)
+
+    setSavingEmpleado(false)
+
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(editingId ? "Empleado actualizado" : "Empleado creado")
+    setDialogOpen(false)
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    startTransition(() => router.refresh())
+  }
 
   async function handleSaveChofer(nombreChofer: string) {
     const empleadoId = choferSelections[nombreChofer]
@@ -110,14 +230,20 @@ export function MapeoClient({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Mapeo de Empleados
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Vincular identidades externas (fleteros ERP, choferes TML) con
-          empleados del sistema
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Mapeo de Empleados
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Vincular identidades externas (fleteros ERP, choferes TML) con
+            empleados del sistema
+          </p>
+        </div>
+        <Button onClick={openCreateDialog} size="sm">
+          <Plus className="mr-1 h-4 w-4" />
+          Nuevo empleado
+        </Button>
       </div>
 
       {/* Stats */}
@@ -155,17 +281,29 @@ export function MapeoClient({
                   <TableHead>Chofer TML</TableHead>
                   <TableHead>Fletero ERP</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mapeos.map((m) => {
                   const hasMaping = m.ds_fletero_carga || m.nombre_chofer
+                  const editable = empleadosById.has(m.empleado_id)
+                  const isInactive = !empleadosById.get(m.empleado_id)?.activo
                   return (
-                    <TableRow key={`${m.empleado_id}-${m.nombre_chofer}-${m.ds_fletero_carga}`}>
+                    <TableRow
+                      key={`${m.empleado_id}-${m.nombre_chofer}-${m.ds_fletero_carga}`}
+                    >
                       <TableCell className="font-mono text-sm">
                         {m.legajo}
                       </TableCell>
-                      <TableCell className="font-medium">{m.nombre}</TableCell>
+                      <TableCell className="font-medium">
+                        {m.nombre}
+                        {isInactive && (
+                          <Badge variant="outline" className="ml-2 text-xs">
+                            inactivo
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline">{m.sector}</Badge>
                       </TableCell>
@@ -195,6 +333,17 @@ export function MapeoClient({
                         ) : (
                           <Link2Off className="size-4 text-amber-500" />
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => openEditDialog(m.empleado_id)}
+                          disabled={!editable}
+                          title="Editar empleado"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   )
@@ -346,6 +495,113 @@ export function MapeoClient({
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? "Editar empleado" : "Nuevo empleado"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? "Modificá los datos del empleado seleccionado."
+                : "Completá los datos del nuevo empleado."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="empleado-legajo">Legajo</Label>
+              <Input
+                id="empleado-legajo"
+                type="number"
+                inputMode="numeric"
+                value={form.legajo}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, legajo: e.target.value }))
+                }
+                placeholder="Ej: 245"
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="empleado-nombre">Nombre completo</Label>
+              <Input
+                id="empleado-nombre"
+                value={form.nombre}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, nombre: e.target.value }))
+                }
+                placeholder="Apellido, Nombre"
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="empleado-numero-id">Número de documento</Label>
+              <Input
+                id="empleado-numero-id"
+                value={form.numero_id}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, numero_id: e.target.value }))
+                }
+                placeholder="DNI sin puntos"
+              />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="empleado-sector">Sector</Label>
+              <Select
+                value={form.sector}
+                onValueChange={(val: string | null) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    sector: (val ?? "Distribución") as SectorEmpleado,
+                  }))
+                }
+              >
+                <SelectTrigger id="empleado-sector">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTORES_EMPLEADO.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.activo}
+                onCheckedChange={(checked) =>
+                  setForm((prev) => ({ ...prev, activo: checked === true }))
+                }
+              />
+              <span>Empleado activo</span>
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              disabled={savingEmpleado}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEmpleado} disabled={savingEmpleado}>
+              {savingEmpleado ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="mr-1 h-3.5 w-3.5" />
+              )}
+              {editingId ? "Guardar cambios" : "Crear empleado"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

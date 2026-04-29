@@ -1,7 +1,13 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { requireRole } from "@/lib/session"
 import type { EmpleadoCompleto } from "@/types/database"
+import {
+  SECTORES_EMPLEADO,
+  type EmpleadoInput,
+  type SectorEmpleado,
+} from "./mapeo-empleados.types"
 
 // ---------- Queries ----------
 
@@ -137,15 +143,122 @@ export async function deleteMapeoFletero(
 // ---------- Empleados list (for dropdowns) ----------
 
 export async function getEmpleadosActivos(): Promise<
-  { data: { id: string; legajo: number; nombre: string; sector: string }[] } | { error: string }
+  {
+    data: {
+      id: string
+      legajo: number
+      nombre: string
+      sector: string
+      numero_id: string
+      activo: boolean
+    }[]
+  } | { error: string }
 > {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("empleados")
-    .select("id, legajo, nombre, sector")
+    .select("id, legajo, nombre, sector, numero_id, activo")
     .eq("activo", true)
     .order("nombre")
 
   if (error) return { error: error.message }
   return { data: data ?? [] }
+}
+
+export async function getEmpleadosTodos(): Promise<
+  {
+    data: {
+      id: string
+      legajo: number
+      nombre: string
+      sector: string
+      numero_id: string
+      activo: boolean
+    }[]
+  } | { error: string }
+> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("empleados")
+    .select("id, legajo, nombre, sector, numero_id, activo")
+    .order("legajo")
+
+  if (error) return { error: error.message }
+  return { data: data ?? [] }
+}
+
+// ---------- Empleados CRUD ----------
+
+function validateEmpleadoInput(
+  input: Partial<EmpleadoInput>
+): { ok: true; value: EmpleadoInput } | { ok: false; error: string } {
+  const legajo = Number(input.legajo)
+  if (!Number.isInteger(legajo) || legajo <= 0) {
+    return { ok: false, error: "Legajo debe ser un entero positivo" }
+  }
+  const nombre = (input.nombre ?? "").trim()
+  if (!nombre) return { ok: false, error: "Nombre es obligatorio" }
+  const numero_id = (input.numero_id ?? "").trim()
+  if (!numero_id) return { ok: false, error: "Número de documento es obligatorio" }
+  const sector = (input.sector ?? "Distribución") as SectorEmpleado
+  if (!SECTORES_EMPLEADO.includes(sector)) {
+    return { ok: false, error: "Sector inválido" }
+  }
+  const activo = input.activo === undefined ? true : !!input.activo
+  return { ok: true, value: { legajo, nombre, numero_id, sector, activo } }
+}
+
+export async function createEmpleado(
+  input: Partial<EmpleadoInput>
+): Promise<{ data: { id: string } } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    const validated = validateEmpleadoInput(input)
+    if (!validated.ok) return { error: validated.error }
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("empleados")
+      .insert(validated.value)
+      .select("id")
+      .single()
+    if (error) {
+      if (error.code === "23505") {
+        return { error: `Ya existe un empleado con legajo ${validated.value.legajo}` }
+      }
+      return { error: error.message }
+    }
+    return { data: { id: data!.id as string } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error creando empleado",
+    }
+  }
+}
+
+export async function updateEmpleado(
+  id: string,
+  input: Partial<EmpleadoInput>
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    if (!id) return { error: "ID requerido" }
+    const validated = validateEmpleadoInput(input)
+    if (!validated.ok) return { error: validated.error }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("empleados")
+      .update(validated.value)
+      .eq("id", id)
+    if (error) {
+      if (error.code === "23505") {
+        return { error: `Ya existe otro empleado con legajo ${validated.value.legajo}` }
+      }
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando empleado",
+    }
+  }
 }
