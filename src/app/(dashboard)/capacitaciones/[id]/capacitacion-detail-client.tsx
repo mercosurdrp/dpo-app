@@ -25,6 +25,10 @@ import {
   ChevronDown,
   ChevronRight,
   Search,
+  ClipboardList,
+  CheckCircle2,
+  XCircle,
+  Pencil,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -70,11 +74,13 @@ import {
   updateAsistencia,
   createCapacitacionPregunta,
   deleteCapacitacionPregunta,
+  updateCapacitacionPregunta,
   saveDpoPuntos,
 } from "@/actions/capacitaciones"
 import type {
   CapacitacionFull,
   CapacitacionPregunta,
+  CapacitacionRespuesta,
   CapacitacionDpoPuntoFull,
   Empleado,
   AsistenciaConEmpleado,
@@ -109,6 +115,7 @@ interface Props {
   dpoPuntos: CapacitacionDpoPuntoFull[]
   dpoHierarchy: DpoHierarchyPilar[]
   intentos: IntentoExamen[]
+  respuestas: CapacitacionRespuesta[]
   canEdit: boolean
 }
 
@@ -119,6 +126,7 @@ export function CapacitacionDetailClient({
   dpoPuntos: initialDpoPuntos,
   dpoHierarchy,
   intentos,
+  respuestas,
   canEdit,
 }: Props) {
   const router = useRouter()
@@ -128,6 +136,7 @@ export function CapacitacionDetailClient({
   const [selectedEmpleados, setSelectedEmpleados] = useState<string[]>([])
   const [examPreguntas, setExamPreguntas] = useState(initialPreguntas)
   const [addPreguntaOpen, setAddPreguntaOpen] = useState(false)
+  const [editingPregunta, setEditingPregunta] = useState<CapacitacionPregunta | null>(null)
   const [dpoPuntos, setDpoPuntos] = useState(initialDpoPuntos)
   const [dpoDialogOpen, setDpoDialogOpen] = useState(false)
 
@@ -325,9 +334,36 @@ export function CapacitacionDetailClient({
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
             <User className="size-5 text-purple-500" />
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-xs text-slate-500">Instructor</p>
-              <p className="text-sm font-medium">{cap.instructor}</p>
+              {canEdit ? (
+                <Input
+                  className="h-7 text-sm"
+                  defaultValue={cap.instructor}
+                  placeholder="Nombre del instructor"
+                  onBlur={async (e) => {
+                    const newInstructor = e.target.value.trim()
+                    if (!newInstructor) {
+                      toast.error("El instructor no puede estar vacío")
+                      e.target.value = cap.instructor
+                      return
+                    }
+                    if (newInstructor === cap.instructor) return
+                    const result = await updateCapacitacion(cap.id, {
+                      instructor: newInstructor,
+                    })
+                    if ("error" in result) {
+                      toast.error(result.error)
+                      e.target.value = cap.instructor
+                    } else {
+                      setCap((prev) => ({ ...prev, instructor: newInstructor }))
+                      toast.success("Instructor actualizado")
+                    }
+                  }}
+                />
+              ) : (
+                <p className="text-sm font-medium">{cap.instructor}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -571,6 +607,7 @@ export function CapacitacionDetailClient({
                     <TableHead className="text-center">Nota</TableHead>
                     <TableHead className="text-center">Intentos</TableHead>
                     <TableHead className="text-center">Resultado</TableHead>
+                    <TableHead className="text-center">Respuestas</TableHead>
                     {canEdit && <TableHead className="w-10" />}
                   </TableRow>
                 </TableHeader>
@@ -584,6 +621,8 @@ export function CapacitacionDetailClient({
                         key={asistencia.id}
                         asistencia={asistencia}
                         intentos={intentos.filter((i) => i.empleado_id === asistencia.empleado_id)}
+                        respuestas={respuestas.filter((r) => r.empleado_id === asistencia.empleado_id)}
+                        preguntas={examPreguntas}
                         canEdit={canEdit}
                         isPending={isPending}
                         onTogglePresencia={() =>
@@ -598,6 +637,11 @@ export function CapacitacionDetailClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Resumen por pregunta */}
+      {examPreguntas.length > 0 && respuestas.length > 0 && (
+        <ResumenPreguntasCard preguntas={examPreguntas} respuestas={respuestas} />
+      )}
 
       {/* Exam questions section */}
       {canEdit && (
@@ -658,24 +702,36 @@ export function CapacitacionDetailClient({
                             ))}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="size-7 shrink-0 p-0 text-slate-400 hover:text-red-500"
-                          onClick={async () => {
-                            const result = await deleteCapacitacionPregunta(preg.id)
-                            if ("error" in result) {
-                              toast.error(result.error)
-                            } else {
-                              setExamPreguntas((prev) =>
-                                prev.filter((p) => p.id !== preg.id)
-                              )
-                              toast.success("Pregunta eliminada")
-                            }
-                          }}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="size-7 p-0 text-slate-400 hover:text-blue-500"
+                            onClick={() => setEditingPregunta(preg)}
+                            title="Editar pregunta"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="size-7 p-0 text-slate-400 hover:text-red-500"
+                            onClick={async () => {
+                              const result = await deleteCapacitacionPregunta(preg.id)
+                              if ("error" in result) {
+                                toast.error(result.error)
+                              } else {
+                                setExamPreguntas((prev) =>
+                                  prev.filter((p) => p.id !== preg.id)
+                                )
+                                toast.success("Pregunta eliminada")
+                              }
+                            }}
+                            title="Eliminar pregunta"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -692,9 +748,25 @@ export function CapacitacionDetailClient({
           capacitacionId={cap.id}
           orden={examPreguntas.length}
           onClose={() => setAddPreguntaOpen(false)}
-          onCreated={(preg) => {
+          onSaved={(preg) => {
             setExamPreguntas((prev) => [...prev, preg])
             setAddPreguntaOpen(false)
+          }}
+        />
+      )}
+
+      {/* Edit pregunta dialog */}
+      {editingPregunta && (
+        <AddPreguntaDialog
+          capacitacionId={cap.id}
+          orden={editingPregunta.orden}
+          pregunta={editingPregunta}
+          onClose={() => setEditingPregunta(null)}
+          onSaved={(preg) => {
+            setExamPreguntas((prev) =>
+              prev.map((p) => (p.id === preg.id ? preg : p))
+            )
+            setEditingPregunta(null)
           }}
         />
       )}
@@ -712,22 +784,121 @@ function parseOpciones(opciones: string[] | string): string[] {
   }
 }
 
+// Resumen agregado por pregunta: cuántos acertaron y cuántos fallaron.
+function ResumenPreguntasCard({
+  preguntas,
+  respuestas,
+}: {
+  preguntas: CapacitacionPregunta[]
+  respuestas: CapacitacionRespuesta[]
+}) {
+  const stats = preguntas
+    .slice()
+    .sort((a, b) => a.orden - b.orden)
+    .map((preg) => {
+      const resps = respuestas.filter((r) => r.pregunta_id === preg.id)
+      const aciertos = resps.filter((r) => r.es_correcta).length
+      const fallos = resps.length - aciertos
+      const total = resps.length
+      const pct = total > 0 ? Math.round((aciertos / total) * 100) : 0
+      return { preg, aciertos, fallos, total, pct }
+    })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <ClipboardList className="size-5 text-purple-500" />
+          Resumen por pregunta
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10 text-center">#</TableHead>
+                <TableHead>Pregunta</TableHead>
+                <TableHead className="w-24 text-center">Aciertos</TableHead>
+                <TableHead className="w-24 text-center">Errores</TableHead>
+                <TableHead className="w-24 text-center">Respondieron</TableHead>
+                <TableHead className="w-32 text-center">% Acierto</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stats.map((s, idx) => {
+                const color =
+                  s.pct >= 80 ? "#10B981" : s.pct >= 50 ? "#F59E0B" : "#EF4444"
+                return (
+                  <TableRow key={s.preg.id}>
+                    <TableCell className="text-center text-xs text-slate-500">
+                      {idx + 1}
+                    </TableCell>
+                    <TableCell className="text-sm">{s.preg.texto}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                        {s.aciertos}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                        {s.fallos}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center text-sm font-medium text-slate-600">
+                      {s.total}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${s.pct}%`, backgroundColor: color }}
+                          />
+                        </div>
+                        <span
+                          className="w-10 text-right text-xs font-semibold"
+                          style={{ color }}
+                        >
+                          {s.pct}%
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // Dialog to add a new exam question
 function AddPreguntaDialog({
   capacitacionId,
   orden,
+  pregunta,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   capacitacionId: string
   orden: number
+  pregunta?: CapacitacionPregunta | null
   onClose: () => void
-  onCreated: (preg: CapacitacionPregunta) => void
+  onSaved: (preg: CapacitacionPregunta, mode: "create" | "update") => void
 }) {
+  const isEdit = !!pregunta
   const [isPending, startTransition] = useTransition()
-  const [texto, setTexto] = useState("")
-  const [opciones, setOpciones] = useState(["", "", "", ""])
-  const [correcta, setCorrecta] = useState(0)
+  const [texto, setTexto] = useState(pregunta?.texto ?? "")
+  const [opciones, setOpciones] = useState<string[]>(() => {
+    if (!pregunta) return ["", "", "", ""]
+    const parsed = parseOpciones(pregunta.opciones)
+    while (parsed.length < 2) parsed.push("")
+    return parsed
+  })
+  const [correcta, setCorrecta] = useState(pregunta?.respuesta_correcta ?? 0)
 
   function updateOpcion(idx: number, value: string) {
     setOpciones((prev) => prev.map((o, i) => (i === idx ? value : o)))
@@ -743,7 +914,7 @@ function AddPreguntaDialog({
     if (correcta >= opciones.length - 1) setCorrecta(0)
   }
 
-  async function handleCreate() {
+  async function handleSave() {
     if (!texto.trim()) {
       toast.error("Escribe la pregunta")
       return
@@ -753,21 +924,38 @@ function AddPreguntaDialog({
       toast.error("Agrega al menos 2 opciones")
       return
     }
+    if (correcta >= filledOpciones.length) {
+      toast.error("La opción correcta marcada no existe (revisá las opciones)")
+      return
+    }
 
     startTransition(async () => {
-      const result = await createCapacitacionPregunta({
-        capacitacion_id: capacitacionId,
-        texto: texto.trim(),
-        opciones: filledOpciones,
-        respuesta_correcta: correcta,
-        orden,
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
+      if (isEdit && pregunta) {
+        const result = await updateCapacitacionPregunta(pregunta.id, {
+          texto: texto.trim(),
+          opciones: filledOpciones,
+          respuesta_correcta: correcta,
+        })
+        if ("error" in result) {
+          toast.error(result.error)
+        } else {
+          toast.success("Pregunta actualizada")
+          onSaved(result.data, "update")
+        }
       } else {
-        toast.success("Pregunta agregada")
-        onCreated(result.data)
+        const result = await createCapacitacionPregunta({
+          capacitacion_id: capacitacionId,
+          texto: texto.trim(),
+          opciones: filledOpciones,
+          respuesta_correcta: correcta,
+          orden,
+        })
+        if ("error" in result) {
+          toast.error(result.error)
+        } else {
+          toast.success("Pregunta agregada")
+          onSaved(result.data, "create")
+        }
       }
     })
   }
@@ -775,7 +963,7 @@ function AddPreguntaDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="mx-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-        <h3 className="text-lg font-semibold">Nueva Pregunta</h3>
+        <h3 className="text-lg font-semibold">{isEdit ? "Editar Pregunta" : "Nueva Pregunta"}</h3>
         <div className="mt-4 space-y-4">
           <div>
             <Label>Pregunta *</Label>
@@ -840,10 +1028,10 @@ function AddPreguntaDialog({
             </Button>
             <Button
               className="flex-1"
-              onClick={handleCreate}
+              onClick={handleSave}
               disabled={isPending}
             >
-              {isPending ? "Creando..." : "Crear Pregunta"}
+              {isPending ? (isEdit ? "Guardando..." : "Creando...") : isEdit ? "Guardar Cambios" : "Crear Pregunta"}
             </Button>
           </div>
         </div>
@@ -934,6 +1122,8 @@ function GenerarExamenButton({
 function AsistenciaRow({
   asistencia,
   intentos,
+  respuestas,
+  preguntas,
   canEdit,
   isPending,
   onTogglePresencia,
@@ -941,11 +1131,14 @@ function AsistenciaRow({
 }: {
   asistencia: AsistenciaConEmpleado
   intentos: IntentoExamen[]
+  respuestas: CapacitacionRespuesta[]
+  preguntas: CapacitacionPregunta[]
   canEdit: boolean
   isPending: boolean
   onTogglePresencia: () => void
   onRemove: () => void
 }) {
+  const [respuestasOpen, setRespuestasOpen] = useState(false)
   const intentosTooltip = intentos
     .map((i) => `Intento #${i.intento_n}: ${i.nota}%`)
     .join("\n")
@@ -999,6 +1192,28 @@ function AsistenciaRow({
           {RESULTADO_LABELS[asistencia.resultado]}
         </Badge>
       </TableCell>
+      <TableCell className="text-center">
+        {respuestas.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setRespuestasOpen(true)}
+          >
+            <ClipboardList className="mr-1 size-3.5" />
+            Ver
+          </Button>
+        ) : (
+          <span className="text-xs text-slate-400">-</span>
+        )}
+        <RespuestasDialog
+          open={respuestasOpen}
+          onOpenChange={setRespuestasOpen}
+          asistencia={asistencia}
+          respuestas={respuestas}
+          preguntas={preguntas}
+        />
+      </TableCell>
       {canEdit && (
         <TableCell>
           <Button
@@ -1013,6 +1228,125 @@ function AsistenciaRow({
         </TableCell>
       )}
     </TableRow>
+  )
+}
+
+// Dialog: ver respuestas de un empleado en una capacitación (último intento)
+function RespuestasDialog({
+  open,
+  onOpenChange,
+  asistencia,
+  respuestas,
+  preguntas,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  asistencia: AsistenciaConEmpleado
+  respuestas: CapacitacionRespuesta[]
+  preguntas: CapacitacionPregunta[]
+}) {
+  const respuestasPorPregunta = new Map(respuestas.map((r) => [r.pregunta_id, r]))
+  const correctas = respuestas.filter((r) => r.es_correcta).length
+  const total = preguntas.length
+  const sortedPreg = [...preguntas].sort((a, b) => a.orden - b.orden)
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardList className="size-5 text-blue-500" />
+            Respuestas — {asistencia.empleado.nombre}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <span className="text-slate-600">Legajo {asistencia.empleado.legajo}</span>
+          <span className="text-slate-400">·</span>
+          <span className="text-slate-600">
+            {correctas}/{total} correctas
+          </span>
+          {asistencia.nota !== null && (
+            <>
+              <span className="text-slate-400">·</span>
+              <span className={`font-bold ${asistencia.nota >= 80 ? "text-green-600" : "text-red-600"}`}>
+                {asistencia.nota}%
+              </span>
+            </>
+          )}
+          <span className="ml-auto text-xs text-slate-400">Último intento</span>
+        </div>
+        {respuestas.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-400">
+            El empleado todavía no rindió el examen.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {sortedPreg.map((preg, idx) => {
+              const opciones = parseOpciones(preg.opciones)
+              const resp = respuestasPorPregunta.get(preg.id)
+              const elegidaIdx = resp?.respuesta_elegida ?? -1
+              const correcta = resp?.es_correcta ?? false
+              return (
+                <div
+                  key={preg.id}
+                  className={`rounded-lg border p-3 ${correcta ? "border-green-200 bg-green-50/50" : resp ? "border-red-200 bg-red-50/50" : "border-slate-200 bg-white"}`}
+                >
+                  <div className="mb-2 flex items-start gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                      {idx + 1}
+                    </span>
+                    <span className="flex-1 text-sm font-medium text-slate-800">
+                      {preg.texto}
+                    </span>
+                    {resp ? (
+                      correcta ? (
+                        <CheckCircle2 className="size-5 shrink-0 text-green-500" />
+                      ) : (
+                        <XCircle className="size-5 shrink-0 text-red-500" />
+                      )
+                    ) : (
+                      <span className="shrink-0 text-xs text-slate-400">Sin responder</span>
+                    )}
+                  </div>
+                  <div className="ml-8 space-y-1.5">
+                    {opciones.map((op, opIdx) => {
+                      const esCorrecta = opIdx === preg.respuesta_correcta
+                      const esElegida = opIdx === elegidaIdx
+                      let cls = "border-slate-200 bg-white text-slate-700"
+                      if (esCorrecta) cls = "border-green-300 bg-green-100 text-green-900"
+                      else if (esElegida) cls = "border-red-300 bg-red-100 text-red-900"
+                      return (
+                        <div
+                          key={opIdx}
+                          className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${cls}`}
+                        >
+                          <span className="font-bold">{String.fromCharCode(65 + opIdx)}.</span>
+                          <span className="flex-1">{op}</span>
+                          {esCorrecta && (
+                            <Badge className="h-5 bg-green-600 px-1.5 text-[10px] text-white hover:bg-green-600">
+                              Correcta
+                            </Badge>
+                          )}
+                          {esElegida && !esCorrecta && (
+                            <Badge className="h-5 bg-red-500 px-1.5 text-[10px] text-white hover:bg-red-500">
+                              Eligió
+                            </Badge>
+                          )}
+                          {esElegida && esCorrecta && (
+                            <Badge className="h-5 bg-blue-600 px-1.5 text-[10px] text-white hover:bg-blue-600">
+                              Eligió
+                            </Badge>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

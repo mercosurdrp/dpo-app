@@ -23,6 +23,7 @@ import {
   Gauge,
   ClipboardCheck,
   Fuel,
+  ExternalLink,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -64,6 +65,24 @@ function formatHoraAR(fecha: string | null): string {
 function formatFecha(fecha: string): string {
   const d = new Date(fecha + "T12:00:00")
   return `${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+}
+
+function MaterialLink({ url }: { url: string | null }) {
+  if (!url || url.trim() === "") return null
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.open(url, "_blank", "noopener,noreferrer")
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
+    >
+      <ExternalLink className="size-3.5" />
+      Ver material
+    </button>
+  )
 }
 
 export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashboard, entrega }: Props) {
@@ -554,6 +573,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                       <User className="size-3.5" />
                       <span>{cap.instructor}</span>
                     </div>
+                    <MaterialLink url={cap.material_url} />
                     <Button size="sm" className="mt-2 w-full">Realizar examen</Button>
                   </CardContent>
                 </Card>
@@ -607,6 +627,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                           </span>
                         </div>
                       )}
+                      <MaterialLink url={cap.material_url} />
                       {puedeReintentar && (
                         <Button size="sm" className="mt-2 w-full bg-blue-600 hover:bg-blue-700">
                           Rendir nuevamente

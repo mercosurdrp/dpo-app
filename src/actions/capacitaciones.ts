@@ -958,3 +958,24 @@ export async function getMisRespuestas(
     return { error: err instanceof Error ? err.message : "Error loading respuestas" }
   }
 }
+
+// ─── Admin: todas las respuestas de una capacitación ───
+// Solo se conserva la última respuesta por (empleado, pregunta) — UPSERT en submitExamen.
+export async function getRespuestasCapacitacion(
+  capacitacionId: string
+): Promise<{ data: CapacitacionRespuesta[] } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("capacitacion_respuestas")
+      .select("*")
+      .eq("capacitacion_id", capacitacionId)
+
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as CapacitacionRespuesta[] }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error loading respuestas" }
+  }
+}

@@ -11,6 +11,7 @@ import {
   Trophy,
   AlertTriangle,
   RotateCcw,
+  ExternalLink,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -292,6 +293,28 @@ export function ExamenClient({
           {preguntas.length} preguntas - Responde todas para enviar
         </p>
       </div>
+
+      {capacitacion.material_url && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-blue-900">
+              <ExternalLink className="size-4" />
+              Material de estudio
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <a
+              href={capacitacion.material_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+            >
+              <ExternalLink className="size-3.5" />
+              Ver material
+            </a>
+          </CardContent>
+        </Card>
+      )}
 
       {preguntas.length === 0 ? (
         <Card>
