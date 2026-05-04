@@ -215,27 +215,47 @@ export async function buildSnapshot(opts: {
           bultosOk += qty
           visitBultosOk += qty
         } else if (last.attempt_status === "FAILED") {
-          bultosRech += qty
-          rechazosCount++
+          // WHY: SUCCESSFUL previo + FAILED final = rechazo parcial. Foxtrot no expone
+          // quantity por attempt, así que no podemos saber qué porción se rechazó.
+          // Lo contamos como caso visible pero no inflamos bultos_rech.
+          const isPartial = atts.some((a) => a.attempt_status === "SUCCESSFUL")
           const motivo =
             last.delivery_message || last.delivery_code || last.driver_notes || "Sin motivo"
-          motivoMap[motivo] = (motivoMap[motivo] ?? 0) + qty
           const prod = d.name ?? "(sin nombre)"
-          skuMap[prod] = (skuMap[prod] ?? 0) + qty
-          visitMotivos.add(motivo)
-          visitBultosRech += qty
           const ts =
             toMs(last.timestamp) ||
             toMs(last.attempt_timestamp) ||
             toMs(wp.completed_timestamp)
-          visitItems.push({
-            producto: prod,
-            cantidad: qty,
-            motivo,
-            codigo: last.delivery_code ?? null,
-            notas: last.driver_notes ?? null,
-            ts_ms: ts,
-          })
+
+          if (isPartial) {
+            bultosOk += qty
+            visitBultosOk += qty
+            rechazosCount++
+            visitMotivos.add(motivo)
+            visitItems.push({
+              producto: prod,
+              cantidad: 0,
+              motivo,
+              codigo: last.delivery_code ?? null,
+              notas: last.driver_notes ?? null,
+              ts_ms: ts,
+            })
+          } else {
+            bultosRech += qty
+            rechazosCount++
+            motivoMap[motivo] = (motivoMap[motivo] ?? 0) + qty
+            skuMap[prod] = (skuMap[prod] ?? 0) + qty
+            visitMotivos.add(motivo)
+            visitBultosRech += qty
+            visitItems.push({
+              producto: prod,
+              cantidad: qty,
+              motivo,
+              codigo: last.delivery_code ?? null,
+              notas: last.driver_notes ?? null,
+              ts_ms: ts,
+            })
+          }
         }
       }
 
