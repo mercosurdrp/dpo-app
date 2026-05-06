@@ -35,11 +35,16 @@ import {
 } from "@/components/ui/table"
 import { NuevaFlotaDialog } from "@/components/s5/nueva-flota-dialog"
 import { NuevaAlmacenDialog } from "@/components/s5/nueva-almacen-dialog"
-import { upsertSectorResponsable, eliminarAuditoria } from "@/actions/s5"
+import {
+  upsertSectorResponsable,
+  eliminarAuditoria,
+  actualizarNombreSectorAlmacen,
+} from "@/actions/s5"
 import {
   S5_AUDITORIA_ESTADO_COLORS,
   S5_AUDITORIA_ESTADO_LABELS,
   type S5AuditoriaConMeta,
+  type S5SectorAlmacen,
   type S5SectorResponsableFull,
   type S5Tipo,
   type S5VehiculoPendiente,
@@ -66,6 +71,7 @@ export function CincoSClient({
   vehiculosActivos,
   vehiculosPendientes,
   empleados,
+  sectoresAlmacen,
 }: {
   periodoActual: string
   tipoInicial?: S5Tipo
@@ -75,7 +81,8 @@ export function CincoSClient({
   responsables: S5SectorResponsableFull[]
   vehiculosActivos: { id: string; dominio: string; descripcion: string | null }[]
   vehiculosPendientes: S5VehiculoPendiente[]
-  empleados: { id: string; legajo: number; nombre: string }[]
+  empleados: { id: string; legajo: number; nombre: string; sector: string | null }[]
+  sectoresAlmacen: S5SectorAlmacen[]
 }) {
   const router = useRouter()
   const [openNuevaFlota, setOpenNuevaFlota] = useState(false)
@@ -102,20 +109,19 @@ export function CincoSClient({
   }, [auditoriasFlota, vehiculosPendientes])
 
   const kpisAlmacen = useMemo(() => {
-    const completadas = auditoriasAlmacen.filter(
-      (a) => a.estado === "completada"
-    )
+    const delMes = auditoriasAlmacen.filter((a) => a.periodo === periodoActual)
+    const completadas = delMes.filter((a) => a.estado === "completada")
     const prom =
       completadas.length > 0
         ? completadas.reduce((acc, a) => acc + (a.nota_total ?? 0), 0) /
           completadas.length
         : 0
     return {
-      total: auditoriasAlmacen.length,
+      total: delMes.length,
       completadas: completadas.length,
       promedio: prom,
     }
-  }, [auditoriasAlmacen])
+  }, [auditoriasAlmacen, periodoActual])
 
   const respBySector = useMemo(() => {
     const m = new Map<number, S5SectorResponsableFull>()
@@ -123,29 +129,40 @@ export function CincoSClient({
     return m
   }, [responsables])
 
+  const empleadosDeposito = useMemo(
+    () => empleados.filter((e) => e.sector === "Depósito"),
+    [empleados]
+  )
+
   const empleadosItems = useMemo(() => {
     const o: Record<string, string> = {}
-    for (const e of empleados) o[e.id] = e.nombre
+    for (const e of empleadosDeposito) o[e.id] = e.nombre
     return o
-  }, [empleados])
+  }, [empleadosDeposito])
+
+  const nombreBySector = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const s of sectoresAlmacen) m.set(s.numero, s.nombre)
+    return m
+  }, [sectoresAlmacen])
+
+  function labelSector(numero: number) {
+    const nom = nombreBySector.get(numero)
+    return nom ? `Sector ${numero} — ${nom}` : `Sector ${numero}`
+  }
 
   function handleAsignarNombreSector(sector: number, nombre: string) {
-    const actual = respBySector.get(sector)
-    if (!actual) {
-      toast.error("Primero asigná un responsable")
+    if (!nombre.trim()) {
+      toast.error("El nombre no puede estar vacío")
       return
     }
     startTransition(async () => {
-      const res = await upsertSectorResponsable(
-        periodoActual,
-        sector,
-        actual.empleado_id,
-        nombre
-      )
+      const res = await actualizarNombreSectorAlmacen(sector, nombre)
       if ("error" in res) {
         toast.error(res.error)
         return
       }
+      toast.success(`Sector ${sector} → ${res.data.nombre}`)
       router.refresh()
     })
   }
@@ -420,12 +437,7 @@ export function CincoSClient({
                       className="rounded-lg border bg-muted/20 p-3 space-y-2"
                     >
                       <p className="text-sm font-semibold text-slate-800">
-                        Sector {sector}
-                        {actual?.nombre ? (
-                          <span className="ml-2 font-normal text-muted-foreground">
-                            — {actual.nombre}
-                          </span>
-                        ) : null}
+                        {labelSector(sector)}
                       </p>
                       {canEdit ? (
                         <>
@@ -441,7 +453,7 @@ export function CincoSClient({
                               <SelectValue placeholder="Seleccionar empleado" />
                             </SelectTrigger>
                             <SelectContent>
-                              {empleados.map((e) => (
+                              {empleadosDeposito.map((e) => (
                                 <SelectItem
                                   key={e.id}
                                   value={e.id}
@@ -456,16 +468,16 @@ export function CincoSClient({
                             </SelectContent>
                           </Select>
                           <Input
-                            placeholder="Nombre del sector (opcional)"
-                            defaultValue={actual?.nombre ?? ""}
+                            placeholder="Nombre del sector"
+                            defaultValue={nombreBySector.get(sector) ?? ""}
                             onBlur={(e) => {
                               const v = e.target.value.trim()
-                              const current = (actual?.nombre ?? "").trim()
-                              if (v !== current && actual) {
+                              const current = (nombreBySector.get(sector) ?? "").trim()
+                              if (v && v !== current) {
                                 handleAsignarNombreSector(sector, v)
                               }
                             }}
-                            disabled={isPending || !actual}
+                            disabled={isPending}
                           />
                         </>
                       ) : (
@@ -493,13 +505,13 @@ export function CincoSClient({
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Auditorías del mes — Almacén
+                Listado de auditorías
               </CardTitle>
             </CardHeader>
             <CardContent>
               {auditoriasAlmacen.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  Aún no hay auditorías este mes.
+                  Aún no hay auditorías cargadas.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -519,7 +531,7 @@ export function CincoSClient({
                         <TableRow key={a.id}>
                           <TableCell>{formatFecha(a.fecha)}</TableCell>
                           <TableCell className="font-medium">
-                            Sector {a.sector_numero}
+                            {labelSector(a.sector_numero ?? 0)}
                           </TableCell>
                           <TableCell className="text-sm">
                             {a.auditor_nombre}
@@ -555,7 +567,7 @@ export function CincoSClient({
                                   onClick={() =>
                                     handleEliminarAuditoria(
                                       a.id,
-                                      `${formatFecha(a.fecha)} — Sector ${a.sector_numero}`
+                                      `${formatFecha(a.fecha)} — ${labelSector(a.sector_numero ?? 0)}`
                                     )
                                   }
                                   disabled={isPending}
@@ -590,6 +602,7 @@ export function CincoSClient({
         open={openNuevaAlmacen}
         onOpenChange={setOpenNuevaAlmacen}
         responsables={responsables}
+        sectoresAlmacen={sectoresAlmacen}
       />
     </div>
   )

@@ -12,6 +12,7 @@ import type {
   S5AuditoriaFull,
   S5AuditoriaItem,
   S5AuditoriaItemConCatalogo,
+  S5SectorAlmacen,
   S5SectorResponsableFull,
   S5VehiculoPendiente,
   S5KpisMes,
@@ -69,6 +70,61 @@ export async function getItemsCatalogo(
 // ===================================================
 // Responsables de sector
 // ===================================================
+
+// ===================================================
+// Sectores de almacén (catálogo persistente)
+// ===================================================
+
+export async function getSectoresAlmacen(): Promise<
+  { data: S5SectorAlmacen[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("s5_sectores_almacen")
+      .select("*")
+      .order("numero", { ascending: true })
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as S5SectorAlmacen[] }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando sectores",
+    }
+  }
+}
+
+export async function actualizarNombreSectorAlmacen(
+  numero: number,
+  nombre: string
+): Promise<{ data: S5SectorAlmacen } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    if (numero < 1 || numero > 4) {
+      return { error: "Sector inválido (1..4)" }
+    }
+    const trimmed = nombre.trim()
+    if (!trimmed) return { error: "El nombre no puede estar vacío" }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("s5_sectores_almacen")
+      .update({ nombre: trimmed, updated_by: profile.id })
+      .eq("numero", numero)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { data: data as S5SectorAlmacen }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando sector",
+    }
+  }
+}
 
 export async function getSectorResponsables(
   periodo: string
@@ -176,7 +232,7 @@ export async function upsertSectorResponsable(
 // ===================================================
 
 export async function getEmpleadosActivos5S(): Promise<
-  | { data: { id: string; legajo: number; nombre: string }[] }
+  | { data: { id: string; legajo: number; nombre: string; sector: string | null }[] }
   | { error: string }
 > {
   try {
@@ -184,11 +240,18 @@ export async function getEmpleadosActivos5S(): Promise<
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("empleados")
-      .select("id, legajo, nombre")
+      .select("id, legajo, nombre, sector")
       .eq("activo", true)
       .order("nombre", { ascending: true })
     if (error) return { error: error.message }
-    return { data: (data ?? []) as { id: string; legajo: number; nombre: string }[] }
+    return {
+      data: (data ?? []) as {
+        id: string
+        legajo: number
+        nombre: string
+        sector: string | null
+      }[],
+    }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando empleados",
@@ -842,17 +905,15 @@ export async function getS5KpisMes(
     let peor: { nombre: string; nota: number } | null = null
 
     if (auditorias.length > 0) {
-      // Resolver nombre sector con responsables si tipo = almacen
-      let respBySector: Map<number, string> | null = null
+      // Resolver nombre sector desde catálogo persistente si tipo = almacen
+      let nombreBySector: Map<number, string> | null = null
       if (tipo === "almacen") {
-        const { data: resp } = await supabase
-          .from("s5_sector_responsables")
-          .select("sector_numero, nombre")
-          .eq("periodo", periodo)
-        respBySector = new Map<number, string>()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for (const r of (resp ?? []) as any[]) {
-          if (r.nombre) respBySector.set(r.sector_numero, r.nombre)
+        const { data: sectores } = await supabase
+          .from("s5_sectores_almacen")
+          .select("numero, nombre")
+        nombreBySector = new Map<number, string>()
+        for (const r of (sectores ?? []) as { numero: number; nombre: string }[]) {
+          if (r.nombre) nombreBySector.set(r.numero, r.nombre)
         }
       }
 
@@ -861,9 +922,8 @@ export async function getS5KpisMes(
         if (tipo === "flota") {
           nombre = a.vehiculo?.dominio ?? "—"
         } else {
-          const base = `Sector ${a.sector_numero}`
-          const nom = respBySector?.get(a.sector_numero)
-          nombre = nom ? `${base} — ${nom}` : base
+          const nom = nombreBySector?.get(a.sector_numero)
+          nombre = nom ? `Sector ${a.sector_numero} — ${nom}` : `Sector ${a.sector_numero}`
         }
         return { nombre, nota: Number(a.nota_total ?? 0) }
       })
@@ -1040,16 +1100,14 @@ export async function getS5Ranking(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const auditorias = (audRaw ?? []) as any[]
 
-    let respBySector: Map<number, string> | null = null
+    let nombreBySector: Map<number, string> | null = null
     if (tipo === "almacen") {
-      const { data: resp } = await supabase
-        .from("s5_sector_responsables")
-        .select("sector_numero, nombre")
-        .eq("periodo", periodo)
-      respBySector = new Map<number, string>()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const r of (resp ?? []) as any[]) {
-        if (r.nombre) respBySector.set(r.sector_numero, r.nombre)
+      const { data: sectores } = await supabase
+        .from("s5_sectores_almacen")
+        .select("numero, nombre")
+      nombreBySector = new Map<number, string>()
+      for (const r of (sectores ?? []) as { numero: number; nombre: string }[]) {
+        if (r.nombre) nombreBySector.set(r.numero, r.nombre)
       }
     }
 
@@ -1061,9 +1119,8 @@ export async function getS5Ranking(
         nombre = a.vehiculo?.dominio ?? "—"
       } else {
         id = String(a.sector_numero ?? "")
-        const base = `Sector ${a.sector_numero}`
-        const nom = respBySector?.get(a.sector_numero)
-        nombre = nom ? `${base} — ${nom}` : base
+        const nom = nombreBySector?.get(a.sector_numero)
+        nombre = nom ? `Sector ${a.sector_numero} — ${nom}` : `Sector ${a.sector_numero}`
       }
       return {
         id,

@@ -3,6 +3,7 @@ import {
   getAuditorias,
   getEmpleadosActivos5S,
   getPeriodoActual,
+  getSectoresAlmacen,
   getSectorResponsables,
   getVehiculosActivos,
   getVehiculosPendientesMes,
@@ -37,13 +38,15 @@ export default async function CincoSPage({
     vehiculosActivos,
     vehiculosPendientes,
     empleados,
+    sectoresAlmacen,
   ] = await Promise.all([
     getAuditorias({ tipo: "flota", periodo: periodoActual }),
-    getAuditorias({ tipo: "almacen", periodo: periodoActual }),
+    getAuditorias({ tipo: "almacen", limit: 500 }),
     getSectorResponsables(periodoActual),
     getVehiculosActivos(),
     getVehiculosPendientesMes(periodoActual),
     getEmpleadosActivos5S(),
+    getSectoresAlmacen(),
   ])
 
   if ("error" in auditoriasFlota) {
@@ -76,6 +79,7 @@ export default async function CincoSPage({
         "error" in vehiculosPendientes ? [] : vehiculosPendientes.data
       }
       empleados={"error" in empleados ? [] : empleados.data}
+      sectoresAlmacen={"error" in sectoresAlmacen ? [] : sectoresAlmacen.data}
     />
   )
 }

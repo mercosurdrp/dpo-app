@@ -1,4 +1,4 @@
-import { getAuditoria } from "@/actions/s5"
+import { getAuditoria, getSectoresAlmacen } from "@/actions/s5"
 import { getProfile } from "@/lib/session"
 import { AuditoriaClient } from "./auditoria-client"
 
@@ -8,7 +8,11 @@ export default async function AuditoriaPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [result, profile] = await Promise.all([getAuditoria(id), getProfile()])
+  const [result, profile, sectoresRes] = await Promise.all([
+    getAuditoria(id),
+    getProfile(),
+    getSectoresAlmacen(),
+  ])
 
   if ("error" in result) {
     return (
@@ -25,5 +29,13 @@ export default async function AuditoriaPage({
     )
   }
 
-  return <AuditoriaClient auditoria={result.data} currentRole={profile.role} />
+  const sectoresAlmacen = "error" in sectoresRes ? [] : sectoresRes.data
+
+  return (
+    <AuditoriaClient
+      auditoria={result.data}
+      currentRole={profile.role}
+      sectoresAlmacen={sectoresAlmacen}
+    />
+  )
 }

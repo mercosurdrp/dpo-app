@@ -34,6 +34,7 @@ import {
   type S5AuditoriaFull,
   type S5AuditoriaItemConCatalogo,
   type S5Categoria,
+  type S5SectorAlmacen,
   type UserRole,
 } from "@/types/database"
 
@@ -45,10 +46,16 @@ function formatFecha(iso: string) {
 export function AuditoriaClient({
   auditoria,
   currentRole,
+  sectoresAlmacen,
 }: {
   auditoria: S5AuditoriaFull
   currentRole: UserRole
+  sectoresAlmacen: S5SectorAlmacen[]
 }) {
+  const nombreSector =
+    auditoria.tipo === "almacen" && auditoria.sector_numero
+      ? sectoresAlmacen.find((s) => s.numero === auditoria.sector_numero)?.nombre
+      : null
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -236,6 +243,7 @@ export function AuditoriaClient({
                   {auditoria.tipo === "almacen" && auditoria.sector_numero && (
                     <span className="ml-2 text-base font-normal text-muted-foreground">
                       · Sector {auditoria.sector_numero}
+                      {nombreSector ? ` — ${nombreSector}` : ""}
                     </span>
                   )}
                 </CardTitle>

@@ -1551,6 +1551,13 @@ export interface S5ItemCatalogo {
   activo: boolean
 }
 
+export interface S5SectorAlmacen {
+  numero: number
+  nombre: string
+  updated_at: string
+  updated_by: string | null
+}
+
 export interface S5SectorResponsable {
   id: string
   periodo: string // DATE (YYYY-MM-01)
@@ -1819,4 +1826,361 @@ export const LINEA_ETICA_ESTADO_COLORS: Record<LineaEticaEstado, string> = {
 export type UserWithStats = Profile & {
   last_sign_in_at: string | null
   email_confirmed_at: string | null
+}
+
+// =============================================================================
+// Orden de Salida Diario — módulo /orden-salida (migración 041)
+// =============================================================================
+
+export type SucursalOrdenSalida = "ELDORADO" | "IGUAZU"
+
+export type EstadoCamionDiario =
+  | "operativo"
+  | "sin_asignar"
+  | "sin_carga"
+  | "fuera_servicio"
+  | "taller"
+
+export type MotivoNoSale =
+  | "deposito"
+  | "vacaciones"
+  | "licencia"
+  | "ausente"
+  | "suspendido"
+  | "franco"
+  | "otro"
+
+// Camión + datos de flota (sucursal, capacidad, número), tal como llegan
+// del select que joinea catalogo_vehiculos ⨝ orden_salida_flota.
+export interface CamionFlota {
+  id: string                // catalogo_vehiculos.id
+  patente: string           // catalogo_vehiculos.dominio
+  sucursal: SucursalOrdenSalida
+  capacidad_kg: number | null
+  numero_unidad: number | null
+  activo: boolean
+}
+
+// Empleado tal como lo necesita el módulo. Incluye sucursal (col nueva en
+// empleados) y la patente del camión titular si tiene uno asignado.
+export interface EmpleadoOrdenSalida {
+  id: string
+  legajo: number | null
+  nombre: string
+  sector: string | null
+  puesto: string | null
+  sucursal: SucursalOrdenSalida | null
+  activo: boolean
+  camion_fijo_patente: string | null
+}
+
+export interface AsignacionCamionDiario {
+  fecha: string                          // YYYY-MM-DD
+  camion_id: string
+  chofer_empleado_id: string | null
+  ayudante_empleado_id: string | null
+  zona: string
+  estado: EstadoCamionDiario
+  observacion: string
+  clientes: number | null
+  sobrecarga_completa: number | null
+  media_sobrecarga: number | null
+  cuarto_sobrecarga: number | null
+  bultos: number | null
+}
+
+export interface PersonalNoSaleDiario {
+  fecha: string
+  empleado_id: string
+  motivo: MotivoNoSale
+  detalle: string
+}
+
+// Vista empleado: lo que el empleado autenticado ve para una fecha dada.
+// Resultado discriminado para que el cliente renderee 3 casos distintos.
+export type MiOrdenDelDia =
+  | {
+      tipo: "asignacion"
+      fecha: string
+      rol: "chofer" | "ayudante"
+      camion_patente: string
+      zona: string
+      observacion: string
+    }
+  | {
+      tipo: "no_sale"
+      fecha: string
+      motivo: MotivoNoSale
+      detalle: string
+    }
+  | {
+      tipo: "sin_definir"
+      fecha: string
+    }
+
+// =============================================
+// Requisitos Legales (DPO Planeamiento 2.1)
+// =============================================
+export type EstadoRequisitoLegal = "vigente" | "por_vencer" | "vencido"
+
+export type TipoIdentificadorRequisito =
+  | "ninguno"
+  | "vehiculo"
+  | "persona"
+  | "ubicacion"
+
+export interface RequisitoLegalCategoria {
+  id: string
+  nombre: string
+  slug: string
+  tipo_identificador: TipoIdentificadorRequisito
+  identificador_label: string | null
+  responsable_principal_id: string | null
+  orden: number
+  activa: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface RequisitoLegal {
+  id: string
+  categoria_id: string
+  nombre: string
+  fecha_emision: string | null
+  fecha_vencimiento: string
+  responsable_id: string | null
+  archivo_url: string | null
+  archivo_nombre: string | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RequisitoLegalConResponsable extends RequisitoLegal {
+  responsable_nombre: string | null
+  responsable_email: string | null
+  estado: EstadoRequisitoLegal
+  dias_para_vencer: number
+}
+
+export interface RequisitoLegalAlertaConfig {
+  id: string
+  email: string
+  nombre: string
+  activo: boolean
+  created_at: string
+}
+
+// =============================================
+// Presupuesto (módulo /presupuesto)
+// =============================================
+export type EstadoPresupuestoTarea = "pendiente" | "en_progreso" | "completada"
+
+export interface PresupuestoAnual {
+  id: string
+  anio: number
+  archivo_url: string | null
+  archivo_nombre: string | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PresupuestoMensual {
+  id: string
+  anio: number
+  mes: number
+  archivo_url: string | null
+  archivo_nombre: string | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PresupuestoTarea {
+  id: string
+  anio: number
+  mes: number
+  rubro: string
+  monto_presupuestado: number | null
+  monto_real: number | null
+  descripcion: string | null
+  responsable_id: string | null
+  fecha_limite: string | null
+  estado: EstadoPresupuestoTarea
+  evidencia_url: string | null
+  evidencia_nombre: string | null
+  justificacion: string | null
+  completada_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PresupuestoTareaConResponsable extends PresupuestoTarea {
+  responsable_nombre: string | null
+  responsable_email: string | null
+  desvio_pct: number | null // calculado: (real - presup)/presup * 100, null si presup es null/0
+}
+
+// =============================================
+// Reuniones (módulo /reuniones)
+// =============================================
+export type TipoReunion =
+  | "logistica"
+  | "logistica-ventas"
+  | "matinal-distribucion"
+  | "warehouse"
+
+export type EstadoReunionCompromiso = "pendiente" | "en_progreso" | "completado"
+
+export interface ReunionTipoConfig {
+  tipo: TipoReunion
+  nombre: string
+  dias_semana: number[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionParticipanteFijo {
+  id: string
+  tipo: TipoReunion
+  profile_id: string
+  created_at: string
+}
+
+export interface ReunionParticipanteFijoConProfile extends ReunionParticipanteFijo {
+  profile_nombre: string
+  profile_email: string | null
+}
+
+export interface Reunion {
+  id: string
+  tipo: TipoReunion
+  fecha: string
+  hora_inicio: string | null
+  hora_fin: string | null
+  lugar: string | null
+  agenda: string | null
+  notas: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionAsistente {
+  id: string
+  reunion_id: string
+  profile_id: string
+  presente: boolean
+  justificacion: string | null
+  created_at: string
+}
+
+export interface ReunionAsistenteConProfile extends ReunionAsistente {
+  profile_nombre: string
+  profile_email: string | null
+}
+
+export interface ReunionCompromiso {
+  id: string
+  reunion_id: string
+  descripcion: string
+  responsable_id: string | null
+  fecha_compromiso: string | null
+  estado: EstadoReunionCompromiso
+  evidencia_url: string | null
+  evidencia_nombre: string | null
+  observaciones: string | null
+  completado_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionCompromisoConResponsable extends ReunionCompromiso {
+  responsable_nombre: string | null
+}
+
+export interface ReunionArchivo {
+  id: string
+  reunion_id: string
+  archivo_url: string
+  archivo_nombre: string
+  descripcion: string | null
+  uploaded_by: string | null
+  created_at: string
+}
+
+export interface ReunionConResumen extends Reunion {
+  total_asistentes: number
+  asistentes_presentes: number
+  total_compromisos: number
+  compromisos_pendientes: number
+}
+
+export interface ReunionDetalle extends Reunion {
+  asistentes: ReunionAsistenteConProfile[]
+  compromisos: ReunionCompromisoConResponsable[]
+  archivos: ReunionArchivo[]
+}
+
+// =============================================
+// Reuniones v3: actividades (renombre de compromisos) + indicadores
+// =============================================
+export type EstadoReunionActividad = "no_comenzada" | "en_curso" | "cerrada"
+
+export interface ReunionActividad {
+  id: string
+  reunion_id: string
+  descripcion: string
+  motivo: string | null
+  responsable_id: string | null
+  fecha_compromiso: string | null
+  estado: EstadoReunionActividad
+  evidencia_url: string | null
+  evidencia_nombre: string | null
+  observaciones: string | null
+  completado_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionActividadConResponsable extends ReunionActividad {
+  responsable_nombre: string | null
+  reunion_origen_fecha: string
+  reunion_origen_id: string
+}
+
+export interface ReunionIndicadorConfig {
+  id: string
+  tipo: TipoReunion
+  nombre: string
+  unidad: string | null
+  meta: number | null
+  orden: number
+  activo: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionIndicadorValor {
+  id: string
+  reunion_id: string
+  indicador_id: string
+  valor: number | null
+  observacion: string | null
+  registrado_por: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReunionIndicadorConValor extends ReunionIndicadorConfig {
+  valor_actual: number | null
+  valor_id: string | null
+  observacion_actual: string | null
 }

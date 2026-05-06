@@ -20,7 +20,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { crearAuditoriaAlmacen } from "@/actions/s5"
-import type { S5SectorResponsableFull } from "@/types/database"
+import type {
+  S5SectorAlmacen,
+  S5SectorResponsableFull,
+} from "@/types/database"
 
 function hoyISO() {
   const d = new Date()
@@ -34,10 +37,12 @@ export function NuevaAlmacenDialog({
   open,
   onOpenChange,
   responsables,
+  sectoresAlmacen,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   responsables: S5SectorResponsableFull[]
+  sectoresAlmacen: S5SectorAlmacen[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -50,11 +55,20 @@ export function NuevaAlmacenDialog({
     return responsables.find((r) => r.sector_numero === n)
   }
 
+  function nombreSector(n: number): string | undefined {
+    return sectoresAlmacen.find((s) => s.numero === n)?.nombre
+  }
+
+  function labelSector(n: number): string {
+    const nom = nombreSector(n)
+    return nom ? `Sector ${n} — ${nom}` : `Sector ${n}`
+  }
+
   const sectorItems: Record<string, string> = {
-    "1": respBySector(1)?.nombre ? `Sector 1 — ${respBySector(1)!.nombre}` : "Sector 1",
-    "2": respBySector(2)?.nombre ? `Sector 2 — ${respBySector(2)!.nombre}` : "Sector 2",
-    "3": respBySector(3)?.nombre ? `Sector 3 — ${respBySector(3)!.nombre}` : "Sector 3",
-    "4": respBySector(4)?.nombre ? `Sector 4 — ${respBySector(4)!.nombre}` : "Sector 4",
+    "1": labelSector(1),
+    "2": labelSector(2),
+    "3": labelSector(3),
+    "4": labelSector(4),
   }
 
   function reset() {
@@ -118,9 +132,7 @@ export function NuevaAlmacenDialog({
               <SelectContent>
                 {[1, 2, 3, 4].map((n) => {
                   const r = respBySector(n)
-                  const label = r?.nombre
-                    ? `Sector ${n} — ${r.nombre}`
-                    : `Sector ${n}`
+                  const label = labelSector(n)
                   return (
                     <SelectItem key={n} value={String(n)} label={label}>
                       {label}
