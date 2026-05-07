@@ -17,6 +17,7 @@ import {
   Search,
   BadgeCheck,
   Clock,
+  ClipboardList,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -58,6 +59,7 @@ import {
   updateUser,
   updateUserRole,
   toggleUserActive,
+  toggleUserPuedeAsignarTareas,
   deleteUser,
   resetUserPassword,
 } from "@/actions/admin"
@@ -297,6 +299,22 @@ export function UsuariosClient({
     setToggling(null)
   }
 
+  async function handleTogglePuedeAsignar(userId: string) {
+    setToggling(userId)
+    const result = await toggleUserPuedeAsignarTareas(userId)
+    if ("error" in result) {
+      toast.error(result.error)
+    } else {
+      toast.success(
+        result.data.puede_asignar_tareas
+          ? "Puede asignar tareas: activado"
+          : "Puede asignar tareas: desactivado"
+      )
+      router.refresh()
+    }
+    setToggling(null)
+  }
+
   // -------- Render --------
   return (
     <div className="space-y-4">
@@ -513,6 +531,9 @@ export function UsuariosClient({
                           onEdit={() => openEdit(user)}
                           onReset={() => openReset(user)}
                           onToggle={() => handleToggleActive(user.id)}
+                          onTogglePuedeAsignar={() =>
+                            handleTogglePuedeAsignar(user.id)
+                          }
                           onDelete={() => setDeleteTarget(user)}
                         />
                       </TableCell>
@@ -554,6 +575,9 @@ export function UsuariosClient({
                       onEdit={() => openEdit(user)}
                       onReset={() => openReset(user)}
                       onToggle={() => handleToggleActive(user.id)}
+                      onTogglePuedeAsignar={() =>
+                        handleTogglePuedeAsignar(user.id)
+                      }
                       onDelete={() => setDeleteTarget(user)}
                     />
                   </div>
@@ -804,6 +828,7 @@ function RowActionsMenu({
   onEdit,
   onReset,
   onToggle,
+  onTogglePuedeAsignar,
   onDelete,
 }: {
   user: UserWithStats
@@ -812,6 +837,7 @@ function RowActionsMenu({
   onEdit: () => void
   onReset: () => void
   onToggle: () => void
+  onTogglePuedeAsignar: () => void
   onDelete: () => void
 }) {
   return (
@@ -848,6 +874,12 @@ function RowActionsMenu({
               Activar
             </>
           )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onTogglePuedeAsignar}>
+          <ClipboardList className="size-4" />
+          {user.puede_asignar_tareas
+            ? "Quitar permiso de asignar tareas"
+            : "Permitir asignar tareas"}
         </DropdownMenuItem>
         {!isSelf && (
           <>

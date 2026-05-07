@@ -470,7 +470,7 @@ export async function deletePlanAccion(
 // ---------- Evidencia CRUD ----------
 
 export async function createEvidencia(data: {
-  pregunta_id: string
+  pregunta_id: string | null
   titulo: string
   descripcion?: string
   url?: string

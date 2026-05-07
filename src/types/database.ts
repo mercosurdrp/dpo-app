@@ -16,6 +16,7 @@ export interface Profile {
   nombre: string
   role: UserRole
   active: boolean
+  puede_asignar_tareas: boolean
   created_at: string
   updated_at: string
 }
@@ -106,7 +107,7 @@ export type TipoEvidencia = "documento" | "foto" | "link" | "nota"
 
 export interface Evidencia {
   id: string
-  pregunta_id: string
+  pregunta_id: string | null
   titulo: string
   descripcion: string | null
   url: string | null
@@ -120,9 +121,13 @@ export interface Evidencia {
 export type EstadoPlan = "pendiente" | "en_progreso" | "completado"
 export type PrioridadPlan = "alta" | "media" | "baja"
 
+export type PlanTipo = "auditoria" | "directa"
+
 export interface PlanAccion {
   id: string
-  pregunta_id: string
+  pregunta_id: string | null
+  tipo: PlanTipo
+  titulo: string | null
   descripcion: string
   responsable: string
   fecha_inicio: string | null

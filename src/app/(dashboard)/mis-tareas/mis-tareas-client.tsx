@@ -237,23 +237,33 @@ function TareaCard({ tarea }: { tarea: MisTareasItem }) {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 flex-1 space-y-1.5">
             <h3 className="text-sm font-semibold text-slate-900">
-              {truncate(tarea.descripcion, 100)}
+              {tarea.tipo === "directa" && tarea.titulo
+                ? truncate(tarea.titulo, 100)
+                : truncate(tarea.descripcion, 100)}
             </h3>
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span
-                className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                style={{ backgroundColor: tarea.pilar_color || "#64748B" }}
-              >
-                {tarea.pilar_nombre}
-              </span>
-              <span className="text-slate-400">·</span>
-              <span className="text-muted-foreground">
-                {tarea.pregunta_numero}
-              </span>
-              <span className="text-slate-400">·</span>
-              <span className="line-clamp-1 text-muted-foreground">
-                {truncate(tarea.pregunta_texto, 80)}
-              </span>
+              {tarea.pregunta_id ? (
+                <>
+                  <span
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                    style={{ backgroundColor: tarea.pilar_color || "#64748B" }}
+                  >
+                    {tarea.pilar_nombre}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-muted-foreground">
+                    {tarea.pregunta_numero}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="line-clamp-1 text-muted-foreground">
+                    {truncate(tarea.pregunta_texto, 80)}
+                  </span>
+                </>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                  Tarea directa
+                </span>
+              )}
             </div>
           </div>
 

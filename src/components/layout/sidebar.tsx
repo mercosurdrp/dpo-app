@@ -82,6 +82,11 @@ const navItems: NavItem[] = [
     icon: <ClipboardList className="size-5" />,
   },
   {
+    label: "Registro de tareas",
+    href: "/registro-tareas",
+    icon: <ListTodo className="size-5" />,
+  },
+  {
     label: "Indicadores",
     href: "/indicadores",
     icon: <BarChart3 className="size-5" />,

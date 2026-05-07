@@ -80,6 +80,11 @@ import {
   unlinkArchivoFromPlan,
   searchArchivos,
 } from "@/actions/planes"
+import {
+  asociarPuntoManual,
+  searchPuntosManual,
+  type PuntoManualSearchResult,
+} from "@/actions/tareas-directas"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import { createEvidencia } from "@/actions/gestion"
 import { createClient } from "@/lib/supabase/client"
@@ -548,7 +553,7 @@ function EvidenciasSection({
   evidencias: initialEvidencias,
 }: {
   planId: string
-  preguntaId: string
+  preguntaId: string | null
   evidencias: Evidencia[]
 }) {
   const router = useRouter()
@@ -626,7 +631,7 @@ function EvidenciasSection({
       try {
         const supabase = createClient()
         const ext = newFotoFile.name.split(".").pop() ?? "jpg"
-        const path = `evidencias/${preguntaId}/${Date.now()}.${ext}`
+        const path = `evidencias/${preguntaId ?? "sin-punto"}/${Date.now()}.${ext}`
 
         const { error: uploadErr } = await supabase.storage
           .from("evidencias")
@@ -971,14 +976,233 @@ function EstadoDropdown({
   )
 }
 
+// ==================== PUNTO MANUAL SECTION (tarea directa) ====================
+
+function PuntoManualSection({
+  plan,
+  canEdit,
+}: {
+  plan: PlanAccionFull
+  canEdit: boolean
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<PuntoManualSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  async function runSearch(q: string) {
+    setSearching(true)
+    try {
+      const result = await searchPuntosManual(q, 25)
+      setResults(result)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  function elegirPunto(p: PuntoManualSearchResult) {
+    startTransition(async () => {
+      const result = await asociarPuntoManual(plan.id, p.pregunta_id)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("Punto del manual asociado")
+      setOpen(false)
+      setQuery("")
+      setResults([])
+      router.refresh()
+    })
+  }
+
+  function quitarPunto() {
+    if (!confirm("¿Quitar la asociación al punto del manual?")) return
+    startTransition(async () => {
+      const result = await asociarPuntoManual(plan.id, null)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("Asociación quitada")
+      router.refresh()
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <ShieldCheck className="h-4 w-4" />
+          Punto del manual
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {plan.pregunta_id ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                style={{ backgroundColor: plan.pilar_color || "#64748B" }}
+              >
+                {plan.pilar_nombre}
+              </span>
+              <span className="text-slate-500">/</span>
+              <span className="text-slate-700">{plan.bloque_nombre}</span>
+            </div>
+            <p className="mt-1 text-sm font-medium text-slate-900">
+              {plan.pregunta_numero} · {plan.pregunta_texto}
+            </p>
+            {canEdit && (
+              <div className="mt-2 flex gap-2">
+                <Dialog
+                  open={open}
+                  onOpenChange={(v) => {
+                    setOpen(v)
+                    if (v) runSearch("")
+                  }}
+                >
+                  <DialogTrigger render={<Button size="sm" variant="outline" />}>
+                    Cambiar
+                  </DialogTrigger>
+                  <PuntoSearchDialogContent
+                    query={query}
+                    setQuery={setQuery}
+                    results={results}
+                    runSearch={runSearch}
+                    searching={searching}
+                    onSelect={elegirPunto}
+                    pending={pending}
+                  />
+                </Dialog>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={quitarPunto}
+                  disabled={pending}
+                >
+                  Quitar
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm text-amber-900">
+              Esta tarea no está asociada a un punto del manual.
+            </p>
+            <p className="mt-1 text-xs text-amber-700">
+              Asociar al manual deja la tarea trazable para auditorías.
+            </p>
+            {canEdit && (
+              <div className="mt-2">
+                <Dialog
+                  open={open}
+                  onOpenChange={(v) => {
+                    setOpen(v)
+                    if (v) runSearch("")
+                  }}
+                >
+                  <DialogTrigger render={<Button size="sm" />}>
+                    Asociar punto
+                  </DialogTrigger>
+                  <PuntoSearchDialogContent
+                    query={query}
+                    setQuery={setQuery}
+                    results={results}
+                    runSearch={runSearch}
+                    searching={searching}
+                    onSelect={elegirPunto}
+                    pending={pending}
+                  />
+                </Dialog>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PuntoSearchDialogContent({
+  query,
+  setQuery,
+  results,
+  runSearch,
+  searching,
+  onSelect,
+  pending,
+}: {
+  query: string
+  setQuery: (q: string) => void
+  results: PuntoManualSearchResult[]
+  runSearch: (q: string) => void
+  searching: boolean
+  onSelect: (p: PuntoManualSearchResult) => void
+  pending: boolean
+}) {
+  return (
+    <DialogContent className="max-w-2xl">
+      <DialogHeader>
+        <DialogTitle>Buscar punto del manual</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-2">
+        <Input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            runSearch(e.target.value)
+          }}
+          placeholder="Buscar por número, texto, guía o requerimiento…"
+        />
+        <div className="max-h-96 overflow-y-auto rounded-md border">
+          {searching && (
+            <div className="flex items-center justify-center gap-2 p-3 text-xs text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" /> Buscando…
+            </div>
+          )}
+          {!searching && results.length === 0 && (
+            <div className="p-3 text-xs text-slate-500">Sin resultados.</div>
+          )}
+          {!searching &&
+            results.map((p) => (
+              <button
+                key={p.pregunta_id}
+                type="button"
+                onClick={() => onSelect(p)}
+                disabled={pending}
+                className="block w-full border-b px-3 py-2 text-left text-xs hover:bg-slate-50 disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white"
+                    style={{ backgroundColor: p.pilar_color }}
+                  >
+                    {p.pilar_nombre}
+                  </span>
+                  <span className="text-slate-500">{p.numero}</span>
+                </div>
+                <p className="mt-0.5 line-clamp-2 text-slate-800">{p.texto}</p>
+              </button>
+            ))}
+        </div>
+      </div>
+    </DialogContent>
+  )
+}
+
 // ==================== MAIN COMPONENT ====================
 
 export function PlanDetailClient({
   plan: initialPlan,
   currentRole,
+  canEditPunto = false,
 }: {
   plan: PlanAccionFull
   currentRole: UserRole
+  canEditPunto?: boolean
 }) {
   const router = useRouter()
   const [plan, setPlan] = useState(initialPlan)
@@ -1035,30 +1259,45 @@ export function PlanDetailClient({
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-              style={{ backgroundColor: plan.pilar_color || "#64748B" }}
-            >
-              {plan.pilar_nombre}
-            </span>
-            <span>/</span>
-            <span>{plan.bloque_nombre}</span>
-            <span>/</span>
-            <Link
-              href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`}
-              className="hover:underline"
-            >
-              {plan.pregunta_numero}
-            </Link>
+            {plan.pregunta_id ? (
+              <>
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                  style={{ backgroundColor: plan.pilar_color || "#64748B" }}
+                >
+                  {plan.pilar_nombre}
+                </span>
+                <span>/</span>
+                <span>{plan.bloque_nombre}</span>
+                <span>/</span>
+                <Link
+                  href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`}
+                  className="hover:underline"
+                >
+                  {plan.pregunta_numero}
+                </Link>
+              </>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                Tarea directa · sin punto del manual
+              </span>
+            )}
           </div>
           <h1 className="mt-1 text-lg font-bold text-slate-900 leading-snug">
-            {plan.descripcion}
+            {plan.tipo === "directa" && plan.titulo ? plan.titulo : plan.descripcion}
           </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
-            {plan.pregunta_texto}
-          </p>
+          {plan.pregunta_texto && plan.tipo !== "directa" && (
+            <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
+              {plan.pregunta_texto}
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Punto del manual (asociar/cambiar) — solo para tareas directas */}
+      {plan.tipo === "directa" && (
+        <PuntoManualSection plan={plan} canEdit={canEditPunto} />
+      )}
 
       {/* Info */}
       <InfoSection

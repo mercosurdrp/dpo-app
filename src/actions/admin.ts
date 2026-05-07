@@ -132,6 +132,41 @@ export async function toggleUserActive(
   }
 }
 
+export async function toggleUserPuedeAsignarTareas(
+  userId: string
+): Promise<{ data: Profile } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    const supabase = await createClient()
+
+    const { data: current, error: getError } = await supabase
+      .from("profiles")
+      .select("puede_asignar_tareas")
+      .eq("id", userId)
+      .single()
+
+    if (getError) return { error: getError.message }
+
+    const newVal = !(current as { puede_asignar_tareas: boolean })
+      .puede_asignar_tareas
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ puede_asignar_tareas: newVal })
+      .eq("id", userId)
+      .select()
+      .single()
+
+    if (error) return { error: error.message }
+    return { data: data as Profile }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error toggling puede_asignar_tareas",
+    }
+  }
+}
+
 /**
  * Hard delete: removes from auth.users. Migration 001 defines
  * profiles.id FK to auth.users(id) with ON DELETE CASCADE, so the

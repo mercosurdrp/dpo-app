@@ -41,12 +41,16 @@ export async function getPlanDetail(
       return { error: planErr?.message ?? "Plan no encontrado" }
     }
 
-    // Get pregunta + bloque + pilar info
-    const { data: pregunta } = await supabase
-      .from("preguntas")
-      .select("numero, texto, bloque_id")
-      .eq("id", plan.pregunta_id)
-      .single()
+    // Get pregunta + bloque + pilar info (puede no existir si la tarea es directa sin punto asociado)
+    const pregunta = plan.pregunta_id
+      ? (
+          await supabase
+            .from("preguntas")
+            .select("numero, texto, bloque_id")
+            .eq("id", plan.pregunta_id)
+            .single()
+        ).data
+      : null
 
     let bloque_nombre = ""
     let pilar_id = ""
@@ -206,12 +210,16 @@ export async function getPlanesList(): Promise<
     const items: PlanAccionListItem[] = []
 
     for (const plan of (planes ?? []) as PlanAccion[]) {
-      // Get pregunta info
-      const { data: pregunta } = await supabase
-        .from("preguntas")
-        .select("numero, texto, bloque_id")
-        .eq("id", plan.pregunta_id)
-        .single()
+      // Get pregunta info (puede ser null si la tarea es directa sin punto)
+      const pregunta = plan.pregunta_id
+        ? (
+            await supabase
+              .from("preguntas")
+              .select("numero, texto, bloque_id")
+              .eq("id", plan.pregunta_id)
+              .single()
+          ).data
+        : null
 
       let pilar_nombre = ""
       let pilar_color = ""
@@ -470,9 +478,13 @@ export async function unlinkEvidenciaFromPlan(
 
 export async function getUnlinkedEvidencias(
   planId: string,
-  preguntaId: string
+  preguntaId: string | null
 ): Promise<{ data: Evidencia[] } | { error: string }> {
   try {
+    // Sin pregunta no se puede ofrecer "vincular existentes": el universo
+    // es todas las evidencias de esa pregunta.
+    if (!preguntaId) return { data: [] }
+
     const supabase = await createClient()
 
     // Get already linked evidencia IDs
@@ -894,12 +906,16 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
   const planes = (planesRaw ?? []) as PlanAccion[]
   if (planes.length === 0) return []
 
-  // 3) Preguntas
-  const preguntaIds = Array.from(new Set(planes.map((p) => p.pregunta_id)))
-  const { data: preguntasRaw } = await supabase
-    .from("preguntas")
-    .select("id, numero, texto, bloque_id")
-    .in("id", preguntaIds)
+  // 3) Preguntas (planes directos pueden no tener pregunta_id)
+  const preguntaIds = Array.from(
+    new Set(planes.map((p) => p.pregunta_id).filter((id): id is string => !!id))
+  )
+  const { data: preguntasRaw } = preguntaIds.length
+    ? await supabase
+        .from("preguntas")
+        .select("id, numero, texto, bloque_id")
+        .in("id", preguntaIds)
+    : { data: [] as Array<{ id: string; numero: string; texto: string; bloque_id: string }> }
 
   const preguntas = (preguntasRaw ?? []) as Array<{
     id: string
@@ -957,7 +973,7 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
   today.setHours(0, 0, 0, 0)
 
   const items: MisTareasItem[] = planes.map((plan) => {
-    const pregunta = preguntaMap.get(plan.pregunta_id)
+    const pregunta = plan.pregunta_id ? preguntaMap.get(plan.pregunta_id) : undefined
     const bloque = pregunta ? bloqueMap.get(pregunta.bloque_id) : undefined
     const pilar = bloque ? pilarMap.get(bloque.pilar_id) : undefined
 

@@ -18,10 +18,16 @@ export default async function PlanDetailPage({
     )
   }
 
+  const canEditPunto =
+    profile?.role === "admin" ||
+    profile?.role === "auditor" ||
+    profile?.puede_asignar_tareas === true
+
   return (
     <PlanDetailClient
       plan={result.data}
       currentRole={profile?.role ?? "viewer"}
+      canEditPunto={canEditPunto}
     />
   )
 }
