@@ -360,7 +360,7 @@ export async function getAuditorias(
     let query = supabase
       .from("s5_auditorias")
       .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
       )
       .order("created_at", { ascending: false })
       .limit(filters.limit ?? 50)
@@ -378,6 +378,7 @@ export async function getAuditorias(
       periodo: row.periodo,
       fecha: row.fecha,
       auditor_id: row.auditor_id,
+      auditor_externo_id: row.auditor_externo_id,
       vehiculo_id: row.vehiculo_id,
       chofer_nombre: row.chofer_nombre,
       ayudante_1: row.ayudante_1,
@@ -387,9 +388,11 @@ export async function getAuditorias(
       nota_total: row.nota_total !== null ? Number(row.nota_total) : null,
       notas_por_s: row.notas_por_s,
       observaciones_generales: row.observaciones_generales,
+      evidencia_storage_path: row.evidencia_storage_path,
       created_at: row.created_at,
       updated_at: row.updated_at,
-      auditor_nombre: row.auditor?.nombre ?? "—",
+      auditor_nombre:
+        row.auditor?.nombre ?? row.auditor_externo?.nombre ?? "—",
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
     }))
 
@@ -416,7 +419,7 @@ export async function getAuditoria(
     const { data, error } = await supabase
       .from("s5_auditorias")
       .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
       )
       .eq("id", id)
       .single()
@@ -458,6 +461,7 @@ export async function getAuditoria(
       periodo: row.periodo,
       fecha: row.fecha,
       auditor_id: row.auditor_id,
+      auditor_externo_id: row.auditor_externo_id,
       vehiculo_id: row.vehiculo_id,
       chofer_nombre: row.chofer_nombre,
       ayudante_1: row.ayudante_1,
@@ -467,9 +471,11 @@ export async function getAuditoria(
       nota_total: row.nota_total !== null ? Number(row.nota_total) : null,
       notas_por_s: row.notas_por_s,
       observaciones_generales: row.observaciones_generales,
+      evidencia_storage_path: row.evidencia_storage_path,
       created_at: row.created_at,
       updated_at: row.updated_at,
-      auditor_nombre: row.auditor?.nombre ?? "—",
+      auditor_nombre:
+        row.auditor?.nombre ?? row.auditor_externo?.nombre ?? "—",
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
       items,
     }

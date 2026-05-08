@@ -1617,12 +1617,21 @@ export interface S5SectorResponsableFull extends S5SectorResponsable {
   empleado_legajo: number | null
 }
 
+export interface S5Auditor {
+  id: string
+  nombre: string
+  activo: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface S5Auditoria {
   id: string
   tipo: S5Tipo
   periodo: string
   fecha: string
-  auditor_id: string
+  auditor_id: string | null
+  auditor_externo_id: string | null
   vehiculo_id: string | null
   chofer_nombre: string | null
   ayudante_1: string | null
@@ -1632,6 +1641,7 @@ export interface S5Auditoria {
   nota_total: number | null
   notas_por_s: Record<S5Categoria, number> | null
   observaciones_generales: string | null
+  evidencia_storage_path: string | null
   created_at: string
   updated_at: string
 }
