@@ -339,7 +339,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
 
       {/* Acciones Vehículo */}
       {entrega?.vinculado && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/vehiculos/checklist">
             <Card className="group cursor-pointer border-blue-200 bg-blue-50 transition-shadow hover:shadow-md">
               <CardContent className="flex items-center gap-4 py-5">
@@ -347,21 +347,8 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                   <ClipboardCheck className="size-6 text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900">Checklist Liberación</p>
-                  <p className="text-sm text-blue-600">Salida a ruta</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-          <Link href="/vehiculos/checklist">
-            <Card className="group cursor-pointer border-green-200 bg-green-50 transition-shadow hover:shadow-md">
-              <CardContent className="flex items-center gap-4 py-5">
-                <div className="rounded-xl bg-green-100 p-3 group-hover:bg-green-200 transition-colors">
-                  <ClipboardCheck className="size-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">Checklist Retorno</p>
-                  <p className="text-sm text-green-600">Vuelta de ruta</p>
+                  <p className="font-semibold text-slate-900">Checklist</p>
+                  <p className="text-sm text-blue-600">Liberación o Retorno</p>
                 </div>
               </CardContent>
             </Card>
