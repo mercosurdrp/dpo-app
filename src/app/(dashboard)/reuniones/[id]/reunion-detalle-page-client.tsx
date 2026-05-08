@@ -22,7 +22,6 @@ import {
   Plus,
   Send,
   Settings,
-  Shield,
   Trash2,
   UserPlus,
   X,
@@ -52,6 +51,7 @@ import {
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
+import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -944,20 +944,7 @@ export function ReunionDetallePageClient({
       </Card>
 
       {/* ETAPA 1: SEGURIDAD */}
-      <Card className="border-red-200 bg-red-50/30">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold text-red-900">
-            <Shield className="size-5 text-red-600" />
-            Etapa 1 — Seguridad
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-700">
-            Sección de seguridad — En desarrollo. Próximamente vas a poder
-            cargar el tema de seguridad del día.
-          </p>
-        </CardContent>
-      </Card>
+      <EtapaSeguridad fechaReunion={detalle.fecha} />
 
       {/* ETAPA 2: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">
