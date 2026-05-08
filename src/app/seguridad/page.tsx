@@ -1,6 +1,8 @@
 import { getChoferesPublic, getVehiculosPublic } from "@/actions/seguridad"
 import { SeguridadFormClient } from "./seguridad-form-client"
 
+export const dynamic = "force-dynamic"
+
 export const metadata = {
   title: "Registro de Vehículos - Seguridad",
 }
