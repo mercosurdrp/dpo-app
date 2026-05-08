@@ -383,15 +383,14 @@ export function RequisitosLegalesClient({
         >,
       )
       const total = items.length
-      const cumplimiento = total === 0 ? 0 : Math.round((counts.vigente / total) * 100)
-      const estadoAgregado: "vacio" | "aprobado" | "por_vencer" | "vencido" =
+      const aprobados = counts.vigente + counts.por_vencer
+      const cumplimiento = total === 0 ? 0 : Math.round((aprobados / total) * 100)
+      const estadoAgregado: "vacio" | "aprobado" | "vencido" =
         total === 0
           ? "vacio"
           : counts.vencido > 0
             ? "vencido"
-            : counts.por_vencer > 0
-              ? "por_vencer"
-              : "aprobado"
+            : "aprobado"
       return { categoria: c, total, counts, cumplimiento, estadoAgregado }
     })
   }, [categorias, requisitos])
@@ -445,11 +444,9 @@ export function RequisitosLegalesClient({
             const colors =
               estadoAgregado === "aprobado"
                 ? { bg: "bg-emerald-50", border: "border-emerald-200", icon: "text-emerald-600", iconBg: "bg-emerald-100", txt: "text-emerald-700", label: "Aprobado", Icon: CheckCircle2 }
-                : estadoAgregado === "por_vencer"
-                  ? { bg: "bg-amber-50",   border: "border-amber-200",   icon: "text-amber-600",   iconBg: "bg-amber-100",   txt: "text-amber-800",   label: "Por vencer", Icon: AlertTriangle }
-                  : estadoAgregado === "vencido"
-                    ? { bg: "bg-red-50",   border: "border-red-200",     icon: "text-red-600",     iconBg: "bg-red-100",     txt: "text-red-700",     label: "Vencido",    Icon: XCircle }
-                    : { bg: "bg-slate-50", border: "border-slate-200",   icon: "text-slate-500",   iconBg: "bg-slate-100",   txt: "text-slate-600",   label: "Sin items",  Icon: ScrollText }
+                : estadoAgregado === "vencido"
+                  ? { bg: "bg-red-50",   border: "border-red-200",     icon: "text-red-600",     iconBg: "bg-red-100",     txt: "text-red-700",     label: "Vencido",    Icon: XCircle }
+                  : { bg: "bg-slate-50", border: "border-slate-200",   icon: "text-slate-500",   iconBg: "bg-slate-100",   txt: "text-slate-600",   label: "Sin items",  Icon: ScrollText }
             const Icon = colors.Icon
             return (
               <button
@@ -467,8 +464,19 @@ export function RequisitosLegalesClient({
                       {total === 0 ? "Sin items" : `${total} item${total === 1 ? "" : "s"}`}
                     </p>
                   </div>
-                  <div className={`flex size-8 shrink-0 items-center justify-center rounded-full ${colors.iconBg}`}>
-                    <Icon className={`size-4 ${colors.icon}`} />
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {counts.por_vencer > 0 && (
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-amber-800"
+                        title={`${counts.por_vencer} por vencer`}
+                      >
+                        <AlertTriangle className="size-3" />
+                        {counts.por_vencer}
+                      </span>
+                    )}
+                    <div className={`flex size-8 items-center justify-center rounded-full ${colors.iconBg}`}>
+                      <Icon className={`size-4 ${colors.icon}`} />
+                    </div>
                   </div>
                 </div>
 
