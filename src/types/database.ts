@@ -1634,7 +1634,9 @@ export interface S5Auditoria {
   auditor_externo_id: string | null
   vehiculo_id: string | null
   chofer_nombre: string | null
+  chofer_id: string | null
   ayudante_1: string | null
+  ayudante_id: string | null
   ayudante_2: string | null
   sector_numero: number | null
   estado: S5AuditoriaEstado
@@ -1661,6 +1663,16 @@ export interface S5AuditoriaItemConCatalogo extends S5AuditoriaItem {
 export interface S5AuditoriaConMeta extends S5Auditoria {
   auditor_nombre: string
   vehiculo_dominio: string | null
+  ayudante_nombre: string | null
+  chofer_nombre_resuelto: string | null
+}
+
+export interface S5RankingAyudanteRow {
+  empleado_id: string | null
+  nombre: string
+  cantidad_audits: number
+  nota_total_promedio: number
+  notas_por_s_promedio: Record<S5Categoria, number>
 }
 
 export interface S5AuditoriaFull extends S5AuditoriaConMeta {

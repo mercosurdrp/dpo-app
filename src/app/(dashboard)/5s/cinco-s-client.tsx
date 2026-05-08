@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   BarChart3,
+  Users,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -215,12 +216,20 @@ export function CincoSClient({
             </span>
           </p>
         </div>
-        <Link href={`/5s/indicadores?tipo=${tipo}`}>
-          <Button variant="outline" size="sm">
-            <BarChart3 className="mr-1.5 size-4" />
-            Indicadores
-          </Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/5s/ayudantes">
+            <Button variant="outline" size="sm">
+              <Users className="mr-1.5 size-4" />
+              Ranking ayudantes
+            </Button>
+          </Link>
+          <Link href={`/5s/indicadores?tipo=${tipo}`}>
+            <Button variant="outline" size="sm">
+              <BarChart3 className="mr-1.5 size-4" />
+              Indicadores
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <Tabs

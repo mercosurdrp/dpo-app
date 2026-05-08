@@ -18,6 +18,7 @@ import type {
   S5KpisMes,
   S5TendenciaMes,
   S5RankingRow,
+  S5RankingAyudanteRow,
   S5ItemCriticoRow,
 } from "@/types/database"
 import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
@@ -360,7 +361,7 @@ export async function getAuditorias(
     let query = supabase
       .from("s5_auditorias")
       .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio), ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre), chofer:empleados!s5_auditorias_chofer_id_fkey(id, nombre)"
       )
       .order("created_at", { ascending: false })
       .limit(filters.limit ?? 50)
@@ -381,7 +382,9 @@ export async function getAuditorias(
       auditor_externo_id: row.auditor_externo_id,
       vehiculo_id: row.vehiculo_id,
       chofer_nombre: row.chofer_nombre,
+      chofer_id: row.chofer_id,
       ayudante_1: row.ayudante_1,
+      ayudante_id: row.ayudante_id,
       ayudante_2: row.ayudante_2,
       sector_numero: row.sector_numero,
       estado: row.estado,
@@ -394,6 +397,8 @@ export async function getAuditorias(
       auditor_nombre:
         row.auditor?.nombre ?? row.auditor_externo?.nombre ?? "—",
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
+      ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
+      chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
     }))
 
     return { data: rows }
@@ -419,7 +424,7 @@ export async function getAuditoria(
     const { data, error } = await supabase
       .from("s5_auditorias")
       .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio)"
+        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio), ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre), chofer:empleados!s5_auditorias_chofer_id_fkey(id, nombre)"
       )
       .eq("id", id)
       .single()
@@ -464,7 +469,9 @@ export async function getAuditoria(
       auditor_externo_id: row.auditor_externo_id,
       vehiculo_id: row.vehiculo_id,
       chofer_nombre: row.chofer_nombre,
+      chofer_id: row.chofer_id,
       ayudante_1: row.ayudante_1,
+      ayudante_id: row.ayudante_id,
       ayudante_2: row.ayudante_2,
       sector_numero: row.sector_numero,
       estado: row.estado,
@@ -477,6 +484,8 @@ export async function getAuditoria(
       auditor_nombre:
         row.auditor?.nombre ?? row.auditor_externo?.nombre ?? "—",
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
+      ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
+      chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
       items,
     }
 
@@ -1240,6 +1249,97 @@ export async function getS5TopItemsCriticos(
         err instanceof Error
           ? err.message
           : "Error cargando ítems críticos 5S",
+    }
+  }
+}
+
+// ===================================================
+// Ranking de ayudantes (5S flota se mide por persona, foco ayudante)
+// ===================================================
+export async function getS5RankingAyudantes(
+  periodo?: string
+): Promise<{ data: S5RankingAyudanteRow[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    let query = supabase
+      .from("s5_auditorias")
+      .select(
+        "ayudante_id, ayudante_1, nota_total, notas_por_s, ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre)"
+      )
+      .eq("tipo", "flota")
+      .eq("estado", "completada")
+      .not("nota_total", "is", null)
+
+    if (periodo) query = query.eq("periodo", periodo)
+
+    const { data: audRaw, error } = await query
+    if (error) return { error: error.message }
+
+    interface Acum {
+      empleado_id: string | null
+      nombre: string
+      audits: number
+      sum_total: number
+      cat: Record<string, { sum: number; n: number }>
+    }
+    const acum = new Map<string, Acum>()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of ((audRaw ?? []) as any[])) {
+      const empId = (a.ayudante_id as string | null) ?? null
+      const nombre =
+        (a.ayudante?.nombre as string | undefined) ??
+        (a.ayudante_1 as string | undefined) ??
+        "Sin asignar"
+      const key = empId ?? `__txt__${nombre}`
+      let row = acum.get(key)
+      if (!row) {
+        row = { empleado_id: empId, nombre, audits: 0, sum_total: 0, cat: {} }
+        acum.set(key, row)
+      }
+      row.audits += 1
+      row.sum_total += Number(a.nota_total ?? 0)
+      const np = (a.notas_por_s ?? null) as Record<string, number> | null
+      if (np) {
+        for (const cat of Object.keys(np)) {
+          const v = Number(np[cat] ?? 0)
+          if (!row.cat[cat]) row.cat[cat] = { sum: 0, n: 0 }
+          row.cat[cat].sum += v
+          row.cat[cat].n += 1
+        }
+      }
+    }
+
+    const rows: S5RankingAyudanteRow[] = []
+    for (const r of acum.values()) {
+      const notas_por_s_promedio: Record<string, number> = {}
+      for (const cat of S5_CATEGORIA_ORDEN) {
+        const c = r.cat[cat]
+        notas_por_s_promedio[cat] = c
+          ? Number((c.sum / c.n).toFixed(2))
+          : 0
+      }
+      rows.push({
+        empleado_id: r.empleado_id,
+        nombre: r.nombre,
+        cantidad_audits: r.audits,
+        nota_total_promedio: Number((r.sum_total / r.audits).toFixed(2)),
+        notas_por_s_promedio: notas_por_s_promedio as Record<
+          S5Categoria,
+          number
+        >,
+      })
+    }
+    rows.sort((a, b) => b.nota_total_promedio - a.nota_total_promedio)
+    return { data: rows }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error cargando ranking de ayudantes 5S",
     }
   }
 }
