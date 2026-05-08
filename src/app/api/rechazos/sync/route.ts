@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/supabase/server"
 import { calcularKpisConClient } from "@/lib/dpo-kpis-calc"
 import https from "node:https"
 
-const API_KEY = process.env.ASISTENCIA_API_KEY
 const CHESS_BASE = process.env.CHESS_API_BASE_URL
 const CHESS_USER = process.env.CHESS_API_USER
 const CHESS_PASS = process.env.CHESS_API_PASS
+
+const ALLOWED_ROLES = ["admin", "supervisor", "admin_rrhh"] as const
 
 // Agent that accepts self-signed certificates
 const insecureAgent = new https.Agent({ rejectUnauthorized: false })
@@ -86,19 +88,33 @@ async function fetchVentasDia(sessionId: string, fecha: string): Promise<ChessVe
 }
 
 export async function POST(request: NextRequest) {
-  if (!API_KEY || !CHESS_BASE || !CHESS_USER || !CHESS_PASS) {
+  if (!CHESS_BASE || !CHESS_USER || !CHESS_PASS) {
     return NextResponse.json(
       {
         error:
-          "Integración Chess no configurada en este deploy. Setear ASISTENCIA_API_KEY, CHESS_API_BASE_URL, CHESS_API_USER y CHESS_API_PASS.",
+          "Integración Chess no configurada en este deploy. Setear CHESS_API_BASE_URL, CHESS_API_USER y CHESS_API_PASS.",
       },
       { status: 503 }
     )
   }
 
-  const authHeader = request.headers.get("x-api-key")
-  if (authHeader !== API_KEY) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const sessionClient = await createClient()
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  }
+
+  const { data: profile } = await sessionClient
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single()
+
+  if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
   try {

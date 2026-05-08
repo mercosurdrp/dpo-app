@@ -97,7 +97,7 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
       const ultimaFecha = `${anio}-${String(mes).padStart(2, "0")}-${ultimoDia}`
       const resp = await fetch("/api/rechazos/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": "mercosur-dpo-sync-2026" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fechaDesde: primerDia, fechaHasta: ultimaFecha }),
       })
       const data = await resp.json()
