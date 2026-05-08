@@ -8,7 +8,28 @@ const CHESS_BASE = process.env.CHESS_API_BASE_URL
 const CHESS_USER = process.env.CHESS_API_USER
 const CHESS_PASS = process.env.CHESS_API_PASS
 
+const FOXTROT_KEY = process.env.FOXTROT_API_KEY
+const FOXTROT_BASE = "https://apiv1.foxtrotsystems.com"
+const FOXTROT_DCS =
+  process.env.FOXTROT_DC_IDS?.split(",").map((s) => s.trim()).filter(Boolean) ??
+  ["eldorado", "iguazu"]
+
 const ALLOWED_ROLES = ["admin", "supervisor", "admin_rrhh"] as const
+
+// Patente argentina: AAA 123 / AAA123 / AB 123 CD / AB123CD, con sufijo opcional .N
+const PATENTE_REGEX =
+  /^([A-Z]{3}\s?\d{3}|[A-Z]{2}\s?\d{3}\s?[A-Z]{2})(\.\d+)?$/i
+
+const MOTIVOS_EXCLUIDOS = new Set(["DEV X TRAMITES INTER"])
+
+function isPatenteValida(s: string | null | undefined): boolean {
+  if (!s) return false
+  return PATENTE_REGEX.test(s.trim())
+}
+
+function normalizarPatente(s: string): string {
+  return s.toUpperCase().trim()
+}
 
 // Agent that accepts self-signed certificates
 const insecureAgent = new https.Agent({ rejectUnauthorized: false })
@@ -56,6 +77,86 @@ interface ChessVenta {
   fechaComprobate: string
   anulado: string
   unimedtotal: number
+}
+
+interface FoxtrotDriver {
+  id: string
+  name: string
+}
+
+interface FoxtrotRoute {
+  name: string | null
+  assigned_driver_id: string | null
+}
+
+// Devuelve un mapa "<dc>:<driverId>" -> nombre del chofer.
+async function fetchFoxtrotDrivers(): Promise<Map<string, string>> {
+  const driversById = new Map<string, string>()
+  if (!FOXTROT_KEY) return driversById
+
+  await Promise.all(
+    FOXTROT_DCS.map(async (dc) => {
+      try {
+        const resp = await fetch(`${FOXTROT_BASE}/dcs/${dc}/drivers`, {
+          headers: {
+            Authorization: `Bearer ${FOXTROT_KEY}`,
+            Accept: "application/json",
+          },
+        })
+        if (!resp.ok) {
+          console.warn(`Foxtrot drivers ${dc}: HTTP ${resp.status}`)
+          return
+        }
+        const data = await resp.json()
+        const drivers: FoxtrotDriver[] = data?.data?.drivers ?? []
+        for (const d of drivers) {
+          driversById.set(`${dc}:${d.id}`, d.name)
+        }
+      } catch (e) {
+        console.warn(`Foxtrot drivers ${dc} error: ${e}`)
+      }
+    })
+  )
+
+  return driversById
+}
+
+// Devuelve un mapa patente normalizada -> nombre del chofer para una fecha.
+async function fetchPatenteChoferMap(
+  fecha: string,
+  driversById: Map<string, string>
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (!FOXTROT_KEY) return map
+
+  await Promise.all(
+    FOXTROT_DCS.map(async (dc) => {
+      try {
+        const resp = await fetch(
+          `${FOXTROT_BASE}/dcs/${dc}/routes/find_by_date/${fecha}`,
+          {
+            headers: {
+              Authorization: `Bearer ${FOXTROT_KEY}`,
+              Accept: "application/json",
+            },
+          }
+        )
+        if (!resp.ok) return
+        const data = await resp.json()
+        const routes: FoxtrotRoute[] = data?.data?.routes ?? []
+        for (const r of routes) {
+          if (!r.name || !r.assigned_driver_id) continue
+          const chofer = driversById.get(`${dc}:${r.assigned_driver_id}`)
+          if (!chofer) continue
+          map.set(normalizarPatente(r.name), chofer)
+        }
+      } catch (e) {
+        console.warn(`Foxtrot routes ${dc} ${fecha} error: ${e}`)
+      }
+    })
+  )
+
+  return map
 }
 
 async function fetchVentasDia(sessionId: string, fecha: string): Promise<ChessVenta[]> {
@@ -131,6 +232,9 @@ export async function POST(request: NextRequest) {
     // Login to Chess
     const sessionId = await chessLogin()
 
+    // Foxtrot drivers (una sola vez para todo el sync)
+    const foxtrotDrivers = await fetchFoxtrotDrivers()
+
     const supabase = createAdminClient()
     let totalInsertadas = 0
     let totalRepetidas = 0
@@ -143,7 +247,10 @@ export async function POST(request: NextRequest) {
       const fechaStr = current.toISOString().slice(0, 10)
       totalDias++
 
-      const ventas = await fetchVentasDia(sessionId, fechaStr)
+      const [ventas, patenteChofer] = await Promise.all([
+        fetchVentasDia(sessionId, fechaStr),
+        fetchPatenteChoferMap(fechaStr, foxtrotDrivers),
+      ])
 
       if (ventas.length === 0) {
         diasSinDatos++
@@ -152,23 +259,30 @@ export async function POST(request: NextRequest) {
       }
 
       // Calculate total bultos entregados per fletero for the day
+      // (sólo patentes válidas; "TRANSPORTE ALTERNATIVO" y similares quedan fuera)
       const entregadosPorFletero = new Map<string, number>()
       for (const v of ventas) {
         if (v.anulado === "SI") continue
-        const fletero = v.dsFleteroCarga ?? "SIN ASIGNAR"
+        if (!isPatenteValida(v.dsFleteroCarga)) continue
+        const fletero = v.dsFleteroCarga
         const bultos = Math.abs(Number(v.unidadesSolicitadas) || 0)
         entregadosPorFletero.set(fletero, (entregadosPorFletero.get(fletero) ?? 0) + bultos)
       }
 
-      // Filter only rechazos (idRechazo > 0)
+      // Filter rechazos: idRechazo > 0, no anulados, motivo no excluido, patente válida
       const rechazos = ventas.filter(
-        (v) => v.idRechazo > 0 && v.anulado !== "SI"
+        (v) =>
+          v.idRechazo > 0 &&
+          v.anulado !== "SI" &&
+          !MOTIVOS_EXCLUIDOS.has(v.dsRechazo) &&
+          isPatenteValida(v.dsFleteroCarga)
       )
 
       for (const r of rechazos) {
-        const fletero = r.dsFleteroCarga ?? "SIN ASIGNAR"
+        const fletero = r.dsFleteroCarga
         const bultosRechazados = Math.abs(Number(r.cantidadesRechazo) || 0)
         const bultosEntregados = entregadosPorFletero.get(fletero) ?? 0
+        const chofer = patenteChofer.get(normalizarPatente(fletero)) ?? null
 
         const { error } = await supabase
           .from("rechazos")
@@ -190,6 +304,7 @@ export async function POST(request: NextRequest) {
               id_vendedor: r.idVendedor,
               ds_vendedor: r.dsVendedor,
               planilla_carga: r.planillaCarga,
+              chofer,
             },
             { onConflict: "serie,nrodoc,id_articulo" }
           )
@@ -202,9 +317,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ---- Aggregate ventas_diarias per fletero (FCVTA only) ----
+      // ---- Aggregate ventas_diarias per fletero (FCVTA only, patente válida) ----
       const ventasFCVTA = ventas.filter(
-        (v) => v.idDocumento === "FCVTA" && v.anulado !== "SI"
+        (v) =>
+          v.idDocumento === "FCVTA" &&
+          v.anulado !== "SI" &&
+          isPatenteValida(v.dsFleteroCarga)
       )
 
       const fleteroAgg = new Map<
@@ -213,7 +331,7 @@ export async function POST(request: NextRequest) {
       >()
 
       for (const v of ventasFCVTA) {
-        const fletero = v.dsFleteroCarga ?? "SIN ASIGNAR"
+        const fletero = v.dsFleteroCarga
         const agg = fleteroAgg.get(fletero) ?? {
           bultos: 0,
           unidades: 0,

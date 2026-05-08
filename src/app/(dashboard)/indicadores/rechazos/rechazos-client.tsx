@@ -166,6 +166,7 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
         const q = busqueda.toLowerCase()
         return (
           d.ds_fletero_carga.toLowerCase().includes(q) ||
+          (d.chofer ?? "").toLowerCase().includes(q) ||
           d.ds_articulo.toLowerCase().includes(q) ||
           d.ds_rechazo.toLowerCase().includes(q) ||
           (d.nombre_cliente ?? "").toLowerCase().includes(q) ||
@@ -175,9 +176,9 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
     : acum.detalle
 
   function exportCSV() {
-    const headers = ["Fecha", "Fletero", "Cliente", "Vendedor", "Artículo", "Bultos", "Motivo"]
+    const headers = ["Fecha", "Patente", "Chofer", "Cliente", "Vendedor", "Artículo", "Bultos", "Motivo"]
     const rows = acum.detalle.map((d) => [
-      d.fecha, d.ds_fletero_carga, d.nombre_cliente ?? "", d.ds_vendedor ?? "",
+      d.fecha, d.ds_fletero_carga, d.chofer ?? "", d.nombre_cliente ?? "", d.ds_vendedor ?? "",
       d.ds_articulo, d.bultos_rechazados.toString(), d.ds_rechazo,
     ])
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n")
@@ -865,7 +866,8 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Fletero</TableHead>
+                    <TableHead>Patente</TableHead>
+                    <TableHead>Chofer</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Vendedor</TableHead>
                     <TableHead>Artículo</TableHead>
@@ -878,6 +880,7 @@ export function RechazosClient({ acumulado: acumInicial, mesInicial, anioInicial
                     <TableRow key={i}>
                       <TableCell className="text-sm font-mono whitespace-nowrap">{d.fecha}</TableCell>
                       <TableCell className="text-sm font-mono">{d.ds_fletero_carga}</TableCell>
+                      <TableCell className="text-sm max-w-[140px] truncate">{d.chofer ?? "—"}</TableCell>
                       <TableCell className="text-sm max-w-[150px] truncate">{d.nombre_cliente ?? "—"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-[100px] truncate">{d.ds_vendedor ?? "—"}</TableCell>
                       <TableCell className="text-sm max-w-[180px] truncate">{d.ds_articulo}</TableCell>

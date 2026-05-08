@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server"
 export interface RechazoDetalle {
   fecha: string
   ds_fletero_carga: string
+  chofer: string | null
   id_rechazo: number
   ds_rechazo: string
   ds_articulo: string
@@ -166,6 +167,7 @@ export async function getRechazosAcumulado(
       id_vendedor: number | null
       ds_vendedor: string | null
       planilla_carga: string | null
+      chofer: string | null
     }>
 
     const ventas = (ventasRes.data ?? []) as Array<{
@@ -253,6 +255,7 @@ export async function getRechazosAcumulado(
       detalle.push({
         fecha: r.fecha,
         ds_fletero_carga: fletero,
+        chofer: r.chofer ?? null,
         id_rechazo: r.id_rechazo,
         ds_rechazo: r.ds_rechazo,
         ds_articulo: r.ds_articulo,
@@ -391,6 +394,7 @@ export async function getRechazosDelDia(
       id_vendedor: number | null
       ds_vendedor: string | null
       planilla_carga: string | null
+      chofer: string | null
     }>
 
     // Aggregate totals
@@ -421,6 +425,7 @@ export async function getRechazosDelDia(
       detalle.push({
         fecha: r.fecha,
         ds_fletero_carga: fletero,
+        chofer: r.chofer ?? null,
         id_rechazo: r.id_rechazo,
         ds_rechazo: r.ds_rechazo,
         ds_articulo: r.ds_articulo,
