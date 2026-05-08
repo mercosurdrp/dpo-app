@@ -66,6 +66,7 @@ const CHOFERES_HABILITADOS_CHECKLIST = [
   "SEQUEIRA HUMBERTO",
   "ACOSTA JOEL",
   "RIVERO LAUREANO",
+  "CORDONE LUIS",
 ]
 
 function normalizarNombre(s: string): string {
@@ -77,9 +78,16 @@ function normalizarNombre(s: string): string {
     .toUpperCase()
 }
 
-const CHOFERES_HABILITADOS_SET = new Set(
-  CHOFERES_HABILITADOS_CHECKLIST.map(normalizarNombre)
+const CHOFERES_HABILITADOS_PALABRAS = CHOFERES_HABILITADOS_CHECKLIST.map((n) =>
+  normalizarNombre(n).split(" ").filter(Boolean)
 )
+
+function choferEstaHabilitado(nombreDB: string): boolean {
+  const palabrasDB = new Set(normalizarNombre(nombreDB).split(" ").filter(Boolean))
+  return CHOFERES_HABILITADOS_PALABRAS.some((palabras) =>
+    palabras.every((p) => palabrasDB.has(p))
+  )
+}
 
 const opcionesMap: Record<string, { value: string; label: string; color: string }[]> = {
   ok_nook: [
@@ -109,9 +117,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const vehiculosFiltrados = vehiculos.filter((v) =>
     sectorFiltro === "todos" ? true : v.sector === sectorFiltro
   )
-  const choferesHabilitados = choferes.filter((c) =>
-    CHOFERES_HABILITADOS_SET.has(normalizarNombre(c.nombre))
-  )
+  const choferesHabilitados = choferes.filter((c) => choferEstaHabilitado(c.nombre))
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
   const [observaciones, setObservaciones] = useState("")
