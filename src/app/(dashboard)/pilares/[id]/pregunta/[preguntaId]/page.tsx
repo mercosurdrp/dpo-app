@@ -1,8 +1,17 @@
 import { createClient } from "@/lib/supabase/server"
 import { getPreguntaGestion } from "@/actions/gestion"
+import { getArchivos } from "@/actions/dpo-evidencia"
 import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
 import type { Pilar } from "@/types/database"
 import { PreguntaGestionClient } from "./pregunta-gestion-client"
+
+function pilarSlug(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+}
 
 export default async function PreguntaPage({
   params,
@@ -43,6 +52,14 @@ export default async function PreguntaPage({
     )
   }
 
+  // Fetch archivos DPO subidos para este punto
+  const archivosRes = await getArchivos({
+    pilar_codigo: pilarSlug((pilar as Pilar).nombre),
+    punto_codigo: result.data.numero,
+    archivado: false,
+  })
+  const archivos = "data" in archivosRes ? archivosRes.data : []
+
   const capacitaciones = "error" in capsResult ? [] : capsResult.data
 
   return (
@@ -50,6 +67,7 @@ export default async function PreguntaPage({
       pilar={pilar as Pilar}
       pregunta={result.data}
       capacitaciones={capacitaciones}
+      archivos={archivos}
     />
   )
 }

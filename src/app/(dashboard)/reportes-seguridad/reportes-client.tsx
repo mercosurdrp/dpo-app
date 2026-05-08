@@ -24,15 +24,36 @@ import {
 import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-reporte-dialog"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import {
+  PiramideSeguridad,
+  type PiramideConteos,
+} from "@/components/reportes-seguridad/piramide-seguridad"
+import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
+  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
   type ReporteSeguridadConAutor,
   type ReporteSeguridadTipo,
   type ReporteSeguridadLocalidad,
   type UserRole,
 } from "@/types/database"
+
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+]
 
 const TIPOS: ReporteSeguridadTipo[] = [
   "accidente",
@@ -84,6 +105,42 @@ export function ReportesSeguridadClient({
   const [fechaDesde, setFechaDesde] = useState("")
   const [fechaHasta, setFechaHasta] = useState("")
 
+  const anioActual = new Date().getFullYear()
+  const [piramideAnio, setPiramideAnio] = useState<number>(anioActual)
+  const [piramideMes, setPiramideMes] = useState<number | "all">("all")
+
+  // Lista de años con datos + año actual (siempre presente, aunque no haya reportes)
+  const aniosDisponibles = useMemo(() => {
+    const set = new Set<number>([anioActual])
+    for (const r of reportes) {
+      const y = Number(r.fecha.slice(0, 4))
+      if (Number.isFinite(y)) set.add(y)
+    }
+    return Array.from(set).sort((a, b) => b - a)
+  }, [reportes, anioActual])
+
+  // Conteos de la pirámide según año + mes elegidos
+  const piramideConteos = useMemo<PiramideConteos>(() => {
+    const base: PiramideConteos = {
+      fat: 0,
+      lti: 0,
+      mdi: 0,
+      mti: 0,
+      fai: 0,
+      sio: 0,
+      sho: 0,
+    }
+    for (const r of reportes) {
+      if (!r.tipo_accidente) continue
+      const y = Number(r.fecha.slice(0, 4))
+      const m = Number(r.fecha.slice(5, 7))
+      if (y !== piramideAnio) continue
+      if (piramideMes !== "all" && m !== piramideMes) continue
+      base[r.tipo_accidente] += 1
+    }
+    return base
+  }, [reportes, piramideAnio, piramideMes])
+
   // KPIs por tipo del mes actual
   const kpisMes = useMemo(() => {
     const base: Record<ReporteSeguridadTipo, number> = {
@@ -127,6 +184,52 @@ export function ReportesSeguridadClient({
           <Plus className="mr-2 size-4" />
           Nuevo reporte
         </Button>
+      </div>
+
+      {/* Pirámide de Seguridad */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label className="text-xs">Año</Label>
+            <Select
+              value={String(piramideAnio)}
+              onValueChange={(v) => setPiramideAnio(Number(v))}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {aniosDisponibles.map((a) => (
+                  <SelectItem key={a} value={String(a)}>
+                    {a}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Mes</Label>
+            <Select
+              value={piramideMes === "all" ? "all" : String(piramideMes)}
+              onValueChange={(v) =>
+                setPiramideMes(v === "all" ? "all" : Number(v))
+              }
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todo el año</SelectItem>
+                {MESES.map((nombre, i) => (
+                  <SelectItem key={i} value={String(i + 1)}>
+                    {nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <PiramideSeguridad conteos={piramideConteos} />
       </div>
 
       {/* KPIs del mes */}
@@ -217,6 +320,8 @@ export function ReportesSeguridadClient({
               <TableHead className="w-20">Hora</TableHead>
               <TableHead className="w-44">Tipo</TableHead>
               <TableHead>Descripción</TableHead>
+              <TableHead className="w-36">Tipo SIF</TableHead>
+              <TableHead className="w-44">Tipo Accidente</TableHead>
               <TableHead className="w-36">Localidad</TableHead>
               <TableHead className="w-32">Área</TableHead>
               <TableHead className="w-40">Autor</TableHead>
@@ -225,7 +330,7 @@ export function ReportesSeguridadClient({
           <TableBody>
             {filtrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-6">
                   No hay reportes para estos filtros.
                 </TableCell>
               </TableRow>
@@ -254,6 +359,30 @@ export function ReportesSeguridadClient({
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-sm">
                     {r.descripcion}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {r.tipo_sif ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-red-100 text-red-700"
+                      >
+                        {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[r.tipo_sif]}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {r.tipo_accidente ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-orange-100 text-orange-700"
+                      >
+                        {REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS[r.tipo_accidente]}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {r.localidad ? REPORTE_SEGURIDAD_LOCALIDAD_LABELS[r.localidad] : "—"}

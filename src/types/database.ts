@@ -1421,6 +1421,20 @@ export type ReporteSeguridadPuesto =
   | "mando_medio"
   | "otro"
 
+export type ReporteSeguridadTipoSif =
+  | "sif_actual"
+  | "sif_potencial"
+  | "sif_precursor"
+
+export type ReporteSeguridadTipoAccidente =
+  | "fat"
+  | "lti"
+  | "mdi"
+  | "mti"
+  | "fai"
+  | "sio"
+  | "sho"
+
 export interface ReporteSeguridad {
   id: string
   tipo: ReporteSeguridadTipo
@@ -1435,6 +1449,8 @@ export interface ReporteSeguridad {
   damnificado_puesto: ReporteSeguridadPuesto | null
   dentro_cd: boolean | null
   sif: boolean | null
+  tipo_sif: ReporteSeguridadTipoSif | null
+  tipo_accidente: ReporteSeguridadTipoAccidente | null
   quien_que: string | null
   creado_por: string
   created_at: string
@@ -1519,6 +1535,28 @@ export const REPORTE_SEGURIDAD_PUESTO_LABELS: Record<ReporteSeguridadPuesto, str
   administracion: "Administración",
   mando_medio: "Mando medio",
   otro: "Otro",
+}
+
+export const REPORTE_SEGURIDAD_TIPO_SIF_LABELS: Record<
+  ReporteSeguridadTipoSif,
+  string
+> = {
+  sif_actual: "SIF Actual",
+  sif_potencial: "SIF Potencial",
+  sif_precursor: "SIF Precursor",
+}
+
+export const REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS: Record<
+  ReporteSeguridadTipoAccidente,
+  string
+> = {
+  fat: "FAT — Fatality",
+  lti: "LTI — Lost Time Injury",
+  mdi: "MDI — Medical Day(s) Injury",
+  mti: "MTI — Medical Treatment Injury",
+  fai: "FAI — First Aid Injury",
+  sio: "SIO — Serious Incident Outcome",
+  sho: "SHO — Serious Health Outcome",
 }
 
 // ===== Notificaciones =====
@@ -2161,6 +2199,8 @@ export interface ReunionActividadConResponsable extends ReunionActividad {
   reunion_origen_id: string
 }
 
+export type AgregacionIndicador = "suma" | "promedio"
+
 export interface ReunionIndicadorConfig {
   id: string
   tipo: TipoReunion
@@ -2169,8 +2209,33 @@ export interface ReunionIndicadorConfig {
   meta: number | null
   orden: number
   activo: boolean
+  agregacion: AgregacionIndicador
   created_at: string
   updated_at: string
+}
+
+export interface ReunionIndicadoresMes {
+  anio: number
+  mes: number
+  fechas: string[]
+  reuniones_por_fecha: Record<string, string | null>
+  indicadores: Array<{
+    id: string
+    nombre: string
+    unidad: string | null
+    meta: number | null
+    orden: number
+    agregacion: AgregacionIndicador
+    valores: Record<
+      string,
+      {
+        reunion_id: string
+        valor: number | null
+        observacion: string | null
+      } | null
+    >
+    mtd: number | null
+  }>
 }
 
 export interface ReunionIndicadorValor {
@@ -2188,4 +2253,86 @@ export interface ReunionIndicadorConValor extends ReunionIndicadorConfig {
   valor_actual: number | null
   valor_id: string | null
   observacion_actual: string | null
+}
+
+// =============================================
+// Riesgos Externos — Plan de Acción (DPO Planeamiento 2.2)
+// =============================================
+export type TipoRiesgoExterno =
+  | "corte_de_luz"
+  | "falla_en_generador"
+  | "corte_de_sistema"
+  | "corte_de_internet"
+  | "corte_de_ruta_o_acceso"
+  | "incendio"
+  | "paro_sindical"
+  | "emergencia_medica_interna"
+  | "emergencia_medica_externa"
+  | "temporal"
+  | "robo_warehouse"
+  | "robo_distribucion"
+  | "saqueos"
+  | "clausura_del_predio"
+  | "no_apertura_de_caja"
+  | "amenaza_de_bomba"
+  | "pandemia"
+  | "invasion_de_plagas"
+
+export type EstadoRiesgoExterno =
+  | "no_iniciado"
+  | "en_curso"
+  | "concluido"
+  | "concluido_con_atraso"
+  | "atrasado"
+
+export const TIPO_RIESGO_EXTERNO_LABELS: Record<TipoRiesgoExterno, string> = {
+  corte_de_luz: "Corte de luz",
+  falla_en_generador: "Falla en generador",
+  corte_de_sistema: "Corte de sistema",
+  corte_de_internet: "Corte de internet",
+  corte_de_ruta_o_acceso: "Corte de ruta o acceso principal",
+  incendio: "Incendio",
+  paro_sindical: "Paro sindical",
+  emergencia_medica_interna: "Emergencia médica (accidente interno)",
+  emergencia_medica_externa: "Emergencia médica (accidente externo)",
+  temporal: "Temporal",
+  robo_warehouse: "Robo (Warehouse)",
+  robo_distribucion: "Robo (Distribución)",
+  saqueos: "Saqueos",
+  clausura_del_predio: "Clausura del predio",
+  no_apertura_de_caja: "No apertura de caja",
+  amenaza_de_bomba: "Amenaza de bomba",
+  pandemia: "Pandemia / Covid-19",
+  invasion_de_plagas: "Invasión de plagas",
+}
+
+export const ESTADO_RIESGO_EXTERNO_LABELS: Record<EstadoRiesgoExterno, string> = {
+  no_iniciado: "No iniciado",
+  en_curso: "En curso",
+  concluido: "Concluido",
+  concluido_con_atraso: "Concluido con atraso",
+  atrasado: "Atrasado",
+}
+
+export interface RiesgoExternoAccion {
+  id: string
+  nro_correlativo: number
+  tipo_riesgo: TipoRiesgoExterno
+  observaciones: string
+  resolucion: string | null
+  fecha_ocurrencia: string
+  responsable_id: string | null
+  tarea_pendiente: string | null
+  fecha_compromiso: string | null
+  fecha_cierre_real: string | null
+  estado: EstadoRiesgoExterno
+  semana: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RiesgoExternoAccionConResponsable extends RiesgoExternoAccion {
+  responsable_nombre: string | null
+  responsable_email: string | null
 }

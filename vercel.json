@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/requisitos-legales/cron-alertas",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/reuniones/cron-crear-diarias",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}

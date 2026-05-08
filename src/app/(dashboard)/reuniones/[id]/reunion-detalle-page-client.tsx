@@ -1,0 +1,1341 @@
+"use client"
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import {
+  ArrowLeft,
+  BarChart3,
+  Calendar,
+  CheckCircle2,
+  FileDown,
+  Hand,
+  ListTodo,
+  Pencil,
+  Plus,
+  Send,
+  Settings,
+  Shield,
+  Trash2,
+  UserPlus,
+  X,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { cn } from "@/lib/utils"
+import {
+  actualizarActividad,
+  agregarAsistente,
+  eliminarActividad,
+  eliminarReunion,
+  getSignedUrl,
+  marcarMiAsistencia,
+  quitarAsistente,
+  setIndicadorValor,
+} from "@/actions/reuniones"
+import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
+import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
+import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
+import type {
+  EstadoReunionActividad,
+  ReunionActividadConResponsable,
+  ReunionAsistenteConProfile,
+  ReunionDetalle,
+  TipoReunion,
+} from "@/types/database"
+
+interface ResponsableOpt {
+  id: string
+  nombre: string
+  email: string
+}
+
+type AgregacionIndicador = "suma" | "promedio"
+
+interface IndicadorMesCellData {
+  reunion_id: string
+  valor: number | null
+  observacion: string | null
+}
+
+interface IndicadorMesItem {
+  id: string
+  nombre: string
+  unidad: string | null
+  meta: number | null
+  orden: number
+  agregacion: AgregacionIndicador
+  valores: Record<string, IndicadorMesCellData | null>
+  mtd: number | null
+}
+
+interface IndicadoresMesData {
+  anio: number
+  mes: number
+  fechas: string[]
+  reuniones_por_fecha: Record<string, string | null>
+  indicadores: IndicadorMesItem[]
+}
+
+interface Props {
+  detalle: ReunionDetalle & { actividades?: ReunionActividadConResponsable[] }
+  indicadoresMes: IndicadoresMesData | null
+  responsables: ResponsableOpt[]
+  puedeEditar: boolean
+  currentProfileId: string | null
+}
+
+const TIPO_LABELS: Record<TipoReunion, string> = {
+  logistica: "Logística",
+  "logistica-ventas": "Logística + Ventas",
+  "matinal-distribucion": "Matinal Distribución",
+  warehouse: "Warehouse",
+}
+
+function formatFechaLarga(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso + "T00:00:00")
+  return d.toLocaleDateString("es-AR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  })
+}
+
+function formatFechaCorta(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso + "T00:00:00")
+  return d.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}
+
+function formatFechaHoraCorta(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  return d.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  })
+}
+
+const NOMBRE_MESES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
+const DIAS_SEM_LABEL = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
+
+function nombreMes(m: number): string {
+  return NOMBRE_MESES[m - 1] ?? ""
+}
+
+function diaDelMes(iso: string): string {
+  return iso.slice(8, 10)
+}
+
+function diaSem(iso: string): string {
+  const d = new Date(iso + "T12:00:00")
+  return DIAS_SEM_LABEL[d.getDay()] ?? ""
+}
+
+function esFinDeSemana(iso: string): boolean {
+  const d = new Date(iso + "T12:00:00")
+  const g = d.getDay()
+  return g === 0 || g === 6
+}
+
+function formatearValor(n: number): string {
+  return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
+}
+
+function EstadoActividadBadge({
+  estado,
+}: {
+  estado: EstadoReunionActividad
+}) {
+  if (estado === "cerrada") {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        Cerrada
+      </Badge>
+    )
+  }
+  if (estado === "en_curso") {
+    return (
+      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+        En curso
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100">
+      No comenzada
+    </Badge>
+  )
+}
+
+// =============================================
+// Asistente row
+// =============================================
+function AsistenteCard({
+  asistente,
+  puedeEditar,
+  onChanged,
+}: {
+  asistente: ReunionAsistenteConProfile
+  puedeEditar: boolean
+  onChanged: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+
+  function handleQuitar() {
+    if (!confirm(`¿Quitar a ${asistente.profile_nombre} de la lista?`)) return
+    startTransition(async () => {
+      const result = await quitarAsistente(asistente.id)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      onChanged()
+    })
+  }
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+        asistente.presente
+          ? "border-emerald-200 bg-emerald-50/50"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {asistente.presente ? (
+          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+        ) : (
+          <span className="inline-block size-3.5 shrink-0 rounded-full border border-slate-300 bg-white" />
+        )}
+        <div className="min-w-0 flex-1">
+          <p
+            className={`truncate text-sm ${
+              asistente.presente
+                ? "font-medium text-slate-900"
+                : "text-slate-600"
+            }`}
+          >
+            {asistente.profile_nombre}
+          </p>
+          {!asistente.presente && asistente.justificacion && (
+            <p
+              className="truncate text-xs text-muted-foreground"
+              title={asistente.justificacion}
+            >
+              {asistente.justificacion}
+            </p>
+          )}
+        </div>
+      </div>
+      {puedeEditar && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-red-600 hover:text-red-700"
+          onClick={handleQuitar}
+          disabled={pending}
+          title="Quitar"
+        >
+          <X className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function AgregarAsistenteAdHoc({
+  reunionId,
+  responsables,
+  yaAgregados,
+  onAdded,
+}: {
+  reunionId: string
+  responsables: ResponsableOpt[]
+  yaAgregados: Set<string>
+  onAdded: () => void
+}) {
+  const [seleccionado, setSeleccionado] = useState<string>("")
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  const disponibles = useMemo(
+    () => responsables.filter((r) => !yaAgregados.has(r.id)),
+    [responsables, yaAgregados],
+  )
+
+  function handleAdd() {
+    if (!seleccionado) return
+    setError(null)
+    startTransition(async () => {
+      const result = await agregarAsistente(reunionId, seleccionado)
+      if ("error" in result) {
+        setError(result.error)
+        return
+      }
+      setSeleccionado("")
+      onAdded()
+    })
+  }
+
+  return (
+    <div className="rounded-md border border-dashed border-slate-300 bg-slate-50/50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-slate-700">
+          Agregar asistente:
+        </span>
+        <div className="min-w-[200px] flex-1">
+          <Select
+            value={seleccionado}
+            onValueChange={(v: string | null) => setSeleccionado(v ?? "")}
+          >
+            <SelectTrigger className="h-8 w-full">
+              <SelectValue placeholder="Seleccionar usuario…" />
+            </SelectTrigger>
+            <SelectContent>
+              {disponibles.length === 0 ? (
+                <div className="px-2 py-2 text-xs text-muted-foreground">
+                  Todos los usuarios ya son asistentes.
+                </div>
+              ) : (
+                disponibles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.nombre}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleAdd}
+          disabled={pending || !seleccionado}
+        >
+          <UserPlus className="mr-2 size-4" />
+          Agregar
+        </Button>
+      </div>
+      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
+    </div>
+  )
+}
+
+// =============================================
+// ValorInput (input editable inline con auto-save debounced)
+// =============================================
+function ValorInput({
+  indicadorId,
+  initial,
+  reunionId,
+  puedeEditar,
+  onChanged,
+}: {
+  indicadorId: string
+  initial: number | null
+  reunionId: string
+  puedeEditar: boolean
+  onChanged: () => void
+}) {
+  const [val, setVal] = useState<string>(
+    initial !== null && initial !== undefined ? String(initial) : "",
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPersistedRef = useRef<string>(
+    initial !== null && initial !== undefined ? String(initial) : "",
+  )
+
+  useEffect(() => {
+    const next =
+      initial !== null && initial !== undefined ? String(initial) : ""
+    setVal(next)
+    lastPersistedRef.current = next
+  }, [initial])
+
+  const persist = useCallback(
+    (nuevo: string) => {
+      if (nuevo === lastPersistedRef.current) return
+      const trimmed = nuevo.trim()
+      const numero = trimmed === "" ? null : Number(trimmed)
+      if (numero !== null && Number.isNaN(numero)) {
+        setError("Inválido")
+        return
+      }
+      setError(null)
+      setSaving(true)
+      void setIndicadorValor(reunionId, indicadorId, numero, null).then(
+        (res) => {
+          setSaving(false)
+          if ("error" in res) {
+            setError(res.error)
+            return
+          }
+          lastPersistedRef.current = nuevo
+          onChanged()
+        },
+      )
+    },
+    [reunionId, indicadorId, onChanged],
+  )
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.value
+    setVal(next)
+    if (!puedeEditar) return
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => persist(next), 600)
+  }
+
+  function handleBlur() {
+    if (!puedeEditar) return
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    persist(val)
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      <Input
+        type="number"
+        step="any"
+        value={val}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        disabled={!puedeEditar}
+        className={cn(
+          "h-8 w-20 text-center text-sm",
+          saving && "border-blue-300",
+          error && "border-red-400",
+        )}
+        placeholder="—"
+      />
+      {error && (
+        <span className="mt-0.5 text-[9px] text-red-600">{error}</span>
+      )}
+    </div>
+  )
+}
+
+// =============================================
+// Actividad row
+// =============================================
+function ActividadListItem({
+  actividad,
+  reunionId,
+  puedeEditar,
+  currentProfileId,
+  onEdit,
+  onResponder,
+  onChanged,
+  onAbrirArchivo,
+}: {
+  actividad: ReunionActividadConResponsable
+  reunionId: string
+  puedeEditar: boolean
+  currentProfileId: string | null
+  onEdit: () => void
+  onResponder: () => void
+  onChanged: () => void
+  onAbrirArchivo: (url: string | null) => void
+}) {
+  const [pending, startTransition] = useTransition()
+
+  const arrastrada = actividad.reunion_origen_id !== reunionId
+  const cerradaArrastrada = arrastrada && actividad.estado === "cerrada"
+
+  function handleEliminar() {
+    if (
+      !confirm(
+        `¿Eliminar la actividad "${actividad.descripcion.slice(0, 60)}${
+          actividad.descripcion.length > 60 ? "…" : ""
+        }"?`,
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const result = await eliminarActividad(actividad.id)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      onChanged()
+    })
+  }
+
+  function handleEstadoChange(nuevo: EstadoReunionActividad) {
+    startTransition(async () => {
+      const formData = new FormData()
+      formData.set("descripcion", actividad.descripcion)
+      formData.set("motivo", actividad.motivo ?? "")
+      if (actividad.responsable_id) {
+        formData.set("responsable_id", actividad.responsable_id)
+      }
+      if (actividad.fecha_compromiso) {
+        formData.set("fecha_compromiso", actividad.fecha_compromiso)
+      }
+      formData.set("observaciones", actividad.observaciones ?? "")
+      formData.set("estado", nuevo)
+      const result = await actualizarActividad(actividad.id, formData)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      onChanged()
+    })
+  }
+
+  const puedeResponder =
+    actividad.estado !== "cerrada" &&
+    (puedeEditar ||
+      (currentProfileId !== null &&
+        actividad.responsable_id === currentProfileId))
+
+  return (
+    <li className="border-b px-4 py-3 last:border-0">
+      {arrastrada && (
+        <p className="mb-1 text-xs text-muted-foreground">
+          Arrastrada de {formatFechaCorta(actividad.reunion_origen_fecha)}
+          {cerradaArrastrada && actividad.completado_at && (
+            <span className="ml-2 text-emerald-700">
+              · Cerrada el {formatFechaHoraCorta(actividad.completado_at)}
+            </span>
+          )}
+        </p>
+      )}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p
+            className={`text-sm font-medium ${
+              actividad.estado === "cerrada"
+                ? "text-slate-500 line-through"
+                : "text-slate-900"
+            }`}
+          >
+            {actividad.descripcion}
+          </p>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            {actividad.responsable_nombre ? (
+              <span>Resp: {actividad.responsable_nombre}</span>
+            ) : (
+              <span className="italic">Sin responsable</span>
+            )}
+            {actividad.fecha_compromiso && (
+              <span>
+                Vence: {formatFechaCorta(actividad.fecha_compromiso)}
+              </span>
+            )}
+            {actividad.motivo && <span>Motivo: {actividad.motivo}</span>}
+          </div>
+          {actividad.observaciones && (
+            <p className="mt-1 text-xs text-slate-600">
+              {actividad.observaciones}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <EstadoActividadBadge estado={actividad.estado} />
+          <div className="flex flex-wrap justify-end gap-1">
+            {actividad.evidencia_url && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => onAbrirArchivo(actividad.evidencia_url)}
+                title={`Ver evidencia${
+                  actividad.evidencia_nombre
+                    ? `: ${actividad.evidencia_nombre}`
+                    : ""
+                }`}
+              >
+                <FileDown className="size-3.5" />
+              </Button>
+            )}
+            {puedeResponder && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2"
+                onClick={onResponder}
+                title="Responder"
+                disabled={pending}
+              >
+                <Send className="size-3.5" />
+              </Button>
+            )}
+            {puedeEditar && (
+              <>
+                <Select
+                  value={actividad.estado}
+                  onValueChange={(v: string | null) => {
+                    if (!v) return
+                    if (
+                      v !== "no_comenzada" &&
+                      v !== "en_curso" &&
+                      v !== "cerrada"
+                    )
+                      return
+                    handleEstadoChange(v as EstadoReunionActividad)
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-[140px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no_comenzada">No comenzada</SelectItem>
+                    <SelectItem value="en_curso">En curso</SelectItem>
+                    <SelectItem value="cerrada">Cerrada</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={onEdit}
+                  title="Editar"
+                  disabled={pending}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-red-600 hover:text-red-700"
+                  onClick={handleEliminar}
+                  title="Eliminar"
+                  disabled={pending}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+// =============================================
+// Main page client
+// =============================================
+export function ReunionDetallePageClient({
+  detalle,
+  indicadoresMes,
+  responsables,
+  puedeEditar,
+  currentProfileId,
+}: Props) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+
+  const [openConfigInd, setOpenConfigInd] = useState(false)
+  const [openActForm, setOpenActForm] = useState(false)
+  const [actividadEditando, setActividadEditando] =
+    useState<ReunionActividadConResponsable | null>(null)
+  const [actividadRespondiendo, setActividadRespondiendo] =
+    useState<ReunionActividadConResponsable | null>(null)
+
+  // Vista del tablero: "hasta_hoy" | "semana_<N>" | "mes_completo"
+  const [vistaTablero, setVistaTablero] = useState<string>("hasta_hoy")
+
+  // Filtro Action Log por estado
+  const [filtroEstado, setFiltroEstado] = useState<
+    "todas" | "no_comenzada" | "en_curso" | "cerrada"
+  >("todas")
+
+  const tipoLabel = TIPO_LABELS[detalle.tipo] ?? detalle.tipo
+
+  // Calcular semanas ISO ya iniciadas dentro del mes (solo las que tienen al
+  // menos un día <= fecha de la reunión actual)
+  const semanasDelMes = useMemo(() => {
+    if (!indicadoresMes) return [] as Array<{ key: string; label: string; fechas: string[] }>
+    const fechaReunion = detalle.fecha
+    const map = new Map<string, string[]>()
+    for (const f of indicadoresMes.fechas) {
+      if (f > fechaReunion) continue // solo semanas iniciadas
+      const d = new Date(f + "T12:00:00")
+      // Lunes de esa semana ISO
+      const dow = d.getDay() || 7 // 1..7
+      const lunes = new Date(d)
+      lunes.setDate(d.getDate() - (dow - 1))
+      const lunesIso = [
+        lunes.getFullYear(),
+        String(lunes.getMonth() + 1).padStart(2, "0"),
+        String(lunes.getDate()).padStart(2, "0"),
+      ].join("-")
+      const arr = map.get(lunesIso) ?? []
+      arr.push(f)
+      map.set(lunesIso, arr)
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([lunesIso, fechas], idx) => {
+        const ini = fechas[0]
+        const fin = fechas[fechas.length - 1]
+        const labelRange =
+          ini === fin ? diaDelMes(ini) : `${diaDelMes(ini)}–${diaDelMes(fin)}`
+        return {
+          key: `semana_${idx + 1}`,
+          label: `Sem ${idx + 1} (${labelRange})`,
+          fechas,
+          lunesIso,
+        }
+      })
+  }, [indicadoresMes, detalle.fecha])
+
+  const fechasFiltradas = useMemo(() => {
+    if (!indicadoresMes) return [] as string[]
+    if (vistaTablero === "mes_completo") return indicadoresMes.fechas
+    if (vistaTablero === "hasta_hoy") {
+      return indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
+    }
+    // semana_X
+    const sem = semanasDelMes.find((s) => s.key === vistaTablero)
+    return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
+  }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
+
+  // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
+  const actividades: ReunionActividadConResponsable[] = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = detalle as any
+    if (Array.isArray(d.actividades)) return d.actividades
+    if (Array.isArray(d.compromisos)) {
+      return (d.compromisos as Array<Record<string, unknown>>).map((c) => {
+        const estadoLegacy = (c.estado as string) ?? "pendiente"
+        const estadoNuevo: EstadoReunionActividad =
+          estadoLegacy === "completado"
+            ? "cerrada"
+            : estadoLegacy === "en_progreso"
+              ? "en_curso"
+              : "no_comenzada"
+        return {
+          ...(c as object),
+          motivo: (c.motivo as string) ?? null,
+          estado: estadoNuevo,
+          reunion_origen_id: (c.reunion_origen_id as string) ?? detalle.id,
+          reunion_origen_fecha:
+            (c.reunion_origen_fecha as string) ?? detalle.fecha,
+        } as ReunionActividadConResponsable
+      })
+    }
+    return []
+  }, [detalle])
+
+  const conteosActividades = useMemo(() => {
+    const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
+    for (const a of actividades) {
+      if (a.estado === "no_comenzada") c.no_comenzada++
+      else if (a.estado === "en_curso") c.en_curso++
+      else if (a.estado === "cerrada") c.cerrada++
+    }
+    return c
+  }, [actividades])
+
+  const actividadesFiltradas = useMemo(() => {
+    if (filtroEstado === "todas") return actividades
+    return actividades.filter((a) => a.estado === filtroEstado)
+  }, [actividades, filtroEstado])
+
+  const yaAgregadosSet = useMemo(
+    () => new Set(detalle.asistentes.map((a) => a.profile_id)),
+    [detalle.asistentes],
+  )
+
+  const miAsistente = useMemo(() => {
+    if (!currentProfileId) return null
+    return (
+      detalle.asistentes.find((a) => a.profile_id === currentProfileId) ?? null
+    )
+  }, [detalle.asistentes, currentProfileId])
+
+  const yaMarque = miAsistente?.presente === true
+  const esAsistenteActivo = miAsistente !== null && yaMarque
+  const puedeEditarTablero = puedeEditar || esAsistenteActivo
+
+  const totalPresentes = detalle.asistentes.filter((a) => a.presente).length
+  const totalAsistentes = detalle.asistentes.length
+
+  function refrescar() {
+    // Re-fetch del server component (todo el árbol de la página)
+    router.refresh()
+  }
+
+  async function abrirArchivo(url: string | null) {
+    if (!url) return
+    const result = await getSignedUrl(url)
+    if ("error" in result) {
+      alert(`Error abriendo archivo: ${result.error}`)
+      return
+    }
+    window.open(result.data.url, "_blank", "noopener,noreferrer")
+  }
+
+  function handleEliminarReunion() {
+    if (
+      !confirm(
+        `¿Eliminar la reunión del ${formatFechaCorta(
+          detalle.fecha,
+        )}? Esta acción no se puede deshacer.`,
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const result = await eliminarReunion(detalle.id)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      router.push("/reuniones")
+    })
+  }
+
+  async function handleMarcarMiAsistencia() {
+    const result = await marcarMiAsistencia(detalle.id)
+    if ("error" in result) {
+      alert(`Error: ${result.error}`)
+      return
+    }
+    refrescar()
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Breadcrumb */}
+      <div>
+        <Link
+          href="/reuniones"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="size-4" />
+          Volver a Reuniones · {tipoLabel}
+        </Link>
+      </div>
+
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-slate-50 p-4">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
+            {tipoLabel}
+          </p>
+          <h1 className="flex items-center gap-2 text-2xl font-bold capitalize text-slate-900">
+            <Calendar className="size-6 text-slate-600" />
+            {formatFechaLarga(detalle.fecha)}
+          </h1>
+        </div>
+        {puedeEditar && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-red-600 hover:text-red-700"
+            onClick={handleEliminarReunion}
+          >
+            <Trash2 className="mr-2 size-4" />
+            Eliminar reunión
+          </Button>
+        )}
+      </div>
+
+      {/* ASISTENCIA — sticky en pantallas grandes */}
+      <Card className="lg:sticky lg:top-2 lg:z-10">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            Asistencia
+            <Badge className="border-slate-200 bg-slate-100 text-base font-semibold text-slate-800 hover:bg-slate-100">
+              {totalPresentes} / {totalAsistentes} presentes
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {miAsistente && yaMarque && (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3">
+              <CheckCircle2 className="size-5 text-emerald-600" />
+              <p className="text-sm font-medium text-emerald-800">
+                Marcaste asistencia
+              </p>
+            </div>
+          )}
+          {miAsistente && !yaMarque && (
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleMarcarMiAsistencia}
+              className="w-full bg-emerald-600 text-base hover:bg-emerald-700"
+            >
+              <Hand className="mr-2 size-5" />
+              Marcar mi asistencia
+            </Button>
+          )}
+
+          {detalle.asistentes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Sin asistentes registrados.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {detalle.asistentes.map((a) => (
+                <AsistenteCard
+                  key={a.id}
+                  asistente={a}
+                  puedeEditar={puedeEditar}
+                  onChanged={refrescar}
+                />
+              ))}
+            </div>
+          )}
+
+          {puedeEditar && (
+            <AgregarAsistenteAdHoc
+              reunionId={detalle.id}
+              responsables={responsables}
+              yaAgregados={yaAgregadosSet}
+              onAdded={refrescar}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ETAPA 1: SEGURIDAD */}
+      <Card className="border-red-200 bg-red-50/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-red-900">
+            <Shield className="size-5 text-red-600" />
+            Etapa 1 — Seguridad
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-700">
+            Sección de seguridad — En desarrollo. Próximamente vas a poder
+            cargar el tema de seguridad del día.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* ETAPA 2: TABLERO DE CONTROL */}
+      <Card className="border-blue-200 bg-blue-50/30">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
+            <BarChart3 className="size-5 text-blue-600" />
+            Etapa 2 — Tablero de control
+            {indicadoresMes && (
+              <span className="text-sm font-normal capitalize text-muted-foreground">
+                · {nombreMes(indicadoresMes.mes)} {indicadoresMes.anio}
+              </span>
+            )}
+          </CardTitle>
+          {puedeEditar && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setOpenConfigInd(true)}
+            >
+              <Settings className="mr-2 size-4" />
+              Configurar indicadores
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="px-0">
+          {indicadoresMes && indicadoresMes.indicadores.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
+              <span className="mr-1 font-medium text-slate-600">Vista:</span>
+              <button
+                type="button"
+                onClick={() => setVistaTablero("hasta_hoy")}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-xs transition",
+                  vistaTablero === "hasta_hoy"
+                    ? "border-blue-500 bg-blue-50 font-semibold text-blue-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                )}
+              >
+                Hasta hoy
+              </button>
+              {semanasDelMes.length > 1 &&
+                semanasDelMes.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setVistaTablero(s.key)}
+                    className={cn(
+                      "rounded-md border px-2 py-1 text-xs transition",
+                      vistaTablero === s.key
+                        ? "border-blue-500 bg-blue-50 font-semibold text-blue-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              <button
+                type="button"
+                onClick={() => setVistaTablero("mes_completo")}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-xs transition",
+                  vistaTablero === "mes_completo"
+                    ? "border-blue-500 bg-blue-50 font-semibold text-blue-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                )}
+              >
+                Mes completo
+              </button>
+            </div>
+          )}
+          {!indicadoresMes ||
+          indicadoresMes.indicadores.length === 0 ||
+          indicadoresMes.fechas.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              Sin indicadores configurados.
+              {puedeEditar && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="font-medium text-blue-600 hover:underline"
+                    onClick={() => setOpenConfigInd(true)}
+                  >
+                    Configurar el primero
+                  </button>
+                </>
+              )}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-white">
+                  <tr className="border-b">
+                    <th className="sticky left-0 z-10 w-[160px] min-w-[160px] max-w-[160px] bg-white px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Indicador
+                    </th>
+                    <th className="sticky left-[160px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Unidad
+                    </th>
+                    <th className="sticky left-[220px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Target
+                    </th>
+                    <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      MTD
+                    </th>
+                    {fechasFiltradas.map((f) => {
+                      const esHoy = f === detalle.fecha
+                      const dom = esFinDeSemana(f)
+                      return (
+                        <th
+                          key={f}
+                          className={cn(
+                            "px-2 py-1 text-center text-xs font-medium",
+                            esHoy && "bg-blue-100",
+                            dom && "bg-slate-100 text-slate-400",
+                          )}
+                        >
+                          <div className="font-semibold">{diaDelMes(f)}</div>
+                          <div className="text-[9px] font-normal text-muted-foreground">
+                            {diaSem(f)}
+                          </div>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {indicadoresMes.indicadores.map((ind) => (
+                    <tr key={ind.id} className="border-b last:border-0">
+                      <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] truncate bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900" title={ind.nombre}>
+                        {ind.nombre}
+                      </td>
+                      <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
+                        {ind.unidad ?? "—"}
+                      </td>
+                      <td className="sticky left-[220px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums">
+                        {ind.meta == null ? "—" : formatearValor(ind.meta)}
+                      </td>
+                      <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                        {ind.mtd == null ? "—" : formatearValor(ind.mtd)}
+                      </td>
+                      {fechasFiltradas.map((f) => {
+                        const cell = ind.valores[f] ?? null
+                        const esHoy = f === detalle.fecha
+                        const dom = esFinDeSemana(f)
+                        const reunionIdEnFecha =
+                          indicadoresMes.reuniones_por_fecha[f] ?? null
+
+                        // Día sin reunión (futuro o no permitido)
+                        if (reunionIdEnFecha === null) {
+                          return (
+                            <td
+                              key={f}
+                              className={cn(
+                                "px-2 py-1 text-center align-middle text-sm text-muted-foreground",
+                                esHoy && "bg-blue-50",
+                                dom && "bg-slate-50",
+                              )}
+                            >
+                              —
+                            </td>
+                          )
+                        }
+
+                        // Es la reunión actual → editable inline
+                        if (reunionIdEnFecha === detalle.id) {
+                          return (
+                            <td
+                              key={f}
+                              className={cn(
+                                "px-1 py-1 align-middle",
+                                esHoy ? "bg-blue-100" : "bg-blue-50",
+                              )}
+                            >
+                              <ValorInput
+                                indicadorId={ind.id}
+                                initial={cell?.valor ?? null}
+                                reunionId={detalle.id}
+                                puedeEditar={puedeEditarTablero}
+                                onChanged={refrescar}
+                              />
+                            </td>
+                          )
+                        }
+
+                        // Otra reunión → read-only
+                        return (
+                          <td
+                            key={f}
+                            className={cn(
+                              "px-2 py-1 text-center align-middle text-sm tabular-nums text-slate-500",
+                              esHoy && "bg-blue-50",
+                              dom && "bg-slate-50",
+                            )}
+                            title={`Cargado en otra reunión (${formatFechaCorta(f)})`}
+                          >
+                            {cell?.valor == null
+                              ? "—"
+                              : formatearValor(cell.valor)}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ETAPA 3: ACTION LOG */}
+      <Card className="border-emerald-200 bg-emerald-50/30">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
+            <ListTodo className="size-5 text-emerald-600" />
+            Etapa 3 — Action Log ({actividades.length})
+          </CardTitle>
+          {puedeEditar && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setActividadEditando(null)
+                setOpenActForm(true)
+              }}
+            >
+              <Plus className="mr-2 size-4" />
+              Nueva actividad
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="px-0">
+          {actividades.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sin actividades registradas.
+              </p>
+              {puedeEditar && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    setActividadEditando(null)
+                    setOpenActForm(true)
+                  }}
+                >
+                  <Plus className="mr-2 size-4" />
+                  Crear primera
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
+                <span className="mr-1 font-medium text-slate-600">Estado:</span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("todas")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "todas"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Todas ({actividades.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("no_comenzada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "no_comenzada"
+                      ? "border-slate-500 bg-slate-100 font-semibold text-slate-800"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  No comenzadas ({conteosActividades.no_comenzada})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("en_curso")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "en_curso"
+                      ? "border-amber-500 bg-amber-50 font-semibold text-amber-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  En curso ({conteosActividades.en_curso})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("cerrada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "cerrada"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Cerradas ({conteosActividades.cerrada})
+                </button>
+              </div>
+              {actividadesFiltradas.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Ninguna actividad coincide con este filtro.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setFiltroEstado("todas")}
+                  >
+                    Ver todas
+                  </Button>
+                </div>
+              ) : (
+                <ul className="border-y bg-white">
+                  {actividadesFiltradas.map((act) => (
+                    <ActividadListItem
+                      key={act.id}
+                      actividad={act}
+                      reunionId={detalle.id}
+                      puedeEditar={puedeEditar}
+                      currentProfileId={currentProfileId}
+                      onEdit={() => {
+                        setActividadEditando(act)
+                        setOpenActForm(true)
+                      }}
+                      onResponder={() => setActividadRespondiendo(act)}
+                      onChanged={refrescar}
+                      onAbrirArchivo={abrirArchivo}
+                    />
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Subdialogs */}
+      <ActividadFormDialog
+        open={openActForm}
+        onOpenChange={(o) => {
+          setOpenActForm(o)
+          if (!o) setActividadEditando(null)
+        }}
+        reunionId={detalle.id}
+        actividad={actividadEditando}
+        responsables={responsables}
+        onSaved={refrescar}
+      />
+      <ConfigurarIndicadoresDialog
+        open={openConfigInd}
+        onOpenChange={setOpenConfigInd}
+        tipo={detalle.tipo}
+        tipoLabel={tipoLabel}
+        onSaved={refrescar}
+      />
+
+      {actividadRespondiendo && (
+        <ResponderActividadDialog
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setActividadRespondiendo(null)
+          }}
+          actividad={actividadRespondiendo}
+          onSaved={refrescar}
+        />
+      )}
+    </div>
+  )
+}

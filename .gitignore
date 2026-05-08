@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env*.local
+
+# excluidos: rompen build / sensibles / temporales
+src/app/(dashboard)/5s/mis-acciones/
+credenciales-empleados.pdf
+*credenciales*.pdf
+supabase/.temp/

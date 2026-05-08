@@ -26,6 +26,8 @@ import {
   ExternalLink,
   AlertCircle,
   Eye,
+  FileDown,
+  Loader2,
   FolderOpen,
   GraduationCap,
   Calendar,
@@ -85,6 +87,7 @@ import {
   createEvidencia,
   deleteEvidencia,
 } from "@/actions/gestion"
+import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import type { PreguntaGestionFull } from "@/actions/gestion"
 import type {
   Pilar,
@@ -96,6 +99,7 @@ import type {
   EstadoPlan,
   PrioridadPlan,
   CapacitacionParaPregunta,
+  DpoArchivo,
 } from "@/types/database"
 
 const SCORE_COLORS: Record<number, string> = {
@@ -1096,13 +1100,36 @@ export function PreguntaGestionClient({
   pilar,
   pregunta,
   capacitaciones = [],
+  archivos = [],
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
   capacitaciones?: CapacitacionParaPregunta[]
+  archivos?: DpoArchivo[]
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
+  const [archivoLoadingId, setArchivoLoadingId] = useState<string | null>(null)
+
+  async function abrirArchivo(archivo_id: string) {
+    setArchivoLoadingId(archivo_id)
+    try {
+      const result = await getDownloadUrl({ archivo_id })
+      if ("error" in result) {
+        alert(`Error abriendo archivo: ${result.error}`)
+        return
+      }
+      window.open(result.data.url, "_blank", "noopener,noreferrer")
+    } finally {
+      setArchivoLoadingId(null)
+    }
+  }
+
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  }
 
   const criterio = pregunta.puntaje_criterio as Record<string, string> | null
   const puntaje = pregunta.puntaje_actual
@@ -1160,7 +1187,7 @@ export function PreguntaGestionClient({
           className="shrink-0 border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800"
           render={
             <Link
-              href={`/evidencia/${pilarSlug(pilar.nombre)}/${pregunta.numero.replace(/\./g, "-")}`}
+              href={`/evidencia/${pilarSlug(pilar.nombre)}/${pregunta.numero.replace(/\./g, "-")}?from=pilar&pilarId=${pilar.id}&preguntaId=${pregunta.id}`}
             />
           }
         >
@@ -1257,6 +1284,75 @@ export function PreguntaGestionClient({
                 <p className="mt-2 whitespace-pre-line leading-relaxed">{pregunta.como_verificar}</p>
               )}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Archivos DPO cargados (vista rápida) */}
+      <Card size="sm">
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <FolderOpen className="h-4 w-4 text-amber-600" />
+            Archivos cargados
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-600">
+              {archivos.length}
+            </span>
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            render={
+              <Link
+                href={`/evidencia/${pilarSlug(pilar.nombre)}/${pregunta.numero.replace(/\./g, "-")}?from=pilar&pilarId=${pilar.id}&preguntaId=${pregunta.id}`}
+              />
+            }
+          >
+            Gestionar
+            <ExternalLink className="ml-1 h-3 w-3" />
+          </Button>
+        </CardHeader>
+        <CardContent className="border-t pt-3">
+          {archivos.length === 0 ? (
+            <p className="py-2 text-center text-xs text-muted-foreground">
+              No hay archivos cargados para este punto.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {archivos.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-2 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {a.titulo}
+                      </p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {a.file_name} · {formatBytes(a.current_file_size)} · v
+                        {a.current_version}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => abrirArchivo(a.id)}
+                    disabled={archivoLoadingId === a.id}
+                    title="Ver archivo"
+                  >
+                    {archivoLoadingId === a.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>

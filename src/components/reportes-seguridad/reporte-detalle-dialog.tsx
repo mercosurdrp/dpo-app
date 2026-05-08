@@ -29,6 +29,8 @@ import {
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
   REPORTE_SEGURIDAD_PUESTO_LABELS,
+  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
   type ReporteSeguridadDetalle,
   type UserRole,
 } from "@/types/database"
@@ -112,7 +114,7 @@ export function ReporteDetalleDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Reporte de seguridad</DialogTitle>
           </DialogHeader>
@@ -145,13 +147,21 @@ export function ReporteDetalleDialog({
                     {REPORTE_SEGURIDAD_AREA_LABELS[detalle.area]}
                   </Badge>
                 )}
-                {esAccIncid && detalle.sif && (
+                {detalle.tipo_sif && (
                   <Badge
                     variant="secondary"
                     className="bg-red-100 text-red-700"
                   >
                     <AlertTriangle className="mr-1 size-3" />
-                    Potencial SIF
+                    {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[detalle.tipo_sif]}
+                  </Badge>
+                )}
+                {detalle.tipo_accidente && (
+                  <Badge
+                    variant="secondary"
+                    className="bg-orange-100 text-orange-700"
+                  >
+                    {REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS[detalle.tipo_accidente]}
                   </Badge>
                 )}
               </div>
@@ -207,7 +217,7 @@ export function ReporteDetalleDialog({
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Datos del damnificado
                   </p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
                     <div>
                       <span className="text-xs text-muted-foreground">Nombre:</span>{" "}
                       <span>{detalle.damnificado_nombre ?? "—"}</span>
@@ -230,18 +240,6 @@ export function ReporteDetalleDialog({
                           : detalle.dentro_cd
                             ? "Dentro del CD"
                             : "Fuera del CD"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground">
-                        Potencial SIF:
-                      </span>{" "}
-                      <span>
-                        {detalle.sif === null || detalle.sif === undefined
-                          ? "—"
-                          : detalle.sif
-                            ? "Sí"
-                            : "No"}
                       </span>
                     </div>
                   </div>

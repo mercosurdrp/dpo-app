@@ -16,11 +16,15 @@ import {
   Users,
   Settings,
   Lightbulb,
+  ScrollText,
   ShieldAlert,
   Target,
+  CalendarCheck,
+  Wallet,
   Menu,
   X,
   LogOut,
+  Presentation,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -63,6 +67,12 @@ const navItems: NavItem[] = [
     icon: <BarChart3 className="size-5" />,
   },
   {
+    label: "Presupuesto",
+    href: "/presupuesto",
+    icon: <Wallet className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
     label: "Asistencia",
     href: "/asistencia",
     icon: <Fingerprint className="size-5" />,
@@ -73,9 +83,25 @@ const navItems: NavItem[] = [
     icon: <Truck className="size-5" />,
   },
   {
+    label: "Orden de salida",
+    href: "/orden-salida",
+    icon: <CalendarCheck className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
+    label: "Mi orden del día",
+    href: "/mi-orden-del-dia",
+    icon: <CalendarCheck className="size-5" />,
+  },
+  {
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Reuniones",
+    href: "/reuniones",
+    icon: <Presentation className="size-5" />,
   },
   {
     label: "Reportes de Seguridad",
@@ -86,6 +112,18 @@ const navItems: NavItem[] = [
     label: "5S",
     href: "/5s",
     icon: <Target className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
+    label: "Requisitos Legales",
+    href: "/requisitos-legales",
+    icon: <ScrollText className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
+    label: "Riesgos Externos",
+    href: "/riesgos-externos",
+    icon: <ShieldAlert className="size-5" />,
     hideForEmpleado: true,
   },
   {

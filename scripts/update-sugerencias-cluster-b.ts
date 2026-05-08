@@ -33,7 +33,7 @@ interface Update {
 }
 
 // Reemplazar tras hacer el commit del Cluster B.
-const COMMIT_PRINCIPAL = "<COMMIT_HASH>"
+const COMMIT_PRINCIPAL = "35e0803"
 const FECHA_DEPLOY = "25/04/2026"
 
 const UPDATES: Update[] = [

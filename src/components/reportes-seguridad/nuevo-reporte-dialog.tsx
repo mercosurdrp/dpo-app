@@ -28,11 +28,15 @@ import {
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   REPORTE_SEGURIDAD_AREA_LABELS,
   REPORTE_SEGURIDAD_PUESTO_LABELS,
+  REPORTE_SEGURIDAD_TIPO_SIF_LABELS,
+  REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS,
   type ReporteSeguridad,
   type ReporteSeguridadTipo,
   type ReporteSeguridadLocalidad,
   type ReporteSeguridadArea,
   type ReporteSeguridadPuesto,
+  type ReporteSeguridadTipoSif,
+  type ReporteSeguridadTipoAccidente,
 } from "@/types/database"
 
 const BUCKET = "reportes-seguridad"
@@ -71,6 +75,22 @@ const PUESTOS: ReporteSeguridadPuesto[] = [
   "otro",
 ]
 
+const TIPOS_SIF: ReporteSeguridadTipoSif[] = [
+  "sif_actual",
+  "sif_potencial",
+  "sif_precursor",
+]
+
+const TIPOS_ACCIDENTE: ReporteSeguridadTipoAccidente[] = [
+  "fat",
+  "lti",
+  "mdi",
+  "mti",
+  "fai",
+  "sio",
+  "sho",
+]
+
 const MAX_FILE_BYTES = 25 * 1024 * 1024 // 25MB por archivo
 
 function formatBytes(n: number): string {
@@ -95,7 +115,6 @@ function sanitizeFileName(name: string): string {
 }
 
 type DentroCD = "" | "dentro" | "fuera"
-type SifValue = "" | "si" | "no"
 
 export function NuevoReporteDialog({
   open,
@@ -126,7 +145,10 @@ export function NuevoReporteDialog({
     ReporteSeguridadPuesto | ""
   >("")
   const [dentroCD, setDentroCD] = useState<DentroCD>("")
-  const [sif, setSif] = useState<SifValue>("")
+  const [tipoSif, setTipoSif] = useState<ReporteSeguridadTipoSif | "">("")
+  const [tipoAccidente, setTipoAccidente] = useState<
+    ReporteSeguridadTipoAccidente | ""
+  >("")
 
   const [quienQue, setQuienQue] = useState<string>("")
 
@@ -155,9 +177,8 @@ export function NuevoReporteDialog({
             ? "fuera"
             : ""
       )
-      setSif(
-        reporte.sif === true ? "si" : reporte.sif === false ? "no" : ""
-      )
+      setTipoSif(reporte.tipo_sif ?? "")
+      setTipoAccidente(reporte.tipo_accidente ?? "")
       setQuienQue(reporte.quien_que ?? "")
       setFiles([])
     } else {
@@ -177,7 +198,8 @@ export function NuevoReporteDialog({
     setDamnificadoNombre("")
     setDamnificadoPuesto("")
     setDentroCD("")
-    setSif("")
+    setTipoSif("")
+    setTipoAccidente("")
     setQuienQue("")
     setFiles([])
     if (fileInputRef.current) fileInputRef.current.value = ""
@@ -245,6 +267,16 @@ export function NuevoReporteDialog({
       toast.error("Completá la descripción")
       return
     }
+    if (tipo === "accidente") {
+      if (!tipoSif) {
+        toast.error("Tipo de SIF es obligatorio para accidentes")
+        return
+      }
+      if (!tipoAccidente) {
+        toast.error("Tipo de Accidente es obligatorio para accidentes")
+        return
+      }
+    }
 
     const input = {
       tipo,
@@ -266,7 +298,8 @@ export function NuevoReporteDialog({
             ? false
             : null
         : null,
-      sif: esAccIncid ? (sif === "si" ? true : sif === "no" ? false : null) : null,
+      tipo_sif: (tipoSif || null) as ReporteSeguridadTipoSif | null,
+      tipo_accidente: (tipoAccidente || null) as ReporteSeguridadTipoAccidente | null,
       quien_que: !esAccIncid ? quienQue || null : null,
     }
 
@@ -347,7 +380,7 @@ export function NuevoReporteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Editar reporte de seguridad" : "Nuevo reporte de seguridad"}
@@ -447,13 +480,63 @@ export function NuevoReporteDialog({
             </div>
           </div>
 
+          {/* Clasificación SIF / Accidente — disponible para todos los tipos */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>
+                  Tipo de SIF{tipo === "accidente" ? " *" : ""}
+                </Label>
+                <Select
+                  value={tipoSif}
+                  onValueChange={(v) =>
+                    setTipoSif((v ?? "") as ReporteSeguridadTipoSif | "")
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPOS_SIF.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {REPORTE_SEGURIDAD_TIPO_SIF_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>
+                  Tipo de Accidente{tipo === "accidente" ? " *" : ""}
+                </Label>
+                <Select
+                  value={tipoAccidente}
+                  onValueChange={(v) =>
+                    setTipoAccidente(
+                      (v ?? "") as ReporteSeguridadTipoAccidente | ""
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPOS_ACCIDENTE.map((a) => (
+                      <SelectItem key={a} value={a}>
+                        {REPORTE_SEGURIDAD_TIPO_ACCIDENTE_LABELS[a]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
           {/* Campos específicos */}
           {esAccIncid ? (
             <div className="space-y-3 rounded-md border bg-muted/20 p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Datos del damnificado
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <Label>Nombre</Label>
                   <Input
@@ -483,8 +566,6 @@ export function NuevoReporteDialog({
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label>¿Dentro del CD?</Label>
                   <Select
@@ -497,21 +578,6 @@ export function NuevoReporteDialog({
                     <SelectContent>
                       <SelectItem value="dentro">Dentro del CD</SelectItem>
                       <SelectItem value="fuera">Fuera del CD</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Potencial SIF (lesión grave / fatalidad)</Label>
-                  <Select
-                    value={sif}
-                    onValueChange={(v) => setSif((v ?? "") as SifValue)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="si">Sí</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -11,13 +11,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Allow static files, auth API, and external API routes
+  // Allow static files, auth API, external API routes, and Vercel cron endpoints
+  // (los crons validan su propio Bearer token; no deben pasar por auth de cookie)
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/asistencia") ||
-    pathname.startsWith("/api/rechazos")
+    pathname.startsWith("/api/rechazos") ||
+    pathname === "/api/reuniones/cron-crear-diarias" ||
+    pathname === "/api/requisitos-legales/cron-alertas"
   ) {
     return NextResponse.next()
   }

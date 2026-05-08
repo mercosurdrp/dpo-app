@@ -13,6 +13,8 @@ import type {
   ReporteSeguridadLocalidad,
   ReporteSeguridadArea,
   ReporteSeguridadPuesto,
+  ReporteSeguridadTipoSif,
+  ReporteSeguridadTipoAccidente,
 } from "@/types/database"
 
 const DASHBOARD_PATH = "/reportes-seguridad"
@@ -44,6 +46,8 @@ interface ReporteInput {
   damnificado_puesto?: ReporteSeguridadPuesto | null
   dentro_cd?: boolean | null
   sif?: boolean | null
+  tipo_sif?: ReporteSeguridadTipoSif | null
+  tipo_accidente?: ReporteSeguridadTipoAccidente | null
   quien_que?: string | null
 }
 
@@ -78,6 +82,8 @@ function normalizeReporteFields(input: ReporteInput) {
     damnificado_puesto: esAccIncid ? input.damnificado_puesto || null : null,
     dentro_cd: esAccIncid ? input.dentro_cd ?? null : null,
     sif: esAccIncid ? input.sif ?? null : null,
+    tipo_sif: input.tipo_sif ?? null,
+    tipo_accidente: input.tipo_accidente ?? null,
     quien_que: !esAccIncid ? input.quien_que?.trim() || null : null,
   }
 }
@@ -121,6 +127,8 @@ export async function getReportes(
       damnificado_puesto: row.damnificado_puesto,
       dentro_cd: row.dentro_cd,
       sif: row.sif,
+      tipo_sif: row.tipo_sif,
+      tipo_accidente: row.tipo_accidente,
       quien_que: row.quien_que,
       creado_por: row.creado_por,
       created_at: row.created_at,
@@ -199,6 +207,8 @@ export async function getReporte(
       damnificado_puesto: row.damnificado_puesto,
       dentro_cd: row.dentro_cd,
       sif: row.sif,
+      tipo_sif: row.tipo_sif,
+      tipo_accidente: row.tipo_accidente,
       quien_que: row.quien_que,
       creado_por: row.creado_por,
       created_at: row.created_at,

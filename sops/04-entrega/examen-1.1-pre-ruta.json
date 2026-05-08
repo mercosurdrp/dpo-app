@@ -1,0 +1,204 @@
+{
+  "titulo": "Examen SOP 1.1 — Procesos de Pre-Ruta",
+  "descripcion": "Evaluación de conocimiento sobre el SOP de Pre-Ruta 2025. Aprobación: 70% (mínimo 11/15 correctas).",
+  "sop": "1.1 - SOP - Procesos de Pre - Ruta 2025",
+  "pilar": "Entrega",
+  "umbral_aprobacion": 70,
+  "preguntas": [
+    {
+      "numero": 1,
+      "categoria": "Ingreso y Puntualidad",
+      "pregunta": "¿A qué hora deben ingresar los empleados al CD como máximo?",
+      "opciones": [
+        "A) 06:30 a.m.",
+        "B) 07:00 a.m.",
+        "C) 07:30 a.m.",
+        "D) 08:00 a.m."
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "El ingreso de los empleados es previo a las 07:00 a.m."
+    },
+    {
+      "numero": 2,
+      "categoria": "Ingreso y Puntualidad",
+      "pregunta": "¿Cuál es el objetivo de horario de salida del CD para iniciar la ruta?",
+      "opciones": [
+        "A) 07:00 a.m.",
+        "B) 07:15 a.m.",
+        "C) 07:30 a.m.",
+        "D) 08:00 a.m."
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "El objetivo de salida del CD para iniciar la ruta es a las 07:30 a.m."
+    },
+    {
+      "numero": 3,
+      "categoria": "Ingreso y Puntualidad",
+      "pregunta": "¿Cómo se registra el horario de ingreso del personal al CD?",
+      "opciones": [
+        "A) Firma en planilla manual",
+        "B) Lector biométrico",
+        "C) Aplicación móvil",
+        "D) Aviso verbal al supervisor"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "Se registra el horario de ingreso del personal utilizando un lector biométrico."
+    },
+    {
+      "numero": 4,
+      "categoria": "Reunión Matinal",
+      "pregunta": "¿Cuál es la duración máxima de la reunión matinal?",
+      "opciones": [
+        "A) 5 minutos",
+        "B) 10 minutos",
+        "C) 12 minutos",
+        "D) 15 minutos"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "La reunión matinal tiene una duración máxima de 12 minutos (finaliza a las 7:12hs)."
+    },
+    {
+      "numero": 5,
+      "categoria": "Reunión Matinal",
+      "pregunta": "¿Cuál de los siguientes temas NO se trata habitualmente en la reunión matinal?",
+      "opciones": [
+        "A) Seguridad y disponibilidad de EPPs",
+        "B) KPIs de rechazos y tiempos de entrega",
+        "C) Liquidación de sueldos del personal",
+        "D) Novedades de ruta y estado de clientes"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "En la matinal se tratan seguridad, KPIs, flota, novedades de ruta, calidad, capacitación e indicadores de faltantes. La liquidación de sueldos no es tema de la reunión."
+    },
+    {
+      "numero": 6,
+      "categoria": "Reunión Matinal",
+      "pregunta": "¿Cómo participan de la matinal los equipos que no pueden asistir presencialmente?",
+      "opciones": [
+        "A) No participan, quedan eximidos",
+        "B) A través de un grupo de WhatsApp",
+        "C) Por videollamada con el SDR",
+        "D) Leen un resumen al día siguiente"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "El personal que no puede incorporarse a la matinal de manera presencial cuenta con un grupo de WhatsApp para seguir las novedades de manera virtual."
+    },
+    {
+      "numero": 7,
+      "categoria": "Documentación",
+      "pregunta": "¿Qué documentación entrega el SDR al chofer antes de la reunión?",
+      "opciones": [
+        "A) Solo las facturas",
+        "B) Planilla de carga, composición de carga, facturas, Nota de Crédito y comodatos",
+        "C) Hoja de ruta y mapa de la zona",
+        "D) Listado de clientes y precios"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "El SDR entrega al chofer la documentación del reparto: planilla de carga, composición de carga, facturas, Nota de Crédito y comodatos."
+    },
+    {
+      "numero": 8,
+      "categoria": "Llaves",
+      "pregunta": "¿Dónde se resguardan las llaves de los camiones y cajas fuertes?",
+      "opciones": [
+        "A) Cada chofer conserva su llave",
+        "B) En la garita de seguridad",
+        "C) En la oficina de depósito y nave 1 respectivamente",
+        "D) En la sala de reuniones"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "Las llaves de las unidades se mantienen en la oficina de depósito y las de cajas fuertes en nave 1."
+    },
+    {
+      "numero": 9,
+      "categoria": "Verificación de Carga",
+      "pregunta": "¿Cuántos controles de carga se realizan antes de salir a ruta?",
+      "opciones": [
+        "A) Uno: el chofer verifica la carga",
+        "B) Dos: controlador en zona de stay + chofer/ayudante",
+        "C) Tres: depósito + controlador + chofer",
+        "D) Ninguno, la carga sale directo del picking"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "El primer control se realiza en la zona de stay por el controlador. El segundo control lo realizan el chofer/ayudante verificando disposición y seguridad de la carga."
+    },
+    {
+      "numero": 10,
+      "categoria": "Verificación de Carga",
+      "pregunta": "¿Qué se controla en el primer control de carga en la zona de stay?",
+      "opciones": [
+        "A) Solo la cantidad de bultos",
+        "B) Productos, calibres, calidad y cantidad",
+        "C) Temperatura de los productos",
+        "D) Peso total del camión"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "Se controlan: productos, calibres, calidad (que no estén pinchados, achatados, mojados, packaging en perfecto estado) y cantidad."
+    },
+    {
+      "numero": 11,
+      "categoria": "Checklist de Liberación",
+      "pregunta": "¿Qué herramienta se utiliza para realizar el checklist de liberación de la unidad?",
+      "opciones": [
+        "A) Planilla en papel",
+        "B) Foxtrot",
+        "C) CloudFleet",
+        "D) Google Forms"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "Para el checklist de liberación se utiliza la herramienta CloudFleet."
+    },
+    {
+      "numero": 12,
+      "categoria": "Checklist de Liberación",
+      "pregunta": "¿Cuál de los siguientes es un punto CRÍTICO del checklist de liberación que impide la salida del camión si no se cumple?",
+      "opciones": [
+        "A) 5S de la flota",
+        "B) Calibración de neumáticos",
+        "C) Estado y funcionamiento del cinturón de seguridad",
+        "D) Carro para transportar mercadería"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "Entre los puntos críticos está el estado y funcionamiento del cinturón de seguridad, junto con frenos, luces, documentación completa, matafuegos, EPPs, entre otros."
+    },
+    {
+      "numero": 13,
+      "categoria": "Seguridad",
+      "pregunta": "¿Cuáles son los EPPs obligatorios para el equipo de distribución?",
+      "opciones": [
+        "A) Casco, chaleco y guantes",
+        "B) Protector ocular, botines de seguridad, ropa con elementos refractarios, guantes anticortes y faja lumbar",
+        "C) Solo botines de seguridad y guantes",
+        "D) Chaleco reflectante y casco"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "Los EPP son: protector ocular, botines de seguridad, ropa de trabajo con elementos refractarios, guantes anticortes y faja lumbar."
+    },
+    {
+      "numero": 14,
+      "categoria": "Seguridad",
+      "pregunta": "¿Por qué solo los choferes pueden ingresar a nave 2 para trasladar el camión?",
+      "opciones": [
+        "A) Porque los ayudantes no tienen licencia de conducir",
+        "B) Por razones de seguridad, para evitar situaciones de riesgo",
+        "C) Porque el seguro no cubre a los ayudantes",
+        "D) Porque los ayudantes deben controlar la carga"
+      ],
+      "respuesta_correcta": "B",
+      "justificacion": "Por razones de seguridad y evitar situaciones de riesgo, sólo los choferes pueden ingresar a nave 2, debiendo el resto esperar en pasillo peatonal."
+    },
+    {
+      "numero": 15,
+      "categoria": "TML y KPIs",
+      "pregunta": "Según la tabla del SOP, ¿cuál es el TML objetivo total del proceso de pre-ruta?",
+      "opciones": [
+        "A) 15 minutos",
+        "B) 20 minutos",
+        "C) 25 minutos",
+        "D) 30 minutos"
+      ],
+      "respuesta_correcta": "C",
+      "justificacion": "La tabla del SOP desglosa: documentación (1 min) + llave (1 min) + reunión (12 min) + traslado (1 min) + verificación carga (5 min) + checklist (5 min) = 25 minutos total."
+    }
+  ]
+}

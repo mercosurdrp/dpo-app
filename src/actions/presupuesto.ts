@@ -1,0 +1,798 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+import { requireAuth, getProfile } from "@/lib/session"
+import type {
+  Profile,
+  PresupuestoAnual,
+  PresupuestoMensual,
+  PresupuestoTarea,
+  PresupuestoTareaConResponsable,
+  EstadoPresupuestoTarea,
+} from "@/types/database"
+
+const BUCKET = "presupuestos"
+const REVALIDATE_PATH = "/presupuesto"
+
+type Result<T> = { data: T } | { error: string }
+
+// =============================================
+// Helpers
+// =============================================
+
+async function requireEditor(): Promise<Profile> {
+  const profile = await requireAuth()
+  if (!["admin", "supervisor", "admin_rrhh"].includes(profile.role)) {
+    throw new Error("No tenés permiso para editar el presupuesto")
+  }
+  return profile
+}
+
+function cleanFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_")
+}
+
+function calcularDesvio(
+  presup: number | null,
+  real: number | null,
+): number | null {
+  if (presup === null || presup === 0) return null
+  if (real === null) return null
+  return ((real - presup) / presup) * 100
+}
+
+// Inserta una notificación in-app para el responsable asignado.
+// Internal helper, no exportada como server action.
+async function notificarAsignacion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  responsableId: string,
+  tarea: { rubro: string },
+): Promise<void> {
+  try {
+    await supabase.from("notificaciones").insert({
+      user_id: responsableId,
+      tipo: "presupuesto_tarea_asignada",
+      titulo: `Nueva tarea de análisis: ${tarea.rubro}`,
+      mensaje: "Te asignaron una tarea de análisis de presupuesto.",
+      link: REVALIDATE_PATH,
+    })
+  } catch {
+    // No bloquear la operación si la notificación falla.
+  }
+}
+
+// =============================================
+// Lectura
+// =============================================
+
+export async function getAniosDisponibles(): Promise<Result<number[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("presupuestos_anuales")
+      .select("anio")
+      .order("anio", { ascending: false })
+    if (error) return { error: error.message }
+
+    const anios = new Set<number>()
+    for (const row of (data ?? []) as { anio: number }[]) {
+      anios.add(row.anio)
+    }
+    anios.add(new Date().getFullYear())
+
+    return {
+      data: Array.from(anios).sort((a, b) => b - a),
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando años",
+    }
+  }
+}
+
+export async function getPresupuestoAnual(
+  anio: number,
+): Promise<Result<PresupuestoAnual | null>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("presupuestos_anuales")
+      .select("*")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (error) return { error: error.message }
+    return { data: (data as PresupuestoAnual | null) ?? null }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando presupuesto anual",
+    }
+  }
+}
+
+export async function listMensuales(
+  anio: number,
+): Promise<Result<PresupuestoMensual[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("presupuestos_mensuales")
+      .select("*")
+      .eq("anio", anio)
+      .order("mes", { ascending: true })
+    if (error) return { error: error.message }
+
+    const existentes = new Map<number, PresupuestoMensual>()
+    for (const row of (data ?? []) as PresupuestoMensual[]) {
+      existentes.set(row.mes, row)
+    }
+
+    const result: PresupuestoMensual[] = []
+    for (let mes = 1; mes <= 12; mes++) {
+      const existente = existentes.get(mes)
+      if (existente) {
+        result.push(existente)
+      } else {
+        result.push({
+          id: "",
+          anio,
+          mes,
+          archivo_url: null,
+          archivo_nombre: null,
+          observaciones: null,
+          created_by: null,
+          created_at: "",
+          updated_at: "",
+        })
+      }
+    }
+
+    return { data: result }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando estados mensuales",
+    }
+  }
+}
+
+export async function listTareas(
+  anio: number,
+): Promise<Result<PresupuestoTareaConResponsable[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("presupuestos_tareas")
+      .select(
+        "*, responsable:profiles!presupuestos_tareas_responsable_id_fkey(id, nombre, email)",
+      )
+      .eq("anio", anio)
+      .order("mes", { ascending: true })
+      .order("created_at", { ascending: true })
+
+    if (error) return { error: error.message }
+
+    const enriched: PresupuestoTareaConResponsable[] = (data ?? []).map(
+      (row) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = row as any
+        const presup =
+          r.monto_presupuestado !== null && r.monto_presupuestado !== undefined
+            ? Number(r.monto_presupuestado)
+            : null
+        const real =
+          r.monto_real !== null && r.monto_real !== undefined
+            ? Number(r.monto_real)
+            : null
+        return {
+          id: r.id,
+          anio: r.anio,
+          mes: r.mes,
+          rubro: r.rubro,
+          monto_presupuestado: presup,
+          monto_real: real,
+          descripcion: r.descripcion,
+          responsable_id: r.responsable_id,
+          fecha_limite: r.fecha_limite,
+          estado: r.estado as EstadoPresupuestoTarea,
+          evidencia_url: r.evidencia_url,
+          evidencia_nombre: r.evidencia_nombre,
+          justificacion: r.justificacion,
+          completada_at: r.completada_at,
+          created_by: r.created_by,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          responsable_nombre: r.responsable?.nombre ?? null,
+          responsable_email: r.responsable?.email ?? null,
+          desvio_pct: calcularDesvio(presup, real),
+        }
+      },
+    )
+
+    return { data: enriched }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando tareas",
+    }
+  }
+}
+
+export async function getSignedUrl(
+  archivoUrl: string,
+): Promise<Result<{ url: string }>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(archivoUrl, 600)
+    if (error || !data) {
+      return { error: error?.message ?? "No se pudo firmar URL" }
+    }
+    return { data: { url: data.signedUrl } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error firmando URL",
+    }
+  }
+}
+
+export async function listResponsablesPosibles(): Promise<
+  Result<{ id: string; nombre: string; email: string }[]>
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, nombre, email")
+      .eq("active", true)
+      .order("nombre")
+    if (error) return { error: error.message }
+    return {
+      data: (data ?? []) as { id: string; nombre: string; email: string }[],
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando usuarios",
+    }
+  }
+}
+
+export async function puedeEditarPresupuesto(): Promise<boolean> {
+  const profile = await getProfile()
+  if (!profile) return false
+  return ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+}
+
+// =============================================
+// Mutaciones — archivos
+// =============================================
+
+export async function subirPresupuestoAnual(
+  formData: FormData,
+): Promise<Result<PresupuestoAnual>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const anioStr = String(formData.get("anio") ?? "").trim()
+    const observaciones =
+      String(formData.get("observaciones") ?? "").trim() || null
+    const file = formData.get("archivo") as File | null
+
+    if (!anioStr) return { error: "El año es obligatorio" }
+    const anio = parseInt(anioStr, 10)
+    if (Number.isNaN(anio)) return { error: "Año inválido" }
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return { error: "Subí el archivo del presupuesto anual" }
+    }
+
+    // Buscar archivo existente para borrarlo
+    const { data: actual } = await supabase
+      .from("presupuestos_anuales")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+
+    const cleanName = cleanFileName(file.name)
+    const path = `${anio}/anual-${Date.now()}-${cleanName}`
+    const arrayBuffer = await file.arrayBuffer()
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, arrayBuffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
+
+    const { data, error } = await supabase
+      .from("presupuestos_anuales")
+      .upsert(
+        {
+          anio,
+          archivo_url: path,
+          archivo_nombre: file.name,
+          observaciones,
+          created_by: profile.id,
+        },
+        { onConflict: "anio" },
+      )
+      .select("*")
+      .single()
+
+    if (error) {
+      await supabase.storage.from(BUCKET).remove([path])
+      return { error: error.message }
+    }
+
+    if (actual?.archivo_url && actual.archivo_url !== path) {
+      await supabase.storage.from(BUCKET).remove([actual.archivo_url])
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as PresupuestoAnual }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error subiendo presupuesto anual",
+    }
+  }
+}
+
+export async function subirEstadoMensual(
+  formData: FormData,
+): Promise<Result<PresupuestoMensual>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const anioStr = String(formData.get("anio") ?? "").trim()
+    const mesStr = String(formData.get("mes") ?? "").trim()
+    const observaciones =
+      String(formData.get("observaciones") ?? "").trim() || null
+    const file = formData.get("archivo") as File | null
+
+    if (!anioStr) return { error: "El año es obligatorio" }
+    if (!mesStr) return { error: "El mes es obligatorio" }
+    const anio = parseInt(anioStr, 10)
+    const mes = parseInt(mesStr, 10)
+    if (Number.isNaN(anio)) return { error: "Año inválido" }
+    if (Number.isNaN(mes) || mes < 1 || mes > 12) {
+      return { error: "Mes inválido (debe ser 1-12)" }
+    }
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return { error: "Subí el archivo del estado mensual" }
+    }
+
+    const { data: actual } = await supabase
+      .from("presupuestos_mensuales")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .eq("mes", mes)
+      .maybeSingle()
+
+    const cleanName = cleanFileName(file.name)
+    const path = `${anio}/mensual/${mes}-${Date.now()}-${cleanName}`
+    const arrayBuffer = await file.arrayBuffer()
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, arrayBuffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      })
+    if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
+
+    const { data, error } = await supabase
+      .from("presupuestos_mensuales")
+      .upsert(
+        {
+          anio,
+          mes,
+          archivo_url: path,
+          archivo_nombre: file.name,
+          observaciones,
+          created_by: profile.id,
+        },
+        { onConflict: "anio,mes" },
+      )
+      .select("*")
+      .single()
+
+    if (error) {
+      await supabase.storage.from(BUCKET).remove([path])
+      return { error: error.message }
+    }
+
+    if (actual?.archivo_url && actual.archivo_url !== path) {
+      await supabase.storage.from(BUCKET).remove([actual.archivo_url])
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as PresupuestoMensual }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error subiendo estado mensual",
+    }
+  }
+}
+
+export async function eliminarMensual(
+  anio: number,
+  mes: number,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const { data: actual } = await supabase
+      .from("presupuestos_mensuales")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .eq("mes", mes)
+      .maybeSingle()
+
+    const { error } = await supabase
+      .from("presupuestos_mensuales")
+      .delete()
+      .eq("anio", anio)
+      .eq("mes", mes)
+
+    if (error) return { error: error.message }
+
+    if (actual?.archivo_url) {
+      await supabase.storage.from(BUCKET).remove([actual.archivo_url])
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error eliminando estado mensual",
+    }
+  }
+}
+
+// =============================================
+// Mutaciones — tareas
+// =============================================
+
+export async function crearTarea(
+  formData: FormData,
+): Promise<Result<PresupuestoTarea>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const anioStr = String(formData.get("anio") ?? "").trim()
+    const mesStr = String(formData.get("mes") ?? "").trim()
+    const rubro = String(formData.get("rubro") ?? "").trim()
+    const montoPresupStr = String(
+      formData.get("monto_presupuestado") ?? "",
+    ).trim()
+    const montoRealStr = String(formData.get("monto_real") ?? "").trim()
+    const descripcion =
+      String(formData.get("descripcion") ?? "").trim() || null
+    const responsable_id =
+      String(formData.get("responsable_id") ?? "").trim() || null
+    const fecha_limite =
+      String(formData.get("fecha_limite") ?? "").trim() || null
+
+    if (!anioStr) return { error: "El año es obligatorio" }
+    if (!mesStr) return { error: "El mes es obligatorio" }
+    if (!rubro) return { error: "El rubro es obligatorio" }
+
+    const anio = parseInt(anioStr, 10)
+    const mes = parseInt(mesStr, 10)
+    if (Number.isNaN(anio)) return { error: "Año inválido" }
+    if (Number.isNaN(mes) || mes < 1 || mes > 12) {
+      return { error: "Mes inválido (debe ser 1-12)" }
+    }
+
+    let monto_presupuestado: number | null = null
+    if (montoPresupStr) {
+      const v = Number(montoPresupStr)
+      if (Number.isNaN(v)) return { error: "Monto presupuestado inválido" }
+      monto_presupuestado = v
+    }
+
+    let monto_real: number | null = null
+    if (montoRealStr) {
+      const v = Number(montoRealStr)
+      if (Number.isNaN(v)) return { error: "Monto real inválido" }
+      monto_real = v
+    }
+
+    const { data, error } = await supabase
+      .from("presupuestos_tareas")
+      .insert({
+        anio,
+        mes,
+        rubro,
+        monto_presupuestado,
+        monto_real,
+        descripcion,
+        responsable_id,
+        fecha_limite,
+        estado: "pendiente",
+        created_by: profile.id,
+      })
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    if (responsable_id) {
+      await notificarAsignacion(supabase, responsable_id, { rubro })
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as PresupuestoTarea }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error creando tarea",
+    }
+  }
+}
+
+export async function actualizarTarea(
+  id: string,
+  formData: FormData,
+): Promise<Result<PresupuestoTarea>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    if (!id) return { error: "ID de tarea inválido" }
+
+    const { data: actual, error: errActual } = await supabase
+      .from("presupuestos_tareas")
+      .select("responsable_id, rubro")
+      .eq("id", id)
+      .single()
+    if (errActual) return { error: errActual.message }
+
+    const anioStr = String(formData.get("anio") ?? "").trim()
+    const mesStr = String(formData.get("mes") ?? "").trim()
+    const rubro = String(formData.get("rubro") ?? "").trim()
+    const montoPresupStr = String(
+      formData.get("monto_presupuestado") ?? "",
+    ).trim()
+    const montoRealStr = String(formData.get("monto_real") ?? "").trim()
+    const descripcion =
+      String(formData.get("descripcion") ?? "").trim() || null
+    const responsable_id =
+      String(formData.get("responsable_id") ?? "").trim() || null
+    const fecha_limite =
+      String(formData.get("fecha_limite") ?? "").trim() || null
+    const estadoRaw = String(formData.get("estado") ?? "").trim()
+
+    if (!anioStr) return { error: "El año es obligatorio" }
+    if (!mesStr) return { error: "El mes es obligatorio" }
+    if (!rubro) return { error: "El rubro es obligatorio" }
+
+    const anio = parseInt(anioStr, 10)
+    const mes = parseInt(mesStr, 10)
+    if (Number.isNaN(anio)) return { error: "Año inválido" }
+    if (Number.isNaN(mes) || mes < 1 || mes > 12) {
+      return { error: "Mes inválido (debe ser 1-12)" }
+    }
+
+    let monto_presupuestado: number | null = null
+    if (montoPresupStr) {
+      const v = Number(montoPresupStr)
+      if (Number.isNaN(v)) return { error: "Monto presupuestado inválido" }
+      monto_presupuestado = v
+    }
+
+    let monto_real: number | null = null
+    if (montoRealStr) {
+      const v = Number(montoRealStr)
+      if (Number.isNaN(v)) return { error: "Monto real inválido" }
+      monto_real = v
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const update: Record<string, any> = {
+      anio,
+      mes,
+      rubro,
+      monto_presupuestado,
+      monto_real,
+      descripcion,
+      responsable_id,
+      fecha_limite,
+    }
+
+    if (
+      estadoRaw &&
+      ["pendiente", "en_progreso", "completada"].includes(estadoRaw)
+    ) {
+      update.estado = estadoRaw
+    }
+
+    const { data, error } = await supabase
+      .from("presupuestos_tareas")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    // Si cambió el responsable a uno nuevo, notificarlo
+    const responsableAnterior = actual?.responsable_id ?? null
+    if (
+      responsable_id &&
+      responsable_id !== responsableAnterior
+    ) {
+      await notificarAsignacion(supabase, responsable_id, { rubro })
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as PresupuestoTarea }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando tarea",
+    }
+  }
+}
+
+export async function responderTarea(
+  id: string,
+  formData: FormData,
+): Promise<Result<PresupuestoTarea>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!id) return { error: "ID de tarea inválido" }
+
+    const isEditor = ["admin", "supervisor", "admin_rrhh"].includes(
+      profile.role,
+    )
+
+    const { data: actual, error: errActual } = await supabase
+      .from("presupuestos_tareas")
+      .select("evidencia_url, responsable_id")
+      .eq("id", id)
+      .single()
+    if (errActual) return { error: errActual.message }
+
+    if (!isEditor && actual.responsable_id !== profile.id) {
+      return {
+        error:
+          "Solo el responsable o un editor puede responder esta tarea",
+      }
+    }
+
+    const justificacionRaw = String(
+      formData.get("justificacion") ?? "",
+    ).trim()
+    const justificacion = justificacionRaw || null
+    const file = formData.get("archivo") as File | null
+    const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
+
+    const tieneArchivo = file && file instanceof File && file.size > 0
+
+    if (!tieneArchivo && !justificacion) {
+      return {
+        error: "Subí evidencia o escribí una justificación",
+      }
+    }
+
+    let nuevoEstado: EstadoPresupuestoTarea | null = null
+    if (nuevoEstadoRaw) {
+      if (!["en_progreso", "completada"].includes(nuevoEstadoRaw)) {
+        return { error: "Estado inválido" }
+      }
+      nuevoEstado = nuevoEstadoRaw as EstadoPresupuestoTarea
+    }
+
+    let nuevaEvidenciaUrl: string | null = null
+    let nuevaEvidenciaNombre: string | null = null
+
+    if (tieneArchivo) {
+      const cleanName = cleanFileName(file.name)
+      const path = `tareas/${id}/v${Date.now()}-${cleanName}`
+      const arrayBuffer = await file.arrayBuffer()
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, arrayBuffer, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
+      nuevaEvidenciaUrl = path
+      nuevaEvidenciaNombre = file.name
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const update: Record<string, any> = {}
+    if (justificacion !== null) {
+      update.justificacion = justificacion
+    }
+    if (nuevaEvidenciaUrl) {
+      update.evidencia_url = nuevaEvidenciaUrl
+      update.evidencia_nombre = nuevaEvidenciaNombre
+    }
+    if (nuevoEstado) {
+      update.estado = nuevoEstado
+      if (nuevoEstado === "completada") {
+        update.completada_at = new Date().toISOString()
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("presupuestos_tareas")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single()
+
+    if (error) {
+      if (nuevaEvidenciaUrl) {
+        await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
+      }
+      return { error: error.message }
+    }
+
+    // Borrar evidencia anterior si subimos una nueva
+    if (nuevaEvidenciaUrl && actual?.evidencia_url) {
+      await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as PresupuestoTarea }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error respondiendo tarea",
+    }
+  }
+}
+
+export async function eliminarTarea(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    if (!id) return { error: "ID de tarea inválido" }
+
+    const { data: actual } = await supabase
+      .from("presupuestos_tareas")
+      .select("evidencia_url")
+      .eq("id", id)
+      .maybeSingle()
+
+    const { error } = await supabase
+      .from("presupuestos_tareas")
+      .delete()
+      .eq("id", id)
+
+    if (error) return { error: error.message }
+
+    if (actual?.evidencia_url) {
+      await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando tarea",
+    }
+  }
+}

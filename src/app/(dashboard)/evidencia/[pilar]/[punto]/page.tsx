@@ -8,16 +8,30 @@ import { EvidenciaPuntoClient } from "./evidencia-punto-client"
 
 export default async function EvidenciaPuntoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ pilar: string; punto: string }>
+  searchParams: Promise<{
+    from?: string
+    pilarId?: string
+    preguntaId?: string
+  }>
 }) {
   const { pilar, punto } = await params
+  const sp = await searchParams
   const puntoCodigo = punto.replace("-", ".")
   const res = await getArchivos({
     pilar_codigo: pilar,
     punto_codigo: puntoCodigo,
   })
   const archivos = "data" in res ? res.data : []
+
+  const volverDesdePilar =
+    sp?.from === "pilar" && sp.pilarId && sp.preguntaId
+  const backHref = volverDesdePilar
+    ? `/pilares/${sp.pilarId}/pregunta/${sp.preguntaId}`
+    : "/evidencia"
+  const backLabel = volverDesdePilar ? "Volver al punto" : "Volver a Evidencia"
 
   const esCompliance11 =
     pilar.toLowerCase() === "gestion" && puntoCodigo === "1.1"
@@ -37,10 +51,10 @@ export default async function EvidenciaPuntoPage({
   return (
     <div className="space-y-4">
       <Link
-        href="/evidencia"
+        href={backHref}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-slate-900"
       >
-        <ArrowLeft className="h-4 w-4" /> Volver a Evidencia
+        <ArrowLeft className="h-4 w-4" /> {backLabel}
       </Link>
 
       {esCompliance11 && (

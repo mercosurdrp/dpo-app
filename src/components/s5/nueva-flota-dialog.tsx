@@ -41,7 +41,7 @@ export function NuevaFlotaDialog({
   onOpenChange: (v: boolean) => void
   vehiculos: { id: string; dominio: string; descripcion: string | null }[]
   pendientes: S5VehiculoPendiente[]
-  empleados: { id: string; legajo: number; nombre: string }[]
+  empleados: { id: string; legajo: number; nombre: string; sector: string | null }[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -58,9 +58,14 @@ export function NuevaFlotaDialog({
     [pendientes]
   )
 
-  const empleadoById = useMemo(
-    () => new Map(empleados.map((e) => [e.id, e])),
+  const empleadosDistribucion = useMemo(
+    () => empleados.filter((e) => e.sector === "Distribución"),
     [empleados]
+  )
+
+  const empleadoById = useMemo(
+    () => new Map(empleadosDistribucion.map((e) => [e.id, e])),
+    [empleadosDistribucion]
   )
 
   const vehiculosItems = useMemo(() => {
@@ -71,9 +76,9 @@ export function NuevaFlotaDialog({
 
   const empleadosItems = useMemo(() => {
     const o: Record<string, string> = {}
-    for (const e of empleados) o[e.id] = e.nombre
+    for (const e of empleadosDistribucion) o[e.id] = e.nombre
     return o
-  }, [empleados])
+  }, [empleadosDistribucion])
 
   function reset() {
     setForm({
@@ -203,7 +208,7 @@ export function NuevaFlotaDialog({
                 <SelectValue placeholder="Seleccionar empleado" />
               </SelectTrigger>
               <SelectContent>
-                {empleados.map((e) => (
+                {empleadosDistribucion.map((e) => (
                   <SelectItem key={e.id} value={e.id} label={e.nombre}>
                     {e.nombre}
                     <span className="ml-1 text-xs text-muted-foreground">
@@ -229,7 +234,7 @@ export function NuevaFlotaDialog({
                   <SelectValue placeholder="Empleado" />
                 </SelectTrigger>
                 <SelectContent>
-                  {empleados.map((e) => (
+                  {empleadosDistribucion.map((e) => (
                     <SelectItem key={e.id} value={e.id} label={e.nombre}>
                       {e.nombre}
                       <span className="ml-1 text-xs text-muted-foreground">
@@ -253,7 +258,7 @@ export function NuevaFlotaDialog({
                   <SelectValue placeholder="Empleado" />
                 </SelectTrigger>
                 <SelectContent>
-                  {empleados.map((e) => (
+                  {empleadosDistribucion.map((e) => (
                     <SelectItem key={e.id} value={e.id} label={e.nombre}>
                       {e.nombre}
                       <span className="ml-1 text-xs text-muted-foreground">
