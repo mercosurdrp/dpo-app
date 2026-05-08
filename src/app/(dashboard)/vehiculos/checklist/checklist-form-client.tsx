@@ -56,6 +56,31 @@ function groupByCategoria(items: ChecklistItem[]) {
   return groups
 }
 
+const CHOFERES_HABILITADOS_CHECKLIST = [
+  "RIVERO FEDERICO",
+  "SANDOVAL ANTONIO",
+  "RIVERO EZEQUIEL",
+  "CERBIN ADRIAN EUCEBIO",
+  "FRIAS ANGEL",
+  "ESCOBAR ROBERTO",
+  "SEQUEIRA HUMBERTO",
+  "ACOSTA JOEL",
+  "RIVERO LAUREANO",
+]
+
+function normalizarNombre(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase()
+}
+
+const CHOFERES_HABILITADOS_SET = new Set(
+  CHOFERES_HABILITADOS_CHECKLIST.map(normalizarNombre)
+)
+
 const opcionesMap: Record<string, { value: string; label: string; color: string }[]> = {
   ok_nook: [
     { value: "ok", label: "OK", color: "bg-green-100 text-green-700 border-green-300" },
@@ -83,6 +108,9 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
 
   const vehiculosFiltrados = vehiculos.filter((v) =>
     sectorFiltro === "todos" ? true : v.sector === sectorFiltro
+  )
+  const choferesHabilitados = choferes.filter((c) =>
+    CHOFERES_HABILITADOS_SET.has(normalizarNombre(c.nombre))
   )
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
@@ -269,7 +297,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                   <SelectValue placeholder="Seleccionar chofer..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {choferes.map((c) => (
+                  {choferesHabilitados.map((c) => (
                     <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
                       {c.nombre}
                     </SelectItem>
