@@ -78,15 +78,6 @@ function formatDate(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
-function isDentroDelMes(fechaISO: string): boolean {
-  const [y, m] = fechaISO.split("-")
-  if (!y || !m) return false
-  const hoy = new Date()
-  return (
-    Number(y) === hoy.getFullYear() && Number(m) === hoy.getMonth() + 1
-  )
-}
-
 export function ReportesSeguridadClient({
   reportes,
   currentProfileId,
@@ -141,8 +132,8 @@ export function ReportesSeguridadClient({
     return base
   }, [reportes, piramideAnio, piramideMes])
 
-  // KPIs por tipo del mes actual
-  const kpisMes = useMemo(() => {
+  // KPIs por tipo según el período seleccionado (mismo filtro que la pirámide)
+  const kpisPeriodo = useMemo(() => {
     const base: Record<ReporteSeguridadTipo, number> = {
       accidente: 0,
       incidente: 0,
@@ -151,10 +142,19 @@ export function ReportesSeguridadClient({
       acto_seguro: 0,
     }
     for (const r of reportes) {
-      if (isDentroDelMes(r.fecha)) base[r.tipo] += 1
+      const y = Number(r.fecha.slice(0, 4))
+      const m = Number(r.fecha.slice(5, 7))
+      if (y !== piramideAnio) continue
+      if (piramideMes !== "all" && m !== piramideMes) continue
+      base[r.tipo] += 1
     }
     return base
-  }, [reportes])
+  }, [reportes, piramideAnio, piramideMes])
+
+  const periodoLabel =
+    piramideMes === "all"
+      ? `año ${piramideAnio}`
+      : `${MESES[piramideMes - 1]} ${piramideAnio}`
 
   const filtrados = useMemo(() => {
     return reportes.filter((r) => {
@@ -243,8 +243,8 @@ export function ReportesSeguridadClient({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {REPORTE_SEGURIDAD_TIPO_LABELS[t]}
             </p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{kpisMes[t]}</p>
-            <p className="text-[11px] text-muted-foreground">este mes</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{kpisPeriodo[t]}</p>
+            <p className="text-[11px] text-muted-foreground">{periodoLabel}</p>
           </div>
         ))}
       </div>
