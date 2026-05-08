@@ -9,15 +9,29 @@ interface NivelPiramide {
 }
 
 // De arriba (más grave) hacia abajo (sin lesión).
-// Colores tomados de la pirámide de referencia (Excel JefeLogistica).
 const NIVELES: NivelPiramide[] = [
   { sigla: "fat", label: "Lesión seguida de Muerte", color: "#C0392B" },
   { sigla: "lti", label: "Lesión Muy Grave", color: "#E67E22" },
   { sigla: "mdi", label: "Lesión Grave", color: "#F39C12" },
   { sigla: "mti", label: "Lesión Moderada", color: "#F1C40F" },
   { sigla: "fai", label: "Lesión Leve", color: "#D4DE2A" },
-  { sigla: "sio", label: "Sin Lesión", color: "#5DADE2" },
-  { sigla: "sho", label: "Sin Lesión", color: "#2E86C1" },
+  { sigla: "sio", label: "Sin Lesión (Incidente)", color: "#5DADE2" },
+  { sigla: "sho", label: "Sin Lesión (Cond/Comp)", color: "#2E86C1" },
+]
+
+// Agrupaciones SIF: cada grupo cubre un rango de niveles (índices inclusive).
+// Nota: SIF Actual y SIF Potencial se solapan en LTI (índice 1).
+const SIF_GROUPS: {
+  key: "actual" | "potencial" | "precursor"
+  label: string
+  fromIdx: number
+  toIdx: number
+  /** Columna del brace, 0 = más cerca de la pirámide */
+  col: number
+}[] = [
+  { key: "actual", label: "SIF ACTUAL", fromIdx: 0, toIdx: 1, col: 0 },
+  { key: "potencial", label: "SIF POTENCIAL", fromIdx: 1, toIdx: 5, col: 1 },
+  { key: "precursor", label: "SIF PRECURSOR", fromIdx: 6, toIdx: 6, col: 2 },
 ]
 
 export type PiramideConteos = Record<ReporteSeguridadTipoAccidente, number>
@@ -27,21 +41,22 @@ export function PiramideSeguridad({
 }: {
   conteos: PiramideConteos
 }) {
-  // Geometría: pirámide de 7 niveles. Ancho del top = 18%, base = 100%.
-  // Cada nivel ocupa el mismo alto. Cada trapecio se construye con polygon.
-  const ANCHO = 600
-  const ALTO = 360
   const NIV = NIVELES.length // 7
-  const ALTO_NIV = ALTO / NIV
-  const TOP_W = 0.18 // fracción del ancho total para el vértice superior
-  const FULL_W = 1.0
+  const VIEW_W = 900
+  const VIEW_H = 380
+  const ALTO_NIV = VIEW_H / NIV
 
-  // Devuelve los % de ancho del nivel n (top y bottom)
+  // Layout horizontal
+  const BRACE_AREA_W = 180
+  const PYR_LEFT = BRACE_AREA_W + 20
+  const PYR_W = 460
+  const PYR_RIGHT = PYR_LEFT + PYR_W
+  const PYR_CX = PYR_LEFT + PYR_W / 2
+  const TOP_W = 0.18
+
   function widths(n: number): { top: number; bottom: number } {
-    const tFracTop = n / NIV
-    const tFracBottom = (n + 1) / NIV
-    const top = TOP_W + (FULL_W - TOP_W) * tFracTop
-    const bottom = TOP_W + (FULL_W - TOP_W) * tFracBottom
+    const top = TOP_W + (1 - TOP_W) * (n / NIV)
+    const bottom = TOP_W + (1 - TOP_W) * ((n + 1) / NIV)
     return { top, bottom }
   }
 
@@ -56,88 +71,153 @@ export function PiramideSeguridad({
         </p>
       </div>
 
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:gap-4">
-        {/* SIF aside */}
-        <div className="flex w-full max-w-[140px] flex-col items-center justify-center self-stretch rounded-md border border-red-300 bg-red-50 p-2 text-center sm:w-32">
-          <span className="text-lg font-extrabold text-red-700">SIF</span>
-          <p className="mt-1 text-[10px] leading-snug text-red-900">
-            Evento de Seguridad en el cual una persona podría haber perdido la
-            vida o sufrido lesiones permanentes.
-          </p>
-        </div>
+      <div className="mx-auto max-w-3xl">
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          className="w-full"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* === Braces SIF a la izquierda === */}
+          {SIF_GROUPS.map((g) => {
+            const yTop = g.fromIdx * ALTO_NIV
+            const yBot = (g.toIdx + 1) * ALTO_NIV
+            const yMid = (yTop + yBot) / 2
+            const xRight = PYR_LEFT - 10 - g.col * 55 // dónde apunta el brace (más cerca/lejos de pirámide)
+            const xLine = xRight - 10 // línea vertical del brace
+            const xLabel = xLine - 14
+            // Path tipo brace [ horizontal-vertical-horizontal ]
+            const d = `M ${xRight} ${yTop} L ${xLine} ${yTop} L ${xLine} ${yBot} L ${xRight} ${yBot}`
+            return (
+              <g key={g.key}>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke="#1F2937"
+                  strokeWidth={1.4}
+                  strokeLinecap="round"
+                />
+                {/* Label rotada -90 */}
+                <text
+                  x={xLabel}
+                  y={yMid}
+                  textAnchor="middle"
+                  transform={`rotate(-90 ${xLabel} ${yMid})`}
+                  fontSize={12}
+                  fontWeight={800}
+                  fill="#0C4A6E"
+                  style={{
+                    paintOrder: "stroke",
+                    stroke: "#BAE6FD",
+                    strokeWidth: 6,
+                  }}
+                >
+                  {g.label}
+                </text>
+              </g>
+            )
+          })}
 
-        {/* Pirámide SVG */}
-        <div className="flex-1 max-w-xl">
-          <svg
-            viewBox={`0 0 ${ANCHO} ${ALTO}`}
-            className="w-full"
-            preserveAspectRatio="xMidYMid meet"
-          >
-            {NIVELES.map((n, i) => {
-              const { top, bottom } = widths(i)
-              const yTop = i * ALTO_NIV
-              const yBot = (i + 1) * ALTO_NIV
-              const cxTop = ANCHO / 2
-              const cxBot = ANCHO / 2
-              const xTopL = cxTop - (top * ANCHO) / 2
-              const xTopR = cxTop + (top * ANCHO) / 2
-              const xBotL = cxBot - (bottom * ANCHO) / 2
-              const xBotR = cxBot + (bottom * ANCHO) / 2
-              const points = `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
-              const count = conteos[n.sigla] ?? 0
-              const cy = yTop + ALTO_NIV / 2
+          {/* === Pirámide (7 niveles) === */}
+          {NIVELES.map((n, i) => {
+            const { top, bottom } = widths(i)
+            const yTop = i * ALTO_NIV
+            const yBot = (i + 1) * ALTO_NIV
+            const xTopL = PYR_CX - (top * PYR_W) / 2
+            const xTopR = PYR_CX + (top * PYR_W) / 2
+            const xBotL = PYR_CX - (bottom * PYR_W) / 2
+            const xBotR = PYR_CX + (bottom * PYR_W) / 2
+            const points = `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
+            const count = conteos[n.sigla] ?? 0
+            const cy = yTop + ALTO_NIV / 2
 
-              return (
-                <g key={n.sigla}>
-                  <polygon
-                    points={points}
-                    fill={n.color}
-                    stroke="#ffffff"
-                    strokeWidth={1.2}
-                  />
-                  {/* Sigla a la izquierda */}
-                  <text
-                    x={xTopL - 6}
-                    y={cy + 4}
-                    textAnchor="end"
-                    fontSize={i === 0 ? 11 : 13}
-                    fontWeight={700}
-                    fill="#1F2937"
-                  >
-                    {n.sigla.toUpperCase()}
-                  </text>
-                  {/* Conteo grande en el centro */}
-                  <text
-                    x={ANCHO / 2}
-                    y={cy + 5}
-                    textAnchor="middle"
-                    fontSize={i === 0 ? 12 : 16}
-                    fontWeight={800}
-                    fill="#FFFFFF"
-                    style={{
-                      paintOrder: "stroke",
-                      stroke: "rgba(0,0,0,0.35)",
-                      strokeWidth: 2,
-                    }}
-                  >
-                    {count}
-                  </text>
-                  {/* Etiqueta a la derecha */}
-                  <text
-                    x={xBotR + 8}
-                    y={cy + 4}
-                    textAnchor="start"
-                    fontSize={11}
-                    fontWeight={500}
-                    fill="#374151"
-                  >
-                    {n.label}
-                  </text>
-                </g>
-              )
-            })}
-          </svg>
-        </div>
+            return (
+              <g key={n.sigla}>
+                <polygon
+                  points={points}
+                  fill={n.color}
+                  stroke="#ffffff"
+                  strokeWidth={1.2}
+                />
+                {/* Sigla dentro del trapecio, lado izquierdo */}
+                <text
+                  x={xTopL + (xBotL - xTopL) / 2 + 22}
+                  y={cy + 4}
+                  textAnchor="middle"
+                  fontSize={i === 0 ? 11 : 13}
+                  fontWeight={800}
+                  fill="#1F2937"
+                  style={{
+                    paintOrder: "stroke",
+                    stroke: "rgba(255,255,255,0.6)",
+                    strokeWidth: 2.5,
+                  }}
+                >
+                  {n.sigla.toUpperCase()}
+                </text>
+                {/* Conteo grande en el centro */}
+                <text
+                  x={PYR_CX}
+                  y={cy + 5}
+                  textAnchor="middle"
+                  fontSize={i === 0 ? 12 : 17}
+                  fontWeight={900}
+                  fill="#FFFFFF"
+                  style={{
+                    paintOrder: "stroke",
+                    stroke: "rgba(0,0,0,0.4)",
+                    strokeWidth: 2.5,
+                  }}
+                >
+                  {count}
+                </text>
+                {/* Etiqueta gravedad a la derecha del trapecio */}
+                <text
+                  x={xBotR + 8}
+                  y={cy + 4}
+                  textAnchor="start"
+                  fontSize={11}
+                  fontWeight={500}
+                  fill="#374151"
+                >
+                  {n.label}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* === Brace "INCIDENTES" a la derecha sobre SIO === */}
+          {(() => {
+            const idx = 5 // SIO
+            const yTop = idx * ALTO_NIV
+            const yBot = (idx + 1) * ALTO_NIV
+            const yMid = (yTop + yBot) / 2
+            const xLeft = PYR_RIGHT + 100 // suficiente para no pisar el label
+            const xLine = xLeft + 8
+            const xLabel = xLine + 14
+            const d = `M ${xLeft} ${yTop} L ${xLine} ${yTop} L ${xLine} ${yBot} L ${xLeft} ${yBot}`
+            return (
+              <g>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke="#1F2937"
+                  strokeWidth={1.4}
+                  strokeLinecap="round"
+                />
+                <text
+                  x={xLabel}
+                  y={yMid + 4}
+                  textAnchor="start"
+                  fontSize={12}
+                  fontWeight={800}
+                  fill="#1F2937"
+                >
+                  INCIDENTES
+                </text>
+              </g>
+            )
+          })()}
+        </svg>
       </div>
 
       <p className="mt-3 text-[11px] italic text-muted-foreground">
