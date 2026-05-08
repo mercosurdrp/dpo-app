@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -42,10 +41,6 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
   const [litros, setLitros] = useState("")
-  const [proveedor, setProveedor] = useState("")
-  const [numeroRemito, setNumeroRemito] = useState("")
-  const [costoTotal, setCostoTotal] = useState("")
-  const [observaciones, setObservaciones] = useState("")
   const [saving, setSaving] = useState(false)
 
   async function handleSubmit() {
@@ -67,10 +62,6 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
       chofer,
       odometro: parseInt(odometro),
       litros: parseFloat(litros),
-      proveedor: proveedor || undefined,
-      numero_remito: numeroRemito || undefined,
-      costo_total: costoTotal ? parseFloat(costoTotal) : undefined,
-      observaciones: observaciones || undefined,
     })
 
     if ("error" in result) {
@@ -82,7 +73,7 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
       } else {
         toast.info("Primera carga para este vehículo — el rendimiento se calculará en la próxima")
       }
-      router.push("/vehiculos")
+      router.push("/mis-capacitaciones")
       router.refresh()
     }
     setSaving(false)
@@ -91,25 +82,83 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
           Registro de Combustible
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Registrá la carga de combustible para calcular el rendimiento del vehículo
+        <p className="text-sm text-muted-foreground sm:text-base">
+          Registrá la carga para calcular el rendimiento del vehículo
         </p>
       </div>
 
-      <Card>
+      <Card className="border-blue-100">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Fuel className="h-5 w-5" />
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Fuel className="h-6 w-6 text-blue-600" />
             Datos de la Carga
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Sector</Label>
+        <CardContent className="space-y-5">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-base font-semibold text-slate-800">Vehículo</Label>
+              <Select value={dominio} onValueChange={(v: string | null) => setDominio(v ?? "")}>
+                <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
+                  <SelectValue placeholder="Seleccionar vehículo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehiculosFiltrados.map((v) => (
+                    <SelectItem key={v.id} value={v.dominio} className="text-base py-2.5">
+                      <span className="font-semibold">{v.dominio}</span>
+                      {v.descripcion ? <span className="text-muted-foreground"> — {v.descripcion}</span> : null}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-base font-semibold text-slate-800">Chofer</Label>
+              <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
+                <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
+                  <SelectValue placeholder="Seleccionar chofer..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {choferes.map((c) => (
+                    <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
+                      {c.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-base font-semibold text-slate-800">Odómetro (km)</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                placeholder="Ej: 125430"
+                value={odometro}
+                onChange={(e) => setOdometro(e.target.value)}
+                className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+              />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-base font-semibold text-slate-800">Litros cargados</Label>
+              <Input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                placeholder="Ej: 120.5"
+                value={litros}
+                onChange={(e) => setLitros(e.target.value)}
+                className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+              />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+              <Label className="text-sm font-medium text-slate-600">Sector (filtro)</Label>
               <Select
                 value={sectorFiltro}
                 onValueChange={(v: string | null) => {
@@ -118,127 +167,32 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
                   setDominio("")
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="distribucion">
-                    {VEHICULO_SECTOR_LABELS.distribucion}
-                  </SelectItem>
-                  <SelectItem value="deposito">
-                    {VEHICULO_SECTOR_LABELS.deposito}
-                  </SelectItem>
+                  <SelectItem value="distribucion">{VEHICULO_SECTOR_LABELS.distribucion}</SelectItem>
+                  <SelectItem value="deposito">{VEHICULO_SECTOR_LABELS.deposito}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label>Vehículo</Label>
-              <Select value={dominio} onValueChange={(v: string | null) => setDominio(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {vehiculosFiltrados.map((v) => (
-                    <SelectItem key={v.id} value={v.dominio}>
-                      {v.dominio} {v.descripcion ? `— ${v.descripcion}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Chofer</Label>
-              <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {choferes.map((c) => (
-                    <SelectItem key={c.id} value={c.nombre}>
-                      {c.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Odómetro (km)</Label>
-              <Input
-                type="number"
-                placeholder="Ej: 125430"
-                value={odometro}
-                onChange={(e) => setOdometro(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Litros cargados</Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="Ej: 120.5"
-                value={litros}
-                onChange={(e) => setLitros(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Costo total ($)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="Opcional"
-                value={costoTotal}
-                onChange={(e) => setCostoTotal(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Proveedor / Estación</Label>
-              <Input
-                placeholder="Opcional"
-                value={proveedor}
-                onChange={(e) => setProveedor(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>N° Remito</Label>
-              <Input
-                placeholder="Opcional"
-                value={numeroRemito}
-                onChange={(e) => setNumeroRemito(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Observaciones</Label>
-            <Textarea
-              placeholder="Opcional"
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-              rows={2}
-            />
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
         <Button
-          size="lg"
           onClick={handleSubmit}
           disabled={saving || !dominio || !chofer || !odometro || !litros}
+          className="h-14 w-full bg-blue-600 text-base font-semibold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto sm:min-w-[260px] sm:text-lg sm:ml-auto sm:flex disabled:opacity-60"
         >
           {saving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           ) : (
-            <Gauge className="mr-2 h-4 w-4" />
+            <Gauge className="mr-2 h-5 w-5" />
           )}
-          Registrar Carga
+          {saving ? "Registrando..." : "Registrar Carga"}
         </Button>
       </div>
     </div>
