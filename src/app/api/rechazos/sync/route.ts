@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 export async function GET() {
   return NextResponse.json({ status: "ok", service: "rechazos-sync" })
