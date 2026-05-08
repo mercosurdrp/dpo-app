@@ -1,0 +1,9 @@
+# Excluidos del deploy a Vercel (CLI y GitHub)
+src/app/(dashboard)/5s/mis-acciones/
+credenciales-empleados.pdf
+*credenciales*.pdf
+supabase/.temp/
+
+# Backups
+*.bak
+.git.bak/
