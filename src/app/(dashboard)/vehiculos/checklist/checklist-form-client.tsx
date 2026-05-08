@@ -181,7 +181,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
         const mm = result.data.tiempo_ruta_minutos % 60
         toast.info(`Tiempo en ruta: ${hh}h ${mm.toString().padStart(2, "0")}m`)
       }
-      router.push("/vehiculos")
+      router.push("/mis-capacitaciones")
       router.refresh()
     }
     setSaving(false)
