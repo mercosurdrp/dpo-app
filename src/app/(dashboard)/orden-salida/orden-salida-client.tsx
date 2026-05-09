@@ -9,9 +9,12 @@ import {
   obtenerNoSaleEnRango,
   quitarNoSale as quitarNoSaleAction,
   setEmpleadoActivo as setEmpleadoActivoAction,
+  sincronizarOrdenSalidaDesdeSheets,
   upsertAsignacion,
   upsertNoSale,
+  type SyncOrdenSalidaResult,
 } from "@/actions/orden-salida"
+import { IS_MISIONES } from "@/lib/empresa"
 import {
   ESTADOS_CAMION,
   MOTIVOS_NO_SALE,
@@ -65,6 +68,11 @@ export function OrdenSalidaClient({
   const [exportDesde, setExportDesde] = useState<string>(() => inicioCicloOperativo(fechaInicial))
   const [exportHasta, setExportHasta] = useState<string>(fechaInicial)
   const [planillaAbierta, setPlanillaAbierta] = useState(false)
+  const [syncAbierto, setSyncAbierto] = useState(false)
+  const [syncDias, setSyncDias] = useState<number>(7)
+  const [syncCargando, setSyncCargando] = useState(false)
+  const [syncResultado, setSyncResultado] = useState<SyncOrdenSalidaResult | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
   // Re-fetch del backend cuando se cambia a una fecha fuera del rango precargado.
@@ -394,6 +402,47 @@ export function OrdenSalidaClient({
     const sheetName = `Resumen ${desde} a ${hasta}`.slice(0, 31)
     XLSX.utils.book_append_sheet(wb, ws, sheetName)
     XLSX.writeFile(wb, `resumen-orden-salida_${desde}_a_${hasta}.xlsx`)
+  }
+
+  // ─── Sincronización desde Google Sheets (solo Misiones) ─────────────────
+  async function ejecutarSync() {
+    setSyncCargando(true)
+    setSyncError(null)
+    setSyncResultado(null)
+    try {
+      const res = await sincronizarOrdenSalidaDesdeSheets(syncDias)
+      if ("error" in res) {
+        setSyncError(res.error)
+        return
+      }
+      setSyncResultado(res.data)
+      // Refrescar estados locales con los datos recién persistidos.
+      // Usamos el rango sincronizado para no traer más de lo necesario.
+      const [asigRes, noSaleRes] = await Promise.all([
+        obtenerAsignacionesEnRango(res.data.rangoDesde, res.data.rangoHasta),
+        obtenerNoSaleEnRango(res.data.rangoDesde, res.data.rangoHasta),
+      ])
+      if ("data" in asigRes) {
+        setAsignaciones((prev) => {
+          const fueraDelRango = prev.filter(
+            (a) => a.fecha < res.data.rangoDesde || a.fecha > res.data.rangoHasta,
+          )
+          return [...fueraDelRango, ...asigRes.data]
+        })
+      }
+      if ("data" in noSaleRes) {
+        setNoSale((prev) => {
+          const fueraDelRango = prev.filter(
+            (n) => n.fecha < res.data.rangoDesde || n.fecha > res.data.rangoHasta,
+          )
+          return [...fueraDelRango, ...noSaleRes.data]
+        })
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Error inesperado")
+    } finally {
+      setSyncCargando(false)
+    }
   }
 
   // ─── Auto-balance de choferes Iguazú ────────────────────────────────────
@@ -730,6 +779,100 @@ export function OrdenSalidaClient({
           >
             Auto-asignar Iguazú
           </button>
+          {IS_MISIONES && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setSyncAbierto((v) => !v)
+                  setSyncError(null)
+                  setSyncResultado(null)
+                }}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                title="Trae los datos de FORMACIÓN y NO SALEN desde la planilla de Google Sheets"
+              >
+                Sincronizar desde Sheets ▾
+              </button>
+              {syncAbierto && (
+                <div
+                  role="dialog"
+                  aria-label="Sincronizar desde Google Sheets"
+                  className="absolute right-0 z-20 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                >
+                  <p className="mb-2 text-xs font-medium text-slate-600">
+                    Trae las hojas <strong>FORMACIÓN</strong> y <strong>NO SALEN</strong>.
+                    Sobrescribe lo que haya en el sistema para cada fecha del rango.
+                    Los camiones de la flota que no aparezcan ese día quedan como{" "}
+                    <em>Sin Carga</em>.
+                  </p>
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                      Últimos días a sincronizar
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={syncDias}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        setSyncDias(Number.isFinite(n) && n > 0 ? n : 1)
+                      }}
+                      className="mt-0.5 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                    />
+                  </label>
+                  {syncError && (
+                    <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">
+                      {syncError}
+                    </p>
+                  )}
+                  {syncResultado && (
+                    <div className="mt-2 rounded-md bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
+                      <p className="font-medium">
+                        ✓ Sincronizado {syncResultado.rangoDesde} → {syncResultado.rangoHasta}
+                      </p>
+                      <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                        <li>{syncResultado.fechasProcesadas} fechas procesadas</li>
+                        <li>{syncResultado.asignacionesInsertadas} asignaciones de camión</li>
+                        <li>{syncResultado.noSaleInsertadas} en lista &quot;no salen&quot;</li>
+                        <li>{syncResultado.camionesSinCarga} camiones marcados &quot;Sin Carga&quot;</li>
+                      </ul>
+                      {syncResultado.advertencias.length > 0 && (
+                        <details className="mt-1.5">
+                          <summary className="cursor-pointer font-medium text-amber-700">
+                            {syncResultado.advertencias.length} advertencia(s)
+                          </summary>
+                          <ul className="mt-1 ml-4 list-disc space-y-0.5 text-amber-800">
+                            {syncResultado.advertencias.map((a, i) => (
+                              <li key={i}>{a}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSyncAbierto(false)}
+                      disabled={syncCargando}
+                      className="rounded-lg px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={ejecutarSync}
+                      disabled={syncCargando || syncDias < 1}
+                      className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {syncCargando ? "Sincronizando…" : "Sincronizar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="relative">
             <button
               type="button"
