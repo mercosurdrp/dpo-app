@@ -24,9 +24,11 @@ import {
   Clock,
 } from "lucide-react"
 import type { PreRutaEnVivo, PreRutaEquipoLive } from "@/types/database"
+import type { TmlFoxtrotEnVivo } from "@/actions/tml-foxtrot"
 
 interface Props {
   initial: PreRutaEnVivo
+  tmlFoxtrotByDominio?: Record<string, TmlFoxtrotEnVivo>
 }
 
 const HOY = new Date().toISOString().slice(0, 10)
@@ -59,11 +61,13 @@ function ventanaColor(pct: number): string {
   return "bg-red-500"
 }
 
-export function PreRutaClient({ initial }: Props) {
+export function PreRutaClient({ initial, tmlFoxtrotByDominio }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [now, setNow] = useState<Date>(() => new Date())
+  const [foxtrotDesde7, setFoxtrotDesde7] = useState(false)
   const isHoy = initial.fecha === HOY
+  const showFoxtrot = !!tmlFoxtrotByDominio && Object.keys(tmlFoxtrotByDominio).length > 0
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000)
@@ -93,6 +97,28 @@ export function PreRutaClient({ initial }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {showFoxtrot && (
+            <div className="flex items-center rounded-md border bg-white p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setFoxtrotDesde7(false)}
+                className={`rounded px-2 py-1 transition-colors ${
+                  !foxtrotDesde7 ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                FX real
+              </button>
+              <button
+                type="button"
+                onClick={() => setFoxtrotDesde7(true)}
+                className={`rounded px-2 py-1 transition-colors ${
+                  foxtrotDesde7 ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                FX desde 07:00
+              </button>
+            </div>
+          )}
           <div className="rounded-md bg-slate-900 px-4 py-2 font-mono text-2xl font-bold text-white tabular-nums">
             {fmtClock(now)}
           </div>
@@ -154,6 +180,12 @@ export function PreRutaClient({ initial }: Props) {
                     <TableHead>Matinal</TableHead>
                     <TableHead>Checklist</TableHead>
                     <TableHead className="text-right">TML</TableHead>
+                    {showFoxtrot && (
+                      <>
+                        <TableHead className="text-right">TML FX</TableHead>
+                        <TableHead>Inicio ruta FX</TableHead>
+                      </>
+                    )}
                     <TableHead>Estado</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -205,6 +237,37 @@ export function PreRutaClient({ initial }: Props) {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
+                        {showFoxtrot && (() => {
+                          const fx = e.dominio ? tmlFoxtrotByDominio?.[e.dominio] : undefined
+                          const tmlFx = fx
+                            ? foxtrotDesde7
+                              ? fx.tml_minutos_desde7
+                              : fx.tml_minutos_real
+                            : null
+                          const fxColor =
+                            tmlFx == null
+                              ? "text-muted-foreground"
+                              : tmlFx > initial.meta_minutos
+                                ? "text-red-700"
+                                : "text-green-700"
+                          return (
+                            <>
+                              <TableCell className="text-right">
+                                {tmlFx != null ? (
+                                  <span className={`flex items-center justify-end gap-1 font-mono font-semibold ${fxColor}`}>
+                                    <Clock className="h-3 w-3" />
+                                    {tmlFx} min
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">
+                                {fx?.hora_inicio_ruta ?? "—"}
+                              </TableCell>
+                            </>
+                          )
+                        })()}
                         <TableCell>
                           <Badge className={`${c.bg} ${c.text} hover:${c.bg}`}>{c.label}</Badge>
                         </TableCell>

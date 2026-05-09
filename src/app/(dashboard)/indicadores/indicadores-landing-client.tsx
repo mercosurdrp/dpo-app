@@ -20,6 +20,7 @@ import {
   FolderOpen,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
+import { IS_MISIONES } from "@/lib/empresa"
 
 const PILAR_ICONS: Record<string, React.ReactNode> = {
   Seguridad: <Shield className="h-6 w-6" />,
@@ -103,7 +104,7 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/indicadores/tml">
+          <Link href={IS_MISIONES ? "/indicadores/tml-foxtrot" : "/indicadores/tml"}>
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-amber-300">
               <CardContent className="flex items-center gap-4 pt-6">
                 <div className="rounded-xl p-3 bg-amber-100 text-amber-600 group-hover:bg-amber-200 transition-colors">
@@ -114,7 +115,9 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     Tiempo Medio de Liberación
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    TML — Pilar Entrega 1.1
+                    {IS_MISIONES
+                      ? "TML — Marca biométrica → inicio ruta Foxtrot"
+                      : "TML — Pilar Entrega 1.1"}
                   </p>
                 </div>
               </CardContent>

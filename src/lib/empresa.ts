@@ -10,3 +10,5 @@ export const EMPRESA_NOMBRE =
 
 export const EMPRESA_NOMBRE_CORTO =
   process.env.NEXT_PUBLIC_EMPRESA_NOMBRE_CORTO ?? "Mercosur"
+
+export const IS_MISIONES = EMPRESA_NOMBRE === "Mercosur Distribuciones"

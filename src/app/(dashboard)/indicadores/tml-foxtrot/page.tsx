@@ -1,15 +1,19 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { getPreRutaEnVivo } from "@/actions/pre-ruta-en-vivo"
-import { getTmlFoxtrotMapByDominio } from "@/actions/tml-foxtrot"
+import { redirect } from "next/navigation"
+import { getTmlFoxtrotDia } from "@/actions/tml-foxtrot"
 import { IS_MISIONES } from "@/lib/empresa"
-import { PreRutaClient } from "./pre-ruta-client"
+import { TmlFoxtrotClient } from "./tml-foxtrot-client"
 
-export default async function PreRutaEnVivoPage() {
-  const [res, tmlFoxtrotByDominio] = await Promise.all([
-    getPreRutaEnVivo(),
-    IS_MISIONES ? getTmlFoxtrotMapByDominio() : Promise.resolve({}),
-  ])
+interface PageProps {
+  searchParams: Promise<{ fecha?: string }>
+}
+
+export default async function TmlFoxtrotPage({ searchParams }: PageProps) {
+  if (!IS_MISIONES) redirect("/indicadores/tml")
+
+  const { fecha } = await searchParams
+  const res = await getTmlFoxtrotDia(fecha)
 
   return (
     <div className="space-y-4">
@@ -21,11 +25,11 @@ export default async function PreRutaEnVivoPage() {
       </Link>
       {"error" in res ? (
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Pre-Ruta en Vivo</h1>
+          <h1 className="text-2xl font-bold text-slate-900">TML — Foxtrot</h1>
           <p className="mt-2 text-red-500">Error: {res.error}</p>
         </div>
       ) : (
-        <PreRutaClient initial={res.data} tmlFoxtrotByDominio={tmlFoxtrotByDominio} />
+        <TmlFoxtrotClient initial={res.data} />
       )}
     </div>
   )

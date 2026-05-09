@@ -1036,6 +1036,52 @@ export interface PreRutaEnVivo {
   ventana_pct: number
 }
 
+// ===== TML Foxtrot (Misiones) =====
+export interface TmlFoxtrotEquipo {
+  fecha: string
+  camion_id: string
+  dominio: string | null
+  sucursal: "ELDORADO" | "IGUAZU" | null
+  zona: string
+  chofer: {
+    empleado_id: string | null
+    legajo: number | null
+    nombre: string | null
+    hora_marca: string | null
+    foxtrot_driver_id: string | null
+  }
+  ayudante: {
+    empleado_id: string | null
+    legajo: number | null
+    nombre: string | null
+    hora_marca: string | null
+    foxtrot_driver_id: string | null
+  }
+  hora_marca_equipo: string | null
+  hora_inicio_ruta: string | null
+  route_id: string | null
+  tml_minutos_real: number | null
+  tml_minutos_desde7: number | null
+  estado: "ok" | "fuera_meta" | "sin_marca" | "sin_ruta"
+}
+
+export interface TmlFoxtrotResumen {
+  equipos_totales: number
+  equipos_con_tml: number
+  promedio_real_min: number | null
+  promedio_desde7_min: number | null
+  peor_real_min: number | null
+  mejor_real_min: number | null
+}
+
+export interface TmlFoxtrotDia {
+  fecha: string
+  meta_minutos: number
+  resumen: TmlFoxtrotResumen
+  por_sucursal: Record<"ELDORADO" | "IGUAZU", TmlFoxtrotResumen>
+  equipos: TmlFoxtrotEquipo[]
+}
+
 // ===== TML comparativo YoY =====
 export interface TmlMesComparado {
   mes: number
