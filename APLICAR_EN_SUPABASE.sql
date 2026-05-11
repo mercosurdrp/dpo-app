@@ -4,25 +4,27 @@
 -- Copiar TODO este archivo y ejecutar en:
 --   https://supabase.com/dashboard/project/tpafgmbhnucdiavvxbcg/sql/new
 -- =============================================================
--- Migración 058 — KPIs complementarios + apertura por operador
+-- Migración 058 — 6 KPIs warehouse + tabla apertura picking
 -- Archivo fuente: supabase/migrations/058_reuniones_kpis_complementarios_y_apertura_picking.sql
 -- Idempotente: se puede ejecutar varias veces sin efectos colaterales.
 -- =============================================================
 
 BEGIN;
 
--- a) 4 KPIs complementarios en reuniones_indicadores_config (tipo='logistica')
+-- a) 6 KPIs en reuniones_indicadores_config (tipo='warehouse')
 INSERT INTO reuniones_indicadores_config (tipo, nombre, unidad, meta, orden, activo, agregacion)
-SELECT 'logistica', v.nombre, v.unidad, NULL::numeric, v.orden, true, v.agregacion
+SELECT 'warehouse', v.nombre, v.unidad, NULL::numeric, v.orden, true, v.agregacion
 FROM (VALUES
-  ('Precision picking',   '%',  115, 'promedio'),
-  ('FGLI',                'HL', 145, 'suma'),
-  ('SCL',                 '$',  155, 'suma'),
-  ('Capacidad utilizada', '%',  160, 'promedio')
+  ('WQI',                       'PPM',   10, 'promedio'),
+  ('FGLI',                      'HL',    20, 'suma'),
+  ('SCL',                       '$',     30, 'suma'),
+  ('Precision picking',         '%',     40, 'promedio'),
+  ('Capacidad utilizada',       '%',     50, 'promedio'),
+  ('Productividad de picking',  'HL/HH', 60, 'promedio')
 ) AS v(nombre, unidad, orden, agregacion)
 WHERE NOT EXISTS (
   SELECT 1 FROM reuniones_indicadores_config c
-  WHERE c.tipo = 'logistica' AND c.nombre = v.nombre
+  WHERE c.tipo = 'warehouse' AND c.nombre = v.nombre
 );
 
 -- b) Tabla de apertura por operador (Troli/Galvez/Ovejero por reunion)

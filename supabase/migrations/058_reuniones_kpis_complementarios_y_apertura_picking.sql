@@ -1,10 +1,14 @@
 -- =============================================
--- 058 · Reuniones · KPIs complementarios + apertura por operador
+-- 058 · Reuniones · 6 KPIs warehouse + apertura por operador
 -- =============================================
 -- Cambios:
---   a) Inserta 4 indicadores de logistica que faltaban segun handbook 2025:
---      FGLI (HL, suma), SCL ($, suma), Precision picking (%, promedio),
---      Capacidad utilizada (%, promedio).
+--   a) Inserta los 6 indicadores reales de la reunion WAREHOUSE segun
+--      handbook 2025 (secciones 3.4, 4.3, 1.2, 7.1):
+--      WQI (PPM, promedio), FGLI (HL, suma), SCL ($, suma),
+--      Precision picking (%, promedio), Capacidad utilizada (%, promedio),
+--      Productividad de picking (HL/HH, promedio).
+--      NOTA: La migracion 048 ya inserto indicadores en 'logistica'.
+--            Acá insertamos en 'warehouse' (tipo distinto, rows distintos).
 --   b) Crea tabla reunion_apertura_picking para el sub-cuadro de operadores
 --      (Troli/Galvez/Ovejero) en cada reunion: bultos, errores, hl_hh.
 --
@@ -14,23 +18,25 @@
 BEGIN;
 
 -- =============================================
--- a) 4 KPIs complementarios en reuniones_indicadores_config (tipo='logistica')
+-- a) 6 KPIs en reuniones_indicadores_config (tipo='warehouse')
 -- =============================================
 INSERT INTO reuniones_indicadores_config (tipo, nombre, unidad, meta, orden, activo, agregacion)
-SELECT 'logistica', v.nombre, v.unidad, NULL::numeric, v.orden, true, v.agregacion
+SELECT 'warehouse', v.nombre, v.unidad, NULL::numeric, v.orden, true, v.agregacion
 FROM (VALUES
-  ('Precision picking',   '%',  115, 'promedio'),
-  ('FGLI',                'HL', 145, 'suma'),
-  ('SCL',                 '$',  155, 'suma'),
-  ('Capacidad utilizada', '%',  160, 'promedio')
+  ('WQI',                       'PPM',   10, 'promedio'),
+  ('FGLI',                      'HL',    20, 'suma'),
+  ('SCL',                       '$',     30, 'suma'),
+  ('Precision picking',         '%',     40, 'promedio'),
+  ('Capacidad utilizada',       '%',     50, 'promedio'),
+  ('Productividad de picking',  'HL/HH', 60, 'promedio')
 ) AS v(nombre, unidad, orden, agregacion)
 WHERE NOT EXISTS (
   SELECT 1 FROM reuniones_indicadores_config c
-  WHERE c.tipo = 'logistica' AND c.nombre = v.nombre
+  WHERE c.tipo = 'warehouse' AND c.nombre = v.nombre
 );
 
 -- =============================================
--- b) Tabla de apertura por operador
+-- b) Tabla de apertura por operador (Troli/Galvez/Ovejero por reunion)
 -- =============================================
 CREATE TABLE IF NOT EXISTS reunion_apertura_picking (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
