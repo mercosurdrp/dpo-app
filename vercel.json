@@ -8,6 +8,10 @@
     {
       "path": "/api/reuniones/cron-crear-diarias",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/rechazos/sync",
+      "schedule": "0 6 * * *"
     }
   ]
 }

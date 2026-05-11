@@ -16,6 +16,10 @@ const FOXTROT_DCS =
 
 const ALLOWED_ROLES = ["admin", "supervisor", "admin_rrhh"] as const
 
+const CRON_SECRET = process.env.CRON_SECRET
+
+type SyncSource = "cron" | "manual-bearer" | "manual-session" | "script"
+
 // Patente argentina: AAA 123 / AAA123 / AB 123 CD / AB123CD, con sufijo opcional .N
 const PATENTE_REGEX =
   /^([A-Z]{3}\s?\d{3}|[A-Z]{2}\s?\d{3}\s?[A-Z]{2})(\.\d+)?$/i
@@ -189,6 +193,8 @@ async function fetchVentasDia(sessionId: string, fecha: string): Promise<ChessVe
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now()
+
   if (!CHESS_BASE || !CHESS_USER || !CHESS_PASS) {
     return NextResponse.json(
       {
@@ -199,35 +205,84 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const sessionClient = await createClient()
-  const {
-    data: { user },
-  } = await sessionClient.auth.getUser()
+  // ---- Auth: 4 caminos posibles, cada uno con su source ----
+  //   cron           = Vercel cron schedule       (Bearer + UA vercel-cron)
+  //   manual-bearer  = curl/Postman con Bearer     (Bearer sin UA vercel-cron)
+  //   script         = script externo             (x-api-key)
+  //   manual-session = botón "Sincronizar" en UI  (sesión Supabase)
+  const authHeader = request.headers.get("authorization") ?? ""
+  const apiKeyHeader = request.headers.get("x-api-key") ?? ""
+  const userAgent = request.headers.get("user-agent") ?? ""
 
-  if (!user) {
-    return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-  }
+  const bearerMatch = !!CRON_SECRET && authHeader === `Bearer ${CRON_SECRET}`
+  const apiKeyMatch = !!CRON_SECRET && apiKeyHeader === CRON_SECRET
+  const isVercelCron = bearerMatch && /^vercel-cron/i.test(userAgent)
 
-  const { data: profile } = await sessionClient
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single()
+  let source: SyncSource
 
-  if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  if (isVercelCron) {
+    source = "cron"
+  } else if (bearerMatch) {
+    source = "manual-bearer"
+  } else if (apiKeyMatch) {
+    source = "script"
+  } else {
+    // ningún secret válido → cae a auth por sesión (UI)
+    source = "manual-session"
+    if (authHeader.startsWith("Bearer ") || apiKeyHeader) {
+      return NextResponse.json({ error: "CRON_SECRET inválido" }, { status: 401 })
+    }
+    const sessionClient = await createClient()
+    const {
+      data: { user },
+    } = await sessionClient.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const { data: profile } = await sessionClient
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+
+    if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
+      return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+    }
   }
 
   try {
-    const body = await request.json()
-    const { fechaDesde, fechaHasta } = body as { fechaDesde?: string; fechaHasta?: string }
+    // ---- Parseo de rango ----
+    // UI (manual-session) requiere body con fechaDesde. El resto de caminos
+    // (cron / manual-bearer / script) si no traen body usan default ayer→hoy,
+    // pero pueden pasar body para forzar un rango (útil para backfills via curl).
+    let desde: Date
+    let hasta: Date
 
-    if (!fechaDesde) {
+    const body = (await request.json().catch(() => ({}))) as {
+      fechaDesde?: string
+      fechaHasta?: string
+    }
+    const { fechaDesde, fechaHasta } = body
+
+    if (fechaDesde) {
+      desde = new Date(fechaDesde)
+      hasta = fechaHasta ? new Date(fechaHasta) : new Date(fechaDesde)
+    } else if (source === "manual-session") {
       return NextResponse.json({ error: "fechaDesde is required" }, { status: 400 })
+    } else {
+      const hoy = new Date()
+      hoy.setUTCHours(0, 0, 0, 0)
+      const ayer = new Date(hoy)
+      ayer.setUTCDate(ayer.getUTCDate() - 1)
+      desde = ayer
+      hasta = hoy
     }
 
-    const desde = new Date(fechaDesde)
-    const hasta = fechaHasta ? new Date(fechaHasta) : new Date(fechaDesde)
+    const fechaDesdeStr = desde.toISOString().slice(0, 10)
+    const fechaHastaStr = hasta.toISOString().slice(0, 10)
+    console.log(`[sync] start source=${source} desde=${fechaDesdeStr} hasta=${fechaHastaStr}`)
 
     // Login to Chess
     const sessionId = await chessLogin()
@@ -238,8 +293,10 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     let totalInsertadas = 0
     let totalRepetidas = 0
+    let totalVentasUpserted = 0
     let totalDias = 0
     let diasSinDatos = 0
+    const errors: Array<{ day: string; kind: "rechazo" | "ventas_diarias"; message: string }> = []
 
     // Loop through each day
     const current = new Date(desde)
@@ -311,7 +368,10 @@ export async function POST(request: NextRequest) {
 
         if (error) {
           if (error.code === "23505") totalRepetidas++
-          else console.error(`Error upserting rechazo: ${error.message}`)
+          else {
+            console.error(`[sync] error upsert rechazo day=${fechaStr}: ${error.message}`)
+            errors.push({ day: fechaStr, kind: "rechazo", message: error.message })
+          }
         } else {
           totalInsertadas++
         }
@@ -361,7 +421,10 @@ export async function POST(request: NextRequest) {
           )
 
         if (vdErr) {
-          console.error(`Error upserting ventas_diarias: ${vdErr.message}`)
+          console.error(`[sync] error upsert ventas_diarias day=${fechaStr}: ${vdErr.message}`)
+          errors.push({ day: fechaStr, kind: "ventas_diarias", message: vdErr.message })
+        } else {
+          totalVentasUpserted++
         }
       }
 
@@ -389,19 +452,53 @@ export async function POST(request: NextRequest) {
       if ("data" in result) kpisCalculados += result.data.calculados
     }
 
+    const durationMs = Date.now() - startedAt
+    console.log(
+      `[sync] done source=${source} dias=${totalDias} sin_datos=${diasSinDatos} ` +
+      `rechazos_upserted=${totalInsertadas} ventas_upserted=${totalVentasUpserted} ` +
+      `errors=${errors.length} duration_ms=${durationMs}`
+    )
+
+    const { error: logErr } = await supabase.from("sync_log").insert({
+      source,
+      date_from: fechaDesdeStr,
+      date_to: fechaHastaStr,
+      rechazos_upserted: totalInsertadas,
+      ventas_upserted: totalVentasUpserted,
+      errors,
+      duration_ms: durationMs,
+    })
+    if (logErr) console.error(`[sync] could not write sync_log: ${logErr.message}`)
+
     return NextResponse.json({
       success: true,
+      source,
       dias_procesados: totalDias,
       rechazos_insertados: totalInsertadas,
       rechazos_repetidos: totalRepetidas,
+      ventas_upserted: totalVentasUpserted,
       dias_sin_datos: diasSinDatos,
       kpis_calculados: kpisCalculados,
+      errors,
+      duration_ms: durationMs,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Error syncing rechazos" },
-      { status: 500 }
-    )
+    const durationMs = Date.now() - startedAt
+    const message = err instanceof Error ? err.message : "Error syncing rechazos"
+    console.error(`[sync] fatal source=${source} duration_ms=${durationMs}: ${message}`)
+    try {
+      const supabase = createAdminClient()
+      await supabase.from("sync_log").insert({
+        source,
+        rechazos_upserted: 0,
+        ventas_upserted: 0,
+        errors: [{ day: null, kind: "fatal", message }],
+        duration_ms: durationMs,
+      })
+    } catch {
+      // si ni sync_log se puede escribir, dejamos solo el log
+    }
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
