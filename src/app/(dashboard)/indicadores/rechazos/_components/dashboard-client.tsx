@@ -12,6 +12,7 @@ import { DistribucionCanal } from "./distribucion-canal"
 import { RankingChoferes } from "./ranking-choferes"
 import { RankingClientes } from "./ranking-clientes"
 import { RankingProductos } from "./ranking-productos"
+import { TopVariacionesBloque } from "./top-variaciones"
 
 export function DashboardClient({ data }: { data: RechazosComparado }) {
   // Drill-down concreto llega en step 7. Mientras: log para validar wiring.
@@ -31,6 +32,7 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
         />
         <AlertasBloque alerts={data.alerts} onDrillTo={onDrillTo} />
         <KpiCards data={data} />
+        <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={onDrillTo} />
         <EvolucionTemporal series={data.series} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ParetoMotivos por_motivo={data.agg.por_motivo} />
