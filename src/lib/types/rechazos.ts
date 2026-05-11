@@ -220,7 +220,12 @@ export interface RechazosAggSupervisor {
 // ────────────────────────────────────────────────────────────────────────────
 
 export type TopVariacionMetric = "monto" | "tasa" | "bultos"
-export type TopVariacionDim = "motivo" | "chofer" | "canal" | "cliente"
+/**
+ * Dimensiones de drill-down. Las primeras 4 ("motivo" | "chofer" | "canal" | "cliente")
+ * pueden aparecer en `TopVariacion` (top variaciones server-side); "producto" solo se
+ * usa para drill-down desde la UI (ranking de productos), no para top variaciones.
+ */
+export type TopVariacionDim = "motivo" | "chofer" | "canal" | "cliente" | "producto"
 
 export interface TopVariacion {
   dim: TopVariacionDim

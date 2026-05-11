@@ -9,6 +9,9 @@ import { KpiCards } from "./kpi-cards"
 import { EvolucionTemporal } from "./evolucion-temporal"
 import { ParetoMotivos } from "./pareto-motivos"
 import { DistribucionCanal } from "./distribucion-canal"
+import { RankingChoferes } from "./ranking-choferes"
+import { RankingClientes } from "./ranking-clientes"
+import { RankingProductos } from "./ranking-productos"
 
 export function DashboardClient({ data }: { data: RechazosComparado }) {
   // Drill-down concreto llega en step 7. Mientras: log para validar wiring.
@@ -32,6 +35,15 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ParetoMotivos por_motivo={data.agg.por_motivo} />
           <DistribucionCanal por_canal={data.agg.por_canal} />
+        </div>
+        <RankingChoferes
+          por_chofer={data.agg.por_chofer}
+          tasaPromedio={data.actual.tasa}
+          onDrillTo={onDrillTo}
+        />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={onDrillTo} />
+          <RankingProductos por_producto={data.agg.por_producto} onDrillTo={onDrillTo} />
         </div>
       </div>
     </TooltipProvider>
