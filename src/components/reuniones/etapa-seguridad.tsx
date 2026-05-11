@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Shield, ClipboardList, Loader2 } from "lucide-react"
+import { Shield, ClipboardList, Loader2, ShieldCheck } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -128,6 +128,23 @@ export function EtapaSeguridad({ fechaReunion }: { fechaReunion: string }) {
       ? `año ${piramideAnio}`
       : `${MESES[piramideMes - 1]} ${piramideAnio}`
 
+  // Días sin accidente: último reporte tipo=accidente (global) → hoy, en UTC.
+  const { diasSinAccidente, ultimoAccidente } = useMemo(() => {
+    let max: string | null = null
+    for (const r of reportes) {
+      if (r.tipo !== "accidente") continue
+      if (max === null || r.fecha > max) max = r.fecha
+    }
+    if (!max) return { diasSinAccidente: null as number | null, ultimoAccidente: null as string | null }
+    const [y, m, d] = max.split("-").map(Number)
+    if (!y || !m || !d) return { diasSinAccidente: null, ultimoAccidente: null }
+    const lastUTC = Date.UTC(y, m - 1, d)
+    const now = new Date()
+    const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+    const dias = Math.max(0, Math.floor((todayUTC - lastUTC) / 86_400_000))
+    return { diasSinAccidente: dias, ultimoAccidente: max }
+  }, [reportes])
+
   const fechaUltimoHabil = useMemo(
     () => ultimoDiaHabilAnterior(fechaReunion),
     [fechaReunion],
@@ -142,10 +159,40 @@ export function EtapaSeguridad({ fechaReunion }: { fechaReunion: string }) {
   return (
     <Card className="border-red-200 bg-red-50/30">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-lg font-bold text-red-900">
-          <Shield className="size-5 text-red-600" />
-          Etapa 1 — Seguridad
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-red-900">
+            <Shield className="size-5 text-red-600" />
+            Etapa 1 — Seguridad
+          </CardTitle>
+          {!cargando && (
+            <div
+              className="flex items-center gap-3 rounded-lg border bg-white px-4 py-2 shadow-sm"
+              style={{ borderLeft: "4px solid #16a34a" }}
+            >
+              <ShieldCheck className="size-7 text-green-600" />
+              <div className="leading-tight">
+                {diasSinAccidente === null ? (
+                  <>
+                    <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
+                    <p className="text-[11px] text-muted-foreground">registrados</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {diasSinAccidente}{" "}
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {diasSinAccidente === 1 ? "día" : "días"}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      sin accidentes · último {formatFechaCorta(ultimoAccidente!)}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {errorMsg && (
