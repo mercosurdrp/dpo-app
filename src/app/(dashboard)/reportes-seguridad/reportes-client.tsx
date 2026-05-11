@@ -97,8 +97,13 @@ export function ReportesSeguridadClient({
   const [fechaHasta, setFechaHasta] = useState("")
 
   const anioActual = new Date().getFullYear()
+  const mesActual = new Date().getMonth() + 1
   const [piramideAnio, setPiramideAnio] = useState<number>(anioActual)
   const [piramideMes, setPiramideMes] = useState<number | "all">("all")
+
+  // Selectores propios para la tabla LTI/TRI (independientes de la pirámide).
+  const [indAnio, setIndAnio] = useState<number>(anioActual)
+  const [indMes, setIndMes] = useState<number>(mesActual)
 
   // Días sin accidente: tomamos el reporte tipo "accidente" más reciente (global,
   // sin importar filtros) y calculamos la diferencia en días calendario hasta hoy.
@@ -149,6 +154,36 @@ export function ReportesSeguridadClient({
     }
     return base
   }, [reportes, piramideAnio, piramideMes])
+
+  // Indicadores LTI / TRI por día del mes seleccionado, con MTD y YTD.
+  // LTI = tipo_accidente === 'lti'
+  // TRI = tipo_accidente ∈ {'lti', 'mdi', 'mti'}
+  const indicadoresLtiTri = useMemo(() => {
+    const diasEnMes = new Date(indAnio, indMes, 0).getDate()
+    const lti = Array(diasEnMes).fill(0) as number[]
+    const tri = Array(diasEnMes).fill(0) as number[]
+    let ltiYtd = 0
+    let triYtd = 0
+    const triSet = new Set(["lti", "mdi", "mti"])
+    for (const r of reportes) {
+      if (!r.tipo_accidente) continue
+      const y = Number(r.fecha.slice(0, 4))
+      if (y !== indAnio) continue
+      const isLti = r.tipo_accidente === "lti"
+      const isTri = triSet.has(r.tipo_accidente)
+      if (isLti) ltiYtd += 1
+      if (isTri) triYtd += 1
+      const m = Number(r.fecha.slice(5, 7))
+      if (m !== indMes) continue
+      const d = Number(r.fecha.slice(8, 10))
+      if (!Number.isFinite(d) || d < 1 || d > diasEnMes) continue
+      if (isLti) lti[d - 1] += 1
+      if (isTri) tri[d - 1] += 1
+    }
+    const ltiMtd = lti.reduce((a, b) => a + b, 0)
+    const triMtd = tri.reduce((a, b) => a + b, 0)
+    return { diasEnMes, lti, tri, ltiMtd, triMtd, ltiYtd, triYtd }
+  }, [reportes, indAnio, indMes])
 
   // KPIs por tipo según el período seleccionado (mismo filtro que la pirámide)
   const kpisPeriodo = useMemo(() => {
@@ -276,6 +311,126 @@ export function ReportesSeguridadClient({
           </div>
         </div>
         <PiramideSeguridad conteos={piramideConteos} />
+      </div>
+
+      {/* Indicadores LTI / TRI por día */}
+      <div className="space-y-2 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Indicadores LTI / TRI por día
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              LTI = accidentes tipo LTI · TRI = LTI + MDI + MTI
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs">Año</Label>
+              <Select
+                value={String(indAnio)}
+                onValueChange={(v) => setIndAnio(Number(v))}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aniosDisponibles.map((a) => (
+                    <SelectItem key={a} value={String(a)}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Mes</Label>
+              <Select
+                value={String(indMes)}
+                onValueChange={(v) => setIndMes(Number(v))}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MESES.map((nombre, i) => (
+                    <SelectItem key={i} value={String(i + 1)}>
+                      {nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full border-collapse text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="sticky left-0 z-10 border-r bg-slate-50 px-2 py-1.5 text-left font-semibold text-slate-700">
+                  Indicador
+                </th>
+                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
+                  YTD
+                </th>
+                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
+                  MTD
+                </th>
+                {Array.from({ length: indicadoresLtiTri.diasEnMes }, (_, i) => (
+                  <th
+                    key={i}
+                    className="border-r px-1.5 py-1.5 text-center font-medium text-slate-600"
+                  >
+                    {i + 1}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  {
+                    nombre: "LTI",
+                    serie: indicadoresLtiTri.lti,
+                    mtd: indicadoresLtiTri.ltiMtd,
+                    ytd: indicadoresLtiTri.ltiYtd,
+                  },
+                  {
+                    nombre: "TRI",
+                    serie: indicadoresLtiTri.tri,
+                    mtd: indicadoresLtiTri.triMtd,
+                    ytd: indicadoresLtiTri.triYtd,
+                  },
+                ] as const
+              ).map((row) => (
+                <tr key={row.nombre} className="border-t">
+                  <td className="sticky left-0 z-10 border-r bg-white px-2 py-1.5 font-semibold text-slate-900">
+                    {row.nombre}
+                  </td>
+                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
+                    {row.ytd}
+                  </td>
+                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
+                    {row.mtd}
+                  </td>
+                  {row.serie.map((v, i) => (
+                    <td
+                      key={i}
+                      className={
+                        "border-r px-1.5 py-1.5 text-center " +
+                        (v > 0
+                          ? "bg-red-50 font-semibold text-red-700"
+                          : "text-slate-300")
+                      }
+                    >
+                      {v > 0 ? v : "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* KPIs del mes */}
