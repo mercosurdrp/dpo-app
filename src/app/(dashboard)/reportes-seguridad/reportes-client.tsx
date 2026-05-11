@@ -313,126 +313,6 @@ export function ReportesSeguridadClient({
         <PiramideSeguridad conteos={piramideConteos} />
       </div>
 
-      {/* Indicadores LTI / TRI por día */}
-      <div className="space-y-2 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">
-              Indicadores LTI / TRI por día
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              LTI = accidentes tipo LTI · TRI = LTI + MDI + MTI
-            </p>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label className="text-xs">Año</Label>
-              <Select
-                value={String(indAnio)}
-                onValueChange={(v) => setIndAnio(Number(v))}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {aniosDisponibles.map((a) => (
-                    <SelectItem key={a} value={String(a)}>
-                      {a}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Mes</Label>
-              <Select
-                value={String(indMes)}
-                onValueChange={(v) => setIndMes(Number(v))}
-              >
-                <SelectTrigger className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MESES.map((nombre, i) => (
-                    <SelectItem key={i} value={String(i + 1)}>
-                      {nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full border-collapse text-xs">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="sticky left-0 z-10 border-r bg-slate-50 px-2 py-1.5 text-left font-semibold text-slate-700">
-                  Indicador
-                </th>
-                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
-                  YTD
-                </th>
-                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
-                  MTD
-                </th>
-                {Array.from({ length: indicadoresLtiTri.diasEnMes }, (_, i) => (
-                  <th
-                    key={i}
-                    className="border-r px-1.5 py-1.5 text-center font-medium text-slate-600"
-                  >
-                    {i + 1}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(
-                [
-                  {
-                    nombre: "LTI",
-                    serie: indicadoresLtiTri.lti,
-                    mtd: indicadoresLtiTri.ltiMtd,
-                    ytd: indicadoresLtiTri.ltiYtd,
-                  },
-                  {
-                    nombre: "TRI",
-                    serie: indicadoresLtiTri.tri,
-                    mtd: indicadoresLtiTri.triMtd,
-                    ytd: indicadoresLtiTri.triYtd,
-                  },
-                ] as const
-              ).map((row) => (
-                <tr key={row.nombre} className="border-t">
-                  <td className="sticky left-0 z-10 border-r bg-white px-2 py-1.5 font-semibold text-slate-900">
-                    {row.nombre}
-                  </td>
-                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
-                    {row.ytd}
-                  </td>
-                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
-                    {row.mtd}
-                  </td>
-                  {row.serie.map((v, i) => (
-                    <td
-                      key={i}
-                      className={
-                        "border-r px-1.5 py-1.5 text-center " +
-                        (v > 0
-                          ? "bg-red-50 font-semibold text-red-700"
-                          : "text-slate-300")
-                      }
-                    >
-                      {v > 0 ? v : "—"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* KPIs del mes */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {TIPOS.map((t) => (
@@ -599,6 +479,126 @@ export function ReportesSeguridadClient({
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Indicadores LTI / TRI por día */}
+      <div className="space-y-2 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Indicadores LTI / TRI por día
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              LTI = accidentes tipo LTI · TRI = LTI + MDI + MTI
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs">Año</Label>
+              <Select
+                value={String(indAnio)}
+                onValueChange={(v) => setIndAnio(Number(v))}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aniosDisponibles.map((a) => (
+                    <SelectItem key={a} value={String(a)}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Mes</Label>
+              <Select
+                value={String(indMes)}
+                onValueChange={(v) => setIndMes(Number(v))}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MESES.map((nombre, i) => (
+                    <SelectItem key={i} value={String(i + 1)}>
+                      {nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full border-collapse text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="sticky left-0 z-10 border-r bg-slate-50 px-2 py-1.5 text-left font-semibold text-slate-700">
+                  Indicador
+                </th>
+                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
+                  YTD
+                </th>
+                <th className="border-r px-2 py-1.5 font-semibold text-slate-700">
+                  MTD
+                </th>
+                {Array.from({ length: indicadoresLtiTri.diasEnMes }, (_, i) => (
+                  <th
+                    key={i}
+                    className="border-r px-1.5 py-1.5 text-center font-medium text-slate-600"
+                  >
+                    {i + 1}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  {
+                    nombre: "LTI",
+                    serie: indicadoresLtiTri.lti,
+                    mtd: indicadoresLtiTri.ltiMtd,
+                    ytd: indicadoresLtiTri.ltiYtd,
+                  },
+                  {
+                    nombre: "TRI",
+                    serie: indicadoresLtiTri.tri,
+                    mtd: indicadoresLtiTri.triMtd,
+                    ytd: indicadoresLtiTri.triYtd,
+                  },
+                ] as const
+              ).map((row) => (
+                <tr key={row.nombre} className="border-t">
+                  <td className="sticky left-0 z-10 border-r bg-white px-2 py-1.5 font-semibold text-slate-900">
+                    {row.nombre}
+                  </td>
+                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
+                    {row.ytd}
+                  </td>
+                  <td className="border-r px-2 py-1.5 text-center font-semibold text-slate-900">
+                    {row.mtd}
+                  </td>
+                  {row.serie.map((v, i) => (
+                    <td
+                      key={i}
+                      className={
+                        "border-r px-1.5 py-1.5 text-center " +
+                        (v > 0
+                          ? "bg-red-50 font-semibold text-red-700"
+                          : "text-slate-300")
+                      }
+                    >
+                      {v > 0 ? v : "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Dialogs */}
