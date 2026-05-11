@@ -11,6 +11,11 @@
  *   3) Upsert a `rechazos` (filtros: idRechazo>0, !anulado, patente válida).
  *   4) Upsert a `ventas_diarias` (solo FCVTA, patente válida).
  *
+ * Chofer (persona) se resuelve únicamente desde `mapeo_patente_chofer`
+ * (tabla manual). Foxtrot NO se consulta acá — el dato de chofer del
+ * rechazo proviene de quién quedó asignado a la patente, no del tracking
+ * de entregas en vivo.
+ *
  * El sync NO filtra por motivo (la categorización vive en `catalogo_rechazos`,
  * el dashboard la aplica para presentación).
  */
@@ -26,7 +31,7 @@ export interface SyncDayResult {
   rechazos_repetidos: number
   ventas_diarias_upserted: number
   total_rechazos_intentados: number
-  chofer: { foxtrot: number; mapeo: number; sin_resolver: number }
+  chofer: { mapeo: number; sin_resolver: number }
   errors: Array<{ day: string; kind: "rechazo" | "ventas_diarias"; message: string }>
 }
 
@@ -36,14 +41,8 @@ export interface ChessCredentials {
   pass: string
 }
 
-export interface FoxtrotConfig {
-  apiKey: string | undefined
-  dcIds: string[]   // ej ["pergamino","ramallo"]
-}
-
 // ----------------------------- Constantes/utilidades -----------------------------
 
-const FOXTROT_BASE = "https://apiv1.foxtrotsystems.com"
 const PATENTE_REGEX =
   /^([A-Z]{3}\s?\d{3}|[A-Z]{2}\s?\d{3}\s?[A-Z]{2})(\.\d+)?$/i
 
@@ -104,10 +103,7 @@ interface ChessVenta {
   internos: number | null
 }
 
-interface FoxtrotDriver { id: string; name: string }
-interface FoxtrotRoute { name: string | null; assigned_driver_id: string | null }
-
-// ----------------------------- Acceso a Chess / Foxtrot -----------------------------
+// ----------------------------- Acceso a Chess -----------------------------
 
 export async function chessLogin(creds: ChessCredentials): Promise<string> {
   const resp = await chessFetch(`${creds.baseUrl}/auth/login`, {
@@ -119,55 +115,6 @@ export async function chessLogin(creds: ChessCredentials): Promise<string> {
   const data = (await resp.json()) as { sessionId?: string }
   if (!data.sessionId) throw new Error("No sessionId from Chess")
   return data.sessionId
-}
-
-/** Mapa `<dc>:<driverId>` → nombre del chofer (una sola vez por sync). */
-export async function fetchFoxtrotDrivers(fox: FoxtrotConfig): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  if (!fox.apiKey) return out
-
-  await Promise.all(fox.dcIds.map(async (dc) => {
-    try {
-      const r = await fetch(`${FOXTROT_BASE}/dcs/${dc}/drivers`, {
-        headers: { Authorization: `Bearer ${fox.apiKey}`, Accept: "application/json" },
-      })
-      if (!r.ok) { console.warn(`[sync] foxtrot drivers ${dc}: HTTP ${r.status}`); return }
-      const d = (await r.json()) as { data?: { drivers?: FoxtrotDriver[] } }
-      for (const drv of d?.data?.drivers ?? []) out.set(`${dc}:${drv.id}`, drv.name)
-    } catch (e) {
-      console.warn(`[sync] foxtrot drivers ${dc} error: ${e}`)
-    }
-  }))
-  return out
-}
-
-/** Mapa patente normalizada → nombre del chofer (por fecha). */
-async function fetchPatenteChoferMap(
-  fox: FoxtrotConfig,
-  fecha: string,
-  driversById: Map<string, string>
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>()
-  if (!fox.apiKey) return map
-
-  await Promise.all(fox.dcIds.map(async (dc) => {
-    try {
-      const r = await fetch(`${FOXTROT_BASE}/dcs/${dc}/routes/find_by_date/${fecha}`, {
-        headers: { Authorization: `Bearer ${fox.apiKey}`, Accept: "application/json" },
-      })
-      if (!r.ok) return
-      const d = (await r.json()) as { data?: { routes?: FoxtrotRoute[] } }
-      for (const rt of d?.data?.routes ?? []) {
-        if (!rt.name || !rt.assigned_driver_id) continue
-        const chofer = driversById.get(`${dc}:${rt.assigned_driver_id}`)
-        if (!chofer) continue
-        map.set(normalizarPatente(rt.name), chofer)
-      }
-    } catch (e) {
-      console.warn(`[sync] foxtrot routes ${dc} ${fecha} error: ${e}`)
-    }
-  }))
-  return map
 }
 
 async function fetchVentasDia(
@@ -187,7 +134,7 @@ async function fetchVentasDia(
 // ----------------------------- mapeo_patente_chofer (manual) -----------------------------
 
 /**
- * Carga el mapeo patente→chofer manual (fallback cuando Foxtrot no resuelve).
+ * Carga el mapeo patente→chofer manual.
  * Devuelve mapa `<patente_normalizada>` → `<nombre del chofer>`.
  * Si la tabla no existe (e.g. antes de aplicar mig. 056), devuelve mapa vacío.
  */
@@ -217,9 +164,7 @@ export async function loadMapeoManualChofer(
 export interface SyncDayDeps {
   supabase: SupabaseClient
   chess: ChessCredentials
-  foxtrot: FoxtrotConfig
   sessionId: string                       // pre-loggeado para reutilizar entre días
-  foxtrotDriversById: Map<string, string> // cargado una vez por sync
   mapeoManualChofer: Map<string, string>  // cargado una vez por sync
 }
 
@@ -232,7 +177,7 @@ export async function syncRechazosForDate(
   fecha: string,
   deps: SyncDayDeps,
 ): Promise<SyncDayResult> {
-  const { supabase, chess, foxtrot, sessionId, foxtrotDriversById, mapeoManualChofer } = deps
+  const { supabase, chess, sessionId, mapeoManualChofer } = deps
 
   const result: SyncDayResult = {
     fecha,
@@ -241,15 +186,11 @@ export async function syncRechazosForDate(
     rechazos_repetidos: 0,
     ventas_diarias_upserted: 0,
     total_rechazos_intentados: 0,
-    chofer: { foxtrot: 0, mapeo: 0, sin_resolver: 0 },
+    chofer: { mapeo: 0, sin_resolver: 0 },
     errors: [],
   }
 
-  const [ventas, patenteChofer] = await Promise.all([
-    fetchVentasDia(chess, sessionId, fecha),
-    fetchPatenteChoferMap(foxtrot, fecha, foxtrotDriversById),
-  ])
-
+  const ventas = await fetchVentasDia(chess, sessionId, fecha)
   if (ventas.length === 0) { result.sin_datos = true; return result }
 
   // Total bultos entregados por fletero (mismo criterio que ventas_diarias
@@ -274,12 +215,9 @@ export async function syncRechazosForDate(
   // ---- upsert rechazos ----
   for (const r of rechazos) {
     const patenteNorm = normalizarPatente(r.dsFleteroCarga)
-    const choferFoxtrot = patenteChofer.get(patenteNorm)
-    const choferMapeo = mapeoManualChofer.get(patenteNorm)
-    let chofer: string | null = null
-    if (choferFoxtrot) { chofer = choferFoxtrot; result.chofer.foxtrot++ }
-    else if (choferMapeo) { chofer = choferMapeo; result.chofer.mapeo++ }
-    else { result.chofer.sin_resolver++ }
+    const choferMapeo = mapeoManualChofer.get(patenteNorm) ?? null
+    if (choferMapeo) result.chofer.mapeo++
+    else result.chofer.sin_resolver++
 
     const row = {
       fecha,
@@ -298,7 +236,7 @@ export async function syncRechazosForDate(
       id_vendedor: r.idVendedor,
       ds_vendedor: r.dsVendedor,
       planilla_carga: r.planillaCarga,
-      chofer,
+      chofer: choferMapeo,
       // Campos sumados en PR 1
       monto_neto:      r.subtotalNeto   == null ? null : Math.abs(Number(r.subtotalNeto)   || 0),
       monto_bruto:     r.subtotalFinal  == null ? null : Math.abs(Number(r.subtotalFinal)  || 0),

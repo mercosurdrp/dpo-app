@@ -17,21 +17,15 @@ import { createClient } from "@/lib/supabase/server"
 import { calcularKpisConClient } from "@/lib/dpo-kpis-calc"
 import {
   chessLogin,
-  fetchFoxtrotDrivers,
   loadMapeoManualChofer,
   syncRechazosForDate,
   type ChessCredentials,
-  type FoxtrotConfig,
   type SyncDayResult,
 } from "@/lib/sync/rechazos-sync"
 
 const CHESS_BASE = process.env.CHESS_API_BASE_URL
 const CHESS_USER = process.env.CHESS_API_USER
 const CHESS_PASS = process.env.CHESS_API_PASS
-const FOXTROT_KEY = process.env.FOXTROT_API_KEY
-const FOXTROT_DCS =
-  process.env.FOXTROT_DC_IDS?.split(",").map((s) => s.trim()).filter(Boolean) ??
-  ["eldorado", "iguazu"]
 
 const ALLOWED_ROLES = ["admin", "supervisor", "admin_rrhh"] as const
 const CRON_SECRET = process.env.CRON_SECRET
@@ -126,20 +120,18 @@ export async function POST(request: NextRequest) {
     console.log(`[sync] start source=${source} desde=${fechaDesdeStr} hasta=${fechaHastaStr}`)
 
     const chess: ChessCredentials = { baseUrl: CHESS_BASE, user: CHESS_USER, pass: CHESS_PASS }
-    const foxtrot: FoxtrotConfig = { apiKey: FOXTROT_KEY, dcIds: FOXTROT_DCS }
     const sessionId = await chessLogin(chess)
-    const foxtrotDriversById = await fetchFoxtrotDrivers(foxtrot)
 
     const supabase = createAdminClient()
     const mapeoManualChofer = await loadMapeoManualChofer(supabase)
-    console.log(`[sync] foxtrot_drivers=${foxtrotDriversById.size} mapeo_manual=${mapeoManualChofer.size}`)
+    console.log(`[sync] mapeo_manual=${mapeoManualChofer.size}`)
 
     let totalRechazosUp = 0
     let totalRechazosRep = 0
     let totalVentasUp = 0
     let totalDias = 0
     let diasSinDatos = 0
-    let chFox = 0, chMap = 0, chSin = 0
+    let chMap = 0, chSin = 0
     const errors: SyncDayResult["errors"] = []
 
     const current = new Date(desde)
@@ -147,13 +139,13 @@ export async function POST(request: NextRequest) {
       const fechaStr = current.toISOString().slice(0, 10)
       totalDias++
       const r = await syncRechazosForDate(fechaStr, {
-        supabase, chess, foxtrot, sessionId, foxtrotDriversById, mapeoManualChofer,
+        supabase, chess, sessionId, mapeoManualChofer,
       })
       if (r.sin_datos) diasSinDatos++
       totalRechazosUp += r.rechazos_upserted
       totalRechazosRep += r.rechazos_repetidos
       totalVentasUp += r.ventas_diarias_upserted
-      chFox += r.chofer.foxtrot; chMap += r.chofer.mapeo; chSin += r.chofer.sin_resolver
+      chMap += r.chofer.mapeo; chSin += r.chofer.sin_resolver
       errors.push(...r.errors)
       current.setDate(current.getDate() + 1)
     }
@@ -176,7 +168,7 @@ export async function POST(request: NextRequest) {
     console.log(
       `[sync] done source=${source} dias=${totalDias} sin_datos=${diasSinDatos} ` +
       `rechazos_upserted=${totalRechazosUp} ventas_upserted=${totalVentasUp} ` +
-      `chofer_foxtrot=${chFox} chofer_mapeo=${chMap} chofer_sin_resolver=${chSin} ` +
+      `chofer_mapeo=${chMap} chofer_sin_resolver=${chSin} ` +
       `errors=${errors.length} duration_ms=${durationMs}`
     )
 
@@ -200,7 +192,7 @@ export async function POST(request: NextRequest) {
       ventas_upserted: totalVentasUp,
       dias_sin_datos: diasSinDatos,
       kpis_calculados: kpisCalculados,
-      chofer: { foxtrot: chFox, mapeo: chMap, sin_resolver: chSin },
+      chofer: { mapeo: chMap, sin_resolver: chSin },
       errors,
       duration_ms: durationMs,
     })

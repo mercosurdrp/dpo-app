@@ -4,7 +4,7 @@
  * `src/lib/sync/rechazos-sync.ts` — una sola fuente de verdad.
  *
  * Pre-requisitos: `.env.local` apuntando al tenant correcto, con
- * SUPABASE_SERVICE_ROLE_KEY + CHESS_API_* + FOXTROT_API_KEY/DC_IDS.
+ * SUPABASE_SERVICE_ROLE_KEY + CHESS_API_*.
  *
  * Uso:
  *   npx tsx scripts/maintenance/sync-rechazos-local.ts test 2026-04-29
@@ -17,11 +17,9 @@ import { createClient } from "@supabase/supabase-js"
 import { readFileSync } from "node:fs"
 import {
   chessLogin,
-  fetchFoxtrotDrivers,
   loadMapeoManualChofer,
   syncRechazosForDate,
   type ChessCredentials,
-  type FoxtrotConfig,
   type SyncDayResult,
 } from "../../src/lib/sync/rechazos-sync"
 
@@ -44,10 +42,6 @@ const chess: ChessCredentials = {
   user: env.CHESS_API_USER,
   pass: env.CHESS_API_PASS,
 }
-const foxtrot: FoxtrotConfig = {
-  apiKey: env.FOXTROT_API_KEY,
-  dcIds: (env.FOXTROT_DC_IDS ?? "").split(",").map(s => s.trim()).filter(Boolean),
-}
 
 const supabase = createClient(SUPABASE_URL, SVC, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -56,7 +50,7 @@ const supabase = createClient(SUPABASE_URL, SVC, {
 function logDay(r: SyncDayResult) {
   if (r.sin_datos) { console.log(`${r.fecha}: sin datos`); return }
   const tag = `R=${r.rechazos_upserted}/${r.total_rechazos_intentados} V=${r.ventas_diarias_upserted}`
-  const cho = `[chofer fox=${r.chofer.foxtrot} map=${r.chofer.mapeo} sin=${r.chofer.sin_resolver}]`
+  const cho = `[chofer map=${r.chofer.mapeo} sin=${r.chofer.sin_resolver}]`
   const err = r.errors.length ? ` ERR(${r.errors.length}: ${r.errors[0].message})` : ""
   console.log(`${r.fecha}: ${tag} ${cho}${err}`)
 }
@@ -64,21 +58,18 @@ function logDay(r: SyncDayResult) {
 async function setup() {
   console.log(`Supabase: ${SUPABASE_URL}`)
   console.log(`Chess:    ${chess.baseUrl} (user ${chess.user})`)
-  console.log(`Foxtrot:  DCs=${foxtrot.dcIds.join(",")}`)
   console.log()
 
   const sessionId = await chessLogin(chess)
   console.log("Chess login OK")
-  const foxtrotDriversById = await fetchFoxtrotDrivers(foxtrot)
-  console.log(`Foxtrot drivers loaded: ${foxtrotDriversById.size}`)
   const mapeoManualChofer = await loadMapeoManualChofer(supabase)
   console.log(`mapeo_patente_chofer manual: ${mapeoManualChofer.size}`)
   console.log()
-  return { sessionId, foxtrotDriversById, mapeoManualChofer }
+  return { sessionId, mapeoManualChofer }
 }
 
 async function modeTest(fecha: string) {
-  const { sessionId, foxtrotDriversById, mapeoManualChofer } = await setup()
+  const { sessionId, mapeoManualChofer } = await setup()
 
   const { count: rB } = await supabase.from("rechazos").select("*", { count: "exact", head: true }).eq("fecha", fecha)
   const { count: vB } = await supabase.from("ventas_diarias").select("*", { count: "exact", head: true }).eq("fecha", fecha)
@@ -87,7 +78,7 @@ async function modeTest(fecha: string) {
   console.log(`ANTES — first created_at: ${sB?.[0]?.created_at ?? "(none)"}`)
   console.log()
 
-  const r = await syncRechazosForDate(fecha, { supabase, chess, foxtrot, sessionId, foxtrotDriversById, mapeoManualChofer })
+  const r = await syncRechazosForDate(fecha, { supabase, chess, sessionId, mapeoManualChofer })
   console.log(`SYNC: ${JSON.stringify(r)}`)
   console.log()
 
@@ -103,22 +94,22 @@ async function modeTest(fecha: string) {
 
 async function modeBackfill(fromStr: string, toStr: string) {
   const startedAt = Date.now()
-  const { sessionId, foxtrotDriversById, mapeoManualChofer } = await setup()
+  const { sessionId, mapeoManualChofer } = await setup()
 
   const from = new Date(fromStr + "T00:00:00Z")
   const to = new Date(toStr + "T00:00:00Z")
   let totalR = 0, totalV = 0
-  let chFox = 0, chMap = 0, chSin = 0
+  let chMap = 0, chSin = 0
   const errors: SyncDayResult["errors"] = []
 
   for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
     const f = d.toISOString().slice(0, 10)
     try {
-      const r = await syncRechazosForDate(f, { supabase, chess, foxtrot, sessionId, foxtrotDriversById, mapeoManualChofer })
+      const r = await syncRechazosForDate(f, { supabase, chess, sessionId, mapeoManualChofer })
       logDay(r)
       totalR += r.rechazos_upserted
       totalV += r.ventas_diarias_upserted
-      chFox += r.chofer.foxtrot; chMap += r.chofer.mapeo; chSin += r.chofer.sin_resolver
+      chMap += r.chofer.mapeo; chSin += r.chofer.sin_resolver
       errors.push(...r.errors)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -130,11 +121,11 @@ async function modeBackfill(fromStr: string, toStr: string) {
 
   console.log()
   console.log(`=== RESUMEN ===`)
-  console.log(`Rechazos upserted:           ${totalR}`)
-  console.log(`Ventas_diarias upserted:     ${totalV}`)
-  console.log(`Chofer fox/map/sin_resolver: ${chFox}/${chMap}/${chSin}`)
-  console.log(`Errores:                     ${errors.length}`)
-  console.log(`Duración:                    ${(durationMs / 1000).toFixed(1)}s`)
+  console.log(`Rechazos upserted:        ${totalR}`)
+  console.log(`Ventas_diarias upserted:  ${totalV}`)
+  console.log(`Chofer mapeo/sin_resolver:${chMap}/${chSin}`)
+  console.log(`Errores:                  ${errors.length}`)
+  console.log(`Duración:                 ${(durationMs / 1000).toFixed(1)}s`)
 
   const { error: logErr } = await supabase.from("sync_log").insert({
     source: "script",

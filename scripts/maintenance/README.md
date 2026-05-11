@@ -17,7 +17,7 @@ Replica EXACTO la lógica de `POST /api/rechazos/sync` pero corre local desde CL
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 - `CHESS_API_BASE_URL`, `CHESS_API_USER`, `CHESS_API_PASS`
-- `FOXTROT_API_KEY`, `FOXTROT_DC_IDS` (opcional, pero sin esto `chofer` queda NULL)
+- `chofer` se resuelve desde la tabla `mapeo_patente_chofer` (manual). Si la patente no está mapeada o el chofer_id queda NULL, el campo `rechazos.chofer` queda en NULL y el dashboard cae al display de patente vía COALESCE.
 
 Antes de correrlo, **confirmá a qué Supabase apunta**:
 
