@@ -347,11 +347,13 @@ export async function getReunionDetalle(
         )
         .eq("reunion_id", id),
       // Actividades: traemos todas con join a la reunión origen y filtramos en TS.
-      // Lógica temporal:
+      // Lógica:
       //   - reunion_origen.tipo == reunionActual.tipo
       //   - reunion_origen.fecha <= reunionActual.fecha (no creadas en el futuro)
-      //   - estado != 'cerrada'  OR
-      //     (estado == 'cerrada' AND DATE(completado_at AT TZ AR) >= reunionActual.fecha)
+      //   - estado != 'cerrada'  → siempre visible (se arrastran de mes a mes hasta cerrarse)
+      //   - estado == 'cerrada'  → visible solo en reuniones del mismo mes-año del cierre,
+      //     comparando YYYY-MM de completado_at (en zona AR) contra YYYY-MM de reunionActual.fecha.
+      //     Las cerradas no cruzan al mes siguiente: quedan como historial del mes en que se cerraron.
       supabase
         .from("reuniones_actividades")
         .select(
@@ -401,19 +403,18 @@ export async function getReunionDetalle(
       if (origen.fecha > reunionFecha) return false
       // Vivas: siempre visibles (mientras origen.fecha <= reunionFecha)
       if (a.estado !== "cerrada") return true
-      // Cerradas: visibles si fecha de cierre (en zona AR) >= reunionFecha
+      // Cerradas: visibles solo en reuniones del MISMO mes-año del cierre (zona AR).
       if (!a.completado_at) return true // defensivo: cerrada sin marca de tiempo
       const fechaCierreAr = new Date(
         new Date(a.completado_at).toLocaleString("en-US", {
           timeZone: "America/Argentina/Buenos_Aires",
         }),
       )
-      const fechaCierreYmd = [
-        fechaCierreAr.getFullYear(),
-        String(fechaCierreAr.getMonth() + 1).padStart(2, "0"),
-        String(fechaCierreAr.getDate()).padStart(2, "0"),
-      ].join("-")
-      return fechaCierreYmd >= reunionFecha
+      const cierreYm = `${fechaCierreAr.getFullYear()}-${String(
+        fechaCierreAr.getMonth() + 1,
+      ).padStart(2, "0")}`
+      const reunionYm = reunionFecha.slice(0, 7) // YYYY-MM
+      return cierreYm === reunionYm
     })
 
     const actividades: ReunionActividadConResponsable[] = actividadesFiltradas.map(
