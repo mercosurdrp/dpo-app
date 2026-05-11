@@ -2303,6 +2303,8 @@ export interface ReunionIndicadoresMes {
       } | null
     >
     mtd: number | null
+    /** Si true, la fila viene calculada por el sistema (no editable) — p.ej. LTI/TRI desde reportes_seguridad. */
+    auto?: boolean
   }>
 }
 

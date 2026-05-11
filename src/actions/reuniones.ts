@@ -1916,13 +1916,78 @@ export async function getIndicadoresMes(
       }
     })
 
+    // 7. Indicadores AUTO desde reportes_seguridad: LTI y TRI.
+    //    LTI = count(tipo_accidente='lti'), TRI = count(tipo_accidente ∈ {lti,mdi,mti}).
+    //    MTD se calcula hasta la fecha de la reunión actual (incluida).
+    const { data: reportesRaw, error: errRep } = await supabase
+      .from("reportes_seguridad")
+      .select("fecha, tipo_accidente")
+      .gte("fecha", fechaDesde)
+      .lte("fecha", fechaHasta)
+      .not("tipo_accidente", "is", null)
+
+    const ltiPorFecha: Record<string, number> = {}
+    const triPorFecha: Record<string, number> = {}
+    if (!errRep) {
+      const triSet = new Set(["lti", "mdi", "mti"])
+      for (const r of (reportesRaw ?? []) as Array<{
+        fecha: string
+        tipo_accidente: string | null
+      }>) {
+        if (!r.tipo_accidente) continue
+        if (r.tipo_accidente === "lti") {
+          ltiPorFecha[r.fecha] = (ltiPorFecha[r.fecha] ?? 0) + 1
+        }
+        if (triSet.has(r.tipo_accidente)) {
+          triPorFecha[r.fecha] = (triPorFecha[r.fecha] ?? 0) + 1
+        }
+      }
+    }
+
+    function buildAutoRow(
+      id: string,
+      nombre: string,
+      porFecha: Record<string, number>,
+    ) {
+      const valoresPorFecha: Record<
+        string,
+        { reunion_id: string; valor: number | null; observacion: string | null } | null
+      > = {}
+      let mtd = 0
+      for (const f of fechas) {
+        const v = porFecha[f] ?? 0
+        valoresPorFecha[f] = {
+          reunion_id: "auto",
+          valor: v,
+          observacion: null,
+        }
+        if (f <= fecha) mtd += v
+      }
+      return {
+        id,
+        nombre,
+        unidad: null,
+        meta: null,
+        orden: -1,
+        agregacion: "suma" as AgregacionIndicador,
+        valores: valoresPorFecha,
+        mtd,
+        auto: true,
+      }
+    }
+
+    const indicadoresAuto = [
+      buildAutoRow("auto_lti", "LTI", ltiPorFecha),
+      buildAutoRow("auto_tri", "TRI", triPorFecha),
+    ]
+
     return {
       data: {
         anio,
         mes,
         fechas,
         reuniones_por_fecha: reunionesPorFecha,
-        indicadores,
+        indicadores: [...indicadoresAuto, ...indicadores],
       },
     }
   } catch (err) {

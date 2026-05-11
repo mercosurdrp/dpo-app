@@ -83,6 +83,7 @@ interface IndicadorMesItem {
   agregacion: AgregacionIndicador
   valores: Record<string, IndicadorMesCellData | null>
   mtd: number | null
+  auto?: boolean
 }
 
 interface IndicadoresMesData {
@@ -1076,7 +1077,14 @@ export function ReunionDetallePageClient({
                   {indicadoresMes.indicadores.map((ind) => (
                     <tr key={ind.id} className="border-b last:border-0">
                       <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] truncate bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900" title={ind.nombre}>
-                        {ind.nombre}
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{ind.nombre}</span>
+                          {ind.auto && (
+                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700">
+                              auto
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}
@@ -1093,6 +1101,31 @@ export function ReunionDetallePageClient({
                         const dom = esFinDeSemana(f)
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
+
+                        // Filas AUTO (LTI/TRI desde reportes_seguridad): se muestran
+                        // siempre como read-only, independientemente de si hubo reunión.
+                        // Mostramos el valor numérico solo si f <= fecha de la reunión
+                        // (no anticipamos futuro).
+                        if (ind.auto) {
+                          const valor = cell?.valor ?? null
+                          const muestra =
+                            valor != null && Number.isFinite(valor) && valor > 0 && f <= detalle.fecha
+                          return (
+                            <td
+                              key={f}
+                              className={cn(
+                                "px-2 py-1 text-center align-middle text-sm tabular-nums",
+                                muestra
+                                  ? "bg-red-50 font-semibold text-red-700"
+                                  : "text-slate-300",
+                                esHoy && !muestra && "bg-blue-50",
+                                dom && !muestra && "bg-slate-50",
+                              )}
+                            >
+                              {muestra ? formatearValor(valor!) : "—"}
+                            </td>
+                          )
+                        }
 
                         // Día sin reunión (futuro o no permitido)
                         if (reunionIdEnFecha === null) {
