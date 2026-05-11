@@ -1,6 +1,7 @@
 "use client"
 
-import type { Alert, RechazosComparado } from "@/lib/types/rechazos"
+import { useCallback, useState } from "react"
+import type { RechazosComparado, TopVariacionDim } from "@/lib/types/rechazos"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Header } from "./header"
 import { Filtros } from "./filtros"
@@ -13,13 +14,33 @@ import { RankingChoferes } from "./ranking-choferes"
 import { RankingClientes } from "./ranking-clientes"
 import { RankingProductos } from "./ranking-productos"
 import { TopVariacionesBloque } from "./top-variaciones"
+import { DrillDownSheet, type DrillTo } from "./drill-down-sheet"
 
 export function DashboardClient({ data }: { data: RechazosComparado }) {
-  // Drill-down concreto llega en step 7. Mientras: log para validar wiring.
-  const onDrillTo = (drillTo: NonNullable<Alert["drillTo"]>) => {
-    // eslint-disable-next-line no-console
-    console.info("[rechazos] drill-down pendiente (step 7):", drillTo)
-  }
+  const [drillTo, setDrillTo] = useState<DrillTo | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  const resolveLabel = useCallback((tipo: TopVariacionDim, id: string | number): string | undefined => {
+    switch (tipo) {
+      case "motivo":
+        return data.filter_options.motivos.find(m => m.id_rechazo === id)?.ds_rechazo
+      case "chofer":
+        return data.filter_options.fleteros.find(f => f.patente === id)?.chofer_display
+      case "cliente":
+        return data.agg.por_cliente.find(c => c.id_cliente === id)?.nombre_cliente ?? undefined
+      case "producto":
+        return data.agg.por_producto.find(p => p.id_articulo === id)?.ds_articulo
+      case "canal":
+        return String(id)
+      default:
+        return undefined
+    }
+  }, [data])
+
+  const openDrill = useCallback((d: { tipo: TopVariacionDim; id: string | number; label?: string }) => {
+    setDrillTo({ tipo: d.tipo, id: d.id, label: d.label ?? resolveLabel(d.tipo, d.id) })
+    setSheetOpen(true)
+  }, [resolveLabel])
 
   return (
     <TooltipProvider>
@@ -30,9 +51,9 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
           defaultDesde={data.meta.actual.desde}
           defaultHasta={data.meta.actual.hasta}
         />
-        <AlertasBloque alerts={data.alerts} onDrillTo={onDrillTo} />
+        <AlertasBloque alerts={data.alerts} onDrillTo={openDrill} />
         <KpiCards data={data} />
-        <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={onDrillTo} />
+        <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={openDrill} />
         <EvolucionTemporal series={data.series} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ParetoMotivos por_motivo={data.agg.por_motivo} />
@@ -41,13 +62,22 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
         <RankingChoferes
           por_chofer={data.agg.por_chofer}
           tasaPromedio={data.actual.tasa}
-          onDrillTo={onDrillTo}
+          onDrillTo={openDrill}
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={onDrillTo} />
-          <RankingProductos por_producto={data.agg.por_producto} onDrillTo={onDrillTo} />
+          <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={openDrill} />
+          <RankingProductos por_producto={data.agg.por_producto} onDrillTo={openDrill} />
         </div>
       </div>
+
+      <DrillDownSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        drillTo={drillTo}
+        desde={data.meta.actual.desde}
+        hasta={data.meta.actual.hasta}
+        filters={data.meta.filters_applied}
+      />
     </TooltipProvider>
   )
 }
