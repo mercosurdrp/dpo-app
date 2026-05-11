@@ -2,7 +2,7 @@
  * Lógica del dashboard ejecutivo de rechazos.
  *
  * Esta es la implementación PURA — recibe el cliente Supabase como parámetro,
- * sin tocar cookies(). El server action en `src/actions/rechazos-v2.ts` la
+ * sin tocar cookies(). El server action en `src/actions/rechazos.ts` la
  * wrappea con un cliente con sesión. Los smoke scripts la consumen con un
  * cliente service_role.
  */

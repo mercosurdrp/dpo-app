@@ -2,7 +2,7 @@
  * Tipos del dashboard de rechazos V1 (Pampeana).
  *
  * Consumidos por:
- *   - src/actions/rechazos-v2.ts → función `getRechazosComparado`
+ *   - src/actions/rechazos.ts → función `getRechazosComparado`
  *   - src/app/(dashboard)/indicadores/rechazos/* → UI consumer
  *
  * Convención general:

@@ -216,10 +216,10 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                 </div>
                 <div>
                   <p className="font-semibold text-slate-900">
-                    % Rechazos
+                    Rechazos
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Bultos rechazados vs entregados — Meta 1.5%
+                    Dashboard ejecutivo de rechazos
                   </p>
                 </div>
               </CardContent>
