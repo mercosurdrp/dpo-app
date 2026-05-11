@@ -6,6 +6,9 @@ import { Header } from "./header"
 import { Filtros } from "./filtros"
 import { AlertasBloque } from "./alertas-bloque"
 import { KpiCards } from "./kpi-cards"
+import { EvolucionTemporal } from "./evolucion-temporal"
+import { ParetoMotivos } from "./pareto-motivos"
+import { DistribucionCanal } from "./distribucion-canal"
 
 export function DashboardClient({ data }: { data: RechazosComparado }) {
   // Drill-down concreto llega en step 7. Mientras: log para validar wiring.
@@ -25,6 +28,11 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
         />
         <AlertasBloque alerts={data.alerts} onDrillTo={onDrillTo} />
         <KpiCards data={data} />
+        <EvolucionTemporal series={data.series} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ParetoMotivos por_motivo={data.agg.por_motivo} />
+          <DistribucionCanal por_canal={data.agg.por_canal} />
+        </div>
       </div>
     </TooltipProvider>
   )
