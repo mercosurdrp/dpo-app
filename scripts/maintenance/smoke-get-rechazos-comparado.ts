@@ -47,6 +47,15 @@ async function main() {
       por_supervisor: d.agg.por_supervisor.slice(0, 5),
     },
     top_variaciones: d.top_variaciones,
+    filter_options_summary: {
+      motivos: d.filter_options.motivos.length,
+      fleteros: d.filter_options.fleteros.length,
+      canales: d.filter_options.canales.length,
+      supervisores: d.filter_options.supervisores.length,
+      categorias: d.filter_options.categorias,
+      sample_motivos: d.filter_options.motivos.slice(0, 3),
+      sample_fleteros: d.filter_options.fleteros.slice(0, 3),
+    },
   }
   console.log(JSON.stringify(truncated, null, 2))
 

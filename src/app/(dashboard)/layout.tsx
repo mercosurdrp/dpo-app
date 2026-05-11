@@ -1,3 +1,4 @@
+import { NuqsAdapter } from "nuqs/adapters/next/app"
 import { requireAuth, getProfile } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -41,12 +42,14 @@ export default async function DashboardLayout({
   )
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar role={role} pilares={pilarNav} />
-      <MobileNav role={role} pilares={pilarNav} />
-      <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-14 md:p-6 md:pt-6">
-        {children}
-      </main>
-    </div>
+    <NuqsAdapter>
+      <div className="flex min-h-screen">
+        <Sidebar role={role} pilares={pilarNav} />
+        <MobileNav role={role} pilares={pilarNav} />
+        <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-14 md:p-6 md:pt-6">
+          {children}
+        </main>
+      </div>
+    </NuqsAdapter>
   )
 }

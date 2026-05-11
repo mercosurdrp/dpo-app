@@ -129,7 +129,7 @@ export async function getRechazosComparado(
     const filters = request.filters ?? {}
 
     console.time("[rechazos-comparado] loads")
-    const [actualData, previousData, previous2Data, catalogo, mapeoChoferes, lastSync] =
+    const [actualData, previousData, previous2Data, catalogo, mapeoChoferes, lastSync, filterDistincts] =
       await Promise.all([
         timed("queries_actual", () => loadPeriodData(supa, request.desde, request.hasta, filters)),
         timed("queries_previous", () => loadPeriodData(supa, previousWin.desde, previousWin.hasta, filters)),
@@ -137,6 +137,7 @@ export async function getRechazosComparado(
         timed("queries_catalogo", () => loadCatalogo(supa)),
         timed("queries_mapeo", () => loadMapeoChoferes(supa)),
         timed("queries_sync_log", () => loadLastSync(supa)),
+        timed("queries_filter_distincts", () => loadFilterDistincts(supa, request.desde, request.hasta)),
       ])
     console.timeEnd("[rechazos-comparado] loads")
 
@@ -184,6 +185,19 @@ export async function getRechazosComparado(
       ? await resolveFilters(supa, filters)
       : undefined
 
+    const filter_options = {
+      motivos: catalogo.map(c => ({
+        id_rechazo: c.id_rechazo, ds_rechazo: c.ds_rechazo,
+        categoria: c.categoria, controlable: c.controlable,
+      })),
+      fleteros: mapeoChoferes
+        .map(m => ({ patente: m.patente, chofer_display: m.chofer_nombre ?? m.patente }))
+        .sort((a, b) => a.patente.localeCompare(b.patente)),
+      canales: filterDistincts.canales,
+      supervisores: filterDistincts.supervisores,
+      categorias: [...new Set(catalogo.map(c => c.categoria))].sort(),
+    }
+
     const result: RechazosComparado = {
       meta: {
         lastSync,
@@ -198,6 +212,7 @@ export async function getRechazosComparado(
       actual: actualKPI,
       previous: previousKPI,
       delta,
+      filter_options,
       alerts: { items: alertItems, tendencia_evaluation: tendenciaEval },
       series,
       agg,
@@ -349,6 +364,30 @@ async function loadMapeoChoferes(supa: SupaClient): Promise<MapeoChofer[]> {
     patente: r.patente,
     chofer_nombre: r.catalogo_choferes?.nombre ?? null,
   }))
+}
+
+/**
+ * Distincts de canal/supervisor del período actual SIN aplicar filtros — sirve
+ * para que los dropdowns muestren todas las opciones aunque el usuario tenga
+ * un filtro activo. Limita a las dimensiones donde no tenemos catálogo aparte.
+ */
+async function loadFilterDistincts(
+  supa: SupaClient, desde: string, hasta: string,
+): Promise<{ canales: string[]; supervisores: string[] }> {
+  const { data } = await supa
+    .from("rechazos")
+    .select("ds_canal_mkt, ds_supervisor")
+    .gte("fecha", desde).lte("fecha", hasta)
+  const cSet = new Set<string>()
+  const sSet = new Set<string>()
+  for (const r of (data ?? []) as { ds_canal_mkt: string | null; ds_supervisor: string | null }[]) {
+    if (r.ds_canal_mkt) cSet.add(r.ds_canal_mkt)
+    if (r.ds_supervisor) sSet.add(r.ds_supervisor)
+  }
+  return {
+    canales: [...cSet].sort(),
+    supervisores: [...sSet].sort(),
+  }
 }
 
 async function loadLastSync(supa: SupaClient): Promise<SyncLogEntry | null> {

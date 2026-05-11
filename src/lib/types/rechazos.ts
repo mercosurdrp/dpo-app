@@ -353,11 +353,32 @@ export interface RechazosFiltersResolved {
 //  Response completo
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Listas completas para poblar los dropdowns de filtros (UI).
+ * Se calculan SIN aplicar los filtros del request — de esa forma el dropdown
+ * sigue mostrando todas las opciones cuando el usuario ya tiene filtros activos.
+ */
+export interface RechazosFilterOptions {
+  /** Catálogo completo de motivos activos (con categoría + flag controlable). */
+  motivos: { id_rechazo: number; ds_rechazo: string; categoria: RechazoCategoria; controlable: boolean }[]
+  /** Mapeo completo de patentes (con chofer resuelto si está cargado). */
+  fleteros: { patente: string; chofer_display: string }[]
+  /** Canales distintos del período (sin filtros). */
+  canales: string[]
+  /** Supervisores distintos del período (sin filtros). */
+  supervisores: string[]
+  /** Categorías presentes en el catálogo. */
+  categorias: RechazoCategoria[]
+}
+
 export interface RechazosComparado {
   meta: RechazosComparadoMeta
   actual: RechazosKPI
   previous: RechazosKPI
   delta: RechazosDelta
+
+  /** Listas para los dropdowns de filtros — independientes de los filtros aplicados. */
+  filter_options: RechazosFilterOptions
 
   /**
    * Alertas evaluadas server-side. La UI debe distinguir:
