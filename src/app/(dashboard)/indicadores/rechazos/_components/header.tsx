@@ -2,6 +2,7 @@
 
 import type { RechazosComparado } from "@/lib/types/rechazos"
 import { formatFecha } from "@/lib/format/rechazos"
+import { ExportCsvBtn } from "./export-csv-btn"
 
 const SOURCE_LABEL: Record<string, string> = {
   cron: "automático",
@@ -16,16 +17,19 @@ export function Header({ meta }: { meta: RechazosComparado["meta"] }) {
     : "Sin datos de sincronización"
 
   return (
-    <header className="space-y-1">
-      <h1 className="text-2xl font-bold text-slate-900">Rechazos Pampeana — Dashboard ejecutivo</h1>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-        <span>
-          Período: <span className="font-medium text-slate-700">{formatFecha(meta.actual.desde)} → {formatFecha(meta.actual.hasta)}</span>{" "}
-          ({meta.actual.label}) · vs {meta.previous.label}
-        </span>
-        <span className="text-slate-400">·</span>
-        <span title={meta.lastSync?.ran_at}>Última corrida: <span className="font-medium text-slate-700">{lastSync}</span></span>
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-bold text-slate-900">Rechazos Pampeana — Dashboard ejecutivo</h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            Período: <span className="font-medium text-slate-700">{formatFecha(meta.actual.desde)} → {formatFecha(meta.actual.hasta)}</span>{" "}
+            ({meta.actual.label}) · vs {meta.previous.label}
+          </span>
+          <span className="text-slate-400">·</span>
+          <span title={meta.lastSync?.ran_at}>Última corrida: <span className="font-medium text-slate-700">{lastSync}</span></span>
+        </div>
       </div>
+      <ExportCsvBtn defaultDesde={meta.actual.desde} defaultHasta={meta.actual.hasta} />
     </header>
   )
 }
