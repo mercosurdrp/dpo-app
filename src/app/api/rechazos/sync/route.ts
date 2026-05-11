@@ -341,30 +341,44 @@ export async function POST(request: NextRequest) {
         const bultosEntregados = entregadosPorFletero.get(fletero) ?? 0
         const chofer = patenteChofer.get(normalizarPatente(fletero)) ?? null
 
-        const { error } = await supabase
+        const baseRow = {
+          fecha: fechaStr,
+          serie: r.serie,
+          nrodoc: r.nrodoc,
+          id_articulo: r.idArticulo,
+          ds_articulo: r.dsArticulo,
+          id_fletero_carga: r.idFleteroCarga,
+          ds_fletero_carga: fletero,
+          id_rechazo: r.idRechazo,
+          ds_rechazo: r.dsRechazo,
+          bultos_rechazados: bultosRechazados,
+          bultos_entregados: bultosEntregados,
+          id_cliente: r.idCliente,
+          nombre_cliente: r.nombreCliente,
+          id_vendedor: r.idVendedor,
+          ds_vendedor: r.dsVendedor,
+          planilla_carga: r.planillaCarga,
+        }
+
+        let { error } = await supabase
           .from("rechazos")
           .upsert(
-            {
-              fecha: fechaStr,
-              serie: r.serie,
-              nrodoc: r.nrodoc,
-              id_articulo: r.idArticulo,
-              ds_articulo: r.dsArticulo,
-              id_fletero_carga: r.idFleteroCarga,
-              ds_fletero_carga: fletero,
-              id_rechazo: r.idRechazo,
-              ds_rechazo: r.dsRechazo,
-              bultos_rechazados: bultosRechazados,
-              bultos_entregados: bultosEntregados,
-              id_cliente: r.idCliente,
-              nombre_cliente: r.nombreCliente,
-              id_vendedor: r.idVendedor,
-              ds_vendedor: r.dsVendedor,
-              planilla_carga: r.planillaCarga,
-              chofer,
-            },
+            { ...baseRow, chofer },
             { onConflict: "serie,nrodoc,id_articulo" }
           )
+
+        // Fallback: en tenants donde la columna `chofer` no existe (e.g. Pampeana
+        // hasta PR 1), reintentar sin la columna. Cuando la migración corra allá,
+        // este fallback queda como no-op.
+        if (
+          error &&
+          (error.code === "PGRST204" || /chofer/i.test(error.message ?? ""))
+        ) {
+          const retry = await supabase
+            .from("rechazos")
+            .upsert(baseRow, { onConflict: "serie,nrodoc,id_articulo" })
+          error = retry.error
+        }
 
         if (error) {
           if (error.code === "23505") totalRepetidas++
