@@ -1077,14 +1077,7 @@ export function ReunionDetallePageClient({
                   {indicadoresMes.indicadores.map((ind) => (
                     <tr key={ind.id} className="border-b last:border-0">
                       <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] truncate bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900" title={ind.nombre}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate">{ind.nombre}</span>
-                          {ind.auto && (
-                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-700">
-                              auto
-                            </span>
-                          )}
-                        </div>
+                        {ind.nombre}
                       </td>
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}

@@ -1827,23 +1827,16 @@ export async function getIndicadoresMes(
       .order("orden", { ascending: true })
 
     if (errCfg) return { error: errCfg.message }
-    const configs = (configRaw ?? []) as ReunionIndicadorConfig[]
-
-    if (configs.length === 0) {
-      return {
-        data: {
-          anio,
-          mes,
-          fechas,
-          reuniones_por_fecha: reunionesPorFecha,
-          indicadores: [],
-        },
-      }
-    }
+    // Dedupe: descartamos indicadores manuales con nombre LTI/TRI para evitar
+    // duplicar filas — la versión auto los reemplaza.
+    const NOMBRES_AUTO = new Set(["lti", "tri"])
+    const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
+      (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
+    )
 
     // 5. Valores existentes para esas reuniones e indicadores
     let valores: ReunionIndicadorValor[] = []
-    if (reunionIds.length > 0) {
+    if (reunionIds.length > 0 && configs.length > 0) {
       const { data: valRaw, error: errVal } = await supabase
         .from("reuniones_indicadores_valores")
         .select("*")
