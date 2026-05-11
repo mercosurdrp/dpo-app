@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Plus, ShieldAlert } from "lucide-react"
+import { Plus, ShieldAlert, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -100,6 +100,24 @@ export function ReportesSeguridadClient({
   const [piramideAnio, setPiramideAnio] = useState<number>(anioActual)
   const [piramideMes, setPiramideMes] = useState<number | "all">("all")
 
+  // Días sin accidente: tomamos el reporte tipo "accidente" más reciente (global,
+  // sin importar filtros) y calculamos la diferencia en días calendario hasta hoy.
+  const { diasSinAccidente, ultimoAccidente } = useMemo(() => {
+    let max: string | null = null
+    for (const r of reportes) {
+      if (r.tipo !== "accidente") continue
+      if (max === null || r.fecha > max) max = r.fecha
+    }
+    if (!max) return { diasSinAccidente: null as number | null, ultimoAccidente: null as string | null }
+    const [y, m, d] = max.split("-").map(Number)
+    if (!y || !m || !d) return { diasSinAccidente: null, ultimoAccidente: null }
+    const lastUTC = Date.UTC(y, m - 1, d)
+    const now = new Date()
+    const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+    const dias = Math.max(0, Math.floor((todayUTC - lastUTC) / 86_400_000))
+    return { diasSinAccidente: dias, ultimoAccidente: max }
+  }, [reportes])
+
   // Lista de años con datos + año actual (siempre presente, aunque no haya reportes)
   const aniosDisponibles = useMemo(() => {
     const set = new Set<number>([anioActual])
@@ -180,10 +198,38 @@ export function ReportesSeguridadClient({
             reconocimientos.
           </p>
         </div>
-        <Button onClick={() => setOpenNuevo(true)}>
-          <Plus className="mr-2 size-4" />
-          Nuevo reporte
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            className="flex items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-sm"
+            style={{ borderLeft: "4px solid #16a34a" }}
+          >
+            <ShieldCheck className="size-7 text-green-600" />
+            <div className="leading-tight">
+              {diasSinAccidente === null ? (
+                <>
+                  <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
+                  <p className="text-[11px] text-muted-foreground">registrados</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {diasSinAccidente}{" "}
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {diasSinAccidente === 1 ? "día" : "días"}
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    sin accidentes · último {formatDate(ultimoAccidente!)}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <Button onClick={() => setOpenNuevo(true)}>
+            <Plus className="mr-2 size-4" />
+            Nuevo reporte
+          </Button>
+        </div>
       </div>
 
       {/* Pirámide de Seguridad */}
