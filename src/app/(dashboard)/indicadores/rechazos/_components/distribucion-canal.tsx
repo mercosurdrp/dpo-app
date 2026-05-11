@@ -8,8 +8,10 @@ import {
   Tooltip,
 } from "recharts"
 import { Card, CardContent } from "@/components/ui/card"
-import type { RechazosAggCanal } from "@/lib/types/rechazos"
+import type { RechazosAggCanal, TopVariacionDim } from "@/lib/types/rechazos"
 import { formatBultos, formatMonto, formatTasa } from "@/lib/format/rechazos"
+
+type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
 // Paleta con suficiente contraste para 7-10 canales
 const CANAL_COLORS = [
@@ -33,7 +35,13 @@ interface PiePoint {
   pct: number
 }
 
-export function DistribucionCanal({ por_canal }: { por_canal: RechazosAggCanal[] }) {
+export function DistribucionCanal({
+  por_canal,
+  onDrillTo,
+}: {
+  por_canal: RechazosAggCanal[]
+  onDrillTo?: (drillTo: DrillTo) => void
+}) {
   const points: PiePoint[] = por_canal.map(c => ({
     name: c.ds_canal_mkt,
     bultos: Math.round(c.bultos * 10) / 10,
@@ -69,6 +77,11 @@ export function DistribucionCanal({ por_canal }: { por_canal: RechazosAggCanal[]
                     outerRadius={85}
                     paddingAngle={1}
                     isAnimationActive={false}
+                    cursor={onDrillTo ? "pointer" : undefined}
+                    onClick={onDrillTo ? (data) => {
+                      const name = (data as unknown as PiePoint).name
+                      if (name) onDrillTo({ tipo: "canal", id: name })
+                    } : undefined}
                   >
                     {points.map((_, i) => (
                       <Cell key={i} fill={CANAL_COLORS[i % CANAL_COLORS.length]} />
@@ -94,17 +107,25 @@ export function DistribucionCanal({ por_canal }: { por_canal: RechazosAggCanal[]
               </ResponsiveContainer>
             </div>
             <ul className="space-y-1.5 text-xs">
-              {points.map((p, i) => (
-                <li key={p.name} className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 flex-none rounded-sm"
-                    style={{ backgroundColor: CANAL_COLORS[i % CANAL_COLORS.length] }}
-                  />
-                  <span className="flex-1 truncate text-slate-700">{p.name}</span>
-                  <span className="tabular-nums text-slate-900">{formatTasa(p.pct)}</span>
-                  <span className="tabular-nums text-muted-foreground">{formatBultos(p.bultos)}</span>
-                </li>
-              ))}
+              {points.map((p, i) => {
+                const ItemTag: "button" | "div" = onDrillTo ? "button" : "div"
+                return (
+                  <li key={p.name}>
+                    <ItemTag
+                      onClick={onDrillTo ? () => onDrillTo({ tipo: "canal", id: p.name }) : undefined}
+                      className={`flex w-full items-center gap-2 text-left ${onDrillTo ? "rounded px-1 hover:bg-slate-50" : ""}`}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 flex-none rounded-sm"
+                        style={{ backgroundColor: CANAL_COLORS[i % CANAL_COLORS.length] }}
+                      />
+                      <span className="flex-1 truncate text-slate-700">{p.name}</span>
+                      <span className="tabular-nums text-slate-900">{formatTasa(p.pct)}</span>
+                      <span className="tabular-nums text-muted-foreground">{formatBultos(p.bultos)}</span>
+                    </ItemTag>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

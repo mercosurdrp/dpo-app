@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { Loader2, ExternalLink, FileText } from "lucide-react"
+import { Loader2, FileText } from "lucide-react"
 import {
   Sheet,
   SheetContent,
@@ -47,6 +47,18 @@ export function DrillDownSheet({
   const [isPending, startTransition] = useTransition()
   const [data, setData] = useState<RechazosDetalleResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [side, setSide] = useState<"right" | "bottom">("right")
+
+  // Sheet: bottom en mobile (más natural para touch), right en desktop.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const mql = window.matchMedia("(max-width: 767px)")
+    const apply = (matches: boolean) => setSide(matches ? "bottom" : "right")
+    apply(mql.matches)
+    const handler = (e: MediaQueryListEvent) => apply(e.matches)
+    mql.addEventListener("change", handler)
+    return () => mql.removeEventListener("change", handler)
+  }, [])
 
   // Refetch cuando se abre el Sheet o cambia drill/filters/rango
   useEffect(() => {
@@ -95,8 +107,12 @@ export function DrillDownSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-3xl md:max-w-4xl"
+        side={side}
+        className={
+          side === "right"
+            ? "flex w-full flex-col gap-0 p-0 sm:max-w-3xl md:max-w-4xl"
+            : "flex h-[85vh] flex-col gap-0 p-0"
+        }
       >
         <SheetHeader className="border-b border-slate-200 p-4">
           <SheetTitle className="text-base">{title}</SheetTitle>

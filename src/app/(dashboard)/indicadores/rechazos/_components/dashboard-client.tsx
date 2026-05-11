@@ -15,6 +15,7 @@ import { RankingClientes } from "./ranking-clientes"
 import { RankingProductos } from "./ranking-productos"
 import { TopVariacionesBloque } from "./top-variaciones"
 import { DrillDownSheet, type DrillTo } from "./drill-down-sheet"
+import { EmptyState } from "./empty-state"
 
 export function DashboardClient({ data }: { data: RechazosComparado }) {
   const [drillTo, setDrillTo] = useState<DrillTo | null>(null)
@@ -42,6 +43,8 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
     setSheetOpen(true)
   }, [resolveLabel])
 
+  const empty = data.actual.eventos === 0
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -51,23 +54,30 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
           defaultDesde={data.meta.actual.desde}
           defaultHasta={data.meta.actual.hasta}
         />
-        <AlertasBloque alerts={data.alerts} onDrillTo={openDrill} />
-        <KpiCards data={data} />
-        <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={openDrill} />
-        <EvolucionTemporal series={data.series} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <ParetoMotivos por_motivo={data.agg.por_motivo} />
-          <DistribucionCanal por_canal={data.agg.por_canal} />
-        </div>
-        <RankingChoferes
-          por_chofer={data.agg.por_chofer}
-          tasaPromedio={data.actual.tasa}
-          onDrillTo={openDrill}
-        />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={openDrill} />
-          <RankingProductos por_producto={data.agg.por_producto} onDrillTo={openDrill} />
-        </div>
+
+        {empty ? (
+          <EmptyState filtersApplied={data.meta.filters_applied} hasta={data.meta.actual.hasta} />
+        ) : (
+          <>
+            <AlertasBloque alerts={data.alerts} onDrillTo={openDrill} />
+            <KpiCards data={data} />
+            <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={openDrill} />
+            <EvolucionTemporal series={data.series} />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <ParetoMotivos por_motivo={data.agg.por_motivo} onDrillTo={openDrill} />
+              <DistribucionCanal por_canal={data.agg.por_canal} onDrillTo={openDrill} />
+            </div>
+            <RankingChoferes
+              por_chofer={data.agg.por_chofer}
+              tasaPromedio={data.actual.tasa}
+              onDrillTo={openDrill}
+            />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={openDrill} />
+              <RankingProductos por_producto={data.agg.por_producto} onDrillTo={openDrill} />
+            </div>
+          </>
+        )}
       </div>
 
       <DrillDownSheet

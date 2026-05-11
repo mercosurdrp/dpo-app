@@ -12,8 +12,10 @@ import {
   Cell,
 } from "recharts"
 import { Card, CardContent } from "@/components/ui/card"
-import type { RechazosAggMotivo, RechazoCategoria } from "@/lib/types/rechazos"
+import type { RechazosAggMotivo, RechazoCategoria, TopVariacionDim } from "@/lib/types/rechazos"
 import { formatBultos, formatMonto, formatTasa } from "@/lib/format/rechazos"
+
+type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
 const CATEGORIA_COLOR: Record<RechazoCategoria, string> = {
   "Logística":       "#f97316", // naranja
@@ -37,7 +39,13 @@ interface ParetoPoint {
   acumulado: number
 }
 
-export function ParetoMotivos({ por_motivo }: { por_motivo: RechazosAggMotivo[] }) {
+export function ParetoMotivos({
+  por_motivo,
+  onDrillTo,
+}: {
+  por_motivo: RechazosAggMotivo[]
+  onDrillTo?: (drillTo: DrillTo) => void
+}) {
   const top = por_motivo.slice(0, 10)
   const totalBultos = por_motivo.reduce((s, m) => s + m.bultos, 0)
 
@@ -122,7 +130,16 @@ export function ParetoMotivos({ por_motivo }: { por_motivo: RechazosAggMotivo[] 
                   )
                 }}
               />
-              <Bar yAxisId="left" dataKey="bultos" radius={[3, 3, 0, 0]}>
+              <Bar
+                yAxisId="left"
+                dataKey="bultos"
+                radius={[3, 3, 0, 0]}
+                cursor={onDrillTo ? "pointer" : undefined}
+                onClick={onDrillTo ? (data) => {
+                  const id = (data as unknown as ParetoPoint).id
+                  if (id != null) onDrillTo({ tipo: "motivo", id })
+                } : undefined}
+              >
                 {points.map(p => (
                   <Cell key={p.id} fill={CATEGORIA_COLOR[p.categoria] ?? "#94a3b8"} />
                 ))}
