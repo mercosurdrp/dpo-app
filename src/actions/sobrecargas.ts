@@ -58,6 +58,23 @@ interface FilaCamionDiario {
   camion: { dominio: string } | null
 }
 
+// Supabase tiene server-side `max-rows = 1000`; ni `.limit()` ni el header
+// Range lo sobrepasan. Para rangos que exceden ese cap (la serie de 6 meses
+// son ~1900 filas) hay que paginar con `.range()` manualmente.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAllPages<T>(buildQuery: () => any): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  const PAGE = 1000
+  const acc: T[] = []
+  for (let offset = 0; offset < 100_000; offset += PAGE) {
+    const { data, error } = await buildQuery().range(offset, offset + PAGE - 1)
+    if (error) return { data: null, error }
+    if (!data || data.length === 0) break
+    acc.push(...(data as T[]))
+    if (data.length < PAGE) break
+  }
+  return { data: acc, error: null }
+}
+
 function rangoMes(mesYYYYMM: string): { desde: string; hasta: string } {
   const [y, m] = mesYYYYMM.split("-").map(Number)
   const desde = new Date(Date.UTC(y, m - 1, 1))
@@ -93,14 +110,24 @@ export async function getSobrecargasIndicador(
 
     // ── 1) Detalle del mes elegido: ranking por empleado ──────────────────────
     const { desde, hasta } = rangoMes(mes)
-    const { data: filasMes, error: errMes } = await supabase
-      .from("orden_salida_camion_diario")
-      .select(
-        `fecha, chofer_empleado_id, ayudante_empleado_id,
-         sobrecarga_completa, media_sobrecarga, cuarto_sobrecarga`
-      )
-      .gte("fecha", desde)
-      .lte("fecha", hasta)
+    const { data: filasMes, error: errMes } = await fetchAllPages<{
+      fecha: string
+      chofer_empleado_id: string | null
+      ayudante_empleado_id: string | null
+      sobrecarga_completa: number | null
+      media_sobrecarga: number | null
+      cuarto_sobrecarga: number | null
+    }>(() =>
+      supabase
+        .from("orden_salida_camion_diario")
+        .select(
+          `fecha, chofer_empleado_id, ayudante_empleado_id,
+           sobrecarga_completa, media_sobrecarga, cuarto_sobrecarga`
+        )
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("fecha", { ascending: true })
+    )
     if (errMes) return { error: errMes.message }
 
     type Acc = { sob: number; med: number; dias: Set<string> }
@@ -108,14 +135,7 @@ export async function getSobrecargasIndicador(
     let totalSobrecargas = 0
     let totalMedias = 0
 
-    for (const f of (filasMes ?? []) as Array<{
-      fecha: string
-      chofer_empleado_id: string | null
-      ayudante_empleado_id: string | null
-      sobrecarga_completa: number | null
-      media_sobrecarga: number | null
-      cuarto_sobrecarga: number | null
-    }>) {
+    for (const f of filasMes ?? []) {
       const sob = f.sobrecarga_completa ?? 0
       const med = (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0) / 2
       if (sob === 0 && med === 0) continue
@@ -170,21 +190,24 @@ export async function getSobrecargasIndicador(
     const { desde: serieDesde } = rangoMes(mesesSerie[0])
     const { hasta: serieHasta } = rangoMes(mesesSerie[5])
 
-    const { data: filasSerie, error: errSerie } = await supabase
-      .from("orden_salida_camion_diario")
-      .select(`fecha, sobrecarga_completa, media_sobrecarga, cuarto_sobrecarga`)
-      .gte("fecha", serieDesde)
-      .lte("fecha", serieHasta)
-    if (errSerie) return { error: errSerie.message }
-
-    const totalesMes = new Map<string, { sob: number; med: number }>()
-    for (const m of mesesSerie) totalesMes.set(m, { sob: 0, med: 0 })
-    for (const f of (filasSerie ?? []) as Array<{
+    const { data: filasSerie, error: errSerie } = await fetchAllPages<{
       fecha: string
       sobrecarga_completa: number | null
       media_sobrecarga: number | null
       cuarto_sobrecarga: number | null
-    }>) {
+    }>(() =>
+      supabase
+        .from("orden_salida_camion_diario")
+        .select(`fecha, sobrecarga_completa, media_sobrecarga, cuarto_sobrecarga`)
+        .gte("fecha", serieDesde)
+        .lte("fecha", serieHasta)
+        .order("fecha", { ascending: true })
+    )
+    if (errSerie) return { error: errSerie.message }
+
+    const totalesMes = new Map<string, { sob: number; med: number }>()
+    for (const m of mesesSerie) totalesMes.set(m, { sob: 0, med: 0 })
+    for (const f of filasSerie ?? []) {
       const yyyymm = f.fecha.slice(0, 7)
       const acc = totalesMes.get(yyyymm)
       if (!acc) continue
