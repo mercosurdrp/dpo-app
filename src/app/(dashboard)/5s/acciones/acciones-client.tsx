@@ -64,11 +64,27 @@ interface VehiculoOpt {
 }
 
 interface Props {
+  tipo: S5Tipo
   currentUserId: string
   currentRole: UserRole
   accionesIniciales: S5AccionConMeta[]
   responsables: ResponsableOpt[]
   vehiculos: VehiculoOpt[]
+}
+
+const MESES_LABELS: Record<string, string> = {
+  "01": "Enero",
+  "02": "Febrero",
+  "03": "Marzo",
+  "04": "Abril",
+  "05": "Mayo",
+  "06": "Junio",
+  "07": "Julio",
+  "08": "Agosto",
+  "09": "Septiembre",
+  "10": "Octubre",
+  "11": "Noviembre",
+  "12": "Diciembre",
 }
 
 function formatFecha(iso: string | null) {
@@ -79,12 +95,11 @@ function formatFecha(iso: string | null) {
 
 function contextoLabel(a: S5AccionConMeta): string {
   if (a.tipo === "almacen") {
-    return a.sector_numero ? `Almacén · Sector ${a.sector_numero}` : "Almacén"
+    return a.sector_numero ? `Sector ${a.sector_numero}` : "—"
   }
-  return a.vehiculo_dominio ? `Flota · ${a.vehiculo_dominio}` : "Flota"
+  return a.vehiculo_dominio ?? "Sin vehículo"
 }
 
-// Fecha en zona AR para comparar contra el mes filtrado.
 function toArDate(iso: string): Date {
   return new Date(
     new Date(iso).toLocaleString("en-US", {
@@ -93,46 +108,51 @@ function toArDate(iso: string): Date {
   )
 }
 
-function formatYm(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  return `${y}-${m}`
+function getYearMonth(iso: string): { year: string; month: string } {
+  const d = toArDate(iso)
+  return {
+    year: String(d.getFullYear()),
+    month: String(d.getMonth() + 1).padStart(2, "0"),
+  }
 }
 
-function labelMes(ym: string): string {
-  const [y, m] = ym.split("-")
-  const d = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1)
-  const txt = d.toLocaleDateString("es-AR", {
-    month: "long",
-    year: "numeric",
-  })
-  return txt.charAt(0).toUpperCase() + txt.slice(1)
-}
+// Mismo criterio que el action log de reuniones:
+// no cerradas se arrastran mes a mes hasta cerrarse;
+// cerradas viven solo en el mes del cierre.
+function accionVisibleEnYearMonth(
+  a: S5AccionConMeta,
+  year: string,
+  month: string | "todos"
+): boolean {
+  const created = getYearMonth(a.created_at)
+  const createdYm = `${created.year}-${created.month}`
 
-// Criterio mismo que el action log de reuniones (ver
-// src/actions/reuniones.ts línea 353): no cerradas se arrastran mes a mes
-// hasta cerrarse; las cerradas viven solo en el mes del cierre.
-function accionEnMes(a: S5AccionConMeta, ym: string): boolean {
-  const createdYm = formatYm(toArDate(a.created_at))
-  if (createdYm > ym) return false
+  if (month === "todos") {
+    // Filtro solo por año
+    if (created.year > year) return false
+    if (a.estado !== "cerrada") return true
+    if (!a.cerrada_at) return true
+    const cerrada = getYearMonth(a.cerrada_at)
+    return cerrada.year === year
+  }
+
+  const targetYm = `${year}-${month}`
+  if (createdYm > targetYm) return false
   if (a.estado !== "cerrada") return true
   if (!a.cerrada_at) return true
-  const cerradaYm = formatYm(toArDate(a.cerrada_at))
-  return cerradaYm === ym
+  const cerrada = getYearMonth(a.cerrada_at)
+  return `${cerrada.year}-${cerrada.month}` === targetYm
 }
 
-function buildMesesOptions(currentYm: string): string[] {
-  // Mes actual + 11 anteriores
-  const [y, m] = currentYm.split("-").map((x) => parseInt(x, 10))
-  const out: string[] = []
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(y, m - 1 - i, 1)
-    out.push(formatYm(d))
-  }
-  return out
+function buildAñosOptions(currentYear: string): string[] {
+  const y = parseInt(currentYear, 10)
+  return [String(y), String(y - 1), String(y - 2), String(y - 3)]
 }
+
+const MESES_KEYS: string[] = Object.keys(MESES_LABELS)
 
 export function AccionesClient({
+  tipo,
   currentUserId,
   currentRole,
   accionesIniciales,
@@ -142,14 +162,17 @@ export function AccionesClient({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
-  const currentYm = formatYm(toArDate(new Date().toISOString()))
-  const mesesOptions = useMemo(
-    () => buildMesesOptions(currentYm),
-    [currentYm]
+  const now = toArDate(new Date().toISOString())
+  const currentYear = String(now.getFullYear())
+  const currentMonth = String(now.getMonth() + 1).padStart(2, "0")
+
+  const añosOptions = useMemo(
+    () => buildAñosOptions(currentYear),
+    [currentYear]
   )
 
-  const [filtroMes, setFiltroMes] = useState<string>(currentYm)
-  const [filtroTipo, setFiltroTipo] = useState<S5Tipo | "todos">("todos")
+  const [filtroAño, setFiltroAño] = useState<string>(currentYear)
+  const [filtroMes, setFiltroMes] = useState<string>(currentMonth)
   const [filtroResponsable, setFiltroResponsable] = useState<string>("todos")
   const [soloMias, setSoloMias] = useState(false)
   const [tab, setTab] = useState<S5AccionEstado | "todas">("no_comenzada")
@@ -161,8 +184,12 @@ export function AccionesClient({
 
   const accionesFiltradas = useMemo(() => {
     return accionesIniciales.filter((a) => {
-      if (filtroMes !== "todos" && !accionEnMes(a, filtroMes)) return false
-      if (filtroTipo !== "todos" && a.tipo !== filtroTipo) return false
+      if (
+        filtroAño !== "todos" &&
+        !accionVisibleEnYearMonth(a, filtroAño, filtroMes)
+      ) {
+        return false
+      }
       if (
         filtroResponsable !== "todos" &&
         a.responsable_id !== filtroResponsable
@@ -174,8 +201,8 @@ export function AccionesClient({
     })
   }, [
     accionesIniciales,
+    filtroAño,
     filtroMes,
-    filtroTipo,
     filtroResponsable,
     soloMias,
     tab,
@@ -184,8 +211,12 @@ export function AccionesClient({
 
   const counts = useMemo(() => {
     const base = accionesIniciales.filter((a) => {
-      if (filtroMes !== "todos" && !accionEnMes(a, filtroMes)) return false
-      if (filtroTipo !== "todos" && a.tipo !== filtroTipo) return false
+      if (
+        filtroAño !== "todos" &&
+        !accionVisibleEnYearMonth(a, filtroAño, filtroMes)
+      ) {
+        return false
+      }
       if (
         filtroResponsable !== "todos" &&
         a.responsable_id !== filtroResponsable
@@ -202,8 +233,8 @@ export function AccionesClient({
     }
   }, [
     accionesIniciales,
+    filtroAño,
     filtroMes,
-    filtroTipo,
     filtroResponsable,
     soloMias,
     currentUserId,
@@ -224,6 +255,12 @@ export function AccionesClient({
     })
   }
 
+  const subjectLabel =
+    tipo === "flota"
+      ? S5_TIPO_LABELS.flota
+      : S5_TIPO_LABELS.almacen
+  const subjectColumn = tipo === "flota" ? "Vehículo" : "Sector"
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -234,7 +271,9 @@ export function AccionesClient({
                 <ArrowLeft className="size-4" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold text-slate-900">Acciones 5S</h1>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Acciones 5S — {subjectLabel}
+            </h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Tareas con historial de evidencia (comentario + archivo).
@@ -248,6 +287,27 @@ export function AccionesClient({
         )}
       </div>
 
+      <div className="flex items-center gap-2">
+        <Link href="/5s/acciones/flota">
+          <Button
+            variant={tipo === "flota" ? "default" : "outline"}
+            size="sm"
+          >
+            <Truck className="mr-1.5 size-4" />
+            Flota
+          </Button>
+        </Link>
+        <Link href="/5s/acciones/almacen">
+          <Button
+            variant={tipo === "almacen" ? "default" : "outline"}
+            size="sm"
+          >
+            <Warehouse className="mr-1.5 size-4" />
+            Almacén
+          </Button>
+        </Link>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -258,19 +318,19 @@ export function AccionesClient({
         <CardContent>
           <div className="grid gap-3 md:grid-cols-4">
             <div>
-              <Label className="mb-1.5 text-xs">Mes</Label>
+              <Label className="mb-1.5 text-xs">Año</Label>
               <Select
-                value={filtroMes}
-                onValueChange={(v) => v && setFiltroMes(v)}
+                value={filtroAño}
+                onValueChange={(v) => v && setFiltroAño(v)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  {mesesOptions.map((ym) => (
-                    <SelectItem key={ym} value={ym}>
-                      {labelMes(ym)}
+                  {añosOptions.map((y) => (
+                    <SelectItem key={y} value={y}>
+                      {y}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -278,24 +338,22 @@ export function AccionesClient({
             </div>
 
             <div>
-              <Label className="mb-1.5 text-xs">Tipo</Label>
+              <Label className="mb-1.5 text-xs">Mes</Label>
               <Select
-                value={filtroTipo}
-                onValueChange={(v) =>
-                  setFiltroTipo(v as S5Tipo | "todos")
-                }
+                value={filtroMes}
+                onValueChange={(v) => v && setFiltroMes(v)}
+                disabled={filtroAño === "todos"}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="flota">
-                    {S5_TIPO_LABELS.flota}
-                  </SelectItem>
-                  <SelectItem value="almacen">
-                    {S5_TIPO_LABELS.almacen}
-                  </SelectItem>
+                  {MESES_KEYS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {MESES_LABELS[m]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -378,7 +436,7 @@ export function AccionesClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Descripción</TableHead>
-                    <TableHead>Contexto</TableHead>
+                    <TableHead>{subjectColumn}</TableHead>
                     <TableHead>Responsable</TableHead>
                     <TableHead>Vencimiento</TableHead>
                     <TableHead>Estado</TableHead>
@@ -402,15 +460,8 @@ export function AccionesClient({
                             </div>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-sm">
-                            {a.tipo === "flota" ? (
-                              <Truck className="size-3.5 text-slate-500" />
-                            ) : (
-                              <Warehouse className="size-3.5 text-slate-500" />
-                            )}
-                            {contextoLabel(a)}
-                          </div>
+                        <TableCell className="text-sm">
+                          {contextoLabel(a)}
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">
@@ -472,6 +523,7 @@ export function AccionesClient({
       </Card>
 
       <CrearAccionDialog
+        tipo={tipo}
         open={openCrear}
         onOpenChange={setOpenCrear}
         responsables={responsables}

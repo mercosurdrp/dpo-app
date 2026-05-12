@@ -180,9 +180,14 @@ export async function getAccionDetalle(id: string): Promise<
 }
 
 // ===================================================
-// Crear acción (aislada o linked a auditoría)
+// Crear acción (aislada o linked a auditoría).
+// Si vienen evidenciaInicial* (comentario y/o archivo), se inserta como
+// PRIMERA fila del historial sin promover el estado (queda no_comenzada).
+// El cliente puede pasar `id` (UUID generado client-side) para usar como
+// folder del path del archivo en storage.
 // ===================================================
 export interface CrearAccionInput {
+  id?: string
   tipo: S5Tipo
   sectorNumero?: number | null
   vehiculoId?: string | null
@@ -190,6 +195,11 @@ export interface CrearAccionInput {
   responsableId: string
   fechaCompromiso?: string | null
   origenAuditoriaId?: string | null
+  evidenciaInicialComentario?: string | null
+  evidenciaInicialArchivoPath?: string | null
+  evidenciaInicialArchivoNombre?: string | null
+  evidenciaInicialArchivoMime?: string | null
+  evidenciaInicialArchivoBytes?: number | null
 }
 
 export async function crearAccion(
@@ -214,28 +224,56 @@ export async function crearAccion(
 
     const supabase = await createClient()
 
+    const insertPayload: Record<string, unknown> = {
+      tipo: input.tipo,
+      sector_numero:
+        input.tipo === "almacen" ? input.sectorNumero ?? null : null,
+      vehiculo_id:
+        input.tipo === "flota" ? input.vehiculoId ?? null : null,
+      descripcion: input.descripcion.trim(),
+      responsable_id: input.responsableId,
+      fecha_compromiso: input.fechaCompromiso ?? null,
+      estado: "no_comenzada",
+      origen_auditoria_id: input.origenAuditoriaId ?? null,
+      creado_por: profile.id,
+    }
+    if (input.id) insertPayload.id = input.id
+
     const { data, error } = await supabase
       .from("s5_acciones")
-      .insert({
-        tipo: input.tipo,
-        sector_numero:
-          input.tipo === "almacen" ? input.sectorNumero ?? null : null,
-        vehiculo_id:
-          input.tipo === "flota" ? input.vehiculoId ?? null : null,
-        descripcion: input.descripcion.trim(),
-        responsable_id: input.responsableId,
-        fecha_compromiso: input.fechaCompromiso ?? null,
-        estado: "no_comenzada",
-        origen_auditoria_id: input.origenAuditoriaId ?? null,
-        creado_por: profile.id,
-      })
+      .insert(insertPayload)
       .select("*")
       .single()
 
     if (error) return { error: error.message }
 
+    const accion = data as S5Accion
+
+    // Si vino evidencia inicial, insertarla SIN promover estado.
+    const comentarioIni = input.evidenciaInicialComentario?.trim() || null
+    const hasArchivoIni = !!input.evidenciaInicialArchivoPath
+    if (comentarioIni || hasArchivoIni) {
+      const { error: evErr } = await supabase
+        .from("s5_acciones_evidencias")
+        .insert({
+          accion_id: accion.id,
+          comentario: comentarioIni,
+          archivo_path: input.evidenciaInicialArchivoPath ?? null,
+          archivo_nombre: input.evidenciaInicialArchivoNombre ?? null,
+          archivo_mime: input.evidenciaInicialArchivoMime ?? null,
+          archivo_bytes: input.evidenciaInicialArchivoBytes ?? null,
+          autor_id: profile.id,
+        })
+      if (evErr) {
+        // Rollback manual: borrar la acción recién creada para no dejar
+        // huérfana sin la evidencia inicial que el usuario quería.
+        await supabase.from("s5_acciones").delete().eq("id", accion.id)
+        return { error: `Error guardando evidencia inicial: ${evErr.message}` }
+      }
+    }
+
     revalidatePath(DASHBOARD_PATH)
-    return { data: data as S5Accion }
+    return { data: accion }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error creando acción",

@@ -218,7 +218,7 @@ export function CincoSClient({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/5s/acciones">
+          <Link href={`/5s/acciones/${tipo}`}>
             <Button variant="outline" size="sm">
               <ClipboardList className="mr-1.5 size-4" />
               Acciones

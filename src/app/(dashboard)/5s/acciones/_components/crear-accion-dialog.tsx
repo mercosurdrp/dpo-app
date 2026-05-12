@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Loader2, Paperclip } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
 import {
   Select,
   SelectContent,
@@ -21,10 +22,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client"
 import { crearAccion } from "@/actions/s5-acciones"
 import { S5_TIPO_LABELS, type S5Tipo } from "@/types/database"
 
+const BUCKET = "s5-auditorias"
+const MAX_BYTES = 15 * 1024 * 1024
+
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 120)
+}
+
 interface Props {
+  tipo: S5Tipo
   open: boolean
   onOpenChange: (open: boolean) => void
   responsables: { id: string; nombre: string; email: string }[]
@@ -35,6 +49,7 @@ interface Props {
 const SECTORES_ALMACEN = [1, 2, 3, 4] as const
 
 export function CrearAccionDialog({
+  tipo,
   open,
   onOpenChange,
   responsables,
@@ -44,21 +59,23 @@ export function CrearAccionDialog({
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  const [tipo, setTipo] = useState<S5Tipo>("flota")
   const [sectorNumero, setSectorNumero] = useState<string>("1")
   const [vehiculoId, setVehiculoId] = useState<string>("none")
   const [descripcion, setDescripcion] = useState("")
   const [responsableId, setResponsableId] = useState<string>("")
   const [fechaCompromiso, setFechaCompromiso] = useState<string>("")
+  const [comentarioInicial, setComentarioInicial] = useState("")
+  const [fileInicial, setFileInicial] = useState<File | null>(null)
 
   function reset() {
     setError(null)
-    setTipo("flota")
     setSectorNumero("1")
     setVehiculoId("none")
     setDescripcion("")
     setResponsableId("")
     setFechaCompromiso("")
+    setComentarioInicial("")
+    setFileInicial(null)
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -73,9 +90,42 @@ export function CrearAccionDialog({
       setError("Asigná un responsable.")
       return
     }
+    if (fileInicial && fileInicial.size > MAX_BYTES) {
+      setError("El archivo inicial supera 15MB.")
+      return
+    }
 
     startTransition(async () => {
+      // Generamos el id client-side para usarlo como folder del archivo.
+      const accionId = crypto.randomUUID()
+
+      let archivoPath: string | null = null
+      let archivoNombre: string | null = null
+      let archivoMime: string | null = null
+      let archivoBytes: number | null = null
+
+      if (fileInicial) {
+        const supabase = createBrowserSupabase()
+        const safe = sanitizeFileName(fileInicial.name || "estado-inicial")
+        const path = `acciones/${accionId}/${crypto.randomUUID()}-${safe}`
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, fileInicial, {
+            contentType: fileInicial.type || "application/octet-stream",
+            upsert: false,
+          })
+        if (upErr) {
+          setError(`Error subiendo archivo: ${upErr.message}`)
+          return
+        }
+        archivoPath = path
+        archivoNombre = fileInicial.name
+        archivoMime = fileInicial.type || null
+        archivoBytes = fileInicial.size
+      }
+
       const res = await crearAccion({
+        id: accionId,
         tipo,
         sectorNumero:
           tipo === "almacen" ? parseInt(sectorNumero, 10) : null,
@@ -84,6 +134,11 @@ export function CrearAccionDialog({
         descripcion: descripcion.trim(),
         responsableId,
         fechaCompromiso: fechaCompromiso || null,
+        evidenciaInicialComentario: comentarioInicial.trim() || null,
+        evidenciaInicialArchivoPath: archivoPath,
+        evidenciaInicialArchivoNombre: archivoNombre,
+        evidenciaInicialArchivoMime: archivoMime,
+        evidenciaInicialArchivoBytes: archivoBytes,
       })
       if ("error" in res) {
         setError(res.error)
@@ -104,74 +159,54 @@ export function CrearAccionDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nueva acción 5S</DialogTitle>
+          <DialogTitle>
+            Nueva acción 5S — {S5_TIPO_LABELS[tipo]}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          {tipo === "almacen" ? (
             <div>
-              <Label className="mb-1.5">Tipo</Label>
+              <Label className="mb-1.5">Sector</Label>
               <Select
-                value={tipo}
-                onValueChange={(v) => setTipo(v as S5Tipo)}
+                value={sectorNumero}
+                onValueChange={(v) => v && setSectorNumero(v)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="flota">
-                    {S5_TIPO_LABELS.flota}
-                  </SelectItem>
-                  <SelectItem value="almacen">
-                    {S5_TIPO_LABELS.almacen}
-                  </SelectItem>
+                  {SECTORES_ALMACEN.map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      Sector {n}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-
-            {tipo === "almacen" ? (
-              <div>
-                <Label className="mb-1.5">Sector</Label>
-                <Select
-                  value={sectorNumero}
-                  onValueChange={(v) => v && setSectorNumero(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SECTORES_ALMACEN.map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        Sector {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <div>
-                <Label className="mb-1.5">Vehículo (opcional)</Label>
-                <Select
-                  value={vehiculoId}
-                  onValueChange={(v) => v && setVehiculoId(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin vehículo</SelectItem>
-                    {vehiculos.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.dominio}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+          ) : (
+            <div>
+              <Label className="mb-1.5">Vehículo (opcional)</Label>
+              <Select
+                value={vehiculoId}
+                onValueChange={(v) => v && setVehiculoId(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin vehículo</SelectItem>
+                  {vehiculos.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.dominio}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div>
             <Label className="mb-1.5">Descripción</Label>
@@ -210,6 +245,55 @@ export function CrearAccionDialog({
                 value={fechaCompromiso}
                 onChange={(e) => setFechaCompromiso(e.target.value)}
               />
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Estado inicial (opcional)
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Foto + comentario para registrar cómo está la situación
+                antes de empezar. Se guarda como primera fila del historial
+                de evidencia.
+              </p>
+            </div>
+            <div>
+              <Label className="mb-1.5 text-xs">Comentario inicial</Label>
+              <Textarea
+                value={comentarioInicial}
+                onChange={(e) => setComentarioInicial(e.target.value)}
+                rows={2}
+                placeholder="¿Cómo está hoy?"
+              />
+            </div>
+            <div>
+              <Label className="mb-1.5 text-xs">
+                Foto del estado inicial (hasta 15MB)
+              </Label>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+                  <Paperclip className="size-3.5" />
+                  {fileInicial ? "Cambiar" : "Seleccionar"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,application/pdf"
+                    onChange={(e) =>
+                      setFileInicial(e.target.files?.[0] ?? null)
+                    }
+                  />
+                </label>
+                {fileInicial && (
+                  <span className="text-xs text-muted-foreground">
+                    {fileInicial.name} (
+                    {(fileInicial.size / 1024 / 1024).toFixed(2)} MB)
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
