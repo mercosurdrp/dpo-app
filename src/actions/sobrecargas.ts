@@ -34,6 +34,7 @@ export interface SobrecargasIndicador {
   totalMedias: number
   empleados: SobrecargasFila[]
   serie: SobrecargasSerieMes[] // últimos 6 meses
+  mesesDisponibles: string[] // todos los meses (YYYY-MM) con al menos una sobrecarga en DB, asc
 }
 
 export interface MisSobrecargasResumen {
@@ -220,8 +221,30 @@ export async function getSobrecargasIndicador(
       medias: totalesMes.get(m)!.med,
     }))
 
+    // ── 3) Meses disponibles: todos los YYYY-MM con sobrecargas en la DB ──────
+    // Solo trae la columna fecha de filas con sob/med/cuarto > 0; paginado.
+    const { data: filasConSobrec, error: errDisp } = await fetchAllPages<{ fecha: string }>(() =>
+      supabase
+        .from("orden_salida_camion_diario")
+        .select("fecha")
+        .or(
+          "sobrecarga_completa.gt.0,media_sobrecarga.gt.0,cuarto_sobrecarga.gt.0"
+        )
+        .order("fecha", { ascending: true })
+    )
+    if (errDisp) return { error: errDisp.message }
+    const mesesDisponibles = Array.from(
+      new Set((filasConSobrec ?? []).map((f) => f.fecha.slice(0, 7)))
+    ).sort()
+    // El mes actualmente seleccionado siempre debe figurar en el dropdown,
+    // incluso si está vacío, para no "saltar" al elegirlo.
+    if (!mesesDisponibles.includes(mes)) {
+      mesesDisponibles.push(mes)
+      mesesDisponibles.sort()
+    }
+
     return {
-      data: { mes, totalSobrecargas, totalMedias, empleados, serie },
+      data: { mes, totalSobrecargas, totalMedias, empleados, serie, mesesDisponibles },
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error" }

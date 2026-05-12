@@ -24,7 +24,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts"
-import { Package, PackageCheck, Truck, Calendar, ArrowUpDown } from "lucide-react"
+import { Package, PackageCheck, Truck, Calendar, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react"
 import type { SobrecargasIndicador } from "@/actions/sobrecargas"
 
 type SortKey = "sobrecargas" | "medias" | "dias" | "total_eq"
@@ -104,7 +104,10 @@ export function SobrecargasClient({
     router.push(`/indicadores/sobrecargas?${params.toString()}`)
   }
 
-  const opcionesMes = data.serie.map((s) => s.mes)
+  const opcionesMes = data.mesesDisponibles
+  const idxMes = opcionesMes.indexOf(data.mes)
+  const mesPrev = idxMes > 0 ? opcionesMes[idxMes - 1] : null
+  const mesNext = idxMes >= 0 && idxMes < opcionesMes.length - 1 ? opcionesMes[idxMes + 1] : null
   const totalEmpleadosConSobrecarga = data.empleados.length
 
   return (
@@ -119,15 +122,37 @@ export function SobrecargasClient({
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-slate-600">Mes</label>
-          <select
-            value={data.mes}
-            onChange={(e) => cambiarMes(e.target.value)}
-            className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"
-          >
-            {opcionesMes.map((m) => (
-              <option key={m} value={m}>{nombreMes(m)}</option>
-            ))}
-          </select>
+          <div className="flex items-center rounded-md border border-slate-200 bg-white">
+            <button
+              type="button"
+              onClick={() => mesPrev && cambiarMes(mesPrev)}
+              disabled={!mesPrev}
+              aria-label="Mes anterior"
+              title={mesPrev ? nombreMes(mesPrev) : "Sin meses anteriores"}
+              className="flex h-9 w-8 items-center justify-center rounded-l-md text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <select
+              value={data.mes}
+              onChange={(e) => cambiarMes(e.target.value)}
+              className="h-9 min-w-[140px] border-x border-slate-200 bg-white px-2 text-sm focus:outline-none"
+            >
+              {opcionesMes.map((m) => (
+                <option key={m} value={m}>{nombreMes(m)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => mesNext && cambiarMes(mesNext)}
+              disabled={!mesNext}
+              aria-label="Mes siguiente"
+              title={mesNext ? nombreMes(mesNext) : "Sin meses siguientes"}
+              className="flex h-9 w-8 items-center justify-center rounded-r-md text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
