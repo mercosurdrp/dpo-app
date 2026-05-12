@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
+import {
+  buildWarehouseAutoData,
+  OPERADORES_APERTURA,
+  type OperadorApertura,
+  type OperadorAperturaRow,
+} from "@/lib/warehouse/auto-indicadores"
 import type {
   Profile,
   TipoReunion,
@@ -1836,6 +1842,17 @@ export async function getIndicadoresMes(
       "rechazos",
       "rechazos %",
     ])
+    // Para warehouse, los 6 KPIs del handbook se computan on-the-fly desde
+    // fuentes externas (deposito-esteban + Google Sheet de errores picking).
+    // Ver src/lib/warehouse/auto-indicadores.ts.
+    if (tipo === "warehouse") {
+      NOMBRES_AUTO.add("wqi")
+      NOMBRES_AUTO.add("fgli")
+      NOMBRES_AUTO.add("scl")
+      NOMBRES_AUTO.add("precision picking")
+      NOMBRES_AUTO.add("capacidad utilizada")
+      NOMBRES_AUTO.add("productividad de picking")
+    }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
     )
@@ -2061,6 +2078,88 @@ export async function getIndicadoresMes(
       }
     }
 
+    // 7c. Indicadores AUTO warehouse — 6 KPIs del handbook 2025.
+    //     Vienen de deposito-esteban.vercel.app (APIs públicas) + Google Sheet
+    //     de errores picking. Tolerante a fallos: si una fuente cae, su KPI
+    //     queda en null pero el resto sigue. Para detalle por operador del
+    //     sub-cuadro Troli/Galvez/Ovejero, ver getAperturaPicking().
+    if (tipo === "warehouse") {
+      // Overrides manuales de bul/HH (columna histórica hl_hh).
+      const { data: aperturaRaw } = await supabase
+        .from("reunion_apertura_picking")
+        .select("operador, hl_hh")
+        .eq("reunion_id", reunionId)
+
+      const overrides = new Map<OperadorApertura, number | null>()
+      for (const a of (aperturaRaw ?? []) as Array<{
+        operador: string
+        hl_hh: number | null
+      }>) {
+        const op = OPERADORES_APERTURA.find(
+          (o) => o.toLowerCase() === a.operador.toLowerCase(),
+        )
+        if (op && a.hl_hh !== null) overrides.set(op, Number(a.hl_hh))
+      }
+
+      const auto = await buildWarehouseAutoData(fecha, overrides)
+
+      // Cada KPI mensual (WQI/FGLI/SCL/Capacidad) lleva su valor solo en la
+      // fecha de la reunión actual; los KPIs diarios (Precisión/Productividad)
+      // van también en esa fecha porque se calcularon para el día anterior
+      // hábil de la reunión.
+      function buildWarehouseRow(
+        id: string,
+        nombre: string,
+        unidad: string,
+        valor: number | null,
+      ): ReunionIndicadoresMes["indicadores"][number] {
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        for (const f of fechas) {
+          valoresPorFecha[f] = f === fecha
+            ? { reunion_id: "auto", valor, observacion: null }
+            : null
+        }
+        return {
+          id,
+          nombre,
+          unidad,
+          meta: null,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresPorFecha,
+          mtd: valor,
+          auto: true,
+        }
+      }
+
+      indicadoresAuto.push(
+        buildWarehouseRow("auto_wqi", "WQI", "PPM", auto.indicadores.wqi_ppm),
+        buildWarehouseRow("auto_fgli", "FGLI", "HL", auto.indicadores.fgli_hl),
+        buildWarehouseRow("auto_scl", "SCL", "$", auto.indicadores.scl_ars),
+        buildWarehouseRow(
+          "auto_precision_picking",
+          "Precision picking",
+          "%",
+          auto.indicadores.precision_pct,
+        ),
+        buildWarehouseRow(
+          "auto_capacidad_utilizada",
+          "Capacidad utilizada",
+          "%",
+          auto.indicadores.capacidad_pct,
+        ),
+        buildWarehouseRow(
+          "auto_productividad_picking",
+          "Productividad de picking",
+          "bul/HH",
+          auto.indicadores.productividad_bul_hh,
+        ),
+      )
+    }
+
     return {
       data: {
         anio,
@@ -2093,4 +2192,141 @@ function diasDelMes(anio: number, mes: number): string[] {
     fechas.push(`${anio}-${mm}-${String(d).padStart(2, "0")}`)
   }
   return fechas
+}
+
+// =============================================
+// Apertura por operador (sub-cuadro Troli/Galvez/Ovejero — solo warehouse)
+// =============================================
+
+export interface AperturaPickingResponse {
+  diaAnterior: string
+  filas: OperadorAperturaRow[]
+}
+
+/**
+ * Devuelve datos del sub-cuadro de operadores para una reunión warehouse.
+ * Datos en vivo: bultos/horas/bul_hh desde el WMS (productividad-picking),
+ * errores desde el Google Sheet, overrides manuales de bul/HH desde DB.
+ */
+export async function getAperturaPicking(
+  reunionId: string,
+): Promise<Result<AperturaPickingResponse>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+
+    const { data: reunion, error: errReu } = await supabase
+      .from("reuniones")
+      .select("tipo, fecha")
+      .eq("id", reunionId)
+      .single()
+
+    if (errReu || !reunion) {
+      return { error: errReu?.message ?? "No se encontró la reunión" }
+    }
+    if ((reunion as { tipo: string }).tipo !== "warehouse") {
+      return { error: "La apertura por operador es solo para reuniones warehouse" }
+    }
+
+    const fecha = (reunion as { fecha: string }).fecha
+
+    const { data: overridesRaw } = await supabase
+      .from("reunion_apertura_picking")
+      .select("operador, hl_hh")
+      .eq("reunion_id", reunionId)
+
+    const overrides = new Map<OperadorApertura, number | null>()
+    for (const a of (overridesRaw ?? []) as Array<{
+      operador: string
+      hl_hh: number | null
+    }>) {
+      const op = OPERADORES_APERTURA.find(
+        (o) => o.toLowerCase() === a.operador.toLowerCase(),
+      )
+      if (op && a.hl_hh !== null) overrides.set(op, Number(a.hl_hh))
+    }
+
+    const auto = await buildWarehouseAutoData(fecha, overrides)
+    return {
+      data: {
+        diaAnterior: auto.diaAnterior,
+        filas: auto.apertura,
+      },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error obteniendo apertura por operador",
+    }
+  }
+}
+
+/**
+ * Upsert del bul/HH manual para un operador en una reunión.
+ * Permisos: igual que setIndicadorValor (editor O asistente activo).
+ * El nombre de columna en la tabla es hl_hh (histórico de cuando la unidad
+ * planeada era HL/HH), pero conceptualmente es bul/HH.
+ */
+export async function setAperturaPickingHlHh(
+  reunionId: string,
+  operador: OperadorApertura,
+  bulHh: number | null,
+): Promise<Result<{ reunion_id: string; operador: string; hl_hh: number | null }>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!OPERADORES_APERTURA.includes(operador)) {
+      return { error: "Operador inválido" }
+    }
+    if (bulHh !== null && !Number.isFinite(bulHh)) {
+      return { error: "bul/HH inválido" }
+    }
+
+    // Permiso: editor O asistente activo de la reunión (igual que setIndicadorValor)
+    if (!isEditorRole(profile.role)) {
+      const { data: asis } = await supabase
+        .from("reuniones_asistentes")
+        .select("id")
+        .eq("reunion_id", reunionId)
+        .eq("profile_id", profile.id)
+        .maybeSingle()
+      if (!asis) {
+        return {
+          error:
+            "Solo editores o asistentes de la reunión pueden cargar la apertura",
+        }
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("reunion_apertura_picking")
+      .upsert(
+        {
+          reunion_id: reunionId,
+          operador,
+          hl_hh: bulHh,
+        },
+        { onConflict: "reunion_id,operador" },
+      )
+      .select("reunion_id, operador, hl_hh")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as { reunion_id: string; operador: string; hl_hh: number | null } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error guardando apertura por operador",
+    }
+  }
 }

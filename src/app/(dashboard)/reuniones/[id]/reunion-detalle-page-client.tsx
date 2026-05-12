@@ -49,6 +49,7 @@ import {
   setIndicadorValor,
 } from "@/actions/reuniones"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
+import { AperturaPickingSubcuadro } from "@/components/reuniones/apertura-picking-subcuadro"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
@@ -1215,6 +1216,15 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Sub-cuadro de apertura por operador — solo warehouse */}
+      {detalle.tipo === "warehouse" && (
+        <AperturaPickingSubcuadro
+          reunionId={detalle.id}
+          puedeEditar={puedeEditarTablero}
+          onChange={refrescar}
+        />
+      )}
 
       {/* ETAPA 3: ACTION LOG */}
       <Card className="border-emerald-200 bg-emerald-50/30">
