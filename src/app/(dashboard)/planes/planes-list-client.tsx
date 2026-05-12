@@ -45,9 +45,9 @@ type PrioridadFilter = "all" | "alta" | "media" | "baja"
 
 const ESTADO_FILTERS: { value: EstadoFilter; label: string }[] = [
   { value: "all", label: "Todos" },
-  { value: "pendiente", label: "Pendientes" },
-  { value: "en_progreso", label: "En Progreso" },
-  { value: "completado", label: "Completados" },
+  { value: "pendiente", label: "No comenzadas" },
+  { value: "en_progreso", label: "En curso" },
+  { value: "completado", label: "Cerradas" },
 ]
 
 function formatDate(iso: string | null): string {
@@ -83,8 +83,10 @@ function ProgressBar({ value }: { value: number }) {
 
 export function PlanesListClient({
   planes: initialPlanes,
+  admins,
 }: {
   planes: PlanAccionListItem[]
+  admins: Array<{ id: string; nombre: string }>
 }) {
   const router = useRouter()
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all")
@@ -98,21 +100,16 @@ export function PlanesListClient({
     return p.responsable_principal_nombre || p.responsable || ""
   }
 
-  const responsablesOpts = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of planes) {
-      const n = nombreResponsable(p).trim()
-      if (n) set.add(n)
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"))
-  }, [planes])
+  // Lista de admins ordenados (de los pasados por server).
+  const responsablesOpts = useMemo(
+    () =>
+      [...admins].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+    [admins]
+  )
 
-  const filtered = useMemo(() => {
+  // Lista parcialmente filtrada (sin estado): la base de los stats.
+  const filteredSinEstado = useMemo(() => {
     let list = planes
-
-    if (estadoFilter !== "all") {
-      list = list.filter((p) => p.estado === estadoFilter)
-    }
 
     if (prioridadFilter !== "all") {
       list = list.filter((p) => p.prioridad === prioridadFilter)
@@ -134,15 +131,26 @@ export function PlanesListClient({
     }
 
     return list
-  }, [planes, estadoFilter, prioridadFilter, responsableFilter, search])
+  }, [planes, prioridadFilter, responsableFilter, search])
+
+  const filtered = useMemo(() => {
+    if (estadoFilter === "all") return filteredSinEstado
+    return filteredSinEstado.filter((p) => p.estado === estadoFilter)
+  }, [filteredSinEstado, estadoFilter])
 
   const stats = useMemo(() => {
-    const total = planes.length
-    const pendientes = planes.filter((p) => p.estado === "pendiente").length
-    const enProgreso = planes.filter((p) => p.estado === "en_progreso").length
-    const completados = planes.filter((p) => p.estado === "completado").length
+    const total = filteredSinEstado.length
+    const pendientes = filteredSinEstado.filter(
+      (p) => p.estado === "pendiente"
+    ).length
+    const enProgreso = filteredSinEstado.filter(
+      (p) => p.estado === "en_progreso"
+    ).length
+    const completados = filteredSinEstado.filter(
+      (p) => p.estado === "completado"
+    ).length
     return { total, pendientes, enProgreso, completados }
-  }, [planes])
+  }, [filteredSinEstado])
 
   async function handleEstadoChange(id: string, newEstado: EstadoPlan) {
     startTransition(async () => {
@@ -171,9 +179,9 @@ export function PlanesListClient({
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Total" value={stats.total} color="#64748B" />
-        <StatCard label="Pendientes" value={stats.pendientes} color={ESTADO_PLAN_COLORS.pendiente} />
-        <StatCard label="En Progreso" value={stats.enProgreso} color={ESTADO_PLAN_COLORS.en_progreso} />
-        <StatCard label="Completados" value={stats.completados} color={ESTADO_PLAN_COLORS.completado} />
+        <StatCard label="No comenzadas" value={stats.pendientes} color={ESTADO_PLAN_COLORS.pendiente} />
+        <StatCard label="En curso" value={stats.enProgreso} color={ESTADO_PLAN_COLORS.en_progreso} />
+        <StatCard label="Cerradas" value={stats.completados} color={ESTADO_PLAN_COLORS.completado} />
       </div>
 
       {/* Filters */}
@@ -210,7 +218,7 @@ export function PlanesListClient({
           ))}
         </div>
 
-        <div className="min-w-[160px]">
+        <div className="min-w-[180px]">
           <Select
             value={responsableFilter}
             onValueChange={(v) => v && setResponsableFilter(v)}
@@ -220,9 +228,9 @@ export function PlanesListClient({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los responsables</SelectItem>
-              {responsablesOpts.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
+              {responsablesOpts.map((a) => (
+                <SelectItem key={a.id} value={a.nombre}>
+                  {a.nombre}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,4 +1,5 @@
 import { getPlanesList } from "@/actions/planes"
+import { createClient } from "@/lib/supabase/server"
 import { PlanesListClient } from "./planes-list-client"
 
 export default async function PlanesPage() {
@@ -12,5 +13,15 @@ export default async function PlanesPage() {
     )
   }
 
-  return <PlanesListClient planes={result.data} />
+  const supabase = await createClient()
+  const { data: adminsRaw } = await supabase
+    .from("profiles")
+    .select("id, nombre")
+    .eq("active", true)
+    .eq("role", "admin")
+    .order("nombre")
+
+  const admins = (adminsRaw ?? []) as Array<{ id: string; nombre: string }>
+
+  return <PlanesListClient planes={result.data} admins={admins} />
 }
