@@ -19,6 +19,32 @@ function assertAuditorOrAdmin(role: string) {
   }
 }
 
+function truncar(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s
+}
+
+// Notificación in-app para el responsable asignado de una acción 5S.
+// Failure no bloquea la operación.
+async function notificarAsignacionAccion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  responsableId: string,
+  descripcion: string,
+  tipo: S5Tipo
+): Promise<void> {
+  try {
+    await supabase.from("notificaciones").insert({
+      user_id: responsableId,
+      tipo: "s5_accion_asignada",
+      titulo: `Nueva acción 5S: ${truncar(descripcion, 60)}`,
+      mensaje: `Te asignaron una acción 5S de ${tipo === "flota" ? "Flota" : "Almacén"}.`,
+      link: "/mis-tareas",
+    })
+  } catch {
+    // silent
+  }
+}
+
 // FK constraint names (auto-generados por Postgres) — explícitos
 // porque s5_acciones tiene múltiples FKs a profiles.
 const SELECT_ACCION_RELS = `
@@ -272,6 +298,15 @@ export async function crearAccion(
       }
     }
 
+    if (accion.responsable_id) {
+      await notificarAsignacionAccion(
+        supabase,
+        accion.responsable_id,
+        accion.descripcion,
+        accion.tipo
+      )
+    }
+
     revalidatePath(DASHBOARD_PATH)
     return { data: accion }
   } catch (err) {
@@ -320,6 +355,19 @@ export async function actualizarAccion(
       return { error: "Nada para actualizar" }
     }
 
+    // Si va a cambiar el responsable, cargar el anterior para comparar.
+    let prevResponsableId: string | null = null
+    if (patch.responsableId !== undefined) {
+      const { data: prev } = await supabase
+        .from("s5_acciones")
+        .select("responsable_id")
+        .eq("id", id)
+        .maybeSingle()
+      prevResponsableId =
+        (prev as { responsable_id: string | null } | null)?.responsable_id ??
+        null
+    }
+
     const { data, error } = await supabase
       .from("s5_acciones")
       .update(update)
@@ -329,8 +377,24 @@ export async function actualizarAccion(
 
     if (error) return { error: error.message }
 
+    const accion = data as S5Accion
+
+    // Si cambió el responsable a uno nuevo no-nulo, notificar.
+    if (
+      patch.responsableId !== undefined &&
+      accion.responsable_id &&
+      accion.responsable_id !== prevResponsableId
+    ) {
+      await notificarAsignacionAccion(
+        supabase,
+        accion.responsable_id,
+        accion.descripcion,
+        accion.tipo
+      )
+    }
+
     revalidatePath(DASHBOARD_PATH)
-    return { data: data as S5Accion }
+    return { data: accion }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error actualizando acción",
