@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
+  crearPdaEnMantenimiento,
+  actualizarPdaEnMantenimiento,
+  eliminarPdaEnMantenimiento,
+  subirEvidenciaPda,
+} from "@/actions/mantenimiento-edilicio"
+import {
   buildAperturaPickingDelDia,
   buildWarehouseSerieDiaria,
   OPERADORES_APERTURA,
@@ -40,6 +46,26 @@ const DESTINOS_5S: TareaDestino[] = ["5s_flota", "5s_almacen"]
 
 function isDestino5S(destino: TareaDestino): destino is "5s_flota" | "5s_almacen" {
   return DESTINOS_5S.includes(destino)
+}
+
+// Resuelve el nombre del responsable para mostrar en el PDA externo de
+// Mantenimiento Edilicio. Si no se puede resolver, devuelve "".
+async function resolverNombreResponsable(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  responsableId: string | null
+): Promise<string> {
+  if (!responsableId) return ""
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("nombre")
+      .eq("id", responsableId)
+      .maybeSingle()
+    return (data as { nombre: string | null } | null)?.nombre ?? ""
+  } catch {
+    return ""
+  }
 }
 
 function tipo5SFromDestino(destino: "5s_flota" | "5s_almacen"): "flota" | "almacen" {
@@ -1099,6 +1125,23 @@ export async function crearActividad(
       await notificarAsignacionActividad(supabase, responsable_id, descripcion)
     }
 
+    // Si destino es mantenimiento_edilicio, espejar PDA en la app externa.
+    // Silent fail: no romper el flujo principal si la integración falla.
+    if (
+      destinoParsed.destino === "mantenimiento_edilicio" &&
+      destinoParsed.mantenimiento_rubro
+    ) {
+      const nombreResp = await resolverNombreResponsable(supabase, responsable_id)
+      await crearPdaEnMantenimiento({
+        externalId: actividad.id,
+        titulo: descripcion,
+        descripcion,
+        responsable: nombreResp,
+        fechaProbable: fecha_compromiso,
+        rubro: destinoParsed.mantenimiento_rubro,
+      })
+    }
+
     revalidatePath(REVALIDATE_PATH)
     return { data: actividad }
   } catch (err) {
@@ -1290,6 +1333,43 @@ export async function actualizarActividad(
       await notificarAsignacionActividad(supabase, responsable_id, descripcion)
     }
 
+    // =============================================
+    // Rebalance del espejo en Mantenimiento Edilicio (app externa)
+    // Silent fail para no romper el flujo principal.
+    // =============================================
+    const eraMant = destinoViejo === "mantenimiento_edilicio"
+    const esMant = destinoNuevo === "mantenimiento_edilicio"
+
+    if (eraMant && !esMant) {
+      await eliminarPdaEnMantenimiento(id)
+    } else if (!eraMant && esMant && destinoParsed.mantenimiento_rubro) {
+      const nombreResp = await resolverNombreResponsable(supabase, responsable_id)
+      await crearPdaEnMantenimiento({
+        externalId: id,
+        titulo: descripcion,
+        descripcion,
+        responsable: nombreResp,
+        fechaProbable: fecha_compromiso,
+        rubro: destinoParsed.mantenimiento_rubro,
+      })
+    } else if (eraMant && esMant && destinoParsed.mantenimiento_rubro) {
+      const nombreResp = await resolverNombreResponsable(supabase, responsable_id)
+      const estadoMant =
+        estadoFinal === "cerrada"
+          ? "ejecutado"
+          : estadoFinal === "en_curso"
+            ? "en_curso"
+            : "planificado"
+      await actualizarPdaEnMantenimiento({
+        externalId: id,
+        descripcion,
+        responsable: nombreResp,
+        fechaProbable: fecha_compromiso,
+        rubro: destinoParsed.mantenimiento_rubro,
+        estado: estadoMant,
+      })
+    }
+
     revalidatePath(REVALIDATE_PATH)
     return { data: actividad }
   } catch (err) {
@@ -1314,7 +1394,7 @@ export async function responderActividad(
 
     const { data: actual, error: errActual } = await supabase
       .from("reuniones_actividades")
-      .select("evidencia_url, responsable_id, estado")
+      .select("evidencia_url, responsable_id, estado, destino")
       .eq("id", id)
       .single()
     if (errActual || !actual) {
@@ -1457,6 +1537,41 @@ export async function responderActividad(
       // No bloquear el flujo principal por fallo en sync.
     }
 
+    // Espejar al PDA de Mantenimiento Edilicio si corresponde.
+    // Silent fail.
+    try {
+      const destinoActual = (actual as { destino: TareaDestino | null })
+        .destino
+      if (destinoActual === "mantenimiento_edilicio") {
+        // Update estado del PDA.
+        const estadoMant =
+          nuevoEstado === "cerrada"
+            ? "ejecutado"
+            : "en_curso"
+        await actualizarPdaEnMantenimiento({
+          externalId: id,
+          estado: estadoMant,
+        })
+
+        // Si subimos archivo, replicarlo al PDA.
+        if (tieneArchivo && nuevaEvidenciaUrl) {
+          const { data: blob } = await supabase.storage
+            .from(BUCKET)
+            .download(nuevaEvidenciaUrl)
+          if (blob) {
+            await subirEvidenciaPda({
+              externalId: id,
+              archivoBlob: blob,
+              archivoNombre: nuevaEvidenciaNombre || "evidencia",
+              descripcion: observaciones,
+            })
+          }
+        }
+      }
+    } catch {
+      // silent
+    }
+
     revalidatePath(REVALIDATE_PATH)
     return { data: data as ReunionActividad }
   } catch (err) {
@@ -1478,7 +1593,7 @@ export async function eliminarActividad(
 
     const { data: actual } = await supabase
       .from("reuniones_actividades")
-      .select("evidencia_url")
+      .select("evidencia_url, destino")
       .eq("id", id)
       .maybeSingle()
 
@@ -1489,10 +1604,25 @@ export async function eliminarActividad(
 
     if (error) return { error: error.message }
 
-    const evidenciaUrl = (actual as { evidencia_url: string | null } | null)
-      ?.evidencia_url
+    const evidenciaUrl = (actual as {
+      evidencia_url: string | null
+      destino: TareaDestino | null
+    } | null)?.evidencia_url
     if (evidenciaUrl) {
       await supabase.storage.from(BUCKET).remove([evidenciaUrl])
+    }
+
+    // Si la actividad estaba espejada en mantenimiento, borrar el PDA.
+    // Silent fail.
+    const destinoActual = (actual as {
+      destino: TareaDestino | null
+    } | null)?.destino
+    if (destinoActual === "mantenimiento_edilicio") {
+      try {
+        await eliminarPdaEnMantenimiento(id)
+      } catch {
+        // silent
+      }
     }
 
     revalidatePath(REVALIDATE_PATH)

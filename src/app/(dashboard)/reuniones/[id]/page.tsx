@@ -6,6 +6,7 @@ import {
   puedeEditarReuniones,
 } from "@/actions/reuniones"
 import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
+import { listarRubrosMantenimiento } from "@/actions/mantenimiento-edilicio"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -23,6 +24,7 @@ export default async function ReunionDetallePage({
     puedeEditar,
     sectoresRes,
     vehiculosRes,
+    rubrosRes,
   ] = await Promise.all([
     getProfile(),
     getReunionDetalle(id),
@@ -31,6 +33,7 @@ export default async function ReunionDetallePage({
     puedeEditarReuniones(),
     getSectoresAlmacen(),
     getVehiculosActivos(),
+    listarRubrosMantenimiento(),
   ])
 
   if (!profile) redirect("/login")
@@ -53,6 +56,7 @@ export default async function ReunionDetallePage({
       responsables={"data" in respRes ? respRes.data : []}
       sectoresAlmacen={"data" in sectoresRes ? sectoresRes.data : []}
       vehiculos={"data" in vehiculosRes ? vehiculosRes.data : []}
+      rubrosMantenimiento={rubrosRes.data ?? []}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
     />

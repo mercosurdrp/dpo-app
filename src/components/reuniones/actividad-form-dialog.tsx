@@ -42,6 +42,11 @@ interface VehiculoOpt {
   dominio: string
 }
 
+interface RubroOpt {
+  id: string
+  nombre: string
+}
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -51,6 +56,7 @@ interface Props {
   responsables: ResponsableOpt[]
   sectoresAlmacen?: S5SectorAlmacen[]
   vehiculos?: VehiculoOpt[]
+  rubrosMantenimiento?: RubroOpt[]
   onSaved: () => void
 }
 
@@ -99,6 +105,7 @@ export function ActividadFormDialog({
   responsables,
   sectoresAlmacen,
   vehiculos,
+  rubrosMantenimiento,
   onSaved,
 }: Props) {
   const editing = !!actividad
@@ -310,14 +317,35 @@ export function ActividadFormDialog({
           {destino === "mantenimiento_edilicio" && (
             <div className="space-y-1.5">
               <Label htmlFor="act_rubro">Rubro *</Label>
-              <Input
-                id="act_rubro"
-                value={mantenimientoRubro}
-                onChange={(e) => setMantenimientoRubro(e.target.value)}
-                placeholder="Ej: Electricidad, plomería, refrigeración…"
-              />
+              {(rubrosMantenimiento ?? []).length > 0 ? (
+                <Select
+                  value={mantenimientoRubro}
+                  onValueChange={(v: string | null) =>
+                    setMantenimientoRubro(v ?? "")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Elegí un rubro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(rubrosMantenimiento ?? []).map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="act_rubro"
+                  value={mantenimientoRubro}
+                  onChange={(e) => setMantenimientoRubro(e.target.value)}
+                  placeholder="Ej: Electricidad, plomería, refrigeración…"
+                />
+              )}
               <p className="text-xs text-muted-foreground">
-                Texto libre por ahora (Fase 1). En Fase 2 se cataloga.
+                La tarea se replica como Plan de Acción en la app de
+                Mantenimiento Edilicio.
               </p>
             </div>
           )}

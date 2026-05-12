@@ -112,12 +112,18 @@ interface VehiculoOpt {
   dominio: string
 }
 
+interface RubroOpt {
+  id: string
+  nombre: string
+}
+
 interface Props {
   detalle: ReunionDetalle & { actividades?: ReunionActividadConResponsable[] }
   indicadoresMes: IndicadoresMesData | null
   responsables: ResponsableOpt[]
   sectoresAlmacen: SectorOpt[]
   vehiculos: VehiculoOpt[]
+  rubrosMantenimiento: RubroOpt[]
   puedeEditar: boolean
   currentProfileId: string | null
 }
@@ -692,6 +698,7 @@ export function ReunionDetallePageClient({
   responsables,
   sectoresAlmacen,
   vehiculos,
+  rubrosMantenimiento,
   puedeEditar,
   currentProfileId,
 }: Props) {
@@ -1425,6 +1432,7 @@ export function ReunionDetallePageClient({
         responsables={responsables}
         sectoresAlmacen={sectoresAlmacen}
         vehiculos={vehiculos}
+        rubrosMantenimiento={rubrosMantenimiento}
         onSaved={refrescar}
       />
       <ConfigurarIndicadoresDialog
