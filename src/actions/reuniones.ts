@@ -1853,12 +1853,17 @@ export async function getIndicadoresMes(
     // Para warehouse, los 6 KPIs del handbook (WQI/FGLI/SCL/Precision picking/
     // Capacidad utilizada/Productividad de picking) se computan on-the-fly desde
     // fuentes externas — ver src/lib/warehouse/auto-indicadores.ts.
+    // Para logistica, solo se replican Productividad de picking y WQI
+    // (los otros 4 son específicos del rol de depósito).
     if (tipo === "warehouse") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("fgli")
       NOMBRES_AUTO.add("scl")
       NOMBRES_AUTO.add("precision picking")
       NOMBRES_AUTO.add("capacidad utilizada")
+      NOMBRES_AUTO.add("productividad de picking")
+    } else if (tipo === "logistica") {
+      NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("productividad de picking")
     }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
@@ -2292,20 +2297,27 @@ export async function getIndicadoresMes(
       }
     }
 
-    // 7d. Indicadores AUTO warehouse — 6 KPIs del handbook 2025.
+    // 7d. Indicadores AUTO warehouse + logistica — KPIs del handbook 2025.
     //     Vienen de deposito-esteban.vercel.app (APIs públicas) + Google Sheet
     //     de errores picking. Tolerante a fallos: si una fuente cae, su KPI
     //     queda en null pero el resto sigue. Para detalle por operador del
     //     día, ver getAperturaPickingDia() y el dialog AperturaPickingDetalleDiaDialog.
-    if (tipo === "warehouse") {
+    //
+    //     Warehouse: los 6 KPIs (WQI/FGLI/SCL/Capacidad/Precision/Productividad).
+    //     Logistica: solo Productividad de picking y WQI (los otros 4 son
+    //     específicos del rol de depósito, no relevantes en logística).
+    if (tipo === "warehouse" || tipo === "logistica") {
       const serie = await buildWarehouseSerieDiaria(fechas, fecha)
 
+      // Métricas diarias (cada celda tiene valor del día, no acumulado).
+      // El MTD se computa según `agregacion`.
       function buildSerieRow(
         id: string,
         nombre: string,
         unidad: string,
         porFecha: Record<string, number | null>,
         agregacion: "suma" | "promedio",
+        meta: number | null,
         mejorSi: "menor" | "mayor" | undefined,
       ): ReunionIndicadoresMes["indicadores"][number] {
         const valoresPorFecha: Record<
@@ -2337,27 +2349,25 @@ export async function getIndicadoresMes(
           id,
           nombre,
           unidad,
-          meta: null,
+          meta,
           orden: -1,
           agregacion,
           valores: valoresPorFecha,
           mtd,
           auto: true,
           mejor_si: mejorSi,
-          // WQI/FGLI/SCL son MTD-del-mes replicado, no diarios. Para esos no
-          // tiene sentido "MTD recomputado" del array → tomamos el valor del
-          // día de la reunión directamente.
         }
       }
 
-      // WQI/FGLI/SCL: valores acumulados día por día (MTD progresivo desde
-      // /api/indicadores/serie-diaria). El MTD del indicador es el valor en
-      // la fecha de la reunión (el último acumulado conocido).
+      // Métricas acumuladas día por día (MTD progresivo: cada celda ya tiene
+      // el valor acumulado desde el 1° hasta ese día). El MTD del indicador
+      // es el valor en la fecha de la reunión (el último acumulado conocido).
       function buildAcumuladoRow(
         id: string,
         nombre: string,
         unidad: string,
         porFecha: Record<string, number | null>,
+        meta: number | null,
         mejorSi: "menor" | "mayor" | undefined,
       ): ReunionIndicadoresMes["indicadores"][number] {
         const valoresPorFecha: Record<
@@ -2371,13 +2381,12 @@ export async function getIndicadoresMes(
             observacion: null,
           }
         }
-        // MTD es el valor en la fecha de la reunión (mismo replicado).
         const mtd = porFecha[fecha] ?? null
         return {
           id,
           nombre,
           unidad,
-          meta: null,
+          meta,
           orden: -1,
           agregacion: "promedio",
           valores: valoresPorFecha,
@@ -2387,35 +2396,45 @@ export async function getIndicadoresMes(
         }
       }
 
+      // Comunes a warehouse + logística
       indicadoresAuto.push(
-        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, "menor"),
-        buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, "menor"),
-        buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, "menor"),
-        buildSerieRow(
-          "auto_capacidad_utilizada",
-          "Capacidad utilizada",
-          "%",
-          serie.capacidad,
-          "promedio",
-          undefined,
-        ),
-        buildSerieRow(
-          "auto_precision_picking",
-          "Precision picking",
-          "%",
-          serie.precision,
-          "promedio",
-          "mayor",
-        ),
+        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, null, "menor"),
         buildSerieRow(
           "auto_productividad_picking",
           "Productividad de picking",
           "bul/HH",
           serie.productividad,
           "promedio",
+          300,
           "mayor",
         ),
       )
+
+      // Solo warehouse (rol de depósito)
+      if (tipo === "warehouse") {
+        indicadoresAuto.push(
+          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, null, "menor"),
+          buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, null, "menor"),
+          buildSerieRow(
+            "auto_capacidad_utilizada",
+            "Capacidad utilizada",
+            "%",
+            serie.capacidad,
+            "promedio",
+            90,
+            "menor",
+          ),
+          buildSerieRow(
+            "auto_precision_picking",
+            "Precision picking",
+            "%",
+            serie.precision,
+            "promedio",
+            100,
+            "mayor",
+          ),
+        )
+      }
     }
 
     return {
