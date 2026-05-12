@@ -53,6 +53,7 @@ import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-i
 import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
+import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -86,6 +87,7 @@ interface IndicadorMesItem {
   mtd: number | null
   auto?: boolean
   mostrar_cero?: boolean
+  mejor_si?: "menor" | "mayor"
 }
 
 interface IndicadoresMesData {
@@ -692,6 +694,10 @@ export function ReunionDetallePageClient({
   const [rechazosDetalleFecha, setRechazosDetalleFecha] = useState<string | null>(
     null,
   )
+  // Detalle del día seleccionado al hacer click en celda Bultos vendidos
+  const [ventasDetalleFecha, setVentasDetalleFecha] = useState<string | null>(
+    null,
+  )
 
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
@@ -1114,14 +1120,26 @@ export function ReunionDetallePageClient({
                             valor != null && Number.isFinite(valor) && f <= detalle.fecha
                           const muestra = valorValido && (ind.mostrar_cero ? true : valor! > 0)
                           const esPct = ind.unidad === "%"
-                          // Para Rechazos %: rojo si supera la meta, verde si la cumple
-                          const colorClass = esPct
-                            ? ind.meta != null && valor! > ind.meta
-                              ? "bg-red-50 font-semibold text-red-700"
-                              : "bg-emerald-50 font-semibold text-emerald-700"
-                            : "bg-red-50 font-semibold text-red-700"
+                          // Color por polaridad de la meta (mejor_si). Si no hay
+                          // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
+                          // hay valor (mismo comportamiento histórico).
+                          let colorClass = "bg-red-50 font-semibold text-red-700"
+                          if (ind.mejor_si && ind.meta != null && valor != null) {
+                            const cumple =
+                              ind.mejor_si === "menor"
+                                ? valor <= ind.meta
+                                : valor >= ind.meta
+                            colorClass = cumple
+                              ? "bg-emerald-50 font-semibold text-emerald-700"
+                              : "bg-red-50 font-semibold text-red-700"
+                          }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
-                          const clickable = esRechazosPct && muestra
+                          const esBultosVendidos = ind.id === "auto_bultos_vendidos"
+                          const clickable = (esRechazosPct || esBultosVendidos) && muestra
+                          const onCellClick = () => {
+                            if (esRechazosPct) setRechazosDetalleFecha(f)
+                            else if (esBultosVendidos) setVentasDetalleFecha(f)
+                          }
                           const contenido = muestra
                             ? esPct
                               ? `${formatearValor(valor!)}%`
@@ -1140,7 +1158,7 @@ export function ReunionDetallePageClient({
                               {clickable ? (
                                 <button
                                   type="button"
-                                  onClick={() => setRechazosDetalleFecha(f)}
+                                  onClick={onCellClick}
                                   className="w-full cursor-pointer rounded px-1 py-0.5 underline-offset-2 hover:underline focus:outline-none focus:ring-1 focus:ring-blue-400"
                                   title="Ver detalle del día"
                                 >
@@ -1389,6 +1407,14 @@ export function ReunionDetallePageClient({
           if (!o) setRechazosDetalleFecha(null)
         }}
         fecha={rechazosDetalleFecha}
+      />
+
+      <VentasDetalleDiaDialog
+        open={ventasDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setVentasDetalleFecha(null)
+        }}
+        fecha={ventasDetalleFecha}
       />
     </div>
   )

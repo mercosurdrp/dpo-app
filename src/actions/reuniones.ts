@@ -1835,6 +1835,8 @@ export async function getIndicadoresMes(
       "tri",
       "rechazos",
       "rechazos %",
+      "bultos vendidos",
+      "bultos entregados",
     ])
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -2056,8 +2058,95 @@ export async function getIndicadoresMes(
             mtd,
             auto: true,
             mostrar_cero: true,
+            mejor_si: "menor",
           })
         }
+      }
+    }
+
+    // 7c. Indicador AUTO "Bultos vendidos" — todos los tipos.
+    //     Suma de total_bultos por día. Meta = promedio diario del mes anterior
+    //     (Σ bultos / días con datos). mejor_si=mayor (verde si supera meta).
+    {
+      const { data: ventRaw, error: errVent } = await supabase
+        .from("ventas_diarias")
+        .select("fecha, total_bultos")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+
+      if (!errVent) {
+        // Rango del mes anterior
+        const prevAnio = mes === 1 ? anio - 1 : anio
+        const prevMes = mes === 1 ? 12 : mes - 1
+        const prevFechasMes = diasDelMes(prevAnio, prevMes)
+        const prevDesde = prevFechasMes[0]
+        const prevHasta = prevFechasMes[prevFechasMes.length - 1]
+
+        const { data: ventPrevRaw } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_bultos")
+          .gte("fecha", prevDesde)
+          .lte("fecha", prevHasta)
+
+        // Promedio diario mes anterior
+        let metaPromedio: number | null = null
+        if (ventPrevRaw) {
+          const porFechaPrev: Record<string, number> = {}
+          for (const v of ventPrevRaw as Array<{
+            fecha: string
+            total_bultos: number | null
+          }>) {
+            const b = Number(v.total_bultos ?? 0)
+            if (!Number.isFinite(b)) continue
+            porFechaPrev[v.fecha] = (porFechaPrev[v.fecha] ?? 0) + b
+          }
+          const dias = Object.keys(porFechaPrev).length
+          if (dias > 0) {
+            let sum = 0
+            for (const b of Object.values(porFechaPrev)) sum += b
+            metaPromedio = Math.round(sum / dias)
+          }
+        }
+
+        // Bultos por fecha (mes en curso)
+        const bultosPorFecha: Record<string, number> = {}
+        for (const v of (ventRaw ?? []) as Array<{
+          fecha: string
+          total_bultos: number | null
+        }>) {
+          const b = Number(v.total_bultos ?? 0)
+          if (!Number.isFinite(b)) continue
+          bultosPorFecha[v.fecha] = (bultosPorFecha[v.fecha] ?? 0) + b
+        }
+
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        let mtd = 0
+        for (const f of fechas) {
+          const b = bultosPorFecha[f] ?? 0
+          valoresPorFecha[f] = {
+            reunion_id: "auto",
+            valor: b,
+            observacion: null,
+          }
+          if (f <= fecha) mtd += b
+        }
+
+        indicadoresAuto.push({
+          id: "auto_bultos_vendidos",
+          nombre: "Bultos vendidos",
+          unidad: "bultos",
+          meta: metaPromedio,
+          orden: -1,
+          agregacion: "suma",
+          valores: valoresPorFecha,
+          mtd,
+          auto: true,
+          mostrar_cero: true,
+          mejor_si: "mayor",
+        })
       }
     }
 

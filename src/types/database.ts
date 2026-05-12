@@ -2361,6 +2361,8 @@ export interface ReunionIndicadoresMes {
     auto?: boolean
     /** Si true, una celda con valor 0 también se muestra (no se oculta como "—"). Útil para tasas/% donde 0% es info válida. */
     mostrar_cero?: boolean
+    /** Para filas auto con meta: define la polaridad del cumplimiento. "menor" = mejor cuando valor ≤ meta (ej. Rechazos %); "mayor" = mejor cuando valor ≥ meta (ej. Bultos vendidos). */
+    mejor_si?: "menor" | "mayor"
   }>
 }
 
