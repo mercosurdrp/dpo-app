@@ -84,6 +84,7 @@ interface IndicadorMesItem {
   valores: Record<string, IndicadorMesCellData | null>
   mtd: number | null
   auto?: boolean
+  mostrar_cero?: boolean
 }
 
 interface IndicadoresMesData {
@@ -1095,27 +1096,39 @@ export function ReunionDetallePageClient({
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
 
-                        // Filas AUTO (LTI/TRI desde reportes_seguridad): se muestran
-                        // siempre como read-only, independientemente de si hubo reunión.
-                        // Mostramos el valor numérico solo si f <= fecha de la reunión
+                        // Filas AUTO (LTI/TRI desde reportes_seguridad, Rechazos %
+                        // desde rechazos+ventas_diarias): se muestran como read-only,
+                        // independientemente de si hubo reunión. Sólo hasta `f <= fecha`
                         // (no anticipamos futuro).
+                        // LTI/TRI ocultan 0 (días sin accidente). Rechazos % usa
+                        // `mostrar_cero` para que los días con 0% también se vean.
                         if (ind.auto) {
                           const valor = cell?.valor ?? null
-                          const muestra =
-                            valor != null && Number.isFinite(valor) && valor > 0 && f <= detalle.fecha
+                          const valorValido =
+                            valor != null && Number.isFinite(valor) && f <= detalle.fecha
+                          const muestra = valorValido && (ind.mostrar_cero ? true : valor! > 0)
+                          const esPct = ind.unidad === "%"
+                          // Para Rechazos %: rojo si supera la meta, verde si la cumple
+                          const colorClass = esPct
+                            ? ind.meta != null && valor! > ind.meta
+                              ? "bg-red-50 font-semibold text-red-700"
+                              : "bg-emerald-50 font-semibold text-emerald-700"
+                            : "bg-red-50 font-semibold text-red-700"
                           return (
                             <td
                               key={f}
                               className={cn(
                                 "px-2 py-1 text-center align-middle text-sm tabular-nums",
-                                muestra
-                                  ? "bg-red-50 font-semibold text-red-700"
-                                  : "text-slate-300",
+                                muestra ? colorClass : "text-slate-300",
                                 esHoy && !muestra && "bg-blue-50",
                                 dom && !muestra && "bg-slate-50",
                               )}
                             >
-                              {muestra ? formatearValor(valor!) : "—"}
+                              {muestra
+                                ? esPct
+                                  ? `${formatearValor(valor!)}%`
+                                  : formatearValor(valor!)
+                                : "—"}
                             </td>
                           )
                         }

@@ -1827,9 +1827,14 @@ export async function getIndicadoresMes(
       .order("orden", { ascending: true })
 
     if (errCfg) return { error: errCfg.message }
-    // Dedupe: descartamos indicadores manuales con nombre LTI/TRI para evitar
-    // duplicar filas — la versión auto los reemplaza.
+    // Dedupe: descartamos indicadores manuales con nombre que coincide con
+    // una fila auto (LTI/TRI para todos los tipos; "rechazos" / "rechazos %"
+    // sólo para warehouse). La versión auto los reemplaza.
     const NOMBRES_AUTO = new Set(["lti", "tri"])
+    if (tipo === "warehouse") {
+      NOMBRES_AUTO.add("rechazos")
+      NOMBRES_AUTO.add("rechazos %")
+    }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
     )
@@ -1969,10 +1974,91 @@ export async function getIndicadoresMes(
       }
     }
 
-    const indicadoresAuto = [
+    const indicadoresAuto: ReunionIndicadoresMes["indicadores"] = [
       buildAutoRow("auto_lti", "LTI", ltiPorFecha),
       buildAutoRow("auto_tri", "TRI", triPorFecha),
     ]
+
+    // 7b. Indicador AUTO "Rechazos %" — sólo warehouse.
+    //     Tasa diaria = bultos_rechazados_dia / total_bultos_ventas_dia * 100.
+    //     MTD ponderado = Σ bultos_mtd / Σ ventas_mtd * 100 (hasta `fecha`).
+    //     Misma fórmula que /indicadores/rechazos (lib/rechazos/comparado.ts).
+    if (tipo === "warehouse") {
+      const bultosPorFecha: Record<string, number> = {}
+      const ventasPorFecha: Record<string, number> = {}
+
+      const { data: rechRaw, error: errRech } = await supabase
+        .from("rechazos")
+        .select("fecha, bultos_rechazados")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+
+      if (!errRech) {
+        for (const r of (rechRaw ?? []) as Array<{
+          fecha: string
+          bultos_rechazados: number | null
+        }>) {
+          const b = Number(r.bultos_rechazados ?? 0)
+          if (!Number.isFinite(b)) continue
+          bultosPorFecha[r.fecha] = (bultosPorFecha[r.fecha] ?? 0) + b
+        }
+
+        const { data: ventRaw, error: errVent } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_bultos")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+
+        if (!errVent) {
+          for (const v of (ventRaw ?? []) as Array<{
+            fecha: string
+            total_bultos: number | null
+          }>) {
+            const b = Number(v.total_bultos ?? 0)
+            if (!Number.isFinite(b)) continue
+            ventasPorFecha[v.fecha] = (ventasPorFecha[v.fecha] ?? 0) + b
+          }
+
+          const valoresPorFecha: Record<
+            string,
+            { reunion_id: string; valor: number | null; observacion: string | null } | null
+          > = {}
+          let sumBultosMtd = 0
+          let sumVentasMtd = 0
+
+          for (const f of fechas) {
+            const ventas = ventasPorFecha[f] ?? 0
+            const bultos = bultosPorFecha[f] ?? 0
+            const tasa = ventas > 0 ? (bultos / ventas) * 100 : null
+            valoresPorFecha[f] = {
+              reunion_id: "auto",
+              valor: tasa,
+              observacion: null,
+            }
+            if (f <= fecha) {
+              sumBultosMtd += bultos
+              sumVentasMtd += ventas
+            }
+          }
+
+          const mtd =
+            sumVentasMtd > 0 ? (sumBultosMtd / sumVentasMtd) * 100 : null
+
+          indicadoresAuto.push({
+            id: "auto_rechazos_pct",
+            nombre: "Rechazos %",
+            unidad: "%",
+            meta: 1.7,
+            orden: -1,
+            agregacion: "promedio",
+            valores: valoresPorFecha,
+            mtd,
+            auto: true,
+            mostrar_cero: true,
+          })
+        }
+      }
+    }
 
     return {
       data: {

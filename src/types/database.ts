@@ -2305,6 +2305,8 @@ export interface ReunionIndicadoresMes {
     mtd: number | null
     /** Si true, la fila viene calculada por el sistema (no editable) — p.ej. LTI/TRI desde reportes_seguridad. */
     auto?: boolean
+    /** Si true, una celda con valor 0 también se muestra (no se oculta como "—"). Útil para tasas/% donde 0% es info válida. */
+    mostrar_cero?: boolean
   }>
 }
 
