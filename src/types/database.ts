@@ -252,8 +252,12 @@ export interface PlanAccionFull extends PlanAccion {
   reprogramaciones: PlanReprogramacionConAutor[]
 }
 
-// Mis tareas: item para la lista consolidada del usuario logueado
-export interface MisTareasItem extends PlanAccion {
+// Estado unificado para Mis Tareas (todos los orígenes mapean a estos 3 valores)
+export type EstadoTareaUnificado = "no_comenzada" | "en_curso" | "cerrada"
+
+// Plan de acción (origen "plan_accion")
+export interface MisTareasItemPlan extends PlanAccion {
+  origen: "plan_accion"
   pregunta_numero: string
   pregunta_texto: string
   pilar_nombre: string
@@ -262,7 +266,27 @@ export interface MisTareasItem extends PlanAccion {
   is_overdue: boolean
   dias_para_vencer: number | null
   evidencias_count: number
+  estado_unificado: EstadoTareaUnificado
 }
+
+// Acción 5S (origen "s5_accion")
+export interface MisTareasItemS5 {
+  origen: "s5_accion"
+  id: string
+  descripcion: string
+  fecha_limite: string | null
+  is_overdue: boolean
+  dias_para_vencer: number | null
+  evidencias_count: number
+  estado_unificado: EstadoTareaUnificado
+  s5_tipo: "flota" | "almacen"
+  s5_sector_numero: number | null
+  s5_sector_nombre: string | null
+  s5_vehiculo_dominio: string | null
+}
+
+// Discriminated union para la lista consolidada
+export type MisTareasItem = MisTareasItemPlan | MisTareasItemS5
 
 // SOP (Standard Operating Procedure)
 export interface Sop {

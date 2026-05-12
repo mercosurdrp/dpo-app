@@ -972,7 +972,16 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const items: MisTareasItem[] = planes.map((plan) => {
+  const ESTADO_PLAN_TO_UNIFICADO: Record<
+    string,
+    "no_comenzada" | "en_curso" | "cerrada"
+  > = {
+    pendiente: "no_comenzada",
+    en_progreso: "en_curso",
+    completado: "cerrada",
+  }
+
+  const planItems = planes.map((plan) => {
     const pregunta = plan.pregunta_id ? preguntaMap.get(plan.pregunta_id) : undefined
     const bloque = pregunta ? bloqueMap.get(pregunta.bloque_id) : undefined
     const pilar = bloque ? pilarMap.get(bloque.pilar_id) : undefined
@@ -991,6 +1000,7 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
 
     return {
       ...plan,
+      origen: "plan_accion" as const,
       pregunta_numero: pregunta?.numero ?? "",
       pregunta_texto: pregunta?.texto ?? "",
       pilar_nombre: pilar?.nombre ?? "",
@@ -999,21 +1009,84 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
       is_overdue,
       dias_para_vencer,
       evidencias_count: evCount.get(plan.id) ?? 0,
+      estado_unificado: ESTADO_PLAN_TO_UNIFICADO[plan.estado] ?? "no_comenzada",
     }
   })
 
-  // 8) Ordenar:
-  //    - completados al final
+  // 8) Sumar acciones 5S asignadas al user
+  const { data: s5Raw } = await supabase
+    .from("s5_acciones")
+    .select(
+      `id, descripcion, fecha_compromiso, estado, tipo, sector_numero, vehiculo_id,
+       vehiculo:catalogo_vehiculos!s5_acciones_vehiculo_id_fkey(id, dominio),
+       evidencias:s5_acciones_evidencias(id)`
+    )
+    .eq("responsable_id", profile.id)
+
+  // Cargar nombres de sectores de almacén (cacheado por la lista)
+  const { data: sectoresRaw } = await supabase
+    .from("s5_sectores_almacen")
+    .select("numero, nombre")
+  const sectorMap = new Map<number, string>()
+  for (const s of (sectoresRaw ?? []) as Array<{ numero: number; nombre: string }>) {
+    sectorMap.set(s.numero, s.nombre)
+  }
+
+  type S5Raw = {
+    id: string
+    descripcion: string
+    fecha_compromiso: string | null
+    estado: "no_comenzada" | "en_curso" | "cerrada"
+    tipo: "flota" | "almacen"
+    sector_numero: number | null
+    vehiculo_id: string | null
+    vehiculo: { id: string; dominio: string } | null
+    evidencias: { id: string }[]
+  }
+
+  const s5Items = ((s5Raw ?? []) as unknown as S5Raw[]).map((s) => {
+    let is_overdue = false
+    let dias_para_vencer: number | null = null
+    if (s.fecha_compromiso) {
+      const limite = new Date(s.fecha_compromiso + "T00:00:00")
+      const diffMs = limite.getTime() - today.getTime()
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+      dias_para_vencer = diffDays
+      if (diffDays < 0 && s.estado !== "cerrada") {
+        is_overdue = true
+      }
+    }
+
+    return {
+      origen: "s5_accion" as const,
+      id: s.id,
+      descripcion: s.descripcion,
+      fecha_limite: s.fecha_compromiso,
+      is_overdue,
+      dias_para_vencer,
+      evidencias_count: s.evidencias?.length ?? 0,
+      estado_unificado: s.estado,
+      s5_tipo: s.tipo,
+      s5_sector_numero: s.sector_numero,
+      s5_sector_nombre:
+        s.sector_numero != null ? sectorMap.get(s.sector_numero) ?? null : null,
+      s5_vehiculo_dominio: s.vehiculo?.dominio ?? null,
+    }
+  })
+
+  const items: MisTareasItem[] = [...planItems, ...s5Items] as MisTareasItem[]
+
+  // 9) Ordenar:
+  //    - cerradas/completadas al final
   //    - resto: fecha_limite ASC NULLS LAST
-  //    - tiebreaker: prioridad alta primero
+  //    - tiebreaker: planes con prioridad alta primero (s5 no tiene prioridad)
   const prioridadOrden: Record<string, number> = { alta: 0, media: 1, baja: 2 }
 
   items.sort((a, b) => {
-    const aDone = a.estado === "completado"
-    const bDone = b.estado === "completado"
+    const aDone = a.estado_unificado === "cerrada"
+    const bDone = b.estado_unificado === "cerrada"
     if (aDone !== bDone) return aDone ? 1 : -1
 
-    // fecha_limite ASC NULLS LAST
     if (a.fecha_limite && !b.fecha_limite) return -1
     if (!a.fecha_limite && b.fecha_limite) return 1
     if (a.fecha_limite && b.fecha_limite) {
@@ -1021,8 +1094,11 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
       if (cmp !== 0) return cmp
     }
 
-    // tiebreaker prioridad
-    return (prioridadOrden[a.prioridad] ?? 99) - (prioridadOrden[b.prioridad] ?? 99)
+    const aPri =
+      a.origen === "plan_accion" ? prioridadOrden[a.prioridad] ?? 99 : 99
+    const bPri =
+      b.origen === "plan_accion" ? prioridadOrden[b.prioridad] ?? 99 : 99
+    return aPri - bPri
   })
 
   return items
