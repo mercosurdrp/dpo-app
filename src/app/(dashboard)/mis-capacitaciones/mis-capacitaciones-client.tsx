@@ -247,7 +247,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`grid grid-cols-2 ${sobrecargas ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-4"} gap-3`}>
+            <div className={`grid grid-cols-2 ${sobrecargas ? "sm:grid-cols-5" : "sm:grid-cols-4"} gap-3`}>
               <div className="rounded-lg bg-green-50 p-3 text-center">
                 <TrendingUp className="mx-auto size-5 text-green-600 mb-1" />
                 <p className="text-2xl font-bold text-green-700">{dashboard.resumen_mes.dias_trabajados}</p>
@@ -269,18 +269,21 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                 <p className="text-xs text-amber-600">Tardanzas</p>
               </div>
               {sobrecargas && (
-                <>
-                  <div className="rounded-lg bg-rose-50 p-3 text-center" title="Sobrecargas completas asignadas como chofer o ayudante este mes">
-                    <Package className="mx-auto size-5 text-rose-600 mb-1" />
-                    <p className="text-2xl font-bold text-rose-700">{fmtNum(sobrecargas.mesActual.sobrecargas)}</p>
-                    <p className="text-xs text-rose-600">Sobrecargas</p>
-                  </div>
-                  <div className="rounded-lg bg-orange-50 p-3 text-center" title="Medias sobrecargas — la 1/4 SC cuenta como 0.5">
-                    <Package className="mx-auto size-5 text-orange-600 mb-1" />
-                    <p className="text-2xl font-bold text-orange-700">{fmtNum(sobrecargas.mesActual.medias)}</p>
-                    <p className="text-xs text-orange-600">Medias SC</p>
-                  </div>
-                </>
+                <div
+                  className="rounded-lg bg-rose-50 p-3 text-center"
+                  title="Sobrecargas asignadas este mes como chofer o ayudante. 1/4 SC cuenta como 0.5 en Medias."
+                >
+                  <Package className="mx-auto size-5 text-rose-600 mb-1" />
+                  <p className="text-xl font-bold leading-tight text-rose-700">
+                    {fmtNum(sobrecargas.mesActual.sobrecargas)}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-wide text-rose-600">Completas</p>
+                  <div className="my-1 border-t border-rose-200" />
+                  <p className="text-xl font-bold leading-tight text-orange-700">
+                    {fmtNum(sobrecargas.mesActual.medias)}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-wide text-orange-600">Medias</p>
+                </div>
               )}
             </div>
           </CardContent>
