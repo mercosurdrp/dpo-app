@@ -38,6 +38,7 @@ export interface SobrecargasIndicador {
 }
 
 export interface MisSobrecargasResumen {
+  vinculado: boolean
   mesActual: { mes: string; sobrecargas: number; medias: number; dias: number }
   mesAnterior: { mes: string; sobrecargas: number; medias: number; dias: number }
   detalleMesActual: Array<{
@@ -254,12 +255,23 @@ export async function getSobrecargasIndicador(
 export async function getMisSobrecargas(): Promise<Result<MisSobrecargasResumen>> {
   try {
     await requireAuth()
-    const empleadoId = await getEmpleadoIdFromAuth()
-    if (!empleadoId) {
-      return { error: "Tu usuario no está vinculado a un empleado." }
-    }
     if (!IS_MISIONES) {
       return { error: "El indicador de Sobrecargas solo está disponible en Misiones." }
+    }
+    const empleadoId = await getEmpleadoIdFromAuth()
+    const mesActualVacio = mesActualISO()
+    const mesAnteriorVacio = restarMes(mesActualVacio, 1)
+    if (!empleadoId) {
+      // Profile sin vincular → devolvemos estado neutro y el cliente muestra
+      // un aviso "Sin vincular", igual que el bloque "Mi Entrega Hoy".
+      return {
+        data: {
+          vinculado: false,
+          mesActual: { mes: mesActualVacio, sobrecargas: 0, medias: 0, dias: 0 },
+          mesAnterior: { mes: mesAnteriorVacio, sobrecargas: 0, medias: 0, dias: 0 },
+          detalleMesActual: [],
+        },
+      }
     }
 
     const mesActual = mesActualISO()
@@ -316,6 +328,7 @@ export async function getMisSobrecargas(): Promise<Result<MisSobrecargasResumen>
 
     return {
       data: {
+        vinculado: true,
         mesActual: {
           mes: mesActual,
           sobrecargas: actAcc.sob,

@@ -92,7 +92,7 @@ export function MiOrdenDelDiaCard({
         Desde las 19:00 hs (ARG) verás la salida del día siguiente.
       </p>
 
-      {sobrecargas && <MisSobrecargasBloque resumen={sobrecargas} />}
+      {sobrecargas && sobrecargas.vinculado && <MisSobrecargasBloque resumen={sobrecargas} />}
     </div>
   )
 }

@@ -268,7 +268,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                 <p className="text-2xl font-bold text-amber-700">{dashboard.resumen_mes.tardanzas}</p>
                 <p className="text-xs text-amber-600">Tardanzas</p>
               </div>
-              {sobrecargas && (
+              {sobrecargas && sobrecargas.vinculado && (
                 <div
                   className="rounded-lg bg-rose-50 p-3 text-center"
                   title="Sobrecargas asignadas este mes como chofer o ayudante. 1/4 SC cuenta como 0.5 en Medias."
@@ -283,6 +283,16 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                     {fmtNum(sobrecargas.mesActual.medias)}
                   </p>
                   <p className="text-[10px] uppercase tracking-wide text-orange-600">Medias</p>
+                </div>
+              )}
+              {sobrecargas && !sobrecargas.vinculado && (
+                <div
+                  className="rounded-lg bg-slate-50 p-3 text-center"
+                  title="Tu usuario no está vinculado a tu legajo en el padrón. Pedile al administrador que te vincule en /admin/usuarios."
+                >
+                  <AlertTriangle className="mx-auto size-5 text-slate-500 mb-1" />
+                  <p className="text-[11px] font-medium leading-tight text-slate-600">Sobrecargas</p>
+                  <p className="mt-1 text-[10px] text-slate-500">Sin vincular</p>
                 </div>
               )}
             </div>
