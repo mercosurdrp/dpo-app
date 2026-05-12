@@ -2,7 +2,10 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getSobrecargasIndicador } from "@/actions/sobrecargas"
 import { IS_MISIONES } from "@/lib/empresa"
+import { requireAuth } from "@/lib/session"
 import { SobrecargasClient } from "./sobrecargas-client"
+
+const ROLES_PUEDEN_SYNC = ["admin", "admin_rrhh", "supervisor"]
 
 export const dynamic = "force-dynamic"
 
@@ -11,6 +14,9 @@ export default async function SobrecargasPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
+  const profile = await requireAuth()
+  const canSync = ROLES_PUEDEN_SYNC.includes(profile.role)
+
   if (!IS_MISIONES) {
     return (
       <div className="space-y-4">
@@ -47,7 +53,7 @@ export default async function SobrecargasPage({
           <p className="mt-1 text-sm text-red-700">{res.error}</p>
         </div>
       ) : (
-        <SobrecargasClient data={res.data} />
+        <SobrecargasClient data={res.data} canSync={canSync} />
       )}
     </div>
   )

@@ -1,8 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { RefreshCw } from "lucide-react"
+import { sincronizarOrdenSalidaDesdeSheets } from "@/actions/orden-salida"
 import {
   Table,
   TableBody,
@@ -39,12 +42,37 @@ function mesCorto(yyyymm: string): string {
     + " '" + String(y).slice(2)
 }
 
-export function SobrecargasClient({ data }: { data: SobrecargasIndicador }) {
+export function SobrecargasClient({
+  data,
+  canSync,
+}: {
+  data: SobrecargasIndicador
+  canSync: boolean
+}) {
   const router = useRouter()
   const sp = useSearchParams()
   const [search, setSearch] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("total_eq")
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc")
+  const [syncDias, setSyncDias] = useState(180)
+  const [syncPending, startSync] = useTransition()
+  const [syncMsg, setSyncMsg] = useState<{ tipo: "ok" | "err"; texto: string } | null>(null)
+
+  function ejecutarSync() {
+    setSyncMsg(null)
+    startSync(async () => {
+      const res = await sincronizarOrdenSalidaDesdeSheets(syncDias)
+      if ("error" in res) {
+        setSyncMsg({ tipo: "err", texto: res.error })
+        return
+      }
+      setSyncMsg({
+        tipo: "ok",
+        texto: `${res.data.fechasProcesadas} días procesados · ${res.data.asignacionesInsertadas} asignaciones${res.data.advertencias.length > 0 ? ` · ${res.data.advertencias.length} advertencias` : ""}`,
+      })
+      router.refresh()
+    })
+  }
 
   const filtrados = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -97,6 +125,52 @@ export function SobrecargasClient({ data }: { data: SobrecargasIndicador }) {
           </select>
         </div>
       </div>
+
+      {/* Sincronización desde Sheets */}
+      {canSync && (
+        <Card className="border-slate-200 bg-slate-50/60">
+          <CardContent className="flex flex-wrap items-center gap-3 p-3 md:p-4">
+            <div className="flex-1 min-w-[180px]">
+              <p className="text-sm font-medium text-slate-900">Sincronizar desde la planilla</p>
+              <p className="text-xs text-muted-foreground">
+                Lee la hoja FORMACIÓN y reescribe las asignaciones del rango (incluye sobrecargas, medias y 1/4).
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-600">Días</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={syncDias}
+                onChange={(e) => setSyncDias(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+                className="h-9 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm tabular-nums"
+                disabled={syncPending}
+              />
+              <Button
+                onClick={ejecutarSync}
+                disabled={syncPending}
+                size="sm"
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${syncPending ? "animate-spin" : ""}`} />
+                {syncPending ? "Sincronizando..." : "Sincronizar"}
+              </Button>
+            </div>
+            {syncMsg && (
+              <div
+                className={`w-full rounded-md border px-3 py-2 text-xs ${
+                  syncMsg.tipo === "ok"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-rose-200 bg-rose-50 text-rose-800"
+                }`}
+              >
+                {syncMsg.texto}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
