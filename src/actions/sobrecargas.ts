@@ -8,8 +8,8 @@ import { IS_MISIONES } from "@/lib/empresa"
 // Los datos vienen de `orden_salida_camion_diario`, alimentada por el sync
 // desde la hoja FORMACIÓN del Sheet de Orden de Salida. Cada empleado suma
 // como chofer y como ayudante en cada día/camión donde figura.
-// "Medias sobrecargas" = media_sobrecarga + cuarto_sobrecarga (criterio
-// confirmado por operación: 1/4 sobrecarga se contabiliza junto con 1/2).
+// "Medias sobrecargas" = media_sobrecarga + cuarto_sobrecarga / 2
+// (criterio operativo: una 1/4 sobrecarga equivale a media de una media).
 
 type Result<T> = { data: T } | { error: string }
 
@@ -117,7 +117,7 @@ export async function getSobrecargasIndicador(
       cuarto_sobrecarga: number | null
     }>) {
       const sob = f.sobrecarga_completa ?? 0
-      const med = (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0)
+      const med = (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0) / 2
       if (sob === 0 && med === 0) continue
 
       totalSobrecargas += sob
@@ -189,7 +189,7 @@ export async function getSobrecargasIndicador(
       const acc = totalesMes.get(yyyymm)
       if (!acc) continue
       acc.sob += f.sobrecarga_completa ?? 0
-      acc.med += (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0)
+      acc.med += (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0) / 2
     }
     const serie: SobrecargasSerieMes[] = mesesSerie.map((m) => ({
       mes: m,
@@ -241,7 +241,7 @@ export async function getMisSobrecargas(): Promise<Result<MisSobrecargasResumen>
 
     for (const f of (filas ?? []) as unknown as FilaCamionDiario[]) {
       const sob = f.sobrecarga_completa ?? 0
-      const med = (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0)
+      const med = (f.media_sobrecarga ?? 0) + (f.cuarto_sobrecarga ?? 0) / 2
       if (sob === 0 && med === 0) continue
 
       const yyyymm = f.fecha.slice(0, 7)

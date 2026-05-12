@@ -116,7 +116,7 @@ function MisSobrecargasBloque({ resumen }: { resumen: MisSobrecargasResumen }) {
       <div className="mb-3">
         <p className="text-xs uppercase tracking-wide text-slate-500">Mis sobrecargas</p>
         <p className="text-sm text-slate-700">
-          Acumulado de tus sobrecargas y medias (incluye 1/4) sumando salidas como chofer y como ayudante.
+          Acumulado de tus sobrecargas y medias (1/4 cuenta como 0.5) sumando salidas como chofer y como ayudante.
         </p>
       </div>
 
@@ -154,12 +154,12 @@ function MisSobrecargasBloque({ resumen }: { resumen: MisSobrecargasResumen }) {
                 <div className="flex gap-3 tabular-nums text-xs">
                   {d.sobrecargas > 0 && (
                     <span className="rounded-full bg-rose-100 px-2 py-0.5 font-semibold text-rose-700">
-                      {d.sobrecargas} sobrec.
+                      {fmtNum(d.sobrecargas)} sobrec.
                     </span>
                   )}
                   {d.medias > 0 && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-                      {d.medias} medias
+                      {fmtNum(d.medias)} medias
                     </span>
                   )}
                 </div>
@@ -194,11 +194,11 @@ function MesBlock({
       <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <div className="mt-1 flex items-baseline gap-3">
         <div>
-          <p className="text-2xl font-bold tabular-nums text-slate-900">{sobrecargas}</p>
+          <p className="text-2xl font-bold tabular-nums text-slate-900">{fmtNum(sobrecargas)}</p>
           <p className="text-[10px] uppercase tracking-wide text-slate-500">sobrecargas</p>
         </div>
         <div>
-          <p className="text-2xl font-bold tabular-nums text-slate-900">{medias}</p>
+          <p className="text-2xl font-bold tabular-nums text-slate-900">{fmtNum(medias)}</p>
           <p className="text-[10px] uppercase tracking-wide text-slate-500">medias</p>
         </div>
       </div>
@@ -213,6 +213,10 @@ function nombreMes(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number)
   const d = new Date(Date.UTC(y, m - 1, 1))
   return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
+}
+
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 
 function formatearFechaCorta(iso: string): string {

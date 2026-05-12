@@ -35,6 +35,11 @@ function nombreMes(yyyymm: string): string {
   return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
 }
 
+// 1.5 → "1.5", 2 → "2", 2.0 → "2". Evita trailing zeros sin perder decimales.
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
 function mesCorto(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number)
   const d = new Date(Date.UTC(y, m - 1, 1))
@@ -181,7 +186,7 @@ export function SobrecargasClient({
           tone="rose"
         />
         <KpiCard
-          label="Medias (incluye 1/4)"
+          label="Medias (1/4 cuenta 0.5)"
           value={data.totalMedias}
           icon={<PackageCheck className="h-5 w-5" />}
           tone="amber"
@@ -217,7 +222,7 @@ export function SobrecargasClient({
               }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="mes" tick={{ fontSize: 12 }} stroke="#64748b" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#64748b" allowDecimals={false} />
+                <YAxis tick={{ fontSize: 12 }} stroke="#64748b" />
                 <Tooltip
                   contentStyle={{ fontSize: 12, borderRadius: 8 }}
                   labelStyle={{ fontWeight: 600 }}
@@ -240,7 +245,7 @@ export function SobrecargasClient({
                 Ranking de personas — {nombreMes(data.mes)}
               </h2>
               <p className="text-xs text-muted-foreground">
-                Suma como chofer y como ayudante. 1/4 sobrecarga se contabiliza dentro de "Medias".
+                Suma como chofer y como ayudante. Una 1/4 sobrecarga cuenta como 0.5 dentro de "Medias".
               </p>
             </div>
             <input
@@ -276,10 +281,10 @@ export function SobrecargasClient({
                       <TableRow key={e.empleado_id}>
                         <TableCell className="font-medium text-slate-900">{e.nombre}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{e.puesto ?? "—"}</TableCell>
-                        <TableCell className="tabular-nums">{e.sobrecargas}</TableCell>
-                        <TableCell className="tabular-nums">{e.medias}</TableCell>
+                        <TableCell className="tabular-nums">{fmtNum(e.sobrecargas)}</TableCell>
+                        <TableCell className="tabular-nums">{fmtNum(e.medias)}</TableCell>
                         <TableCell className="tabular-nums">{e.dias}</TableCell>
-                        <TableCell className="tabular-nums font-semibold">{eq.toFixed(1).replace(/\.0$/, "")}</TableCell>
+                        <TableCell className="tabular-nums font-semibold">{fmtNum(eq)}</TableCell>
                       </TableRow>
                     )
                   })}
@@ -312,7 +317,7 @@ function KpiCard({
     slate: "bg-slate-100 text-slate-700",
     indigo: "bg-indigo-100 text-indigo-600",
   }[tone]
-  const display = Number.isInteger(value) ? String(value) : value.toFixed(1)
+  const display = fmtNum(value)
   return (
     <Card className="border-slate-200">
       <CardContent className="flex items-center gap-3 p-4">
