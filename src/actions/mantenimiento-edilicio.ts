@@ -53,14 +53,41 @@ function buildHeaders(token: string, extra?: Record<string, string>) {
   }
 }
 
+// Timeout default para llamadas al servicio externo. Si la app de
+// mantenimiento está caída o lenta no debe bloquear el flujo principal
+// de la actividad de reunión.
+const DEFAULT_TIMEOUT_MS = 5000
+
+async function fetchConTimeout(
+  url: string,
+  init: RequestInit & { timeoutMs?: number } = {}
+): Promise<Response> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...rest, signal: controller.signal })
+  } finally {
+    clearTimeout(id)
+  }
+}
+
 /**
  * GET /api/rubros — lista pública, sin auth.
+ * Cacheado 5 min (lista estática). Timeout de 2.5s para no bloquear
+ * la página si la app de mantenimiento está caída o lenta.
  */
 export async function listarRubrosMantenimiento(): Promise<ApiResult<Rubro[]>> {
   const cfg = getConfig()
   if (!cfg) return { error: "Mantenimiento API no configurada" }
   try {
-    const r = await fetch(`${cfg.url}/api/rubros`, { cache: "no-store" })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 2500)
+    const r = await fetch(`${cfg.url}/api/rubros`, {
+      next: { revalidate: 300 },
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
     if (!r.ok) return { error: `HTTP ${r.status}` }
     const data = (await r.json()) as Rubro[]
     return { data }
@@ -101,7 +128,7 @@ export async function crearPdaEnMantenimiento(
       external_id: input.externalId,
       estado: "planificado",
     }
-    const r = await fetch(`${cfg.url}/api/pdas`, {
+    const r = await fetchConTimeout(`${cfg.url}/api/pdas`, {
       method: "POST",
       headers: buildHeaders(cfg.token),
       body: JSON.stringify(body),
@@ -133,7 +160,7 @@ async function buscarPdaPorExternalId(
     const url = new URL(`${cfg.url}/api/pdas`)
     url.searchParams.set("external_source", "dpo-app-reuniones")
     url.searchParams.set("external_id", externalId)
-    const r = await fetch(url.toString(), {
+    const r = await fetchConTimeout(url.toString(), {
       headers: buildHeaders(cfg.token),
       cache: "no-store",
     })
@@ -179,7 +206,7 @@ export async function actualizarPdaEnMantenimiento(
     if (input.rubro !== undefined) body.rubro = input.rubro
     if (input.estado !== undefined) body.estado = input.estado
 
-    const r = await fetch(`${cfg.url}/api/pdas/${found.data.id}`, {
+    const r = await fetchConTimeout(`${cfg.url}/api/pdas/${found.data.id}`, {
       method: "PUT",
       headers: buildHeaders(cfg.token),
       body: JSON.stringify(body),
@@ -213,7 +240,7 @@ export async function eliminarPdaEnMantenimiento(
     return { data: { ok: true } }
   }
   try {
-    const r = await fetch(`${cfg.url}/api/pdas/${found.data.id}`, {
+    const r = await fetchConTimeout(`${cfg.url}/api/pdas/${found.data.id}`, {
       method: "DELETE",
       headers: buildHeaders(cfg.token),
       cache: "no-store",
