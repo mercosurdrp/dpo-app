@@ -24,6 +24,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { updatePlanEstado } from "@/actions/planes"
 import {
   ESTADO_PLAN_COLORS,
@@ -82,9 +89,23 @@ export function PlanesListClient({
   const router = useRouter()
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all")
   const [prioridadFilter, setPrioridadFilter] = useState<PrioridadFilter>("all")
+  const [responsableFilter, setResponsableFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [isPending, startTransition] = useTransition()
   const [planes, setPlanes] = useState(initialPlanes)
+
+  function nombreResponsable(p: PlanAccionListItem): string {
+    return p.responsable_principal_nombre || p.responsable || ""
+  }
+
+  const responsablesOpts = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of planes) {
+      const n = nombreResponsable(p).trim()
+      if (n) set.add(n)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"))
+  }, [planes])
 
   const filtered = useMemo(() => {
     let list = planes
@@ -97,19 +118,23 @@ export function PlanesListClient({
       list = list.filter((p) => p.prioridad === prioridadFilter)
     }
 
+    if (responsableFilter !== "all") {
+      list = list.filter((p) => nombreResponsable(p) === responsableFilter)
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(
         (p) =>
           p.descripcion.toLowerCase().includes(q) ||
-          p.responsable.toLowerCase().includes(q) ||
+          nombreResponsable(p).toLowerCase().includes(q) ||
           p.pregunta_texto.toLowerCase().includes(q) ||
           p.pilar_nombre.toLowerCase().includes(q)
       )
     }
 
     return list
-  }, [planes, estadoFilter, prioridadFilter, search])
+  }, [planes, estadoFilter, prioridadFilter, responsableFilter, search])
 
   const stats = useMemo(() => {
     const total = planes.length
@@ -185,6 +210,25 @@ export function PlanesListClient({
           ))}
         </div>
 
+        <div className="min-w-[160px]">
+          <Select
+            value={responsableFilter}
+            onValueChange={(v) => v && setResponsableFilter(v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Responsable" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los responsables</SelectItem>
+              {responsablesOpts.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {r}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="relative flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -247,8 +291,13 @@ export function PlanesListClient({
                       <span>
                         Responsable:{" "}
                         <span className="font-medium text-slate-700">
-                          {plan.responsable}
+                          {nombreResponsable(plan) || "—"}
                         </span>
+                        {plan.coresponsables_count > 0 && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            (+{plan.coresponsables_count} co)
+                          </span>
+                        )}
                       </span>
                       {plan.fecha_limite && (
                         <span

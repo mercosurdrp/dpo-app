@@ -921,6 +921,10 @@ export interface PlanAccionListItem extends PlanAccion {
   pilar_color: string
   comentarios_count: number
   evidencias_count: number
+  // Responsable principal resuelto desde plan_responsables (nombre real).
+  // Si está vacío, usar plan.responsable (campo text legacy).
+  responsable_principal_nombre: string | null
+  coresponsables_count: number
 }
 
 // Vehículos analytics

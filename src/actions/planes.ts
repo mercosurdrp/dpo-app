@@ -207,6 +207,39 @@ export async function getPlanesList(): Promise<
 
     if (error) return { error: error.message }
 
+    // Cargar responsables resueltos (join plan_responsables → profiles)
+    const planIdsAll = (planes ?? []).map((p) => (p as PlanAccion).id)
+    type PRRow = {
+      plan_id: string
+      profile_id: string
+      rol: PlanResponsableRol
+      profile: { id: string; nombre: string } | null
+    }
+    const { data: prRaw } = planIdsAll.length
+      ? await supabase
+          .from("plan_responsables")
+          .select(
+            "plan_id, profile_id, rol, profile:profiles!plan_responsables_profile_id_fkey(id, nombre)"
+          )
+          .in("plan_id", planIdsAll)
+      : { data: [] as PRRow[] }
+    const prByPlan = new Map<
+      string,
+      { principal: string | null; coresponsables: number }
+    >()
+    for (const r of (prRaw ?? []) as unknown as PRRow[]) {
+      const cur = prByPlan.get(r.plan_id) ?? {
+        principal: null,
+        coresponsables: 0,
+      }
+      if (r.rol === "responsable_principal") {
+        cur.principal = r.profile?.nombre ?? null
+      } else {
+        cur.coresponsables += 1
+      }
+      prByPlan.set(r.plan_id, cur)
+    }
+
     const items: PlanAccionListItem[] = []
 
     for (const plan of (planes ?? []) as PlanAccion[]) {
@@ -257,6 +290,7 @@ export async function getPlanesList(): Promise<
         .select("id", { count: "exact", head: true })
         .eq("plan_id", plan.id)
 
+      const pr = prByPlan.get(plan.id)
       items.push({
         ...plan,
         pregunta_numero: pregunta?.numero ?? "",
@@ -265,6 +299,8 @@ export async function getPlanesList(): Promise<
         pilar_color,
         comentarios_count: comentariosCount ?? 0,
         evidencias_count: evidenciasCount ?? 0,
+        responsable_principal_nombre: pr?.principal ?? null,
+        coresponsables_count: pr?.coresponsables ?? 0,
       })
     }
 
