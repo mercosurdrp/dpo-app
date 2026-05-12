@@ -1828,13 +1828,14 @@ export async function getIndicadoresMes(
 
     if (errCfg) return { error: errCfg.message }
     // Dedupe: descartamos indicadores manuales con nombre que coincide con
-    // una fila auto (LTI/TRI para todos los tipos; "rechazos" / "rechazos %"
-    // sólo para warehouse). La versión auto los reemplaza.
-    const NOMBRES_AUTO = new Set(["lti", "tri"])
-    if (tipo === "warehouse") {
-      NOMBRES_AUTO.add("rechazos")
-      NOMBRES_AUTO.add("rechazos %")
-    }
+    // una fila auto (LTI/TRI, Rechazos / Rechazos %). La versión auto los
+    // reemplaza en todos los tipos de reunión.
+    const NOMBRES_AUTO = new Set([
+      "lti",
+      "tri",
+      "rechazos",
+      "rechazos %",
+    ])
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
     )
@@ -1979,11 +1980,11 @@ export async function getIndicadoresMes(
       buildAutoRow("auto_tri", "TRI", triPorFecha),
     ]
 
-    // 7b. Indicador AUTO "Rechazos %" — sólo warehouse.
+    // 7b. Indicador AUTO "Rechazos %" — todos los tipos de reunión.
     //     Tasa diaria = bultos_rechazados_dia / total_bultos_ventas_dia * 100.
     //     MTD ponderado = Σ bultos_mtd / Σ ventas_mtd * 100 (hasta `fecha`).
     //     Misma fórmula que /indicadores/rechazos (lib/rechazos/comparado.ts).
-    if (tipo === "warehouse") {
+    {
       const bultosPorFecha: Record<string, number> = {}
       const ventasPorFecha: Record<string, number> = {}
 
