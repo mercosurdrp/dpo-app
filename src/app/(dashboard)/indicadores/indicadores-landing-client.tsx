@@ -245,6 +245,23 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          <Link href="/indicadores/choferes">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-blue-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-blue-100 text-blue-600 group-hover:bg-blue-200 transition-colors">
+                  <Truck className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Bultos por chofer
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Ranking diario con TML y rechazos por chofer
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </div>
 
