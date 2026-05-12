@@ -15,21 +15,75 @@
 --       no_comenzada / en_curso / cerrada
 --
 -- Archivos en bucket 's5-auditorias', prefijo 'acciones/{accion_id}/...'
+--
+-- Idempotente. Cleanup arriba detecta partial state + ALTER INDEX rename
+-- de los indexes viejos cuyos nombres chocaban con los nuevos.
 -- =============================================
 
 BEGIN;
 
 -- =============================================
--- a) Rename defensivo del modelo anterior
+-- a) Drop NUEVOS si quedaron a medias (CASCADE limpia
+--    indexes/triggers/policies dependientes)
+-- =============================================
+DROP TABLE IF EXISTS s5_acciones_evidencias CASCADE;
+DROP TABLE IF EXISTS s5_acciones CASCADE;
+
+-- =============================================
+-- b) Manejo idempotente del enum s5_accion_estado.
+--    - VIEJO ('pendiente','resuelto'): rename a *_deprecated_2026_05
+--    - NUEVO ('no_comenzada','en_curso','cerrada'): drop (sus dependientes
+--      ya fueron limpiados arriba)
+--    - Inexistente: no-op
+-- =============================================
+DO $$
+DECLARE
+  enum_values text[];
+BEGIN
+  SELECT array_agg(enumlabel ORDER BY enumsortorder)
+  INTO enum_values
+  FROM pg_enum
+  WHERE enumtypid = (
+    SELECT oid FROM pg_type
+    WHERE typname = 's5_accion_estado' AND typtype = 'e'
+  );
+
+  IF enum_values IS NULL THEN
+    NULL;
+  ELSIF 'pendiente' = ANY(enum_values) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_type
+      WHERE typname = 's5_accion_estado_deprecated_2026_05'
+    ) THEN
+      EXECUTE 'ALTER TYPE s5_accion_estado RENAME TO s5_accion_estado_deprecated_2026_05';
+    END IF;
+  ELSE
+    EXECUTE 'DROP TYPE s5_accion_estado';
+  END IF;
+END $$;
+
+-- =============================================
+-- c) Rename idempotente de la tabla vieja
 -- =============================================
 ALTER TABLE IF EXISTS s5_auditoria_acciones
   RENAME TO s5_auditoria_acciones_deprecated_2026_05;
 
-ALTER TYPE s5_accion_estado
-  RENAME TO s5_accion_estado_deprecated_2026_05;
+-- =============================================
+-- d) Rename de INDEXES viejos cuyos nombres chocan con los nuevos.
+--    La migracion 033 creo estos indexes con nombres genericos sobre
+--    s5_auditoria_acciones. Al renombrar la tabla el nombre del index
+--    no se actualiza, asi que ocupa el nombre que necesitamos. Los
+--    movemos al sufijo deprecated.
+-- =============================================
+ALTER INDEX IF EXISTS idx_s5_acciones_estado
+  RENAME TO idx_s5_acciones_estado_deprecated_2026_05;
+ALTER INDEX IF EXISTS idx_s5_acciones_responsable
+  RENAME TO idx_s5_acciones_responsable_deprecated_2026_05;
+ALTER INDEX IF EXISTS idx_s5_acciones_auditoria
+  RENAME TO idx_s5_acciones_auditoria_deprecated_2026_05;
 
 -- =============================================
--- b) Enum nuevo de estado (alineado con reuniones_actividades)
+-- e) Enum nuevo
 -- =============================================
 CREATE TYPE s5_accion_estado AS ENUM (
   'no_comenzada',
@@ -38,7 +92,7 @@ CREATE TYPE s5_accion_estado AS ENUM (
 );
 
 -- =============================================
--- c) Tabla principal de acciones 5S
+-- f) Tabla principal de acciones 5S
 -- =============================================
 CREATE TABLE s5_acciones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,9 +134,9 @@ CREATE TABLE s5_acciones (
   )
 );
 
-CREATE INDEX idx_s5_acciones_tipo ON s5_acciones(tipo);
-CREATE INDEX idx_s5_acciones_estado ON s5_acciones(estado);
-CREATE INDEX idx_s5_acciones_responsable ON s5_acciones(responsable_id);
+CREATE INDEX idx_s5_acciones_tipo             ON s5_acciones(tipo);
+CREATE INDEX idx_s5_acciones_estado           ON s5_acciones(estado);
+CREATE INDEX idx_s5_acciones_responsable      ON s5_acciones(responsable_id);
 CREATE INDEX idx_s5_acciones_origen_auditoria ON s5_acciones(origen_auditoria_id);
 CREATE INDEX idx_s5_acciones_fecha_compromiso ON s5_acciones(fecha_compromiso);
 
@@ -100,7 +154,8 @@ CREATE POLICY "s5_acciones_insert"
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin','auditor')
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('admin','auditor')
     )
   );
 
@@ -110,7 +165,8 @@ CREATE POLICY "s5_acciones_update"
     responsable_id = auth.uid()
     OR EXISTS (
       SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin','auditor')
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('admin','auditor')
     )
   );
 
@@ -119,12 +175,13 @@ CREATE POLICY "s5_acciones_delete"
   USING (
     EXISTS (
       SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin','auditor')
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('admin','auditor')
     )
   );
 
 -- =============================================
--- d) Historial de evidencias por accion
+-- g) Historial de evidencias por accion
 -- =============================================
 CREATE TABLE s5_acciones_evidencias (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -143,8 +200,8 @@ CREATE TABLE s5_acciones_evidencias (
   )
 );
 
-CREATE INDEX idx_s5_acciones_evid_accion ON s5_acciones_evidencias(accion_id);
-CREATE INDEX idx_s5_acciones_evid_autor ON s5_acciones_evidencias(autor_id);
+CREATE INDEX idx_s5_acciones_evid_accion  ON s5_acciones_evidencias(accion_id);
+CREATE INDEX idx_s5_acciones_evid_autor   ON s5_acciones_evidencias(autor_id);
 CREATE INDEX idx_s5_acciones_evid_created ON s5_acciones_evidencias(created_at);
 
 ALTER TABLE s5_acciones_evidencias ENABLE ROW LEVEL SECURITY;
@@ -152,32 +209,30 @@ ALTER TABLE s5_acciones_evidencias ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "s5_acciones_evid_read"
   ON s5_acciones_evidencias FOR SELECT TO authenticated USING (true);
 
--- Puede agregar evidencia: responsable de la accion, su creador, o admin/auditor.
 CREATE POLICY "s5_acciones_evid_insert"
   ON s5_acciones_evidencias FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM s5_acciones a
-      WHERE a.id = accion_id
-        AND (
-          a.responsable_id = auth.uid()
-          OR a.creado_por = auth.uid()
-          OR EXISTS (
-            SELECT 1 FROM profiles
-            WHERE id = auth.uid() AND role IN ('admin','auditor')
-          )
-        )
+    accion_id IN (
+      SELECT s5_acciones.id
+      FROM s5_acciones
+      WHERE s5_acciones.responsable_id = auth.uid()
+         OR s5_acciones.creado_por = auth.uid()
+    )
+    OR EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('admin','auditor')
     )
   );
 
--- Borrado solo admin/auditor o el propio autor.
 CREATE POLICY "s5_acciones_evid_delete"
   ON s5_acciones_evidencias FOR DELETE TO authenticated
   USING (
     autor_id = auth.uid()
     OR EXISTS (
       SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role IN ('admin','auditor')
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('admin','auditor')
     )
   );
 
