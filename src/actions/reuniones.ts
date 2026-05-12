@@ -2350,9 +2350,10 @@ export async function getIndicadoresMes(
         }
       }
 
-      // WQI/FGLI/SCL: MTD del mes (mismo valor en cada celda hasta la fecha
-      // de la reunión). El MTD del indicador es justamente ese valor.
-      function buildMtdReplicadoRow(
+      // WQI/FGLI/SCL: valores acumulados día por día (MTD progresivo desde
+      // /api/indicadores/serie-diaria). El MTD del indicador es el valor en
+      // la fecha de la reunión (el último acumulado conocido).
+      function buildAcumuladoRow(
         id: string,
         nombre: string,
         unidad: string,
@@ -2387,9 +2388,9 @@ export async function getIndicadoresMes(
       }
 
       indicadoresAuto.push(
-        buildMtdReplicadoRow("auto_wqi", "WQI", "PPM", serie.wqi, "menor"),
-        buildMtdReplicadoRow("auto_fgli", "FGLI", "HL", serie.fgli, "menor"),
-        buildMtdReplicadoRow("auto_scl", "SCL", "$", serie.scl, "menor"),
+        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, "menor"),
+        buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, "menor"),
+        buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, "menor"),
         buildSerieRow(
           "auto_capacidad_utilizada",
           "Capacidad utilizada",

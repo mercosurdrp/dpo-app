@@ -170,12 +170,13 @@ async function fetchErroresPickingPorFecha(): Promise<
 // Tipos de respuesta de deposito-esteban
 // ────────────────────────────────────────────────────────────────────
 
-interface DepositoIndicadores {
-  indicadores?: {
-    wqi?: { mes?: number | null }
-    fgli?: { mes?: number | null }
-    scl?: { mes?: number | null }
-  }
+interface DepositoIndicadoresSerieDiaria {
+  year: number
+  month: number
+  /** Por fecha YYYY-MM-DD → valor MTD acumulado hasta ese día. */
+  wqi: Record<string, number | null>
+  fgli: Record<string, number | null>
+  scl: Record<string, number | null>
 }
 
 interface DepositoOcupacionShared {
@@ -240,10 +241,10 @@ export async function buildWarehouseSerieDiaria(
   const year = partes[0]
   const month = partes[1]
 
-  const [indicadoresRes, ocupacionRes, productividadRes, erroresPorFecha] =
+  const [serieRes, ocupacionRes, productividadRes, erroresPorFecha] =
     await Promise.all([
-      fetchJsonSafe<DepositoIndicadores>(
-        `${DEPOSITO_API_BASE}/api/indicadores?year=${year}&month=${month}`,
+      fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
+        `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
       ),
       fetchJsonSafe<DepositoOcupacionShared>(
         `${DEPOSITO_API_BASE}/api/shared/load?module=ocupacion`,
@@ -254,20 +255,17 @@ export async function buildWarehouseSerieDiaria(
       fetchErroresPickingPorFecha(),
     ])
 
-  // WQI/FGLI/SCL: el endpoint da solo el MTD del mes → replicamos en cada fecha
-  //               hasta la fecha de la reunión (después de esa fecha, null).
-  const wqiMes = indicadoresRes?.indicadores?.wqi?.mes ?? null
-  const fgliMes = indicadoresRes?.indicadores?.fgli?.mes ?? null
-  const sclMes = indicadoresRes?.indicadores?.scl?.mes ?? null
-
+  // WQI/FGLI/SCL: serie diaria con MTD progresivo (acumulado desde el 1°
+  // hasta ese día). Lo provee /api/indicadores/serie-diaria.
+  // Solo mostramos hasta la fecha de la reunión (después: null).
   const wqi: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
   const scl: Record<string, number | null> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
-    wqi[f] = visible ? wqiMes : null
-    fgli[f] = visible ? fgliMes : null
-    scl[f] = visible ? sclMes : null
+    wqi[f] = visible ? (serieRes?.wqi?.[f] ?? null) : null
+    fgli[f] = visible ? (serieRes?.fgli?.[f] ?? null) : null
+    scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
 
   // Capacidad utilizada: histórico de ocupación trae "dd/MM" → convertir a ISO
