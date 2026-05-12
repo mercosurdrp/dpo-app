@@ -3,7 +3,9 @@
 
 import { requireAuth } from "@/lib/session"
 import { obtenerMiOrdenSalida } from "@/actions/orden-salida"
+import { getMisSobrecargas } from "@/actions/sobrecargas"
 import { fechaQueVeElEmpleado } from "@/lib/orden-salida-fechas"
+import { IS_MISIONES } from "@/lib/empresa"
 import { MiOrdenDelDiaCard } from "./mi-orden-del-dia-card"
 
 export const dynamic = "force-dynamic"
@@ -11,7 +13,10 @@ export const dynamic = "force-dynamic"
 export default async function MiOrdenDelDiaPage() {
   await requireAuth()
   const fecha = fechaQueVeElEmpleado()
-  const res = await obtenerMiOrdenSalida()
+  const [res, sobreRes] = await Promise.all([
+    obtenerMiOrdenSalida(),
+    IS_MISIONES ? getMisSobrecargas() : Promise.resolve(null),
+  ])
 
   if ("error" in res) {
     return (
@@ -24,5 +29,14 @@ export default async function MiOrdenDelDiaPage() {
     )
   }
 
-  return <MiOrdenDelDiaCard data={res.data} fecha={fecha} />
+  const sobrecargas =
+    sobreRes && "data" in sobreRes ? sobreRes.data : null
+
+  return (
+    <MiOrdenDelDiaCard
+      data={res.data}
+      fecha={fecha}
+      sobrecargas={sobrecargas}
+    />
+  )
 }

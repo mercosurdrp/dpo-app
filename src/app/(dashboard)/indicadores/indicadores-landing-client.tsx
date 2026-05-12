@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   Radio,
   FolderOpen,
+  Package,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -208,6 +209,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          {IS_MISIONES && (
+            <Link href="/indicadores/sobrecargas">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-rose-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-rose-100 text-rose-600 group-hover:bg-rose-200 transition-colors">
+                    <Package className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Sobrecargas
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Sobrecargas y medias por mes y por persona — Pilar Entrega
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           <Link href="/indicadores/rechazos">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-red-300">
               <CardContent className="flex items-center gap-4 pt-6">
