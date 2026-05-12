@@ -52,6 +52,7 @@ import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialo
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
+import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -687,6 +688,11 @@ export function ReunionDetallePageClient({
   // Vista del tablero: "hasta_hoy" | "semana_<N>" | "mes_completo"
   const [vistaTablero, setVistaTablero] = useState<string>("hasta_hoy")
 
+  // Detalle del día seleccionado al hacer click en celda Rechazos %
+  const [rechazosDetalleFecha, setRechazosDetalleFecha] = useState<string | null>(
+    null,
+  )
+
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
     "todas" | "no_comenzada" | "en_curso" | "cerrada"
@@ -1114,6 +1120,13 @@ export function ReunionDetallePageClient({
                               ? "bg-red-50 font-semibold text-red-700"
                               : "bg-emerald-50 font-semibold text-emerald-700"
                             : "bg-red-50 font-semibold text-red-700"
+                          const esRechazosPct = ind.id === "auto_rechazos_pct"
+                          const clickable = esRechazosPct && muestra
+                          const contenido = muestra
+                            ? esPct
+                              ? `${formatearValor(valor!)}%`
+                              : formatearValor(valor!)
+                            : "—"
                           return (
                             <td
                               key={f}
@@ -1124,11 +1137,18 @@ export function ReunionDetallePageClient({
                                 dom && !muestra && "bg-slate-50",
                               )}
                             >
-                              {muestra
-                                ? esPct
-                                  ? `${formatearValor(valor!)}%`
-                                  : formatearValor(valor!)
-                                : "—"}
+                              {clickable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setRechazosDetalleFecha(f)}
+                                  className="w-full cursor-pointer rounded px-1 py-0.5 underline-offset-2 hover:underline focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                  title="Ver detalle del día"
+                                >
+                                  {contenido}
+                                </button>
+                              ) : (
+                                contenido
+                              )}
                             </td>
                           )
                         }
@@ -1362,6 +1382,14 @@ export function ReunionDetallePageClient({
           onSaved={refrescar}
         />
       )}
+
+      <RechazosDetalleDiaDialog
+        open={rechazosDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setRechazosDetalleFecha(null)
+        }}
+        fecha={rechazosDetalleFecha}
+      />
     </div>
   )
 }
