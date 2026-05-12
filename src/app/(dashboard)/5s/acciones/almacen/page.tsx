@@ -4,18 +4,20 @@ import {
   listarAcciones,
   listResponsablesPosibles,
 } from "@/actions/s5-acciones"
-import { getVehiculosActivos } from "@/actions/s5"
+import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
 import { AccionesClient } from "../acciones-client"
 
 export default async function AccionesAlmacenPage() {
   const profile = await getProfile()
   if (!profile) redirect("/login")
 
-  const [accionesRes, responsablesRes, vehiculosRes] = await Promise.all([
-    listarAcciones({ tipo: "almacen" }),
-    listResponsablesPosibles(),
-    getVehiculosActivos(),
-  ])
+  const [accionesRes, responsablesRes, vehiculosRes, sectoresRes] =
+    await Promise.all([
+      listarAcciones({ tipo: "almacen" }),
+      listResponsablesPosibles(),
+      getVehiculosActivos(),
+      getSectoresAlmacen(),
+    ])
 
   if ("error" in accionesRes) {
     return (
@@ -34,6 +36,7 @@ export default async function AccionesAlmacenPage() {
       accionesIniciales={accionesRes.data}
       responsables={"error" in responsablesRes ? [] : responsablesRes.data}
       vehiculos={"error" in vehiculosRes ? [] : vehiculosRes.data}
+      sectoresAlmacen={"error" in sectoresRes ? [] : sectoresRes.data}
     />
   )
 }

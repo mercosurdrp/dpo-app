@@ -24,7 +24,11 @@ import {
 } from "@/components/ui/select"
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client"
 import { crearAccion } from "@/actions/s5-acciones"
-import { S5_TIPO_LABELS, type S5Tipo } from "@/types/database"
+import {
+  S5_TIPO_LABELS,
+  type S5SectorAlmacen,
+  type S5Tipo,
+} from "@/types/database"
 
 const BUCKET = "s5-auditorias"
 const MAX_BYTES = 15 * 1024 * 1024
@@ -43,10 +47,16 @@ interface Props {
   onOpenChange: (open: boolean) => void
   responsables: { id: string; nombre: string; email: string }[]
   vehiculos: { id: string; dominio: string }[]
+  sectoresAlmacen?: S5SectorAlmacen[]
   onSaved: () => void
 }
 
-const SECTORES_ALMACEN = [1, 2, 3, 4] as const
+const SECTORES_FALLBACK: S5SectorAlmacen[] = [1, 2, 3, 4].map((n) => ({
+  numero: n,
+  nombre: `Sector ${n}`,
+  updated_at: "",
+  updated_by: null,
+}))
 
 export function CrearAccionDialog({
   tipo,
@@ -54,8 +64,15 @@ export function CrearAccionDialog({
   onOpenChange,
   responsables,
   vehiculos,
+  sectoresAlmacen,
   onSaved,
 }: Props) {
+  const sectoresOpts = (sectoresAlmacen?.length
+    ? sectoresAlmacen
+    : SECTORES_FALLBACK
+  )
+    .slice()
+    .sort((a, b) => a.numero - b.numero)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
@@ -178,9 +195,9 @@ export function CrearAccionDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SECTORES_ALMACEN.map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      Sector {n}
+                  {sectoresOpts.map((s) => (
+                    <SelectItem key={s.numero} value={String(s.numero)}>
+                      {s.nombre || `Sector ${s.numero}`}
                     </SelectItem>
                   ))}
                 </SelectContent>

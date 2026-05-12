@@ -48,6 +48,7 @@ import {
   S5_TIPO_LABELS,
   type S5AccionConMeta,
   type S5AccionEstado,
+  type S5SectorAlmacen,
   type S5Tipo,
   type UserRole,
 } from "@/types/database"
@@ -70,6 +71,7 @@ interface Props {
   accionesIniciales: S5AccionConMeta[]
   responsables: ResponsableOpt[]
   vehiculos: VehiculoOpt[]
+  sectoresAlmacen?: S5SectorAlmacen[]
 }
 
 const MESES_LABELS: Record<string, string> = {
@@ -93,9 +95,15 @@ function formatFecha(iso: string | null) {
   return `${d}/${m}/${y}`
 }
 
-function contextoLabel(a: S5AccionConMeta): string {
+function contextoLabel(
+  a: S5AccionConMeta,
+  sectoresAlmacen?: S5SectorAlmacen[]
+): string {
   if (a.tipo === "almacen") {
-    return a.sector_numero ? `Sector ${a.sector_numero}` : "—"
+    if (!a.sector_numero) return "—"
+    const sector = sectoresAlmacen?.find((s) => s.numero === a.sector_numero)
+    if (sector?.nombre) return sector.nombre
+    return `Sector ${a.sector_numero}`
   }
   return a.vehiculo_dominio ?? "Sin vehículo"
 }
@@ -158,6 +166,7 @@ export function AccionesClient({
   accionesIniciales,
   responsables,
   vehiculos,
+  sectoresAlmacen,
 }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -461,7 +470,7 @@ export function AccionesClient({
                           )}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {contextoLabel(a)}
+                          {contextoLabel(a, sectoresAlmacen)}
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">
@@ -528,6 +537,7 @@ export function AccionesClient({
         onOpenChange={setOpenCrear}
         responsables={responsables}
         vehiculos={vehiculos}
+        sectoresAlmacen={sectoresAlmacen}
         onSaved={() => {
           router.refresh()
         }}
