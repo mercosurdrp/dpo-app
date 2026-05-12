@@ -42,6 +42,7 @@ import {
 } from "@/lib/constants"
 import { createClient } from "@/lib/supabase/client"
 import { checkInReunion } from "@/actions/reunion-preruta"
+import { marcarMiAsistencia, type MiAsistenciaReunionHoy } from "@/actions/reuniones"
 import type { Capacitacion, Asistencia } from "@/types/database"
 import type { MiDashboardData } from "@/actions/mi-asistencia"
 import type { MiEntregaData } from "@/actions/mi-entrega"
@@ -54,6 +55,7 @@ interface Props {
   capacitaciones: (Capacitacion & { asistencia: Asistencia | null })[]
   nombre: string
   reunion: { marcado: boolean; hora_checkin: string | null; minutos: number | null }
+  reunionWarehouse: MiAsistenciaReunionHoy | null
   dashboard: MiDashboardData | null
   entrega: MiEntregaData | null
   sobrecargas: MisSobrecargasResumen | null
@@ -91,10 +93,14 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashboard, entrega, sobrecargas }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, dashboard, entrega, sobrecargas }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
+  const [warehouseState, setWarehouseState] = useState(reunionWarehouse)
   const [loading, setLoading] = useState(false)
+  const [loadingWh, setLoadingWh] = useState(false)
+
+  const esDeposito = dashboard?.sector === "Depósito"
 
   async function handleLogout() {
     const supabase = createClient()
@@ -115,6 +121,18 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
       alert(res.error)
     }
     setLoading(false)
+  }
+
+  async function handleMarcarWarehouse() {
+    if (!warehouseState) return
+    setLoadingWh(true)
+    const res = await marcarMiAsistencia(warehouseState.reunion_id)
+    if ("data" in res) {
+      setWarehouseState({ ...warehouseState, presente: true })
+    } else {
+      alert(res.error)
+    }
+    setLoadingWh(false)
   }
 
   const pendientes = capacitaciones.filter(
@@ -145,50 +163,86 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
 
       {/* Top Row: Reunión + Fichaje Hoy */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* Reunión Pre-Ruta */}
-        <Card className={reunionState.marcado ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Hand className="size-5" />
-                Reunión Pre-Ruta
-              </CardTitle>
-              <Badge className={reunionState.marcado ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
-                {reunionState.marcado ? "Presente" : "Hoy"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {reunionState.marcado ? (
-              <div className="space-y-2">
+        {esDeposito ? (
+          /* Reunión Warehouse (Depósito) */
+          <Card className={warehouseState?.presente ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Hand className="size-5" />
+                  Reunión Warehouse
+                </CardTitle>
+                <Badge className={
+                  !warehouseState ? "bg-slate-100 text-slate-700" :
+                  warehouseState.presente ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                }>
+                  {!warehouseState ? "Sin reunión hoy" : warehouseState.presente ? "Presente" : "Hoy"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!warehouseState ? (
+                <p className="text-sm text-muted-foreground text-center py-3">
+                  Todavía no se creó la reunión de hoy.
+                </p>
+              ) : warehouseState.presente ? (
                 <div className="flex items-center gap-3">
                   <CheckCircle className="size-6 text-green-500" />
-                  <div>
-                    <p className="font-semibold text-green-700 text-sm">Asistencia confirmada</p>
-                    <p className="text-xs text-green-600">
-                      {reunionState.hora_checkin ? formatHoraAR(reunionState.hora_checkin) : "—"}
-                    </p>
-                  </div>
+                  <p className="font-semibold text-green-700 text-sm">Asistencia confirmada</p>
                 </div>
-                {reunionState.minutos !== null && (
-                  <div className="flex items-center gap-2 rounded-lg bg-white/60 px-3 py-1.5">
-                    <Timer className="size-3.5 text-slate-500" />
-                    <span className="text-xs text-slate-600">
-                      Fichaje → reunión: <strong className={
-                        reunionState.minutos <= 15 ? "text-green-600" :
-                        reunionState.minutos <= 30 ? "text-amber-600" : "text-red-600"
-                      }>{reunionState.minutos} min</strong>
-                    </span>
-                  </div>
-                )}
+              ) : (
+                <Button onClick={handleMarcarWarehouse} disabled={loadingWh} className="w-full bg-blue-600 hover:bg-blue-700" size="lg">
+                  {loadingWh ? "Marcando..." : <><Hand className="mr-2 size-5" /> Marcar Asistencia</>}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          /* Reunión Pre-Ruta */
+          <Card className={reunionState.marcado ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Hand className="size-5" />
+                  Reunión Pre-Ruta
+                </CardTitle>
+                <Badge className={reunionState.marcado ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
+                  {reunionState.marcado ? "Presente" : "Hoy"}
+                </Badge>
               </div>
-            ) : (
-              <Button onClick={handleCheckIn} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700" size="lg">
-                {loading ? "Marcando..." : <><Hand className="mr-2 size-5" /> Marcar Asistencia</>}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {reunionState.marcado ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="size-6 text-green-500" />
+                    <div>
+                      <p className="font-semibold text-green-700 text-sm">Asistencia confirmada</p>
+                      <p className="text-xs text-green-600">
+                        {reunionState.hora_checkin ? formatHoraAR(reunionState.hora_checkin) : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {reunionState.minutos !== null && (
+                    <div className="flex items-center gap-2 rounded-lg bg-white/60 px-3 py-1.5">
+                      <Timer className="size-3.5 text-slate-500" />
+                      <span className="text-xs text-slate-600">
+                        Fichaje → reunión: <strong className={
+                          reunionState.minutos <= 15 ? "text-green-600" :
+                          reunionState.minutos <= 30 ? "text-amber-600" : "text-red-600"
+                        }>{reunionState.minutos} min</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Button onClick={handleCheckIn} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700" size="lg">
+                  {loading ? "Marcando..." : <><Hand className="mr-2 size-5" /> Marcar Asistencia</>}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Fichaje Hoy */}
         <Card className="border-slate-200">

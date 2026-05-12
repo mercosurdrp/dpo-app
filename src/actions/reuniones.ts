@@ -942,6 +942,61 @@ export async function setAsistencia(
   }
 }
 
+export interface MiAsistenciaReunionHoy {
+  reunion_id: string
+  fecha: string
+  hora_inicio: string | null
+  asistente_id: string
+  presente: boolean
+}
+
+export async function getMiAsistenciaReunionHoy(
+  tipo: TipoReunion,
+): Promise<{ data: MiAsistenciaReunionHoy | null } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const hoy = new Date().toISOString().slice(0, 10)
+    const { data: reunion, error: errReu } = await supabase
+      .from("reuniones")
+      .select("id, fecha, hora_inicio")
+      .eq("tipo", tipo)
+      .eq("fecha", hoy)
+      .maybeSingle()
+    if (errReu) return { error: errReu.message }
+    if (!reunion) return { data: null }
+
+    const r = reunion as { id: string; fecha: string; hora_inicio: string | null }
+    const { data: asis, error: errAsis } = await supabase
+      .from("reuniones_asistentes")
+      .select("id, presente")
+      .eq("reunion_id", r.id)
+      .eq("profile_id", profile.id)
+      .maybeSingle()
+    if (errAsis) return { error: errAsis.message }
+    if (!asis) return { data: null }
+
+    const a = asis as { id: string; presente: boolean }
+    return {
+      data: {
+        reunion_id: r.id,
+        fecha: r.fecha,
+        hora_inicio: r.hora_inicio,
+        asistente_id: a.id,
+        presente: a.presente,
+      },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error consultando reunión del día",
+    }
+  }
+}
+
 export async function marcarMiAsistencia(
   reunionId: string,
 ): Promise<Result<ReunionAsistente>> {

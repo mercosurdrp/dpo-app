@@ -51,6 +51,7 @@ export interface MiDashboardData {
   historial: MiFichajeHistorial[]
   legajo: number
   nombre: string
+  sector: string | null
 }
 
 export async function getMiDashboard(): Promise<
@@ -63,7 +64,7 @@ export async function getMiDashboard(): Promise<
     // Get empleado
     const { data: empleado } = await supabase
       .from("empleados")
-      .select("legajo, nombre")
+      .select("legajo, nombre, sector")
       .eq("profile_id", profile.id)
       .single()
 
@@ -201,10 +202,12 @@ export async function getMiDashboard(): Promise<
       historial.push({ fecha, entrada, salida, horas_trabajadas: horas })
     }
 
+    const empleadoTyped = empleado as { legajo: number; nombre: string; sector: string | null }
     return {
       data: {
-        legajo: empleado.legajo,
-        nombre: empleado.nombre,
+        legajo: empleadoTyped.legajo,
+        nombre: empleadoTyped.nombre,
+        sector: empleadoTyped.sector ?? null,
         fichaje_hoy: {
           entrada: entradaHoy,
           salida: salidaHoy,
