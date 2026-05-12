@@ -5,6 +5,7 @@ import {
   listResponsablesPosibles,
   puedeEditarReuniones,
 } from "@/actions/reuniones"
+import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -14,14 +15,23 @@ export default async function ReunionDetallePage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [profile, detalleRes, indicadoresMesRes, respRes, puedeEditar] =
-    await Promise.all([
-      getProfile(),
-      getReunionDetalle(id),
-      getIndicadoresMes(id),
-      listResponsablesPosibles(),
-      puedeEditarReuniones(),
-    ])
+  const [
+    profile,
+    detalleRes,
+    indicadoresMesRes,
+    respRes,
+    puedeEditar,
+    sectoresRes,
+    vehiculosRes,
+  ] = await Promise.all([
+    getProfile(),
+    getReunionDetalle(id),
+    getIndicadoresMes(id),
+    listResponsablesPosibles(),
+    puedeEditarReuniones(),
+    getSectoresAlmacen(),
+    getVehiculosActivos(),
+  ])
 
   if (!profile) redirect("/login")
 
@@ -41,6 +51,8 @@ export default async function ReunionDetallePage({
         "data" in indicadoresMesRes ? indicadoresMesRes.data : null
       }
       responsables={"data" in respRes ? respRes.data : []}
+      sectoresAlmacen={"data" in sectoresRes ? sectoresRes.data : []}
+      vehiculos={"data" in vehiculosRes ? vehiculosRes.data : []}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
     />

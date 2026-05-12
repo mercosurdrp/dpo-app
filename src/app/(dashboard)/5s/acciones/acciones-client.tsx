@@ -463,11 +463,21 @@ export function AccionesClient({
                           <div className="font-medium text-slate-900">
                             {a.descripcion}
                           </div>
-                          {a.origen_auditoria_id && (
+                          {a.origen_reunion_actividad_id &&
+                          a.origen_reunion_id ? (
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              <Link
+                                href={`/reuniones/${a.origen_reunion_id}`}
+                                className="text-sky-700 hover:underline"
+                              >
+                                Desde reunión
+                              </Link>
+                            </div>
+                          ) : a.origen_auditoria_id ? (
                             <div className="mt-0.5 text-xs text-muted-foreground">
                               Desde auditoría
                             </div>
-                          )}
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-sm">
                           {contextoLabel(a, sectoresAlmacen)}

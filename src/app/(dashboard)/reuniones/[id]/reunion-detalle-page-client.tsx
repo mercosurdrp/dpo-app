@@ -100,10 +100,24 @@ interface IndicadoresMesData {
   indicadores: IndicadorMesItem[]
 }
 
+interface SectorOpt {
+  numero: number
+  nombre: string
+  updated_at: string
+  updated_by: string | null
+}
+
+interface VehiculoOpt {
+  id: string
+  dominio: string
+}
+
 interface Props {
   detalle: ReunionDetalle & { actividades?: ReunionActividadConResponsable[] }
   indicadoresMes: IndicadoresMesData | null
   responsables: ResponsableOpt[]
+  sectoresAlmacen: SectorOpt[]
+  vehiculos: VehiculoOpt[]
   puedeEditar: boolean
   currentProfileId: string | null
 }
@@ -676,6 +690,8 @@ export function ReunionDetallePageClient({
   detalle,
   indicadoresMes,
   responsables,
+  sectoresAlmacen,
+  vehiculos,
   puedeEditar,
   currentProfileId,
 }: Props) {
@@ -1404,8 +1420,11 @@ export function ReunionDetallePageClient({
           if (!o) setActividadEditando(null)
         }}
         reunionId={detalle.id}
+        reunionTipo={detalle.tipo}
         actividad={actividadEditando}
         responsables={responsables}
+        sectoresAlmacen={sectoresAlmacen}
+        vehiculos={vehiculos}
         onSaved={refrescar}
       />
       <ConfigurarIndicadoresDialog

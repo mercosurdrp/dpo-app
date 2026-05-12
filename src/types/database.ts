@@ -1855,6 +1855,8 @@ export interface S5AccionConMeta extends S5Accion {
   cerrada_por_nombre: string | null
   vehiculo_dominio: string | null
   evidencias_count: number
+  /** reunion_id de la actividad origen (si fue espejada desde reuniones). */
+  origen_reunion_id?: string | null
 }
 
 export interface S5AccionEvidencia {
@@ -2326,6 +2328,16 @@ export interface ReunionDetalle extends Reunion {
 // =============================================
 export type EstadoReunionActividad = "no_comenzada" | "en_curso" | "cerrada"
 
+// Destino de una actividad del action log de reuniones.
+// 'simple'  → tarea aislada en reuniones (default, comportamiento legacy).
+// '5s_*'    → espejo bidireccional en s5_acciones.
+// 'mantenimiento_edilicio' → placeholder Fase 2 (texto libre).
+export type TareaDestino =
+  | "simple"
+  | "5s_flota"
+  | "5s_almacen"
+  | "mantenimiento_edilicio"
+
 export interface ReunionActividad {
   id: string
   reunion_id: string
@@ -2341,6 +2353,10 @@ export interface ReunionActividad {
   created_by: string | null
   created_at: string
   updated_at: string
+  destino: TareaDestino
+  s5_sector_numero: number | null
+  s5_vehiculo_id: string | null
+  mantenimiento_rubro: string | null
 }
 
 export interface ReunionActividadConResponsable extends ReunionActividad {

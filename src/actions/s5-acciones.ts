@@ -51,7 +51,8 @@ const SELECT_ACCION_RELS = `
   responsable:profiles!s5_acciones_responsable_id_fkey(id, nombre),
   creado_por_profile:profiles!s5_acciones_creado_por_fkey(id, nombre),
   cerrada_por_profile:profiles!s5_acciones_cerrada_por_fkey(id, nombre),
-  vehiculo:catalogo_vehiculos!s5_acciones_vehiculo_id_fkey(id, dominio)
+  vehiculo:catalogo_vehiculos!s5_acciones_vehiculo_id_fkey(id, dominio),
+  origen_actividad:reuniones_actividades!s5_acciones_origen_reunion_actividad_id_fkey(reunion_id)
 ` as const
 
 type AccionRawRow = S5Accion & {
@@ -59,6 +60,7 @@ type AccionRawRow = S5Accion & {
   creado_por_profile: { id: string; nombre: string } | null
   cerrada_por_profile: { id: string; nombre: string } | null
   vehiculo: { id: string; dominio: string } | null
+  origen_actividad: { reunion_id: string } | null
 }
 
 function enrichAccion(
@@ -86,6 +88,7 @@ function enrichAccion(
     cerrada_por_nombre: row.cerrada_por_profile?.nombre ?? null,
     vehiculo_dominio: row.vehiculo?.dominio ?? null,
     evidencias_count: evidenciasCount,
+    origen_reunion_id: row.origen_actividad?.reunion_id ?? null,
   }
 }
 
@@ -432,7 +435,9 @@ export async function agregarEvidencia(
 
     const { data: accion, error: accErr } = await supabase
       .from("s5_acciones")
-      .select("id, responsable_id, creado_por, estado")
+      .select(
+        "id, responsable_id, creado_por, estado, origen_reunion_actividad_id"
+      )
       .eq("id", input.accionId)
       .maybeSingle()
 
@@ -474,6 +479,36 @@ export async function agregarEvidencia(
         .update({ estado: "en_curso" })
         .eq("id", input.accionId)
         .eq("estado", "no_comenzada")
+    }
+
+    // Espejar a la actividad de reuniones si la acción tiene origen.
+    // La actividad solo guarda 1 evidencia (no historial) → sobrescribe.
+    if (accion.origen_reunion_actividad_id) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const actividadUpdate: Record<string, any> = {}
+        if (input.archivoPath) {
+          actividadUpdate.evidencia_url = input.archivoPath
+          actividadUpdate.evidencia_nombre = input.archivoNombre ?? null
+        }
+        if (comentario) {
+          actividadUpdate.observaciones = comentario
+        }
+        // Si la acción pasó de no_comenzada → en_curso por el side-effect del
+        // insert, espejar también el estado en la actividad.
+        if (accion.estado === "no_comenzada") {
+          actividadUpdate.estado = "en_curso"
+          actividadUpdate.completado_at = null
+        }
+        if (Object.keys(actividadUpdate).length > 0) {
+          await supabase
+            .from("reuniones_actividades")
+            .update(actividadUpdate)
+            .eq("id", accion.origen_reunion_actividad_id)
+        }
+      } catch {
+        // Sync best-effort
+      }
     }
 
     revalidatePath(DASHBOARD_PATH)
@@ -523,9 +558,25 @@ export async function cerrarAccion(
       .single()
 
     if (error) return { error: error.message }
+    const accion = data as S5Accion
+
+    // Espejar cierre a la actividad de reuniones.
+    if (accion.origen_reunion_actividad_id) {
+      try {
+        await supabase
+          .from("reuniones_actividades")
+          .update({
+            estado: "cerrada",
+            completado_at: new Date().toISOString(),
+          })
+          .eq("id", accion.origen_reunion_actividad_id)
+      } catch {
+        // best-effort
+      }
+    }
 
     revalidatePath(DASHBOARD_PATH)
-    return { data: data as S5Accion }
+    return { data: accion }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cerrando acción",
@@ -556,9 +607,25 @@ export async function reabrirAccion(
       .single()
 
     if (error) return { error: error.message }
+    const accion = data as S5Accion
+
+    // Espejar reapertura a la actividad de reuniones.
+    if (accion.origen_reunion_actividad_id) {
+      try {
+        await supabase
+          .from("reuniones_actividades")
+          .update({
+            estado: "en_curso",
+            completado_at: null,
+          })
+          .eq("id", accion.origen_reunion_actividad_id)
+      } catch {
+        // best-effort
+      }
+    }
 
     revalidatePath(DASHBOARD_PATH)
-    return { data: data as S5Accion }
+    return { data: accion }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error reabriendo acción",

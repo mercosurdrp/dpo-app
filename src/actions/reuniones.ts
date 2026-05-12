@@ -30,7 +30,106 @@ import type {
   ReunionIndicadorConValor,
   ReunionIndicadoresMes,
   AgregacionIndicador,
+  TareaDestino,
 } from "@/types/database"
+
+// =============================================
+// Espejo en s5_acciones: helpers
+// =============================================
+const DESTINOS_5S: TareaDestino[] = ["5s_flota", "5s_almacen"]
+
+function isDestino5S(destino: TareaDestino): destino is "5s_flota" | "5s_almacen" {
+  return DESTINOS_5S.includes(destino)
+}
+
+function tipo5SFromDestino(destino: "5s_flota" | "5s_almacen"): "flota" | "almacen" {
+  return destino === "5s_flota" ? "flota" : "almacen"
+}
+
+interface ParsedDestino {
+  destino: TareaDestino
+  s5_sector_numero: number | null
+  s5_vehiculo_id: string | null
+  mantenimiento_rubro: string | null
+}
+
+/**
+ * Parsea destino + sub-campos desde el FormData de la actividad.
+ * Devuelve `{ error }` si la combinación no es válida (igual que el CHECK SQL).
+ * Si el form no manda `destino`, default = 'simple'.
+ */
+function parseDestino(formData: FormData): ParsedDestino | { error: string } {
+  const destinoRaw = String(formData.get("destino") ?? "simple").trim()
+  if (
+    !["simple", "5s_flota", "5s_almacen", "mantenimiento_edilicio"].includes(
+      destinoRaw,
+    )
+  ) {
+    return { error: "Destino inválido" }
+  }
+  const destino = destinoRaw as TareaDestino
+
+  let s5_sector_numero: number | null = null
+  let s5_vehiculo_id: string | null = null
+  let mantenimiento_rubro: string | null = null
+
+  if (destino === "5s_almacen") {
+    const sRaw = String(formData.get("s5_sector_numero") ?? "").trim()
+    const n = parseInt(sRaw, 10)
+    if (!Number.isFinite(n) || n < 1 || n > 4) {
+      return { error: "Para 5S Almacén el sector debe ser 1..4" }
+    }
+    s5_sector_numero = n
+  } else if (destino === "5s_flota") {
+    const v = String(formData.get("s5_vehiculo_id") ?? "").trim()
+    s5_vehiculo_id = v && v !== "none" ? v : null
+  } else if (destino === "mantenimiento_edilicio") {
+    const r = String(formData.get("mantenimiento_rubro") ?? "").trim()
+    if (!r) return { error: "Para Mantenimiento Edilicio el rubro es obligatorio" }
+    mantenimiento_rubro = r
+  }
+
+  return { destino, s5_sector_numero, s5_vehiculo_id, mantenimiento_rubro }
+}
+
+/**
+ * Crea la fila espejo en s5_acciones para una actividad 5S. Devuelve error si
+ * el insert falla — el caller decide qué rollback hacer.
+ */
+async function crearEspejo5S(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  params: {
+    actividadId: string
+    destino: "5s_flota" | "5s_almacen"
+    sector: number | null
+    vehiculoId: string | null
+    descripcion: string
+    responsableId: string | null
+    fechaCompromiso: string | null
+    estado: EstadoReunionActividad
+    creadoPor: string
+  },
+): Promise<{ error: string } | { ok: true }> {
+  const tipo5s = tipo5SFromDestino(params.destino)
+  const { error } = await supabase.from("s5_acciones").insert({
+    tipo: tipo5s,
+    sector_numero: tipo5s === "almacen" ? params.sector : null,
+    vehiculo_id: tipo5s === "flota" ? params.vehiculoId : null,
+    descripcion: params.descripcion,
+    responsable_id: params.responsableId,
+    fecha_compromiso: params.fechaCompromiso,
+    estado: params.estado,
+    origen_reunion_actividad_id: params.actividadId,
+    creado_por: params.creadoPor,
+    // Si la actividad nace ya cerrada (poco probable acá), respeta la CHECK
+    // cerrada_at NOT NULL en estado=cerrada.
+    cerrada_at: params.estado === "cerrada" ? new Date().toISOString() : null,
+    cerrada_por: params.estado === "cerrada" ? params.creadoPor : null,
+  })
+  if (error) return { error: error.message }
+  return { ok: true }
+}
 
 const BUCKET = "reuniones"
 const REVALIDATE_PATH = "/reuniones"
@@ -443,6 +542,10 @@ export async function getReunionDetalle(
           created_by: r.created_by,
           created_at: r.created_at,
           updated_at: r.updated_at,
+          destino: (r.destino as ReunionActividad["destino"]) ?? "simple",
+          s5_sector_numero: r.s5_sector_numero ?? null,
+          s5_vehiculo_id: r.s5_vehiculo_id ?? null,
+          mantenimiento_rubro: r.mantenimiento_rubro ?? null,
           responsable_nombre: r.responsable?.nombre ?? null,
           reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
           reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
@@ -945,6 +1048,9 @@ export async function crearActividad(
     if (!reunion_id) return { error: "La reunión es obligatoria" }
     if (!descripcion) return { error: "La descripción es obligatoria" }
 
+    const destinoParsed = parseDestino(formData)
+    if ("error" in destinoParsed) return { error: destinoParsed.error }
+
     const { data, error } = await supabase
       .from("reuniones_actividades")
       .insert({
@@ -956,18 +1062,45 @@ export async function crearActividad(
         observaciones,
         estado: "no_comenzada",
         created_by: profile.id,
+        destino: destinoParsed.destino,
+        s5_sector_numero: destinoParsed.s5_sector_numero,
+        s5_vehiculo_id: destinoParsed.s5_vehiculo_id,
+        mantenimiento_rubro: destinoParsed.mantenimiento_rubro,
       })
       .select("*")
       .single()
 
     if (error) return { error: error.message }
+    const actividad = data as ReunionActividad
+
+    // Espejo en s5_acciones si corresponde. Si falla, rollback manual.
+    if (isDestino5S(destinoParsed.destino)) {
+      const mirror = await crearEspejo5S(supabase, {
+        actividadId: actividad.id,
+        destino: destinoParsed.destino,
+        sector: destinoParsed.s5_sector_numero,
+        vehiculoId: destinoParsed.s5_vehiculo_id,
+        descripcion,
+        responsableId: responsable_id,
+        fechaCompromiso: fecha_compromiso,
+        estado: "no_comenzada",
+        creadoPor: profile.id,
+      })
+      if ("error" in mirror) {
+        await supabase
+          .from("reuniones_actividades")
+          .delete()
+          .eq("id", actividad.id)
+        return { error: `Error creando espejo 5S: ${mirror.error}` }
+      }
+    }
 
     if (responsable_id) {
       await notificarAsignacionActividad(supabase, responsable_id, descripcion)
     }
 
     revalidatePath(REVALIDATE_PATH)
-    return { data: data as ReunionActividad }
+    return { data: actividad }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error creando actividad",
@@ -980,19 +1113,32 @@ export async function actualizarActividad(
   formData: FormData,
 ): Promise<Result<ReunionActividad>> {
   try {
-    await requireEditor()
+    const profile = await requireEditor()
     const supabase = await createClient()
 
     if (!id) return { error: "ID de actividad inválido" }
 
     const { data: actual, error: errActual } = await supabase
       .from("reuniones_actividades")
-      .select("responsable_id, estado, descripcion")
+      .select(
+        "responsable_id, estado, descripcion, destino, s5_sector_numero, s5_vehiculo_id, mantenimiento_rubro",
+      )
       .eq("id", id)
       .single()
     if (errActual || !actual) {
       return { error: errActual?.message ?? "No se encontró la actividad" }
     }
+
+    const actualRow = actual as {
+      responsable_id: string | null
+      estado: EstadoReunionActividad
+      descripcion: string
+      destino: TareaDestino | null
+      s5_sector_numero: number | null
+      s5_vehiculo_id: string | null
+      mantenimiento_rubro: string | null
+    }
+    const destinoViejo: TareaDestino = actualRow.destino ?? "simple"
 
     const descripcion = String(formData.get("descripcion") ?? "").trim()
     const motivo = String(formData.get("motivo") ?? "").trim() || null
@@ -1005,6 +1151,9 @@ export async function actualizarActividad(
     const estadoRaw = String(formData.get("estado") ?? "").trim()
 
     if (!descripcion) return { error: "La descripción es obligatoria" }
+
+    const destinoParsed = parseDestino(formData)
+    if ("error" in destinoParsed) return { error: destinoParsed.error }
 
     let nuevoEstado: EstadoReunionActividad | null = null
     if (estadoRaw) {
@@ -1021,11 +1170,15 @@ export async function actualizarActividad(
       responsable_id,
       fecha_compromiso,
       observaciones,
+      destino: destinoParsed.destino,
+      s5_sector_numero: destinoParsed.s5_sector_numero,
+      s5_vehiculo_id: destinoParsed.s5_vehiculo_id,
+      mantenimiento_rubro: destinoParsed.mantenimiento_rubro,
     }
 
     if (nuevoEstado) {
       update.estado = nuevoEstado
-      const estadoActual = (actual as { estado: string }).estado
+      const estadoActual = actualRow.estado
       if (nuevoEstado === "cerrada") {
         update.completado_at = new Date().toISOString()
       } else if (estadoActual === "cerrada") {
@@ -1041,16 +1194,104 @@ export async function actualizarActividad(
       .single()
 
     if (error) return { error: error.message }
+    const actividad = data as ReunionActividad
+
+    // =============================================
+    // Rebalance del espejo en s5_acciones
+    // =============================================
+    const destinoNuevo: TareaDestino = destinoParsed.destino
+    const era5S = isDestino5S(destinoViejo)
+    const es5S = isDestino5S(destinoNuevo)
+
+    const estadoFinal: EstadoReunionActividad =
+      (update.estado as EstadoReunionActividad | undefined) ?? actualRow.estado
+
+    if (es5S && !era5S) {
+      // simple/mantenimiento → 5S: crear espejo nuevo.
+      const mirror = await crearEspejo5S(supabase, {
+        actividadId: actividad.id,
+        destino: destinoNuevo,
+        sector: destinoParsed.s5_sector_numero,
+        vehiculoId: destinoParsed.s5_vehiculo_id,
+        descripcion,
+        responsableId: responsable_id,
+        fechaCompromiso: fecha_compromiso,
+        estado: estadoFinal,
+        creadoPor: profile.id,
+      })
+      if ("error" in mirror) {
+        // No rollback de la actividad: el cambio principal ya se guardó.
+        // Devolver el error pero advertir.
+        return {
+          error: `Actividad actualizada pero falló el espejo 5S: ${mirror.error}`,
+        }
+      }
+    } else if (era5S && !es5S) {
+      // 5S → simple/mantenimiento: borrar espejo si existe.
+      await supabase
+        .from("s5_acciones")
+        .delete()
+        .eq("origen_reunion_actividad_id", id)
+    } else if (era5S && es5S && destinoViejo !== destinoNuevo) {
+      // 5s_flota ↔ 5s_almacen: tipo distinto → rehacer.
+      await supabase
+        .from("s5_acciones")
+        .delete()
+        .eq("origen_reunion_actividad_id", id)
+      const mirror = await crearEspejo5S(supabase, {
+        actividadId: actividad.id,
+        destino: destinoNuevo,
+        sector: destinoParsed.s5_sector_numero,
+        vehiculoId: destinoParsed.s5_vehiculo_id,
+        descripcion,
+        responsableId: responsable_id,
+        fechaCompromiso: fecha_compromiso,
+        estado: estadoFinal,
+        creadoPor: profile.id,
+      })
+      if ("error" in mirror) {
+        return {
+          error: `Actividad actualizada pero falló el espejo 5S: ${mirror.error}`,
+        }
+      }
+    } else if (era5S && es5S && destinoViejo === destinoNuevo) {
+      // Mismo destino 5S: UPDATE del espejo (sincroniza sector/vehículo +
+      // campos comunes).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mirrorUpdate: Record<string, any> = {
+        descripcion,
+        responsable_id,
+        fecha_compromiso,
+        estado: estadoFinal,
+      }
+      if (destinoNuevo === "5s_almacen") {
+        mirrorUpdate.sector_numero = destinoParsed.s5_sector_numero
+        mirrorUpdate.vehiculo_id = null
+      } else {
+        mirrorUpdate.vehiculo_id = destinoParsed.s5_vehiculo_id
+        mirrorUpdate.sector_numero = null
+      }
+      if (estadoFinal === "cerrada") {
+        mirrorUpdate.cerrada_at = new Date().toISOString()
+        mirrorUpdate.cerrada_por = profile.id
+      } else {
+        mirrorUpdate.cerrada_at = null
+        mirrorUpdate.cerrada_por = null
+      }
+      await supabase
+        .from("s5_acciones")
+        .update(mirrorUpdate)
+        .eq("origen_reunion_actividad_id", id)
+    }
 
     // Si cambió responsable a uno nuevo no nulo, notificar
-    const responsableAnterior = (actual as { responsable_id: string | null })
-      .responsable_id
+    const responsableAnterior = actualRow.responsable_id
     if (responsable_id && responsable_id !== responsableAnterior) {
       await notificarAsignacionActividad(supabase, responsable_id, descripcion)
     }
 
     revalidatePath(REVALIDATE_PATH)
-    return { data: data as ReunionActividad }
+    return { data: actividad }
   } catch (err) {
     return {
       error:
@@ -1166,6 +1407,54 @@ export async function responderActividad(
       .evidencia_url
     if (nuevaEvidenciaUrl && evidenciaAnterior) {
       await supabase.storage.from(BUCKET).remove([evidenciaAnterior])
+    }
+
+    // Espejar evidencia al s5_acciones_evidencias si la actividad tiene espejo.
+    // Buscamos la fila espejo por origen_reunion_actividad_id. La actividad solo
+    // guarda 1 evidencia (no historial), pero acá insertamos una entrada nueva
+    // al historial del espejo. Si se cerró la actividad, también espejamos el
+    // cierre.
+    try {
+      const { data: espejo } = await supabase
+        .from("s5_acciones")
+        .select("id, estado")
+        .eq("origen_reunion_actividad_id", id)
+        .maybeSingle()
+
+      if (espejo) {
+        const e = espejo as { id: string; estado: string }
+        // Insertar evidencia al historial del espejo (si hay archivo o comentario).
+        const tieneComentarioParaEspejo =
+          (observaciones?.trim().length ?? 0) > 0
+        if (nuevaEvidenciaUrl || tieneComentarioParaEspejo) {
+          await supabase.from("s5_acciones_evidencias").insert({
+            accion_id: e.id,
+            comentario: observaciones ?? null,
+            archivo_path: nuevaEvidenciaUrl,
+            archivo_nombre: nuevaEvidenciaNombre,
+            archivo_mime: tieneArchivo ? file.type || null : null,
+            archivo_bytes: tieneArchivo ? file.size : null,
+            autor_id: profile.id,
+          })
+        }
+
+        // Sincronizar estado del espejo.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mirrorUpdate: Record<string, any> = { estado: nuevoEstado }
+        if (nuevoEstado === "cerrada") {
+          mirrorUpdate.cerrada_at = new Date().toISOString()
+          mirrorUpdate.cerrada_por = profile.id
+        } else if (e.estado === "cerrada") {
+          mirrorUpdate.cerrada_at = null
+          mirrorUpdate.cerrada_por = null
+        }
+        await supabase
+          .from("s5_acciones")
+          .update(mirrorUpdate)
+          .eq("id", e.id)
+      }
+    } catch {
+      // No bloquear el flujo principal por fallo en sync.
     }
 
     revalidatePath(REVALIDATE_PATH)
