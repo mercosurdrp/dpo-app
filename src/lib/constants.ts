@@ -58,6 +58,9 @@ export const ESTADO_ACCION_LABELS: Record<string, string> = {
 }
 
 // Plan de accion estado colors
+// NOTA: las keys son los valores del enum en DB (pendiente/en_progreso/completado),
+// pero los labels visibles se unificaron a la nomenclatura no_comenzada/en_curso/cerrada
+// que también usan las acciones 5S y la pestaña Mis Tareas.
 export const ESTADO_PLAN_COLORS: Record<string, string> = {
   pendiente: "#EF4444",
   en_progreso: "#F59E0B",
@@ -65,9 +68,9 @@ export const ESTADO_PLAN_COLORS: Record<string, string> = {
 }
 
 export const ESTADO_PLAN_LABELS: Record<string, string> = {
-  pendiente: "Pendiente",
-  en_progreso: "En Progreso",
-  completado: "Completado",
+  pendiente: "No comenzada",
+  en_progreso: "En curso",
+  completado: "Cerrada",
 }
 
 // Prioridad colors
