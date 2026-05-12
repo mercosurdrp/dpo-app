@@ -1800,6 +1800,60 @@ export const S5_AUDITORIA_ESTADO_COLORS: Record<S5AuditoriaEstado, string> = {
   completada: "#10B981",
 }
 
+// ===== 5S Acciones (tareas con evidencia con historial) =====
+export type S5AccionEstado = "no_comenzada" | "en_curso" | "cerrada"
+
+export interface S5Accion {
+  id: string
+  tipo: S5Tipo
+  sector_numero: number | null
+  vehiculo_id: string | null
+  descripcion: string
+  responsable_id: string | null
+  fecha_compromiso: string | null
+  estado: S5AccionEstado
+  origen_auditoria_id: string | null
+  origen_reunion_actividad_id: string | null
+  creado_por: string
+  cerrada_at: string | null
+  cerrada_por: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface S5AccionConMeta extends S5Accion {
+  responsable_nombre: string | null
+  creado_por_nombre: string | null
+  cerrada_por_nombre: string | null
+  vehiculo_dominio: string | null
+  evidencias_count: number
+}
+
+export interface S5AccionEvidencia {
+  id: string
+  accion_id: string
+  comentario: string | null
+  archivo_path: string | null
+  archivo_nombre: string | null
+  archivo_mime: string | null
+  archivo_bytes: number | null
+  autor_id: string
+  autor_nombre: string | null
+  created_at: string
+}
+
+export const S5_ACCION_ESTADO_LABELS: Record<S5AccionEstado, string> = {
+  no_comenzada: "No comenzada",
+  en_curso: "En curso",
+  cerrada: "Cerrada",
+}
+
+export const S5_ACCION_ESTADO_COLORS: Record<S5AccionEstado, string> = {
+  no_comenzada: "#64748B",
+  en_curso: "#F59E0B",
+  cerrada: "#10B981",
+}
+
 // ===== 5S Indicadores =====
 export interface S5KpisMes {
   promedio_nota: number | null

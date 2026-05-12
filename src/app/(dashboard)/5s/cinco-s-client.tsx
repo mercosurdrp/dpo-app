@@ -13,6 +13,7 @@ import {
   Trash2,
   BarChart3,
   Users,
+  ClipboardList,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -217,6 +218,12 @@ export function CincoSClient({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/5s/acciones">
+            <Button variant="outline" size="sm">
+              <ClipboardList className="mr-1.5 size-4" />
+              Acciones
+            </Button>
+          </Link>
           <Link href="/5s/ayudantes">
             <Button variant="outline" size="sm">
               <Users className="mr-1.5 size-4" />
