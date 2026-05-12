@@ -97,7 +97,7 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1400px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1400px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Detalle de rechazos
