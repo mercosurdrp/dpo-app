@@ -1839,6 +1839,9 @@ export async function getIndicadoresMes(
       "bultos entregados",
       "tml",
       "tiempo medio de liberación",
+      "hl vendidos",
+      "hectolitros vendidos",
+      "hl",
     ])
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -2066,13 +2069,14 @@ export async function getIndicadoresMes(
       }
     }
 
-    // 7c. Indicador AUTO "Bultos vendidos" — todos los tipos.
-    //     Suma de total_bultos por día. Meta = promedio diario del mes anterior
-    //     (Σ bultos / días con datos). mejor_si=mayor (verde si supera meta).
+    // 7c. Indicadores AUTO "Bultos vendidos" + "HL vendidos" — todos los tipos.
+    //     Suma diaria de total_bultos / total_hl. Meta de cada uno = promedio
+    //     diario del mes anterior. mejor_si=mayor (verde si supera meta).
+    //     Se hace una sola lectura por rango con ambas columnas.
     {
       const { data: ventRaw, error: errVent } = await supabase
         .from("ventas_diarias")
-        .select("fecha, total_bultos")
+        .select("fecha, total_bultos, total_hl")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
 
@@ -2086,69 +2090,124 @@ export async function getIndicadoresMes(
 
         const { data: ventPrevRaw } = await supabase
           .from("ventas_diarias")
-          .select("fecha, total_bultos")
+          .select("fecha, total_bultos, total_hl")
           .gte("fecha", prevDesde)
           .lte("fecha", prevHasta)
 
-        // Promedio diario mes anterior
-        let metaPromedio: number | null = null
+        // Promedios diarios mes anterior (bultos y HL por separado)
+        let metaBultos: number | null = null
+        let metaHl: number | null = null
         if (ventPrevRaw) {
-          const porFechaPrev: Record<string, number> = {}
+          const porFechaBultosPrev: Record<string, number> = {}
+          const porFechaHlPrev: Record<string, number> = {}
           for (const v of ventPrevRaw as Array<{
             fecha: string
             total_bultos: number | null
+            total_hl: number | null
           }>) {
             const b = Number(v.total_bultos ?? 0)
-            if (!Number.isFinite(b)) continue
-            porFechaPrev[v.fecha] = (porFechaPrev[v.fecha] ?? 0) + b
+            const h = Number(v.total_hl ?? 0)
+            if (Number.isFinite(b)) {
+              porFechaBultosPrev[v.fecha] = (porFechaBultosPrev[v.fecha] ?? 0) + b
+            }
+            if (Number.isFinite(h)) {
+              porFechaHlPrev[v.fecha] = (porFechaHlPrev[v.fecha] ?? 0) + h
+            }
           }
-          const dias = Object.keys(porFechaPrev).length
-          if (dias > 0) {
+          const diasBultos = Object.keys(porFechaBultosPrev).length
+          if (diasBultos > 0) {
             let sum = 0
-            for (const b of Object.values(porFechaPrev)) sum += b
-            metaPromedio = Math.round(sum / dias)
+            for (const b of Object.values(porFechaBultosPrev)) sum += b
+            metaBultos = Math.round(sum / diasBultos)
+          }
+          const diasHl = Object.keys(porFechaHlPrev).length
+          if (diasHl > 0) {
+            let sum = 0
+            for (const h of Object.values(porFechaHlPrev)) sum += h
+            metaHl = Math.round((sum / diasHl) * 10) / 10
           }
         }
 
-        // Bultos por fecha (mes en curso)
+        // Bultos + HL por fecha (mes en curso)
         const bultosPorFecha: Record<string, number> = {}
+        const hlPorFecha: Record<string, number> = {}
         for (const v of (ventRaw ?? []) as Array<{
           fecha: string
           total_bultos: number | null
+          total_hl: number | null
         }>) {
           const b = Number(v.total_bultos ?? 0)
-          if (!Number.isFinite(b)) continue
-          bultosPorFecha[v.fecha] = (bultosPorFecha[v.fecha] ?? 0) + b
-        }
-
-        const valoresPorFecha: Record<
-          string,
-          { reunion_id: string; valor: number | null; observacion: string | null } | null
-        > = {}
-        let mtd = 0
-        for (const f of fechas) {
-          const b = bultosPorFecha[f] ?? 0
-          valoresPorFecha[f] = {
-            reunion_id: "auto",
-            valor: b,
-            observacion: null,
+          const h = Number(v.total_hl ?? 0)
+          if (Number.isFinite(b)) {
+            bultosPorFecha[v.fecha] = (bultosPorFecha[v.fecha] ?? 0) + b
           }
-          if (f <= fecha) mtd += b
+          if (Number.isFinite(h)) {
+            hlPorFecha[v.fecha] = (hlPorFecha[v.fecha] ?? 0) + h
+          }
         }
 
-        indicadoresAuto.push({
-          id: "auto_bultos_vendidos",
-          nombre: "Bultos vendidos",
-          unidad: "bultos",
-          meta: metaPromedio,
-          orden: -1,
-          agregacion: "suma",
-          valores: valoresPorFecha,
-          mtd,
-          auto: true,
-          mostrar_cero: true,
-          mejor_si: "mayor",
-        })
+        // Fila auto: Bultos vendidos
+        {
+          const valoresPorFecha: Record<
+            string,
+            { reunion_id: string; valor: number | null; observacion: string | null } | null
+          > = {}
+          let mtd = 0
+          for (const f of fechas) {
+            const b = bultosPorFecha[f] ?? 0
+            valoresPorFecha[f] = {
+              reunion_id: "auto",
+              valor: b,
+              observacion: null,
+            }
+            if (f <= fecha) mtd += b
+          }
+          indicadoresAuto.push({
+            id: "auto_bultos_vendidos",
+            nombre: "Bultos vendidos",
+            unidad: "bultos",
+            meta: metaBultos,
+            orden: -1,
+            agregacion: "suma",
+            valores: valoresPorFecha,
+            mtd,
+            auto: true,
+            mostrar_cero: true,
+            mejor_si: "mayor",
+          })
+        }
+
+        // Fila auto: HL vendidos
+        {
+          const valoresPorFecha: Record<
+            string,
+            { reunion_id: string; valor: number | null; observacion: string | null } | null
+          > = {}
+          let mtd = 0
+          for (const f of fechas) {
+            const h = hlPorFecha[f] ?? 0
+            const hRedondeado = Math.round(h * 10) / 10
+            valoresPorFecha[f] = {
+              reunion_id: "auto",
+              valor: hRedondeado,
+              observacion: null,
+            }
+            if (f <= fecha) mtd += h
+          }
+          indicadoresAuto.push({
+            id: "auto_hl_vendidos",
+            nombre: "HL vendidos",
+            unidad: "HL",
+            meta: metaHl,
+            orden: -1,
+            agregacion: "suma",
+            valores: valoresPorFecha,
+            mtd: Math.round(mtd * 10) / 10,
+            auto: true,
+            mostrar_cero: true,
+            mejor_si: "mayor",
+          })
+        }
       }
     }
 

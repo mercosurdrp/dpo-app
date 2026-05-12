@@ -1,6 +1,7 @@
 /**
- * Resumen del día de bultos vendidos para el detalle de "Bultos vendidos"
- * en el tablero de reuniones. Lectura pura.
+ * Resumen del día de ventas (bultos + HL) para los drill-downs del tablero
+ * de reuniones. Lectura pura: una sola query devuelve ambas métricas para
+ * que cualquier dialog (Bultos vendidos / HL vendidos) reuse el resumen.
  */
 import type { SupaClient } from "@/lib/rechazos/comparado"
 
@@ -8,13 +9,19 @@ export interface VentasPatenteRow {
   patente: string
   chofer_nombre: string | null
   bultos: number
+  hl: number
 }
 
 export interface VentasResumenDia {
   fecha: string
   total_bultos: number
+  total_hl: number
   patentes_con_venta: number
-  promedio_mes_anterior: number | null
+  /** Promedio diario de bultos del mes anterior (Σ bultos / días con datos). */
+  promedio_bultos_mes_anterior: number | null
+  /** Promedio diario de HL del mes anterior. */
+  promedio_hl_mes_anterior: number | null
+  /** Patentes ordenadas por bultos desc por default. */
   por_patente: VentasPatenteRow[]
 }
 
@@ -37,11 +44,11 @@ export async function getVentasResumenDia(
   const [ventasRaw, ventasMesAntRaw, mapeoRaw] = await Promise.all([
     supa
       .from("ventas_diarias")
-      .select("ds_fletero_carga, total_bultos")
+      .select("ds_fletero_carga, total_bultos, total_hl")
       .eq("fecha", fecha),
     supa
       .from("ventas_diarias")
-      .select("fecha, total_bultos")
+      .select("fecha, total_bultos, total_hl")
       .gte("fecha", prevDesde)
       .lte("fecha", prevHasta),
     supa
@@ -59,62 +66,82 @@ export async function getVentasResumenDia(
   }
   const mapeo = (mapeoRaw.data ?? []) as unknown as MapeoRow[]
   const choferIdx = new Map<string, string | null>()
-  for (const m of mapeo) {
-    choferIdx.set(m.patente, m.catalogo_choferes?.nombre ?? null)
+  for (const mp of mapeo) {
+    choferIdx.set(mp.patente, mp.catalogo_choferes?.nombre ?? null)
   }
 
   const ventas = (ventasRaw.data ?? []) as Array<{
     ds_fletero_carga: string
     total_bultos: number | null
+    total_hl: number | null
   }>
 
-  let total = 0
-  const porPatente = new Map<string, number>()
+  let totalBultos = 0
+  let totalHl = 0
+  const porPatenteAgg = new Map<string, { bultos: number; hl: number }>()
   for (const v of ventas) {
     const b = Number(v.total_bultos ?? 0)
-    if (!Number.isFinite(b)) continue
-    total += b
+    const h = Number(v.total_hl ?? 0)
+    const bs = Number.isFinite(b) ? b : 0
+    const hs = Number.isFinite(h) ? h : 0
+    totalBultos += bs
+    totalHl += hs
     if (v.ds_fletero_carga) {
-      porPatente.set(
-        v.ds_fletero_carga,
-        (porPatente.get(v.ds_fletero_carga) ?? 0) + b,
-      )
+      const cur = porPatenteAgg.get(v.ds_fletero_carga) ?? { bultos: 0, hl: 0 }
+      cur.bultos += bs
+      cur.hl += hs
+      porPatenteAgg.set(v.ds_fletero_carga, cur)
     }
   }
 
-  // Promedio diario del mes anterior (Σ bultos / días con datos)
-  let promedio: number | null = null
+  // Promedios diarios mes anterior
+  let promedioBultos: number | null = null
+  let promedioHl: number | null = null
   if (!ventasMesAntRaw.error && ventasMesAntRaw.data) {
-    const porFecha = new Map<string, number>()
+    const porFechaBultos = new Map<string, number>()
+    const porFechaHl = new Map<string, number>()
     for (const v of ventasMesAntRaw.data as Array<{
       fecha: string
       total_bultos: number | null
+      total_hl: number | null
     }>) {
       const b = Number(v.total_bultos ?? 0)
-      if (!Number.isFinite(b)) continue
-      porFecha.set(v.fecha, (porFecha.get(v.fecha) ?? 0) + b)
+      const h = Number(v.total_hl ?? 0)
+      if (Number.isFinite(b)) {
+        porFechaBultos.set(v.fecha, (porFechaBultos.get(v.fecha) ?? 0) + b)
+      }
+      if (Number.isFinite(h)) {
+        porFechaHl.set(v.fecha, (porFechaHl.get(v.fecha) ?? 0) + h)
+      }
     }
-    const dias = porFecha.size
-    if (dias > 0) {
-      let sum = 0
-      for (const b of porFecha.values()) sum += b
-      promedio = sum / dias
+    if (porFechaBultos.size > 0) {
+      let s = 0
+      for (const b of porFechaBultos.values()) s += b
+      promedioBultos = s / porFechaBultos.size
+    }
+    if (porFechaHl.size > 0) {
+      let s = 0
+      for (const h of porFechaHl.values()) s += h
+      promedioHl = s / porFechaHl.size
     }
   }
 
-  const por_patente: VentasPatenteRow[] = [...porPatente.entries()]
-    .map(([patente, bultos]) => ({
+  const por_patente: VentasPatenteRow[] = [...porPatenteAgg.entries()]
+    .map(([patente, agg]) => ({
       patente,
       chofer_nombre: choferIdx.get(patente) ?? null,
-      bultos,
+      bultos: agg.bultos,
+      hl: agg.hl,
     }))
     .sort((a, b) => b.bultos - a.bultos)
 
   return {
     fecha,
-    total_bultos: total,
-    patentes_con_venta: porPatente.size,
-    promedio_mes_anterior: promedio,
+    total_bultos: totalBultos,
+    total_hl: Math.round(totalHl * 100) / 100,
+    patentes_con_venta: porPatenteAgg.size,
+    promedio_bultos_mes_anterior: promedioBultos,
+    promedio_hl_mes_anterior: promedioHl,
     por_patente,
   }
 }

@@ -696,9 +696,11 @@ export function ReunionDetallePageClient({
     null,
   )
   // Detalle del día seleccionado al hacer click en celda Bultos vendidos
-  const [ventasDetalleFecha, setVentasDetalleFecha] = useState<string | null>(
+  const [ventasBultosFecha, setVentasBultosFecha] = useState<string | null>(
     null,
   )
+  // Detalle del día seleccionado al hacer click en celda HL vendidos
+  const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
 
@@ -1138,11 +1140,18 @@ export function ReunionDetallePageClient({
                           }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
+                          const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
-                          const clickable = (esRechazosPct || esBultosVendidos || esTml) && muestra
+                          const clickable =
+                            (esRechazosPct ||
+                              esBultosVendidos ||
+                              esHlVendidos ||
+                              esTml) &&
+                            muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
-                            else if (esBultosVendidos) setVentasDetalleFecha(f)
+                            else if (esBultosVendidos) setVentasBultosFecha(f)
+                            else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
                           }
                           const contenido = muestra
@@ -1415,11 +1424,21 @@ export function ReunionDetallePageClient({
       />
 
       <VentasDetalleDiaDialog
-        open={ventasDetalleFecha !== null}
+        open={ventasBultosFecha !== null}
         onOpenChange={(o) => {
-          if (!o) setVentasDetalleFecha(null)
+          if (!o) setVentasBultosFecha(null)
         }}
-        fecha={ventasDetalleFecha}
+        fecha={ventasBultosFecha}
+        metrica="bultos"
+      />
+
+      <VentasDetalleDiaDialog
+        open={ventasHlFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setVentasHlFecha(null)
+        }}
+        fecha={ventasHlFecha}
+        metrica="hl"
       />
 
       <TmlDetalleDiaDialog

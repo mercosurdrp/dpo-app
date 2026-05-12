@@ -24,13 +24,68 @@ import {
   type VentasResumenDia,
 } from "@/actions/ventas-resumen-dia"
 
+type Metrica = "bultos" | "hl"
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   fecha: string | null
+  metrica: Metrica
 }
 
-export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
+interface MetricaCfg {
+  label: string
+  unidad: string
+  total: (d: VentasResumenDia) => number
+  promedio: (d: VentasResumenDia) => number | null
+  porPatente: (
+    d: VentasResumenDia,
+  ) => Array<{ patente: string; chofer_nombre: string | null; valor: number }>
+  formatValor: (n: number) => string
+}
+
+const CONFIG: Record<Metrica, MetricaCfg> = {
+  bultos: {
+    label: "Bultos vendidos",
+    unidad: "bultos",
+    total: (d) => d.total_bultos,
+    promedio: (d) => d.promedio_bultos_mes_anterior,
+    porPatente: (d) =>
+      d.por_patente.map((p) => ({
+        patente: p.patente,
+        chofer_nombre: p.chofer_nombre,
+        valor: p.bultos,
+      })),
+    formatValor: (n) =>
+      new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n),
+  },
+  hl: {
+    label: "HL vendidos",
+    unidad: "HL",
+    total: (d) => d.total_hl,
+    promedio: (d) => d.promedio_hl_mes_anterior,
+    porPatente: (d) =>
+      d.por_patente
+        .map((p) => ({
+          patente: p.patente,
+          chofer_nombre: p.chofer_nombre,
+          valor: p.hl,
+        }))
+        .sort((a, b) => b.valor - a.valor),
+    formatValor: (n) =>
+      new Intl.NumberFormat("es-AR", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(n),
+  },
+}
+
+export function VentasDetalleDiaDialog({
+  open,
+  onOpenChange,
+  fecha,
+  metrica,
+}: Props) {
   const [data, setData] = useState<VentasResumenDia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,17 +114,19 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
     }
   }, [open, fecha])
 
-  const promedio = data?.promedio_mes_anterior ?? null
-  const total = data?.total_bultos ?? 0
+  const cfg = CONFIG[metrica]
+  const total = data ? cfg.total(data) : 0
+  const promedio = data ? cfg.promedio(data) : null
   const superaPromedio =
     promedio != null && promedio > 0 ? total >= promedio : null
+  const filas = data ? cfg.porPatente(data) : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1100px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1100px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Bultos vendidos
+            {cfg.label}
             {fecha && (
               <span className="text-base font-normal text-muted-foreground">
                 · {formatFechaLarga(fecha)}
@@ -77,7 +134,8 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
             )}
           </DialogTitle>
           <DialogDescription>
-            Desglose del volumen entregado del día por patente.
+            Desglose del volumen entregado del día por patente
+            {metrica === "hl" ? " (en hectolitros)" : ""}.
           </DialogDescription>
         </DialogHeader>
 
@@ -98,8 +156,8 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <KpiCard
-                label="Bultos del día"
-                value={formatInt(data.total_bultos)}
+                label={`${cfg.label} del día`}
+                value={`${cfg.formatValor(total)} ${cfg.unidad}`}
                 sub="total entregado"
                 valueClassName={
                   superaPromedio == null
@@ -116,8 +174,12 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
               />
               <KpiCard
                 label="Promedio mes anterior"
-                value={promedio == null ? "—" : formatInt(promedio)}
-                sub="bultos/día"
+                value={
+                  promedio == null
+                    ? "—"
+                    : `${cfg.formatValor(promedio)} ${cfg.unidad}`
+                }
+                sub={`${cfg.unidad}/día`}
               />
             </div>
 
@@ -133,22 +195,28 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                 {superaPromedio ? (
                   <>
                     El día <strong>supera</strong> el promedio del mes anterior
-                    por <strong>{formatInt(data.total_bultos - (promedio ?? 0))}</strong> bultos.
+                    por{" "}
+                    <strong>
+                      {cfg.formatValor(total - (promedio ?? 0))} {cfg.unidad}
+                    </strong>
+                    .
                   </>
                 ) : (
                   <>
                     El día está <strong>por debajo</strong> del promedio del mes
                     anterior por{" "}
-                    <strong>{formatInt((promedio ?? 0) - data.total_bultos)}</strong>{" "}
-                    bultos.
+                    <strong>
+                      {cfg.formatValor((promedio ?? 0) - total)} {cfg.unidad}
+                    </strong>
+                    .
                   </>
                 )}
               </div>
             )}
 
             <Section
-              title="Bultos por patente"
-              subtitle={`${data.por_patente.length} patente${data.por_patente.length === 1 ? "" : "s"} con venta`}
+              title={`${cfg.label === "HL vendidos" ? "HL" : "Bultos"} por patente`}
+              subtitle={`${filas.length} patente${filas.length === 1 ? "" : "s"} con venta`}
             >
               <Table>
                 <TableHeader>
@@ -156,12 +224,14 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead className="w-32">Patente</TableHead>
                     <TableHead>Chofer</TableHead>
-                    <TableHead className="w-28 text-right">Bultos</TableHead>
+                    <TableHead className="w-28 text-right">
+                      {cfg.unidad}
+                    </TableHead>
                     <TableHead className="w-24 text-right">% del día</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.por_patente.length === 0 && (
+                  {filas.length === 0 && (
                     <TableRow>
                       <TableCell
                         colSpan={5}
@@ -171,11 +241,8 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                       </TableCell>
                     </TableRow>
                   )}
-                  {data.por_patente.map((p, i) => {
-                    const pct =
-                      data.total_bultos > 0
-                        ? (p.bultos / data.total_bultos) * 100
-                        : 0
+                  {filas.map((p, i) => {
+                    const pct = total > 0 ? (p.valor / total) * 100 : 0
                     return (
                       <TableRow key={p.patente}>
                         <TableCell className="text-muted-foreground">
@@ -192,7 +259,7 @@ export function VentasDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">
-                          {formatInt(p.bultos)}
+                          {cfg.formatValor(p.valor)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {pct.toFixed(1)}%
