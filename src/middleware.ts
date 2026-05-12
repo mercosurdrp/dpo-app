@@ -20,7 +20,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/asistencia") ||
     pathname === "/api/rechazos/sync" ||
     pathname === "/api/reuniones/cron-crear-diarias" ||
-    pathname === "/api/requisitos-legales/cron-alertas"
+    pathname === "/api/requisitos-legales/cron-alertas" ||
+    pathname === "/api/orden-salida/cron-sync"
   ) {
     return NextResponse.next()
   }
