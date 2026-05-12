@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
+import {
+  buildAperturaPickingDelDia,
+  buildWarehouseSerieDiaria,
+  OPERADORES_APERTURA,
+  type AperturaPickingDelDia,
+  type OperadorApertura,
+} from "@/lib/warehouse/auto-indicadores"
 import type {
   Profile,
   TipoReunion,
@@ -1843,6 +1850,17 @@ export async function getIndicadoresMes(
       "hectolitros vendidos",
       "hl",
     ])
+    // Para warehouse, los 6 KPIs del handbook (WQI/FGLI/SCL/Precision picking/
+    // Capacidad utilizada/Productividad de picking) se computan on-the-fly desde
+    // fuentes externas — ver src/lib/warehouse/auto-indicadores.ts.
+    if (tipo === "warehouse") {
+      NOMBRES_AUTO.add("wqi")
+      NOMBRES_AUTO.add("fgli")
+      NOMBRES_AUTO.add("scl")
+      NOMBRES_AUTO.add("precision picking")
+      NOMBRES_AUTO.add("capacidad utilizada")
+      NOMBRES_AUTO.add("productividad de picking")
+    }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
     )
@@ -2274,6 +2292,131 @@ export async function getIndicadoresMes(
       }
     }
 
+    // 7d. Indicadores AUTO warehouse — 6 KPIs del handbook 2025.
+    //     Vienen de deposito-esteban.vercel.app (APIs públicas) + Google Sheet
+    //     de errores picking. Tolerante a fallos: si una fuente cae, su KPI
+    //     queda en null pero el resto sigue. Para detalle por operador del
+    //     día, ver getAperturaPickingDia() y el dialog AperturaPickingDetalleDiaDialog.
+    if (tipo === "warehouse") {
+      const serie = await buildWarehouseSerieDiaria(fechas, fecha)
+
+      function buildSerieRow(
+        id: string,
+        nombre: string,
+        unidad: string,
+        porFecha: Record<string, number | null>,
+        agregacion: "suma" | "promedio",
+        mejorSi: "menor" | "mayor" | undefined,
+      ): ReunionIndicadoresMes["indicadores"][number] {
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        const numericos: number[] = []
+        for (const f of fechas) {
+          const v = porFecha[f] ?? null
+          valoresPorFecha[f] = {
+            reunion_id: "auto",
+            valor: v,
+            observacion: null,
+          }
+          if (v !== null && Number.isFinite(v) && f <= fecha) {
+            numericos.push(v)
+          }
+        }
+        let mtd: number | null = null
+        if (numericos.length > 0) {
+          if (agregacion === "suma") {
+            mtd = numericos.reduce((a, b) => a + b, 0)
+          } else {
+            mtd =
+              numericos.reduce((a, b) => a + b, 0) / numericos.length
+          }
+        }
+        return {
+          id,
+          nombre,
+          unidad,
+          meta: null,
+          orden: -1,
+          agregacion,
+          valores: valoresPorFecha,
+          mtd,
+          auto: true,
+          mejor_si: mejorSi,
+          // WQI/FGLI/SCL son MTD-del-mes replicado, no diarios. Para esos no
+          // tiene sentido "MTD recomputado" del array → tomamos el valor del
+          // día de la reunión directamente.
+        }
+      }
+
+      // WQI/FGLI/SCL: MTD del mes (mismo valor en cada celda hasta la fecha
+      // de la reunión). El MTD del indicador es justamente ese valor.
+      function buildMtdReplicadoRow(
+        id: string,
+        nombre: string,
+        unidad: string,
+        porFecha: Record<string, number | null>,
+        mejorSi: "menor" | "mayor" | undefined,
+      ): ReunionIndicadoresMes["indicadores"][number] {
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        for (const f of fechas) {
+          valoresPorFecha[f] = {
+            reunion_id: "auto",
+            valor: porFecha[f] ?? null,
+            observacion: null,
+          }
+        }
+        // MTD es el valor en la fecha de la reunión (mismo replicado).
+        const mtd = porFecha[fecha] ?? null
+        return {
+          id,
+          nombre,
+          unidad,
+          meta: null,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresPorFecha,
+          mtd,
+          auto: true,
+          mejor_si: mejorSi,
+        }
+      }
+
+      indicadoresAuto.push(
+        buildMtdReplicadoRow("auto_wqi", "WQI", "PPM", serie.wqi, "menor"),
+        buildMtdReplicadoRow("auto_fgli", "FGLI", "HL", serie.fgli, "menor"),
+        buildMtdReplicadoRow("auto_scl", "SCL", "$", serie.scl, "menor"),
+        buildSerieRow(
+          "auto_capacidad_utilizada",
+          "Capacidad utilizada",
+          "%",
+          serie.capacidad,
+          "promedio",
+          undefined,
+        ),
+        buildSerieRow(
+          "auto_precision_picking",
+          "Precision picking",
+          "%",
+          serie.precision,
+          "promedio",
+          "mayor",
+        ),
+        buildSerieRow(
+          "auto_productividad_picking",
+          "Productividad de picking",
+          "bul/HH",
+          serie.productividad,
+          "promedio",
+          "mayor",
+        ),
+      )
+    }
+
     return {
       data: {
         anio,
@@ -2306,4 +2449,118 @@ function diasDelMes(anio: number, mes: number): string[] {
     fechas.push(`${anio}-${mm}-${String(d).padStart(2, "0")}`)
   }
   return fechas
+}
+
+// =============================================
+// Apertura por operador del día (sub-cuadro contextual — solo warehouse)
+// =============================================
+
+/**
+ * Devuelve la apertura por operador (Troli/Galvez/Ovejero) para una fecha específica.
+ * Datos en vivo desde el WMS + Google Sheet + overrides manuales de bul/HH.
+ */
+export async function getAperturaPickingDia(
+  reunionId: string,
+  fecha: string,
+): Promise<Result<AperturaPickingDelDia>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return { error: "Fecha inválida (formato esperado YYYY-MM-DD)" }
+    }
+
+    const { data: overridesRaw } = await supabase
+      .from("reunion_apertura_picking")
+      .select("operador, hl_hh")
+      .eq("reunion_id", reunionId)
+
+    const overrides = new Map<OperadorApertura, number | null>()
+    for (const a of (overridesRaw ?? []) as Array<{
+      operador: string
+      hl_hh: number | null
+    }>) {
+      const op = OPERADORES_APERTURA.find(
+        (o) => o.toLowerCase() === a.operador.toLowerCase(),
+      )
+      if (op && a.hl_hh !== null) overrides.set(op, Number(a.hl_hh))
+    }
+
+    const data = await buildAperturaPickingDelDia(fecha, overrides)
+    return { data }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error obteniendo apertura por operador",
+    }
+  }
+}
+
+/**
+ * Upsert del bul/HH manual para un operador en una reunión.
+ * El nombre de columna en la tabla es hl_hh (histórico de cuando la unidad
+ * planeada era HL/HH), pero conceptualmente es bul/HH.
+ * Permisos: igual que setIndicadorValor (editor O asistente activo).
+ */
+export async function setAperturaPickingHlHh(
+  reunionId: string,
+  operador: OperadorApertura,
+  bulHh: number | null,
+): Promise<Result<{ reunion_id: string; operador: string; hl_hh: number | null }>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!OPERADORES_APERTURA.includes(operador)) {
+      return { error: "Operador inválido" }
+    }
+    if (bulHh !== null && !Number.isFinite(bulHh)) {
+      return { error: "bul/HH inválido" }
+    }
+
+    if (!isEditorRole(profile.role)) {
+      const { data: asis } = await supabase
+        .from("reuniones_asistentes")
+        .select("id")
+        .eq("reunion_id", reunionId)
+        .eq("profile_id", profile.id)
+        .maybeSingle()
+      if (!asis) {
+        return {
+          error:
+            "Solo editores o asistentes de la reunión pueden cargar la apertura",
+        }
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("reunion_apertura_picking")
+      .upsert(
+        {
+          reunion_id: reunionId,
+          operador,
+          hl_hh: bulHh,
+        },
+        { onConflict: "reunion_id,operador" },
+      )
+      .select("reunion_id, operador, hl_hh")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as { reunion_id: string; operador: string; hl_hh: number | null } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error guardando apertura por operador",
+    }
+  }
 }

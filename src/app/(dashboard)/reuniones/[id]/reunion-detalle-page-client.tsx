@@ -55,6 +55,7 @@ import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
+import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -703,6 +704,12 @@ export function ReunionDetallePageClient({
   const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
+  // Detalle del día seleccionado al hacer click en celdas Precision picking
+  // o Productividad de picking (solo warehouse). Abre el sub-cuadro con los 3
+  // operadores Troli/Galvez/Ovejero para esa fecha.
+  const [aperturaPickingFecha, setAperturaPickingFecha] = useState<string | null>(
+    null,
+  )
 
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
@@ -1142,17 +1149,22 @@ export function ReunionDetallePageClient({
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
+                          const esAperturaPicking =
+                            ind.id === "auto_precision_picking" ||
+                            ind.id === "auto_productividad_picking"
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
                               esHlVendidos ||
-                              esTml) &&
+                              esTml ||
+                              esAperturaPicking) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
                             else if (esBultosVendidos) setVentasBultosFecha(f)
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
+                            else if (esAperturaPicking) setAperturaPickingFecha(f)
                           }
                           const contenido = muestra
                             ? esPct
@@ -1447,6 +1459,17 @@ export function ReunionDetallePageClient({
           if (!o) setTmlDetalleFecha(null)
         }}
         fecha={tmlDetalleFecha}
+      />
+
+      <AperturaPickingDetalleDiaDialog
+        open={aperturaPickingFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setAperturaPickingFecha(null)
+        }}
+        reunionId={detalle.id}
+        fecha={aperturaPickingFecha}
+        puedeEditar={puedeEditarTablero}
+        onChange={refrescar}
       />
     </div>
   )
