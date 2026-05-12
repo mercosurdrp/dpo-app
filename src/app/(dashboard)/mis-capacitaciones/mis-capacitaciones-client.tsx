@@ -45,6 +45,7 @@ import { checkInReunion } from "@/actions/reunion-preruta"
 import type { Capacitacion, Asistencia } from "@/types/database"
 import type { MiDashboardData } from "@/actions/mi-asistencia"
 import type { MiEntregaData } from "@/actions/mi-entrega"
+import type { MisSobrecargasResumen } from "@/actions/sobrecargas"
 
 const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -55,6 +56,11 @@ interface Props {
   reunion: { marcado: boolean; hora_checkin: string | null; minutos: number | null }
   dashboard: MiDashboardData | null
   entrega: MiEntregaData | null
+  sobrecargas: MisSobrecargasResumen | null
+}
+
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 
 function formatHoraAR(fecha: string | null): string {
@@ -85,7 +91,7 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashboard, entrega }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashboard, entrega, sobrecargas }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
   const [loading, setLoading] = useState(false)
@@ -241,7 +247,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className={`grid grid-cols-2 ${sobrecargas ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-4"} gap-3`}>
               <div className="rounded-lg bg-green-50 p-3 text-center">
                 <TrendingUp className="mx-auto size-5 text-green-600 mb-1" />
                 <p className="text-2xl font-bold text-green-700">{dashboard.resumen_mes.dias_trabajados}</p>
@@ -262,6 +268,20 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, dashb
                 <p className="text-2xl font-bold text-amber-700">{dashboard.resumen_mes.tardanzas}</p>
                 <p className="text-xs text-amber-600">Tardanzas</p>
               </div>
+              {sobrecargas && (
+                <>
+                  <div className="rounded-lg bg-rose-50 p-3 text-center" title="Sobrecargas completas asignadas como chofer o ayudante este mes">
+                    <Package className="mx-auto size-5 text-rose-600 mb-1" />
+                    <p className="text-2xl font-bold text-rose-700">{fmtNum(sobrecargas.mesActual.sobrecargas)}</p>
+                    <p className="text-xs text-rose-600">Sobrecargas</p>
+                  </div>
+                  <div className="rounded-lg bg-orange-50 p-3 text-center" title="Medias sobrecargas — la 1/4 SC cuenta como 0.5">
+                    <Package className="mx-auto size-5 text-orange-600 mb-1" />
+                    <p className="text-2xl font-bold text-orange-700">{fmtNum(sobrecargas.mesActual.medias)}</p>
+                    <p className="text-xs text-orange-600">Medias SC</p>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
