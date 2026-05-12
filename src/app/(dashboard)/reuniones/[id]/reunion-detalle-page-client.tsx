@@ -54,6 +54,7 @@ import { ResponderActividadDialog } from "@/components/reuniones/responder-activ
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
+import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -698,6 +699,8 @@ export function ReunionDetallePageClient({
   const [ventasDetalleFecha, setVentasDetalleFecha] = useState<string | null>(
     null,
   )
+  // Detalle del día seleccionado al hacer click en celda TML
+  const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
 
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
@@ -1135,10 +1138,12 @@ export function ReunionDetallePageClient({
                           }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
-                          const clickable = (esRechazosPct || esBultosVendidos) && muestra
+                          const esTml = ind.id === "auto_tml"
+                          const clickable = (esRechazosPct || esBultosVendidos || esTml) && muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
                             else if (esBultosVendidos) setVentasDetalleFecha(f)
+                            else if (esTml) setTmlDetalleFecha(f)
                           }
                           const contenido = muestra
                             ? esPct
@@ -1415,6 +1420,14 @@ export function ReunionDetallePageClient({
           if (!o) setVentasDetalleFecha(null)
         }}
         fecha={ventasDetalleFecha}
+      />
+
+      <TmlDetalleDiaDialog
+        open={tmlDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setTmlDetalleFecha(null)
+        }}
+        fecha={tmlDetalleFecha}
       />
     </div>
   )

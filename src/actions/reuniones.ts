@@ -1837,6 +1837,8 @@ export async function getIndicadoresMes(
       "rechazos %",
       "bultos vendidos",
       "bultos entregados",
+      "tml",
+      "tiempo medio de liberación",
     ])
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -2146,6 +2148,69 @@ export async function getIndicadoresMes(
           auto: true,
           mostrar_cero: true,
           mejor_si: "mayor",
+        })
+      }
+    }
+
+    // 7d. Indicador AUTO "TML" (Tiempo Medio de Liberación) — todos los tipos.
+    //     Promedio diario de tml_minutos en registros_vehiculos (tipo=egreso,
+    //     tml_minutos NOT NULL). Meta 21 min. mejor_si=menor.
+    //     MTD = promedio ponderado por # de egresos (Σ minutos / Σ egresos).
+    {
+      const { data: tmlRaw, error: errTml } = await supabase
+        .from("registros_vehiculos")
+        .select("fecha, tml_minutos")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .eq("tipo", "egreso")
+        .not("tml_minutos", "is", null)
+
+      if (!errTml) {
+        const sumPorFecha: Record<string, number> = {}
+        const countPorFecha: Record<string, number> = {}
+        for (const r of (tmlRaw ?? []) as Array<{
+          fecha: string
+          tml_minutos: number | null
+        }>) {
+          const t = Number(r.tml_minutos ?? 0)
+          if (!Number.isFinite(t)) continue
+          sumPorFecha[r.fecha] = (sumPorFecha[r.fecha] ?? 0) + t
+          countPorFecha[r.fecha] = (countPorFecha[r.fecha] ?? 0) + 1
+        }
+
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        let sumMtd = 0
+        let countMtd = 0
+        for (const f of fechas) {
+          const cnt = countPorFecha[f] ?? 0
+          const sum = sumPorFecha[f] ?? 0
+          const prom = cnt > 0 ? Math.round(sum / cnt) : null
+          valoresPorFecha[f] = {
+            reunion_id: "auto",
+            valor: prom,
+            observacion: null,
+          }
+          if (f <= fecha) {
+            sumMtd += sum
+            countMtd += cnt
+          }
+        }
+        const mtd = countMtd > 0 ? Math.round(sumMtd / countMtd) : null
+
+        indicadoresAuto.push({
+          id: "auto_tml",
+          nombre: "TML",
+          unidad: "min",
+          meta: 21,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresPorFecha,
+          mtd,
+          auto: true,
+          mejor_si: "menor",
         })
       }
     }

@@ -14,7 +14,7 @@ import type {
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
-const TML_META_MINUTOS = 30
+const TML_META_MINUTOS = 21
 
 function calcTml(hora: string, horaEntrada: number): number {
   const [h, m] = hora.split(":").map(Number)
