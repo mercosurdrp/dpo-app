@@ -19,6 +19,7 @@ import {
   Radio,
   FolderOpen,
   Package,
+  Route as RouteIcon,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -222,6 +223,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Sobrecargas y medias por mes y por persona — Pilar Entrega
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {IS_MISIONES && (
+            <Link href="/indicadores/fueras-de-ruta">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-orange-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-orange-100 text-orange-600 group-hover:bg-orange-200 transition-colors">
+                    <RouteIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Fueras de Ruta
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Pedidos cuya fecha de entrega no coincide con el día de visita del cliente
                     </p>
                   </div>
                 </CardContent>

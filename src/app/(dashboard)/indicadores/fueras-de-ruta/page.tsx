@@ -1,0 +1,63 @@
+import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
+import { getFuerasDeRutaIndicador } from "@/actions/fueras-de-ruta"
+import { IS_MISIONES } from "@/lib/empresa"
+import { requireAuth } from "@/lib/session"
+import { FuerasDeRutaClient } from "./fueras-de-ruta-client"
+
+const ROLES_PUEDEN_SYNC = ["admin", "admin_rrhh", "supervisor"]
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
+export default async function FuerasDeRutaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const profile = await requireAuth()
+  const canSync = ROLES_PUEDEN_SYNC.includes(profile.role)
+
+  if (!IS_MISIONES) {
+    return (
+      <div className="space-y-4">
+        <Link
+          href="/indicadores"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-slate-900 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
+        </Link>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          El indicador de Fueras de Ruta solo está disponible en Misiones.
+        </div>
+      </div>
+    )
+  }
+
+  const sp = await searchParams
+  const desde = typeof sp.desde === "string" ? sp.desde : undefined
+  const hasta = typeof sp.hasta === "string" ? sp.hasta : undefined
+
+  const res = await getFuerasDeRutaIndicador({ desde, hasta })
+
+  return (
+    <div className="space-y-4">
+      <Link
+        href="/indicadores"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-slate-900 transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
+      </Link>
+      {"error" in res ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <h1 className="text-lg font-semibold text-red-900">
+            No se pudo cargar Fueras de Ruta
+          </h1>
+          <p className="mt-1 text-sm text-red-700">{res.error}</p>
+        </div>
+      ) : (
+        <FuerasDeRutaClient data={res.data} canSync={canSync} />
+      )}
+    </div>
+  )
+}
