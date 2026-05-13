@@ -270,28 +270,37 @@ export async function syncRechazosForDate(
   }
 
   // ---- upsert ventas_diarias (solo FCVTA + patente válida) ----
+  // Agregamos por (fletero, vendedor) para soportar ranking por vendedor.
+  // La query del chofer sigue funcionando con SUM(total_bultos) GROUP BY fletero.
   const ventasFCVTA = ventas.filter(
     (v) => v.idDocumento === "FCVTA" && v.anulado !== "SI" && isPatenteValida(v.dsFleteroCarga)
   )
-  type Agg = { bultos: number; unidades: number; hl: number; planillas: Set<string> }
+  type Agg = { bultos: number; unidades: number; hl: number; planillas: Set<string>; ds_vendedor: string | null }
   const agg = new Map<string, Agg>()
   for (const v of ventasFCVTA) {
-    const a = agg.get(v.dsFleteroCarga) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>() }
+    const idV = Number(v.idVendedor ?? 0) || 0
+    const key = `${v.dsFleteroCarga}|${idV}`
+    const a = agg.get(key) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>(), ds_vendedor: v.dsVendedor ?? null }
     a.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
     a.unidades += Math.abs(Number(v.cantidadesTotal) || 0)
     a.hl += Math.abs(Number(v.unimedtotal) || 0)
     if (v.planillaCarga) a.planillas.add(v.planillaCarga)
-    agg.set(v.dsFleteroCarga, a)
+    if (!a.ds_vendedor && v.dsVendedor) a.ds_vendedor = v.dsVendedor
+    agg.set(key, a)
   }
-  for (const [fletero, a] of agg) {
+  for (const [key, a] of agg) {
+    const [fletero, idVStr] = key.split("|")
+    const id_vendedor = Number(idVStr) || 0
     const { error } = await supabase.from("ventas_diarias").upsert({
       fecha,
       ds_fletero_carga: fletero,
+      id_vendedor,
+      ds_vendedor: a.ds_vendedor,
       total_bultos: Math.round(a.bultos * 100) / 100,
       total_unidades: Math.round(a.unidades * 10000) / 10000,
       total_hl: Math.round(a.hl * 10000) / 10000,
       viajes: a.planillas.size,
-    }, { onConflict: "fecha,ds_fletero_carga" })
+    }, { onConflict: "fecha,ds_fletero_carga,id_vendedor" })
     if (error) {
       console.error(`[sync] error upsert ventas_diarias day=${fecha}: ${error.message}`)
       result.errors.push({ day: fecha, kind: "ventas_diarias", message: error.message })

@@ -13,6 +13,7 @@ import { DistribucionCanal } from "./distribucion-canal"
 import { RankingChoferes } from "./ranking-choferes"
 import { RankingClientes } from "./ranking-clientes"
 import { RankingProductos } from "./ranking-productos"
+import { RankingVendedores } from "./ranking-vendedores"
 import { TopVariacionesBloque } from "./top-variaciones"
 import { DrillDownSheet, type DrillTo } from "./drill-down-sheet"
 import { EmptyState } from "./empty-state"
@@ -71,6 +72,10 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
               por_chofer={data.agg.por_chofer}
               tasaPromedio={data.actual.tasa}
               onDrillTo={openDrill}
+            />
+            <RankingVendedores
+              por_vendedor={data.agg.por_vendedor}
+              tasaPromedio={data.actual.tasa}
             />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={openDrill} />

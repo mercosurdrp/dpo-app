@@ -218,6 +218,19 @@ export interface RechazosAggSupervisor {
   monto: number
 }
 
+export interface RechazosAggVendedor {
+  id_vendedor: number
+  ds_vendedor: string                                 // COALESCE(ds_vendedor, "(id N)")
+  bultos: number                                      // bultos rechazados
+  eventos: number
+  monto: number                                       // monto_neto
+  total_entregados: number                            // Σ ventas_diarias.total_bultos para el vendedor
+  /** bultos_rechazados / total_entregados × 100. 0 si denominador <= 0. */
+  tasa: number
+  /** false si total_entregados <= 0 (sin denominador real). */
+  denominador_confiable: boolean
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 //  Mayores variaciones (highlights accionables)
 // ────────────────────────────────────────────────────────────────────────────
@@ -423,6 +436,11 @@ export interface RechazosComparado {
     por_producto: RechazosAggProducto[]
     por_canal: RechazosAggCanal[]
     por_supervisor: RechazosAggSupervisor[]
+    /**
+     * Ranking de vendedores con tasa (rechazados / entregados).
+     * Excluye id_vendedor = 0 (ventas mostrador / sin vendedor real).
+     */
+    por_vendedor: RechazosAggVendedor[]
   }
 
   top_variaciones: TopVariaciones

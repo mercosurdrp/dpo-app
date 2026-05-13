@@ -20,6 +20,7 @@ import type {
   RechazosAggMotivo,
   RechazosAggProducto,
   RechazosAggSupervisor,
+  RechazosAggVendedor,
   RechazosComparado,
   RechazosComparadoRequest,
   RechazosComparadoResult,
@@ -52,6 +53,8 @@ interface RechazoRow {
   bultos_rechazados: number
   id_cliente: number | null
   nombre_cliente: string | null
+  id_vendedor: number | null
+  ds_vendedor: string | null
   monto_neto: number | null
   monto_bruto: number | null
   ds_canal_mkt: string | null
@@ -62,6 +65,7 @@ interface RechazoRow {
 interface VentaDiariaRow {
   fecha: string
   ds_fletero_carga: string
+  id_vendedor: number | null
   total_bultos: number
 }
 
@@ -82,6 +86,7 @@ interface PeriodData {
   ventasTotalBultos: number
   ventasPorFecha: Map<string, number>
   ventasPorPatente: Map<string, number>
+  ventasPorVendedor: Map<number, number>
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -166,6 +171,7 @@ export async function getRechazosComparado(
       por_producto: computeAggProducto(actualData.rechazos),
       por_canal: computeAggCanal(actualData.rechazos, actualKPI.bultos),
       por_supervisor: computeAggSupervisor(actualData.rechazos),
+      por_vendedor: computeAggVendedor(actualData.rechazos, actualData.ventasPorVendedor),
     }
 
     const top_variaciones = computeTopVariaciones(
@@ -320,7 +326,7 @@ async function loadPeriodData(
   if (e1) throw new Error(`rechazos query: ${e1.message}`)
 
   let ventaQuery = supa.from("ventas_diarias")
-    .select("fecha,ds_fletero_carga,total_bultos")
+    .select("fecha,ds_fletero_carga,id_vendedor,total_bultos")
     .gte("fecha", desde).lte("fecha", hasta)
   if (filters.ds_fletero_carga?.length) {
     ventaQuery = ventaQuery.in("ds_fletero_carga", filters.ds_fletero_carga)
@@ -330,12 +336,15 @@ async function loadPeriodData(
 
   const ventasPorFecha = new Map<string, number>()
   const ventasPorPatente = new Map<string, number>()
+  const ventasPorVendedor = new Map<number, number>()
   let ventasTotalBultos = 0
   for (const v of (ventas ?? []) as VentaDiariaRow[]) {
     const b = Number(v.total_bultos ?? 0)
     ventasTotalBultos += b
     ventasPorFecha.set(v.fecha, (ventasPorFecha.get(v.fecha) ?? 0) + b)
     ventasPorPatente.set(v.ds_fletero_carga, (ventasPorPatente.get(v.ds_fletero_carga) ?? 0) + b)
+    const idV = Number(v.id_vendedor ?? 0)
+    if (idV > 0) ventasPorVendedor.set(idV, (ventasPorVendedor.get(idV) ?? 0) + b)
   }
 
   return {
@@ -343,6 +352,7 @@ async function loadPeriodData(
     ventasTotalBultos,
     ventasPorFecha,
     ventasPorPatente,
+    ventasPorVendedor,
   }
 }
 
@@ -852,6 +862,56 @@ function computeAggSupervisor(rows: RechazoRow[]): RechazosAggSupervisor[] {
     map.set(k, cur)
   }
   return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+}
+
+function computeAggVendedor(
+  rows: RechazoRow[],
+  ventasPorVendedor: Map<number, number>,
+): RechazosAggVendedor[] {
+  const map = new Map<number, RechazosAggVendedor>()
+
+  // Sumar rechazos por id_vendedor
+  for (const r of rows) {
+    const idV = Number(r.id_vendedor ?? 0)
+    if (idV <= 0) continue                              // saltea VTA. MOSTRADOR / sin asignar
+    const cur = map.get(idV) ?? {
+      id_vendedor: idV,
+      ds_vendedor: r.ds_vendedor || `(id ${idV})`,
+      bultos: 0, eventos: 0, monto: 0,
+      total_entregados: 0, tasa: 0, denominador_confiable: false,
+    }
+    cur.bultos += Number(r.bultos_rechazados ?? 0)
+    cur.eventos += 1
+    cur.monto += Number(r.monto_neto ?? 0)
+    if (!cur.ds_vendedor || cur.ds_vendedor.startsWith("(id")) {
+      if (r.ds_vendedor) cur.ds_vendedor = r.ds_vendedor
+    }
+    map.set(idV, cur)
+  }
+
+  // Cerrar con denominador
+  const out: RechazosAggVendedor[] = []
+  for (const v of map.values()) {
+    const denom = ventasPorVendedor.get(v.id_vendedor) ?? 0
+    v.total_entregados = denom
+    if (denom > 0 && v.bultos <= denom) {
+      v.tasa = (v.bultos / denom) * 100
+      v.denominador_confiable = true
+    } else {
+      v.tasa = 0
+      v.denominador_confiable = false
+    }
+    out.push(v)
+  }
+
+  // Sort: primero los confiables por tasa desc, después los no-confiables por bultos desc
+  return out.sort((a, b) => {
+    if (a.denominador_confiable !== b.denominador_confiable) {
+      return a.denominador_confiable ? -1 : 1
+    }
+    if (a.denominador_confiable) return b.tasa - a.tasa
+    return b.bultos - a.bultos
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────
