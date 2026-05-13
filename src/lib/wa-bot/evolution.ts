@@ -41,6 +41,31 @@ export function jidToPhone(remoteJid: string | null | undefined): string | null 
   return m ? m[1] : null
 }
 
+/**
+ * Resuelve el número real desde una key de mensaje Evolution.
+ *
+ * WhatsApp introdujo en 2026 el formato "@lid" (Linked Identity) en algunos
+ * chats. Cuando llega un mensaje con remoteJid="<id>@lid", el número real
+ * viene en `remoteJidAlt` (con formato normal "<number>@s.whatsapp.net").
+ * Si no hay @lid, usamos remoteJid directo.
+ */
+export interface EvolutionKey {
+  remoteJid?: string | null
+  remoteJidAlt?: string | null
+  participant?: string | null
+  addressingMode?: string | null
+}
+
+export function resolvePhoneFromKey(key: EvolutionKey | null | undefined): string | null {
+  if (!key) return null
+  const isLid = key.remoteJid?.endsWith("@lid") || key.addressingMode === "lid"
+  if (isLid && key.remoteJidAlt) {
+    const phone = jidToPhone(key.remoteJidAlt)
+    if (phone) return phone
+  }
+  return jidToPhone(key.remoteJid)
+}
+
 /** Extrae el texto de un message Evolution (varias formas posibles). */
 export interface EvolutionMessage {
   conversation?: string

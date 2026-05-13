@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { chessLogin } from "@/lib/wa-bot/chess"
-import { extractText, jidToPhone, sendText, type EvolutionMessage } from "@/lib/wa-bot/evolution"
+import { extractText, resolvePhoneFromKey, sendText, type EvolutionMessage } from "@/lib/wa-bot/evolution"
 import { formatTopPedidosMessage } from "@/lib/wa-bot/format"
 import { getTopPedidosForVendedor } from "@/lib/wa-bot/pedidos"
 
@@ -40,7 +40,14 @@ interface EvolutionWebhookPayload {
   event?: string
   instance?: string
   data?: {
-    key?: { remoteJid?: string; fromMe?: boolean; id?: string }
+    key?: {
+      remoteJid?: string
+      remoteJidAlt?: string                      // formato número real cuando remoteJid es @lid
+      participant?: string
+      addressingMode?: string                    // "lid" | "pn" | undefined
+      fromMe?: boolean
+      id?: string
+    }
     message?: EvolutionMessage
     pushName?: string
   }
@@ -75,8 +82,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ignored: "fromMe_or_no_key" })
   }
 
-  // 3) Extraer texto + número
-  const phone = jidToPhone(key.remoteJid)
+  // 3) Extraer texto + número (soporta formato nuevo "@lid")
+  const phone = resolvePhoneFromKey(key)
   const text = extractText(payload.data?.message)?.trim() ?? ""
   if (!phone) return NextResponse.json({ ignored: "no_phone" })
 
