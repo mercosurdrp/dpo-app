@@ -35,7 +35,6 @@ export interface ChessRutaVentaFull {
   idPersonal?: number | null
   desPersonal?: string | null
   idModoAtencion?: string | number | null
-  diasVisita?: number[] | string | null
   anulado?: string | boolean | null
   fechaHasta?: string | null
   fechaInicioFuerza?: string | null
@@ -44,12 +43,15 @@ export interface ChessRutaVentaFull {
 // Tipo independiente (no extiende ChessClienteFuerza del wa-bot porque ese
 // tipa idModoAtencion como number, pero Chess en la práctica devuelve string
 // 'PRE'/'TEL'/'MER'). Tipamos defensivo y normalizamos al usarlo.
+// `diasEntrega` es lo que define el día PACTADO de reparto al cliente
+// (distinto de `diasVisita` que es cuándo lo visita la preventa).
 interface ChessClienteFuerzaLoose {
   idRuta: number
   idModoAtencion?: string | number | null
   anulado?: string | boolean | null
   fechaInicioFuerza?: string | null
   fechaHasta?: string | null
+  diasEntrega?: string | number[] | null
 }
 
 // ───────────────────────── Util ─────────────────────────
@@ -69,7 +71,7 @@ function chessFetch(url: string, init?: RequestInit): Promise<Response> {
  * Equivalencia: iso = (chess === 1) ? 7 : chess - 1.
  * Acepta arrays, CSV strings, o cualquier shape; descarta valores fuera de 1-7.
  */
-export function parseDiasVisitaToIso(input: unknown): number[] {
+export function parseChessDiasToIso(input: unknown): number[] {
   const raw: number[] = []
   if (Array.isArray(input)) {
     for (const v of input) {
@@ -105,7 +107,7 @@ export function pickFuerzaPreVigente(c: ChessCliente): ChessClienteFuerzaLoose |
   return null
 }
 
-/** Trae el maestro de rutas con campos completos (incluye diasVisita). */
+/** Trae el maestro de rutas (sin diasVisita: ese campo no se usa en este indicador). */
 async function fetchRutasFull(
   creds: ChessCredentials,
   sessionId: string,
@@ -218,7 +220,6 @@ export async function runFuerasRutaSync(
         id_personal: r.idPersonal ?? null,
         des_personal: r.desPersonal ?? null,
         id_modo_atencion: r.idModoAtencion == null ? null : String(r.idModoAtencion),
-        dias_visita_iso: parseDiasVisitaToIso(r.diasVisita),
         anulado: false,
         synced_at: new Date().toISOString(),
       }))
@@ -259,6 +260,7 @@ export async function runFuerasRutaSync(
         calle_entrega: c.calleEntrega ?? null,
         altura_entrega:
           c.alturaEntrega == null ? null : String(c.alturaEntrega),
+        dias_entrega_iso: parseChessDiasToIso(f?.diasEntrega),
         synced_at: new Date().toISOString(),
       })
     }

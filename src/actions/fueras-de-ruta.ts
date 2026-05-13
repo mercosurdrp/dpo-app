@@ -26,7 +26,7 @@ export interface FueraRutaFila {
   des_ruta: string | null
   id_personal: number | null
   des_personal: string | null
-  dias_visita_iso: number[] | null
+  dias_entrega_iso: number[] | null
   dow_iso_entrega: number
   es_fuera_de_ruta: boolean | null
 }
@@ -131,7 +131,7 @@ export async function getFuerasDeRutaIndicador(
       const { data, error } = await supabase
         .from("v_fueras_de_ruta_misiones")
         .select(
-          "id_cliente, fecha_entrega, eliminado, items_total, items_no_anulados, unidades_total, monto_aprox, razon_social, des_canal_mkt, des_localidad, id_ruta, des_ruta, id_personal, des_personal, dias_visita_iso, dow_iso_entrega, es_fuera_de_ruta",
+          "id_cliente, fecha_entrega, eliminado, items_total, items_no_anulados, unidades_total, monto_aprox, razon_social, des_canal_mkt, des_localidad, id_ruta, des_ruta, id_personal, des_personal, dias_entrega_iso, dow_iso_entrega, es_fuera_de_ruta",
         )
         .gte("fecha_entrega", desde)
         .lte("fecha_entrega", hasta)

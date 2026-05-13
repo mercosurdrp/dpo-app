@@ -148,7 +148,7 @@ export function FuerasDeRutaClient({
       "id_ruta",
       "ruta",
       "promotor",
-      "dias_planificados",
+      "dias_entrega_pactados",
       "es_fuera_de_ruta",
       "items_no_anulados",
       "unidades_total",
@@ -165,7 +165,7 @@ export function FuerasDeRutaClient({
       f.id_ruta == null ? "" : String(f.id_ruta),
       f.des_ruta ?? "",
       f.des_personal ?? "",
-      (f.dias_visita_iso ?? []).map((d) => DIA_ABBR[d]).filter(Boolean).join("-"),
+      (f.dias_entrega_iso ?? []).map((d) => DIA_ABBR[d]).filter(Boolean).join("-"),
       f.es_fuera_de_ruta === null ? "S/D" : f.es_fuera_de_ruta ? "SI" : "NO",
       String(f.items_no_anulados),
       String(f.unidades_total),
@@ -185,8 +185,9 @@ export function FuerasDeRutaClient({
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Fueras de Ruta</h1>
           <p className="text-sm text-muted-foreground">
-            Pedidos cuya fecha de entrega no coincide con el día de visita planificado
-            para la ruta PRE del cliente. Fuente: Chess Misiones.
+            Pedidos cuya fecha de entrega no coincide con los días de entrega
+            pactados para el cliente (fuerza PRE, campo Chess <code>diasEntrega</code>).
+            Fuente: Chess Misiones.
           </p>
         </div>
         <div className="text-right">
@@ -448,7 +449,7 @@ export function FuerasDeRutaClient({
                   <TableHead>Localidad</TableHead>
                   <TableHead>Ruta</TableHead>
                   <TableHead>Promotor</TableHead>
-                  <TableHead>Días planif.</TableHead>
+                  <TableHead>Días entrega</TableHead>
                   <TableHead className="text-right">Items OK</TableHead>
                   <TableHead className="text-right">$ aprox</TableHead>
                   <TableHead>Estado</TableHead>
@@ -476,8 +477,8 @@ export function FuerasDeRutaClient({
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{f.des_personal ?? "—"}</TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {f.dias_visita_iso && f.dias_visita_iso.length > 0
-                          ? f.dias_visita_iso.map((d) => DIA_ABBR[d]).filter(Boolean).join(" · ")
+                        {f.dias_entrega_iso && f.dias_entrega_iso.length > 0
+                          ? f.dias_entrega_iso.map((d) => DIA_ABBR[d]).filter(Boolean).join(" · ")
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right">{fmtInt(f.items_no_anulados)}</TableCell>
