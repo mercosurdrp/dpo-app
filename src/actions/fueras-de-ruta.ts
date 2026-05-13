@@ -37,6 +37,7 @@ export interface AggPorPersonal {
   pedidos: number
   fuera_de_ruta: number
   porc: number
+  monto_fuera_de_ruta: number
 }
 
 export interface AggPorRuta {
@@ -46,6 +47,7 @@ export interface AggPorRuta {
   pedidos: number
   fuera_de_ruta: number
   porc: number
+  monto_fuera_de_ruta: number
 }
 
 export interface AggPorCliente {
@@ -179,9 +181,13 @@ export async function getFuerasDeRutaIndicador(
         pedidos: 0,
         fuera_de_ruta: 0,
         porc: 0,
+        monto_fuera_de_ruta: 0,
       }
       aggP.pedidos++
-      if (fuera) aggP.fuera_de_ruta++
+      if (fuera) {
+        aggP.fuera_de_ruta++
+        aggP.monto_fuera_de_ruta += Number(f.monto_aprox) || 0
+      }
       porPersonalMap.set(personalKey, aggP)
 
       const rutaKey = String(f.id_ruta ?? "null")
@@ -192,9 +198,13 @@ export async function getFuerasDeRutaIndicador(
         pedidos: 0,
         fuera_de_ruta: 0,
         porc: 0,
+        monto_fuera_de_ruta: 0,
       }
       aggR.pedidos++
-      if (fuera) aggR.fuera_de_ruta++
+      if (fuera) {
+        aggR.fuera_de_ruta++
+        aggR.monto_fuera_de_ruta += Number(f.monto_aprox) || 0
+      }
       porRutaMap.set(rutaKey, aggR)
 
       const aggC = porClienteMap.get(f.id_cliente) ?? {

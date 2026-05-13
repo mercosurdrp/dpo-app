@@ -190,41 +190,75 @@ export function FuerasDeRutaClient({
   const topPersonal = data.porPersonal.slice(0, 5)
   const topRutas = data.porRuta.slice(0, 5)
 
-  // Pareto: clientes ordenados desc por fuera_de_ruta + % acumulado.
-  // Mostramos hasta acumular ≥80% (mínimo 5, máximo 25) para no saturar.
+  // Pareto multi-dimensión: cliente / promotor / ruta
+  const [paretoDim, setParetoDim] = useState<"cliente" | "promotor" | "ruta">("cliente")
+
   const paretoData = useMemo(() => {
-    const totalFuera = data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
-    if (totalFuera === 0) return [] as Array<{
+    type Row = {
       label: string
-      razon: string
+      titulo: string
+      subtitulo: string | null
       fuera: number
       acumPct: number
       monto: number
-      promotor: string
-    }>
+    }
+    let fuente: Array<{ titulo: string; subtitulo: string | null; fuera: number; monto: number }>
+    if (paretoDim === "cliente") {
+      fuente = data.porCliente
+        .filter((c) => c.fuera_de_ruta > 0)
+        .map((c) => ({
+          titulo: c.razon_social ?? `#${c.id_cliente}`,
+          subtitulo: c.des_personal ?? c.des_localidad,
+          fuera: c.fuera_de_ruta,
+          monto: c.monto_fuera_de_ruta,
+        }))
+    } else if (paretoDim === "promotor") {
+      fuente = data.porPersonal
+        .filter((p) => p.fuera_de_ruta > 0)
+        .map((p) => ({
+          titulo: p.des_personal ?? `Promotor ${p.id_personal ?? "?"}`,
+          subtitulo: null,
+          fuera: p.fuera_de_ruta,
+          monto: p.monto_fuera_de_ruta,
+        }))
+    } else {
+      fuente = data.porRuta
+        .filter((r) => r.fuera_de_ruta > 0)
+        .map((r) => ({
+          titulo: r.des_ruta ?? (r.id_ruta == null ? "(sin ruta)" : `Ruta ${r.id_ruta}`),
+          subtitulo: r.des_personal,
+          fuera: r.fuera_de_ruta,
+          monto: r.monto_fuera_de_ruta,
+        }))
+    }
+    const total = fuente.reduce((s, c) => s + c.fuera, 0)
+    if (total === 0) return [] as Row[]
     let acum = 0
-    const rows: Array<{ label: string; razon: string; fuera: number; acumPct: number; monto: number; promotor: string }> = []
-    for (let i = 0; i < data.porCliente.length; i++) {
-      const c = data.porCliente[i]
-      acum += c.fuera_de_ruta
-      const pct = (acum / totalFuera) * 100
-      const razon = c.razon_social ?? `#${c.id_cliente}`
+    const rows: Row[] = []
+    for (const c of fuente) {
+      acum += c.fuera
+      const pct = (acum / total) * 100
       rows.push({
-        label: razon.length > 22 ? razon.slice(0, 20) + "…" : razon,
-        razon,
-        fuera: c.fuera_de_ruta,
+        label: c.titulo.length > 22 ? c.titulo.slice(0, 20) + "…" : c.titulo,
+        titulo: c.titulo,
+        subtitulo: c.subtitulo,
+        fuera: c.fuera,
         acumPct: Math.round(pct * 10) / 10,
-        monto: c.monto_fuera_de_ruta,
-        promotor: c.des_personal ?? "—",
+        monto: c.monto,
       })
       if (pct >= 80 && rows.length >= 5) break
       if (rows.length >= 25) break
     }
     return rows
-  }, [data.porCliente])
+  }, [paretoDim, data.porCliente, data.porPersonal, data.porRuta])
 
   const paretoCorte = paretoData.length > 0 ? paretoData[paretoData.length - 1].acumPct : 0
-  const totalFueraGlobal = data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
+  const totalFueraGlobal = useMemo(() => {
+    if (paretoDim === "cliente") return data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
+    if (paretoDim === "promotor") return data.porPersonal.reduce((s, p) => s + p.fuera_de_ruta, 0)
+    return data.porRuta.reduce((s, r) => s + r.fuera_de_ruta, 0)
+  }, [paretoDim, data.porCliente, data.porPersonal, data.porRuta])
+  const entidadLabel = paretoDim === "cliente" ? "clientes" : paretoDim === "promotor" ? "promotores" : "rutas"
 
   return (
     <div className="space-y-6">
@@ -360,31 +394,50 @@ export function FuerasDeRutaClient({
         </div>
       )}
 
-      {/* Pareto clientes — concentración de fueras de ruta */}
+      {/* Pareto — concentración de fueras de ruta (cliente / promotor / ruta) */}
       <Card>
         <CardContent className="pt-6">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-                Pareto — clientes con más fueras de ruta
+                Pareto — concentración de fueras de ruta
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Top clientes ordenados por cantidad de pedidos fuera de ruta, mostrados hasta llegar al 80 % acumulado.
+                Ordenado descendente por cantidad. Se muestra hasta 80 % acumulado (máx. 25).
                 La línea naranja es el acumulado % sobre el total del período.
               </p>
             </div>
-            {paretoData.length > 0 && (
-              <div className="text-right text-xs text-muted-foreground">
-                <div>
-                  <span className="font-medium text-slate-900">{paretoData.length}</span>{" "}
-                  cliente{paretoData.length === 1 ? "" : "s"} concentran{" "}
-                  <span className="font-medium text-slate-900">{paretoCorte.toFixed(1)} %</span>
-                </div>
-                <div>
-                  de los <span className="font-medium text-slate-900">{fmtInt(totalFueraGlobal)}</span> pedidos fuera de ruta
-                </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+                {(["cliente", "promotor", "ruta"] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setParetoDim(d)}
+                    className={
+                      "rounded px-3 py-1 capitalize transition " +
+                      (paretoDim === d
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-100")
+                    }
+                  >
+                    {d === "cliente" ? "Por cliente" : d === "promotor" ? "Por promotor" : "Por ruta"}
+                  </button>
+                ))}
               </div>
-            )}
+              {paretoData.length > 0 && (
+                <div className="text-right text-xs text-muted-foreground">
+                  <div>
+                    <span className="font-medium text-slate-900">{paretoData.length}</span>{" "}
+                    {entidadLabel} concentran{" "}
+                    <span className="font-medium text-slate-900">{paretoCorte.toFixed(1)} %</span>
+                  </div>
+                  <div>
+                    de los <span className="font-medium text-slate-900">{fmtInt(totalFueraGlobal)}</span> pedidos fuera de ruta
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           {paretoData.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin pedidos fuera de ruta en el período.</p>
@@ -422,8 +475,8 @@ export function FuerasDeRutaClient({
                         const p = payload[0].payload as typeof paretoData[number]
                         return (
                           <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
-                            <div className="font-medium text-slate-900">{p.razon}</div>
-                            <div className="mt-1 text-slate-600">Promotor: {p.promotor}</div>
+                            <div className="font-medium text-slate-900">{p.titulo}</div>
+                            {p.subtitulo && <div className="mt-1 text-slate-600">{p.subtitulo}</div>}
                             <div className="mt-1">
                               <span className="font-medium text-rose-700">{fmtInt(p.fuera)}</span> pedidos fuera
                             </div>
@@ -447,9 +500,12 @@ export function FuerasDeRutaClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10 text-right">#</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Localidad</TableHead>
-                      <TableHead>Promotor</TableHead>
+                      <TableHead>
+                        {paretoDim === "cliente" ? "Cliente" : paretoDim === "promotor" ? "Promotor" : "Ruta"}
+                      </TableHead>
+                      {paretoDim !== "promotor" && (
+                        <TableHead>{paretoDim === "cliente" ? "Promotor / Localidad" : "Promotor"}</TableHead>
+                      )}
                       <TableHead className="text-right">Pedidos fuera</TableHead>
                       <TableHead className="text-right">% acum.</TableHead>
                       <TableHead className="text-right">Monto fuera</TableHead>
@@ -457,11 +513,12 @@ export function FuerasDeRutaClient({
                   </TableHeader>
                   <TableBody>
                     {paretoData.map((row, idx) => (
-                      <TableRow key={row.razon + idx}>
+                      <TableRow key={row.titulo + idx}>
                         <TableCell className="text-right text-muted-foreground">{idx + 1}</TableCell>
-                        <TableCell className="font-medium">{row.razon}</TableCell>
-                        <TableCell className="text-sm">{data.porCliente[idx]?.des_localidad ?? "—"}</TableCell>
-                        <TableCell className="text-sm">{row.promotor}</TableCell>
+                        <TableCell className="font-medium">{row.titulo}</TableCell>
+                        {paretoDim !== "promotor" && (
+                          <TableCell className="text-sm">{row.subtitulo ?? "—"}</TableCell>
+                        )}
                         <TableCell className="text-right">{fmtInt(row.fuera)}</TableCell>
                         <TableCell className="text-right">{row.acumPct.toFixed(1)}%</TableCell>
                         <TableCell className="text-right">{fmtMoney(row.monto)}</TableCell>
