@@ -490,7 +490,8 @@ function computeKPI(
   const ticket_promedio = eventos_con_monto > 0 ? monto_neto / eventos_con_monto : 0
 
   return {
-    bultos, eventos, eventos_con_monto,
+    bultos, total_entregados: ventasTotalBultos,
+    eventos, eventos_con_monto,
     monto_neto, monto_bruto, total_hl: 0,
     tasa, pct_controlable, ticket_promedio,
     clientes_afectados: clientes.size,
@@ -515,6 +516,8 @@ function computeDelta(
   const delta: RechazosDelta = {
     bultos_abs:      actual.bultos - previous.bultos,
     bultos_pct:      pct(actual.bultos, previous.bultos),
+    total_entregados_abs: actual.total_entregados - previous.total_entregados,
+    total_entregados_pct: pct(actual.total_entregados, previous.total_entregados),
     eventos_abs:     actual.eventos - previous.eventos,
     eventos_pct:     pct(actual.eventos, previous.eventos),
     monto_neto_abs:  actual.monto_neto - previous.monto_neto,

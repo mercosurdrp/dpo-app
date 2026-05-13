@@ -69,6 +69,8 @@ export type ComparisonMode =
 export interface RechazosKPI {
   /** Σ bultos_rechazados (en cajas/packs según Chess, ver tooltip "Metodología en validación"). */
   bultos: number
+  /** Σ total_bultos entregados (denominador de `tasa`). Universo total del período. */
+  total_entregados: number
   /** Cantidad total de filas-rechazo en el período (incluye las que tienen monto_neto NULL). */
   eventos: number
   /** Subset de `eventos` que tienen monto_neto no-null. Base para `ticket_promedio`. */
@@ -95,6 +97,7 @@ export interface RechazosKPI {
  */
 export interface RechazosDelta {
   bultos_abs: number;          bultos_pct: number
+  total_entregados_abs: number; total_entregados_pct: number
   eventos_abs: number;         eventos_pct: number
   monto_neto_abs: number;      monto_neto_pct: number
   tasa_pp: number              // diferencia en puntos porcentuales (no %, no fracción)

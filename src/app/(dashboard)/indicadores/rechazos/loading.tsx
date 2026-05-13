@@ -23,11 +23,14 @@ export default function Loading() {
         <Skel className="h-16 w-full" />
       </div>
 
-      {/* KPI cards grid 6 */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skel key={i} className="h-28" />
-        ))}
+      {/* KPI hero + cards grid 6 */}
+      <div className="space-y-3">
+        <Skel className="h-28 w-full" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skel key={i} className="h-24" />
+          ))}
+        </div>
       </div>
 
       {/* Top variaciones grid */}
