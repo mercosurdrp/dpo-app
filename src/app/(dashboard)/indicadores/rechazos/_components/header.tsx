@@ -3,6 +3,7 @@
 import type { RechazosComparado } from "@/lib/types/rechazos"
 import { formatFecha } from "@/lib/format/rechazos"
 import { ExportCsvBtn } from "./export-csv-btn"
+import { SyncBtn } from "./sync-btn"
 
 const SOURCE_LABEL: Record<string, string> = {
   cron: "automático",
@@ -29,7 +30,10 @@ export function Header({ meta }: { meta: RechazosComparado["meta"] }) {
           <span title={meta.lastSync?.ran_at}>Última corrida: <span className="font-medium text-slate-700">{lastSync}</span></span>
         </div>
       </div>
-      <ExportCsvBtn defaultDesde={meta.actual.desde} defaultHasta={meta.actual.hasta} />
+      <div className="flex items-start gap-2">
+        <SyncBtn />
+        <ExportCsvBtn defaultDesde={meta.actual.desde} defaultHasta={meta.actual.hasta} />
+      </div>
     </header>
   )
 }
