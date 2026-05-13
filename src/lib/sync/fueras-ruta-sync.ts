@@ -189,17 +189,28 @@ export async function runFuerasRutaSync(
   try {
     const sessionId = await chessLogin(creds)
 
-    // ── 1) Rutas
+    // ── 1) Rutas. /rutasVenta/ devuelve varias filas por idRuta (histórico de
+    // fuerzas, distintos idPersonal, etc.). Dedupamos priorizando:
+    //   PRE vigente + idPersonal > 0  >  PRE vigente + idPersonal = 0
+    // Misma estrategia que daily_sync.py:_build_ruta_to_personal_map.
     const rutasAll = await fetchRutasFull(creds, sessionId)
-    const rutasPre: ChessRutaVentaFull[] = []
+    const rutasMap = new Map<number, ChessRutaVentaFull>()
     for (const r of rutasAll) {
       if (String(r.anulado ?? "").toLowerCase() === "true") continue
       const modo = String(r.idModoAtencion ?? "").toUpperCase()
       if (modo && modo !== "PRE") continue
       const hasta = String(r.fechaHasta ?? "")
       if (hasta && !hasta.startsWith("9999")) continue
-      rutasPre.push(r)
+      const existing = rutasMap.get(r.idRuta)
+      const newPersonal = Number(r.idPersonal ?? 0) || 0
+      if (existing) {
+        const existPersonal = Number(existing.idPersonal ?? 0) || 0
+        if (existPersonal > 0 && newPersonal === 0) continue
+        if (existPersonal > 0 && newPersonal > 0) continue
+      }
+      rutasMap.set(r.idRuta, r)
     }
+    const rutasPre = Array.from(rutasMap.values())
     if (rutasPre.length > 0) {
       const rows = rutasPre.map((r) => ({
         id_ruta: r.idRuta,
@@ -217,12 +228,18 @@ export async function runFuerasRutaSync(
       if (error) throw new Error(`upsert rutas: ${error.message}`)
     }
 
-    // ── 2) Clientes
+    // ── 2) Clientes. fetchAllClientes itera por nroLote sin dedup; Chess
+    // puede repetir un cliente entre lotes. Dedup por idCliente (primera gana).
     const clientesAll = await fetchAllClientes(creds, sessionId)
+    const clientesMap = new Map<number, ChessCliente>()
+    for (const c of clientesAll) {
+      if (!clientesMap.has(c.idCliente)) clientesMap.set(c.idCliente, c)
+    }
+    const clientesUnicos = Array.from(clientesMap.values())
     let conRutaPre = 0
     let sinRutaPre = 0
     const clientesRows: Array<Record<string, unknown>> = []
-    for (const c of clientesAll) {
+    for (const c of clientesUnicos) {
       const f = pickFuerzaPreVigente(c)
       const idRuta = f?.idRuta ?? null
       if (idRuta) conRutaPre++
@@ -347,7 +364,7 @@ export async function runFuerasRutaSync(
     const result: SyncFuerasRutaResult = {
       runId,
       rutas: { total: rutasAll.length, preVigentes: rutasPre.length },
-      clientes: { total: clientesAll.length, conRutaPre, sinRutaPre },
+      clientes: { total: clientesUnicos.length, conRutaPre, sinRutaPre },
       pedidos: { diasConsultados, pedidosInsertados, itemsTotal, itemsNoAnulados },
       ms: Date.now() - t0,
     }
