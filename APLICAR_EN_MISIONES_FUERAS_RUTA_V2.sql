@@ -9,6 +9,9 @@
 -- `diasVisita` solo refleja la visita del promotor de preventa.
 -- =============================================================
 
+-- 0) Tirar la vista (depende de chess_rutas_misiones.dias_visita_iso, que vamos a drop)
+DROP VIEW IF EXISTS v_fueras_de_ruta_misiones;
+
 -- 1) clientes: nueva columna dias_entrega_iso (ISO 1=Lun..7=Dom)
 ALTER TABLE chess_clientes_ruta_misiones
   ADD COLUMN IF NOT EXISTS dias_entrega_iso SMALLINT[] NOT NULL DEFAULT '{}';
@@ -17,8 +20,8 @@ ALTER TABLE chess_clientes_ruta_misiones
 ALTER TABLE chess_rutas_misiones
   DROP COLUMN IF EXISTS dias_visita_iso;
 
--- 3) Vista: comparar contra c.dias_entrega_iso (no más r.dias_visita_iso).
-CREATE OR REPLACE VIEW v_fueras_de_ruta_misiones AS
+-- 3) Vista nueva: comparar contra c.dias_entrega_iso (no más r.dias_visita_iso).
+CREATE VIEW v_fueras_de_ruta_misiones AS
 SELECT
   p.id_cliente,
   p.fecha_entrega,

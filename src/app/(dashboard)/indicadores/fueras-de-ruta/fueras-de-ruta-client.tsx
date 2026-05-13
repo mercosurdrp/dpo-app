@@ -32,6 +32,18 @@ import {
   sincronizarFuerasDeRuta,
   type FuerasDeRutaIndicador,
 } from "@/actions/fueras-de-ruta"
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  ReferenceLine,
+} from "recharts"
 
 const DIA_ABBR: Record<number, string> = {
   1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom",
@@ -178,6 +190,42 @@ export function FuerasDeRutaClient({
   const topPersonal = data.porPersonal.slice(0, 5)
   const topRutas = data.porRuta.slice(0, 5)
 
+  // Pareto: clientes ordenados desc por fuera_de_ruta + % acumulado.
+  // Mostramos hasta acumular ≥80% (mínimo 5, máximo 25) para no saturar.
+  const paretoData = useMemo(() => {
+    const totalFuera = data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
+    if (totalFuera === 0) return [] as Array<{
+      label: string
+      razon: string
+      fuera: number
+      acumPct: number
+      monto: number
+      promotor: string
+    }>
+    let acum = 0
+    const rows: Array<{ label: string; razon: string; fuera: number; acumPct: number; monto: number; promotor: string }> = []
+    for (let i = 0; i < data.porCliente.length; i++) {
+      const c = data.porCliente[i]
+      acum += c.fuera_de_ruta
+      const pct = (acum / totalFuera) * 100
+      const razon = c.razon_social ?? `#${c.id_cliente}`
+      rows.push({
+        label: razon.length > 22 ? razon.slice(0, 20) + "…" : razon,
+        razon,
+        fuera: c.fuera_de_ruta,
+        acumPct: Math.round(pct * 10) / 10,
+        monto: c.monto_fuera_de_ruta,
+        promotor: c.des_personal ?? "—",
+      })
+      if (pct >= 80 && rows.length >= 5) break
+      if (rows.length >= 25) break
+    }
+    return rows
+  }, [data.porCliente])
+
+  const paretoCorte = paretoData.length > 0 ? paretoData[paretoData.length - 1].acumPct : 0
+  const totalFueraGlobal = data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -311,6 +359,121 @@ export function FuerasDeRutaClient({
           ⚠ Los resultados se truncaron a 10.000 filas — usá un rango más corto para ver el detalle completo.
         </div>
       )}
+
+      {/* Pareto clientes — concentración de fueras de ruta */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+                Pareto — clientes con más fueras de ruta
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Top clientes ordenados por cantidad de pedidos fuera de ruta, mostrados hasta llegar al 80 % acumulado.
+                La línea naranja es el acumulado % sobre el total del período.
+              </p>
+            </div>
+            {paretoData.length > 0 && (
+              <div className="text-right text-xs text-muted-foreground">
+                <div>
+                  <span className="font-medium text-slate-900">{paretoData.length}</span>{" "}
+                  cliente{paretoData.length === 1 ? "" : "s"} concentran{" "}
+                  <span className="font-medium text-slate-900">{paretoCorte.toFixed(1)} %</span>
+                </div>
+                <div>
+                  de los <span className="font-medium text-slate-900">{fmtInt(totalFueraGlobal)}</span> pedidos fuera de ruta
+                </div>
+              </div>
+            )}
+          </div>
+          {paretoData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin pedidos fuera de ruta en el período.</p>
+          ) : (
+            <>
+              <div className="h-[360px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={paretoData} margin={{ top: 8, right: 32, bottom: 90, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: "#475569" }}
+                      angle={-35}
+                      textAnchor="end"
+                      interval={0}
+                      height={70}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11, fill: "#475569" }}
+                      label={{ value: "Pedidos fuera", angle: -90, position: "insideLeft", fontSize: 11, fill: "#64748b" }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={[0, 100]}
+                      ticks={[0, 20, 40, 60, 80, 100]}
+                      tick={{ fontSize: 11, fill: "#475569" }}
+                      tickFormatter={(v) => `${v}%`}
+                      label={{ value: "% acumulado", angle: 90, position: "insideRight", fontSize: 11, fill: "#64748b" }}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || payload.length === 0) return null
+                        const p = payload[0].payload as typeof paretoData[number]
+                        return (
+                          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
+                            <div className="font-medium text-slate-900">{p.razon}</div>
+                            <div className="mt-1 text-slate-600">Promotor: {p.promotor}</div>
+                            <div className="mt-1">
+                              <span className="font-medium text-rose-700">{fmtInt(p.fuera)}</span> pedidos fuera
+                            </div>
+                            <div>
+                              Acumulado: <span className="font-medium text-amber-700">{p.acumPct.toFixed(1)}%</span>
+                            </div>
+                            <div>Monto fuera: <span className="font-medium">{fmtMoney(p.monto)}</span></div>
+                          </div>
+                        )
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <ReferenceLine yAxisId="right" y={80} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: "80%", fill: "#64748b", fontSize: 11, position: "right" }} />
+                    <Bar yAxisId="left" dataKey="fuera" name="Pedidos fuera" fill="#e11d48" radius={[2, 2, 0, 0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="acumPct" name="% acumulado" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#f59e0b" }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10 text-right">#</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Localidad</TableHead>
+                      <TableHead>Promotor</TableHead>
+                      <TableHead className="text-right">Pedidos fuera</TableHead>
+                      <TableHead className="text-right">% acum.</TableHead>
+                      <TableHead className="text-right">Monto fuera</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paretoData.map((row, idx) => (
+                      <TableRow key={row.razon + idx}>
+                        <TableCell className="text-right text-muted-foreground">{idx + 1}</TableCell>
+                        <TableCell className="font-medium">{row.razon}</TableCell>
+                        <TableCell className="text-sm">{data.porCliente[idx]?.des_localidad ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{row.promotor}</TableCell>
+                        <TableCell className="text-right">{fmtInt(row.fuera)}</TableCell>
+                        <TableCell className="text-right">{row.acumPct.toFixed(1)}%</TableCell>
+                        <TableCell className="text-right">{fmtMoney(row.monto)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Top promotores / rutas */}
       <div className="grid gap-4 lg:grid-cols-2">

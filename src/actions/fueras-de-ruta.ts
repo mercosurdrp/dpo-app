@@ -48,6 +48,17 @@ export interface AggPorRuta {
   porc: number
 }
 
+export interface AggPorCliente {
+  id_cliente: number
+  razon_social: string | null
+  des_localidad: string | null
+  des_personal: string | null
+  pedidos: number
+  fuera_de_ruta: number
+  porc: number
+  monto_fuera_de_ruta: number
+}
+
 export interface SyncRunResumen {
   id: string
   desde: string
@@ -68,6 +79,7 @@ export interface FuerasDeRutaIndicador {
   porcFueraDeRuta: number
   porPersonal: AggPorPersonal[]
   porRuta: AggPorRuta[]
+  porCliente: AggPorCliente[]
   filas: FueraRutaFila[]
   ultimoSync: SyncRunResumen | null
   truncated: boolean
@@ -150,6 +162,7 @@ export async function getFuerasDeRutaIndicador(
     let totalSinRutaPre = 0
     const porPersonalMap = new Map<string, AggPorPersonal>()
     const porRutaMap = new Map<string, AggPorRuta>()
+    const porClienteMap = new Map<number, AggPorCliente>()
 
     for (const f of filas) {
       if (f.eliminado) continue
@@ -183,6 +196,23 @@ export async function getFuerasDeRutaIndicador(
       aggR.pedidos++
       if (fuera) aggR.fuera_de_ruta++
       porRutaMap.set(rutaKey, aggR)
+
+      const aggC = porClienteMap.get(f.id_cliente) ?? {
+        id_cliente: f.id_cliente,
+        razon_social: f.razon_social,
+        des_localidad: f.des_localidad,
+        des_personal: f.des_personal,
+        pedidos: 0,
+        fuera_de_ruta: 0,
+        porc: 0,
+        monto_fuera_de_ruta: 0,
+      }
+      aggC.pedidos++
+      if (fuera) {
+        aggC.fuera_de_ruta++
+        aggC.monto_fuera_de_ruta += Number(f.monto_aprox) || 0
+      }
+      porClienteMap.set(f.id_cliente, aggC)
     }
 
     for (const v of porPersonalMap.values()) {
@@ -197,6 +227,10 @@ export async function getFuerasDeRutaIndicador(
     const porRuta = Array.from(porRutaMap.values()).sort(
       (a, b) => b.fuera_de_ruta - a.fuera_de_ruta || b.pedidos - a.pedidos,
     )
+    const porCliente = Array.from(porClienteMap.values())
+      .filter((c) => c.fuera_de_ruta > 0)
+      .map((c) => ({ ...c, porc: c.pedidos > 0 ? (c.fuera_de_ruta / c.pedidos) * 100 : 0 }))
+      .sort((a, b) => b.fuera_de_ruta - a.fuera_de_ruta || b.monto_fuera_de_ruta - a.monto_fuera_de_ruta)
 
     // ── Último sync run del módulo ──
     const { data: ultimo } = await supabase
@@ -220,6 +254,7 @@ export async function getFuerasDeRutaIndicador(
         porcFueraDeRuta,
         porPersonal,
         porRuta,
+        porCliente,
         filas,
         ultimoSync: (ultimo as SyncRunResumen | null) ?? null,
         truncated,
