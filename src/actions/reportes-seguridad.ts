@@ -102,6 +102,8 @@ export async function getReportes(
     let query = supabase
       .from("reportes_seguridad")
       .select("*, autor:profiles!reportes_seguridad_creado_por_fkey(id, nombre)")
+      .order("fecha", { ascending: false })
+      .order("hora", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
 
     if (filters?.tipo) query = query.eq("tipo", filters.tipo)
