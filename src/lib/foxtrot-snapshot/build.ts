@@ -823,30 +823,48 @@ export async function buildSnapshot(opts: {
       b.repases - a.repases || b.visitas - a.visitas || a.cliente_id.localeCompare(b.cliente_id),
   )
 
-  const routesTable: RouteRow[] = unified.map((r) => ({
-    dc: r.dc,
-    fecha: r.fecha,
-    ruta: r.ruta,
-    ruta_raw: r.ruta_raw,
-    recarga: r.recarga,
-    num_vueltas: r.num_vueltas,
-    route_ids: r.route_ids,
-    driver_id: r.driver_id,
-    chofer: r.chofer,
-    pdvs_total: r.pdvs_total,
-    pdvs_done: r.pdvs_done,
-    bultos_ok: round2(r.bultos_ok),
-    bultos_rech: round2(r.bultos_rech),
-    rechazos: r.rechazos,
-    driven_m: r.driven_m,
-    planned_m: r.planned_m,
-    duracion_min: r.duracion_min,
-    activa: r.activa,
-    finalizada: r.finalizada,
-    cumplimiento_pct: r.cumplimiento_pct,
-    avg_service_min: r.avg_service_min ?? null,
-    service_source: r.service_source ?? null,
-  }))
+  const routesTable: RouteRow[] = unified.map((r) => {
+    let rutaZona: "Norte" | "Central" | "Este" | null = null
+    if (r.dc === "iguazu") {
+      rutaZona = "Norte"
+    } else if (r.dc === "eldorado") {
+      let nCentral = 0
+      let nEste = 0
+      for (const wp of r.waypoints) {
+        const z = wpZone(r.dc, wp)
+        if (z === "Central") nCentral++
+        else if (z === "Este") nEste++
+      }
+      if (nCentral > nEste) rutaZona = "Central"
+      else if (nEste > nCentral) rutaZona = "Este"
+      // empate o cero → null
+    }
+    return {
+      dc: r.dc,
+      fecha: r.fecha,
+      ruta: r.ruta,
+      ruta_raw: r.ruta_raw,
+      recarga: r.recarga,
+      num_vueltas: r.num_vueltas,
+      route_ids: r.route_ids,
+      driver_id: r.driver_id,
+      chofer: r.chofer,
+      pdvs_total: r.pdvs_total,
+      pdvs_done: r.pdvs_done,
+      bultos_ok: round2(r.bultos_ok),
+      bultos_rech: round2(r.bultos_rech),
+      rechazos: r.rechazos,
+      driven_m: r.driven_m,
+      planned_m: r.planned_m,
+      duracion_min: r.duracion_min,
+      activa: r.activa,
+      finalizada: r.finalizada,
+      cumplimiento_pct: r.cumplimiento_pct,
+      avg_service_min: r.avg_service_min ?? null,
+      service_source: r.service_source ?? null,
+      ruta_zona: rutaZona,
+    }
+  })
 
   const mapPoints: MapPoint[] = unified.map((r) => {
     const byCust = new Map<string, MapWaypointAgg>()

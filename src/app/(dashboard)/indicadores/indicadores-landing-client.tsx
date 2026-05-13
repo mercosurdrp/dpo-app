@@ -192,7 +192,7 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/indicadores/tiempo-ruta">
+          <Link href={IS_MISIONES ? "/indicadores/tiempo-ruta-foxtrot" : "/indicadores/tiempo-ruta"}>
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-purple-300">
               <CardContent className="flex items-center gap-4 pt-6">
                 <div className="rounded-xl p-3 bg-purple-100 text-purple-600 group-hover:bg-purple-200 transition-colors">

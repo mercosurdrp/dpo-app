@@ -48,6 +48,7 @@ export interface RouteRow {
   cumplimiento_pct: number
   avg_service_min: number | null
   service_source: "analytics" | "timestamps" | null
+  ruta_zona: ZonaName | null
 }
 
 export interface RechazoItem {
