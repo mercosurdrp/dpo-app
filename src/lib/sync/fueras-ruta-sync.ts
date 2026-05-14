@@ -92,19 +92,33 @@ export function parseChessDiasToIso(input: unknown): number[] {
   return Array.from(iso).sort((a, b) => a - b)
 }
 
-/** Devuelve la fuerza PRE vigente del cliente, o null si no tiene. */
+/**
+ * Devuelve la fuerza PRE vigente del cliente, o null si no tiene.
+ *
+ * Chess puede listar MÚLTIPLES fuerzas PRE vigentes para el mismo cliente
+ * (anulado=false + fechaHasta vacía o '9999...'). En la práctica, las viejas
+ * quedaron sin cerrar pero la operativa real corre con la de
+ * `fechaInicioFuerza` más reciente — coincide con lo que muestra la UI de
+ * Chess. Por eso elegimos la última, no la primera.
+ */
 export function pickFuerzaPreVigente(c: ChessCliente): ChessClienteFuerzaLoose | null {
   const fuerzas = (c.eClifuerza ?? []) as ChessClienteFuerzaLoose[]
+  const candidatas: ChessClienteFuerzaLoose[] = []
   for (const f of fuerzas) {
     if (String(f.anulado ?? "").toLowerCase() === "true") continue
     const modo = String(f.idModoAtencion ?? "").toUpperCase()
     if (modo && modo !== "PRE") continue
-    // fechaHasta vigente: vacía o empieza con 9999
     const hasta = String(f.fechaHasta ?? "")
     if (hasta && !hasta.startsWith("9999")) continue
-    return f
+    candidatas.push(f)
   }
-  return null
+  if (candidatas.length === 0) return null
+  candidatas.sort((a, b) => {
+    const ka = String(a.fechaInicioFuerza ?? "")
+    const kb = String(b.fechaInicioFuerza ?? "")
+    return kb.localeCompare(ka)
+  })
+  return candidatas[0]
 }
 
 /** Trae el maestro de rutas (sin diasVisita: ese campo no se usa en este indicador). */
