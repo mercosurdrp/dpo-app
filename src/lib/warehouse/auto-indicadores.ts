@@ -1,15 +1,21 @@
 /**
- * Indicadores AUTO para reuniones de tipo 'warehouse'.
+ * Indicadores AUTO para reuniones de tipo 'warehouse' / 'logistica'.
  *
- * Fuentes externas (consume API pública de deposito-esteban.vercel.app + Google Sheet):
- *   - /api/indicadores?year=Y&month=M     → WQI (PPM), FGLI (HL), SCL ($)
- *   - /api/shared/load?module=ocupacion   → Capacidad utilizada por día (histórico)
- *   - /api/shared/load?module=productividad-picking → bultos/horas/bul_hh por día y operario
- *   - Google Sheet "Errores picking"       → errores por día y operario (faltantes/sobrantes)
+ * Lee un snapshot diario pre-cocinado del blob `shared/warehouse-kpi-diario`
+ * (1 sola URL chica). El snapshot lo genera un pusher local
+ * (push_warehouse_kpi.ps1, Scheduled Task `WMS-WarehouseKPI-Push`) que junta:
+ *   - /api/indicadores/serie-diaria        → WQI (PPM), FGLI (HL), SCL ($)
+ *   - /api/shared/load?module=ocupacion    → Capacidad utilizada por día
+ *   - /api/shared/load?module=productividad-picking → bul/HH por operario
+ *   - Google Sheet "Errores picking"        → errores por operario
+ * y computa por día apertura por operador (Troli/Galvez/Ovejero).
  *
- * Se calculan on-the-fly cada vez que se abre la reunión. No persisten en DB.
- * El sub-cuadro contextual de operadores (Troli/Galvez/Ovejero) usa
- * buildAperturaPickingDelDia para una fecha específica.
+ * Esto reemplaza al esquema anterior que hacía 4 fetches en cada apertura
+ * de reunión y tardaba 5-15s en cold start. Ahora la apertura solo lee 1
+ * JSON pre-cocinado (<500ms).
+ *
+ * Fallback: si el snapshot no existe todavía, se llama a la versión legacy
+ * que computa on-the-fly (mantiene compatibilidad).
  */
 
 // ────────────────────────────────────────────────────────────────────
@@ -74,13 +80,12 @@ export interface WarehouseSerieDiaria {
 // Fetches con tolerancia a fallos + cache in-memory por proceso
 // ────────────────────────────────────────────────────────────────────
 //
-// Las fuentes externas (deposito-esteban.vercel.app, Google Sheets) tienen
-// cold start de varios segundos. Sin cache cada apertura de reunión pegaba
-// al origen y el Promise.all esperaba al más lento. Cacheamos por 5 min en
-// memoria del proceso y aplicamos timeout de 5s para que un origen colgado
-// no bloquee la apertura.
+// El snapshot es chiquito (~50KB para un año) y se regenera 1 vez al día,
+// asi que cacheamos 1 hora en memoria. Si el cache vence o el pusher falla,
+// caemos al legacy path (4 fetches en paralelo con cache de 5min como ya hacía).
 
 const EXTERNAL_FETCH_TTL_MS = 5 * 60 * 1000
+const SNAPSHOT_TTL_MS = 60 * 60 * 1000
 const EXTERNAL_FETCH_TIMEOUT_MS = 5000
 
 type CacheEntry = { value: unknown; expiresAt: number }
@@ -96,14 +101,14 @@ function readCache<T>(url: string): T | undefined {
   return entry.value as T
 }
 
-function writeCache(url: string, value: unknown) {
+function writeCache(url: string, value: unknown, ttlMs = EXTERNAL_FETCH_TTL_MS) {
   externalCache.set(url, {
     value,
-    expiresAt: Date.now() + EXTERNAL_FETCH_TTL_MS,
+    expiresAt: Date.now() + ttlMs,
   })
 }
 
-async function fetchJsonSafe<T>(url: string): Promise<T | null> {
+async function fetchJsonSafe<T>(url: string, ttlMs?: number): Promise<T | null> {
   const cached = readCache<T | null>(url)
   if (cached !== undefined) return cached
   try {
@@ -113,7 +118,7 @@ async function fetchJsonSafe<T>(url: string): Promise<T | null> {
     })
     if (!res.ok) return null
     const data = (await res.json()) as T
-    writeCache(url, data)
+    writeCache(url, data, ttlMs)
     return data
   } catch {
     return null
@@ -138,7 +143,168 @@ async function fetchTextSafe(url: string): Promise<string | null> {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Parseo del Sheet de errores picking
+// Snapshot pre-cocinado (camino principal)
+// ────────────────────────────────────────────────────────────────────
+
+interface SnapshotApertura {
+  bultos: number | null
+  horas: number | null
+  errores: number | null
+  precision: number | null
+  bul_hh: number | null
+}
+
+interface SnapshotDia {
+  wqi: number | null
+  fgli: number | null
+  scl: number | null
+  capacidad: number | null
+  precision: number | null
+  productividad: number | null
+  apertura: Record<string, SnapshotApertura>
+}
+
+interface SnapshotResponse {
+  data?: {
+    generado_en?: string
+    anio?: number
+    dias?: Record<string, SnapshotDia>
+  } | null
+}
+
+async function fetchSnapshot(): Promise<SnapshotResponse["data"] | null> {
+  const res = await fetchJsonSafe<SnapshotResponse>(
+    `${DEPOSITO_API_BASE}/api/shared/load?module=warehouse-kpi-diario`,
+    SNAPSHOT_TTL_MS,
+  )
+  return res?.data ?? null
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Builder principal: serie diaria del mes para la grilla
+// ────────────────────────────────────────────────────────────────────
+
+export async function buildWarehouseSerieDiaria(
+  fechas: string[],
+  fechaReunion: string,
+): Promise<WarehouseSerieDiaria> {
+  if (fechas.length === 0) {
+    return {
+      wqi: {},
+      fgli: {},
+      scl: {},
+      capacidad: {},
+      precision: {},
+      productividad: {},
+    }
+  }
+
+  const snap = await fetchSnapshot()
+  if (snap && snap.dias) {
+    return buildSerieFromSnapshot(fechas, fechaReunion, snap.dias)
+  }
+
+  // Fallback: si el snapshot no existe (primera vez, o pusher caído), pegar a
+  // las 4 fuentes originales.
+  return buildSerieLegacy(fechas, fechaReunion)
+}
+
+function buildSerieFromSnapshot(
+  fechas: string[],
+  fechaReunion: string,
+  dias: Record<string, SnapshotDia>,
+): WarehouseSerieDiaria {
+  const wqi: Record<string, number | null> = {}
+  const fgli: Record<string, number | null> = {}
+  const scl: Record<string, number | null> = {}
+  const capacidad: Record<string, number | null> = {}
+  const precision: Record<string, number | null> = {}
+  const productividad: Record<string, number | null> = {}
+
+  for (const f of fechas) {
+    const dia = dias[f]
+    const visible = f <= fechaReunion
+    // WQI/FGLI/SCL: solo hasta la fecha de la reunión (acumulado MTD)
+    wqi[f] = visible ? (dia?.wqi ?? null) : null
+    fgli[f] = visible ? (dia?.fgli ?? null) : null
+    scl[f] = visible ? (dia?.scl ?? null) : null
+    // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
+    capacidad[f] = dia?.capacidad ?? null
+    precision[f] = dia?.precision ?? null
+    productividad[f] = dia?.productividad ?? null
+  }
+
+  return { wqi, fgli, scl, capacidad, precision, productividad }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Builder: apertura por operador para una fecha específica
+// ────────────────────────────────────────────────────────────────────
+
+export async function buildAperturaPickingDelDia(
+  fecha: string,
+  overridesHlHh: Map<OperadorApertura, number | null>,
+): Promise<AperturaPickingDelDia> {
+  const snap = await fetchSnapshot()
+  if (snap && snap.dias && snap.dias[fecha]) {
+    return buildAperturaFromSnapshot(fecha, snap.dias[fecha], overridesHlHh)
+  }
+  return buildAperturaLegacy(fecha, overridesHlHh)
+}
+
+function buildAperturaFromSnapshot(
+  fecha: string,
+  dia: SnapshotDia,
+  overridesHlHh: Map<OperadorApertura, number | null>,
+): AperturaPickingDelDia {
+  const filas: OperadorAperturaRow[] = OPERADORES_APERTURA.map((alias) => {
+    const op = dia.apertura?.[alias] ?? null
+    const bultos = op?.bultos ?? null
+    const errores = op?.errores ?? null
+    const precision = op?.precision ?? null
+    const bul_hh_auto = op?.bul_hh ?? null
+    const manual = overridesHlHh.get(alias) ?? null
+    const efectivo = manual !== null ? manual : bul_hh_auto
+    return {
+      operador: alias,
+      bultos,
+      errores,
+      precision,
+      bul_hh_auto,
+      bul_hh_manual: manual,
+      bul_hh_efectivo: efectivo,
+    }
+  })
+
+  // Aplicar overrides manuales al promedio de productividad si los hay.
+  const tieneOverride = Array.from(overridesHlHh.values()).some(
+    (v) => v !== null,
+  )
+  let productividad_promedio_bul_hh = dia.productividad ?? null
+  if (tieneOverride) {
+    const efectivos = filas
+      .map((f) => f.bul_hh_efectivo)
+      .filter((v): v is number => v !== null && Number.isFinite(v))
+    productividad_promedio_bul_hh =
+      efectivos.length > 0
+        ? Math.round(
+            (efectivos.reduce((a, b) => a + b, 0) / efectivos.length) * 10,
+          ) / 10
+        : null
+  }
+
+  return {
+    fecha,
+    filas,
+    precision_promedio: dia.precision ?? null,
+    productividad_promedio_bul_hh,
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Legacy: cómputo on-the-fly desde las 4 fuentes
+// (Se usa SOLO si el snapshot no existe — primera vez tras el deploy o si
+// el pusher se cayó. Mantiene la app funcional sin depender del snapshot.)
 // ────────────────────────────────────────────────────────────────────
 
 function parseCsvRow(line: string): string[] {
@@ -166,7 +332,6 @@ function parseCsvRow(line: string): string[] {
   return cells
 }
 
-/** "d/MM/yyyy" → "yyyy-MM-dd" o null si no parsea. */
 function parseFechaSheet(raw: string): string | null {
   const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   if (!m) return null
@@ -178,7 +343,6 @@ function parseDecimalEs(s: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Devuelve: por fecha YYYY-MM-DD → por operador → total bultos errados. */
 async function fetchErroresPickingPorFecha(): Promise<
   Map<string, Map<string, number>>
 > {
@@ -209,14 +373,9 @@ async function fetchErroresPickingPorFecha(): Promise<
   return out
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Tipos de respuesta de deposito-esteban
-// ────────────────────────────────────────────────────────────────────
-
 interface DepositoIndicadoresSerieDiaria {
   year: number
   month: number
-  /** Por fecha YYYY-MM-DD → valor MTD acumulado hasta ese día. */
   wqi: Record<string, number | null>
   fgli: Record<string, number | null>
   scl: Record<string, number | null>
@@ -231,9 +390,7 @@ interface DepositoOcupacionShared {
 interface ProductividadFila {
   fecha: string
   operario: string
-  bultos: number
-  horas: number
-  bul_hh: number
+  bul_hh?: number
 }
 
 interface DepositoProductividad {
@@ -242,44 +399,16 @@ interface DepositoProductividad {
   } | null
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Builder: serie diaria del mes para la grilla principal
-// ────────────────────────────────────────────────────────────────────
-
-/**
- * Convierte el formato "dd/MM" del histórico de ocupación a "YYYY-MM-DD"
- * usando el año del rango pedido. Tolerante: si no parsea, devuelve null.
- */
 function fechaOcupacionAIso(raw: string, anioRef: number): string | null {
   const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})$/)
   if (!m) return null
   return `${anioRef}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`
 }
 
-/**
- * Devuelve para cada fecha del rango: WQI/FGLI/SCL/Capacidad/Precision/Productividad.
- *
- * WQI/FGLI/SCL son MTD del mes (mismo valor replicado para cada fecha hasta `fechaReunion`).
- * Capacidad utilizada viene del histórico de ocupación (día real).
- * Precisión y Productividad se calculan por día desde productividad-picking + Sheet.
- *
- * Tolerante a fallos: si una fuente cae, su mapa queda vacío y los valores se ven como null.
- */
-export async function buildWarehouseSerieDiaria(
+async function buildSerieLegacy(
   fechas: string[],
   fechaReunion: string,
 ): Promise<WarehouseSerieDiaria> {
-  if (fechas.length === 0) {
-    return {
-      wqi: {},
-      fgli: {},
-      scl: {},
-      capacidad: {},
-      precision: {},
-      productividad: {},
-    }
-  }
-
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
   const year = partes[0]
   const month = partes[1]
@@ -298,9 +427,6 @@ export async function buildWarehouseSerieDiaria(
       fetchErroresPickingPorFecha(),
     ])
 
-  // WQI/FGLI/SCL: serie diaria con MTD progresivo (acumulado desde el 1°
-  // hasta ese día). Lo provee /api/indicadores/serie-diaria.
-  // Solo mostramos hasta la fecha de la reunión (después: null).
   const wqi: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
   const scl: Record<string, number | null> = {}
@@ -311,7 +437,6 @@ export async function buildWarehouseSerieDiaria(
     scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
 
-  // Capacidad utilizada: histórico de ocupación trae "dd/MM" → convertir a ISO
   const capacidad: Record<string, number | null> = {}
   const historicoOcup = ocupacionRes?.data?.historico ?? []
   const ocupPorFecha = new Map<string, number>()
@@ -325,8 +450,6 @@ export async function buildWarehouseSerieDiaria(
     capacidad[f] = ocupPorFecha.get(f) ?? null
   }
 
-  // Precisión y Productividad: por fecha, computar promedio de los 3 operadores
-  // (Troli/Galvez/Ovejero) usando productividad-picking + Sheet.
   const filasProd = productividadRes?.data?.filas ?? []
   const filasProdPorFecha = new Map<string, ProductividadFila[]>()
   for (const fila of filasProd) {
@@ -341,11 +464,11 @@ export async function buildWarehouseSerieDiaria(
   const precision: Record<string, number | null> = {}
   const productividad: Record<string, number | null> = {}
   for (const f of fechas) {
-    const apertura = computeAperturaDelDia(
+    const apertura = computeAperturaLegacy(
       f,
       filasProdPorFecha.get(f) ?? [],
       erroresPorFecha.get(f) ?? new Map<string, number>(),
-      new Map<OperadorApertura, number | null>(), // sin overrides en grilla principal
+      new Map<OperadorApertura, number | null>(),
     )
     precision[f] = apertura.precision_promedio
     productividad[f] = apertura.productividad_promedio_bul_hh
@@ -354,99 +477,7 @@ export async function buildWarehouseSerieDiaria(
   return { wqi, fgli, scl, capacidad, precision, productividad }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Builder: apertura por operador para una fecha específica
-// (usado por el Dialog contextual al hacer click en una celda)
-// ────────────────────────────────────────────────────────────────────
-
-function computeAperturaDelDia(
-  fecha: string,
-  filasProd: ProductividadFila[],
-  erroresDelDia: Map<string, number>,
-  overridesHlHh: Map<OperadorApertura, number | null>,
-): AperturaPickingDelDia {
-  const filas: OperadorAperturaRow[] = OPERADORES_APERTURA.map((alias) => {
-    let bultos = 0
-    let horasNum = 0
-    let bulHhNum = 0
-    let bulHhDen = 0
-    let hayFila = false
-    for (const f of filasProd) {
-      if (!matchOperador(f.operario, alias)) continue
-      hayFila = true
-      bultos += f.bultos
-      horasNum += f.horas
-      bulHhNum += f.bultos
-      bulHhDen += f.horas
-    }
-
-    let errores = 0
-    let hayError = false
-    for (const [nombre, errBultos] of erroresDelDia.entries()) {
-      if (matchOperador(nombre, alias)) {
-        errores += errBultos
-        hayError = true
-      }
-    }
-
-    const bultosVal = hayFila ? bultos : null
-    const erroresVal = hayError ? errores : hayFila ? 0 : null
-    const precision =
-      bultosVal && bultosVal > 0 && erroresVal !== null
-        ? Math.max(0, 1 - erroresVal / bultosVal)
-        : null
-
-    const bul_hh_auto =
-      bulHhDen > 0 ? Math.round((bulHhNum / bulHhDen) * 10) / 10 : null
-    const manual = overridesHlHh.get(alias) ?? null
-    const efectivo = manual !== null ? manual : bul_hh_auto
-
-    return {
-      operador: alias,
-      bultos: bultosVal,
-      errores: erroresVal,
-      precision,
-      bul_hh_auto,
-      bul_hh_manual: manual,
-      bul_hh_efectivo: efectivo,
-    }
-  })
-
-  const precisiones = filas
-    .map((a) => a.precision)
-    .filter((v): v is number => v !== null)
-  const productividades = filas
-    .map((a) => a.bul_hh_efectivo)
-    .filter((v): v is number => v !== null)
-  const precision_promedio =
-    precisiones.length > 0
-      ? Math.round(
-          (precisiones.reduce((a, b) => a + b, 0) / precisiones.length) * 1000,
-        ) / 10
-      : null
-  const productividad_promedio_bul_hh =
-    productividades.length > 0
-      ? Math.round(
-          (productividades.reduce((a, b) => a + b, 0) /
-            productividades.length) *
-            10,
-        ) / 10
-      : null
-
-  return {
-    fecha,
-    filas,
-    precision_promedio,
-    productividad_promedio_bul_hh,
-  }
-}
-
-/**
- * Para el Dialog contextual al hacer click en una celda de la grilla.
- * Devuelve la apertura por operador (Troli/Galvez/Ovejero) para una fecha específica,
- * con overrides manuales de bul/HH (columna hl_hh en reunion_apertura_picking).
- */
-export async function buildAperturaPickingDelDia(
+async function buildAperturaLegacy(
   fecha: string,
   overridesHlHh: Map<OperadorApertura, number | null>,
 ): Promise<AperturaPickingDelDia> {
@@ -461,5 +492,73 @@ export async function buildAperturaPickingDelDia(
     (f) => f.fecha === fecha,
   )
   const erroresDelDia = erroresPorFecha.get(fecha) ?? new Map<string, number>()
-  return computeAperturaDelDia(fecha, filasProd, erroresDelDia, overridesHlHh)
+  return computeAperturaLegacy(fecha, filasProd, erroresDelDia, overridesHlHh)
+}
+
+function computeAperturaLegacy(
+  fecha: string,
+  filasProd: ProductividadFila[],
+  erroresDelDia: Map<string, number>,
+  overridesHlHh: Map<OperadorApertura, number | null>,
+): AperturaPickingDelDia {
+  const filas: OperadorAperturaRow[] = OPERADORES_APERTURA.map((alias) => {
+    // El scraper actual sólo expone `bul_hh` (rate). Si hubiera varias filas
+    // del mismo operador en el día (no debería: dedupea por fecha|operario),
+    // tomamos el promedio.
+    let bulHhSum = 0
+    let bulHhCnt = 0
+    for (const f of filasProd) {
+      if (!matchOperador(f.operario, alias)) continue
+      if (typeof f.bul_hh === "number" && Number.isFinite(f.bul_hh)) {
+        bulHhSum += f.bul_hh
+        bulHhCnt++
+      }
+    }
+
+    let errores = 0
+    let hayError = false
+    for (const [nombre, errBultos] of erroresDelDia.entries()) {
+      if (matchOperador(nombre, alias)) {
+        errores += errBultos
+        hayError = true
+      }
+    }
+
+    const bul_hh_auto =
+      bulHhCnt > 0 ? Math.round((bulHhSum / bulHhCnt) * 10) / 10 : null
+    const erroresVal = hayError ? errores : bulHhCnt > 0 ? 0 : null
+    // Sin raw bultos no podemos calcular precision por operador
+    const precision = null
+    const manual = overridesHlHh.get(alias) ?? null
+    const efectivo = manual !== null ? manual : bul_hh_auto
+
+    return {
+      operador: alias,
+      bultos: null,
+      errores: erroresVal,
+      precision,
+      bul_hh_auto,
+      bul_hh_manual: manual,
+      bul_hh_efectivo: efectivo,
+    }
+  })
+
+  const productividades = filas
+    .map((a) => a.bul_hh_efectivo)
+    .filter((v): v is number => v !== null)
+  const productividad_promedio_bul_hh =
+    productividades.length > 0
+      ? Math.round(
+          (productividades.reduce((a, b) => a + b, 0) /
+            productividades.length) *
+            10,
+        ) / 10
+      : null
+
+  return {
+    fecha,
+    filas,
+    precision_promedio: null,
+    productividad_promedio_bul_hh,
+  }
 }
