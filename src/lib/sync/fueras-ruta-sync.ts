@@ -135,6 +135,52 @@ async function fetchRutasFull(
   return d?.RutasVenta?.eRutasVenta ?? []
 }
 
+/**
+ * Mapa monto_final (con impuestos y bonificaciones) por id_cliente para una
+ * fecha dada. Se construye consumiendo `/ventas/?detallado=true`, que devuelve
+ * una fila por LÍNEA (item) facturada. Sumamos `subtotalFinal` de las no
+ * anuladas y agrupamos por idCliente. Se usa después para enriquecer los
+ * pedidos del día con el monto realmente facturado. Si un pedido no fue
+ * facturado (pendiente / anulado), no aparece acá y el caller hace fallback
+ * al monto bruto calculado item × precio.
+ */
+interface ChessVentaLinea {
+  idCliente: number | string
+  idPedido?: number | string | null
+  subtotalFinal?: number | string | null
+  anulado?: string | boolean | null
+}
+async function fetchMontoFinalPorCliente(
+  creds: ChessCredentials,
+  sessionId: string,
+  fecha: string,
+): Promise<Map<number, number>> {
+  const url = `${creds.baseUrl}/ventas/?fechaDesde=${fecha}&fechaHasta=${fecha}&detallado=true`
+  const r = await chessFetch(url, {
+    headers: { Accept: "application/json", Cookie: sessionId },
+  })
+  if (!r.ok) {
+    console.warn(`[fueras-ruta-sync] /ventas ${fecha}: HTTP ${r.status}`)
+    return new Map()
+  }
+  let d: { dsReporteComprobantesApi?: { VentasResumen?: ChessVentaLinea[] } }
+  try {
+    d = (await r.json()) as typeof d
+  } catch {
+    return new Map()
+  }
+  const filas = d?.dsReporteComprobantesApi?.VentasResumen ?? []
+  const map = new Map<number, number>()
+  for (const v of filas) {
+    if (String(v.anulado ?? "").toUpperCase() === "SI") continue
+    const idCli = Number(v.idCliente)
+    if (!Number.isFinite(idCli) || idCli <= 0) continue
+    const sub = Number(v.subtotalFinal) || 0
+    map.set(idCli, (map.get(idCli) ?? 0) + sub)
+  }
+  return map
+}
+
 // ───────────────────────── Sync principal ─────────────────────────
 
 export interface SyncFuerasRutaInput {
@@ -302,7 +348,10 @@ export async function runFuerasRutaSync(
 
     for (const fecha of iterDays(input.desde, input.hasta)) {
       diasConsultados++
-      const pedidos = await fetchPedidosByFechaEntrega(creds, sessionId, fecha)
+      const [pedidos, montoFinalMap] = await Promise.all([
+        fetchPedidosByFechaEntrega(creds, sessionId, fecha),
+        fetchMontoFinalPorCliente(creds, sessionId, fecha),
+      ])
 
       // Agregar por id_cliente: Chess puede devolver varios pedidos del mismo
       // cliente para una fecha; los consolidamos.
@@ -312,7 +361,7 @@ export async function runFuerasRutaSync(
         items_total: number
         items_no_anulados: number
         unidades_total: number
-        monto_aprox: number
+        monto_bruto: number
       }>()
 
       for (const p of pedidos as ChessPedido[]) {
@@ -328,7 +377,7 @@ export async function runFuerasRutaSync(
             items_total: 0,
             items_no_anulados: 0,
             unidades_total: 0,
-            monto_aprox: 0,
+            monto_bruto: 0,
           }
           porCliente.set(idCli, agg)
         } else {
@@ -345,7 +394,7 @@ export async function runFuerasRutaSync(
             const b = Math.abs(Number(it.cantBultos) || 0)
             const precio = Math.abs(Number(it.precioUnitario) || 0)
             agg.unidades_total += u
-            agg.monto_aprox += (u || b) * precio
+            agg.monto_bruto += (u || b) * precio
           }
         }
       }
@@ -353,18 +402,27 @@ export async function runFuerasRutaSync(
       itemsTotal += Array.from(porCliente.values()).reduce((s, v) => s + v.items_total, 0)
       itemsNoAnulados += Array.from(porCliente.values()).reduce((s, v) => s + v.items_no_anulados, 0)
 
-      const rows = Array.from(porCliente.entries()).map(([id_cliente, v]) => ({
-        id_cliente,
-        fecha_entrega: fecha,
-        eliminado: v.eliminado,
-        id_deposito: v.id_deposito,
-        items_total: v.items_total,
-        items_no_anulados: v.items_no_anulados,
-        unidades_total: Math.round(v.unidades_total * 10000) / 10000,
-        monto_aprox: Math.round(v.monto_aprox * 100) / 100,
-        sync_run_id: runId,
-        synced_at: new Date().toISOString(),
-      }))
+      // monto_aprox: si hay venta facturada del cliente en la fecha (suma de
+      // subtotalFinal en /ventas), usamos eso — incluye IVA, internos y
+      // bonificaciones, igual a lo que ve el cliente en la factura. Si no
+      // hay venta (pedido pendiente, anulado o no facturado todavía),
+      // caemos al bruto calculado cantidad × precioUnitario.
+      const rows = Array.from(porCliente.entries()).map(([id_cliente, v]) => {
+        const montoFinal = montoFinalMap.get(id_cliente)
+        const monto = montoFinal != null && montoFinal > 0 ? montoFinal : v.monto_bruto
+        return {
+          id_cliente,
+          fecha_entrega: fecha,
+          eliminado: v.eliminado,
+          id_deposito: v.id_deposito,
+          items_total: v.items_total,
+          items_no_anulados: v.items_no_anulados,
+          unidades_total: Math.round(v.unidades_total * 10000) / 10000,
+          monto_aprox: Math.round(monto * 100) / 100,
+          sync_run_id: runId,
+          synced_at: new Date().toISOString(),
+        }
+      })
       if (rows.length > 0) {
         for (let i = 0; i < rows.length; i += 1000) {
           const slice = rows.slice(i, i + 1000)

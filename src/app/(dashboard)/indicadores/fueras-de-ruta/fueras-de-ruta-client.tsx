@@ -31,6 +31,10 @@ import {
 import {
   sincronizarFuerasDeRuta,
   type FuerasDeRutaIndicador,
+  type AggPorPersonal,
+  type AggPorRuta,
+  type AggPorCliente,
+  type FueraRutaFila,
 } from "@/actions/fueras-de-ruta"
 import {
   ComposedChart,
@@ -99,6 +103,8 @@ export function FuerasDeRutaClient({
   const [soloFuera, setSoloFuera] = useState(false)
   const [excluirEliminados, setExcluirEliminados] = useState(true)
   const [excluirSinItems, setExcluirSinItems] = useState(true)
+  const [montoMinInput, setMontoMinInput] = useState<string>("")
+  const [montoMin, setMontoMin] = useState<number>(0)
   const [page, setPage] = useState(1)
 
   const [syncPending, startSync] = useTransition()
@@ -132,18 +138,139 @@ export function FuerasDeRutaClient({
     })
   }
 
-  const filasFiltradas = useMemo(() => {
-    const s = search.trim().toLowerCase()
-    return data.filas.filter((f) => {
+  // Universo "estructural": aplica filtros que afectan a todos los cómputos
+  // del dashboard (eliminados, items 100% anulados, monto mínimo). Los
+  // filtros de búsqueda y "solo fuera" se aplican solo a la tabla, no
+  // contaminan KPIs ni Pareto.
+  const universo = useMemo<{
+    filas: FueraRutaFila[]
+    totalPedidos: number
+    totalFueraDeRuta: number
+    totalSinRutaPre: number
+    porcFueraDeRuta: number
+    porPersonal: AggPorPersonal[]
+    porRuta: AggPorRuta[]
+    porCliente: AggPorCliente[]
+  }>(() => {
+    const filas = data.filas.filter((f) => {
       if (excluirEliminados && f.eliminado) return false
       if (excluirSinItems && f.items_no_anulados === 0) return false
+      if (montoMin > 0 && (Number(f.monto_aprox) || 0) < montoMin) return false
+      return true
+    })
+
+    let totalPedidos = 0
+    let totalFueraDeRuta = 0
+    let totalSinRutaPre = 0
+    const porPersonalMap = new Map<string, AggPorPersonal>()
+    const porRutaMap = new Map<string, AggPorRuta>()
+    const porClienteMap = new Map<number, AggPorCliente>()
+
+    for (const f of filas) {
+      totalPedidos++
+      const fuera = f.es_fuera_de_ruta === true
+      if (fuera) totalFueraDeRuta++
+      if (f.es_fuera_de_ruta === null && f.id_ruta == null) totalSinRutaPre++
+      const monto = Number(f.monto_aprox) || 0
+
+      const personalKey = String(f.id_personal ?? "null")
+      const aggP = porPersonalMap.get(personalKey) ?? {
+        id_personal: f.id_personal,
+        des_personal: f.des_personal,
+        pedidos: 0,
+        fuera_de_ruta: 0,
+        porc: 0,
+        monto_fuera_de_ruta: 0,
+      }
+      aggP.pedidos++
+      if (fuera) {
+        aggP.fuera_de_ruta++
+        aggP.monto_fuera_de_ruta += monto
+      }
+      porPersonalMap.set(personalKey, aggP)
+
+      const rutaKey = String(f.id_ruta ?? "null")
+      const aggR = porRutaMap.get(rutaKey) ?? {
+        id_ruta: f.id_ruta,
+        des_ruta: f.des_ruta,
+        des_personal: f.des_personal,
+        pedidos: 0,
+        fuera_de_ruta: 0,
+        porc: 0,
+        monto_fuera_de_ruta: 0,
+      }
+      aggR.pedidos++
+      if (fuera) {
+        aggR.fuera_de_ruta++
+        aggR.monto_fuera_de_ruta += monto
+      }
+      porRutaMap.set(rutaKey, aggR)
+
+      const aggC = porClienteMap.get(f.id_cliente) ?? {
+        id_cliente: f.id_cliente,
+        razon_social: f.razon_social,
+        des_localidad: f.des_localidad,
+        des_personal: f.des_personal,
+        pedidos: 0,
+        fuera_de_ruta: 0,
+        porc: 0,
+        monto_fuera_de_ruta: 0,
+      }
+      aggC.pedidos++
+      if (fuera) {
+        aggC.fuera_de_ruta++
+        aggC.monto_fuera_de_ruta += monto
+      }
+      porClienteMap.set(f.id_cliente, aggC)
+    }
+
+    for (const v of porPersonalMap.values()) v.porc = v.pedidos > 0 ? (v.fuera_de_ruta / v.pedidos) * 100 : 0
+    for (const v of porRutaMap.values()) v.porc = v.pedidos > 0 ? (v.fuera_de_ruta / v.pedidos) * 100 : 0
+
+    const porPersonal = Array.from(porPersonalMap.values()).sort(
+      (a, b) => b.fuera_de_ruta - a.fuera_de_ruta || b.pedidos - a.pedidos,
+    )
+    const porRuta = Array.from(porRutaMap.values()).sort(
+      (a, b) => b.fuera_de_ruta - a.fuera_de_ruta || b.pedidos - a.pedidos,
+    )
+    const porCliente = Array.from(porClienteMap.values())
+      .filter((c) => c.fuera_de_ruta > 0)
+      .map((c) => ({ ...c, porc: c.pedidos > 0 ? (c.fuera_de_ruta / c.pedidos) * 100 : 0 }))
+      .sort((a, b) => b.fuera_de_ruta - a.fuera_de_ruta || b.monto_fuera_de_ruta - a.monto_fuera_de_ruta)
+
+    return {
+      filas,
+      totalPedidos,
+      totalFueraDeRuta,
+      totalSinRutaPre,
+      porcFueraDeRuta: totalPedidos > 0 ? (totalFueraDeRuta / totalPedidos) * 100 : 0,
+      porPersonal,
+      porRuta,
+      porCliente,
+    }
+  }, [data.filas, excluirEliminados, excluirSinItems, montoMin])
+
+  const filasFiltradas = useMemo(() => {
+    const s = search.trim().toLowerCase()
+    return universo.filas.filter((f) => {
       if (soloFuera && f.es_fuera_de_ruta !== true) return false
       if (!s) return true
       const blob =
         `${f.id_cliente} ${f.razon_social ?? ""} ${f.des_localidad ?? ""} ${f.des_ruta ?? ""} ${f.des_personal ?? ""}`.toLowerCase()
       return blob.includes(s)
     })
-  }, [data.filas, search, soloFuera, excluirEliminados, excluirSinItems])
+  }, [universo.filas, search, soloFuera])
+
+  function aplicarMontoMin() {
+    const n = Number(montoMinInput.replace(/[^\d.,-]/g, "").replace(",", "."))
+    setMontoMin(Number.isFinite(n) && n > 0 ? n : 0)
+    setPage(1)
+  }
+  function limpiarMontoMin() {
+    setMontoMinInput("")
+    setMontoMin(0)
+    setPage(1)
+  }
 
   const totalPages = Math.max(1, Math.ceil(filasFiltradas.length / PAGE_SIZE))
   const pageSafe = Math.min(page, totalPages)
@@ -187,8 +314,8 @@ export function FuerasDeRutaClient({
     downloadCsv(`fueras-de-ruta_${data.desde}_${data.hasta}.csv`, [header, ...rows])
   }
 
-  const topPersonal = data.porPersonal.slice(0, 5)
-  const topRutas = data.porRuta.slice(0, 5)
+  const topPersonal = universo.porPersonal.slice(0, 5)
+  const topRutas = universo.porRuta.slice(0, 5)
 
   // Pareto multi-dimensión: cliente / promotor / ruta
   const [paretoDim, setParetoDim] = useState<"cliente" | "promotor" | "ruta">("cliente")
@@ -204,7 +331,7 @@ export function FuerasDeRutaClient({
     }
     let fuente: Array<{ titulo: string; subtitulo: string | null; fuera: number; monto: number }>
     if (paretoDim === "cliente") {
-      fuente = data.porCliente
+      fuente = universo.porCliente
         .filter((c) => c.fuera_de_ruta > 0)
         .map((c) => ({
           titulo: c.razon_social ?? `#${c.id_cliente}`,
@@ -213,7 +340,7 @@ export function FuerasDeRutaClient({
           monto: c.monto_fuera_de_ruta,
         }))
     } else if (paretoDim === "promotor") {
-      fuente = data.porPersonal
+      fuente = universo.porPersonal
         .filter((p) => p.fuera_de_ruta > 0)
         .map((p) => ({
           titulo: p.des_personal ?? `Promotor ${p.id_personal ?? "?"}`,
@@ -222,7 +349,7 @@ export function FuerasDeRutaClient({
           monto: p.monto_fuera_de_ruta,
         }))
     } else {
-      fuente = data.porRuta
+      fuente = universo.porRuta
         .filter((r) => r.fuera_de_ruta > 0)
         .map((r) => ({
           titulo: r.des_ruta ?? (r.id_ruta == null ? "(sin ruta)" : `Ruta ${r.id_ruta}`),
@@ -250,14 +377,14 @@ export function FuerasDeRutaClient({
       if (rows.length >= 25) break
     }
     return rows
-  }, [paretoDim, data.porCliente, data.porPersonal, data.porRuta])
+  }, [paretoDim, universo.porCliente, universo.porPersonal, universo.porRuta])
 
   const paretoCorte = paretoData.length > 0 ? paretoData[paretoData.length - 1].acumPct : 0
   const totalFueraGlobal = useMemo(() => {
-    if (paretoDim === "cliente") return data.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
-    if (paretoDim === "promotor") return data.porPersonal.reduce((s, p) => s + p.fuera_de_ruta, 0)
-    return data.porRuta.reduce((s, r) => s + r.fuera_de_ruta, 0)
-  }, [paretoDim, data.porCliente, data.porPersonal, data.porRuta])
+    if (paretoDim === "cliente") return universo.porCliente.reduce((s, c) => s + c.fuera_de_ruta, 0)
+    if (paretoDim === "promotor") return universo.porPersonal.reduce((s, p) => s + p.fuera_de_ruta, 0)
+    return universo.porRuta.reduce((s, r) => s + r.fuera_de_ruta, 0)
+  }, [paretoDim, universo.porCliente, universo.porPersonal, universo.porRuta])
   const entidadLabel = paretoDim === "cliente" ? "clientes" : paretoDim === "promotor" ? "promotores" : "rutas"
 
   return (
@@ -362,31 +489,37 @@ export function FuerasDeRutaClient({
           icon={<Package className="h-5 w-5" />}
           color="slate"
           label="Pedidos totales"
-          value={fmtInt(data.totalPedidos)}
+          value={fmtInt(universo.totalPedidos)}
           hint="Excluye eliminados e items 100% anulados"
         />
         <KpiCard
           icon={<AlertTriangle className="h-5 w-5" />}
           color="rose"
           label="Fuera de ruta"
-          value={fmtInt(data.totalFueraDeRuta)}
+          value={fmtInt(universo.totalFueraDeRuta)}
           hint="Pedido cuyo día no figura en la ruta del cliente"
         />
         <KpiCard
           icon={<RouteIcon className="h-5 w-5" />}
           color="amber"
           label="% Fuera de ruta"
-          value={fmtPct(data.porcFueraDeRuta)}
+          value={fmtPct(universo.porcFueraDeRuta)}
           hint="Sobre pedidos con ruta PRE asignada"
         />
         <KpiCard
           icon={<Users className="h-5 w-5" />}
           color="indigo"
           label="Sin ruta PRE"
-          value={fmtInt(data.totalSinRutaPre)}
+          value={fmtInt(universo.totalSinRutaPre)}
           hint="Pedidos de clientes sin fuerza PRE vigente"
         />
       </div>
+
+      {montoMin > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Filtro activo: mostrando solo pedidos con monto final ≥ {fmtMoney(montoMin)}. KPIs, Pareto y tablas top reflejan este corte.
+        </div>
+      )}
 
       {data.truncated && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -653,6 +786,37 @@ export function FuerasDeRutaClient({
               />
               Excluir 100% anulados
             </label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="monto-min" className="text-sm text-slate-700">
+                Monto mín. $
+              </Label>
+              <Input
+                id="monto-min"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="1000"
+                value={montoMinInput}
+                onChange={(e) => setMontoMinInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    aplicarMontoMin()
+                  }
+                }}
+                placeholder="0"
+                className="w-28"
+                title="Excluye pedidos con monto final menor a este valor"
+              />
+              <Button variant="outline" size="sm" onClick={aplicarMontoMin}>
+                Aplicar
+              </Button>
+              {montoMin > 0 && (
+                <Button variant="ghost" size="sm" onClick={limpiarMontoMin}>
+                  ✕
+                </Button>
+              )}
+            </div>
             <Button variant="outline" size="sm" onClick={exportarCsv}>
               <Download className="mr-1.5 h-4 w-4" />
               CSV
