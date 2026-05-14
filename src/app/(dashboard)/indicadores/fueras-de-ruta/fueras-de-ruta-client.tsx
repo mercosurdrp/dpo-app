@@ -103,8 +103,8 @@ export function FuerasDeRutaClient({
   const [soloFuera, setSoloFuera] = useState(false)
   const [excluirEliminados, setExcluirEliminados] = useState(true)
   const [excluirSinItems, setExcluirSinItems] = useState(true)
-  const [montoMinInput, setMontoMinInput] = useState<string>("")
-  const [montoMin, setMontoMin] = useState<number>(0)
+  const [montoMaxInput, setMontoMaxInput] = useState<string>("")
+  const [montoMax, setMontoMax] = useState<number>(0)
   const [page, setPage] = useState(1)
 
   const [syncPending, startSync] = useTransition()
@@ -139,7 +139,7 @@ export function FuerasDeRutaClient({
   }
 
   // Universo "estructural": aplica filtros que afectan a todos los cómputos
-  // del dashboard (eliminados, items 100% anulados, monto mínimo). Los
+  // del dashboard (eliminados, items 100% anulados, monto máximo). Los
   // filtros de búsqueda y "solo fuera" se aplican solo a la tabla, no
   // contaminan KPIs ni Pareto.
   const universo = useMemo<{
@@ -155,7 +155,7 @@ export function FuerasDeRutaClient({
     const filas = data.filas.filter((f) => {
       if (excluirEliminados && f.eliminado) return false
       if (excluirSinItems && f.items_no_anulados === 0) return false
-      if (montoMin > 0 && (Number(f.monto_aprox) || 0) < montoMin) return false
+      if (montoMax > 0 && (Number(f.monto_aprox) || 0) > montoMax) return false
       return true
     })
 
@@ -248,7 +248,7 @@ export function FuerasDeRutaClient({
       porRuta,
       porCliente,
     }
-  }, [data.filas, excluirEliminados, excluirSinItems, montoMin])
+  }, [data.filas, excluirEliminados, excluirSinItems, montoMax])
 
   const filasFiltradas = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -261,14 +261,14 @@ export function FuerasDeRutaClient({
     })
   }, [universo.filas, search, soloFuera])
 
-  function aplicarMontoMin() {
-    const n = Number(montoMinInput.replace(/[^\d.,-]/g, "").replace(",", "."))
-    setMontoMin(Number.isFinite(n) && n > 0 ? n : 0)
+  function aplicarMontoMax() {
+    const n = Number(montoMaxInput.replace(/[^\d.,-]/g, "").replace(",", "."))
+    setMontoMax(Number.isFinite(n) && n > 0 ? n : 0)
     setPage(1)
   }
-  function limpiarMontoMin() {
-    setMontoMinInput("")
-    setMontoMin(0)
+  function limpiarMontoMax() {
+    setMontoMaxInput("")
+    setMontoMax(0)
     setPage(1)
   }
 
@@ -515,9 +515,9 @@ export function FuerasDeRutaClient({
         />
       </div>
 
-      {montoMin > 0 && (
+      {montoMax > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Filtro activo: mostrando solo pedidos con monto final ≥ {fmtMoney(montoMin)}. KPIs, Pareto y tablas top reflejan este corte.
+          Filtro activo: mostrando solo pedidos con monto final ≤ {fmtMoney(montoMax)}. KPIs, Pareto y tablas top reflejan este corte.
         </div>
       )}
 
@@ -787,32 +787,32 @@ export function FuerasDeRutaClient({
               Excluir 100% anulados
             </label>
             <div className="flex items-center gap-1">
-              <Label htmlFor="monto-min" className="text-sm text-slate-700">
-                Monto mín. $
+              <Label htmlFor="monto-max" className="text-sm text-slate-700">
+                Monto ≤ $
               </Label>
               <Input
-                id="monto-min"
+                id="monto-max"
                 type="number"
                 inputMode="decimal"
                 min="0"
                 step="1000"
-                value={montoMinInput}
-                onChange={(e) => setMontoMinInput(e.target.value)}
+                value={montoMaxInput}
+                onChange={(e) => setMontoMaxInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault()
-                    aplicarMontoMin()
+                    aplicarMontoMax()
                   }
                 }}
                 placeholder="0"
                 className="w-28"
-                title="Excluye pedidos con monto final menor a este valor"
+                title="Muestra solo pedidos con monto final menor o igual a este valor (útil para ver pedidos chicos)"
               />
-              <Button variant="outline" size="sm" onClick={aplicarMontoMin}>
+              <Button variant="outline" size="sm" onClick={aplicarMontoMax}>
                 Aplicar
               </Button>
-              {montoMin > 0 && (
-                <Button variant="ghost" size="sm" onClick={limpiarMontoMin}>
+              {montoMax > 0 && (
+                <Button variant="ghost" size="sm" onClick={limpiarMontoMax}>
                   ✕
                 </Button>
               )}
