@@ -71,24 +71,67 @@ export interface WarehouseSerieDiaria {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Fetches con tolerancia a fallos
+// Fetches con tolerancia a fallos + cache in-memory por proceso
 // ────────────────────────────────────────────────────────────────────
+//
+// Las fuentes externas (deposito-esteban.vercel.app, Google Sheets) tienen
+// cold start de varios segundos. Sin cache cada apertura de reunión pegaba
+// al origen y el Promise.all esperaba al más lento. Cacheamos por 5 min en
+// memoria del proceso y aplicamos timeout de 5s para que un origen colgado
+// no bloquee la apertura.
+
+const EXTERNAL_FETCH_TTL_MS = 5 * 60 * 1000
+const EXTERNAL_FETCH_TIMEOUT_MS = 5000
+
+type CacheEntry = { value: unknown; expiresAt: number }
+const externalCache = new Map<string, CacheEntry>()
+
+function readCache<T>(url: string): T | undefined {
+  const entry = externalCache.get(url)
+  if (!entry) return undefined
+  if (entry.expiresAt < Date.now()) {
+    externalCache.delete(url)
+    return undefined
+  }
+  return entry.value as T
+}
+
+function writeCache(url: string, value: unknown) {
+  externalCache.set(url, {
+    value,
+    expiresAt: Date.now() + EXTERNAL_FETCH_TTL_MS,
+  })
+}
 
 async function fetchJsonSafe<T>(url: string): Promise<T | null> {
+  const cached = readCache<T | null>(url)
+  if (cached !== undefined) return cached
   try {
-    const res = await fetch(url, { cache: "no-store" })
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
+    })
     if (!res.ok) return null
-    return (await res.json()) as T
+    const data = (await res.json()) as T
+    writeCache(url, data)
+    return data
   } catch {
     return null
   }
 }
 
 async function fetchTextSafe(url: string): Promise<string | null> {
+  const cached = readCache<string | null>(url)
+  if (cached !== undefined) return cached
   try {
-    const res = await fetch(url, { cache: "no-store" })
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
+    })
     if (!res.ok) return null
-    return await res.text()
+    const text = await res.text()
+    writeCache(url, text)
+    return text
   } catch {
     return null
   }
