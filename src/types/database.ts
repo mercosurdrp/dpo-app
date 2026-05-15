@@ -1110,6 +1110,50 @@ export interface TmlFoxtrotDia {
   equipos: TmlFoxtrotEquipo[]
 }
 
+// ===== TML Foxtrot — selección de período =====
+export type TmlFoxtrotPeriodo = "dia" | "semana" | "mes" | "ytd" | "personalizado"
+
+// Un punto de la tendencia diaria dentro de un rango.
+export interface TmlFoxtrotSerieDia {
+  fecha: string
+  promedio_real_min: number | null
+  promedio_desde7_min: number | null
+  equipos_con_tml: number
+  equipos_totales: number
+}
+
+// Agregado por chofer sobre todo el rango (vista de rangos multi-día).
+export interface TmlFoxtrotChoferAgg {
+  empleado_id: string | null
+  legajo: number | null
+  nombre: string | null
+  sucursal: "ELDORADO" | "IGUAZU" | null
+  dias_con_ruta: number
+  dias_con_tml: number
+  dias_fuera_meta: number
+  dias_sin_marca: number
+  tml_promedio_real: number | null
+  tml_promedio_desde7: number | null
+  tml_peor_real: number | null
+  tml_mejor_real: number | null
+  pct_dentro_meta: number | null
+}
+
+export interface TmlFoxtrotRango {
+  periodo: TmlFoxtrotPeriodo
+  desde: string
+  hasta: string
+  es_dia_unico: boolean
+  meta_minutos: number
+  resumen: TmlFoxtrotResumen
+  por_sucursal: Record<"ELDORADO" | "IGUAZU", TmlFoxtrotResumen>
+  serie_diaria: TmlFoxtrotSerieDia[]
+  // Poblado solo cuando es_dia_unico (vista detalle por equipo).
+  equipos: TmlFoxtrotEquipo[]
+  // Agregado por chofer sobre el rango (vista multi-día).
+  choferes: TmlFoxtrotChoferAgg[]
+}
+
 // ===== TML comparativo YoY =====
 export interface TmlMesComparado {
   mes: number
