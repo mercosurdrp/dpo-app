@@ -2,13 +2,22 @@
  * Resumen del día para el detalle de "Rechazos %" en el tablero de reuniones.
  * Lectura pura: recibe el cliente Supabase y la fecha, devuelve KPIs +
  * top 10 clientes / motivos / productos + breakdown por patente.
+ *
+ * Se agrupa por `fecha_venta` (día de la venta original, no el de carga de
+ * la devolución) — mismo criterio que el dashboard de /indicadores/rechazos.
+ * El volumen se mide en HL (primario), con bultos como dato secundario.
  */
 import type { SupaClient } from "./comparado"
 
 export interface RechazosResumenDiaKPIs {
+  hl_rechazados: number
+  ventas_total_hl: number
+  /** % de rechazo en HL = hl_rechazados / ventas_total_hl × 100. Null si no hay ventas. */
+  tasa: number | null
   bultos_rechazados: number
   ventas_total_bultos: number
-  tasa: number | null
+  /** % de rechazo en bultos (secundario). Null si no hay ventas. */
+  tasa_bultos: number | null
   eventos: number
   monto_neto: number
   monto_bruto: number
@@ -18,6 +27,7 @@ export interface RechazosResumenDiaKPIs {
 export interface RechazosResumenClienteRow {
   id_cliente: number | null
   nombre_cliente: string
+  hl: number
   bultos: number
   monto_neto: number
   eventos: number
@@ -28,6 +38,7 @@ export interface RechazosResumenMotivoRow {
   id_rechazo: number
   ds_rechazo: string
   categoria: string
+  hl: number
   bultos: number
   eventos: number
 }
@@ -35,6 +46,7 @@ export interface RechazosResumenMotivoRow {
 export interface RechazosResumenProductoRow {
   id_articulo: number
   ds_articulo: string
+  hl: number
   bultos: number
   monto_neto: number
 }
@@ -42,6 +54,7 @@ export interface RechazosResumenProductoRow {
 export interface RechazosResumenPatenteRow {
   patente: string
   chofer_nombre: string | null
+  hl: number
   bultos: number
   eventos: number
   monto_neto: number
@@ -64,6 +77,7 @@ interface RawRechazoRow {
   nombre_cliente: string | null
   id_articulo: number
   ds_articulo: string | null
+  hl_rechazados: number | null
   bultos_rechazados: number | null
   monto_neto: number | null
   monto_bruto: number | null
@@ -90,12 +104,13 @@ export async function getRechazosResumenDia(
     supa
       .from("rechazos")
       .select(
-        "ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,bultos_rechazados,monto_neto,monto_bruto",
+        "ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto",
       )
-      .eq("fecha", fecha),
+      // Imputado al día de la venta (ver migración 065), no al de carga.
+      .eq("fecha_venta", fecha),
     supa
       .from("ventas_diarias")
-      .select("total_bultos")
+      .select("total_bultos,total_hl")
       .eq("fecha", fecha),
     supa
       .from("catalogo_rechazos")
@@ -113,7 +128,10 @@ export async function getRechazosResumenDia(
   }
 
   const rechazos = (rechazosRaw.data ?? []) as RawRechazoRow[]
-  const ventas = (ventasRaw.data ?? []) as Array<{ total_bultos: number | null }>
+  const ventas = (ventasRaw.data ?? []) as Array<{
+    total_bultos: number | null
+    total_hl: number | null
+  }>
   const catalogo = (catalogoRaw.data ?? []) as CatalogoEntry[]
   type MapeoRow = {
     patente: string
@@ -129,11 +147,16 @@ export async function getRechazosResumenDia(
     choferIdx.set(m.patente, m.catalogo_choferes?.nombre ?? null)
   }
 
-  // KPIs
+  // KPIs — denominador en HL (primario) y bultos (secundario)
+  const ventasTotalHl = ventas.reduce(
+    (acc, v) => acc + Number(v.total_hl ?? 0),
+    0,
+  )
   const ventasTotalBultos = ventas.reduce(
     (acc, v) => acc + Number(v.total_bultos ?? 0),
     0,
   )
+  let hlRechazados = 0
   let bultosRechazados = 0
   let montoNetoTotal = 0
   let montoBrutoTotal = 0
@@ -142,25 +165,30 @@ export async function getRechazosResumenDia(
   // Agregadores
   type ClienteAgg = {
     nombre_cliente: string
+    hl: number
     bultos: number
     monto_neto: number
     eventos: number
-    motivosBultos: Map<string, number>
+    /** motivo → { hl, bultos } para elegir el motivo principal. */
+    motivos: Map<string, { hl: number; bultos: number }>
   }
   type MotivoAgg = {
     id_rechazo: number
     ds_rechazo: string
     categoria: string
+    hl: number
     bultos: number
     eventos: number
   }
   type ProductoAgg = {
     ds_articulo: string
+    hl: number
     bultos: number
     monto_neto: number
   }
   type PatenteAgg = {
     chofer_nombre: string | null
+    hl: number
     bultos: number
     eventos: number
     monto_neto: number
@@ -172,11 +200,13 @@ export async function getRechazosResumenDia(
   const patentes = new Map<string, PatenteAgg>()
 
   for (const r of rechazos) {
+    const hl = Number(r.hl_rechazados ?? 0)
     const b = Number(r.bultos_rechazados ?? 0)
     const mn = Number(r.monto_neto ?? 0)
     const mb = Number(r.monto_bruto ?? 0)
     if (!Number.isFinite(b)) continue
 
+    hlRechazados += hl
     bultosRechazados += b
     montoNetoTotal += mn
     montoBrutoTotal += mb
@@ -188,22 +218,24 @@ export async function getRechazosResumenDia(
     const dsR = (r.ds_rechazo ?? "").trim() || "(Sin motivo)"
     const cExist = clientes.get(idC)
     if (cExist) {
+      cExist.hl += hl
       cExist.bultos += b
       cExist.monto_neto += mn
       cExist.eventos += 1
-      cExist.motivosBultos.set(
-        dsR,
-        (cExist.motivosBultos.get(dsR) ?? 0) + b,
-      )
+      const mAgg = cExist.motivos.get(dsR) ?? { hl: 0, bultos: 0 }
+      mAgg.hl += hl
+      mAgg.bultos += b
+      cExist.motivos.set(dsR, mAgg)
     } else {
-      const m = new Map<string, number>()
-      m.set(dsR, b)
+      const m = new Map<string, { hl: number; bultos: number }>()
+      m.set(dsR, { hl, bultos: b })
       clientes.set(idC, {
         nombre_cliente: nombreC,
+        hl,
         bultos: b,
         monto_neto: mn,
         eventos: 1,
-        motivosBultos: m,
+        motivos: m,
       })
     }
 
@@ -212,6 +244,7 @@ export async function getRechazosResumenDia(
     const motivoLabel = cat?.ds_rechazo ?? (r.ds_rechazo ?? "(Sin motivo)")
     const mExist = motivos.get(r.id_rechazo)
     if (mExist) {
+      mExist.hl += hl
       mExist.bultos += b
       mExist.eventos += 1
     } else {
@@ -219,6 +252,7 @@ export async function getRechazosResumenDia(
         id_rechazo: r.id_rechazo,
         ds_rechazo: motivoLabel,
         categoria: cat?.categoria ?? "POR_CLASIFICAR",
+        hl,
         bultos: b,
         eventos: 1,
       })
@@ -228,11 +262,13 @@ export async function getRechazosResumenDia(
     const dsA = (r.ds_articulo ?? "").trim() || SIN_ARTICULO
     const pExist = productos.get(r.id_articulo)
     if (pExist) {
+      pExist.hl += hl
       pExist.bultos += b
       pExist.monto_neto += mn
     } else {
       productos.set(r.id_articulo, {
         ds_articulo: dsA,
+        hl,
         bultos: b,
         monto_neto: mn,
       })
@@ -243,12 +279,14 @@ export async function getRechazosResumenDia(
     if (pat) {
       const patExist = patentes.get(pat)
       if (patExist) {
+        patExist.hl += hl
         patExist.bultos += b
         patExist.eventos += 1
         patExist.monto_neto += mn
       } else {
         patentes.set(pat, {
           chofer_nombre: choferIdx.get(pat) ?? null,
+          hl,
           bultos: b,
           eventos: 1,
           monto_neto: mn,
@@ -258,61 +296,72 @@ export async function getRechazosResumenDia(
   }
 
   const tasa =
+    ventasTotalHl > 0 ? (hlRechazados / ventasTotalHl) * 100 : null
+  const tasaBultos =
     ventasTotalBultos > 0 ? (bultosRechazados / ventasTotalBultos) * 100 : null
 
-  // Top 10 clientes por bultos
+  // Top 10 clientes por HL
   const top_clientes: RechazosResumenClienteRow[] = [...clientes.entries()]
     .map(([id, agg]) => {
+      // Motivo principal: el de mayor HL; desempate por bultos (cubre combos = 0 HL).
       let motivoPrincipal: string | null = null
-      let mejor = -1
-      for (const [m, b] of agg.motivosBultos) {
-        if (b > mejor) {
-          mejor = b
+      let mejorHl = -1
+      let mejorBultos = -1
+      for (const [m, v] of agg.motivos) {
+        if (v.hl > mejorHl || (v.hl === mejorHl && v.bultos > mejorBultos)) {
+          mejorHl = v.hl
+          mejorBultos = v.bultos
           motivoPrincipal = m
         }
       }
       return {
         id_cliente: id === -1 ? null : id,
         nombre_cliente: agg.nombre_cliente,
+        hl: agg.hl,
         bultos: agg.bultos,
         monto_neto: agg.monto_neto,
         eventos: agg.eventos,
         motivo_principal: motivoPrincipal,
       }
     })
-    .sort((a, b) => b.bultos - a.bultos)
+    .sort((a, b) => b.hl - a.hl)
     .slice(0, 10)
 
   const top_motivos: RechazosResumenMotivoRow[] = [...motivos.values()]
-    .sort((a, b) => b.bultos - a.bultos)
+    .sort((a, b) => b.hl - a.hl)
     .slice(0, 10)
 
   const top_productos: RechazosResumenProductoRow[] = [...productos.entries()]
     .map(([id, agg]) => ({
       id_articulo: id,
       ds_articulo: agg.ds_articulo,
+      hl: agg.hl,
       bultos: agg.bultos,
       monto_neto: agg.monto_neto,
     }))
-    .sort((a, b) => b.bultos - a.bultos)
+    .sort((a, b) => b.hl - a.hl)
     .slice(0, 10)
 
   const por_patente: RechazosResumenPatenteRow[] = [...patentes.entries()]
     .map(([pat, agg]) => ({
       patente: pat,
       chofer_nombre: agg.chofer_nombre,
+      hl: agg.hl,
       bultos: agg.bultos,
       eventos: agg.eventos,
       monto_neto: agg.monto_neto,
     }))
-    .sort((a, b) => b.bultos - a.bultos)
+    .sort((a, b) => b.hl - a.hl)
 
   return {
     fecha,
     kpis: {
+      hl_rechazados: hlRechazados,
+      ventas_total_hl: ventasTotalHl,
+      tasa,
       bultos_rechazados: bultosRechazados,
       ventas_total_bultos: ventasTotalBultos,
-      tasa,
+      tasa_bultos: tasaBultos,
       eventos: rechazos.length,
       monto_neto: montoNetoTotal,
       monto_bruto: montoBrutoTotal,

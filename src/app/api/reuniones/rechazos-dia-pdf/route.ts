@@ -177,16 +177,16 @@ function drawKPIs(doc: Doc, r: RechazosResumenDia) {
         : `> meta ${META_TASA}%`
 
   const kpis: Array<{ label: string; value: string; sub: string; color?: string }> = [
-    { label: "Tasa", value: tasaStr, sub: tasaSub, color: tasaColor },
+    { label: "Tasa HL", value: tasaStr, sub: tasaSub, color: tasaColor },
     {
-      label: "Rechazados",
-      value: formatInt(r.kpis.bultos_rechazados),
-      sub: "bultos",
+      label: "HL rechazados",
+      value: formatHl(r.kpis.hl_rechazados),
+      sub: `${formatInt(r.kpis.bultos_rechazados)} bultos`,
     },
     {
-      label: "Entregados",
-      value: formatInt(r.kpis.ventas_total_bultos),
-      sub: "bultos",
+      label: "HL entregados",
+      value: formatHl(r.kpis.ventas_total_hl),
+      sub: `${formatInt(r.kpis.ventas_total_bultos)} bultos`,
     },
     { label: "Eventos", value: formatInt(r.kpis.eventos), sub: "rechazos" },
     {
@@ -404,12 +404,13 @@ function drawTablaClientes(doc: Doc, rows: RechazosResumenDia["top_clientes"]) {
       align: "right",
       get: (r) => (r.id_cliente == null ? "—" : String(r.id_cliente)),
     },
-    { header: "Bultos", width: 50, align: "right", get: (r) => formatInt(r.bultos) },
-    { header: "Eventos", width: 55, align: "right", get: (r) => formatInt(r.eventos) },
-    { header: "Monto neto", width: 80, align: "right", get: (r) => formatMoneyShort(r.monto_neto) },
+    { header: "HL", width: 48, align: "right", get: (r) => formatHl(r.hl) },
+    { header: "Bultos", width: 48, align: "right", get: (r) => formatInt(r.bultos) },
+    { header: "Eventos", width: 52, align: "right", get: (r) => formatInt(r.eventos) },
+    { header: "Monto neto", width: 78, align: "right", get: (r) => formatMoneyShort(r.monto_neto) },
     {
       header: "Motivo principal",
-      width: 165,
+      width: 150,
       get: (r) => r.motivo_principal ?? "—",
     },
   ])
@@ -419,8 +420,9 @@ function drawTablaMotivos(doc: Doc, rows: RechazosResumenDia["top_motivos"]) {
   drawSectionTitle(doc, "Top 10 motivos de rechazo")
   drawTable<RechazosResumenDia["top_motivos"][number]>(doc, rows, [
     { header: "#", width: 18, align: "right", get: (r) => String(rows.indexOf(r) + 1) },
-    { header: "Motivo", width: 280, get: (r) => r.ds_rechazo },
-    { header: "Categoría", width: 130, get: (r) => prettyCategoria(r.categoria) },
+    { header: "Motivo", width: 270, get: (r) => r.ds_rechazo },
+    { header: "Categoría", width: 120, get: (r) => prettyCategoria(r.categoria) },
+    { header: "HL", width: 55, align: "right", get: (r) => formatHl(r.hl) },
     { header: "Bultos", width: 55, align: "right", get: (r) => formatInt(r.bultos) },
     { header: "Eventos", width: 60, align: "right", get: (r) => formatInt(r.eventos) },
   ])
@@ -437,24 +439,26 @@ function drawTablaProductos(doc: Doc, rows: RechazosResumenDia["top_productos"])
       align: "right",
       get: (r) => String(r.id_articulo),
     },
+    { header: "HL", width: 55, align: "right", get: (r) => formatHl(r.hl) },
     { header: "Bultos", width: 55, align: "right", get: (r) => formatInt(r.bultos) },
     { header: "Monto neto", width: 85, align: "right", get: (r) => formatMoneyShort(r.monto_neto) },
   ])
 }
 
 function drawTablaPatentes(doc: Doc, rows: RechazosResumenDia["por_patente"]) {
-  drawSectionTitle(doc, "Bultos rechazados por patente")
+  drawSectionTitle(doc, "HL rechazados por patente")
   drawTable<RechazosResumenDia["por_patente"][number]>(doc, rows, [
     { header: "#", width: 18, align: "right", get: (r) => String(rows.indexOf(r) + 1) },
     { header: "Patente", width: 80, get: (r) => r.patente },
     {
       header: "Chofer",
-      width: 230,
+      width: 215,
       get: (r) => r.chofer_nombre ?? "(sin asignar)",
     },
-    { header: "Bultos", width: 55, align: "right", get: (r) => formatInt(r.bultos) },
-    { header: "Eventos", width: 60, align: "right", get: (r) => formatInt(r.eventos) },
-    { header: "Monto neto", width: 85, align: "right", get: (r) => formatMoneyShort(r.monto_neto) },
+    { header: "HL", width: 50, align: "right", get: (r) => formatHl(r.hl) },
+    { header: "Bultos", width: 50, align: "right", get: (r) => formatInt(r.bultos) },
+    { header: "Eventos", width: 55, align: "right", get: (r) => formatInt(r.eventos) },
+    { header: "Monto neto", width: 80, align: "right", get: (r) => formatMoneyShort(r.monto_neto) },
   ])
 }
 
@@ -519,6 +523,16 @@ function ensureSpace(doc: Doc, needed: number) {
 
 function formatInt(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n)
+}
+
+/** HL sin sufijo (la columna/label ya dice HL). 2 decimales hasta 100, 1 por encima. */
+function formatHl(n: number): string {
+  if (!Number.isFinite(n)) return "—"
+  const dec = Math.abs(n) >= 100 ? 1 : 2
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec,
+  }).format(n)
 }
 
 function formatMoneyShort(n: number): string {

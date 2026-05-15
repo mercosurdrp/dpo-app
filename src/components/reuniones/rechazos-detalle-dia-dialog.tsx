@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { formatHl } from "@/lib/format/rechazos"
 import {
   getRechazosResumenDia,
   type RechazosResumenDia,
@@ -131,7 +132,7 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <KpiCard
-                label="Tasa del día"
+                label="Tasa del día (HL)"
                 value={tasa == null ? "—" : `${tasa.toFixed(2)}%`}
                 valueClassName={
                   tasa == null
@@ -143,20 +144,21 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                 sub={
                   tasa == null
                     ? "sin ventas"
-                    : cumple
-                      ? `cumple meta ${META_TASA}%`
-                      : `supera meta ${META_TASA}%`
+                    : `${cumple ? "cumple" : "supera"} meta ${META_TASA}%` +
+                      (data.kpis.tasa_bultos == null
+                        ? ""
+                        : ` · bultos ${data.kpis.tasa_bultos.toFixed(2)}%`)
                 }
               />
               <KpiCard
-                label="Bultos rechazados"
-                value={formatInt(data.kpis.bultos_rechazados)}
-                sub={`${formatInt(data.kpis.eventos)} eventos`}
+                label="HL rechazados"
+                value={formatHl(data.kpis.hl_rechazados)}
+                sub={`${formatInt(data.kpis.bultos_rechazados)} bultos · ${formatInt(data.kpis.eventos)} eventos`}
               />
               <KpiCard
-                label="Bultos entregados"
-                value={formatInt(data.kpis.ventas_total_bultos)}
-                sub="total del día"
+                label="HL entregados"
+                value={formatHl(data.kpis.ventas_total_hl)}
+                sub={`${formatInt(data.kpis.ventas_total_bultos)} bultos · total del día`}
               />
               <KpiCard
                 label="Patentes involucradas"
@@ -186,7 +188,8 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead className="w-20 text-right">Cód.</TableHead>
-                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">Bultos</TableHead>
                     <TableHead className="w-20 text-right">Eventos</TableHead>
                     <TableHead className="w-28 text-right">Monto neto</TableHead>
                     <TableHead>Motivo principal</TableHead>
@@ -195,7 +198,7 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                 <TableBody>
                   {data.top_clientes.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
                         Sin datos para este día
                       </TableCell>
                     </TableRow>
@@ -208,6 +211,9 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                         {c.id_cliente == null ? "—" : c.id_cliente}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
+                        {formatHl(c.hl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
                         {formatInt(c.bultos)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -233,14 +239,15 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Motivo</TableHead>
                     <TableHead>Categoría</TableHead>
-                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">Bultos</TableHead>
                     <TableHead className="w-20 text-right">Eventos</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.top_motivos.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         Sin datos para este día
                       </TableCell>
                     </TableRow>
@@ -255,6 +262,9 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
+                        {formatHl(m.hl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
                         {formatInt(m.bultos)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -274,14 +284,15 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Producto</TableHead>
                     <TableHead className="w-20 text-right">Cód.</TableHead>
-                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">Bultos</TableHead>
                     <TableHead className="w-28 text-right">Monto neto</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.top_productos.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         Sin datos para este día
                       </TableCell>
                     </TableRow>
@@ -294,6 +305,9 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                         {p.id_articulo}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
+                        {formatHl(p.hl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
                         {formatInt(p.bultos)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -307,7 +321,7 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
 
             {/* Por patente */}
             <Section
-              title="Bultos rechazados por patente"
+              title="HL rechazados por patente"
               subtitle={`${data.por_patente.length} patente${data.por_patente.length === 1 ? "" : "s"} con rechazo`}
             >
               <Table>
@@ -316,7 +330,8 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead className="w-24">Patente</TableHead>
                     <TableHead>Chofer</TableHead>
-                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">Bultos</TableHead>
                     <TableHead className="w-20 text-right">Eventos</TableHead>
                     <TableHead className="w-28 text-right">Monto neto</TableHead>
                   </TableRow>
@@ -324,7 +339,7 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                 <TableBody>
                   {data.por_patente.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         Sin datos para este día
                       </TableCell>
                     </TableRow>
@@ -339,6 +354,9 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
+                        {formatHl(p.hl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
                         {formatInt(p.bultos)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
