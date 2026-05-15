@@ -2590,69 +2590,70 @@ export async function getIndicadoresMes(
     ]
 
     // 7b. Indicador AUTO "Rechazos %" — todos los tipos de reunión.
-    //     Tasa diaria = bultos_rechazados_dia / total_bultos_ventas_dia * 100.
-    //     MTD ponderado = Σ bultos_mtd / Σ ventas_mtd * 100 (hasta `fecha`).
-    //     Misma fórmula que /indicadores/rechazos (lib/rechazos/comparado.ts).
+    //     Tasa diaria = hl_rechazados_dia / total_hl_ventas_dia * 100.
+    //     Se imputa por `fecha_venta` (día de la venta real, no el de carga de
+    //     la devolución) y se mide en HL. Mismo criterio que /indicadores/rechazos
+    //     (lib/rechazos/comparado.ts) y el detalle del día (lib/rechazos/resumen-dia.ts).
     {
-      const bultosPorFecha: Record<string, number> = {}
-      const ventasPorFecha: Record<string, number> = {}
+      const hlPorFecha: Record<string, number> = {}
+      const ventasHlPorFecha: Record<string, number> = {}
 
       const { data: rechRaw, error: errRech } = await supabase
         .from("rechazos")
-        .select("fecha, bultos_rechazados")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
+        .select("fecha_venta, hl_rechazados")
+        .gte("fecha_venta", fechaDesde)
+        .lte("fecha_venta", fechaHasta)
 
       if (!errRech) {
         for (const r of (rechRaw ?? []) as Array<{
-          fecha: string
-          bultos_rechazados: number | null
+          fecha_venta: string
+          hl_rechazados: number | null
         }>) {
-          const b = Number(r.bultos_rechazados ?? 0)
-          if (!Number.isFinite(b)) continue
-          bultosPorFecha[r.fecha] = (bultosPorFecha[r.fecha] ?? 0) + b
+          const hl = Number(r.hl_rechazados ?? 0)
+          if (!Number.isFinite(hl)) continue
+          hlPorFecha[r.fecha_venta] = (hlPorFecha[r.fecha_venta] ?? 0) + hl
         }
 
         const { data: ventRaw, error: errVent } = await supabase
           .from("ventas_diarias")
-          .select("fecha, total_bultos")
+          .select("fecha, total_hl")
           .gte("fecha", fechaDesde)
           .lte("fecha", fechaHasta)
 
         if (!errVent) {
           for (const v of (ventRaw ?? []) as Array<{
             fecha: string
-            total_bultos: number | null
+            total_hl: number | null
           }>) {
-            const b = Number(v.total_bultos ?? 0)
-            if (!Number.isFinite(b)) continue
-            ventasPorFecha[v.fecha] = (ventasPorFecha[v.fecha] ?? 0) + b
+            const hl = Number(v.total_hl ?? 0)
+            if (!Number.isFinite(hl)) continue
+            ventasHlPorFecha[v.fecha] = (ventasHlPorFecha[v.fecha] ?? 0) + hl
           }
 
           const valoresPorFecha: Record<
             string,
             { reunion_id: string; valor: number | null; observacion: string | null } | null
           > = {}
-          let sumBultosMtd = 0
-          let sumVentasMtd = 0
+          let sumHlMtd = 0
+          let sumVentasHlMtd = 0
 
           for (const f of fechas) {
-            const ventas = ventasPorFecha[f] ?? 0
-            const bultos = bultosPorFecha[f] ?? 0
-            const tasa = ventas > 0 ? (bultos / ventas) * 100 : null
+            const ventas = ventasHlPorFecha[f] ?? 0
+            const hl = hlPorFecha[f] ?? 0
+            const tasa = ventas > 0 ? (hl / ventas) * 100 : null
             valoresPorFecha[f] = {
               reunion_id: "auto",
               valor: tasa,
               observacion: null,
             }
             if (f <= fecha) {
-              sumBultosMtd += bultos
-              sumVentasMtd += ventas
+              sumHlMtd += hl
+              sumVentasHlMtd += ventas
             }
           }
 
           const mtd =
-            sumVentasMtd > 0 ? (sumBultosMtd / sumVentasMtd) * 100 : null
+            sumVentasHlMtd > 0 ? (sumHlMtd / sumVentasHlMtd) * 100 : null
 
           indicadoresAuto.push({
             id: "auto_rechazos_pct",
