@@ -312,25 +312,6 @@ export function PresupuestoClient({
               </SelectContent>
             </Select>
           </div>
-          <div className="w-44">
-            <Select
-              value={String(mesActivo)}
-              onValueChange={(v: string | null) =>
-                setMesActivo(Number(v) || mesActivo)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MESES.map((nom, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>
-                    {nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </div>
       </div>
 
@@ -530,6 +511,23 @@ export function PresupuestoClient({
 
         {/* Filtros */}
         <div className="mb-3 flex flex-wrap gap-2">
+          <Select
+            value={String(mesActivo)}
+            onValueChange={(v: string | null) =>
+              setMesActivo(Number(v) || mesActivo)
+            }
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MESES.map((nom, i) => (
+                <SelectItem key={i + 1} value={String(i + 1)}>
+                  {nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={filtroResp}
             onValueChange={(v: string | null) => setFiltroResp(v ?? "todos")}
