@@ -4,8 +4,9 @@ import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -424,11 +425,12 @@ export function TmlFoxtrotClient({ initial }: Props) {
             ) : (
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={serieChart} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <BarChart data={serieChart} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 11 }} unit=" min" width={56} />
                     <Tooltip
+                      cursor={{ fill: "#f1f5f9" }}
                       formatter={(v) => (typeof v === "number" ? `${v} min` : "—")}
                       labelFormatter={(l) =>
                         granularidad === "dia"
@@ -444,15 +446,19 @@ export function TmlFoxtrotClient({ initial }: Props) {
                       strokeDasharray="4 4"
                       label={{ value: `meta ${initial.meta_minutos}`, fontSize: 10, fill: "#dc2626" }}
                     />
-                    <Line
-                      type="monotone"
-                      dataKey="valor"
-                      stroke="#d97706"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      connectNulls
-                    />
-                  </LineChart>
+                    <Bar dataKey="valor" radius={[3, 3, 0, 0]} maxBarSize={48}>
+                      {serieChart.map((d, i) => (
+                        <Cell
+                          key={i}
+                          fill={
+                            d.valor != null && d.valor > initial.meta_minutos
+                              ? "#dc2626"
+                              : "#16a34a"
+                          }
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
