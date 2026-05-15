@@ -33,6 +33,26 @@ export async function getOwdItems(): Promise<
   }
 }
 
+// Personal afectado a Distribución — fuente del desplegable "Empleado observado"
+export async function getEmpleadosDistribucion(): Promise<
+  { data: { nombre: string }[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("empleados")
+      .select("nombre")
+      .eq("activo", true)
+      .eq("sector", "Distribución")
+      .order("nombre", { ascending: true })
+    if (error) return { error: error.message }
+    return { data: (data || []) as { nombre: string }[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 interface CreateObservacionInput {
   fecha: string
   supervisor: string

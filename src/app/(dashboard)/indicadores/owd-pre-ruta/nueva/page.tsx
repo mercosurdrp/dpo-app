@@ -1,13 +1,13 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { getOwdItems } from "@/actions/owd-pre-ruta"
-import { getChoferes, getVehiculos } from "@/actions/registros-vehiculos"
+import { getOwdItems, getEmpleadosDistribucion } from "@/actions/owd-pre-ruta"
+import { getVehiculos } from "@/actions/registros-vehiculos"
 import { NuevaOwdClient } from "./nueva-owd-client"
 
 export default async function NuevaOwdPage() {
-  const [itemsRes, choferesRes, vehiculosRes] = await Promise.all([
+  const [itemsRes, empleadosRes, vehiculosRes] = await Promise.all([
     getOwdItems(),
-    getChoferes(),
+    getEmpleadosDistribucion(),
     getVehiculos(),
   ])
 
@@ -20,7 +20,7 @@ export default async function NuevaOwdPage() {
     )
   }
 
-  const choferes = "data" in choferesRes ? choferesRes.data : []
+  const empleados = "data" in empleadosRes ? empleadosRes.data : []
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
 
   return (
@@ -31,7 +31,7 @@ export default async function NuevaOwdPage() {
       >
         <ArrowLeft className="h-4 w-4" /> Volver
       </Link>
-      <NuevaOwdClient items={itemsRes.data} choferes={choferes} vehiculos={vehiculos} />
+      <NuevaOwdClient items={itemsRes.data} empleados={empleados} vehiculos={vehiculos} />
     </div>
   )
 }

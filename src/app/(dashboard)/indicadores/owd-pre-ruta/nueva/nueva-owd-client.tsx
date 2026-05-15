@@ -18,7 +18,6 @@ import {
 import type {
   OwdItem,
   OwdResultado,
-  CatalogoChofer,
   CatalogoVehiculo,
 } from "@/types/database"
 import { Loader2, CheckCircle2, XCircle, MinusCircle } from "lucide-react"
@@ -26,13 +25,13 @@ import { createObservacion } from "@/actions/owd-pre-ruta"
 
 interface Props {
   items: OwdItem[]
-  choferes: CatalogoChofer[]
+  empleados: { nombre: string }[]
   vehiculos: CatalogoVehiculo[]
 }
 
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
 
-export function NuevaOwdClient({ items, choferes, vehiculos }: Props) {
+export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -104,7 +103,7 @@ export function NuevaOwdClient({ items, choferes, vehiculos }: Props) {
     router.push(`/indicadores/owd-pre-ruta/${result.data.id}`)
   }
 
-  const personasOptions = choferes.map((c) => c.nombre)
+  const personasOptions = empleados.map((e) => e.nombre)
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -143,11 +142,17 @@ export function NuevaOwdClient({ items, choferes, vehiculos }: Props) {
                   <SelectValue placeholder="Seleccionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {personasOptions.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
+                  {personasOptions.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Sin personal de Distribución cargado
+                    </div>
+                  ) : (
+                    personasOptions.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
