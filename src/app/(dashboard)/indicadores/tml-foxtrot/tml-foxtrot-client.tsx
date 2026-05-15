@@ -32,6 +32,7 @@ import type {
   TmlFoxtrotResumen,
   TmlFoxtrotChoferAgg,
   TmlFoxtrotPeriodo,
+  TmlFoxtrotSerieDia,
 } from "@/types/database"
 
 interface Props {
@@ -48,6 +49,67 @@ const PERIODOS: { value: TmlFoxtrotPeriodo; label: string }[] = [
 
 function ddMM(fecha: string): string {
   return `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
+}
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+type Granularidad = "dia" | "semana" | "mes"
+
+// Lunes de la semana que contiene a `fecha` (YYYY-MM-DD).
+function lunesDe(fecha: string): string {
+  const d = new Date(`${fecha}T12:00:00.000Z`)
+  const dow = d.getUTCDay()
+  d.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1))
+  return d.toISOString().slice(0, 10)
+}
+
+// Granularidad del gráfico de tendencia según el período:
+// semana→días, mes→semanas, YTD→meses. Personalizado: por largo del rango.
+function granularidadSerie(
+  periodo: TmlFoxtrotPeriodo,
+  desde: string,
+  hasta: string,
+): Granularidad {
+  if (periodo === "semana") return "dia"
+  if (periodo === "mes") return "semana"
+  if (periodo === "ytd") return "mes"
+  const dias = Math.round((Date.parse(hasta) - Date.parse(desde)) / 86_400_000) + 1
+  if (dias <= 16) return "dia"
+  if (dias <= 92) return "semana"
+  return "mes"
+}
+
+// Agrupa la serie diaria en días/semanas/meses. El promedio del bucket es
+// ponderado por equipos_con_tml (= suma real de TMLs / suma de equipos).
+function bucketSerie(
+  serie: TmlFoxtrotSerieDia[],
+  granularidad: Granularidad,
+  desde7: boolean,
+): { label: string; valor: number | null }[] {
+  const val = (s: TmlFoxtrotSerieDia) =>
+    desde7 ? s.promedio_desde7_min : s.promedio_real_min
+  if (granularidad === "dia") {
+    return serie.map((s) => ({ label: ddMM(s.fecha), valor: val(s) }))
+  }
+  const groups = new Map<string, { label: string; sum: number; n: number }>()
+  for (const s of serie) {
+    const key = granularidad === "semana" ? lunesDe(s.fecha) : s.fecha.slice(0, 7)
+    const label =
+      granularidad === "semana" ? ddMM(key) : MESES[Number(key.slice(5, 7)) - 1]
+    let g = groups.get(key)
+    if (!g) {
+      g = { label, sum: 0, n: 0 }
+      groups.set(key, g)
+    }
+    const v = val(s)
+    if (v != null) {
+      g.sum += v * s.equipos_con_tml
+      g.n += s.equipos_con_tml
+    }
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, g]) => ({ label: g.label, valor: g.n > 0 ? Math.round(g.sum / g.n) : null }))
 }
 
 function estadoColor(e: TmlFoxtrotEquipo["estado"]): {
@@ -101,16 +163,17 @@ export function TmlFoxtrotClient({ initial }: Props) {
     return { enMeta, fueraMeta, totales }
   }, [initial.choferes])
 
-  // Serie para el gráfico de tendencia diaria.
-  const serieChart = useMemo(
-    () =>
-      initial.serie_diaria.map((s) => ({
-        fecha: ddMM(s.fecha),
-        valor: desde7 ? s.promedio_desde7_min : s.promedio_real_min,
-        equipos: s.equipos_con_tml,
-      })),
-    [initial.serie_diaria, desde7],
+  // Serie para el gráfico de tendencia, con granularidad según el período.
+  const granularidad = useMemo(
+    () => granularidadSerie(initial.periodo, initial.desde, initial.hasta),
+    [initial.periodo, initial.desde, initial.hasta],
   )
+  const serieChart = useMemo(
+    () => bucketSerie(initial.serie_diaria, granularidad, desde7),
+    [initial.serie_diaria, granularidad, desde7],
+  )
+  const tendenciaLabel =
+    granularidad === "dia" ? "diaria" : granularidad === "semana" ? "semanal" : "mensual"
 
   return (
     <div className="space-y-6">
@@ -278,7 +341,7 @@ export function TmlFoxtrotClient({ initial }: Props) {
           <CardContent className="pt-6">
             <p className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
               <TrendingUp className="h-4 w-4 text-amber-600" />
-              Tendencia diaria del TML promedio ({metricaLabel})
+              Tendencia {tendenciaLabel} del TML promedio ({metricaLabel})
             </p>
             {serieChart.every((d) => d.valor == null) ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -290,11 +353,17 @@ export function TmlFoxtrotClient({ initial }: Props) {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={serieChart} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="fecha" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 11 }} unit=" min" width={56} />
                     <Tooltip
                       formatter={(v) => (typeof v === "number" ? `${v} min` : "—")}
-                      labelFormatter={(l) => `Día ${l}`}
+                      labelFormatter={(l) =>
+                        granularidad === "dia"
+                          ? `Día ${l}`
+                          : granularidad === "semana"
+                            ? `Semana del ${l}`
+                            : `Mes ${l}`
+                      }
                     />
                     <ReferenceLine
                       y={initial.meta_minutos}
