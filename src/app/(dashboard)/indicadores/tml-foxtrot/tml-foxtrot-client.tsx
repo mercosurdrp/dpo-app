@@ -148,7 +148,7 @@ export function TmlFoxtrotClient({ initial }: Props) {
   }
 
   const esDiaUnico = initial.es_dia_unico
-  const metricaLabel = desde7 ? "Desde 07:00" : "Marca real"
+  const metricaLabel = desde7 ? "Desde turno" : "Marca real"
 
   // KPIs agregados sobre el rango (jornadas = pares chofer·día).
   const kpis = useMemo(() => {
@@ -204,11 +204,12 @@ export function TmlFoxtrotClient({ initial }: Props) {
           <button
             type="button"
             onClick={() => setDesde7(true)}
+            title="Cuenta desde la hora de turno (inicio planificado de la ruta: 07:00 o 05:00 para zona este)"
             className={`rounded px-3 py-1 transition-colors ${
               desde7 ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            Desde 07:00
+            Desde turno
           </button>
         </div>
       </div>

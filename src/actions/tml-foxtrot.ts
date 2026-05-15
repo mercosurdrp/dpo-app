@@ -59,6 +59,9 @@ interface DayRoute {
   driverName: string | null
   vehicleId: string | null
   startedIso: string | null
+  // Inicio planificado (epoch ms). Define la "hora de turno" del modo
+  // "Desde turno": 07:30 planificado → piso 07:00, 05:00 → piso 05:00.
+  plannedStartMs: number | null
 }
 
 // Fila cruda de `foxtrot_routes` (solo las columnas que usa el TML).
@@ -76,6 +79,8 @@ interface FoxtrotRouteRow {
     tml_actual_departure?: string | null
     // "Driver Marked Route Start" — el chofer toca el botón. Solo fallback.
     started_timestamp?: string | null
+    // Inicio planificado de la ruta (epoch ms).
+    start_time?: number | null
   } | null
 }
 
@@ -216,6 +221,7 @@ async function routesLive(fecha: string, dcIds: string[]): Promise<DayRoute[]> {
       driverName: driverId ? (driversByDc.get(dc)?.get(driverId) ?? null) : null,
       vehicleId: route.vehicle_id ?? null,
       startedIso: route.started_timestamp ?? null,
+      plannedStartMs: typeof route.start_time === "number" ? route.start_time : null,
     }
   })
 }
@@ -252,6 +258,8 @@ async function routesFromDb(
         row.raw_data?.started_timestamp ??
         row.start_time ??
         null,
+      plannedStartMs:
+        typeof row.raw_data?.start_time === "number" ? row.raw_data.start_time : null,
     }
     const arr = byFecha.get(row.fecha)
     if (arr) arr.push(dr)
@@ -328,8 +336,17 @@ function computeEquiposDia(
     let tmlDesde7: number | null = null
     if (choferMarcaMs != null) {
       tmlReal = diffMin(choferMarcaMs, startedMs)
-      const corte = Math.max(siete00ArEpochMs(fecha), choferMarcaMs)
-      tmlDesde7 = diffMin(corte, startedMs)
+      // "Desde turno": el piso es la hora de turno = inicio planificado de la
+      // ruta truncado a la hora (07:30→07:00, 05:00→05:00). Como AR es UTC-3
+      // fijo, truncar el epoch a la hora ya da el borde de hora local.
+      // Fallback 07:00 si la ruta no trae inicio planificado.
+      const turnoFloorMs =
+        route.plannedStartMs != null
+          ? route.plannedStartMs - (route.plannedStartMs % 3_600_000)
+          : siete00ArEpochMs(fecha)
+      const corte = Math.max(turnoFloorMs, choferMarcaMs)
+      // Si salió antes del turno, no hay demora → 0 (no puede ser negativo).
+      tmlDesde7 = Math.max(0, diffMin(corte, startedMs))
     }
 
     let estado: TmlFoxtrotEquipo["estado"]
