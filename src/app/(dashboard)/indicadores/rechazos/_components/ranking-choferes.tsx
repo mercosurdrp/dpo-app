@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import type { RechazosAggChofer, TopVariacionDim } from "@/lib/types/rechazos"
-import { formatBultos, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { formatBultos, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
-type SortKey = "bultos" | "monto" | "tasa" | "eventos"
+type SortKey = "hl" | "bultos" | "monto" | "tasa" | "eventos"
 type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
 export function RankingChoferes({
@@ -35,7 +35,7 @@ export function RankingChoferes({
   tasaPromedio: number
   onDrillTo?: (drillTo: DrillTo) => void
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("bultos")
+  const [sortKey, setSortKey] = useState<SortKey>("hl")
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc")
   const [showSinDenominador, setShowSinDenominador] = useState(false)
 
@@ -54,7 +54,7 @@ export function RankingChoferes({
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-slate-900">Ranking de choferes</h2>
           <p className="text-xs text-muted-foreground">
-            Tasa por chofer (bultos rechazados / entregados). Promedio del período: <span className="font-medium tabular-nums">{formatTasa(tasaPromedio)}</span>
+            Tasa por chofer (HL rechazados / HL entregados). Promedio del período: <span className="font-medium tabular-nums">{formatTasa(tasaPromedio)}</span>
           </p>
         </div>
 
@@ -65,7 +65,8 @@ export function RankingChoferes({
             <Table className="text-sm">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[40%]">Chofer / Patente</TableHead>
+                  <TableHead className="w-[36%]">Chofer / Patente</TableHead>
+                  <SortableHead label="HL"       k="hl"       current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Bultos"   k="bultos"   current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Eventos"  k="eventos"  current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Monto"    k="monto"    current={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -87,7 +88,8 @@ export function RankingChoferes({
                           <div className="text-[11px] text-muted-foreground">{c.patente}</div>
                         )}
                       </TableCell>
-                      <TableCell className="tabular-nums">{formatBultos(c.bultos)}</TableCell>
+                      <TableCell className="tabular-nums font-medium text-slate-900">{formatHl(c.hl)}</TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{formatBultos(c.bultos)}</TableCell>
                       <TableCell className="tabular-nums">{formatBultos(c.eventos)}</TableCell>
                       <TableCell className="tabular-nums">{formatMonto(c.monto)}</TableCell>
                       <TableCell className={`tabular-nums ${tasaAlta ? "font-semibold text-red-600" : ""}`}>
@@ -120,7 +122,7 @@ export function RankingChoferes({
                 <Tooltip>
                   <TooltipTrigger render={<span className="cursor-help text-muted-foreground">ⓘ</span>} />
                   <TooltipContent className="max-w-[300px]">
-                    La patente entregó menos bultos de los que rechazó (o no aparece en ventas_diarias).
+                    La patente entregó menos HL de los que rechazó (o no aparece en ventas_diarias).
                     Su tasa no es comparable contra el promedio del fleet. Excluida de alertas y rankings de tasa.
                   </TooltipContent>
                 </Tooltip>
@@ -135,11 +137,12 @@ export function RankingChoferes({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Patente</TableHead>
+                      <TableHead>HL</TableHead>
                       <TableHead>Bultos</TableHead>
                       <TableHead>Eventos</TableHead>
                       <TableHead>Monto</TableHead>
-                      <TableHead>Entreg.</TableHead>
-                      <TableHead className="w-[35%]">Top motivos</TableHead>
+                      <TableHead>Entreg. HL</TableHead>
+                      <TableHead className="w-[32%]">Top motivos</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -150,10 +153,11 @@ export function RankingChoferes({
                         onClick={onDrillTo ? () => onDrillTo({ tipo: "chofer", id: c.patente }) : undefined}
                       >
                         <TableCell className="font-medium">{c.display}</TableCell>
-                        <TableCell className="tabular-nums">{formatBultos(c.bultos)}</TableCell>
+                        <TableCell className="tabular-nums font-medium text-slate-900">{formatHl(c.hl)}</TableCell>
+                        <TableCell className="tabular-nums text-muted-foreground">{formatBultos(c.bultos)}</TableCell>
                         <TableCell className="tabular-nums">{formatBultos(c.eventos)}</TableCell>
                         <TableCell className="tabular-nums">{formatMonto(c.monto)}</TableCell>
-                        <TableCell className="tabular-nums text-amber-700">{formatBultos(c.total_entregados)}</TableCell>
+                        <TableCell className="tabular-nums text-amber-700">{formatHl(c.total_hl_entregados)}</TableCell>
                         <TableCell className="text-[11px]">
                           {c.motivos_top?.length ? (
                             <ul className="space-y-0.5">

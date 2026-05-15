@@ -18,7 +18,7 @@ import type {
   RechazosFilters,
   TopVariacionDim,
 } from "@/lib/types/rechazos"
-import { formatBultos, formatFecha, formatMonto } from "@/lib/format/rechazos"
+import { formatBultos, formatFecha, formatHl, formatMonto } from "@/lib/format/rechazos"
 
 export interface DrillTo {
   tipo: TopVariacionDim
@@ -216,8 +216,9 @@ function DetalleRowItem({ row }: { row: RechazosDetalleRow }) {
         <Badge variant="outline" className="border-slate-200 text-[10px] font-normal text-muted-foreground">
           {row.categoria}{row.controlable ? " · controlable" : ""}
         </Badge>
-        <span className="ml-auto tabular-nums text-slate-600">
-          {formatBultos(row.bultos_rechazados)} bultos
+        <span className="ml-auto tabular-nums">
+          <span className="font-medium text-slate-700">{formatHl(row.hl_rechazados)}</span>
+          <span className="ml-1 text-muted-foreground">· {formatBultos(row.bultos_rechazados)} bultos</span>
         </span>
       </div>
       {(row.ds_localidad || row.ds_canal_mkt || row.ds_supervisor) && (

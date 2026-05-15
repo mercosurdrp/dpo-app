@@ -67,9 +67,13 @@ export type ComparisonMode =
 
 /** Métricas del período (actual o anterior). Mismo shape para ambos. */
 export interface RechazosKPI {
-  /** Σ bultos_rechazados (en cajas/packs según Chess, ver tooltip "Metodología en validación"). */
+  /** Σ hl_rechazados — métrica de volumen PRIMARIA (unidad-consistente). */
+  hl: number
+  /** Σ ventas_diarias.total_hl entregados (denominador de `tasa`). */
+  total_hl_entregados: number
+  /** Σ bultos_rechazados — métrica de volumen SECUNDARIA (cubre combos, que dan 0 HL). */
   bultos: number
-  /** Σ total_bultos entregados (denominador de `tasa`). Universo total del período. */
+  /** Σ total_bultos entregados (denominador de `tasa_bultos`). */
   total_entregados: number
   /** Cantidad total de filas-rechazo en el período (incluye las que tienen monto_neto NULL). */
   eventos: number
@@ -79,11 +83,11 @@ export interface RechazosKPI {
   monto_neto: number
   /** Σ monto_bruto (con IVA + internos). */
   monto_bruto: number
-  /** Σ hectolitros equivalentes — disponible para uso secundario, NO renderizado como card. */
-  total_hl: number
-  /** % de rechazo = bultos / total_bultos_entregados_del_rango × 100. Pendiente validación de unidades. */
+  /** % de rechazo PRIMARIO = hl / total_hl_entregados × 100. */
   tasa: number
-  /** % de bultos rechazados que son "controlables" según catalogo_rechazos.controlable. */
+  /** % de rechazo SECUNDARIO = bultos / total_entregados × 100. */
+  tasa_bultos: number
+  /** % de HL rechazado que es "controlable" según catalogo_rechazos.controlable. */
   pct_controlable: number
   /** $ promedio por evento con monto = monto_neto / eventos_con_monto. */
   ticket_promedio: number
@@ -96,11 +100,14 @@ export interface RechazosKPI {
  * `_pp` (puntos porcentuales) se usa para deltas de % que viven en escala 0–100.
  */
 export interface RechazosDelta {
+  hl_abs: number;              hl_pct: number
+  total_hl_entregados_abs: number; total_hl_entregados_pct: number
   bultos_abs: number;          bultos_pct: number
   total_entregados_abs: number; total_entregados_pct: number
   eventos_abs: number;         eventos_pct: number
   monto_neto_abs: number;      monto_neto_pct: number
-  tasa_pp: number              // diferencia en puntos porcentuales (no %, no fracción)
+  tasa_pp: number              // delta de la tasa HL en puntos porcentuales
+  tasa_bultos_pp: number       // delta de la tasa bultos en puntos porcentuales
   pct_controlable_pp: number
   ticket_abs: number;          ticket_pct: number
   clientes_abs: number;        clientes_pct: number
@@ -118,10 +125,11 @@ export interface RechazosDelta {
 
 export interface RechazosPuntoDia {
   fecha: string         // "YYYY-MM-DD"
+  hl: number
   bultos: number
   monto: number
   eventos: number
-  /** 0–100. Si `total_bultos_dia = 0`, devuelve 0 (no se muestra como gap). */
+  /** 0–100, base HL. Si `total_hl_dia = 0`, devuelve 0 (no se muestra como gap). */
   tasa: number
 }
 
@@ -129,10 +137,11 @@ export interface RechazosPuntoSemana {
   semana: string        // "YYYY-Www" (ISO 8601 week)
   desde: string         // primer día de la semana (YYYY-MM-DD)
   hasta: string         // último día de la semana
+  hl: number
   bultos: number
   monto: number
   eventos: number
-  tasa: number
+  tasa: number          // 0–100, base HL
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -144,15 +153,17 @@ export interface RechazosAggMotivo {
   ds_rechazo: string
   categoria: RechazoCategoria
   controlable: boolean
+  hl: number
   bultos: number
   eventos: number
   monto: number              // monto_neto
-  /** 0–100, contra el total de bultos del período. */
+  /** 0–100, contra el total de HL rechazado del período. */
   pct_del_total: number
 }
 
 export interface RechazosAggCategoria {
   categoria: RechazoCategoria
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -164,15 +175,18 @@ export interface RechazosAggChofer {
   patente: string
   /** Nombre desde mapeo_patente_chofer → catalogo_choferes. NULL si no hay mapeo. */
   chofer_nombre: string | null
+  hl: number
   bultos: number
   eventos: number
   monto: number
-  /** bultos_chofer / total_entregados_chofer × 100. 0 si no hay entregas FCVTA en el rango. */
+  /** hl_chofer / total_hl_entregados_chofer × 100. 0 si no hay entregas FCVTA en el rango. */
   tasa: number
-  /** Σ ventas_diarias.total_bultos del mismo rango+patente (denominador de `tasa`). */
+  /** Σ ventas_diarias.total_hl del mismo rango+patente (denominador de `tasa`). */
+  total_hl_entregados: number
+  /** Σ ventas_diarias.total_bultos del mismo rango+patente (denominador secundario, en bultos). */
   total_entregados: number
   /**
-   * False si `total_entregados <= 0` o `bultos > total_entregados` (la patente entregó menos
+   * False si `total_hl_entregados <= 0` o `hl > total_hl_entregados` (la patente entregó menos
    * de lo que rechazó, o no aparece en ventas_diarias). En ese caso `tasa` no es comparable
    * con el promedio del fleet; la UI debe marcarlo con icono ⚠ y excluirlo de rankings de tasa.
    */
@@ -182,12 +196,13 @@ export interface RechazosAggChofer {
    * para dar contexto en el bloque colapsado de la UI ("¿qué rechazó esta patente sin denominador?").
    * En `ranking_principal` queda undefined.
    */
-  motivos_top?: { ds_rechazo: string; monto: number; eventos: number }[]
+  motivos_top?: { ds_rechazo: string; hl: number; monto: number; eventos: number }[]
 }
 
 export interface RechazosAggCliente {
   id_cliente: number
   nombre_cliente: string
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -197,6 +212,7 @@ export interface RechazosAggProducto {
   id_articulo: number
   /** El `ds_articulo` más reciente (por created_at DESC), no el alfabéticamente "primero". */
   ds_articulo: string
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -204,15 +220,17 @@ export interface RechazosAggProducto {
 
 export interface RechazosAggCanal {
   ds_canal_mkt: string
+  hl: number
   bultos: number
   eventos: number
   monto: number
-  /** 0–100, share del canal sobre el total de bultos del período. */
+  /** 0–100, share del canal sobre el total de HL rechazado del período. */
   pct: number
 }
 
 export interface RechazosAggSupervisor {
   ds_supervisor: string
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -462,6 +480,7 @@ export interface RechazosDetalleRow {
   nombre_cliente: string | null
   id_articulo: number
   ds_articulo: string
+  hl_rechazados: number
   bultos_rechazados: number
   monto_neto: number | null
   monto_bruto: number | null

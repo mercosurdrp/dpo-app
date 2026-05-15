@@ -41,6 +41,7 @@ const COLUMNS: { header: string; key: string }[] = [
   { header: "motivo",             key: "motivo" },
   { header: "categoria",          key: "categoria" },
   { header: "controlable",        key: "controlable" },
+  { header: "hl_rechazados",      key: "hl_rechazados" },
   { header: "bultos_rechazados",  key: "bultos_rechazados" },
   { header: "monto_neto",         key: "monto_neto" },
   { header: "monto_bruto",        key: "monto_bruto" },
@@ -57,7 +58,7 @@ const SELECT = [
   "fecha", "ds_fletero_carga", "ds_vendedor",
   "id_cliente", "nombre_cliente", "id_articulo", "ds_articulo",
   "id_rechazo", "ds_rechazo",
-  "bultos_rechazados", "monto_neto", "monto_bruto",
+  "hl_rechazados", "bultos_rechazados", "monto_neto", "monto_bruto",
   "ds_localidad", "ds_provincia",
   "ds_canal_mkt", "ds_subcanal_mkt", "ds_segmento_mkt",
   "ds_supervisor", "planilla_carga",
@@ -73,6 +74,7 @@ interface RawRow {
   ds_articulo: string | null
   id_rechazo: number
   ds_rechazo: string
+  hl_rechazados: number | null
   bultos_rechazados: number
   monto_neto: number | null
   monto_bruto: number | null
@@ -199,6 +201,7 @@ function renderCSV(
       motivo:             cat?.ds_rechazo ?? r.ds_rechazo,
       categoria:          cat?.categoria ?? "",
       controlable:        cat?.controlable == null ? "" : (cat.controlable ? "Si" : "No"),
+      hl_rechazados:      r.hl_rechazados != null ? formatNumberAr(r.hl_rechazados) : "",
       bultos_rechazados:  formatNumberAr(r.bultos_rechazados),
       monto_neto:         r.monto_neto != null ? formatNumberAr(r.monto_neto) : "",
       monto_bruto:        r.monto_bruto != null ? formatNumberAr(r.monto_bruto) : "",

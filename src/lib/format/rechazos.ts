@@ -33,6 +33,20 @@ export function formatBultos(v: number): string {
 }
 
 /**
+ * Hectolitros. Métrica de volumen primaria del dashboard de rechazos.
+ * Los valores son chicos (un día ≈ 8 HL de rechazos) → 2 decimales hasta
+ * 100, 1 decimal por encima. Sufijo " HL".
+ *   formatHl(7.95)   → "7,95 HL"
+ *   formatHl(273.36) → "273,4 HL"
+ *   formatHl(0)      → "0,00 HL"
+ */
+export function formatHl(v: number): string {
+  if (!Number.isFinite(v)) return "—"
+  const abs = Math.abs(v)
+  return `${(abs >= 100 ? NF_1DEC : NF_2DEC).format(v)} HL`
+}
+
+/**
  * Monto en pesos. Umbrales pensados para gerencia (lectura rápida):
  *   |v| < 10.000      → "$2.745"
  *   |v| < 1.000.000   → "$245 k"   (k = miles, redondeado)

@@ -13,7 +13,7 @@ import {
 } from "recharts"
 import { Card, CardContent } from "@/components/ui/card"
 import type { RechazosAggMotivo, RechazoCategoria, TopVariacionDim } from "@/lib/types/rechazos"
-import { formatBultos, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { formatBultos, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
 type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
@@ -32,6 +32,7 @@ interface ParetoPoint {
   shortLabel: string
   categoria: RechazoCategoria
   controlable: boolean
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -47,25 +48,27 @@ export function ParetoMotivos({
   onDrillTo?: (drillTo: DrillTo) => void
 }) {
   const top = por_motivo.slice(0, 10)
-  const totalBultos = por_motivo.reduce((s, m) => s + m.bultos, 0)
+  const totalHl = por_motivo.reduce((s, m) => s + m.hl, 0)
 
+  const points: ParetoPoint[] = []
   let acumulado = 0
-  const points: ParetoPoint[] = top.map(m => {
-    const pct = totalBultos > 0 ? (m.bultos / totalBultos) * 100 : 0
+  for (const m of top) {
+    const pct = totalHl > 0 ? (m.hl / totalHl) * 100 : 0
     acumulado += pct
-    return {
+    points.push({
       id: m.id_rechazo,
       label: m.ds_rechazo,
       shortLabel: shortenLabel(m.ds_rechazo),
       categoria: m.categoria,
       controlable: m.controlable,
+      hl: Math.round(m.hl * 100) / 100,
       bultos: Math.round(m.bultos * 10) / 10,
       eventos: m.eventos,
       monto: m.monto,
       pct: Math.round(pct * 10) / 10,
       acumulado: Math.round(acumulado * 10) / 10,
-    }
-  })
+    })
+  }
 
   return (
     <Card className="border-slate-200">
@@ -73,7 +76,7 @@ export function ParetoMotivos({
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-slate-900">Pareto de motivos</h2>
           <p className="text-xs text-muted-foreground">
-            Bultos por motivo + % acumulado del total (top {top.length})
+            HL por motivo + % acumulado del total (top {top.length})
           </p>
         </div>
 
@@ -99,7 +102,7 @@ export function ParetoMotivos({
                 tick={{ fontSize: 11 }}
                 stroke="#94a3b8"
                 tickFormatter={(v) => formatBultos(v)}
-                width={45}
+                width={50}
               />
               <YAxis
                 yAxisId="right"
@@ -121,7 +124,8 @@ export function ParetoMotivos({
                         {p.categoria}{p.controlable ? " · controlable" : ""}
                       </div>
                       <div className="space-y-0.5 text-slate-700">
-                        <div>Bultos: <span className="font-medium tabular-nums">{formatBultos(p.bultos)}</span> ({formatTasa(p.pct)})</div>
+                        <div>HL: <span className="font-medium tabular-nums">{formatHl(p.hl)}</span> ({formatTasa(p.pct)})</div>
+                        <div>Bultos: <span className="font-medium tabular-nums">{formatBultos(p.bultos)}</span></div>
                         <div>Eventos: <span className="font-medium tabular-nums">{formatBultos(p.eventos)}</span></div>
                         <div>Monto: <span className="font-medium tabular-nums">{formatMonto(p.monto)}</span></div>
                         <div>Acumulado: <span className="font-medium tabular-nums">{formatTasa(p.acumulado)}</span></div>
@@ -132,7 +136,7 @@ export function ParetoMotivos({
               />
               <Bar
                 yAxisId="left"
-                dataKey="bultos"
+                dataKey="hl"
                 radius={[3, 3, 0, 0]}
                 cursor={onDrillTo ? "pointer" : undefined}
                 onClick={onDrillTo ? (data) => {

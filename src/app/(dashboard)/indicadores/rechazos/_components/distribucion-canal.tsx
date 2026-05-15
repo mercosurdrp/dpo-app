@@ -9,7 +9,7 @@ import {
 } from "recharts"
 import { Card, CardContent } from "@/components/ui/card"
 import type { RechazosAggCanal, TopVariacionDim } from "@/lib/types/rechazos"
-import { formatBultos, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { formatBultos, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
 type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
@@ -29,6 +29,7 @@ const CANAL_COLORS = [
 
 interface PiePoint {
   name: string
+  hl: number
   bultos: number
   eventos: number
   monto: number
@@ -44,6 +45,7 @@ export function DistribucionCanal({
 }) {
   const points: PiePoint[] = por_canal.map(c => ({
     name: c.ds_canal_mkt,
+    hl: Math.round(c.hl * 100) / 100,
     bultos: Math.round(c.bultos * 10) / 10,
     eventos: c.eventos,
     monto: c.monto,
@@ -55,7 +57,7 @@ export function DistribucionCanal({
       <CardContent className="p-3 md:p-4">
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-slate-900">Distribución por canal</h2>
-          <p className="text-xs text-muted-foreground">Bultos rechazados por canal de venta</p>
+          <p className="text-xs text-muted-foreground">HL rechazados por canal de venta</p>
         </div>
 
         {points.length === 0 ? (
@@ -69,7 +71,7 @@ export function DistribucionCanal({
                 <PieChart>
                   <Pie
                     data={points}
-                    dataKey="bultos"
+                    dataKey="hl"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
@@ -95,7 +97,8 @@ export function DistribucionCanal({
                         <div className="rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
                           <div className="mb-1 font-semibold text-slate-900">{p.name}</div>
                           <div className="space-y-0.5 text-slate-700">
-                            <div>Bultos: <span className="font-medium tabular-nums">{formatBultos(p.bultos)}</span> ({formatTasa(p.pct)})</div>
+                            <div>HL: <span className="font-medium tabular-nums">{formatHl(p.hl)}</span> ({formatTasa(p.pct)})</div>
+                            <div>Bultos: <span className="font-medium tabular-nums">{formatBultos(p.bultos)}</span></div>
                             <div>Eventos: <span className="font-medium tabular-nums">{formatBultos(p.eventos)}</span></div>
                             <div>Monto: <span className="font-medium tabular-nums">{formatMonto(p.monto)}</span></div>
                           </div>
@@ -121,7 +124,7 @@ export function DistribucionCanal({
                       />
                       <span className="flex-1 truncate text-slate-700">{p.name}</span>
                       <span className="tabular-nums text-slate-900">{formatTasa(p.pct)}</span>
-                      <span className="tabular-nums text-muted-foreground">{formatBultos(p.bultos)}</span>
+                      <span className="tabular-nums text-muted-foreground">{formatHl(p.hl)}</span>
                     </ItemTag>
                   </li>
                 )

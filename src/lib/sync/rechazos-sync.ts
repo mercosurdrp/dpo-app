@@ -230,6 +230,7 @@ export async function syncRechazosForDate(
       id_rechazo: r.idRechazo,
       ds_rechazo: r.dsRechazo,
       bultos_rechazados: Math.abs(Number(r.cantidadesRechazo) || 0),
+      hl_rechazados: Math.abs(Number(r.unimedtotal) || 0), // HL: métrica de volumen primaria (combos = 0)
       bultos_entregados: entregadosPorFletero.get(r.dsFleteroCarga) ?? 0, // DEPRECATED (ver mig 054)
       id_cliente: r.idCliente,
       nombre_cliente: r.nombreCliente,

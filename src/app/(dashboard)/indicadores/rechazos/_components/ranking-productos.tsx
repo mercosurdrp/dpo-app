@@ -8,9 +8,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import type { RechazosAggProducto, TopVariacionDim } from "@/lib/types/rechazos"
-import { formatBultos, formatMonto } from "@/lib/format/rechazos"
+import { formatBultos, formatHl, formatMonto } from "@/lib/format/rechazos"
 
-type SortKey = "bultos" | "monto" | "eventos"
+type SortKey = "hl" | "bultos" | "monto" | "eventos"
 type DrillTo = { tipo: TopVariacionDim; id: string | number }
 
 const DEFAULT_LIMIT = 10
@@ -23,7 +23,7 @@ export function RankingProductos({
   por_producto: RechazosAggProducto[]
   onDrillTo?: (drillTo: DrillTo) => void
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("monto")
+  const [sortKey, setSortKey] = useState<SortKey>("hl")
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc")
   const [expanded, setExpanded] = useState(false)
 
@@ -58,7 +58,8 @@ export function RankingProductos({
             <Table className="text-sm">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50%]">Producto</TableHead>
+                  <TableHead className="w-[44%]">Producto</TableHead>
+                  <SortableHead label="HL"      k="hl"      current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Bultos"  k="bultos"  current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Eventos" k="eventos" current={sortKey} dir={sortDir} onClick={toggleSort} />
                   <SortableHead label="Monto"   k="monto"   current={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -75,7 +76,8 @@ export function RankingProductos({
                       <div className="font-medium text-slate-900">{p.ds_articulo}</div>
                       <div className="text-[11px] text-muted-foreground">ID {p.id_articulo}</div>
                     </TableCell>
-                    <TableCell className="tabular-nums">{formatBultos(p.bultos)}</TableCell>
+                    <TableCell className="tabular-nums font-medium text-slate-900">{formatHl(p.hl)}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">{formatBultos(p.bultos)}</TableCell>
                     <TableCell className="tabular-nums">{formatBultos(p.eventos)}</TableCell>
                     <TableCell className="tabular-nums">{formatMonto(p.monto)}</TableCell>
                   </TableRow>

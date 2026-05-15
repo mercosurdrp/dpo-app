@@ -15,13 +15,14 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import type { RechazosComparado } from "@/lib/types/rechazos"
-import { formatBultos, formatFecha, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { formatBultos, formatFecha, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
 type View = "dia" | "semana"
 
 interface Point {
   key: string
   label: string
+  hl: number
   bultos: number
   monto: number
   eventos: number
@@ -36,6 +37,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
     ? series.por_dia.map(p => ({
         key: p.fecha,
         label: formatFechaShortDM(p.fecha),
+        hl: round2(p.hl),
         bultos: round1(p.bultos),
         monto: p.monto,
         eventos: p.eventos,
@@ -44,6 +46,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
     : series.por_semana.map(p => ({
         key: p.semana,
         label: p.semana.slice(-3), // "W18"
+        hl: round2(p.hl),
         bultos: round1(p.bultos),
         monto: p.monto,
         eventos: p.eventos,
@@ -57,7 +60,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Evolución temporal</h2>
             <p className="text-xs text-muted-foreground">
-              Bultos rechazados + tasa% por {view === "dia" ? "día" : "semana"}
+              HL rechazados + tasa% por {view === "dia" ? "día" : "semana"}
             </p>
           </div>
           <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
@@ -95,7 +98,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
                 tick={{ fontSize: 11 }}
                 stroke="#94a3b8"
                 tickFormatter={(v) => formatBultos(v)}
-                width={45}
+                width={50}
               />
               <YAxis
                 yAxisId="right"
@@ -115,6 +118,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
                         {view === "dia" ? formatFecha(p.key) : `Semana ${label}`}
                       </div>
                       <div className="space-y-0.5 text-slate-700">
+                        <div>HL: <span className="font-medium tabular-nums">{formatHl(p.hl)}</span></div>
                         <div>Bultos: <span className="font-medium tabular-nums">{formatBultos(p.bultos)}</span></div>
                         <div>Eventos: <span className="font-medium tabular-nums">{formatBultos(p.eventos)}</span></div>
                         <div>Monto: <span className="font-medium tabular-nums">{formatMonto(p.monto)}</span></div>
@@ -125,7 +129,7 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
                 }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="bultos" name="Bultos rechazados" fill="#fca5a5" radius={[3, 3, 0, 0]} />
+              <Bar yAxisId="left" dataKey="hl" name="HL rechazados" fill="#fca5a5" radius={[3, 3, 0, 0]} />
               <Line
                 yAxisId="right"
                 type="monotone"

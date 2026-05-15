@@ -49,6 +49,7 @@ interface RechazoRow {
   ds_fletero_carga: string
   id_rechazo: number
   ds_rechazo: string
+  hl_rechazados: number | null
   bultos_rechazados: number
   id_cliente: number | null
   nombre_cliente: string | null
@@ -63,6 +64,7 @@ interface VentaDiariaRow {
   fecha: string
   ds_fletero_carga: string
   total_bultos: number
+  total_hl: number
 }
 
 interface CatalogoMotivo {
@@ -80,8 +82,11 @@ interface MapeoChofer {
 interface PeriodData {
   rechazos: RechazoRow[]
   ventasTotalBultos: number
+  ventasTotalHl: number
   ventasPorFecha: Map<string, number>
+  ventasHlPorFecha: Map<string, number>
   ventasPorPatente: Map<string, number>
+  ventasHlPorPatente: Map<string, number>
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -145,26 +150,26 @@ export async function getRechazosComparado(
     const mapeoMap = new Map(mapeoChoferes.map(m => [m.patente, m]))
 
     console.time("[rechazos-comparado] compute")
-    const actualKPI = computeKPI(actualData.rechazos, actualData.ventasTotalBultos, catalogoMap)
-    const previousKPI = computeKPI(previousData.rechazos, previousData.ventasTotalBultos, catalogoMap)
-    const previous2KPI = computeKPI(previous2Data.rechazos, previous2Data.ventasTotalBultos, catalogoMap)
+    const actualKPI = computeKPI(actualData.rechazos, actualData.ventasTotalBultos, actualData.ventasTotalHl, catalogoMap)
+    const previousKPI = computeKPI(previousData.rechazos, previousData.ventasTotalBultos, previousData.ventasTotalHl, catalogoMap)
+    const previous2KPI = computeKPI(previous2Data.rechazos, previous2Data.ventasTotalBultos, previous2Data.ventasTotalHl, catalogoMap)
     const delta = computeDelta(actualKPI, previousKPI, request.desde, previousWin.desde)
 
-    const series = computeSeries(actualData.rechazos, actualData.ventasPorFecha)
+    const series = computeSeries(actualData.rechazos, actualData.ventasHlPorFecha)
 
     const choferSplit = splitChoferesPorDenominador(
-      computeAggChofer(actualData.rechazos, actualData.ventasPorPatente, mapeoMap),
+      computeAggChofer(actualData.rechazos, actualData.ventasPorPatente, actualData.ventasHlPorPatente, mapeoMap),
       actualData.rechazos,
       catalogoMap,
     )
 
     const agg = {
-      por_motivo: computeAggMotivo(actualData.rechazos, catalogoMap, actualKPI.bultos),
+      por_motivo: computeAggMotivo(actualData.rechazos, catalogoMap, actualKPI.hl),
       por_categoria: computeAggCategoria(actualData.rechazos, catalogoMap),
       por_chofer: choferSplit,
       por_cliente: computeAggCliente(actualData.rechazos),
       por_producto: computeAggProducto(actualData.rechazos),
-      por_canal: computeAggCanal(actualData.rechazos, actualKPI.bultos),
+      por_canal: computeAggCanal(actualData.rechazos, actualKPI.hl),
       por_supervisor: computeAggSupervisor(actualData.rechazos),
     }
 
@@ -306,7 +311,7 @@ async function loadPeriodData(
   supa: SupaClient, desde: string, hasta: string, filters: RechazosFilters,
 ): Promise<PeriodData> {
   let q = supa.from("rechazos").select(
-    "fecha,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,bultos_rechazados,id_cliente,nombre_cliente,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
+    "fecha,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,hl_rechazados,bultos_rechazados,id_cliente,nombre_cliente,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
   ).gte("fecha", desde).lte("fecha", hasta)
 
   if (filters.ds_fletero_carga?.length) q = q.in("ds_fletero_carga", filters.ds_fletero_carga)
@@ -320,7 +325,7 @@ async function loadPeriodData(
   if (e1) throw new Error(`rechazos query: ${e1.message}`)
 
   let ventaQuery = supa.from("ventas_diarias")
-    .select("fecha,ds_fletero_carga,total_bultos")
+    .select("fecha,ds_fletero_carga,total_bultos,total_hl")
     .gte("fecha", desde).lte("fecha", hasta)
   if (filters.ds_fletero_carga?.length) {
     ventaQuery = ventaQuery.in("ds_fletero_carga", filters.ds_fletero_carga)
@@ -329,20 +334,30 @@ async function loadPeriodData(
   if (e2) throw new Error(`ventas_diarias query: ${e2.message}`)
 
   const ventasPorFecha = new Map<string, number>()
+  const ventasHlPorFecha = new Map<string, number>()
   const ventasPorPatente = new Map<string, number>()
+  const ventasHlPorPatente = new Map<string, number>()
   let ventasTotalBultos = 0
+  let ventasTotalHl = 0
   for (const v of (ventas ?? []) as VentaDiariaRow[]) {
     const b = Number(v.total_bultos ?? 0)
+    const h = Number(v.total_hl ?? 0)
     ventasTotalBultos += b
+    ventasTotalHl += h
     ventasPorFecha.set(v.fecha, (ventasPorFecha.get(v.fecha) ?? 0) + b)
+    ventasHlPorFecha.set(v.fecha, (ventasHlPorFecha.get(v.fecha) ?? 0) + h)
     ventasPorPatente.set(v.ds_fletero_carga, (ventasPorPatente.get(v.ds_fletero_carga) ?? 0) + b)
+    ventasHlPorPatente.set(v.ds_fletero_carga, (ventasHlPorPatente.get(v.ds_fletero_carga) ?? 0) + h)
   }
 
   return {
     rechazos: (rechazos ?? []) as RechazoRow[],
     ventasTotalBultos,
+    ventasTotalHl,
     ventasPorFecha,
+    ventasHlPorFecha,
     ventasPorPatente,
+    ventasHlPorPatente,
   }
 }
 
@@ -467,33 +482,38 @@ async function resolveFilters(supa: SupaClient, filters: RechazosFilters): Promi
 // ─────────────────────────────────────────────────────────────────────────
 
 function computeKPI(
-  rows: RechazoRow[], ventasTotalBultos: number, catalogo: Map<number, CatalogoMotivo>,
+  rows: RechazoRow[], ventasTotalBultos: number, ventasTotalHl: number,
+  catalogo: Map<number, CatalogoMotivo>,
 ): RechazosKPI {
-  let bultos = 0, monto_neto = 0, monto_bruto = 0
+  let hl = 0, bultos = 0, monto_neto = 0, monto_bruto = 0
   let eventos = 0, eventos_con_monto = 0
-  let bultosControlables = 0
+  let hlControlables = 0
   const clientes = new Set<number>()
 
   for (const r of rows) {
+    const h = Number(r.hl_rechazados ?? 0)
     const b = Number(r.bultos_rechazados ?? 0)
+    hl += h
     bultos += b
     eventos += 1
     if (r.monto_neto != null) { eventos_con_monto += 1; monto_neto += Number(r.monto_neto) }
     if (r.monto_bruto != null) monto_bruto += Number(r.monto_bruto)
     if (r.id_cliente != null) clientes.add(r.id_cliente)
     const cat = catalogo.get(r.id_rechazo)
-    if (cat?.controlable) bultosControlables += b
+    if (cat?.controlable) hlControlables += h
   }
 
-  const tasa = ventasTotalBultos > 0 ? (bultos / ventasTotalBultos) * 100 : 0
-  const pct_controlable = bultos > 0 ? (bultosControlables / bultos) * 100 : 0
+  const tasa = ventasTotalHl > 0 ? (hl / ventasTotalHl) * 100 : 0
+  const tasa_bultos = ventasTotalBultos > 0 ? (bultos / ventasTotalBultos) * 100 : 0
+  const pct_controlable = hl > 0 ? (hlControlables / hl) * 100 : 0
   const ticket_promedio = eventos_con_monto > 0 ? monto_neto / eventos_con_monto : 0
 
   return {
+    hl, total_hl_entregados: ventasTotalHl,
     bultos, total_entregados: ventasTotalBultos,
     eventos, eventos_con_monto,
-    monto_neto, monto_bruto, total_hl: 0,
-    tasa, pct_controlable, ticket_promedio,
+    monto_neto, monto_bruto,
+    tasa, tasa_bultos, pct_controlable, ticket_promedio,
     clientes_afectados: clientes.size,
   }
 }
@@ -514,6 +534,10 @@ function computeDelta(
     invalidated.pct_controlable = "catalogo_actualizado_2026-05"
   }
   const delta: RechazosDelta = {
+    hl_abs:          actual.hl - previous.hl,
+    hl_pct:          pct(actual.hl, previous.hl),
+    total_hl_entregados_abs: actual.total_hl_entregados - previous.total_hl_entregados,
+    total_hl_entregados_pct: pct(actual.total_hl_entregados, previous.total_hl_entregados),
     bultos_abs:      actual.bultos - previous.bultos,
     bultos_pct:      pct(actual.bultos, previous.bultos),
     total_entregados_abs: actual.total_entregados - previous.total_entregados,
@@ -523,6 +547,7 @@ function computeDelta(
     monto_neto_abs:  actual.monto_neto - previous.monto_neto,
     monto_neto_pct:  pct(actual.monto_neto, previous.monto_neto),
     tasa_pp:         actual.tasa - previous.tasa,
+    tasa_bultos_pp:  actual.tasa_bultos - previous.tasa_bultos,
     pct_controlable_pp: actual.pct_controlable - previous.pct_controlable,
     ticket_abs:      actual.ticket_promedio - previous.ticket_promedio,
     ticket_pct:      pct(actual.ticket_promedio, previous.ticket_promedio),
@@ -565,12 +590,13 @@ function splitChoferesPorDenominador(
   // Poblar motivos_top solo para las filas sin denominador (las otras siempre lo tienen en agg.por_motivo del global)
   if (ranking_sin_denominador.length > 0) {
     const patentesSet = new Set(ranking_sin_denominador.map(r => r.patente))
-    const aggPorPat = new Map<string, Map<number, { monto: number; eventos: number }>>()
+    const aggPorPat = new Map<string, Map<number, { hl: number; monto: number; eventos: number }>>()
     for (const r of rechazos) {
       if (!patentesSet.has(r.ds_fletero_carga)) continue
       let mot = aggPorPat.get(r.ds_fletero_carga)
       if (!mot) { mot = new Map(); aggPorPat.set(r.ds_fletero_carga, mot) }
-      const cur = mot.get(r.id_rechazo) ?? { monto: 0, eventos: 0 }
+      const cur = mot.get(r.id_rechazo) ?? { hl: 0, monto: 0, eventos: 0 }
+      cur.hl += Number(r.hl_rechazados ?? 0)
       cur.monto += Number(r.monto_neto ?? 0)
       cur.eventos += 1
       mot.set(r.id_rechazo, cur)
@@ -581,6 +607,7 @@ function splitChoferesPorDenominador(
       row.motivos_top = [...mot.entries()]
         .map(([id_rechazo, v]) => ({
           ds_rechazo: catalogo.get(id_rechazo)?.ds_rechazo ?? `id_${id_rechazo}`,
+          hl: v.hl,
           monto: v.monto,
           eventos: v.eventos,
         }))
@@ -669,10 +696,14 @@ function formatFechaShort(iso: string): string {
 //  Series
 // ─────────────────────────────────────────────────────────────────────────
 
-function computeSeries(rows: RechazoRow[], ventasPorFecha: Map<string, number>): RechazosComparado["series"] {
-  const dias = new Map<string, { bultos: number; monto: number; eventos: number }>()
+function computeSeries(
+  rows: RechazoRow[],
+  ventasHlPorFecha: Map<string, number>,
+): RechazosComparado["series"] {
+  const dias = new Map<string, { hl: number; bultos: number; monto: number; eventos: number }>()
   for (const r of rows) {
-    const cur = dias.get(r.fecha) ?? { bultos: 0, monto: 0, eventos: 0 }
+    const cur = dias.get(r.fecha) ?? { hl: 0, bultos: 0, monto: 0, eventos: 0 }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.monto += Number(r.monto_neto ?? 0)
     cur.eventos += 1
@@ -681,12 +712,12 @@ function computeSeries(rows: RechazoRow[], ventasPorFecha: Map<string, number>):
   const por_dia: RechazosPuntoDia[] = [...dias.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([fecha, v]) => {
-      const totalDia = ventasPorFecha.get(fecha) ?? 0
-      return { fecha, bultos: v.bultos, monto: v.monto, eventos: v.eventos,
-               tasa: totalDia > 0 ? (v.bultos / totalDia) * 100 : 0 }
+      const totalHlDia = ventasHlPorFecha.get(fecha) ?? 0
+      return { fecha, hl: v.hl, bultos: v.bultos, monto: v.monto, eventos: v.eventos,
+               tasa: totalHlDia > 0 ? (v.hl / totalHlDia) * 100 : 0 }
     })
 
-  const semanas = new Map<string, { desde: string; hasta: string; bultos: number; monto: number; eventos: number; ventas: number }>()
+  const semanas = new Map<string, { desde: string; hasta: string; hl: number; bultos: number; monto: number; eventos: number; ventasHl: number }>()
   for (const p of por_dia) {
     const { isoYear, isoWeek } = isoYearWeek(parseISO(p.fecha))
     const key = `${isoYear}-W${String(isoWeek).padStart(2, "0")}`
@@ -694,19 +725,19 @@ function computeSeries(rows: RechazoRow[], ventasPorFecha: Map<string, number>):
     if (!cur) {
       const monday = mondayOfIsoWeek(isoYear, isoWeek)
       semanas.set(key, { desde: toISO(monday), hasta: toISO(addDays(monday, 6)),
-                         bultos: p.bultos, monto: p.monto, eventos: p.eventos,
-                         ventas: ventasPorFecha.get(p.fecha) ?? 0 })
+                         hl: p.hl, bultos: p.bultos, monto: p.monto, eventos: p.eventos,
+                         ventasHl: ventasHlPorFecha.get(p.fecha) ?? 0 })
     } else {
-      cur.bultos += p.bultos; cur.monto += p.monto; cur.eventos += p.eventos
-      cur.ventas += ventasPorFecha.get(p.fecha) ?? 0
+      cur.hl += p.hl; cur.bultos += p.bultos; cur.monto += p.monto; cur.eventos += p.eventos
+      cur.ventasHl += ventasHlPorFecha.get(p.fecha) ?? 0
     }
   }
   const por_semana: RechazosPuntoSemana[] = [...semanas.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([semana, v]) => ({
       semana, desde: v.desde, hasta: v.hasta,
-      bultos: v.bultos, monto: v.monto, eventos: v.eventos,
-      tasa: v.ventas > 0 ? (v.bultos / v.ventas) * 100 : 0,
+      hl: v.hl, bultos: v.bultos, monto: v.monto, eventos: v.eventos,
+      tasa: v.ventasHl > 0 ? (v.hl / v.ventasHl) * 100 : 0,
     }))
 
   return { por_dia, por_semana }
@@ -733,7 +764,7 @@ function mondayOfIsoWeek(year: number, week: number): Date {
 // ─────────────────────────────────────────────────────────────────────────
 
 function computeAggMotivo(
-  rows: RechazoRow[], catalogo: Map<number, CatalogoMotivo>, totalBultos: number,
+  rows: RechazoRow[], catalogo: Map<number, CatalogoMotivo>, totalHl: number,
 ): RechazosAggMotivo[] {
   const map = new Map<number, RechazosAggMotivo>()
   for (const r of rows) {
@@ -743,33 +774,36 @@ function computeAggMotivo(
       ds_rechazo: cat?.ds_rechazo ?? r.ds_rechazo,
       categoria: cat?.categoria ?? "POR_CLASIFICAR",
       controlable: cat?.controlable ?? false,
-      bultos: 0, eventos: 0, monto: 0, pct_del_total: 0,
+      hl: 0, bultos: 0, eventos: 0, monto: 0, pct_del_total: 0,
     }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(r.id_rechazo, cur)
   }
   return [...map.values()]
-    .map(m => ({ ...m, pct_del_total: totalBultos > 0 ? (m.bultos / totalBultos) * 100 : 0 }))
-    .sort((a, b) => b.bultos - a.bultos)
+    .map(m => ({ ...m, pct_del_total: totalHl > 0 ? (m.hl / totalHl) * 100 : 0 }))
+    .sort((a, b) => b.hl - a.hl)
 }
 
 function computeAggCategoria(rows: RechazoRow[], catalogo: Map<number, CatalogoMotivo>): RechazosAggCategoria[] {
   const map = new Map<RechazoCategoria, RechazosAggCategoria>()
   for (const r of rows) {
     const cat = catalogo.get(r.id_rechazo)?.categoria ?? "POR_CLASIFICAR"
-    const cur = map.get(cat) ?? { categoria: cat, bultos: 0, eventos: 0, monto: 0 }
+    const cur = map.get(cat) ?? { categoria: cat, hl: 0, bultos: 0, eventos: 0, monto: 0 }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(cat, cur)
   }
-  return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+  return [...map.values()].sort((a, b) => b.hl - a.hl)
 }
 
 function computeAggChofer(
-  rows: RechazoRow[], ventasPorPatente: Map<string, number>, mapeoMap: Map<string, MapeoChofer>,
+  rows: RechazoRow[], ventasPorPatente: Map<string, number>,
+  ventasHlPorPatente: Map<string, number>, mapeoMap: Map<string, MapeoChofer>,
 ): RechazosAggChofer[] {
   const map = new Map<string, RechazosAggChofer>()
   for (const r of rows) {
@@ -779,20 +813,23 @@ function computeAggChofer(
     const display = chofer_nombre ?? patente
     const cur = map.get(patente) ?? {
       display, patente, chofer_nombre,
-      bultos: 0, eventos: 0, monto: 0, tasa: 0, total_entregados: 0,
+      hl: 0, bultos: 0, eventos: 0, monto: 0, tasa: 0,
+      total_hl_entregados: 0, total_entregados: 0,
       denominador_confiable: true,
     }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(patente, cur)
   }
   for (const v of map.values()) {
+    v.total_hl_entregados = ventasHlPorPatente.get(v.patente) ?? 0
     v.total_entregados = ventasPorPatente.get(v.patente) ?? 0
-    v.tasa = v.total_entregados > 0 ? (v.bultos / v.total_entregados) * 100 : 0
-    v.denominador_confiable = v.total_entregados > 0 && v.bultos <= v.total_entregados
+    v.tasa = v.total_hl_entregados > 0 ? (v.hl / v.total_hl_entregados) * 100 : 0
+    v.denominador_confiable = v.total_hl_entregados > 0 && v.hl <= v.total_hl_entregados
   }
-  return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+  return [...map.values()].sort((a, b) => b.hl - a.hl)
 }
 
 function computeAggCliente(rows: RechazoRow[]): RechazosAggCliente[] {
@@ -801,14 +838,15 @@ function computeAggCliente(rows: RechazoRow[]): RechazosAggCliente[] {
     if (r.id_cliente == null) continue
     const cur = map.get(r.id_cliente) ?? {
       id_cliente: r.id_cliente, nombre_cliente: r.nombre_cliente ?? "(sin nombre)",
-      bultos: 0, eventos: 0, monto: 0,
+      hl: 0, bultos: 0, eventos: 0, monto: 0,
     }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(r.id_cliente, cur)
   }
-  return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+  return [...map.values()].sort((a, b) => b.hl - a.hl)
 }
 
 function computeAggProducto(rows: RechazoRow[]): RechazosAggProducto[] {
@@ -816,42 +854,45 @@ function computeAggProducto(rows: RechazoRow[]): RechazosAggProducto[] {
   for (const r of rows) {
     const cur = map.get(r.id_articulo) ?? {
       id_articulo: r.id_articulo, ds_articulo: r.ds_articulo ?? "(sin descripción)",
-      bultos: 0, eventos: 0, monto: 0,
+      hl: 0, bultos: 0, eventos: 0, monto: 0,
     }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(r.id_articulo, cur)
   }
-  return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+  return [...map.values()].sort((a, b) => b.hl - a.hl)
 }
 
-function computeAggCanal(rows: RechazoRow[], totalBultos: number): RechazosAggCanal[] {
+function computeAggCanal(rows: RechazoRow[], totalHl: number): RechazosAggCanal[] {
   const map = new Map<string, RechazosAggCanal>()
   for (const r of rows) {
     const k = r.ds_canal_mkt ?? "(sin canal)"
-    const cur = map.get(k) ?? { ds_canal_mkt: k, bultos: 0, eventos: 0, monto: 0, pct: 0 }
+    const cur = map.get(k) ?? { ds_canal_mkt: k, hl: 0, bultos: 0, eventos: 0, monto: 0, pct: 0 }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(k, cur)
   }
   return [...map.values()]
-    .map(v => ({ ...v, pct: totalBultos > 0 ? (v.bultos / totalBultos) * 100 : 0 }))
-    .sort((a, b) => b.bultos - a.bultos)
+    .map(v => ({ ...v, pct: totalHl > 0 ? (v.hl / totalHl) * 100 : 0 }))
+    .sort((a, b) => b.hl - a.hl)
 }
 
 function computeAggSupervisor(rows: RechazoRow[]): RechazosAggSupervisor[] {
   const map = new Map<string, RechazosAggSupervisor>()
   for (const r of rows) {
     const k = r.ds_supervisor ?? "(sin supervisor)"
-    const cur = map.get(k) ?? { ds_supervisor: k, bultos: 0, eventos: 0, monto: 0 }
+    const cur = map.get(k) ?? { ds_supervisor: k, hl: 0, bultos: 0, eventos: 0, monto: 0 }
+    cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.eventos += 1
     cur.monto += Number(r.monto_neto ?? 0)
     map.set(k, cur)
   }
-  return [...map.values()].sort((a, b) => b.bultos - a.bultos)
+  return [...map.values()].sort((a, b) => b.hl - a.hl)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -872,22 +913,22 @@ function computeTopVariaciones(
   const motivo_subio = topByDeltaAbs(motDeltas, "up")
   const motivo_bajo  = topByDeltaAbs(motDeltas, "down")
 
-  // Chofer: tasa = bultos / total_entregados.
+  // Chofer: tasa = hl_rechazados / total_hl_entregados.
   // Solo se incluyen patentes con denominador_confiable EN AMBOS períodos
-  // (entregados > 0 Y bultos_rechazados <= entregados). Si una patente falla
+  // (entregados_hl > 0 Y hl_rechazados <= entregados_hl). Si una patente falla
   // en cualquiera de los dos, queda fuera del top_variaciones.
-  const aBultos = aggBy(actualData.rechazos, r => r.ds_fletero_carga, r => Number(r.bultos_rechazados ?? 0))
-  const pBultos = aggBy(previousData.rechazos, r => r.ds_fletero_carga, r => Number(r.bultos_rechazados ?? 0))
+  const aHl = aggBy(actualData.rechazos, r => r.ds_fletero_carga, r => Number(r.hl_rechazados ?? 0))
+  const pHl = aggBy(previousData.rechazos, r => r.ds_fletero_carga, r => Number(r.hl_rechazados ?? 0))
   const pChoferEv = aggBy(previousData.rechazos, r => r.ds_fletero_carga, () => 1)
   const tasaActual = new Map<string, number>()
   const tasaPrevious = new Map<string, number>()
-  for (const [pat, bultos] of aBultos) {
-    const denom = actualData.ventasPorPatente.get(pat) ?? 0
-    if (denom > 0 && bultos <= denom) tasaActual.set(pat, (bultos / denom) * 100)
+  for (const [pat, hl] of aHl) {
+    const denom = actualData.ventasHlPorPatente.get(pat) ?? 0
+    if (denom > 0 && hl <= denom) tasaActual.set(pat, (hl / denom) * 100)
   }
-  for (const [pat, bultos] of pBultos) {
-    const denom = previousData.ventasPorPatente.get(pat) ?? 0
-    if (denom > 0 && bultos <= denom) tasaPrevious.set(pat, (bultos / denom) * 100)
+  for (const [pat, hl] of pHl) {
+    const denom = previousData.ventasHlPorPatente.get(pat) ?? 0
+    if (denom > 0 && hl <= denom) tasaPrevious.set(pat, (hl / denom) * 100)
   }
   const patentesConfiables = new Set<string>()
   for (const k of tasaActual.keys()) if (tasaPrevious.has(k)) patentesConfiables.add(k)

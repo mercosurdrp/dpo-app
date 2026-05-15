@@ -1,14 +1,13 @@
 "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { RechazosComparado, RechazosDelta, RechazosKPI } from "@/lib/types/rechazos"
-import { formatBultos, formatDelta, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { formatBultos, formatDelta, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
 type Sentiment = "bad" | "good" | "neutral"
 
@@ -28,31 +27,13 @@ export function KpiCards({ data }: { data: RechazosComparado }) {
   const cards = buildSecondarySpecs(a, d)
   return (
     <div className="space-y-3">
-      {/* Hero — KPI principal */}
+      {/* Hero — KPI principal (tasa en HL) */}
       <Card className="border-slate-200">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                % de rechazo del período
-              </span>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Badge
-                      variant="outline"
-                      className="cursor-help border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-normal text-amber-700 leading-tight"
-                    />
-                  }
-                >
-                  Metodología en validación
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px]">
-                  Unidades de Chess (packs vs unidades sueltas) pendientes de validación.
-                  La tasa puede tener un margen de error que se ajustará cuando cierre el análisis.
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              % de rechazo del período (HL)
+            </span>
             <div className="flex items-baseline gap-3">
               <span className="text-4xl font-bold tabular-nums text-slate-900">{formatTasa(a.tasa)}</span>
               <span className={`text-sm font-medium tabular-nums ${sentimentClass(hero.deltaSentiment)}`}>
@@ -60,9 +41,14 @@ export function KpiCards({ data }: { data: RechazosComparado }) {
               </span>
             </div>
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium text-slate-700">{formatBultos(a.bultos)}</span> bultos rechazados
+              <span className="font-medium text-slate-700">{formatHl(a.hl)}</span> rechazados
               {" / "}
-              <span className="font-medium text-slate-700">{formatBultos(a.total_entregados)}</span> entregados
+              <span className="font-medium text-slate-700">{formatHl(a.total_hl_entregados)}</span> entregados
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Bultos: <span className="font-medium text-slate-600">{formatBultos(a.bultos)}</span>
+              {" / "}{formatBultos(a.total_entregados)} entregados
+              {" · "}tasa <span className="font-medium text-slate-600">{formatTasa(a.tasa_bultos)}</span>
             </div>
           </div>
         </CardContent>
@@ -133,12 +119,12 @@ function buildSecondarySpecs(a: RechazosKPI, d: RechazosDelta): CardSpec[] {
       delta: { text: formatDelta(d.monto_neto_pct, "%"), sentiment: badIfUp(d.monto_neto_pct) },
     },
     {
-      key: "total_entregados",
-      label: "Bultos entregados",
-      value: formatBultos(a.total_entregados),
-      sub: "universo total",
+      key: "total_hl_entregados",
+      label: "HL entregados",
+      value: formatHl(a.total_hl_entregados),
+      sub: `${formatBultos(a.total_entregados)} bultos`,
       // Más entregados es bueno, menos es malo (es signo de que se vendió).
-      delta: { text: formatDelta(d.total_entregados_pct, "%"), sentiment: goodIfUp(d.total_entregados_pct) },
+      delta: { text: formatDelta(d.total_hl_entregados_pct, "%"), sentiment: goodIfUp(d.total_hl_entregados_pct) },
     },
     {
       key: "eventos",

@@ -24,6 +24,7 @@ interface RawRechazoRow {
   nombre_cliente: string | null
   id_articulo: number
   ds_articulo: string | null
+  hl_rechazados: number | null
   bultos_rechazados: number
   monto_neto: number | null
   monto_bruto: number | null
@@ -69,6 +70,7 @@ export async function getRechazosDetalle(
       nombre_cliente: r.nombre_cliente,
       id_articulo: r.id_articulo,
       ds_articulo: r.ds_articulo ?? "(sin descripción)",
+      hl_rechazados: Number(r.hl_rechazados ?? 0),
       bultos_rechazados: Number(r.bultos_rechazados ?? 0),
       monto_neto: r.monto_neto != null ? Number(r.monto_neto) : null,
       monto_bruto: r.monto_bruto != null ? Number(r.monto_bruto) : null,
@@ -88,7 +90,7 @@ async function loadPage(
   filters: NonNullable<RechazosDetalleRequest["filters"]>, offset: number, limit: number,
 ): Promise<RawRechazoRow[]> {
   let q = supa.from("rechazos").select(
-    "id,fecha,ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,bultos_rechazados,monto_neto,monto_bruto,ds_localidad,ds_canal_mkt,ds_supervisor,id_documento,fecha_pedido"
+    "id,fecha,ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto,ds_localidad,ds_canal_mkt,ds_supervisor,id_documento,fecha_pedido"
   )
   q = applyFilters(q, request, filters)
   // Orden: por monto_neto desc (más impacto primero), tiebreak por fecha desc + id
