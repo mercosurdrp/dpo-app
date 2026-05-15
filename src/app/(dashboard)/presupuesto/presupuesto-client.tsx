@@ -12,6 +12,7 @@ import {
   FileDown,
   CheckCircle2,
   Send,
+  Eye,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +41,7 @@ import { SubirPresupuestoAnualDialog } from "@/components/presupuesto/subir-pres
 import { SubirEerrAnualDialog } from "@/components/presupuesto/subir-eerr-anual-dialog"
 import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
 import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-dialog"
+import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type {
   EstadoPresupuestoTarea,
   PresupuestoAnual,
@@ -191,6 +193,9 @@ export function PresupuestoClient({
     useState<PresupuestoTareaConResponsable | null>(null)
   // Diálogos: responder tarea
   const [tareaRespondiendo, setTareaRespondiendo] =
+    useState<PresupuestoTareaConResponsable | null>(null)
+  // Diálogos: ver detalle de tarea (solo lectura)
+  const [tareaViendo, setTareaViendo] =
     useState<PresupuestoTareaConResponsable | null>(null)
 
   // Mes activo (el de la vista). Default = mes actual.
@@ -639,6 +644,15 @@ export function PresupuestoClient({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTareaViendo(t)}
+                          title="Ver detalle"
+                        >
+                          <Eye className="size-3.5" />
+                        </Button>
                         {t.evidencia_url && (
                           <Button
                             type="button"
@@ -736,6 +750,18 @@ export function PresupuestoClient({
           }}
           tarea={tareaRespondiendo}
           onSaved={refrescar}
+        />
+      )}
+
+      {/* Ver detalle de tarea (solo lectura, disponible para cualquiera) */}
+      {tareaViendo && (
+        <VerTareaDialog
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setTareaViendo(null)
+          }}
+          tarea={tareaViendo}
+          onAbrirArchivo={abrirArchivo}
         />
       )}
 
