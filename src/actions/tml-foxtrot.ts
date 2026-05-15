@@ -58,10 +58,19 @@ interface DayRoute {
   driverId: string
   driverName: string | null
   vehicleId: string | null
+  // Nombre de la ruta en Foxtrot; trae la patente (ej "1° OJA 408").
+  name: string | null
   startedIso: string | null
   // Inicio planificado (epoch ms). Define la "hora de turno" del modo
   // "Desde turno": 07:30 planificado → piso 07:00, 05:00 → piso 05:00.
   plannedStartMs: number | null
+}
+
+// Formación del camión un día dado, según Orden de Salida.
+interface Formacion {
+  choferId: string | null
+  ayudanteId: string | null
+  patente: string
 }
 
 // Fila cruda de `foxtrot_routes` (solo las columnas que usa el TML).
@@ -81,6 +90,8 @@ interface FoxtrotRouteRow {
     started_timestamp?: string | null
     // Inicio planificado de la ruta (epoch ms).
     start_time?: number | null
+    // Nombre de la ruta (trae la patente del camión).
+    name?: string | null
   } | null
 }
 
@@ -92,6 +103,25 @@ function dcToSucursal(dc: string): "ELDORADO" | "IGUAZU" | null {
 
 function normaliza(s: string | null | undefined): string {
   return (s ?? "").trim().toUpperCase()
+}
+
+// Patente normalizada para matchear ruta Foxtrot ↔ camión de Orden de Salida.
+// Quita el prefijo de vuelta ("1° "), el sufijo ".2" y todo lo no alfanumérico.
+function normPatente(name: string | null | undefined): string {
+  return (name ?? "")
+    .toUpperCase()
+    .replace(/^\s*\d+\s*[°ºO]?\s*/, "")
+    .replace(/\.\d+\s*$/, "")
+    .replace(/[^A-Z0-9]/g, "")
+}
+
+// Patente legible (conserva espacios) para mostrar como dominio del camión.
+function patenteDisplay(name: string | null | undefined): string | null {
+  const p = (name ?? "")
+    .replace(/^\s*\d+\s*[°ºO]?\s*/, "")
+    .replace(/\.\d+\s*$/, "")
+    .trim()
+  return p || null
 }
 
 function parseDcIds(): string[] {
@@ -220,6 +250,7 @@ async function routesLive(fecha: string, dcIds: string[]): Promise<DayRoute[]> {
       driverId,
       driverName: driverId ? (driversByDc.get(dc)?.get(driverId) ?? null) : null,
       vehicleId: route.vehicle_id ?? null,
+      name: route.name ?? null,
       startedIso: route.started_timestamp ?? null,
       plannedStartMs: typeof route.start_time === "number" ? route.start_time : null,
     }
@@ -251,6 +282,7 @@ async function routesFromDb(
       driverId: row.driver_id ?? "",
       driverName: row.driver_name ?? null,
       vehicleId: row.vehicle_id ?? null,
+      name: row.raw_data?.name ?? null,
       // Inicio de ruta = salida REAL del vehículo (ROUTE_ANALYTICS). Si todavía
       // no hay analytics, cae al "driver marked start" y luego al planificado.
       startedIso:
@@ -300,36 +332,108 @@ async function marcasEnRango(
   return byFecha
 }
 
+// Formación (chofer + ayudante) por camión y fecha, desde Orden de Salida.
+// Devuelve Map<fecha, Map<patenteNormalizada, Formacion>>.
+async function formacionEnRango(
+  supabase: SupabaseClient,
+  desde: string,
+  hasta: string,
+): Promise<Map<string, Map<string, Formacion>>> {
+  interface OsRow {
+    fecha: string
+    camion_id: string
+    chofer_empleado_id: string | null
+    ayudante_empleado_id: string | null
+  }
+  interface VehRow {
+    id: string
+    dominio: string | null
+  }
+  const [vehRes, osRows] = await Promise.all([
+    supabase.from("catalogo_vehiculos").select("id,dominio"),
+    fetchAllRows<OsRow>((from, to) =>
+      supabase
+        .from("orden_salida_camion_diario")
+        .select("fecha,camion_id,chofer_empleado_id,ayudante_empleado_id")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("fecha")
+        .range(from, to),
+    ),
+  ])
+
+  const domById = new Map<string, string>()
+  for (const v of (vehRes.data ?? []) as VehRow[]) {
+    if (v.dominio) domById.set(v.id, v.dominio)
+  }
+
+  const byFecha = new Map<string, Map<string, Formacion>>()
+  for (const o of osRows) {
+    const dom = domById.get(o.camion_id)
+    if (!dom) continue
+    let m = byFecha.get(o.fecha)
+    if (!m) {
+      m = new Map()
+      byFecha.set(o.fecha, m)
+    }
+    m.set(normPatente(dom), {
+      choferId: o.chofer_empleado_id,
+      ayudanteId: o.ayudante_empleado_id,
+      patente: dom,
+    })
+  }
+  return byFecha
+}
+
 // ---- Cálculo del TML ----
 
-// Construye los equipos (uno por chofer) de un día puntual.
+// Construye los equipos (uno por camión) de un día puntual. La formación
+// (chofer + ayudante) sale de Orden de Salida; el TML se cuenta desde la
+// marca del CHOFER. El ayudante se muestra a título informativo.
 function computeEquiposDia(
   fecha: string,
   routes: DayRoute[],
   empByNombre: Map<string, EmpleadoRow>,
+  empById: Map<string, EmpleadoRow>,
   primeraEntradaByLegajo: Map<number, number>,
+  formacionDia: Map<string, Formacion>,
 ): TmlFoxtrotEquipo[] {
-  // Por cada driver: la PRIMERA vuelta del día (menor inicio de ruta).
+  // Por cada camión (patente): la PRIMERA vuelta del día (menor inicio).
   const primera = new Map<string, { route: DayRoute; startedMs: number }>()
   for (const r of routes) {
-    if (!r.driverId || !r.startedIso) continue
+    if (!r.startedIso) continue
     const ms = new Date(r.startedIso).getTime()
     if (Number.isNaN(ms)) continue
     // Descartar rutas cuyo inicio cae en otra fecha: Foxtrot a veces devuelve
     // en el día siguiente rutas viejas/no finalizadas, y producen TML espurios.
     if (ymdFormatter.format(new Date(ms)) !== fecha) continue
-    const key = `${r.dc}:${r.driverId}`
+    const np = normPatente(r.name)
+    const key = np || (r.driverId ? `drv:${r.dc}:${r.driverId}` : null)
+    if (!key) continue
     const prev = primera.get(key)
     if (!prev || ms < prev.startedMs) primera.set(key, { route: r, startedMs: ms })
   }
 
   const equipos: TmlFoxtrotEquipo[] = []
   for (const { route, startedMs } of primera.values()) {
-    const empleado = route.driverName
-      ? empByNombre.get(normaliza(route.driverName))
+    const np = normPatente(route.name)
+    const formacion = np ? formacionDia.get(np) : undefined
+
+    // Chofer: el de Orden de Salida; si no hay, el driver de Foxtrot.
+    let chofer: EmpleadoRow | undefined
+    if (formacion?.choferId) chofer = empById.get(formacion.choferId)
+    if (!chofer && route.driverName) {
+      chofer = empByNombre.get(normaliza(route.driverName))
+    }
+    const ayudante = formacion?.ayudanteId
+      ? empById.get(formacion.ayudanteId)
       : undefined
-    const choferMarcaMs = empleado
-      ? (primeraEntradaByLegajo.get(empleado.legajo) ?? null)
+
+    const choferMarcaMs = chofer
+      ? (primeraEntradaByLegajo.get(chofer.legajo) ?? null)
+      : null
+    const ayudanteMarcaMs = ayudante
+      ? (primeraEntradaByLegajo.get(ayudante.legajo) ?? null)
       : null
 
     let tmlReal: number | null = null
@@ -357,24 +461,24 @@ function computeEquiposDia(
     equipos.push({
       fecha,
       camion_id: route.routeId,
-      dominio: route.vehicleId,
+      dominio: formacion?.patente ?? patenteDisplay(route.name),
       sucursal: dcToSucursal(route.dc),
       zona: "",
       chofer: {
-        empleado_id: empleado?.id ?? null,
-        legajo: empleado?.legajo ?? null,
-        nombre: empleado?.nombre ?? route.driverName,
-        hora_marca: epochMsToHHMM(choferMarcaMs ?? null),
-        foxtrot_driver_id: route.driverId,
+        empleado_id: chofer?.id ?? null,
+        legajo: chofer?.legajo ?? null,
+        nombre: chofer?.nombre ?? route.driverName,
+        hora_marca: epochMsToHHMM(choferMarcaMs),
+        foxtrot_driver_id: route.driverId || null,
       },
       ayudante: {
-        empleado_id: null,
-        legajo: null,
-        nombre: null,
-        hora_marca: null,
+        empleado_id: ayudante?.id ?? null,
+        legajo: ayudante?.legajo ?? null,
+        nombre: ayudante?.nombre ?? null,
+        hora_marca: epochMsToHHMM(ayudanteMarcaMs),
         foxtrot_driver_id: null,
       },
-      hora_marca_equipo: epochMsToHHMM(choferMarcaMs ?? null),
+      hora_marca_equipo: epochMsToHHMM(choferMarcaMs),
       hora_inicio_ruta: hhmmFormatter.format(new Date(startedMs)),
       route_id: route.routeId,
       tml_minutos_real: tmlReal,
@@ -403,19 +507,43 @@ function resumir(equipos: TmlFoxtrotEquipo[]): TmlFoxtrotResumen {
   }
 }
 
-// Agrega los equipos del rango por chofer (vista multi-día).
-function agruparPorChofer(equipos: TmlFoxtrotEquipo[]): TmlFoxtrotChoferAgg[] {
-  const grupos = new Map<string, TmlFoxtrotEquipo[]>()
+// Agrega los equipos del rango por TRIPULANTE (chofer y ayudante). Cada equipo
+// suma a su chofer y a su ayudante; el TML del camión (chofer) lo "hereda" el
+// ayudante de ese día.
+function agruparPorTripulante(equipos: TmlFoxtrotEquipo[]): TmlFoxtrotChoferAgg[] {
+  interface Persona {
+    empleado_id: string | null
+    legajo: number | null
+    nombre: string | null
+  }
+  interface Acc {
+    persona: Persona
+    items: { equipo: TmlFoxtrotEquipo; rol: "chofer" | "ayudante" }[]
+  }
+  const grupos = new Map<string, Acc>()
+  const agregar = (p: Persona, equipo: TmlFoxtrotEquipo, rol: "chofer" | "ayudante") => {
+    if (!p.empleado_id && !p.nombre) return
+    const key = p.empleado_id ?? `nombre:${normaliza(p.nombre)}`
+    let g = grupos.get(key)
+    if (!g) {
+      g = { persona: p, items: [] }
+      grupos.set(key, g)
+    }
+    g.items.push({ equipo, rol })
+  }
   for (const e of equipos) {
-    const key = e.chofer.empleado_id ?? `nombre:${normaliza(e.chofer.nombre)}`
-    const arr = grupos.get(key)
-    if (arr) arr.push(e)
-    else grupos.set(key, [e])
+    agregar(e.chofer, e, "chofer")
+    if (e.ayudante.empleado_id || e.ayudante.nombre) {
+      agregar(e.ayudante, e, "ayudante")
+    }
   }
 
+  const promedio = (xs: number[]) =>
+    xs.length === 0 ? null : Math.round(xs.reduce((s, x) => s + x, 0) / xs.length)
+
   const out: TmlFoxtrotChoferAgg[] = []
-  for (const arr of grupos.values()) {
-    const ref = arr[0]
+  for (const g of grupos.values()) {
+    const arr = g.items.map((i) => i.equipo)
     const reales = arr
       .map((e) => e.tml_minutos_real)
       .filter((v): v is number => v != null)
@@ -425,17 +553,16 @@ function agruparPorChofer(equipos: TmlFoxtrotEquipo[]): TmlFoxtrotChoferAgg[] {
     const diasFueraMeta = arr.filter((e) => e.estado === "fuera_meta").length
     const diasOk = arr.filter((e) => e.estado === "ok").length
     const diasSinMarca = arr.filter((e) => e.estado === "sin_marca").length
-    const promedio = (xs: number[]) =>
-      xs.length === 0 ? null : Math.round(xs.reduce((s, x) => s + x, 0) / xs.length)
-    // sucursal: primera no nula
     const sucursal = arr.find((e) => e.sucursal != null)?.sucursal ?? null
 
     out.push({
-      empleado_id: ref.chofer.empleado_id,
-      legajo: ref.chofer.legajo,
-      nombre: ref.chofer.nombre,
+      empleado_id: g.persona.empleado_id,
+      legajo: g.persona.legajo,
+      nombre: g.persona.nombre,
       sucursal,
       dias_con_ruta: arr.length,
+      dias_como_chofer: g.items.filter((i) => i.rol === "chofer").length,
+      dias_como_ayudante: g.items.filter((i) => i.rol === "ayudante").length,
       dias_con_tml: reales.length,
       dias_fuera_meta: diasFueraMeta,
       dias_sin_marca: diasSinMarca,
@@ -509,17 +636,20 @@ export async function getTmlFoxtrotRango(
 
     const dcIds = parseDcIds()
 
-    // Empleados + marcas + rutas históricas: todo en paralelo.
-    const [empRes, marcasByFecha, dbRoutesByFecha] = await Promise.all([
+    // Empleados + marcas + rutas históricas + formación: todo en paralelo.
+    const [empRes, marcasByFecha, dbRoutesByFecha, formacionByFecha] = await Promise.all([
       supabase.from("empleados").select("id,legajo,nombre").eq("activo", true),
       marcasEnRango(supabase, desdeEf, hastaEf),
       routesFromDb(supabase, dcIds, desdeEf, hastaEf),
+      formacionEnRango(supabase, desdeEf, hastaEf),
     ])
     if (empRes.error) throw new Error(`empleados: ${empRes.error.message}`)
 
     const empByNombre = new Map<string, EmpleadoRow>()
+    const empById = new Map<string, EmpleadoRow>()
     for (const e of (empRes.data ?? []) as EmpleadoRow[]) {
       empByNombre.set(normaliza(e.nombre), e)
+      empById.set(e.id, e)
     }
 
     // El día de hoy se lee EN VIVO (el cron aún no lo sincronizó).
@@ -530,7 +660,14 @@ export async function getTmlFoxtrotRango(
     for (const f of fechas) {
       const dayRoutes = f === hoy ? liveRoutes : (dbRoutesByFecha.get(f) ?? [])
       const marcas = marcasByFecha.get(f) ?? new Map<number, number>()
-      const equiposDia = computeEquiposDia(f, dayRoutes, empByNombre, marcas)
+      const equiposDia = computeEquiposDia(
+        f,
+        dayRoutes,
+        empByNombre,
+        empById,
+        marcas,
+        formacionByFecha.get(f) ?? new Map<string, Formacion>(),
+      )
       allEquipos.push(...equiposDia)
       serie_diaria.push({
         fecha: f,
@@ -561,7 +698,7 @@ export async function getTmlFoxtrotRango(
         },
         serie_diaria,
         equipos,
-        choferes: agruparPorChofer(allEquipos),
+        choferes: agruparPorTripulante(allEquipos),
       },
     }
   } catch (e) {
@@ -587,23 +724,28 @@ export async function getTmlFoxtrotMapByDominio(
     const f = fecha ?? hoyAr()
     const dcIds = parseDcIds()
 
-    const [routes, marcasByFecha, empRes] = await Promise.all([
+    const [routes, marcasByFecha, empRes, formacionByFecha] = await Promise.all([
       routesLive(f, dcIds),
       marcasEnRango(supabase, f, f),
       supabase.from("empleados").select("id,legajo,nombre").eq("activo", true),
+      formacionEnRango(supabase, f, f),
     ])
     if (empRes.error) return {}
 
     const empByNombre = new Map<string, EmpleadoRow>()
+    const empById = new Map<string, EmpleadoRow>()
     for (const e of (empRes.data ?? []) as EmpleadoRow[]) {
       empByNombre.set(normaliza(e.nombre), e)
+      empById.set(e.id, e)
     }
 
     const equipos = computeEquiposDia(
       f,
       routes,
       empByNombre,
+      empById,
       marcasByFecha.get(f) ?? new Map<number, number>(),
+      formacionByFecha.get(f) ?? new Map<string, Formacion>(),
     )
     const map: Record<string, TmlFoxtrotEnVivo> = {}
     for (const e of equipos) {

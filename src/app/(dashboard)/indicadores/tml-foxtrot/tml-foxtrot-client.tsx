@@ -656,8 +656,9 @@ function ChoferesTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Chofer</TableHead>
+            <TableHead>Tripulante</TableHead>
             <TableHead>Sucursal</TableHead>
+            <TableHead>Rol en el período</TableHead>
             <TableHead className="text-right">Días c/ruta</TableHead>
             <TableHead className="text-right">TML promedio</TableHead>
             <TableHead className="text-right">Peor</TableHead>
@@ -687,6 +688,14 @@ function ChoferesTable({
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {[
+                    c.dias_como_chofer > 0 ? `${c.dias_como_chofer} chofer` : null,
+                    c.dias_como_ayudante > 0 ? `${c.dias_como_ayudante} ayudante` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm">{c.dias_con_ruta}</TableCell>
                 <TableCell className="text-right">

@@ -1126,13 +1126,16 @@ export interface TmlFoxtrotSerieDia {
   iguazu: TmlFoxtrotResumen
 }
 
-// Agregado por chofer sobre todo el rango (vista de rangos multi-día).
+// Agregado por tripulante (chofer o ayudante) sobre todo el rango.
+// El TML del camión es del chofer; el ayudante "hereda" el del equipo.
 export interface TmlFoxtrotChoferAgg {
   empleado_id: string | null
   legajo: number | null
   nombre: string | null
   sucursal: "ELDORADO" | "IGUAZU" | null
   dias_con_ruta: number
+  dias_como_chofer: number
+  dias_como_ayudante: number
   dias_con_tml: number
   dias_fuera_meta: number
   dias_sin_marca: number
