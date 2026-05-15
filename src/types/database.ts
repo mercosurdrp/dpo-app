@@ -1100,6 +1100,10 @@ export interface TmlFoxtrotResumen {
   promedio_desde7_min: number | null
   peor_real_min: number | null
   mejor_real_min: number | null
+  // Equipos dentro de meta (TML ≤ 30 min) según cada métrica. El % dentro de
+  // meta (objetivo DPO ≥ 65%) = en_meta_X / equipos_con_tml.
+  en_meta_real: number
+  en_meta_desde7: number
 }
 
 export interface TmlFoxtrotDia {
@@ -1113,13 +1117,13 @@ export interface TmlFoxtrotDia {
 // ===== TML Foxtrot — selección de período =====
 export type TmlFoxtrotPeriodo = "dia" | "semana" | "mes" | "ytd" | "personalizado"
 
-// Un punto de la tendencia diaria dentro de un rango.
+// Un punto de la tendencia diaria, con el detalle por sucursal para que el
+// gráfico se pueda filtrar (Todas / Eldorado / Iguazú) sin recargar.
 export interface TmlFoxtrotSerieDia {
   fecha: string
-  promedio_real_min: number | null
-  promedio_desde7_min: number | null
-  equipos_con_tml: number
-  equipos_totales: number
+  total: TmlFoxtrotResumen
+  eldorado: TmlFoxtrotResumen
+  iguazu: TmlFoxtrotResumen
 }
 
 // Agregado por chofer sobre todo el rango (vista de rangos multi-día).

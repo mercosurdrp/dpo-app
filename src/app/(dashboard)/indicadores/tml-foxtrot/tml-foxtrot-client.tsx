@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Clock, Truck, AlertTriangle, CheckCircle2, RefreshCcw, TrendingUp } from "lucide-react"
+import { Clock, Truck, AlertTriangle, CheckCircle2, RefreshCcw, TrendingUp, Target } from "lucide-react"
 import type {
   TmlFoxtrotRango,
   TmlFoxtrotEquipo,
@@ -54,6 +54,28 @@ function ddMM(fecha: string): string {
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 type Granularidad = "dia" | "semana" | "mes"
+type Sucursal = "TODAS" | "ELDORADO" | "IGUAZU"
+type ScopeKey = "total" | "eldorado" | "iguazu"
+
+// Objetivo del programa DPO: ≥ 65% de equipos dentro de meta.
+const OBJETIVO_PCT = 65
+
+const SUCURSALES: { value: Sucursal; label: string }[] = [
+  { value: "TODAS", label: "Todas" },
+  { value: "ELDORADO", label: "Eldorado" },
+  { value: "IGUAZU", label: "Iguazú" },
+]
+
+function scopeKeyDe(s: Sucursal): ScopeKey {
+  return s === "ELDORADO" ? "eldorado" : s === "IGUAZU" ? "iguazu" : "total"
+}
+
+// % de equipos dentro de meta de un resumen, según la métrica activa.
+function pctEnMeta(r: TmlFoxtrotResumen, desde7: boolean): number | null {
+  if (r.equipos_con_tml === 0) return null
+  const enMeta = desde7 ? r.en_meta_desde7 : r.en_meta_real
+  return Math.round((enMeta / r.equipos_con_tml) * 100)
+}
 
 // Lunes de la semana que contiene a `fecha` (YYYY-MM-DD).
 function lunesDe(fecha: string): string {
@@ -85,11 +107,12 @@ function bucketSerie(
   serie: TmlFoxtrotSerieDia[],
   granularidad: Granularidad,
   desde7: boolean,
+  scope: ScopeKey,
 ): { label: string; valor: number | null }[] {
-  const val = (s: TmlFoxtrotSerieDia) =>
-    desde7 ? s.promedio_desde7_min : s.promedio_real_min
+  const val = (r: TmlFoxtrotResumen) =>
+    desde7 ? r.promedio_desde7_min : r.promedio_real_min
   if (granularidad === "dia") {
-    return serie.map((s) => ({ label: ddMM(s.fecha), valor: val(s) }))
+    return serie.map((s) => ({ label: ddMM(s.fecha), valor: val(s[scope]) }))
   }
   const groups = new Map<string, { label: string; sum: number; n: number }>()
   for (const s of serie) {
@@ -101,10 +124,11 @@ function bucketSerie(
       g = { label, sum: 0, n: 0 }
       groups.set(key, g)
     }
-    const v = val(s)
+    const r = s[scope]
+    const v = val(r)
     if (v != null) {
-      g.sum += v * s.equipos_con_tml
-      g.n += s.equipos_con_tml
+      g.sum += v * r.equipos_con_tml
+      g.n += r.equipos_con_tml
     }
   }
   return [...groups.entries()]
@@ -134,8 +158,10 @@ export function TmlFoxtrotClient({ initial }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [desde7, setDesde7] = useState(false)
+  const [sucursal, setSucursal] = useState<Sucursal>("TODAS")
   const [customDesde, setCustomDesde] = useState(initial.desde)
   const [customHasta, setCustomHasta] = useState(initial.hasta)
+  const scopeKey = scopeKeyDe(sucursal)
 
   const navegar = (periodo: TmlFoxtrotPeriodo, desde?: string, hasta?: string) => {
     const params = new URLSearchParams()
@@ -150,18 +176,36 @@ export function TmlFoxtrotClient({ initial }: Props) {
   const esDiaUnico = initial.es_dia_unico
   const metricaLabel = desde7 ? "Desde turno" : "Marca real"
 
-  // KPIs agregados sobre el rango (jornadas = pares chofer·día).
+  // Datos del detalle (tabla + KPIs) filtrados por la sucursal elegida.
+  const choferesScope = useMemo(
+    () =>
+      sucursal === "TODAS"
+        ? initial.choferes
+        : initial.choferes.filter((c) => c.sucursal === sucursal),
+    [initial.choferes, sucursal],
+  )
+  const equiposScope = useMemo(
+    () =>
+      sucursal === "TODAS"
+        ? initial.equipos
+        : initial.equipos.filter((e) => e.sucursal === sucursal),
+    [initial.equipos, sucursal],
+  )
+
+  // Resumen del scope elegido (Todas / Eldorado / Iguazú).
+  const scopedResumen =
+    sucursal === "TODAS" ? initial.resumen : initial.por_sucursal[sucursal]
+
+  // KPIs del scope; responden al toggle Marca real / Desde turno.
   const kpis = useMemo(() => {
-    let enMeta = 0
-    let fueraMeta = 0
-    let totales = 0
-    for (const c of initial.choferes) {
-      enMeta += c.dias_con_tml - c.dias_fuera_meta
-      fueraMeta += c.dias_fuera_meta
-      totales += c.dias_con_ruta
+    const enMeta = desde7 ? scopedResumen.en_meta_desde7 : scopedResumen.en_meta_real
+    return {
+      enMeta,
+      fueraMeta: scopedResumen.equipos_con_tml - enMeta,
+      totales: scopedResumen.equipos_totales,
+      pct: pctEnMeta(scopedResumen, desde7),
     }
-    return { enMeta, fueraMeta, totales }
-  }, [initial.choferes])
+  }, [scopedResumen, desde7])
 
   // Serie para el gráfico de tendencia, con granularidad según el período.
   const granularidad = useMemo(
@@ -169,8 +213,8 @@ export function TmlFoxtrotClient({ initial }: Props) {
     [initial.periodo, initial.desde, initial.hasta],
   )
   const serieChart = useMemo(
-    () => bucketSerie(initial.serie_diaria, granularidad, desde7),
-    [initial.serie_diaria, granularidad, desde7],
+    () => bucketSerie(initial.serie_diaria, granularidad, desde7, scopeKey),
+    [initial.serie_diaria, granularidad, desde7, scopeKey],
   )
   const tendenciaLabel =
     granularidad === "dia" ? "diaria" : granularidad === "semana" ? "semanal" : "mensual"
@@ -234,6 +278,24 @@ export function TmlFoxtrotClient({ initial }: Props) {
           ))}
         </div>
 
+        {/* Filtro de sucursal */}
+        <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+          {SUCURSALES.map((su) => (
+            <button
+              key={su.value}
+              type="button"
+              onClick={() => setSucursal(su.value)}
+              className={`rounded px-3 py-1 transition-colors ${
+                sucursal === su.value
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {su.label}
+            </button>
+          ))}
+        </div>
+
         {initial.periodo === "personalizado" && (
           <div className="flex items-end gap-2">
             <div className="flex flex-col gap-1">
@@ -293,11 +355,12 @@ export function TmlFoxtrotClient({ initial }: Props) {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ResumenCard
-          title={esDiaUnico ? "Promedio total" : "Promedio del período"}
+          title="Total"
           r={initial.resumen}
           color="bg-slate-300"
           desde7={desde7}
           esDiaUnico={esDiaUnico}
+          selected={sucursal === "TODAS"}
         />
         <ResumenCard
           title="Eldorado"
@@ -305,6 +368,7 @@ export function TmlFoxtrotClient({ initial }: Props) {
           color="bg-blue-300"
           desde7={desde7}
           esDiaUnico={esDiaUnico}
+          selected={sucursal === "ELDORADO"}
         />
         <ResumenCard
           title="Iguazú"
@@ -312,18 +376,20 @@ export function TmlFoxtrotClient({ initial }: Props) {
           color="bg-emerald-300"
           desde7={desde7}
           esDiaUnico={esDiaUnico}
+          selected={sucursal === "IGUAZU"}
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetaPctCard pct={kpis.pct} />
         <KpiBox
-          label={esDiaUnico ? "Equipos OK" : "Jornadas en meta"}
+          label={esDiaUnico ? "Equipos en meta" : "Jornadas en meta"}
           value={kpis.enMeta}
           icon={<CheckCircle2 className="h-4 w-4" />}
           color="green"
         />
         <KpiBox
-          label={esDiaUnico ? "Fuera meta" : "Jornadas fuera meta"}
+          label={esDiaUnico ? "Fuera de meta" : "Jornadas fuera meta"}
           value={kpis.fueraMeta}
           icon={<AlertTriangle className="h-4 w-4" />}
           color="red"
@@ -342,7 +408,13 @@ export function TmlFoxtrotClient({ initial }: Props) {
           <CardContent className="pt-6">
             <p className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
               <TrendingUp className="h-4 w-4 text-amber-600" />
-              Tendencia {tendenciaLabel} del TML promedio ({metricaLabel})
+              Tendencia {tendenciaLabel} del TML promedio ({metricaLabel}
+              {sucursal === "ELDORADO"
+                ? " · Eldorado"
+                : sucursal === "IGUAZU"
+                  ? " · Iguazú"
+                  : ""}
+              )
             </p>
             {serieChart.every((d) => d.valor == null) ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -392,9 +464,9 @@ export function TmlFoxtrotClient({ initial }: Props) {
       <Card>
         <CardContent className="pt-6">
           {esDiaUnico ? (
-            <EquiposTable equipos={initial.equipos} desde7={desde7} />
+            <EquiposTable equipos={equiposScope} desde7={desde7} />
           ) : (
-            <ChoferesTable choferes={initial.choferes} desde7={desde7} meta={initial.meta_minutos} />
+            <ChoferesTable choferes={choferesScope} desde7={desde7} meta={initial.meta_minutos} />
           )}
         </CardContent>
       </Card>
@@ -408,26 +480,68 @@ function ResumenCard({
   color,
   desde7,
   esDiaUnico,
+  selected,
 }: {
   title: string
   r: TmlFoxtrotResumen
   color: string
   desde7: boolean
   esDiaUnico: boolean
+  selected: boolean
 }) {
   const valor = desde7 ? r.promedio_desde7_min : r.promedio_real_min
+  const pct = pctEnMeta(r, desde7)
+  const pctOk = pct != null && pct >= OBJETIVO_PCT
   return (
-    <Card>
+    <Card className={selected ? "ring-2 ring-slate-900" : undefined}>
       <CardContent className="pt-6">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-        <p className="mt-1 text-3xl font-bold text-slate-900">
-          {valor != null ? `${valor} min` : "—"}
-        </p>
+        <div className="mt-1 flex items-baseline gap-3">
+          <p className="text-3xl font-bold text-slate-900">
+            {valor != null ? `${valor} min` : "—"}
+          </p>
+          <p
+            className={`text-sm font-semibold ${
+              pct == null ? "text-slate-400" : pctOk ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {pct != null ? `${pct}% en meta` : "—"}
+          </p>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {r.equipos_con_tml}/{r.equipos_totales} {esDiaUnico ? "equipos" : "jornadas"} · peor{" "}
           {r.peor_real_min ?? "—"} · mejor {r.mejor_real_min ?? "—"}
         </p>
         <div className={`mt-3 h-1 w-full rounded-full ${color}`} />
+      </CardContent>
+    </Card>
+  )
+}
+
+// KPI destacado del % dentro de meta vs el objetivo del programa DPO (≥65%).
+function MetaPctCard({ pct }: { pct: number | null }) {
+  const ok = pct != null && pct >= OBJETIVO_PCT
+  const tono =
+    pct == null
+      ? { texto: "text-slate-400", chip: "bg-slate-100 text-slate-700" }
+      : ok
+        ? { texto: "text-green-600", chip: "bg-green-100 text-green-700" }
+        : { texto: "text-red-600", chip: "bg-red-100 text-red-700" }
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">% dentro de meta</p>
+            <p className={`text-2xl font-bold ${tono.texto}`}>
+              {pct != null ? `${pct}%` : "—"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">objetivo DPO ≥ {OBJETIVO_PCT}%</p>
+          </div>
+          <div className={`rounded-full p-2 ${tono.chip}`}>
+            <Target className="h-4 w-4" />
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

@@ -398,6 +398,8 @@ function resumir(equipos: TmlFoxtrotEquipo[]): TmlFoxtrotResumen {
     promedio_desde7_min: promedio(desde7),
     peor_real_min: reales.length === 0 ? null : Math.max(...reales),
     mejor_real_min: reales.length === 0 ? null : Math.min(...reales),
+    en_meta_real: reales.filter((x) => x <= META_MIN).length,
+    en_meta_desde7: desde7.filter((x) => x <= META_MIN).length,
   }
 }
 
@@ -530,13 +532,11 @@ export async function getTmlFoxtrotRango(
       const marcas = marcasByFecha.get(f) ?? new Map<number, number>()
       const equiposDia = computeEquiposDia(f, dayRoutes, empByNombre, marcas)
       allEquipos.push(...equiposDia)
-      const r = resumir(equiposDia)
       serie_diaria.push({
         fecha: f,
-        promedio_real_min: r.promedio_real_min,
-        promedio_desde7_min: r.promedio_desde7_min,
-        equipos_con_tml: r.equipos_con_tml,
-        equipos_totales: r.equipos_totales,
+        total: resumir(equiposDia),
+        eldorado: resumir(equiposDia.filter((e) => e.sucursal === "ELDORADO")),
+        iguazu: resumir(equiposDia.filter((e) => e.sucursal === "IGUAZU")),
       })
     }
 
