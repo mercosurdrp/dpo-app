@@ -30,7 +30,8 @@ export type ExportResult =
 
 /** Columnas del CSV en orden. La key matchea la propiedad del row procesado. */
 const COLUMNS: { header: string; key: string }[] = [
-  { header: "fecha",              key: "fecha" },
+  { header: "fecha_venta",        key: "fecha_venta" },
+  { header: "fecha_devolucion",   key: "fecha" },
   { header: "chofer",             key: "chofer" },
   { header: "patente",            key: "patente" },
   { header: "vendedor",           key: "vendedor" },
@@ -55,7 +56,7 @@ const COLUMNS: { header: string; key: string }[] = [
 ]
 
 const SELECT = [
-  "fecha", "ds_fletero_carga", "ds_vendedor",
+  "fecha", "fecha_venta", "ds_fletero_carga", "ds_vendedor",
   "id_cliente", "nombre_cliente", "id_articulo", "ds_articulo",
   "id_rechazo", "ds_rechazo",
   "hl_rechazados", "bultos_rechazados", "monto_neto", "monto_bruto",
@@ -66,6 +67,7 @@ const SELECT = [
 
 interface RawRow {
   fecha: string
+  fecha_venta: string
   ds_fletero_carga: string
   ds_vendedor: string | null
   id_cliente: number | null
@@ -136,7 +138,7 @@ async function loadRows(
     let q = supa.from("rechazos").select(SELECT)
     q = applyFilters(q, request, filters)
     q = q
-      .order("fecha", { ascending: false })
+      .order("fecha_venta", { ascending: false })
       .order("id", { ascending: false })
       .range(off, Math.min(off + CHUNK - 1, total - 1))
     const { data, error } = await q
@@ -148,7 +150,7 @@ async function loadRows(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyFilters(q: any, request: ExportRequest, filters: RechazosFilters): any {
-  q = q.gte("fecha", request.desde).lte("fecha", request.hasta)
+  q = q.gte("fecha_venta", request.desde).lte("fecha_venta", request.hasta)
   if (filters.ds_fletero_carga?.length) q = q.in("ds_fletero_carga", filters.ds_fletero_carga)
   if (filters.id_cliente?.length)        q = q.in("id_cliente", filters.id_cliente)
   if (filters.id_rechazo?.length)        q = q.in("id_rechazo", filters.id_rechazo)
@@ -191,6 +193,7 @@ function renderCSV(
     const choferNombre = mapeo.get(r.ds_fletero_carga) ?? null
     const record: Record<string, unknown> = {
       fecha:              r.fecha,
+      fecha_venta:        r.fecha_venta,
       chofer:             choferNombre ?? r.ds_fletero_carga, // COALESCE
       patente:            r.ds_fletero_carga,
       vendedor:           r.ds_vendedor ?? "",

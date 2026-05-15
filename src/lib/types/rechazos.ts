@@ -467,7 +467,10 @@ export interface RechazosDetalleRequest {
 
 export interface RechazosDetalleRow {
   id: string
+  /** Fecha de carga de la devolución en Chess (auditoría). */
   fecha: string
+  /** Día al que se imputa el rechazo = fecha de la venta original. El dashboard usa esta. */
+  fecha_venta: string
   /** Patente (== ds_fletero_carga en DB). Columna secundaria en la grilla. */
   patente: string
   /** COALESCE(chofer_nombre_via_mapeo, patente). Columna principal en CSV de gerencia. */

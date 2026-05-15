@@ -89,6 +89,7 @@ interface ChessVenta {
   fechaPedido: string | null
   anulado: string
   unimedtotal: number
+  fechaComprobanteRela: string | null   // fecha de la FCVTA relacionada (DVVTA)
   idSucursal: number | null
   dsSucursal: string | null
   dsSupervisor: string | null
@@ -219,8 +220,18 @@ export async function syncRechazosForDate(
     if (choferMapeo) result.chofer.mapeo++
     else result.chofer.sin_resolver++
 
+    // fecha_venta: imputa el rechazo al día de la venta original.
+    // DVVTA → fechaComprobanteRela (la FCVTA relacionada). PRDVO y demás
+    // (sin doc relacionado) → la propia fecha (no tienen desfasaje).
+    const rela = r.fechaComprobanteRela
+    const fechaVenta =
+      rela && /^\d{4}-\d{2}-\d{2}/.test(rela) && !rela.startsWith("9999") && !rela.startsWith("0001")
+        ? rela.slice(0, 10)
+        : fecha
+
     const row = {
       fecha,
+      fecha_venta: fechaVenta,
       serie: r.serie,
       nrodoc: r.nrodoc,
       id_articulo: r.idArticulo,

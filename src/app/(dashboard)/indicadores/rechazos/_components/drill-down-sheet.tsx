@@ -190,7 +190,14 @@ function DetalleRowItem({ row }: { row: RechazosDetalleRow }) {
   return (
     <li className="space-y-1 px-4 py-3 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium tabular-nums text-slate-900">{formatFecha(row.fecha)}</span>
+        <span className="font-medium tabular-nums text-slate-900">
+          {formatFecha(row.fecha_venta)}
+          {row.fecha !== row.fecha_venta && (
+            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+              dev. {formatFecha(row.fecha)}
+            </span>
+          )}
+        </span>
         <span className="tabular-nums font-medium text-slate-900">
           {row.monto_neto != null ? formatMonto(row.monto_neto) : <span className="text-muted-foreground">—</span>}
         </span>

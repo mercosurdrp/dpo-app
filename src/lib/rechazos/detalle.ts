@@ -17,6 +17,7 @@ const MAX_LIMIT = 1000
 interface RawRechazoRow {
   id: string
   fecha: string
+  fecha_venta: string
   ds_fletero_carga: string
   id_rechazo: number
   ds_rechazo: string
@@ -60,6 +61,7 @@ export async function getRechazosDetalle(
     return {
       id: r.id,
       fecha: r.fecha,
+      fecha_venta: r.fecha_venta,
       patente: r.ds_fletero_carga,
       chofer_display: chofer_nombre ?? r.ds_fletero_carga,
       id_rechazo: r.id_rechazo,
@@ -90,13 +92,13 @@ async function loadPage(
   filters: NonNullable<RechazosDetalleRequest["filters"]>, offset: number, limit: number,
 ): Promise<RawRechazoRow[]> {
   let q = supa.from("rechazos").select(
-    "id,fecha,ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto,ds_localidad,ds_canal_mkt,ds_supervisor,id_documento,fecha_pedido"
+    "id,fecha,fecha_venta,ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto,ds_localidad,ds_canal_mkt,ds_supervisor,id_documento,fecha_pedido"
   )
   q = applyFilters(q, request, filters)
-  // Orden: por monto_neto desc (más impacto primero), tiebreak por fecha desc + id
+  // Orden: por monto_neto desc (más impacto primero), tiebreak por fecha_venta desc + id
   q = q
     .order("monto_neto", { ascending: false, nullsFirst: false })
-    .order("fecha", { ascending: false })
+    .order("fecha_venta", { ascending: false })
     .order("id", { ascending: false })
     .range(offset, offset + limit - 1)
   const { data, error } = await q
@@ -118,7 +120,7 @@ async function loadCount(
 type Query = ReturnType<SupaClient["from"]> extends infer T ? T : never
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyFilters(q: any, request: RechazosDetalleRequest, filters: NonNullable<RechazosDetalleRequest["filters"]>): any {
-  q = q.gte("fecha", request.desde).lte("fecha", request.hasta)
+  q = q.gte("fecha_venta", request.desde).lte("fecha_venta", request.hasta)
   if (filters.ds_fletero_carga?.length) q = q.in("ds_fletero_carga", filters.ds_fletero_carga)
   if (filters.id_cliente?.length)        q = q.in("id_cliente", filters.id_cliente)
   if (filters.id_rechazo?.length)        q = q.in("id_rechazo", filters.id_rechazo)

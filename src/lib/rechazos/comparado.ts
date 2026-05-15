@@ -42,7 +42,9 @@ import type {
 export type SupaClient = SupabaseClient<any, "public", any>
 
 interface RechazoRow {
-  fecha: string
+  // Día al que se imputa el rechazo = fecha de la venta original (no la de
+  // carga de la devolución). Ver migración 065.
+  fecha_venta: string
   id_articulo: number
   ds_articulo: string | null
   id_fletero_carga: number | null
@@ -311,8 +313,8 @@ async function loadPeriodData(
   supa: SupaClient, desde: string, hasta: string, filters: RechazosFilters,
 ): Promise<PeriodData> {
   let q = supa.from("rechazos").select(
-    "fecha,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,hl_rechazados,bultos_rechazados,id_cliente,nombre_cliente,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
-  ).gte("fecha", desde).lte("fecha", hasta)
+    "fecha_venta,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,hl_rechazados,bultos_rechazados,id_cliente,nombre_cliente,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
+  ).gte("fecha_venta", desde).lte("fecha_venta", hasta)
 
   if (filters.ds_fletero_carga?.length) q = q.in("ds_fletero_carga", filters.ds_fletero_carga)
   if (filters.id_cliente?.length)        q = q.in("id_cliente", filters.id_cliente)
@@ -392,7 +394,7 @@ async function loadFilterDistincts(
   const { data } = await supa
     .from("rechazos")
     .select("ds_canal_mkt, ds_supervisor")
-    .gte("fecha", desde).lte("fecha", hasta)
+    .gte("fecha_venta", desde).lte("fecha_venta", hasta)
   const cSet = new Set<string>()
   const sSet = new Set<string>()
   for (const r of (data ?? []) as { ds_canal_mkt: string | null; ds_supervisor: string | null }[]) {
@@ -637,7 +639,7 @@ function buildMotivoContextSummary(
   const aggPats = new Map<string, number>()
   for (const r of filas) {
     const m = Number(r.monto_neto ?? 0)
-    aggDias.set(r.fecha, (aggDias.get(r.fecha) ?? 0) + m)
+    aggDias.set(r.fecha_venta, (aggDias.get(r.fecha_venta) ?? 0) + m)
     aggPats.set(r.ds_fletero_carga, (aggPats.get(r.ds_fletero_carga) ?? 0) + m)
   }
   const diasConc = pickConcentration(aggDias, totalMonto)
@@ -702,12 +704,12 @@ function computeSeries(
 ): RechazosComparado["series"] {
   const dias = new Map<string, { hl: number; bultos: number; monto: number; eventos: number }>()
   for (const r of rows) {
-    const cur = dias.get(r.fecha) ?? { hl: 0, bultos: 0, monto: 0, eventos: 0 }
+    const cur = dias.get(r.fecha_venta) ?? { hl: 0, bultos: 0, monto: 0, eventos: 0 }
     cur.hl += Number(r.hl_rechazados ?? 0)
     cur.bultos += Number(r.bultos_rechazados ?? 0)
     cur.monto += Number(r.monto_neto ?? 0)
     cur.eventos += 1
-    dias.set(r.fecha, cur)
+    dias.set(r.fecha_venta, cur)
   }
   const por_dia: RechazosPuntoDia[] = [...dias.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
