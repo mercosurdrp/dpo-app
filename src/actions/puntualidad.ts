@@ -15,7 +15,8 @@ export interface PuntualidadFiltros {
   sucursal: SucursalFiltro
 }
 
-export const FILTROS_PUNTUALIDAD_DEFAULT: PuntualidadFiltros = {
+// No se exporta: un archivo "use server" solo puede exportar funciones async.
+const FILTROS_DEFAULT: PuntualidadFiltros = {
   soloDistribucion: true,
   sucursal: "TODAS",
 }
@@ -51,7 +52,7 @@ const HORA_CORTE_UTC = 10
 
 export async function getPuntualidadDiaria(
   fecha: string,
-  filtros: PuntualidadFiltros = FILTROS_PUNTUALIDAD_DEFAULT
+  filtros: PuntualidadFiltros = FILTROS_DEFAULT
 ): Promise<{ data: PuntualidadDiaria } | { error: string }> {
   try {
     const supabase = await createClient()
@@ -160,7 +161,7 @@ export async function getPuntualidadDiaria(
 export async function getPuntualidadMensual(
   mes: number,
   anio: number,
-  filtros: PuntualidadFiltros = FILTROS_PUNTUALIDAD_DEFAULT
+  filtros: PuntualidadFiltros = FILTROS_DEFAULT
 ): Promise<{ data: PuntualidadResumenDia[] } | { error: string }> {
   try {
     const supabase = await createClient()
