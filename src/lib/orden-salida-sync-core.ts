@@ -108,10 +108,16 @@ export async function runOrdenSalidaSync(
 ): Promise<Result<SyncOrdenSalidaResult>> {
   const dias = Math.max(1, Math.min(365, Math.floor(ultimosDias || 7)))
 
+  // Días futuros que el sync alcanza a leer. La planilla rara vez tiene más de
+  // un día cargado, pero los sábados se carga la ruta del lunes, así que el
+  // tope NO puede ser "mañana": debe abarcar cualquier fecha futura ya armada.
+  const DIAS_ADELANTE = 14
+
   const hoy = new Date()
   const desde = new Date(hoy); desde.setUTCDate(desde.getUTCDate() - (dias - 1))
+  const hasta = new Date(hoy); hasta.setUTCDate(hasta.getUTCDate() + DIAS_ADELANTE)
   const rangoDesde = desde.toISOString().slice(0, 10)
-  const rangoHasta = hoy.toISOString().slice(0, 10)
+  const rangoHasta = hasta.toISOString().slice(0, 10)
 
   const [resForm, resNoSale] = await Promise.all([
     fetch(`${GVIZ_BASE}&gid=576890334`, { cache: "no-store" }),
