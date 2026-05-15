@@ -1,7 +1,7 @@
 import {
   getAniosDisponibles,
+  getEerrAnual,
   getPresupuestoAnual,
-  listMensuales,
   listResponsablesPosibles,
   listTareas,
   puedeEditarPresupuesto,
@@ -49,26 +49,18 @@ export default async function PresupuestoPage({
 
   const [
     anualRes,
-    mensualesRes,
+    eerrRes,
     tareasRes,
     responsablesRes,
     puedeEditar,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
-    listMensuales(anioActivo),
+    getEerrAnual(anioActivo),
     listTareas(anioActivo),
     listResponsablesPosibles(),
     puedeEditarPresupuesto(),
   ])
 
-  if ("error" in mensualesRes) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Presupuesto</h1>
-        <p className="mt-2 text-red-500">Error: {mensualesRes.error}</p>
-      </div>
-    )
-  }
   if ("error" in tareasRes) {
     return (
       <div>
@@ -83,7 +75,7 @@ export default async function PresupuestoPage({
       aniosDisponibles={aniosDisponibles}
       anioActivo={anioActivo}
       anual={"data" in anualRes ? anualRes.data : null}
-      mensuales={mensualesRes.data}
+      eerr={"data" in eerrRes ? eerrRes.data : null}
       tareas={tareasRes.data}
       responsables={"data" in responsablesRes ? responsablesRes.data : []}
       puedeEditar={puedeEditar}

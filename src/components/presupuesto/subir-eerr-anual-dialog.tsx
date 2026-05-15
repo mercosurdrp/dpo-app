@@ -13,38 +13,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { subirEstadoMensual } from "@/actions/presupuesto"
-
-const MESES = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
-]
+import { subirEerrAnual } from "@/actions/presupuesto"
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   anio: number
-  mes: number
   tieneArchivo: boolean
   defaultObservaciones?: string
   onSaved: () => void
 }
 
-export function SubirMensualDialog({
+export function SubirEerrAnualDialog({
   open,
   onOpenChange,
   anio,
-  mes,
   tieneArchivo,
   defaultObservaciones,
   onSaved,
@@ -61,7 +44,6 @@ export function SubirMensualDialog({
     setError(null)
     const formData = new FormData(e.currentTarget)
     formData.set("anio", String(anio))
-    formData.set("mes", String(mes))
 
     const file = formData.get("archivo") as File | null
     if (!file || file.size === 0) {
@@ -70,7 +52,7 @@ export function SubirMensualDialog({
     }
 
     startTransition(async () => {
-      const result = await subirEstadoMensual(formData)
+      const result = await subirEerrAnual(formData)
       if ("error" in result) {
         setError(result.error)
         return
@@ -86,36 +68,36 @@ export function SubirMensualDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="size-5 text-blue-600" />
-            {tieneArchivo ? "Reemplazar" : "Subir"} Estado de Resultado —{" "}
-            {MESES[mes - 1]} {anio}
+            {tieneArchivo
+              ? `Reemplazar Estado de Resultado ${anio}`
+              : `Subir Estado de Resultado ${anio}`}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="mensual_archivo">Archivo *</Label>
+            <Label htmlFor="eerr_archivo">Archivo *</Label>
             <Input
-              id="mensual_archivo"
+              id="eerr_archivo"
               name="archivo"
               type="file"
               accept=".pdf,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.doc,.docx"
               required
             />
-            {tieneArchivo && (
-              <p className="text-xs text-muted-foreground">
-                El archivo anterior será reemplazado.
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              El archivo contiene los meses del año adentro. Se sube uno solo y
+              se va pisando con cada actualización.
+            </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="mensual_obs">Observaciones</Label>
+            <Label htmlFor="eerr_obs">Observaciones</Label>
             <Textarea
-              id="mensual_obs"
+              id="eerr_obs"
               name="observaciones"
               rows={2}
               defaultValue={defaultObservaciones ?? ""}
-              placeholder="Notas del mes…"
+              placeholder="Mes de corte, versión, etc."
             />
           </div>
 

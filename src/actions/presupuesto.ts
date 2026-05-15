@@ -6,7 +6,7 @@ import { requireAuth, getProfile } from "@/lib/session"
 import type {
   Profile,
   PresupuestoAnual,
-  PresupuestoMensual,
+  PresupuestoEerrAnual,
   PresupuestoTarea,
   PresupuestoTareaConResponsable,
   EstadoPresupuestoTarea,
@@ -114,49 +114,23 @@ export async function getPresupuestoAnual(
   }
 }
 
-export async function listMensuales(
+export async function getEerrAnual(
   anio: number,
-): Promise<Result<PresupuestoMensual[]>> {
+): Promise<Result<PresupuestoEerrAnual | null>> {
   try {
     await requireAuth()
     const supabase = await createClient()
     const { data, error } = await supabase
-      .from("presupuestos_mensuales")
+      .from("presupuestos_eerr_anual")
       .select("*")
       .eq("anio", anio)
-      .order("mes", { ascending: true })
+      .maybeSingle()
     if (error) return { error: error.message }
-
-    const existentes = new Map<number, PresupuestoMensual>()
-    for (const row of (data ?? []) as PresupuestoMensual[]) {
-      existentes.set(row.mes, row)
-    }
-
-    const result: PresupuestoMensual[] = []
-    for (let mes = 1; mes <= 12; mes++) {
-      const existente = existentes.get(mes)
-      if (existente) {
-        result.push(existente)
-      } else {
-        result.push({
-          id: "",
-          anio,
-          mes,
-          archivo_url: null,
-          archivo_nombre: null,
-          observaciones: null,
-          created_by: null,
-          created_at: "",
-          updated_at: "",
-        })
-      }
-    }
-
-    return { data: result }
+    return { data: (data as PresupuestoEerrAnual | null) ?? null }
   } catch (err) {
     return {
       error:
-        err instanceof Error ? err.message : "Error cargando estados mensuales",
+        err instanceof Error ? err.message : "Error cargando EERR anual",
     }
   }
 }
@@ -349,40 +323,33 @@ export async function subirPresupuestoAnual(
   }
 }
 
-export async function subirEstadoMensual(
+export async function subirEerrAnual(
   formData: FormData,
-): Promise<Result<PresupuestoMensual>> {
+): Promise<Result<PresupuestoEerrAnual>> {
   try {
     const profile = await requireEditor()
     const supabase = await createClient()
 
     const anioStr = String(formData.get("anio") ?? "").trim()
-    const mesStr = String(formData.get("mes") ?? "").trim()
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
     const file = formData.get("archivo") as File | null
 
     if (!anioStr) return { error: "El año es obligatorio" }
-    if (!mesStr) return { error: "El mes es obligatorio" }
     const anio = parseInt(anioStr, 10)
-    const mes = parseInt(mesStr, 10)
     if (Number.isNaN(anio)) return { error: "Año inválido" }
-    if (Number.isNaN(mes) || mes < 1 || mes > 12) {
-      return { error: "Mes inválido (debe ser 1-12)" }
-    }
     if (!file || !(file instanceof File) || file.size === 0) {
-      return { error: "Subí el archivo del estado mensual" }
+      return { error: "Subí el archivo del Estado de Resultado" }
     }
 
     const { data: actual } = await supabase
-      .from("presupuestos_mensuales")
+      .from("presupuestos_eerr_anual")
       .select("archivo_url")
       .eq("anio", anio)
-      .eq("mes", mes)
       .maybeSingle()
 
     const cleanName = cleanFileName(file.name)
-    const path = `${anio}/mensual/${mes}-${Date.now()}-${cleanName}`
+    const path = `${anio}/eerr-${Date.now()}-${cleanName}`
     const arrayBuffer = await file.arrayBuffer()
     const { error: upErr } = await supabase.storage
       .from(BUCKET)
@@ -393,17 +360,16 @@ export async function subirEstadoMensual(
     if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
 
     const { data, error } = await supabase
-      .from("presupuestos_mensuales")
+      .from("presupuestos_eerr_anual")
       .upsert(
         {
           anio,
-          mes,
           archivo_url: path,
           archivo_nombre: file.name,
           observaciones,
           created_by: profile.id,
         },
-        { onConflict: "anio,mes" },
+        { onConflict: "anio" },
       )
       .select("*")
       .single()
@@ -418,35 +384,32 @@ export async function subirEstadoMensual(
     }
 
     revalidatePath(REVALIDATE_PATH)
-    return { data: data as PresupuestoMensual }
+    return { data: data as PresupuestoEerrAnual }
   } catch (err) {
     return {
       error:
-        err instanceof Error ? err.message : "Error subiendo estado mensual",
+        err instanceof Error ? err.message : "Error subiendo EERR anual",
     }
   }
 }
 
-export async function eliminarMensual(
+export async function eliminarEerrAnual(
   anio: number,
-  mes: number,
 ): Promise<{ success: true } | { error: string }> {
   try {
     await requireEditor()
     const supabase = await createClient()
 
     const { data: actual } = await supabase
-      .from("presupuestos_mensuales")
+      .from("presupuestos_eerr_anual")
       .select("archivo_url")
       .eq("anio", anio)
-      .eq("mes", mes)
       .maybeSingle()
 
     const { error } = await supabase
-      .from("presupuestos_mensuales")
+      .from("presupuestos_eerr_anual")
       .delete()
       .eq("anio", anio)
-      .eq("mes", mes)
 
     if (error) return { error: error.message }
 
@@ -459,7 +422,7 @@ export async function eliminarMensual(
   } catch (err) {
     return {
       error:
-        err instanceof Error ? err.message : "Error eliminando estado mensual",
+        err instanceof Error ? err.message : "Error eliminando EERR anual",
     }
   }
 }

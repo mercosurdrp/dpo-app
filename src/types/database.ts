@@ -2183,10 +2183,9 @@ export interface PresupuestoAnual {
   updated_at: string
 }
 
-export interface PresupuestoMensual {
+export interface PresupuestoEerrAnual {
   id: string
   anio: number
-  mes: number
   archivo_url: string | null
   archivo_nombre: string | null
   observaciones: string | null

@@ -32,18 +32,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  eliminarMensual,
+  eliminarEerrAnual,
   eliminarTarea,
   getSignedUrl,
 } from "@/actions/presupuesto"
 import { SubirPresupuestoAnualDialog } from "@/components/presupuesto/subir-presupuesto-anual-dialog"
-import { SubirMensualDialog } from "@/components/presupuesto/subir-mensual-dialog"
+import { SubirEerrAnualDialog } from "@/components/presupuesto/subir-eerr-anual-dialog"
 import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
 import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-dialog"
 import type {
   EstadoPresupuestoTarea,
   PresupuestoAnual,
-  PresupuestoMensual,
+  PresupuestoEerrAnual,
   PresupuestoTareaConResponsable,
 } from "@/types/database"
 
@@ -57,7 +57,7 @@ interface Props {
   aniosDisponibles: number[]
   anioActivo: number
   anual: PresupuestoAnual | null
-  mensuales: PresupuestoMensual[]
+  eerr: PresupuestoEerrAnual | null
   tareas: PresupuestoTareaConResponsable[]
   responsables: ResponsableOpt[]
   puedeEditar: boolean
@@ -164,7 +164,7 @@ export function PresupuestoClient({
   aniosDisponibles,
   anioActivo,
   anual,
-  mensuales,
+  eerr,
   tareas,
   responsables,
   puedeEditar,
@@ -183,12 +183,8 @@ export function PresupuestoClient({
 
   // Diálogos: anual
   const [openAnual, setOpenAnual] = useState(false)
-  // Diálogos: mensual
-  const [mensualEditando, setMensualEditando] = useState<{
-    anio: number
-    mes: number
-    existente: PresupuestoMensual | null
-  } | null>(null)
+  // Diálogos: EERR anual
+  const [openEerr, setOpenEerr] = useState(false)
   // Diálogos: tarea
   const [openTarea, setOpenTarea] = useState(false)
   const [tareaEditando, setTareaEditando] =
@@ -225,16 +221,16 @@ export function PresupuestoClient({
     window.open(result.data.url, "_blank", "noopener,noreferrer")
   }
 
-  function handleEliminarMensual(m: PresupuestoMensual) {
+  function handleEliminarEerr() {
     if (
       !confirm(
-        `¿Eliminar el Estado de Resultado de ${MESES[m.mes - 1]} ${m.anio}?`,
+        `¿Eliminar el Estado de Resultado de ${anioActivo}? Se borra el archivo y se podrá subir uno nuevo.`,
       )
     ) {
       return
     }
     startTransition(async () => {
-      const result = await eliminarMensual(m.anio, m.mes)
+      const result = await eliminarEerrAnual(anioActivo)
       if ("error" in result) {
         alert(`Error: ${result.error}`)
         return
@@ -280,11 +276,6 @@ export function PresupuestoClient({
     [tareas, mesActivo],
   )
 
-  const mensualActivo = useMemo(
-    () => mensuales.find((m) => m.mes === mesActivo) ?? null,
-    [mensuales, mesActivo],
-  )
-
   function puedeResponder(t: PresupuestoTareaConResponsable): boolean {
     if (t.estado === "completada") return false
     if (puedeEditar) return true
@@ -302,8 +293,8 @@ export function PresupuestoClient({
             Presupuesto
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Carga de presupuesto, Estados de Resultado mensuales y tareas de
-            análisis de desvíos.
+            Carga del presupuesto anual, Estado de Resultado del año y tareas
+            mensuales de análisis de desvíos.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -419,14 +410,14 @@ export function PresupuestoClient({
         </Card>
       </section>
 
-      {/* Sección 2 — Estado de Resultado del mes activo */}
+      {/* Sección 2 — Estado de Resultado anual (un archivo, se va pisando) */}
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-700">
-          Estado de Resultado — {MESES[mesActivo - 1]} {anioActivo}
+          Estado de Resultado {anioActivo}
         </h2>
         <Card>
           <CardContent className="pt-2">
-            {mensualActivo && mensualActivo.archivo_url ? (
+            {eerr && eerr.archivo_url ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -434,17 +425,17 @@ export function PresupuestoClient({
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-900">
-                      {mensualActivo.archivo_nombre ?? "Estado de Resultado"}
+                      {eerr.archivo_nombre ?? "Estado de Resultado"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Subido el {formatDateTime(mensualActivo.created_at)}
-                      {mensualActivo.updated_at &&
-                        mensualActivo.updated_at !== mensualActivo.created_at &&
-                        ` · Actualizado el ${formatDateTime(mensualActivo.updated_at)}`}
+                      Subido el {formatDateTime(eerr.created_at)}
+                      {eerr.updated_at &&
+                        eerr.updated_at !== eerr.created_at &&
+                        ` · Actualizado el ${formatDateTime(eerr.updated_at)}`}
                     </p>
-                    {mensualActivo.observaciones && (
+                    {eerr.observaciones && (
                       <p className="mt-1 line-clamp-2 text-xs text-slate-600">
-                        {mensualActivo.observaciones}
+                        {eerr.observaciones}
                       </p>
                     )}
                   </div>
@@ -454,7 +445,7 @@ export function PresupuestoClient({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => abrirArchivo(mensualActivo.archivo_url)}
+                    onClick={() => abrirArchivo(eerr.archivo_url)}
                   >
                     <FileDown className="mr-2 size-4" />
                     Ver
@@ -464,13 +455,7 @@ export function PresupuestoClient({
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() =>
-                          setMensualEditando({
-                            anio: anioActivo,
-                            mes: mesActivo,
-                            existente: mensualActivo,
-                          })
-                        }
+                        onClick={() => setOpenEerr(true)}
                       >
                         <Upload className="mr-2 size-4" />
                         Reemplazar
@@ -480,7 +465,7 @@ export function PresupuestoClient({
                         variant="outline"
                         size="sm"
                         className="text-red-600 hover:text-red-700"
-                        onClick={() => handleEliminarMensual(mensualActivo)}
+                        onClick={handleEliminarEerr}
                         title="Eliminar"
                       >
                         <Trash2 className="size-4" />
@@ -496,21 +481,14 @@ export function PresupuestoClient({
                     <FileText className="size-5" />
                   </div>
                   <span>
-                    Sin Estado de Resultado cargado para {MESES[mesActivo - 1]}{" "}
-                    {anioActivo}
+                    Sin Estado de Resultado cargado para {anioActivo}
                   </span>
                 </div>
                 {puedeEditar && (
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() =>
-                      setMensualEditando({
-                        anio: anioActivo,
-                        mes: mesActivo,
-                        existente: null,
-                      })
-                    }
+                    onClick={() => setOpenEerr(true)}
                   >
                     <Upload className="mr-2 size-4" />
                     Subir Estado de Resultado
@@ -520,6 +498,10 @@ export function PresupuestoClient({
             )}
           </CardContent>
         </Card>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Se sube un único archivo por año que se va pisando mes a mes (contiene
+          todos los meses adentro).
+        </p>
       </section>
 
       {/* Sección 3 — Tareas de análisis */}
@@ -727,21 +709,14 @@ export function PresupuestoClient({
             tieneArchivo={!!(anual && anual.archivo_url)}
             onSaved={refrescar}
           />
-          {mensualEditando && (
-            <SubirMensualDialog
-              open={true}
-              onOpenChange={(o) => {
-                if (!o) setMensualEditando(null)
-              }}
-              anio={mensualEditando.anio}
-              mes={mensualEditando.mes}
-              tieneArchivo={!!mensualEditando.existente?.archivo_url}
-              defaultObservaciones={
-                mensualEditando.existente?.observaciones ?? ""
-              }
-              onSaved={refrescar}
-            />
-          )}
+          <SubirEerrAnualDialog
+            open={openEerr}
+            onOpenChange={setOpenEerr}
+            anio={anioActivo}
+            tieneArchivo={!!(eerr && eerr.archivo_url)}
+            defaultObservaciones={eerr?.observaciones ?? ""}
+            onSaved={refrescar}
+          />
           <TareaFormDialog
             open={openTarea}
             onOpenChange={setOpenTarea}
