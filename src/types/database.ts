@@ -2364,6 +2364,26 @@ export interface ReunionActividadConResponsable extends ReunionActividad {
   reunion_origen_id: string
 }
 
+// Entrada del historial de avances de una actividad del Action Log.
+// Cada avance es un comentario + archivo opcional, con fecha y autor.
+export interface ReunionActividadEvidencia {
+  id: string
+  actividad_id: string
+  comentario: string | null
+  archivo_path: string | null
+  archivo_nombre: string | null
+  archivo_mime: string | null
+  archivo_bytes: number | null
+  estado_resultante: EstadoReunionActividad | null
+  autor_id: string | null
+  created_at: string
+}
+
+export interface ReunionActividadEvidenciaConAutor
+  extends ReunionActividadEvidencia {
+  autor_nombre: string | null
+}
+
 export type AgregacionIndicador = "suma" | "promedio"
 
 export interface ReunionIndicadorConfig {

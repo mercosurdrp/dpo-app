@@ -15,12 +15,12 @@ import {
   BarChart3,
   Calendar,
   CheckCircle2,
+  Eye,
   FileDown,
   Hand,
   ListTodo,
   Pencil,
   Plus,
-  Send,
   Settings,
   Trash2,
   UserPlus,
@@ -50,7 +50,7 @@ import {
 } from "@/actions/reuniones"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
-import { ResponderActividadDialog } from "@/components/reuniones/responder-actividad-dialog"
+import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
@@ -494,7 +494,7 @@ function ActividadListItem({
   puedeEditar,
   currentProfileId,
   onEdit,
-  onResponder,
+  onAbrirDetalle,
   onChanged,
   onAbrirArchivo,
 }: {
@@ -503,7 +503,7 @@ function ActividadListItem({
   puedeEditar: boolean
   currentProfileId: string | null
   onEdit: () => void
-  onResponder: () => void
+  onAbrirDetalle: (estadoInicial?: EstadoReunionActividad) => void
   onChanged: () => void
   onAbrirArchivo: (url: string | null) => void
 }) {
@@ -574,15 +574,18 @@ function ActividadListItem({
       )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p
-            className={`text-sm font-medium ${
+          <button
+            type="button"
+            onClick={() => onAbrirDetalle()}
+            title="Ver detalle y avances"
+            className={`text-left text-sm font-medium hover:underline ${
               actividad.estado === "cerrada"
                 ? "text-slate-500 line-through"
                 : "text-slate-900"
             }`}
           >
             {actividad.descripcion}
-          </p>
+          </button>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
             {actividad.responsable_nombre ? (
               <span>Resp: {actividad.responsable_nombre}</span>
@@ -621,19 +624,18 @@ function ActividadListItem({
                 <FileDown className="size-3.5" />
               </Button>
             )}
-            {puedeResponder && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 px-2"
-                onClick={onResponder}
-                title="Responder"
-                disabled={pending}
-              >
-                <Send className="size-3.5" />
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => onAbrirDetalle()}
+              title="Ver detalle y avances"
+              disabled={pending}
+            >
+              <Eye className="size-3.5" />
+              {puedeResponder ? "Ver / responder" : "Ver"}
+            </Button>
             {puedeEditar && (
               <>
                 <Select
@@ -646,6 +648,11 @@ function ActividadListItem({
                       v !== "cerrada"
                     )
                       return
+                    // Cerrar exige comentario: se hace desde el popup.
+                    if (v === "cerrada") {
+                      onAbrirDetalle("cerrada")
+                      return
+                    }
                     handleEstadoChange(v as EstadoReunionActividad)
                   }}
                 >
@@ -709,8 +716,12 @@ export function ReunionDetallePageClient({
   const [openActForm, setOpenActForm] = useState(false)
   const [actividadEditando, setActividadEditando] =
     useState<ReunionActividadConResponsable | null>(null)
-  const [actividadRespondiendo, setActividadRespondiendo] =
-    useState<ReunionActividadConResponsable | null>(null)
+  // Actividad abierta en el popup de detalle. estadoInicial preselecciona el
+  // estado del formulario (ej. al elegir "Cerrada" en el Select de la fila).
+  const [actividadDetalle, setActividadDetalle] = useState<{
+    actividad: ReunionActividadConResponsable
+    estadoInicial?: EstadoReunionActividad
+  } | null>(null)
 
   // Vista del tablero: "hasta_hoy" | "semana_<N>" | "mes_completo"
   const [vistaTablero, setVistaTablero] = useState<string>("hasta_hoy")
@@ -1407,7 +1418,9 @@ export function ReunionDetallePageClient({
                         setActividadEditando(act)
                         setOpenActForm(true)
                       }}
-                      onResponder={() => setActividadRespondiendo(act)}
+                      onAbrirDetalle={(estadoInicial) =>
+                        setActividadDetalle({ actividad: act, estadoInicial })
+                      }
                       onChanged={refrescar}
                       onAbrirArchivo={abrirArchivo}
                     />
@@ -1443,13 +1456,22 @@ export function ReunionDetallePageClient({
         onSaved={refrescar}
       />
 
-      {actividadRespondiendo && (
-        <ResponderActividadDialog
+      {actividadDetalle && (
+        <DetalleActividadDialog
+          key={actividadDetalle.actividad.id}
           open={true}
           onOpenChange={(o) => {
-            if (!o) setActividadRespondiendo(null)
+            if (!o) setActividadDetalle(null)
           }}
-          actividad={actividadRespondiendo}
+          actividad={actividadDetalle.actividad}
+          estadoInicial={actividadDetalle.estadoInicial}
+          puedeResponder={
+            actividadDetalle.actividad.estado !== "cerrada" &&
+            (puedeEditar ||
+              (currentProfileId !== null &&
+                actividadDetalle.actividad.responsable_id ===
+                  currentProfileId))
+          }
           onSaved={refrescar}
         />
       )}

@@ -28,6 +28,7 @@ import type {
   ReunionAsistenteConProfile,
   ReunionActividad,
   ReunionActividadConResponsable,
+  ReunionActividadEvidenciaConAutor,
   ReunionArchivo,
   ReunionConResumen,
   ReunionDetalle,
@@ -1435,7 +1436,68 @@ export async function actualizarActividad(
   }
 }
 
-export async function responderActividad(
+/**
+ * Devuelve el historial de avances (comentario + archivo) de una actividad,
+ * más reciente primero. Alimenta la línea de tiempo del popup de detalle.
+ */
+export async function getHistorialActividad(
+  actividadId: string,
+): Promise<Result<ReunionActividadEvidenciaConAutor[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    if (!actividadId) return { error: "ID de actividad inválido" }
+
+    const { data, error } = await supabase
+      .from("reuniones_actividades_evidencias")
+      .select(
+        "*, autor:profiles!reuniones_actividades_evidencias_autor_id_fkey(id, nombre)",
+      )
+      .eq("actividad_id", actividadId)
+      .order("created_at", { ascending: false })
+
+    if (error) return { error: error.message }
+
+    const historial: ReunionActividadEvidenciaConAutor[] = (
+      (data ?? []) as unknown as Array<Record<string, unknown>>
+    ).map((row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any
+      return {
+        id: r.id,
+        actividad_id: r.actividad_id,
+        comentario: r.comentario ?? null,
+        archivo_path: r.archivo_path ?? null,
+        archivo_nombre: r.archivo_nombre ?? null,
+        archivo_mime: r.archivo_mime ?? null,
+        archivo_bytes: r.archivo_bytes ?? null,
+        estado_resultante:
+          (r.estado_resultante as EstadoReunionActividad | null) ?? null,
+        autor_id: r.autor_id ?? null,
+        created_at: r.created_at,
+        autor_nombre: r.autor?.nombre ?? null,
+      }
+    })
+
+    return { data: historial }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando el historial",
+    }
+  }
+}
+
+/**
+ * Registra un avance en una actividad del Action Log: guarda una entrada en
+ * el historial (comentario + archivo opcional) y actualiza el estado.
+ *
+ * Reglas:
+ *   - Para cerrar (nuevo_estado='cerrada') el comentario es OBLIGATORIO.
+ *   - Para el resto de los estados alcanza con comentario o archivo.
+ */
+export async function agregarAvanceActividad(
   id: string,
   formData: FormData,
 ): Promise<Result<ReunionActividad>> {
@@ -1461,7 +1523,7 @@ export async function responderActividad(
     if (!isEditor && responsableId !== profile.id) {
       return {
         error:
-          "Solo el responsable o un editor puede responder esta actividad",
+          "Solo el responsable o un editor puede registrar avances en esta actividad",
       }
     }
 
@@ -1472,17 +1534,23 @@ export async function responderActividad(
 
     const tieneArchivo = file && file instanceof File && file.size > 0
 
-    if (!tieneArchivo && !observaciones) {
-      return { error: "Subí evidencia o escribí observaciones" }
-    }
-
     if (!nuevoEstadoRaw) {
-      return { error: "Indicá el nuevo estado" }
+      return { error: "Indicá el estado de la actividad" }
     }
-    if (!["en_curso", "cerrada"].includes(nuevoEstadoRaw)) {
+    if (!["no_comenzada", "en_curso", "cerrada"].includes(nuevoEstadoRaw)) {
       return { error: "Estado inválido" }
     }
     const nuevoEstado = nuevoEstadoRaw as EstadoReunionActividad
+
+    // Para cerrar, el comentario es obligatorio sí o sí.
+    if (nuevoEstado === "cerrada" && !observaciones) {
+      return {
+        error: "Para cerrar la actividad tenés que escribir un comentario",
+      }
+    }
+    if (!tieneArchivo && !observaciones) {
+      return { error: "Adjuntá un archivo o escribí un comentario" }
+    }
 
     let nuevaEvidenciaUrl: string | null = null
     let nuevaEvidenciaNombre: string | null = null
@@ -1500,6 +1568,32 @@ export async function responderActividad(
       if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
       nuevaEvidenciaUrl = path
       nuevaEvidenciaNombre = file.name
+    }
+
+    // Entrada en el historial de avances. Cada avance conserva su propio
+    // archivo: no se borran las evidencias previas.
+    const { data: evidenciaRow, error: errEvid } = await supabase
+      .from("reuniones_actividades_evidencias")
+      .insert({
+        actividad_id: id,
+        comentario: observaciones,
+        archivo_path: nuevaEvidenciaUrl,
+        archivo_nombre: nuevaEvidenciaNombre,
+        archivo_mime: tieneArchivo ? file.type || null : null,
+        archivo_bytes: tieneArchivo ? file.size : null,
+        estado_resultante: nuevoEstado,
+        autor_id: profile.id,
+      })
+      .select("id")
+      .single()
+
+    if (errEvid || !evidenciaRow) {
+      if (nuevaEvidenciaUrl) {
+        await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
+      }
+      return {
+        error: errEvid?.message ?? "No se pudo registrar el avance",
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1531,24 +1625,21 @@ export async function responderActividad(
       .single()
 
     if (error) {
+      // Rollback manual del avance recién insertado.
+      await supabase
+        .from("reuniones_actividades_evidencias")
+        .delete()
+        .eq("id", (evidenciaRow as { id: string }).id)
       if (nuevaEvidenciaUrl) {
         await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
       }
       return { error: error.message }
     }
 
-    // Borrar evidencia anterior si subimos una nueva
-    const evidenciaAnterior = (actual as { evidencia_url: string | null })
-      .evidencia_url
-    if (nuevaEvidenciaUrl && evidenciaAnterior) {
-      await supabase.storage.from(BUCKET).remove([evidenciaAnterior])
-    }
-
-    // Espejar evidencia al s5_acciones_evidencias si la actividad tiene espejo.
-    // Buscamos la fila espejo por origen_reunion_actividad_id. La actividad solo
-    // guarda 1 evidencia (no historial), pero acá insertamos una entrada nueva
-    // al historial del espejo. Si se cerró la actividad, también espejamos el
-    // cierre.
+    // Espejar el avance al s5_acciones_evidencias si la actividad tiene espejo.
+    // Buscamos la fila espejo por origen_reunion_actividad_id e insertamos una
+    // entrada nueva en su historial. Si se cerró la actividad, también
+    // espejamos el cierre.
     try {
       const { data: espejo } = await supabase
         .from("s5_acciones")
@@ -1632,7 +1723,7 @@ export async function responderActividad(
   } catch (err) {
     return {
       error:
-        err instanceof Error ? err.message : "Error respondiendo actividad",
+        err instanceof Error ? err.message : "Error registrando el avance",
     }
   }
 }
@@ -1652,6 +1743,13 @@ export async function eliminarActividad(
       .eq("id", id)
       .maybeSingle()
 
+    // Archivos del historial de avances (se borran de Storage; las filas
+    // caen solas por ON DELETE CASCADE al eliminar la actividad).
+    const { data: evidenciasRows } = await supabase
+      .from("reuniones_actividades_evidencias")
+      .select("archivo_path")
+      .eq("actividad_id", id)
+
     const { error } = await supabase
       .from("reuniones_actividades")
       .delete()
@@ -1659,12 +1757,19 @@ export async function eliminarActividad(
 
     if (error) return { error: error.message }
 
+    const pathsABorrar = new Set<string>()
     const evidenciaUrl = (actual as {
       evidencia_url: string | null
       destino: TareaDestino | null
     } | null)?.evidencia_url
-    if (evidenciaUrl) {
-      await supabase.storage.from(BUCKET).remove([evidenciaUrl])
+    if (evidenciaUrl) pathsABorrar.add(evidenciaUrl)
+    for (const row of (evidenciasRows ?? []) as Array<{
+      archivo_path: string | null
+    }>) {
+      if (row.archivo_path) pathsABorrar.add(row.archivo_path)
+    }
+    if (pathsABorrar.size > 0) {
+      await supabase.storage.from(BUCKET).remove([...pathsABorrar])
     }
 
     // Si la actividad estaba espejada en mantenimiento, borrar el PDA.
