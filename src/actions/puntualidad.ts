@@ -1,13 +1,30 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { IS_MISIONES } from "@/lib/empresa"
 
 // ---------- Types ----------
+
+export type Sucursal = "ELDORADO" | "IGUAZU"
+export type SucursalFiltro = "TODAS" | Sucursal
+
+export interface PuntualidadFiltros {
+  // true = solo empleados del sector "Distribución" (default).
+  soloDistribucion: boolean
+  // "TODAS" = sin segmentar; "ELDORADO" / "IGUAZU" = una sucursal.
+  sucursal: SucursalFiltro
+}
+
+export const FILTROS_PUNTUALIDAD_DEFAULT: PuntualidadFiltros = {
+  soloDistribucion: true,
+  sucursal: "TODAS",
+}
 
 export interface PuntualidadDetalle {
   legajo: number
   nombre: string
   sector: string
+  sucursal: Sucursal | null
   primera_entrada: string | null  // ISO string UTC
   puntual: boolean
 }
@@ -33,7 +50,8 @@ const HORA_CORTE_UTC = 10
 // ---------- getPuntualidadDiaria ----------
 
 export async function getPuntualidadDiaria(
-  fecha: string
+  fecha: string,
+  filtros: PuntualidadFiltros = FILTROS_PUNTUALIDAD_DEFAULT
 ): Promise<{ data: PuntualidadDiaria } | { error: string }> {
   try {
     const supabase = await createClient()
@@ -57,14 +75,27 @@ export async function getPuntualidadDiaria(
 
     const marcasArr = (marcas ?? []) as { legajo: number; fecha_marca: string }[]
 
-    // Get all active empleados
-    const { data: empleados } = await supabase
+    // Get active empleados, aplicando los filtros de sector / sucursal.
+    // La columna `sucursal` solo existe en la DB de Misiones.
+    let empQuery = supabase
       .from("empleados")
-      .select("legajo, nombre, sector")
+      .select(IS_MISIONES ? "legajo, nombre, sector, sucursal" : "legajo, nombre, sector")
       .eq("activo", true)
       .order("nombre")
 
-    const empleadosArr = (empleados ?? []) as { legajo: number; nombre: string; sector: string }[]
+    if (filtros.soloDistribucion) empQuery = empQuery.eq("sector", "Distribución")
+    if (IS_MISIONES && filtros.sucursal !== "TODAS") {
+      empQuery = empQuery.eq("sucursal", filtros.sucursal)
+    }
+
+    const { data: empleados } = await empQuery
+
+    const empleadosArr = (empleados ?? []) as unknown as {
+      legajo: number
+      nombre: string
+      sector: string | null
+      sucursal?: Sucursal | null
+    }[]
     const empMap = new Map(empleadosArr.map((e) => [e.legajo, e]))
 
     // Group marcas by legajo — keep only first entry per legajo
@@ -93,7 +124,9 @@ export async function getPuntualidadDiaria(
       detalle.push({
         legajo,
         nombre: emp.nombre,
-        sector: emp.sector ?? "Distribucion",
+        sector: emp.sector ?? "Distribución",
+        sucursal: emp.sucursal ?? null,
+        // sucursal queda en null en deploys sin esa columna (Pampeana).
         primera_entrada: fechaMarca,
         puntual: esPuntual,
       })
@@ -126,7 +159,8 @@ export async function getPuntualidadDiaria(
 
 export async function getPuntualidadMensual(
   mes: number,
-  anio: number
+  anio: number,
+  filtros: PuntualidadFiltros = FILTROS_PUNTUALIDAD_DEFAULT
 ): Promise<{ data: PuntualidadResumenDia[] } | { error: string }> {
   try {
     const supabase = await createClient()
@@ -154,11 +188,18 @@ export async function getPuntualidadMensual(
 
     const marcasArr = (marcas ?? []) as { legajo: number; fecha_marca: string }[]
 
-    // Get active empleados for filtering
-    const { data: empleados } = await supabase
+    // Get active empleados for filtering, aplicando los filtros de sector / sucursal
+    let empQuery = supabase
       .from("empleados")
       .select("legajo")
       .eq("activo", true)
+
+    if (filtros.soloDistribucion) empQuery = empQuery.eq("sector", "Distribución")
+    if (IS_MISIONES && filtros.sucursal !== "TODAS") {
+      empQuery = empQuery.eq("sucursal", filtros.sucursal)
+    }
+
+    const { data: empleados } = await empQuery
 
     const activeLegajos = new Set((empleados ?? []).map((e: { legajo: number }) => e.legajo))
 

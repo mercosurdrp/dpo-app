@@ -35,8 +35,14 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react"
-import type { PuntualidadDiaria, PuntualidadResumenDia } from "@/actions/puntualidad"
-import { getPuntualidadMensual } from "@/actions/puntualidad"
+import type {
+  PuntualidadDiaria,
+  PuntualidadResumenDia,
+  PuntualidadFiltros,
+  SucursalFiltro,
+} from "@/actions/puntualidad"
+import { getPuntualidadDiaria, getPuntualidadMensual } from "@/actions/puntualidad"
+import { IS_MISIONES } from "@/lib/empresa"
 
 const MESES = [
   "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -44,6 +50,12 @@ const MESES = [
 ]
 
 const META_PUNTUALIDAD = 80
+
+const SUCURSALES: { value: SucursalFiltro; label: string }[] = [
+  { value: "TODAS", label: "Todas" },
+  { value: "ELDORADO", label: "Eldorado" },
+  { value: "IGUAZU", label: "Iguazú" },
+]
 
 interface Props {
   diariaHoy: PuntualidadDiaria
@@ -93,15 +105,43 @@ function bgPct(pct: number): string {
 }
 
 export function PuntualidadClient({
-  diariaHoy,
+  diariaHoy: diariaHoyInicial,
   resumenMes: resumenMesInicial,
   mesActual,
   anioActual,
 }: Props) {
   const [mes, setMes] = useState(mesActual)
   const [anio, setAnio] = useState(anioActual)
+  const [diariaHoy, setDiariaHoy] = useState(diariaHoyInicial)
   const [resumenMes, setResumenMes] = useState(resumenMesInicial)
+  // Filtros — el de Distribución viene activado por default.
+  const [soloDistribucion, setSoloDistribucion] = useState(true)
+  const [sucursal, setSucursal] = useState<SucursalFiltro>("TODAS")
   const [isPending, startTransition] = useTransition()
+
+  // Recarga diaria + mensual con los filtros indicados (los no provistos
+  // conservan el valor actual).
+  function aplicar(opts: {
+    solo?: boolean
+    suc?: SucursalFiltro
+    nuevoMes?: number
+    nuevoAnio?: number
+  }) {
+    const filtros: PuntualidadFiltros = {
+      soloDistribucion: opts.solo ?? soloDistribucion,
+      sucursal: opts.suc ?? sucursal,
+    }
+    const m = opts.nuevoMes ?? mes
+    const a = opts.nuevoAnio ?? anio
+    startTransition(async () => {
+      const [diariaRes, mensualRes] = await Promise.all([
+        getPuntualidadDiaria(diariaHoy.fecha, filtros),
+        getPuntualidadMensual(m, a, filtros),
+      ])
+      if ("data" in diariaRes) setDiariaHoy(diariaRes.data)
+      if ("data" in mensualRes) setResumenMes(mensualRes.data)
+    })
+  }
 
   const promedioMes =
     resumenMes.length > 0
@@ -132,10 +172,7 @@ export function PuntualidadClient({
     }
     setMes(nuevoMes)
     setAnio(nuevoAnio)
-    startTransition(async () => {
-      const res = await getPuntualidadMensual(nuevoMes, nuevoAnio)
-      if ("data" in res) setResumenMes(res.data)
-    })
+    aplicar({ nuevoMes, nuevoAnio })
   }
 
   return (
@@ -148,6 +185,77 @@ export function PuntualidadClient({
         <p className="text-sm text-muted-foreground">
           Indicador DPO — Empleados con entrada &le; 07:00 sobre total fichados
         </p>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Toggle de sector — Distribución activado por default */}
+        <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (!soloDistribucion) {
+                setSoloDistribucion(true)
+                aplicar({ solo: true })
+              }
+            }}
+            className={`rounded px-3 py-1 transition-colors ${
+              soloDistribucion
+                ? "bg-slate-900 text-white"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Solo Distribución
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (soloDistribucion) {
+                setSoloDistribucion(false)
+                aplicar({ solo: false })
+              }
+            }}
+            className={`rounded px-3 py-1 transition-colors ${
+              !soloDistribucion
+                ? "bg-slate-900 text-white"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Todos los sectores
+          </button>
+        </div>
+
+        {/* Toggle de sucursal — segmenta Eldorado / Iguazú (solo Misiones) */}
+        {IS_MISIONES && (
+        <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+          {SUCURSALES.map((su) => (
+            <button
+              key={su.value}
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                if (sucursal !== su.value) {
+                  setSucursal(su.value)
+                  aplicar({ suc: su.value })
+                }
+              }}
+              className={`rounded px-3 py-1 transition-colors ${
+                sucursal === su.value
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {su.label}
+            </button>
+          ))}
+        </div>
+        )}
+
+        {isPending && (
+          <span className="text-xs text-muted-foreground">Actualizando…</span>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -343,6 +451,7 @@ export function PuntualidadClient({
                     <TableHead>Legajo</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Sector</TableHead>
+                    {IS_MISIONES && <TableHead>Sucursal</TableHead>}
                     <TableHead>Hora Entrada</TableHead>
                     <TableHead className="text-right">Estado</TableHead>
                   </TableRow>
@@ -353,6 +462,17 @@ export function PuntualidadClient({
                       <TableCell className="text-sm font-mono">{d.legajo}</TableCell>
                       <TableCell className="font-medium">{d.nombre}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{d.sector}</TableCell>
+                      {IS_MISIONES && (
+                        <TableCell className="text-sm">
+                          {d.sucursal ? (
+                            <Badge variant="outline">
+                              {d.sucursal === "ELDORADO" ? "Eldorado" : "Iguazú"}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">{"—"}</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-sm font-mono">
                         {d.primera_entrada
                           ? new Date(d.primera_entrada).toLocaleTimeString("es-AR", {
