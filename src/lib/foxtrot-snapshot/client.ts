@@ -12,6 +12,30 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<unknown>>()
 
+// WHY: Foxtrot/undici no soporta cientos de fetch simultáneos contra el mismo
+// host. Al armar el snapshot semanal/mensual se disparaban ~900 requests a la
+// vez (un cliente de Eldorado por waypoint) y la mayoría fallaba con
+// "fetch failed", dejando clientes sin coordenadas y rutas enteras como
+// "Sin zona". Este semáforo global acota la concurrencia a un valor que
+// Foxtrot tolera sin perder requests.
+const MAX_CONCURRENT_FX = 10
+let fxActive = 0
+const fxQueue: (() => void)[] = []
+
+function fxAcquire(): Promise<void> {
+  if (fxActive < MAX_CONCURRENT_FX) {
+    fxActive++
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => fxQueue.push(resolve))
+}
+
+function fxRelease(): void {
+  const next = fxQueue.shift()
+  if (next) next()
+  else fxActive--
+}
+
 function getKey(): string {
   const k = process.env.FOXTROT_API_KEY
   if (!k) throw new Error("FOXTROT_API_KEY no configurada")
@@ -31,6 +55,7 @@ export async function fxFetch<T = unknown>(
   if (pending) return pending as Promise<T>
 
   const promise = (async () => {
+    await fxAcquire()
     try {
       const res = await fetch(`${FOXTROT_BASE}${path}`, {
         headers: {
@@ -52,6 +77,7 @@ export async function fxFetch<T = unknown>(
       cache.set(path, { ts: now, data: empty, ttl: 5_000 })
       return empty
     } finally {
+      fxRelease()
       inflight.delete(path)
     }
   })()
@@ -64,6 +90,7 @@ export async function fxPostJson<T = unknown>(
   path: string,
   body: unknown,
 ): Promise<T> {
+  await fxAcquire()
   try {
     const res = await fetch(`${FOXTROT_BASE}${path}`, {
       method: "POST",
@@ -78,6 +105,8 @@ export async function fxPostJson<T = unknown>(
     return (await res.json()) as T
   } catch {
     return {} as T
+  } finally {
+    fxRelease()
   }
 }
 
