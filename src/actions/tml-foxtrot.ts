@@ -307,6 +307,9 @@ function computeEquiposDia(
     if (!r.driverId || !r.startedIso) continue
     const ms = new Date(r.startedIso).getTime()
     if (Number.isNaN(ms)) continue
+    // Descartar rutas cuyo inicio cae en otra fecha: Foxtrot a veces devuelve
+    // en el día siguiente rutas viejas/no finalizadas, y producen TML espurios.
+    if (ymdFormatter.format(new Date(ms)) !== fecha) continue
     const key = `${r.dc}:${r.driverId}`
     const prev = primera.get(key)
     if (!prev || ms < prev.startedMs) primera.set(key, { route: r, startedMs: ms })
