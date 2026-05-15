@@ -121,7 +121,7 @@ export function TmlFoxtrotClient({ initial }: Props) {
             TML · Tiempo Medio de Liberación (Foxtrot)
           </h1>
           <p className="text-sm text-muted-foreground">
-            Desde marca biométrica del equipo hasta inicio de ruta en Foxtrot · meta{" "}
+            Desde marca biométrica del equipo hasta la salida real del vehículo (Foxtrot) · meta{" "}
             {initial.meta_minutos} min ·{" "}
             <span className="font-medium text-slate-700">
               {esDiaUnico ? ddMM(initial.desde) : `${ddMM(initial.desde)} – ${ddMM(initial.hasta)}`}
@@ -216,6 +216,16 @@ export function TmlFoxtrotClient({ initial }: Props) {
           <RefreshCcw className={`mr-1 h-4 w-4 ${isPending ? "animate-spin" : ""}`} /> Refrescar
         </Button>
       </div>
+
+      {initial.incluye_hoy_provisional && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            El día de hoy es <strong>provisional</strong>: usa el inicio de ruta en vivo.
+            La salida real del vehículo se consolida al cierre del día, con el sync de Foxtrot.
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ResumenCard

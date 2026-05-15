@@ -70,7 +70,13 @@ interface FoxtrotRouteRow {
   driver_name: string | null
   vehicle_id: string | null
   start_time: string | null
-  raw_data: { started_timestamp?: string | null } | null
+  raw_data: {
+    // Salida REAL del vehículo (ROUTE_ANALYTICS), ISO UTC. Es el campo correcto
+    // para el TML; lo carga el cron/backfill de analytics.
+    tml_actual_departure?: string | null
+    // "Driver Marked Route Start" — el chofer toca el botón. Solo fallback.
+    started_timestamp?: string | null
+  } | null
 }
 
 function dcToSucursal(dc: string): "ELDORADO" | "IGUAZU" | null {
@@ -239,9 +245,13 @@ async function routesFromDb(
       driverId: row.driver_id ?? "",
       driverName: row.driver_name ?? null,
       vehicleId: row.vehicle_id ?? null,
-      // El inicio real de ruta es `raw_data.started_timestamp`; `start_time`
-      // (columna) puede traer el planificado y se usa solo como fallback.
-      startedIso: row.raw_data?.started_timestamp ?? row.start_time ?? null,
+      // Inicio de ruta = salida REAL del vehículo (ROUTE_ANALYTICS). Si todavía
+      // no hay analytics, cae al "driver marked start" y luego al planificado.
+      startedIso:
+        row.raw_data?.tml_actual_departure ??
+        row.raw_data?.started_timestamp ??
+        row.start_time ??
+        null,
     }
     const arr = byFecha.get(row.fecha)
     if (arr) arr.push(dr)
@@ -520,6 +530,9 @@ export async function getTmlFoxtrotRango(
         desde: desdeEf,
         hasta: hastaEf,
         es_dia_unico,
+        // El día de hoy usa el inicio en vivo (driver marked); la salida real
+        // se consolida al cierre con el cron de analytics.
+        incluye_hoy_provisional: fechas.includes(hoy),
         meta_minutos: META_MIN,
         resumen: resumir(allEquipos),
         por_sucursal: {

@@ -1144,6 +1144,9 @@ export interface TmlFoxtrotRango {
   desde: string
   hasta: string
   es_dia_unico: boolean
+  // true si el rango incluye hoy: ese día usa el inicio en vivo (provisional)
+  // porque la salida real (ROUTE_ANALYTICS) se consolida al cierre.
+  incluye_hoy_provisional: boolean
   meta_minutos: number
   resumen: TmlFoxtrotResumen
   por_sucursal: Record<"ELDORADO" | "IGUAZU", TmlFoxtrotResumen>

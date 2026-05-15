@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { syncFoxtrotDay } from "@/lib/foxtrot-sync"
+import { syncFoxtrotRouteAnalytics } from "@/lib/foxtrot-analytics"
 import { IS_MISIONES } from "@/lib/empresa"
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -85,10 +86,23 @@ async function handle(request: NextRequest) {
       })
     }
 
+    // Enriquecer con el departure real (ROUTE_ANALYTICS). El analytics se
+    // genera asíncrono tras el cierre de la ruta, así que cubrimos una ventana
+    // hacia atrás: el día de hoy puede no estar listo todavía, los previos sí.
+    const analyticsHasta = fechas[fechas.length - 1]
+    const analyticsDesde = new Date(`${fechas[0]}T12:00:00.000Z`)
+    analyticsDesde.setUTCDate(analyticsDesde.getUTCDate() - 4)
+    const analytics = await syncFoxtrotRouteAnalytics(
+      supabase,
+      analyticsDesde.toISOString().slice(0, 10),
+      analyticsHasta,
+    )
+
     const durationMs = Date.now() - startedAt
     console.log(
       `[foxtrot-cron-sync] ok dias=${fechas.length} rutas=${rutas} ` +
-        `errores=${errores} duration_ms=${durationMs}`,
+        `errores=${errores} analytics_ok=${analytics.ok} ` +
+        `departures=${analytics.rutas_actualizadas} duration_ms=${durationMs}`,
     )
 
     return NextResponse.json({
@@ -97,6 +111,7 @@ async function handle(request: NextRequest) {
       rutas,
       errores,
       resultados,
+      analytics,
       duration_ms: durationMs,
     })
   } catch (err) {
