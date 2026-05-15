@@ -927,7 +927,9 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
     .eq("profile_id", profile.id)
 
   const relaciones = (rels ?? []) as Array<{ plan_id: string; rol: PlanResponsableRol }>
-  if (relaciones.length === 0) return []
+  // NO hacer early-return si el user no tiene planes de acción: la función
+  // igual debe llegar al paso 8 para cargar las acciones 5S asignadas.
+  // Con planIds vacío, los pasos 2-7 producen listas vacías sin error.
 
   const planIds = relaciones.map((r) => r.plan_id)
   const rolMap = new Map<string, PlanResponsableRol>()
@@ -940,7 +942,8 @@ export async function getMisTareas(): Promise<MisTareasItem[]> {
     .in("id", planIds)
 
   const planes = (planesRaw ?? []) as PlanAccion[]
-  if (planes.length === 0) return []
+  // Sin early-return: ver nota arriba — el paso 8 (acciones 5S) debe correr
+  // aunque el user no tenga ningún plan de acción.
 
   // 3) Preguntas (planes directos pueden no tener pregunta_id)
   const preguntaIds = Array.from(
