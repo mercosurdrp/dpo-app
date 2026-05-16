@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import {
   BarChart,
   Bar,
@@ -32,35 +33,69 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react"
-import type { ReunionKpis, ReunionResumenMensual } from "@/actions/reunion-preruta"
-import { getReunionResumenMensual } from "@/actions/reunion-preruta"
-
-const MESES = [
-  "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-]
+import type {
+  AsistenciaRango,
+  AsistenciaResumenDia,
+  AsistenciaFiltros,
+  SucursalAsistenciaFiltro,
+  PeriodoAsistencia,
+} from "@/actions/reunion-preruta"
+import { getAsistenciaRango } from "@/actions/reunion-preruta"
+import { IS_MISIONES } from "@/lib/empresa"
 
 const META_ASISTENCIA = 80
 
-interface Props {
-  kpisHoy: ReunionKpis
-  resumenMes: ReunionResumenMensual[]
-  mesActual: number
-  anioActual: number
+const SUCURSALES: { value: SucursalAsistenciaFiltro; label: string }[] = [
+  { value: "TODAS", label: "Todas" },
+  { value: "ELDORADO", label: "Eldorado" },
+  { value: "IGUAZU", label: "Iguazú" },
+]
+
+const PERIODOS: { value: PeriodoAsistencia; label: string }[] = [
+  { value: "dia", label: "Hoy" },
+  { value: "semana", label: "Semana" },
+  { value: "mes", label: "Mes" },
+  { value: "ytd", label: "YTD" },
+  { value: "personalizado", label: "Personalizado" },
+]
+
+// Rango [desde, hasta] de un período relativo a "hoy" (YYYY-MM-DD).
+function rangoDe(
+  periodo: PeriodoAsistencia,
+  hoy: string,
+): { desde: string; hasta: string } {
+  if (periodo === "semana") {
+    // Lunes de la semana en curso → hoy.
+    const d = new Date(`${hoy}T12:00:00Z`)
+    const dow = d.getUTCDay() // 0 = domingo
+    d.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1))
+    return { desde: d.toISOString().slice(0, 10), hasta: hoy }
+  }
+  if (periodo === "mes") return { desde: `${hoy.slice(0, 8)}01`, hasta: hoy }
+  if (periodo === "ytd") return { desde: `${hoy.slice(0, 4)}-01-01`, hasta: hoy }
+  // "dia" (y fallback): solo hoy.
+  return { desde: hoy, hasta: hoy }
 }
 
-function PctBadge({ pct }: { pct: number }) {
-  if (pct >= META_ASISTENCIA)
-    return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{pct}%</Badge>
-  if (pct >= 60)
-    return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{pct}%</Badge>
-  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{pct}%</Badge>
+// "2026-05-15" -> "15/05"
+function fmtCorta(f: string): string {
+  return `${f.slice(8, 10)}/${f.slice(5, 7)}`
 }
 
-function Tendencia({ datos }: { datos: ReunionResumenMensual[] }) {
+function colorPct(pct: number): string {
+  if (pct >= META_ASISTENCIA) return "text-green-600"
+  if (pct >= 60) return "text-amber-600"
+  return "text-red-600"
+}
+
+function bgPct(pct: number): string {
+  if (pct >= META_ASISTENCIA) return "bg-green-100"
+  if (pct >= 60) return "bg-amber-100"
+  return "bg-red-100"
+}
+
+function Tendencia({ datos }: { datos: AsistenciaResumenDia[] }) {
   if (datos.length < 3)
     return <span className="text-sm text-muted-foreground">Sin datos suficientes</span>
 
@@ -88,51 +123,77 @@ function Tendencia({ datos }: { datos: ReunionResumenMensual[] }) {
   )
 }
 
-export function AsistenciaMatinalClient({
-  kpisHoy,
-  resumenMes: resumenMesInicial,
-  mesActual,
-  anioActual,
-}: Props) {
-  const [mes, setMes] = useState(mesActual)
-  const [anio, setAnio] = useState(anioActual)
-  const [resumenMes, setResumenMes] = useState(resumenMesInicial)
+interface Props {
+  initial: AsistenciaRango
+  hoy: string
+}
+
+export function AsistenciaMatinalClient({ initial, hoy }: Props) {
+  const [data, setData] = useState(initial)
+  const [periodo, setPeriodo] = useState<PeriodoAsistencia>(initial.periodo)
+  // Fechas editables para el período "personalizado".
+  const [desdeCustom, setDesdeCustom] = useState(initial.desde)
+  const [hastaCustom, setHastaCustom] = useState(initial.hasta)
+  // Filtros — el de Distribución viene activado por default.
+  const [soloDistribucion, setSoloDistribucion] = useState(true)
+  const [sucursal, setSucursal] = useState<SucursalAsistenciaFiltro>("TODAS")
   const [isPending, startTransition] = useTransition()
 
-  const promedioMes =
-    resumenMes.length > 0
-      ? Math.round(resumenMes.reduce((s, d) => s + d.pct_asistencia, 0) / resumenMes.length)
-      : 0
-
-  const diasConReunion = resumenMes.length
-
-  const chartData = resumenMes.map((d) => {
-    const dia = parseInt(d.fecha.slice(-2), 10)
-    return {
-      name: `${dia}`,
-      pct: d.pct_asistencia,
-      asistieron: d.asistieron,
-      total: d.total_empleados,
+  // Recarga el rango con los parámetros indicados (los no provistos
+  // conservan el valor actual).
+  function recargar(opts: {
+    per?: PeriodoAsistencia
+    desde?: string
+    hasta?: string
+    solo?: boolean
+    suc?: SucursalAsistenciaFiltro
+  }) {
+    const per = opts.per ?? periodo
+    let desde: string
+    let hasta: string
+    if (per === "personalizado") {
+      desde = opts.desde ?? desdeCustom
+      hasta = opts.hasta ?? hastaCustom
+    } else {
+      const r = rangoDe(per, hoy)
+      desde = r.desde
+      hasta = r.hasta
     }
-  })
-
-  function cambiarMes(delta: number) {
-    let nuevoMes = mes + delta
-    let nuevoAnio = anio
-    if (nuevoMes < 1) {
-      nuevoMes = 12
-      nuevoAnio--
-    } else if (nuevoMes > 12) {
-      nuevoMes = 1
-      nuevoAnio++
+    const filtros: AsistenciaFiltros = {
+      soloDistribucion: opts.solo ?? soloDistribucion,
+      sucursal: opts.suc ?? sucursal,
     }
-    setMes(nuevoMes)
-    setAnio(nuevoAnio)
     startTransition(async () => {
-      const res = await getReunionResumenMensual(nuevoMes, nuevoAnio)
-      if ("data" in res) setResumenMes(res.data)
+      const res = await getAsistenciaRango(desde, hasta, per, filtros)
+      if ("data" in res) setData(res.data)
     })
   }
+
+  function elegirPeriodo(p: PeriodoAsistencia) {
+    setPeriodo(p)
+    // "personalizado" espera a que el usuario aplique las fechas.
+    if (p !== "personalizado") recargar({ per: p })
+  }
+
+  const serie = data.serie_diaria
+  const esDiaUnico = data.desde === data.hasta
+  const promedioDiario =
+    serie.length > 0
+      ? Math.round(
+          serie.reduce((s, d) => s + d.pct_asistencia, 0) / serie.length,
+        )
+      : 0
+
+  const chartData = serie.map((d) => ({
+    name: fmtCorta(d.fecha),
+    pct: d.pct_asistencia,
+    asistieron: d.asistieron,
+    total: d.total_empleados,
+  }))
+
+  const rangoLabel = esDiaUnico
+    ? fmtCorta(data.desde)
+    : `${fmtCorta(data.desde)} – ${fmtCorta(data.hasta)}`
 
   return (
     <div className="space-y-6">
@@ -146,47 +207,169 @@ export function AsistenciaMatinalClient({
         </p>
       </div>
 
+      {/* Selector de período */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+          {PERIODOS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              disabled={isPending}
+              onClick={() => elegirPeriodo(p.value)}
+              className={`rounded px-3 py-1 transition-colors ${
+                periodo === p.value
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {periodo === "personalizado" && (
+          <div className="flex items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="desde" className="text-xs text-muted-foreground">
+                Desde
+              </Label>
+              <input
+                id="desde"
+                type="date"
+                value={desdeCustom}
+                max={hoy}
+                onChange={(e) => setDesdeCustom(e.target.value)}
+                className="rounded-md border px-2 py-1 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="hasta" className="text-xs text-muted-foreground">
+                Hasta
+              </Label>
+              <input
+                id="hasta"
+                type="date"
+                value={hastaCustom}
+                max={hoy}
+                onChange={(e) => setHastaCustom(e.target.value)}
+                className="rounded-md border px-2 py-1 text-sm"
+              />
+            </div>
+            <Button
+              size="sm"
+              disabled={isPending}
+              onClick={() =>
+                recargar({
+                  per: "personalizado",
+                  desde: desdeCustom,
+                  hasta: hastaCustom,
+                })
+              }
+            >
+              Aplicar
+            </Button>
+          </div>
+        )}
+
+        {isPending && (
+          <span className="text-xs text-muted-foreground">Actualizando…</span>
+        )}
+      </div>
+
+      {/* Filtros de sector / sucursal */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Toggle de sector — Distribución activado por default */}
+        <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (!soloDistribucion) {
+                setSoloDistribucion(true)
+                recargar({ solo: true })
+              }
+            }}
+            className={`rounded px-3 py-1 transition-colors ${
+              soloDistribucion
+                ? "bg-slate-900 text-white"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Solo Distribución
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (soloDistribucion) {
+                setSoloDistribucion(false)
+                recargar({ solo: false })
+              }
+            }}
+            className={`rounded px-3 py-1 transition-colors ${
+              !soloDistribucion
+                ? "bg-slate-900 text-white"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Todos los sectores
+          </button>
+        </div>
+
+        {/* Toggle de sucursal — segmenta Eldorado / Iguazú (solo Misiones) */}
+        {IS_MISIONES && (
+          <div className="flex items-center rounded-md border bg-white p-1 text-sm">
+            {SUCURSALES.map((su) => (
+              <button
+                key={su.value}
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  if (sucursal !== su.value) {
+                    setSucursal(su.value)
+                    recargar({ suc: su.value })
+                  }
+                }}
+                className={`rounded px-3 py-1 transition-colors ${
+                  sucursal === su.value
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {su.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Hoy</p>
+                <p className="text-sm text-muted-foreground">% Asistencia</p>
                 <p
-                  className={`text-3xl font-bold ${
-                    kpisHoy.pct_asistencia >= META_ASISTENCIA
-                      ? "text-green-600"
-                      : kpisHoy.pct_asistencia >= 60
-                        ? "text-amber-600"
-                        : "text-red-600"
-                  }`}
+                  className={`text-3xl font-bold ${colorPct(
+                    data.resumen.pct_asistencia,
+                  )}`}
                 >
-                  {kpisHoy.pct_asistencia}%
+                  {data.resumen.pct_asistencia}%
                 </p>
               </div>
               <div
-                className={`rounded-full p-3 ${
-                  kpisHoy.pct_asistencia >= META_ASISTENCIA
-                    ? "bg-green-100"
-                    : kpisHoy.pct_asistencia >= 60
-                      ? "bg-amber-100"
-                      : "bg-red-100"
-                }`}
+                className={`rounded-full p-3 ${bgPct(
+                  data.resumen.pct_asistencia,
+                )}`}
               >
                 <UserCheck
-                  className={`h-5 w-5 ${
-                    kpisHoy.pct_asistencia >= META_ASISTENCIA
-                      ? "text-green-600"
-                      : kpisHoy.pct_asistencia >= 60
-                        ? "text-amber-600"
-                        : "text-red-600"
-                  }`}
+                  className={`h-5 w-5 ${colorPct(data.resumen.pct_asistencia)}`}
                 />
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {kpisHoy.asistieron}/{kpisHoy.total_empleados} empleados — Meta: {META_ASISTENCIA}%
+              {data.resumen.asistencias} asistencias — Meta: {META_ASISTENCIA}%
             </p>
           </CardContent>
         </Card>
@@ -195,41 +378,17 @@ export function AsistenciaMatinalClient({
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Promedio {MESES[mes]}</p>
-                <p
-                  className={`text-3xl font-bold ${
-                    promedioMes >= META_ASISTENCIA
-                      ? "text-green-600"
-                      : promedioMes >= 60
-                        ? "text-amber-600"
-                        : "text-red-600"
-                  }`}
-                >
-                  {promedioMes}%
+                <p className="text-sm text-muted-foreground">Promedio diario</p>
+                <p className={`text-3xl font-bold ${colorPct(promedioDiario)}`}>
+                  {promedioDiario}%
                 </p>
               </div>
-              <div
-                className={`rounded-full p-3 ${
-                  promedioMes >= META_ASISTENCIA
-                    ? "bg-green-100"
-                    : promedioMes >= 60
-                      ? "bg-amber-100"
-                      : "bg-red-100"
-                }`}
-              >
-                <Target
-                  className={`h-5 w-5 ${
-                    promedioMes >= META_ASISTENCIA
-                      ? "text-green-600"
-                      : promedioMes >= 60
-                        ? "text-amber-600"
-                        : "text-red-600"
-                  }`}
-                />
+              <div className={`rounded-full p-3 ${bgPct(promedioDiario)}`}>
+                <Target className={`h-5 w-5 ${colorPct(promedioDiario)}`} />
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {diasConReunion} días con reunión registrada
+              {data.resumen.dias_con_reunion} días con reunión registrada
             </p>
           </CardContent>
         </Card>
@@ -238,9 +397,9 @@ export function AsistenciaMatinalClient({
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Empleados Activos</p>
+                <p className="text-sm text-muted-foreground">Empleados</p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {kpisHoy.total_empleados}
+                  {data.resumen.total_empleados}
                 </p>
               </div>
               <div className="rounded-full bg-slate-100 p-3">
@@ -257,7 +416,7 @@ export function AsistenciaMatinalClient({
               <div>
                 <p className="text-sm text-muted-foreground">Tendencia</p>
                 <div className="mt-1">
-                  <Tendencia datos={resumenMes} />
+                  <Tendencia datos={serie} />
                 </div>
               </div>
               <div className="rounded-full bg-slate-100 p-3">
@@ -269,31 +428,18 @@ export function AsistenciaMatinalClient({
         </Card>
       </div>
 
-      {/* Month selector + Chart */}
+      {/* Bar Chart */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">% Asistencia Diaria</CardTitle>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon-sm" onClick={() => cambiarMes(-1)} disabled={isPending}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-medium min-w-[120px] text-center">
-              {MESES[mes]} {anio}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => cambiarMes(1)}
-              disabled={isPending || (mes === mesActual && anio === anioActual)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          <span className="text-sm font-medium text-muted-foreground">
+            {rangoLabel}
+          </span>
         </CardHeader>
         <CardContent>
           {chartData.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">
-              No hay registros de reunión matinal en este mes.
+              No hay registros de reunión matinal en este período.
             </p>
           ) : (
             <div className="h-72">
@@ -310,7 +456,11 @@ export function AsistenciaMatinalClient({
                     y={META_ASISTENCIA}
                     stroke="#10B981"
                     strokeDasharray="5 5"
-                    label={{ value: `Meta ${META_ASISTENCIA}%`, position: "right", fontSize: 10 }}
+                    label={{
+                      value: `Meta ${META_ASISTENCIA}%`,
+                      position: "right",
+                      fontSize: 10,
+                    }}
                   />
                   <Bar dataKey="pct" radius={[4, 4, 0, 0]}>
                     {chartData.map((entry, index) => (
@@ -369,72 +519,178 @@ export function AsistenciaMatinalClient({
         </Card>
       )}
 
-      {/* Detail table - today */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Detalle de Hoy — {kpisHoy.fecha}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {kpisHoy.detalle.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              No hay empleados registrados.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Legajo</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Sector</TableHead>
-                    <TableHead>Fichaje</TableHead>
-                    <TableHead>Check-in Reunión</TableHead>
-                    <TableHead className="text-right">Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {kpisHoy.detalle.map((d) => (
-                    <TableRow key={d.legajo}>
-                      <TableCell className="text-sm font-mono">{d.legajo}</TableCell>
-                      <TableCell className="font-medium">{d.nombre}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{d.sector}</TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {d.hora_fichaje
-                          ? new Date(d.hora_fichaje).toLocaleTimeString("es-AR", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZone: "America/Argentina/Buenos_Aires",
-                            })
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {d.hora_checkin
-                          ? new Date(d.hora_checkin).toLocaleTimeString("es-AR", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZone: "America/Argentina/Buenos_Aires",
-                            })
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {d.asistio ? (
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                            Presente
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                            Ausente
-                          </Badge>
-                        )}
-                      </TableCell>
+      {/* Detalle */}
+      {esDiaUnico ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Detalle del día — {data.desde}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.detalle_dia.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No hay empleados registrados.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Legajo</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Sector</TableHead>
+                      {IS_MISIONES && <TableHead>Sucursal</TableHead>}
+                      <TableHead>Fichaje</TableHead>
+                      <TableHead>Check-in Reunión</TableHead>
+                      <TableHead className="text-right">Estado</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {data.detalle_dia.map((d) => (
+                      <TableRow key={d.legajo}>
+                        <TableCell className="text-sm font-mono">
+                          {d.legajo}
+                        </TableCell>
+                        <TableCell className="font-medium">{d.nombre}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {d.sector}
+                        </TableCell>
+                        {IS_MISIONES && (
+                          <TableCell className="text-sm">
+                            {d.sucursal ? (
+                              <Badge variant="outline">
+                                {d.sucursal === "ELDORADO"
+                                  ? "Eldorado"
+                                  : "Iguazú"}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {"—"}
+                              </span>
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-sm font-mono">
+                          {d.hora_fichaje
+                            ? new Date(d.hora_fichaje).toLocaleTimeString(
+                                "es-AR",
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  timeZone: "America/Argentina/Buenos_Aires",
+                                },
+                              )
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {d.hora_checkin
+                            ? new Date(d.hora_checkin).toLocaleTimeString(
+                                "es-AR",
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  timeZone: "America/Argentina/Buenos_Aires",
+                                },
+                              )
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {d.asistio ? (
+                            <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                              Presente
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                              Ausente
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Detalle por empleado — {rangoLabel}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.detalle_empleados.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No hay empleados registrados en este período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Legajo</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Sector</TableHead>
+                      {IS_MISIONES && <TableHead>Sucursal</TableHead>}
+                      <TableHead className="text-right">
+                        Días con reunión
+                      </TableHead>
+                      <TableHead className="text-right">Días asistió</TableHead>
+                      <TableHead className="text-right">% Asistencia</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.detalle_empleados.map((e) => (
+                      <TableRow key={e.legajo}>
+                        <TableCell className="text-sm font-mono">
+                          {e.legajo}
+                        </TableCell>
+                        <TableCell className="font-medium">{e.nombre}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {e.sector}
+                        </TableCell>
+                        {IS_MISIONES && (
+                          <TableCell className="text-sm">
+                            {e.sucursal ? (
+                              <Badge variant="outline">
+                                {e.sucursal === "ELDORADO"
+                                  ? "Eldorado"
+                                  : "Iguazú"}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {"—"}
+                              </span>
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-right text-sm font-mono">
+                          {e.dias_con_reunion}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-mono">
+                          {e.dias_asistio}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={`font-semibold ${colorPct(
+                              e.pct_asistencia,
+                            )}`}
+                          >
+                            {e.pct_asistencia}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
