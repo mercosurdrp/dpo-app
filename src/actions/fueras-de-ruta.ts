@@ -6,6 +6,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, requireRole, getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { runFuerasRutaSync } from "@/lib/sync/fueras-ruta-sync"
+import {
+  supervisorDePromotor,
+  type SupervisorKey,
+} from "@/lib/fueras-de-ruta-supervisores"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -29,6 +33,7 @@ export interface FueraRutaFila {
   dias_entrega_iso: number[] | null
   dow_iso_entrega: number
   es_fuera_de_ruta: boolean | null
+  supervisor: SupervisorKey | null
 }
 
 export interface AggPorPersonal {
@@ -153,7 +158,9 @@ export async function getFuerasDeRutaIndicador(
         .range(offset, offset + PAGE - 1)
       if (error) return { error: error.message }
       if (!data || data.length === 0) break
-      filas.push(...(data as FueraRutaFila[]))
+      for (const raw of data as Omit<FueraRutaFila, "supervisor">[]) {
+        filas.push({ ...raw, supervisor: supervisorDePromotor(raw.id_personal) })
+      }
       if (data.length < PAGE) break
       if (offset + PAGE >= MAX_FILAS) truncated = true
     }

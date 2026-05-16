@@ -37,6 +37,11 @@ import {
   type FueraRutaFila,
 } from "@/actions/fueras-de-ruta"
 import {
+  SUPERVISORES,
+  SUPERVISOR_KEYS,
+  type SupervisorKey,
+} from "@/lib/fueras-de-ruta-supervisores"
+import {
   ComposedChart,
   Bar,
   Line,
@@ -65,6 +70,54 @@ function fmtMoney(n: number): string {
 function fmtDateAR(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-").map(Number)
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`
+}
+
+// ── Toggles de período ──
+type PeriodoKey = "hoy" | "semana" | "mes" | "ytd" | "personalizado"
+
+const PERIODOS: { key: PeriodoKey; label: string }[] = [
+  { key: "hoy", label: "Hoy" },
+  { key: "semana", label: "Semana" },
+  { key: "mes", label: "Mes" },
+  { key: "ytd", label: "YTD" },
+  { key: "personalizado", label: "Personalizado" },
+]
+
+function toYMD(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${dd}`
+}
+
+// Rango de cada período relativo a "hoy" (hora local de Argentina).
+function rangoDePeriodo(
+  key: Exclude<PeriodoKey, "personalizado">,
+): { desde: string; hasta: string } {
+  const hoy = new Date()
+  const hasta = toYMD(hoy)
+  if (key === "hoy") return { desde: hasta, hasta }
+  if (key === "semana") {
+    // Lunes de la semana actual.
+    const d = new Date(hoy)
+    const dow = d.getDay() // 0=Dom..6=Sáb
+    d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1))
+    return { desde: toYMD(d), hasta }
+  }
+  if (key === "mes") {
+    return { desde: toYMD(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), hasta }
+  }
+  // ytd
+  return { desde: toYMD(new Date(hoy.getFullYear(), 0, 1)), hasta }
+}
+
+// Qué toggle corresponde al rango activo (o "personalizado" si no calza).
+function detectarPeriodo(desde: string, hasta: string): PeriodoKey {
+  for (const k of ["hoy", "semana", "mes", "ytd"] as const) {
+    const r = rangoDePeriodo(k)
+    if (r.desde === desde && r.hasta === hasta) return k
+  }
+  return "personalizado"
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
@@ -99,6 +152,10 @@ export function FuerasDeRutaClient({
   const router = useRouter()
   const [desdeInput, setDesdeInput] = useState(data.desde)
   const [hastaInput, setHastaInput] = useState(data.hasta)
+  const [periodo, setPeriodo] = useState<PeriodoKey>(() =>
+    detectarPeriodo(data.desde, data.hasta),
+  )
+  const [supervisorSel, setSupervisorSel] = useState<SupervisorKey | "TODOS">("TODOS")
   const [search, setSearch] = useState("")
   const [soloFuera, setSoloFuera] = useState(false)
   const [excluirEliminados, setExcluirEliminados] = useState(true)
@@ -111,14 +168,29 @@ export function FuerasDeRutaClient({
   const [periodoPending, startPeriodo] = useTransition()
   const [syncMsg, setSyncMsg] = useState<{ tipo: "ok" | "err"; texto: string } | null>(null)
 
-  function aplicarPeriodo() {
+  function navegarAlPeriodo(desde: string, hasta: string) {
     setPage(1)
     startPeriodo(() => {
       const params = new URLSearchParams()
-      params.set("desde", desdeInput)
-      params.set("hasta", hastaInput)
+      params.set("desde", desde)
+      params.set("hasta", hasta)
       router.push(`/indicadores/fueras-de-ruta?${params.toString()}`)
     })
+  }
+
+  function aplicarPeriodo() {
+    navegarAlPeriodo(desdeInput, hastaInput)
+  }
+
+  function seleccionarPeriodo(key: PeriodoKey) {
+    setPeriodo(key)
+    if (key === "personalizado") return
+    const r = rangoDePeriodo(key)
+    setDesdeInput(r.desde)
+    setHastaInput(r.hasta)
+    // Si el rango ya es el activo, evitamos un push redundante.
+    if (r.desde === data.desde && r.hasta === data.hasta) return
+    navegarAlPeriodo(r.desde, r.hasta)
   }
 
   function ejecutarSync() {
@@ -156,6 +228,7 @@ export function FuerasDeRutaClient({
       if (excluirEliminados && f.eliminado) return false
       if (excluirSinItems && f.items_no_anulados === 0) return false
       if (montoMax > 0 && (Number(f.monto_aprox) || 0) > montoMax) return false
+      if (supervisorSel !== "TODOS" && f.supervisor !== supervisorSel) return false
       return true
     })
 
@@ -248,7 +321,7 @@ export function FuerasDeRutaClient({
       porRuta,
       porCliente,
     }
-  }, [data.filas, excluirEliminados, excluirSinItems, montoMax])
+  }, [data.filas, excluirEliminados, excluirSinItems, montoMax, supervisorSel])
 
   const filasFiltradas = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -287,6 +360,8 @@ export function FuerasDeRutaClient({
       "id_ruta",
       "ruta",
       "promotor",
+      "supervisor",
+      "zona",
       "dias_entrega_pactados",
       "es_fuera_de_ruta",
       "items_no_anulados",
@@ -304,6 +379,8 @@ export function FuerasDeRutaClient({
       f.id_ruta == null ? "" : String(f.id_ruta),
       f.des_ruta ?? "",
       f.des_personal ?? "",
+      f.supervisor ? SUPERVISORES[f.supervisor].nombre : "",
+      f.supervisor ? SUPERVISORES[f.supervisor].zona : "",
       (f.dias_entrega_iso ?? []).map((d) => DIA_ABBR[d]).filter(Boolean).join("-"),
       f.es_fuera_de_ruta === null ? "S/D" : f.es_fuera_de_ruta ? "SI" : "NO",
       String(f.items_no_anulados),
@@ -425,39 +502,127 @@ export function FuerasDeRutaClient({
         </div>
       </div>
 
-      {/* Selector período + Sync */}
+      {/* Selector período + supervisor + Sync */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-end gap-4">
-            <div>
-              <Label htmlFor="desde" className="text-xs uppercase tracking-wide text-muted-foreground">
-                Desde
-              </Label>
-              <Input
-                id="desde"
-                type="date"
-                value={desdeInput}
-                onChange={(e) => setDesdeInput(e.target.value)}
-                className="mt-1"
-              />
+        <CardContent className="space-y-4 pt-6">
+          {/* Toggles de período */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Período
+            </span>
+            <div className="inline-flex flex-wrap rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+              {PERIODOS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => seleccionarPeriodo(p.key)}
+                  disabled={periodoPending}
+                  className={
+                    "rounded px-3 py-1 transition disabled:opacity-50 " +
+                    (periodo === p.key
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100")
+                  }
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
-            <div>
-              <Label htmlFor="hasta" className="text-xs uppercase tracking-wide text-muted-foreground">
-                Hasta
-              </Label>
-              <Input
-                id="hasta"
-                type="date"
-                value={hastaInput}
-                onChange={(e) => setHastaInput(e.target.value)}
-                className="mt-1"
-              />
+            {periodoPending && (
+              <span className="text-xs text-muted-foreground">Aplicando…</span>
+            )}
+          </div>
+
+          {/* Rango manual — solo visible con "Personalizado" */}
+          {periodo === "personalizado" && (
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <Label htmlFor="desde" className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Desde
+                </Label>
+                <Input
+                  id="desde"
+                  type="date"
+                  value={desdeInput}
+                  onChange={(e) => setDesdeInput(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="hasta" className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Hasta
+                </Label>
+                <Input
+                  id="hasta"
+                  type="date"
+                  value={hastaInput}
+                  onChange={(e) => setHastaInput(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <Button onClick={aplicarPeriodo} disabled={periodoPending}>
+                <Calendar className="mr-1.5 h-4 w-4" />
+                {periodoPending ? "Aplicando..." : "Aplicar período"}
+              </Button>
             </div>
-            <Button onClick={aplicarPeriodo} disabled={periodoPending}>
-              <Calendar className="mr-1.5 h-4 w-4" />
-              {periodoPending ? "Aplicando..." : "Aplicar período"}
-            </Button>
-            {canSync && (
+          )}
+
+          {/* Toggles de supervisor (filtro local, no recarga) */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Supervisor
+            </span>
+            <div className="inline-flex flex-wrap rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSupervisorSel("TODOS")
+                  setPage(1)
+                }}
+                className={
+                  "rounded px-3 py-1.5 transition " +
+                  (supervisorSel === "TODOS"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100")
+                }
+              >
+                TODOS
+              </button>
+              {SUPERVISOR_KEYS.map((k) => {
+                const s = SUPERVISORES[k]
+                const active = supervisorSel === k
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setSupervisorSel(k)
+                      setPage(1)
+                    }}
+                    className={
+                      "rounded px-3 py-1 text-left leading-tight transition " +
+                      (active
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-100")
+                    }
+                  >
+                    <span className="block">{s.nombre}</span>
+                    <span
+                      className={
+                        "block text-[10px] " +
+                        (active ? "text-slate-300" : "text-slate-400")
+                      }
+                    >
+                      {s.zona}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {canSync && (
+            <div>
               <Button
                 variant="secondary"
                 onClick={ejecutarSync}
@@ -467,8 +632,8 @@ export function FuerasDeRutaClient({
                 <RefreshCw className={`mr-1.5 h-4 w-4 ${syncPending ? "animate-spin" : ""}`} />
                 {syncPending ? "Sincronizando..." : "Sincronizar período"}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
           {syncMsg && (
             <div
               className={`mt-3 rounded-md border px-3 py-2 text-sm ${
@@ -518,6 +683,14 @@ export function FuerasDeRutaClient({
       {montoMax > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Filtro activo: mostrando solo pedidos con monto final ≤ {fmtMoney(montoMax)}. KPIs, Pareto y tablas top reflejan este corte.
+        </div>
+      )}
+
+      {supervisorSel !== "TODOS" && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          Filtrado por supervisor <strong>{SUPERVISORES[supervisorSel].nombre}</strong> (
+          {SUPERVISORES[supervisorSel].zona}). KPIs, Pareto y tablas reflejan solo sus
+          promotores.
         </div>
       )}
 
