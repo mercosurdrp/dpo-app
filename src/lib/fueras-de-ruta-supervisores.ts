@@ -1,11 +1,18 @@
 // Mapeo promotor (id_personal de Chess) → supervisor / JDV de preventa en
-// Misiones. Derivado de la jerarquía de Chess (idPersonalSuperior) y
-// confirmado operativamente. Los tres JDV se conocen por su zona:
-//   Irala Iván     → CENTRAL
-//   Bargas Ronaldo → IGUAZÚ
+// Misiones. Los tres JDV se conocen por su zona:
+//   Irala Iván      → CENTRAL
+//   Bargas Ronaldo  → IGUAZÚ
 //   Bogado Leonardo → ZONA ESTE
-// Las cuentas no-preventa (VI PEOPLE, MOSTRADOR, telesales, etc.) no tienen
-// supervisor: caen en `null` y solo aparecen bajo el toggle "TODOS".
+//
+// ⚠️ OJO: en Chess los id_personal se repiten entre sucursales (un mismo id
+// puede ser un promotor distinto en Eldorado vs Iguazú). Por eso este mapeo
+// NO se deriva de catálogos genéricos: refleja los id_personal verificados
+// que efectivamente aparecen en la vista v_fueras_de_ruta_misiones
+// (verificado contra la base el 2026-05-16). Si aparece un promotor nuevo,
+// cae en `null` (solo visible bajo "TODOS") hasta agregarlo acá a mano.
+//
+// Las cuentas no-preventa (VI PEOPLE, MOSTRADOR, VENTA TELEFONICA, etc.) no
+// tienen supervisor: caen en `null`.
 
 export type SupervisorKey = "CENTRAL" | "IGUAZU" | "ESTE"
 
@@ -27,22 +34,20 @@ export const SUPERVISOR_KEYS: SupervisorKey[] = ["CENTRAL", "IGUAZU", "ESTE"]
 const PROMOTOR_A_SUPERVISOR: Record<number, SupervisorKey> = {
   // CENTRAL — Irala Iván
   1: "CENTRAL", // Duran Luis
-  2: "CENTRAL", // Wunsch José
   3: "CENTRAL", // Avalos Brian
   4: "CENTRAL", // Freitas Ale Claus
   5: "CENTRAL", // Fernández Agustín
   7: "CENTRAL", // Fragoso Esteban
-  8: "CENTRAL", // Erhard Cristian
   13: "CENTRAL", // Benítez Gustavo
-  31: "CENTRAL", // Castillo Cintia Noemí
-  32: "CENTRAL", // Cristaldo Rodrigo
   // IGUAZÚ — Bargas Ronaldo
-  6: "IGUAZU", // Grauman Jorge
+  9: "IGUAZU", // Gómez César
+  10: "IGUAZU", // Paniagua Fabricio
+  11: "IGUAZU", // Cartagena Joan
   12: "IGUAZU", // Butnen Ornela Beatriz
   14: "IGUAZU", // Burgin Daiana
-  18: "IGUAZU", // Zárate Javier
+  15: "IGUAZU", // Miranda Leticia
+  22: "IGUAZU", // Jara Adrián
   // ZONA ESTE — Bogado Leonardo
-  10: "ESTE", // Gaitano Gustavo
   50: "ESTE", // Alvez de Lima Lucas
   51: "ESTE", // Acosta Lázaro
   52: "ESTE", // Bothner Erick
