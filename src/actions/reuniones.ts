@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
   crearPdaEnMantenimiento,
@@ -1640,8 +1641,14 @@ export async function agregarAvanceActividad(
     // Buscamos la fila espejo por origen_reunion_actividad_id e insertamos una
     // entrada nueva en su historial. Si se cerró la actividad, también
     // espejamos el cierre.
+    //
+    // Se usa el cliente admin (service-role): quien responde la actividad de
+    // reunión (responsable o editor de reuniones) puede no tener permiso RLS
+    // sobre s5_acciones; con el cliente de usuario el espejo quedaba
+    // desincronizado en silencio (acción 5S abierta / actividad cerrada).
     try {
-      const { data: espejo } = await supabase
+      const admin = createAdminClient()
+      const { data: espejo } = await admin
         .from("s5_acciones")
         .select("id, estado")
         .eq("origen_reunion_actividad_id", id)
@@ -1653,7 +1660,7 @@ export async function agregarAvanceActividad(
         const tieneComentarioParaEspejo =
           (observaciones?.trim().length ?? 0) > 0
         if (nuevaEvidenciaUrl || tieneComentarioParaEspejo) {
-          await supabase.from("s5_acciones_evidencias").insert({
+          await admin.from("s5_acciones_evidencias").insert({
             accion_id: e.id,
             comentario: observaciones ?? null,
             archivo_path: nuevaEvidenciaUrl,
@@ -1674,13 +1681,19 @@ export async function agregarAvanceActividad(
           mirrorUpdate.cerrada_at = null
           mirrorUpdate.cerrada_por = null
         }
-        await supabase
+        const { error: errMirror } = await admin
           .from("s5_acciones")
           .update(mirrorUpdate)
           .eq("id", e.id)
+        if (errMirror) {
+          console.error(
+            `[reuniones] no se pudo espejar estado a s5_acciones ${e.id}: ${errMirror.message}`,
+          )
+        }
       }
-    } catch {
+    } catch (err) {
       // No bloquear el flujo principal por fallo en sync.
+      console.error("[reuniones] error espejando avance a s5_acciones:", err)
     }
 
     // Espejar al PDA de Mantenimiento Edilicio si corresponde.
