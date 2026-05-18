@@ -2432,8 +2432,8 @@ export async function getIndicadoresMes(
     // Para warehouse, los 6 KPIs del handbook (WQI/FGLI/SCL/Precision picking/
     // Capacidad utilizada/Productividad de picking) se computan on-the-fly desde
     // fuentes externas — ver src/lib/warehouse/auto-indicadores.ts.
-    // Para logistica: Productividad de picking, WQI, Roturas y Faltantes
-    // (los KPIs de depósito FGLI/SCL/etc. no aplican al rol de logística).
+    // Para logistica, solo se replican Productividad de picking y WQI
+    // (los otros 4 son específicos del rol de depósito).
     if (tipo === "warehouse") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("fgli")
@@ -2444,8 +2444,6 @@ export async function getIndicadoresMes(
     } else if (tipo === "logistica") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("productividad de picking")
-      NOMBRES_AUTO.add("roturas")
-      NOMBRES_AUTO.add("faltantes")
     }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -3141,33 +3139,10 @@ export async function getIndicadoresMes(
         ),
       )
 
-      // Solo logística: Roturas y Faltantes en HL (acumulado MTD), con
-      // target mensual del presupuesto (bultos × HL/bulto).
-      if (tipo === "logistica") {
-        indicadoresAuto.push(
-          buildAcumuladoRow(
-            "auto_roturas",
-            "Roturas",
-            "HL",
-            serie.roturas,
-            serie.targets.roturas,
-            "menor",
-          ),
-          buildAcumuladoRow(
-            "auto_faltantes",
-            "Faltantes",
-            "HL",
-            serie.faltantes,
-            serie.targets.faltantes,
-            "menor",
-          ),
-        )
-      }
-
       // Solo warehouse (rol de depósito)
       if (tipo === "warehouse") {
         indicadoresAuto.push(
-          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, serie.targets.fgli, "menor"),
+          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, null, "menor"),
           buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, null, "menor"),
           buildSerieRow(
             "auto_capacidad_utilizada",
