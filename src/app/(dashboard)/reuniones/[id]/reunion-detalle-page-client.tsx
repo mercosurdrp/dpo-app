@@ -57,6 +57,7 @@ import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-di
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
+import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -754,6 +755,10 @@ export function ReunionDetallePageClient({
     string | null
   >(null)
 
+  // Detalle del día al hacer click en la celda del indicador Km recorridos:
+  // km por camión (odómetro de retorno − odómetro de liberación).
+  const [kmDetalleFecha, setKmDetalleFecha] = useState<string | null>(null)
+
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
     "todas" | "no_comenzada" | "en_curso" | "cerrada"
@@ -1194,7 +1199,10 @@ export function ReunionDetallePageClient({
                           }
                           // Camiones a la calle: es un conteo neutro, no un
                           // accidente — no se pinta de rojo.
-                          if (ind.id === "auto_camiones_calle") {
+                          if (
+                            ind.id === "auto_camiones_calle" ||
+                            ind.id === "auto_km_recorridos"
+                          ) {
                             colorClass = "font-medium text-slate-700"
                           }
                           // Checklist "X/Y": verde si todas aprobadas, ámbar
@@ -1211,6 +1219,7 @@ export function ReunionDetallePageClient({
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
                           const esChecklist = ind.id === "auto_checklist"
+                          const esKm = ind.id === "auto_km_recorridos"
                           const esAperturaPicking =
                             ind.id === "auto_precision_picking" ||
                             ind.id === "auto_productividad_picking"
@@ -1220,6 +1229,7 @@ export function ReunionDetallePageClient({
                               esHlVendidos ||
                               esTml ||
                               esChecklist ||
+                              esKm ||
                               esAperturaPicking) &&
                             muestra
                           const onCellClick = () => {
@@ -1228,6 +1238,7 @@ export function ReunionDetallePageClient({
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
                             else if (esChecklist) setChecklistDetalleFecha(f)
+                            else if (esKm) setKmDetalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                           }
                           const contenido = muestra
@@ -1559,6 +1570,14 @@ export function ReunionDetallePageClient({
           if (!o) setChecklistDetalleFecha(null)
         }}
         fecha={checklistDetalleFecha}
+      />
+
+      <KmRecorridosDetalleDiaDialog
+        open={kmDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setKmDetalleFecha(null)
+        }}
+        fecha={kmDetalleFecha}
       />
     </div>
   )

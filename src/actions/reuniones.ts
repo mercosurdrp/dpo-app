@@ -2432,8 +2432,8 @@ export async function getIndicadoresMes(
     // Para warehouse, los 6 KPIs del handbook (WQI/FGLI/SCL/Precision picking/
     // Capacidad utilizada/Productividad de picking) se computan on-the-fly desde
     // fuentes externas — ver src/lib/warehouse/auto-indicadores.ts.
-    // Para logistica, solo se replican Productividad de picking y WQI
-    // (los otros 4 son específicos del rol de depósito).
+    // Para logistica: Productividad de picking, WQI, Roturas y Faltantes
+    // (los KPIs de depósito FGLI/SCL/etc. no aplican al rol de logística).
     if (tipo === "warehouse") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("fgli")
@@ -2444,6 +2444,8 @@ export async function getIndicadoresMes(
     } else if (tipo === "logistica") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("productividad de picking")
+      NOMBRES_AUTO.add("roturas")
+      NOMBRES_AUTO.add("faltantes")
     }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -2885,10 +2887,9 @@ export async function getIndicadoresMes(
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       const { data: chkRaw, error: errChk } = await supabase
         .from("checklist_vehiculos")
-        .select("fecha, dominio, resultado")
+        .select("fecha, dominio, tipo, resultado, odometro")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
-        .eq("tipo", "liberacion")
 
       if (!errChk) {
         const totalPorFecha: Record<string, number> = {}
@@ -2896,19 +2897,41 @@ export async function getIndicadoresMes(
         // Dominios únicos por fecha — un camión puede tener más de un
         // checklist el mismo día (rehace tras corregir un desvío).
         const dominiosPorFecha: Record<string, Set<string>> = {}
+        // Odómetros por fecha+dominio (liberación y retorno) para los km.
+        const odoPorFechaDom: Record<
+          string,
+          Record<string, { lib: number[]; ret: number[] }>
+        > = {}
         for (const r of (chkRaw ?? []) as Array<{
           fecha: string
           dominio: string | null
+          tipo: string
           resultado: string | null
+          odometro: number | null
         }>) {
-          totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
-          if (r.resultado === "aprobado") {
-            aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
-          }
           const dom = (r.dominio ?? "").trim().toUpperCase()
-          if (dom) {
-            if (!dominiosPorFecha[r.fecha]) dominiosPorFecha[r.fecha] = new Set()
-            dominiosPorFecha[r.fecha].add(dom)
+          // Camiones a la calle + Checklist: sólo los checklists de liberación.
+          if (r.tipo === "liberacion") {
+            totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
+            if (r.resultado === "aprobado") {
+              aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
+            }
+            if (dom) {
+              if (!dominiosPorFecha[r.fecha]) dominiosPorFecha[r.fecha] = new Set()
+              dominiosPorFecha[r.fecha].add(dom)
+            }
+          }
+          // Km recorridos: odómetro de liberación y de retorno por unidad.
+          if (dom && r.odometro != null && Number.isFinite(r.odometro)) {
+            if (!odoPorFechaDom[r.fecha]) odoPorFechaDom[r.fecha] = {}
+            if (!odoPorFechaDom[r.fecha][dom]) {
+              odoPorFechaDom[r.fecha][dom] = { lib: [], ret: [] }
+            }
+            if (r.tipo === "liberacion") {
+              odoPorFechaDom[r.fecha][dom].lib.push(r.odometro)
+            } else if (r.tipo === "retorno") {
+              odoPorFechaDom[r.fecha][dom].ret.push(r.odometro)
+            }
           }
         }
 
@@ -2959,6 +2982,48 @@ export async function getIndicadoresMes(
           mtd_texto: sumTotal > 0 ? `${sumAprob}/${sumTotal}` : null,
           auto: true,
           mostrar_cero: true,
+        })
+
+        // Fila "Km recorridos": Σ (odómetro de retorno − odómetro de
+        // liberación) de cada unidad. Se descartan lecturas inválidas
+        // (km ≤ 0 o > KM_MAX_DIA, p.ej. un odómetro tipeado con un dígito
+        // de más). El detalle por camión está en el modal (celda clickeable).
+        const KM_MAX_DIA = 2000
+        const kmPorFecha: Record<string, number> = {}
+        for (const f of Object.keys(odoPorFechaDom)) {
+          let suma = 0
+          for (const dom of Object.keys(odoPorFechaDom[f])) {
+            const { lib, ret } = odoPorFechaDom[f][dom]
+            if (lib.length === 0 || ret.length === 0) continue
+            const km = Math.max(...ret) - Math.min(...lib)
+            if (km > 0 && km <= KM_MAX_DIA) suma += km
+          }
+          kmPorFecha[f] = suma
+        }
+        const kmValores: Record<
+          string,
+          {
+            reunion_id: string
+            valor: number | null
+            observacion: string | null
+          } | null
+        > = {}
+        let kmMtd = 0
+        for (const f of fechas) {
+          const v = kmPorFecha[f] ?? 0
+          kmValores[f] = { reunion_id: "auto", valor: v, observacion: null }
+          if (f <= fecha) kmMtd += v
+        }
+        indicadoresAuto.push({
+          id: "auto_km_recorridos",
+          nombre: "Km recorridos",
+          unidad: "km",
+          meta: null,
+          orden: -1,
+          agregacion: "suma",
+          valores: kmValores,
+          mtd: kmMtd,
+          auto: true,
         })
       }
     }
@@ -3076,10 +3141,33 @@ export async function getIndicadoresMes(
         ),
       )
 
+      // Solo logística: Roturas y Faltantes en HL (acumulado MTD), con
+      // target mensual del presupuesto (bultos × HL/bulto).
+      if (tipo === "logistica") {
+        indicadoresAuto.push(
+          buildAcumuladoRow(
+            "auto_roturas",
+            "Roturas",
+            "HL",
+            serie.roturas,
+            serie.targets.roturas,
+            "menor",
+          ),
+          buildAcumuladoRow(
+            "auto_faltantes",
+            "Faltantes",
+            "HL",
+            serie.faltantes,
+            serie.targets.faltantes,
+            "menor",
+          ),
+        )
+      }
+
       // Solo warehouse (rol de depósito)
       if (tipo === "warehouse") {
         indicadoresAuto.push(
-          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, null, "menor"),
+          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, serie.targets.fgli, "menor"),
           buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, null, "menor"),
           buildSerieRow(
             "auto_capacidad_utilizada",
