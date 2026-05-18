@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import type {
   S5Tipo,
@@ -16,6 +17,37 @@ const DASHBOARD_PATH = "/5s"
 function assertAuditorOrAdmin(role: string) {
   if (role !== "admin" && role !== "auditor") {
     throw new Error("Sólo admin o auditor puede realizar esta acción.")
+  }
+}
+
+/**
+ * Espeja un cambio a la actividad de reuniones enlazada (origen_reunion_actividad_id).
+ *
+ * Usa el cliente admin (service-role) a propósito: el cierre/avance de una
+ * acción 5S lo dispara su responsable — habitualmente un operario sin rol
+ * editor — y la RLS de `reuniones_actividades` sólo deja escribir a editores
+ * (admin/supervisor/admin_rrhh) o al responsable de ESA fila. Con el cliente
+ * de usuario el UPDATE se rechazaba en silencio y la actividad de la reunión
+ * quedaba huérfana: cerrada en 5S / Mis Tareas pero abierta en Reuniones.
+ */
+async function espejarEstadoActividad(
+  actividadId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  patch: Record<string, any>,
+): Promise<void> {
+  if (Object.keys(patch).length === 0) return
+  try {
+    const { error } = await createAdminClient()
+      .from("reuniones_actividades")
+      .update(patch)
+      .eq("id", actividadId)
+    if (error) {
+      console.error(
+        `[s5-acciones] no se pudo espejar a reuniones_actividades ${actividadId}: ${error.message}`,
+      )
+    }
+  } catch (err) {
+    console.error("[s5-acciones] error espejando a reuniones_actividades:", err)
   }
 }
 
@@ -484,31 +516,25 @@ export async function agregarEvidencia(
     // Espejar a la actividad de reuniones si la acción tiene origen.
     // La actividad solo guarda 1 evidencia (no historial) → sobrescribe.
     if (accion.origen_reunion_actividad_id) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const actividadUpdate: Record<string, any> = {}
-        if (input.archivoPath) {
-          actividadUpdate.evidencia_url = input.archivoPath
-          actividadUpdate.evidencia_nombre = input.archivoNombre ?? null
-        }
-        if (comentario) {
-          actividadUpdate.observaciones = comentario
-        }
-        // Si la acción pasó de no_comenzada → en_curso por el side-effect del
-        // insert, espejar también el estado en la actividad.
-        if (accion.estado === "no_comenzada") {
-          actividadUpdate.estado = "en_curso"
-          actividadUpdate.completado_at = null
-        }
-        if (Object.keys(actividadUpdate).length > 0) {
-          await supabase
-            .from("reuniones_actividades")
-            .update(actividadUpdate)
-            .eq("id", accion.origen_reunion_actividad_id)
-        }
-      } catch {
-        // Sync best-effort
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const actividadUpdate: Record<string, any> = {}
+      if (input.archivoPath) {
+        actividadUpdate.evidencia_url = input.archivoPath
+        actividadUpdate.evidencia_nombre = input.archivoNombre ?? null
       }
+      if (comentario) {
+        actividadUpdate.observaciones = comentario
+      }
+      // Si la acción pasó de no_comenzada → en_curso por el side-effect del
+      // insert, espejar también el estado en la actividad.
+      if (accion.estado === "no_comenzada") {
+        actividadUpdate.estado = "en_curso"
+        actividadUpdate.completado_at = null
+      }
+      await espejarEstadoActividad(
+        accion.origen_reunion_actividad_id,
+        actividadUpdate,
+      )
     }
 
     revalidatePath(DASHBOARD_PATH)
@@ -562,17 +588,10 @@ export async function cerrarAccion(
 
     // Espejar cierre a la actividad de reuniones.
     if (accion.origen_reunion_actividad_id) {
-      try {
-        await supabase
-          .from("reuniones_actividades")
-          .update({
-            estado: "cerrada",
-            completado_at: new Date().toISOString(),
-          })
-          .eq("id", accion.origen_reunion_actividad_id)
-      } catch {
-        // best-effort
-      }
+      await espejarEstadoActividad(accion.origen_reunion_actividad_id, {
+        estado: "cerrada",
+        completado_at: new Date().toISOString(),
+      })
     }
 
     revalidatePath(DASHBOARD_PATH)
@@ -611,17 +630,10 @@ export async function reabrirAccion(
 
     // Espejar reapertura a la actividad de reuniones.
     if (accion.origen_reunion_actividad_id) {
-      try {
-        await supabase
-          .from("reuniones_actividades")
-          .update({
-            estado: "en_curso",
-            completado_at: null,
-          })
-          .eq("id", accion.origen_reunion_actividad_id)
-      } catch {
-        // best-effort
-      }
+      await espejarEstadoActividad(accion.origen_reunion_actividad_id, {
+        estado: "en_curso",
+        completado_at: null,
+      })
     }
 
     revalidatePath(DASHBOARD_PATH)
