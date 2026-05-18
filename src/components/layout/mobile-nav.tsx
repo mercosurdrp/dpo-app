@@ -38,6 +38,8 @@ interface NavItem {
   icon: React.ReactNode
   adminOnly?: boolean
   hideForEmpleado?: boolean
+  /** Si está presente, sólo se muestra a estos roles. */
+  roles?: UserRole[]
 }
 
 const navItems: NavItem[] = [
@@ -102,6 +104,12 @@ const navItems: NavItem[] = [
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Mis Capacitaciones",
+    href: "/mis-capacitaciones",
+    icon: <GraduationCap className="size-5" />,
+    roles: ["auditor"],
   },
   {
     label: "Reuniones",
@@ -222,7 +230,11 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
           {/* Main nav items */}
           <div className="space-y-1">
             {navItems
-              .filter((item) => !(item.hideForEmpleado && role === "empleado"))
+              .filter(
+                (item) =>
+                  !(item.hideForEmpleado && role === "empleado") &&
+                  (!item.roles || item.roles.includes(role)),
+              )
               .map((item) => {
               const isActive =
                 item.href === "/"

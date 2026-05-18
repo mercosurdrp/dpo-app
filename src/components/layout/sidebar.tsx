@@ -123,6 +123,12 @@ const navItems: NavItem[] = [
     icon: <GraduationCap className="size-5" />,
   },
   {
+    label: "Mis Capacitaciones",
+    href: "/mis-capacitaciones",
+    icon: <GraduationCap className="size-5" />,
+    roles: ["auditor"],
+  },
+  {
     label: "Reuniones",
     href: "/reuniones",
     icon: <Presentation className="size-5" />,
@@ -286,7 +292,11 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
         {/* Main nav items */}
         <div className="space-y-1">
           {navItems
-            .filter((item) => !(item.hideForEmpleado && role === "empleado"))
+            .filter(
+              (item) =>
+                !(item.hideForEmpleado && role === "empleado") &&
+                (!item.roles || item.roles.includes(role)),
+            )
             .map((item) => {
             const isActive =
               item.href === "/"
