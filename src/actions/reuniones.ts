@@ -2885,7 +2885,7 @@ export async function getIndicadoresMes(
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       const { data: chkRaw, error: errChk } = await supabase
         .from("checklist_vehiculos")
-        .select("fecha, resultado")
+        .select("fecha, dominio, resultado")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
         .eq("tipo", "liberacion")
@@ -2893,19 +2893,32 @@ export async function getIndicadoresMes(
       if (!errChk) {
         const totalPorFecha: Record<string, number> = {}
         const aprobPorFecha: Record<string, number> = {}
+        // Dominios únicos por fecha — un camión puede tener más de un
+        // checklist el mismo día (rehace tras corregir un desvío).
+        const dominiosPorFecha: Record<string, Set<string>> = {}
         for (const r of (chkRaw ?? []) as Array<{
           fecha: string
+          dominio: string | null
           resultado: string | null
         }>) {
           totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
           if (r.resultado === "aprobado") {
             aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
           }
+          const dom = (r.dominio ?? "").trim().toUpperCase()
+          if (dom) {
+            if (!dominiosPorFecha[r.fecha]) dominiosPorFecha[r.fecha] = new Set()
+            dominiosPorFecha[r.fecha].add(dom)
+          }
         }
 
-        // Fila "Camiones a la calle": cantidad de liberaciones del día.
+        // Fila "Camiones a la calle": unidades únicas liberadas por día.
+        const camionesPorFecha: Record<string, number> = {}
+        for (const f of Object.keys(dominiosPorFecha)) {
+          camionesPorFecha[f] = dominiosPorFecha[f].size
+        }
         indicadoresAuto.push(
-          buildAutoRow("auto_camiones_calle", "Camiones a la calle", totalPorFecha),
+          buildAutoRow("auto_camiones_calle", "Camiones a la calle", camionesPorFecha),
         )
 
         // Fila "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.

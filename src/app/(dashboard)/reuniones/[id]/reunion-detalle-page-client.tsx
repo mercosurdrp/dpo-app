@@ -56,6 +56,7 @@ import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detall
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
+import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -747,6 +748,12 @@ export function ReunionDetallePageClient({
     null,
   )
 
+  // Detalle del día al hacer click en la celda del indicador Checklist:
+  // unidades liberadas con sus ítems en falla + las que salieron sin checklist.
+  const [checklistDetalleFecha, setChecklistDetalleFecha] = useState<
+    string | null
+  >(null)
+
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
     "todas" | "no_comenzada" | "en_curso" | "cerrada"
@@ -1203,6 +1210,7 @@ export function ReunionDetallePageClient({
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
+                          const esChecklist = ind.id === "auto_checklist"
                           const esAperturaPicking =
                             ind.id === "auto_precision_picking" ||
                             ind.id === "auto_productividad_picking"
@@ -1211,6 +1219,7 @@ export function ReunionDetallePageClient({
                               esBultosVendidos ||
                               esHlVendidos ||
                               esTml ||
+                              esChecklist ||
                               esAperturaPicking) &&
                             muestra
                           const onCellClick = () => {
@@ -1218,6 +1227,7 @@ export function ReunionDetallePageClient({
                             else if (esBultosVendidos) setVentasBultosFecha(f)
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
+                            else if (esChecklist) setChecklistDetalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                           }
                           const contenido = muestra
@@ -1541,6 +1551,14 @@ export function ReunionDetallePageClient({
         fecha={aperturaPickingFecha}
         puedeEditar={puedeEditarTablero}
         onChange={refrescar}
+      />
+
+      <ChecklistDetalleDiaDialog
+        open={checklistDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setChecklistDetalleFecha(null)
+        }}
+        fecha={checklistDetalleFecha}
       />
     </div>
   )
