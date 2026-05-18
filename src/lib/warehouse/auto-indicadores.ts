@@ -66,7 +66,15 @@ export interface AperturaPickingDelDia {
   precision_promedio: number | null
 }
 
-export interface WarehouseSerieDiaria {
+/** Targets mensuales en HL (bultos presupuestados × HL/bulto). */
+export interface WarehouseTargets {
+  fgli: number | null
+  roturas: number | null
+  faltantes: number | null
+}
+
+/** Series que provee el snapshot pre-cocinado (o el fallback legacy). */
+export interface WarehouseSerieBase {
   /** Por fecha YYYY-MM-DD → valor (o null si no hay dato). */
   wqi: Record<string, number | null>
   fgli: Record<string, number | null>
@@ -74,6 +82,14 @@ export interface WarehouseSerieDiaria {
   capacidad: Record<string, number | null>
   precision: Record<string, number | null>
   productividad: Record<string, number | null>
+}
+
+export interface WarehouseSerieDiaria extends WarehouseSerieBase {
+  /** Sub-series de pérdida para la reunión de logística (acumulado MTD). */
+  roturas: Record<string, number | null>
+  faltantes: Record<string, number | null>
+  /** Targets mensuales en HL del mes consultado. */
+  targets: WarehouseTargets
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -188,6 +204,7 @@ export async function buildWarehouseSerieDiaria(
   fechas: string[],
   fechaReunion: string,
 ): Promise<WarehouseSerieDiaria> {
+  const sinTargets: WarehouseTargets = { fgli: null, roturas: null, faltantes: null }
   if (fechas.length === 0) {
     return {
       wqi: {},
@@ -196,24 +213,33 @@ export async function buildWarehouseSerieDiaria(
       capacidad: {},
       precision: {},
       productividad: {},
+      roturas: {},
+      faltantes: {},
+      targets: sinTargets,
     }
   }
 
   const snap = await fetchSnapshot()
-  if (snap && snap.dias) {
-    return buildSerieFromSnapshot(fechas, fechaReunion, snap.dias)
-  }
+  const base: WarehouseSerieBase =
+    snap && snap.dias
+      ? buildSerieFromSnapshot(fechas, fechaReunion, snap.dias)
+      : // Fallback: si el snapshot no existe (primera vez, o pusher caído),
+        // pegar a las 4 fuentes originales.
+        await buildSerieLegacy(fechas, fechaReunion)
 
-  // Fallback: si el snapshot no existe (primera vez, o pusher caído), pegar a
-  // las 4 fuentes originales.
-  return buildSerieLegacy(fechas, fechaReunion)
+  // roturas/faltantes/targets no están en el snapshot pre-cocinado → se leen
+  // directo de serie-diaria (1 fetch cacheado; en el camino legacy es la
+  // misma URL ya cacheada por fetchJsonSafe).
+  const extra = await fetchSerieExtra(fechas, fechaReunion)
+
+  return { ...base, ...extra }
 }
 
 function buildSerieFromSnapshot(
   fechas: string[],
   fechaReunion: string,
   dias: Record<string, SnapshotDia>,
-): WarehouseSerieDiaria {
+): WarehouseSerieBase {
   const wqi: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
   const scl: Record<string, number | null> = {}
@@ -379,6 +405,9 @@ interface DepositoIndicadoresSerieDiaria {
   wqi: Record<string, number | null>
   fgli: Record<string, number | null>
   scl: Record<string, number | null>
+  roturas?: Record<string, number | null>
+  faltantes?: Record<string, number | null>
+  targets?: Partial<WarehouseTargets>
 }
 
 interface DepositoOcupacionShared {
@@ -408,7 +437,7 @@ function fechaOcupacionAIso(raw: string, anioRef: number): string | null {
 async function buildSerieLegacy(
   fechas: string[],
   fechaReunion: string,
-): Promise<WarehouseSerieDiaria> {
+): Promise<WarehouseSerieBase> {
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
   const year = partes[0]
   const month = partes[1]
@@ -475,6 +504,43 @@ async function buildSerieLegacy(
   }
 
   return { wqi, fgli, scl, capacidad, precision, productividad }
+}
+
+/**
+ * roturas/faltantes (acumulado MTD, sólo hasta la fecha de reunión) y los
+ * targets del mes en HL. Se leen directo de /api/indicadores/serie-diaria
+ * porque el snapshot pre-cocinado no los incluye.
+ */
+async function fetchSerieExtra(
+  fechas: string[],
+  fechaReunion: string,
+): Promise<{
+  roturas: Record<string, number | null>
+  faltantes: Record<string, number | null>
+  targets: WarehouseTargets
+}> {
+  const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
+  const res = await fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
+    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${partes[0]}&month=${partes[1]}`,
+  )
+
+  const roturas: Record<string, number | null> = {}
+  const faltantes: Record<string, number | null> = {}
+  for (const f of fechas) {
+    const visible = f <= fechaReunion
+    roturas[f] = visible ? (res?.roturas?.[f] ?? null) : null
+    faltantes[f] = visible ? (res?.faltantes?.[f] ?? null) : null
+  }
+
+  return {
+    roturas,
+    faltantes,
+    targets: {
+      fgli: res?.targets?.fgli ?? null,
+      roturas: res?.targets?.roturas ?? null,
+      faltantes: res?.targets?.faltantes ?? null,
+    },
+  }
 }
 
 async function buildAperturaLegacy(
