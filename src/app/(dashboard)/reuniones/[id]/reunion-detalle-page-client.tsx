@@ -76,6 +76,7 @@ interface IndicadorMesCellData {
   reunion_id: string
   valor: number | null
   observacion: string | null
+  texto?: string | null
 }
 
 interface IndicadorMesItem {
@@ -87,6 +88,7 @@ interface IndicadorMesItem {
   agregacion: AgregacionIndicador
   valores: Record<string, IndicadorMesCellData | null>
   mtd: number | null
+  mtd_texto?: string | null
   auto?: boolean
   mostrar_cero?: boolean
   mejor_si?: "menor" | "mayor"
@@ -1145,7 +1147,11 @@ export function ReunionDetallePageClient({
                         {ind.meta == null ? "—" : formatearValor(ind.meta)}
                       </td>
                       <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
-                        {ind.mtd == null ? "—" : formatearValor(ind.mtd)}
+                        {ind.mtd_texto != null
+                          ? ind.mtd_texto
+                          : ind.mtd == null
+                            ? "—"
+                            : formatearValor(ind.mtd)}
                       </td>
                       {fechasFiltradas.map((f) => {
                         const cell = ind.valores[f] ?? null
@@ -1179,6 +1185,20 @@ export function ReunionDetallePageClient({
                               ? "bg-emerald-50 font-semibold text-emerald-700"
                               : "bg-red-50 font-semibold text-red-700"
                           }
+                          // Camiones a la calle: es un conteo neutro, no un
+                          // accidente — no se pinta de rojo.
+                          if (ind.id === "auto_camiones_calle") {
+                            colorClass = "font-medium text-slate-700"
+                          }
+                          // Checklist "X/Y": verde si todas aprobadas, ámbar
+                          // si hubo algún rechazo en las liberaciones del día.
+                          if (ind.id === "auto_checklist") {
+                            const m = (cell?.texto ?? "").match(/^(\d+)\/(\d+)$/)
+                            colorClass =
+                              m && m[1] === m[2]
+                                ? "bg-emerald-50 font-semibold text-emerald-700"
+                                : "bg-amber-50 font-semibold text-amber-700"
+                          }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
@@ -1201,9 +1221,11 @@ export function ReunionDetallePageClient({
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                           }
                           const contenido = muestra
-                            ? esPct
-                              ? `${formatearValor(valor!)}%`
-                              : formatearValor(valor!)
+                            ? cell?.texto != null
+                              ? cell.texto
+                              : esPct
+                                ? `${formatearValor(valor!)}%`
+                                : formatearValor(valor!)
                             : "—"
                           return (
                             <td

@@ -2877,6 +2877,79 @@ export async function getIndicadoresMes(
       }
     }
 
+    // 7e. Indicadores AUTO "Camiones a la calle" + "Checklist" — solo en
+    //     reuniones de Logística y Matinal Distribución. Cada checklist de
+    //     liberación (checklist_vehiculos.tipo='liberacion') = un camión
+    //     liberado para salir a la calle. El indicador Checklist muestra
+    //     aprobados/total como texto "X/Y" (ej. 8/8, 7/8).
+    if (tipo === "logistica" || tipo === "matinal-distribucion") {
+      const { data: chkRaw, error: errChk } = await supabase
+        .from("checklist_vehiculos")
+        .select("fecha, resultado")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .eq("tipo", "liberacion")
+
+      if (!errChk) {
+        const totalPorFecha: Record<string, number> = {}
+        const aprobPorFecha: Record<string, number> = {}
+        for (const r of (chkRaw ?? []) as Array<{
+          fecha: string
+          resultado: string | null
+        }>) {
+          totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
+          if (r.resultado === "aprobado") {
+            aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
+          }
+        }
+
+        // Fila "Camiones a la calle": cantidad de liberaciones del día.
+        indicadoresAuto.push(
+          buildAutoRow("auto_camiones_calle", "Camiones a la calle", totalPorFecha),
+        )
+
+        // Fila "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.
+        const chkValores: Record<
+          string,
+          {
+            reunion_id: string
+            valor: number | null
+            observacion: string | null
+            texto: string | null
+          } | null
+        > = {}
+        let sumAprob = 0
+        let sumTotal = 0
+        for (const f of fechas) {
+          const total = totalPorFecha[f] ?? 0
+          const aprob = aprobPorFecha[f] ?? 0
+          chkValores[f] = {
+            reunion_id: "auto",
+            valor: total > 0 ? aprob : null,
+            observacion: null,
+            texto: total > 0 ? `${aprob}/${total}` : null,
+          }
+          if (f <= fecha) {
+            sumAprob += aprob
+            sumTotal += total
+          }
+        }
+        indicadoresAuto.push({
+          id: "auto_checklist",
+          nombre: "Checklist",
+          unidad: null,
+          meta: null,
+          orden: -1,
+          agregacion: "suma",
+          valores: chkValores,
+          mtd: sumTotal > 0 ? sumAprob : null,
+          mtd_texto: sumTotal > 0 ? `${sumAprob}/${sumTotal}` : null,
+          auto: true,
+          mostrar_cero: true,
+        })
+      }
+    }
+
     // 7d. Indicadores AUTO warehouse + logistica — KPIs del handbook 2025.
     //     Vienen de deposito-esteban.vercel.app (APIs públicas) + Google Sheet
     //     de errores picking. Tolerante a fallos: si una fuente cae, su KPI

@@ -2471,9 +2471,13 @@ export interface ReunionIndicadoresMes {
         reunion_id: string
         valor: number | null
         observacion: string | null
+        /** Texto a mostrar en la celda en vez del número (ej. "8/8" del indicador Checklist). */
+        texto?: string | null
       } | null
     >
     mtd: number | null
+    /** Texto a mostrar en la columna MTD en vez del número (filas con `texto` por celda). */
+    mtd_texto?: string | null
     /** Si true, la fila viene calculada por el sistema (no editable) — p.ej. LTI/TRI desde reportes_seguridad. */
     auto?: boolean
     /** Si true, una celda con valor 0 también se muestra (no se oculta como "—"). Útil para tasas/% donde 0% es info válida. */
