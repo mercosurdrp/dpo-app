@@ -152,7 +152,7 @@ export function ConfigurarIndicadoresDialog({
                     <TableHead className="w-24">Unidad</TableHead>
                     <TableHead className="w-24">Meta</TableHead>
                     <TableHead className="w-20">Orden</TableHead>
-                    <TableHead className="w-28 text-right">Acciones</TableHead>
+                    <TableHead className="w-44 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -236,7 +236,7 @@ export function ConfigurarIndicadoresDialog({
                     placeholder="1"
                   />
                 </div>
-                <div className="col-span-8 sm:col-span-3 space-y-1.5">
+                <div className="col-span-8 sm:col-span-4 space-y-1.5">
                   <Label
                     htmlFor="ind_agregacion"
                     className="text-xs"
@@ -264,20 +264,16 @@ export function ConfigurarIndicadoresDialog({
                     Cómo se calcula el MTD: suma o promedio de los valores diarios.
                   </p>
                 </div>
-                <div className="col-span-4 sm:col-span-1 flex items-start pt-5">
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="w-full"
-                    disabled={pending}
-                  >
-                    {pending ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Plus className="size-4" />
-                    )}
-                  </Button>
-                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" size="sm" disabled={pending}>
+                  {pending ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Plus className="mr-2 size-4" />
+                  )}
+                  Agregar indicador
+                </Button>
               </div>
             </form>
           </div>
@@ -338,16 +334,16 @@ function IndicadorConfigRow({
         <TableCell>{item.meta ?? "—"}</TableCell>
         <TableCell>{item.orden}</TableCell>
         <TableCell className="text-right">
-          <div className="flex justify-end gap-1">
+          <div className="flex justify-end gap-1.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onStartEdit}
               disabled={pending}
-              title="Editar"
             >
-              <Pencil className="size-3.5" />
+              <Pencil className="mr-1.5 size-3.5" />
+              Editar
             </Button>
             <Button
               type="button"
@@ -356,9 +352,9 @@ function IndicadorConfigRow({
               className="text-red-600 hover:text-red-700"
               onClick={onDelete}
               disabled={pending}
-              title="Eliminar"
             >
-              <Trash2 className="size-3.5" />
+              <Trash2 className="mr-1.5 size-3.5" />
+              Eliminar
             </Button>
           </div>
         </TableCell>
@@ -419,34 +415,30 @@ function IndicadorConfigRow({
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-12 sm:col-span-1 flex items-center gap-1">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={savingLocal}
-                title="Guardar"
-              >
-                {savingLocal ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  "OK"
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onCancelEdit}
-                disabled={savingLocal}
-                title="Cancelar"
-              >
-                <X className="size-3.5" />
-              </Button>
-            </div>
           </div>
           {error && (
             <p className="text-xs text-red-700">{error}</p>
           )}
+          <div className="flex justify-end gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancelEdit}
+              disabled={savingLocal}
+            >
+              <X className="mr-1.5 size-3.5" />
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" disabled={savingLocal}>
+              {savingLocal ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Pencil className="mr-2 size-4" />
+              )}
+              Guardar
+            </Button>
+          </div>
         </form>
       </TableCell>
     </TableRow>
