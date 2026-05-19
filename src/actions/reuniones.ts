@@ -2901,7 +2901,7 @@ export async function getIndicadoresMes(
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       const { data: chkRaw, error: errChk } = await supabase
         .from("checklist_vehiculos")
-        .select("fecha, dominio, tipo, resultado, odometro")
+        .select("fecha, dominio, tipo, resultado, odometro, hora")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
 
@@ -2916,12 +2916,19 @@ export async function getIndicadoresMes(
           string,
           Record<string, { lib: number[]; ret: number[] }>
         > = {}
+        // Marcas horarias por fecha+dominio (liberación y retorno), en ms
+        // epoch, para las horas en la calle.
+        const horaPorFechaDom: Record<
+          string,
+          Record<string, { lib: number[]; ret: number[] }>
+        > = {}
         for (const r of (chkRaw ?? []) as Array<{
           fecha: string
           dominio: string | null
           tipo: string
           resultado: string | null
           odometro: number | null
+          hora: string | null
         }>) {
           const dom = (r.dominio ?? "").trim().toUpperCase()
           // Camiones a la calle + Checklist: sólo los checklists de liberación.
@@ -2945,6 +2952,21 @@ export async function getIndicadoresMes(
               odoPorFechaDom[r.fecha][dom].lib.push(r.odometro)
             } else if (r.tipo === "retorno") {
               odoPorFechaDom[r.fecha][dom].ret.push(r.odometro)
+            }
+          }
+          // Horas en la calle: marca horaria de liberación y de retorno.
+          if (dom && r.hora) {
+            const t = new Date(r.hora).getTime()
+            if (Number.isFinite(t)) {
+              if (!horaPorFechaDom[r.fecha]) horaPorFechaDom[r.fecha] = {}
+              if (!horaPorFechaDom[r.fecha][dom]) {
+                horaPorFechaDom[r.fecha][dom] = { lib: [], ret: [] }
+              }
+              if (r.tipo === "liberacion") {
+                horaPorFechaDom[r.fecha][dom].lib.push(t)
+              } else if (r.tipo === "retorno") {
+                horaPorFechaDom[r.fecha][dom].ret.push(t)
+              }
             }
           }
         }
@@ -3037,6 +3059,68 @@ export async function getIndicadoresMes(
           agregacion: "suma",
           valores: kmValores,
           mtd: kmMtd,
+          auto: true,
+        })
+
+        // Fila "Horas en la calle": promedio de (hora de retorno − hora de
+        // liberación) de cada unidad del día. Se descartan marcas inválidas
+        // (horas ≤ 0 o > HORAS_MAX_DIA, p.ej. un retorno mal cargado). El
+        // detalle por camión está en el modal (celda clickeable).
+        const HORAS_MAX_DIA = 18
+        const horasPorFecha: Record<string, number> = {}
+        for (const f of Object.keys(horaPorFechaDom)) {
+          let suma = 0
+          let n = 0
+          for (const dom of Object.keys(horaPorFechaDom[f])) {
+            const { lib, ret } = horaPorFechaDom[f][dom]
+            if (lib.length === 0 || ret.length === 0) continue
+            const horas =
+              (Math.max(...ret) - Math.min(...lib)) / 3_600_000
+            if (horas > 0 && horas <= HORAS_MAX_DIA) {
+              suma += horas
+              n++
+            }
+          }
+          if (n > 0) horasPorFecha[f] = suma / n
+        }
+        const horasValores: Record<
+          string,
+          {
+            reunion_id: string
+            valor: number | null
+            observacion: string | null
+          } | null
+        > = {}
+        let horasSuma = 0
+        let horasDias = 0
+        for (const f of fechas) {
+          const v = horasPorFecha[f]
+          if (v != null) {
+            horasValores[f] = {
+              reunion_id: "auto",
+              valor: Math.round(v * 10) / 10,
+              observacion: null,
+            }
+            if (f <= fecha) {
+              horasSuma += v
+              horasDias++
+            }
+          } else {
+            horasValores[f] = null
+          }
+        }
+        indicadoresAuto.push({
+          id: "auto_horas_calle",
+          nombre: "Horas en la calle",
+          unidad: "hs",
+          meta: null,
+          orden: -1,
+          agregacion: "promedio",
+          valores: horasValores,
+          mtd:
+            horasDias > 0
+              ? Math.round((horasSuma / horasDias) * 10) / 10
+              : null,
           auto: true,
         })
       }

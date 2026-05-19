@@ -58,6 +58,7 @@ import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dial
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
+import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -759,6 +760,10 @@ export function ReunionDetallePageClient({
   // km por camión (odómetro de retorno − odómetro de liberación).
   const [kmDetalleFecha, setKmDetalleFecha] = useState<string | null>(null)
 
+  // Detalle del día al hacer click en la celda del indicador Horas en la
+  // calle: horas por camión (hora de retorno − hora de liberación).
+  const [horasCalleFecha, setHorasCalleFecha] = useState<string | null>(null)
+
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
     "todas" | "no_comenzada" | "en_curso" | "cerrada"
@@ -1201,7 +1206,8 @@ export function ReunionDetallePageClient({
                           // accidente — no se pinta de rojo.
                           if (
                             ind.id === "auto_camiones_calle" ||
-                            ind.id === "auto_km_recorridos"
+                            ind.id === "auto_km_recorridos" ||
+                            ind.id === "auto_horas_calle"
                           ) {
                             colorClass = "font-medium text-slate-700"
                           }
@@ -1220,6 +1226,7 @@ export function ReunionDetallePageClient({
                           const esTml = ind.id === "auto_tml"
                           const esChecklist = ind.id === "auto_checklist"
                           const esKm = ind.id === "auto_km_recorridos"
+                          const esHorasCalle = ind.id === "auto_horas_calle"
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking"
                           const clickable =
@@ -1229,6 +1236,7 @@ export function ReunionDetallePageClient({
                               esTml ||
                               esChecklist ||
                               esKm ||
+                              esHorasCalle ||
                               esAperturaPicking) &&
                             muestra
                           const onCellClick = () => {
@@ -1238,6 +1246,7 @@ export function ReunionDetallePageClient({
                             else if (esTml) setTmlDetalleFecha(f)
                             else if (esChecklist) setChecklistDetalleFecha(f)
                             else if (esKm) setKmDetalleFecha(f)
+                            else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                           }
                           const contenido = muestra
@@ -1577,6 +1586,14 @@ export function ReunionDetallePageClient({
           if (!o) setKmDetalleFecha(null)
         }}
         fecha={kmDetalleFecha}
+      />
+
+      <HorasCalleDetalleDiaDialog
+        open={horasCalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setHorasCalleFecha(null)
+        }}
+        fecha={horasCalleFecha}
       />
     </div>
   )
