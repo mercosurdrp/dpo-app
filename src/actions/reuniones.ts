@@ -2457,6 +2457,7 @@ export async function getIndicadoresMes(
     } else if (tipo === "logistica") {
       NOMBRES_AUTO.add("wqi")
       NOMBRES_AUTO.add("productividad de picking")
+      NOMBRES_AUTO.add("precision picking")
       NOMBRES_AUTO.add("roturas")
       NOMBRES_AUTO.add("faltantes")
     }
@@ -3125,7 +3126,16 @@ export async function getIndicadoresMes(
             observacion: null,
           }
         }
-        const mtd = porFecha[fecha] ?? null
+        // MTD = último acumulado conocido hasta la fecha de la reunión
+        // (inclusive). Si ese día no tiene dato — fin de semana, o el WQI
+        // que oculta el día en curso — se toma el último día con valor,
+        // no null.
+        let mtd: number | null = null
+        for (const f of fechas) {
+          if (f > fecha) break
+          const v = porFecha[f]
+          if (v != null && Number.isFinite(v)) mtd = v
+        }
         return {
           id,
           nombre,
@@ -3142,7 +3152,7 @@ export async function getIndicadoresMes(
 
       // Comunes a warehouse + logística
       indicadoresAuto.push(
-        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, null, "menor"),
+        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, serie.targets.wqi, "menor"),
         buildSerieRow(
           "auto_productividad_picking",
           "Productividad de picking",
@@ -3154,10 +3164,20 @@ export async function getIndicadoresMes(
         ),
       )
 
-      // Solo logística: Roturas y Faltantes en HL (acumulado MTD), con
-      // target mensual del presupuesto (bultos × HL/bulto).
+      // Solo logística: Precisión de picking (bultos pickeados vs errores),
+      // y Roturas/Faltantes en HL (acumulado MTD) con target mensual del
+      // presupuesto (bultos × HL/bulto).
       if (tipo === "logistica") {
         indicadoresAuto.push(
+          buildSerieRow(
+            "auto_precision_picking",
+            "Precision picking",
+            "%",
+            serie.precision,
+            "promedio",
+            100,
+            "mayor",
+          ),
           buildAcumuladoRow(
             "auto_roturas",
             "Roturas",

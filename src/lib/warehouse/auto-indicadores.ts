@@ -66,11 +66,27 @@ export interface AperturaPickingDelDia {
   precision_promedio: number | null
 }
 
-/** Targets mensuales en HL (bultos presupuestados × HL/bulto). */
+/** Targets mensuales: HL para fgli/roturas/faltantes; PPM para wqi. */
 export interface WarehouseTargets {
   fgli: number | null
   roturas: number | null
   faltantes: number | null
+  /** WQI objetivo en PPM = HL roturas presup. / HL ventas esperadas × 1M. */
+  wqi: number | null
+}
+
+/**
+ * Ventas esperadas en HL por mes — presupuesto, hoja "PRESUPUESTO 2026 MRP"
+ * fila 17 ("Total en HL") del archivo cargado en dpo-app /presupuesto. Es el
+ * denominador del target de WQI. Valores fijos por año: se agrega una entrada
+ * nueva cuando se sube el presupuesto del año siguiente.
+ */
+const VENTAS_HL_PRESUPUESTO: Record<number, Record<number, number>> = {
+  2026: {
+    1: 12764.48, 2: 11759.19, 3: 9190.44, 4: 9157.13,
+    5: 10611.85, 6: 7065.16, 7: 9706.19, 8: 9376.89,
+    9: 9886.44, 10: 11303.44, 11: 11279.08, 12: 15986.61,
+  },
 }
 
 /** Series que provee el snapshot pre-cocinado (o el fallback legacy). */
@@ -204,7 +220,12 @@ export async function buildWarehouseSerieDiaria(
   fechas: string[],
   fechaReunion: string,
 ): Promise<WarehouseSerieDiaria> {
-  const sinTargets: WarehouseTargets = { fgli: null, roturas: null, faltantes: null }
+  const sinTargets: WarehouseTargets = {
+    fgli: null,
+    roturas: null,
+    faltantes: null,
+    wqi: null,
+  }
   if (fechas.length === 0) {
     return {
       wqi: {},
@@ -250,8 +271,10 @@ function buildSerieFromSnapshot(
   for (const f of fechas) {
     const dia = dias[f]
     const visible = f <= fechaReunion
-    // WQI/FGLI/SCL: solo hasta la fecha de la reunión (acumulado MTD)
-    wqi[f] = visible ? (dia?.wqi ?? null) : null
+    // WQI: hasta el día ANTERIOR a la reunión — la reunión analiza el
+    // valor de ayer, no el del día en curso (recién arranca).
+    wqi[f] = f < fechaReunion ? (dia?.wqi ?? null) : null
+    // FGLI/SCL: hasta la fecha de la reunión inclusive (acumulado MTD)
     fgli[f] = visible ? (dia?.fgli ?? null) : null
     scl[f] = visible ? (dia?.scl ?? null) : null
     // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
@@ -461,7 +484,8 @@ async function buildSerieLegacy(
   const scl: Record<string, number | null> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
-    wqi[f] = visible ? (serieRes?.wqi?.[f] ?? null) : null
+    // WQI: hasta el día anterior a la reunión (analiza el valor de ayer).
+    wqi[f] = f < fechaReunion ? (serieRes?.wqi?.[f] ?? null) : null
     fgli[f] = visible ? (serieRes?.fgli?.[f] ?? null) : null
     scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
@@ -520,8 +544,10 @@ async function fetchSerieExtra(
   targets: WarehouseTargets
 }> {
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
+  const year = partes[0]
+  const month = partes[1]
   const res = await fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
-    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${partes[0]}&month=${partes[1]}`,
+    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
   )
 
   const roturas: Record<string, number | null> = {}
@@ -532,13 +558,24 @@ async function fetchSerieExtra(
     faltantes[f] = visible ? (res?.faltantes?.[f] ?? null) : null
   }
 
+  // Target de WQI (PPM): HL de roturas presupuestadas / HL de ventas
+  // esperadas del mes × 1M. Las roturas presupuestadas vienen del endpoint;
+  // las ventas esperadas, de la tabla fija del presupuesto.
+  const roturasTarget = res?.targets?.roturas ?? null
+  const ventasHl = VENTAS_HL_PRESUPUESTO[year]?.[month] ?? null
+  const wqiTarget =
+    roturasTarget !== null && ventasHl
+      ? Math.round((roturasTarget / ventasHl) * 1_000_000)
+      : null
+
   return {
     roturas,
     faltantes,
     targets: {
       fgli: res?.targets?.fgli ?? null,
-      roturas: res?.targets?.roturas ?? null,
+      roturas: roturasTarget,
       faltantes: res?.targets?.faltantes ?? null,
+      wqi: wqiTarget,
     },
   }
 }
