@@ -742,9 +742,9 @@ export function ReunionDetallePageClient({
   const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
-  // Detalle del día seleccionado al hacer click en celdas Precision picking
-  // o Productividad de picking (solo warehouse). Abre el sub-cuadro con los 3
-  // operadores Troli/Galvez/Ovejero para esa fecha.
+  // Detalle del día al hacer click en la celda Productividad de picking:
+  // abre el sub-cuadro con los 3 operadores Troli/Galvez/Ovejero. La fila
+  // Precisión de picking NO abre este detalle (es un valor global del día).
   const [aperturaPickingFecha, setAperturaPickingFecha] = useState<string | null>(
     null,
   )
@@ -1221,7 +1221,6 @@ export function ReunionDetallePageClient({
                           const esChecklist = ind.id === "auto_checklist"
                           const esKm = ind.id === "auto_km_recorridos"
                           const esAperturaPicking =
-                            ind.id === "auto_precision_picking" ||
                             ind.id === "auto_productividad_picking"
                           const clickable =
                             (esRechazosPct ||
