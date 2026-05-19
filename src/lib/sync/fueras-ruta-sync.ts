@@ -15,7 +15,7 @@
  * no acumula.
  */
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { chessLogin, type ChessCredentials } from "@/lib/sync/rechazos-sync"
+import { chessLogin, isPatenteValida, type ChessCredentials } from "@/lib/sync/rechazos-sync"
 import {
   fetchAllClientes,
   fetchPedidosByFechaEntrega,
@@ -90,6 +90,29 @@ export function parseChessDiasToIso(input: unknown): number[] {
     iso.add(n === 1 ? 7 : n - 1)
   }
   return Array.from(iso).sort((a, b) => a - b)
+}
+
+/**
+ * Clasifica el reparto de un pedido para el análisis de fueras de ruta.
+ *
+ *  - "patente":   reparto con estructura de patente real (un vehículo de
+ *    reparto). `isPatenteValida` acepta el sufijo de vuelta `.2`, `.3`, etc.
+ *    (la misma patente sale a la calle más de una vez en el día).
+ *  - "pendiente": pedido todavía SIN reparto asignado — `IdReparto` 0/vacío
+ *    o `Reparto` = "PENDIENTE". Es lo normal en pedidos con fecha de entrega
+ *    futura (aún no se rutearon). Se cuentan igual: el indicador los muestra.
+ *  - "transporte": transporte sin patente con reparto propio (SEGUNDA VUELTA,
+ *    GESTION, TRANSPORTE ALTERNATIVO, REFUERZO, ...). No es una ruta de
+ *    reparto real → se excluye del indicador.
+ */
+export function clasificarReparto(
+  p: { IdReparto?: number | null; Reparto?: string | null },
+): "patente" | "pendiente" | "transporte" {
+  if (isPatenteValida(p.Reparto)) return "patente"
+  const idReparto = Number(p.IdReparto ?? 0) || 0
+  const nombre = String(p.Reparto ?? "").trim().toUpperCase()
+  if (idReparto === 0 || nombre === "" || nombre === "PENDIENTE") return "pendiente"
+  return "transporte"
 }
 
 /**
@@ -196,6 +219,8 @@ export interface SyncFuerasRutaResult {
   pedidos: {
     diasConsultados: number
     pedidosInsertados: number
+    pedidosExcluidos: number
+    pedidosPendientes: number
     itemsTotal: number
     itemsNoAnulados: number
   }
@@ -343,6 +368,8 @@ export async function runFuerasRutaSync(
 
     let diasConsultados = 0
     let pedidosInsertados = 0
+    let pedidosExcluidos = 0
+    let pedidosPendientes = 0
     let itemsTotal = 0
     let itemsNoAnulados = 0
 
@@ -367,6 +394,18 @@ export async function runFuerasRutaSync(
       for (const p of pedidos as ChessPedido[]) {
         const idCli = Number(p.idCliente)
         if (!Number.isFinite(idCli) || idCli <= 0) continue
+
+        // Se cuentan los pedidos con patente real y los que están pendientes
+        // de rutear (típicamente los de fecha de entrega futura). Solo se
+        // excluyen los transportes sin patente (SEGUNDA VUELTA, GESTION,
+        // TRANSPORTE ALTERNATIVO, REFUERZO, ...).
+        const clase = clasificarReparto(p)
+        if (clase === "transporte") {
+          pedidosExcluidos++
+          continue
+        }
+        if (clase === "pendiente") pedidosPendientes++
+
         const elim = String(p.eliminado ?? "").toLowerCase() === "true"
 
         let agg = porCliente.get(idCli)
@@ -439,7 +478,14 @@ export async function runFuerasRutaSync(
       runId,
       rutas: { total: rutasAll.length, preVigentes: rutasPre.length },
       clientes: { total: clientesUnicos.length, conRutaPre, sinRutaPre },
-      pedidos: { diasConsultados, pedidosInsertados, itemsTotal, itemsNoAnulados },
+      pedidos: {
+        diasConsultados,
+        pedidosInsertados,
+        pedidosExcluidos,
+        pedidosPendientes,
+        itemsTotal,
+        itemsNoAnulados,
+      },
       ms: Date.now() - t0,
     }
 

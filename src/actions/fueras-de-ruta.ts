@@ -289,7 +289,7 @@ export async function sincronizarFuerasDeRuta(input: {
 }): Promise<Result<{
   rutas: { total: number; preVigentes: number }
   clientes: { total: number; conRutaPre: number; sinRutaPre: number }
-  pedidos: { diasConsultados: number; pedidosInsertados: number; itemsTotal: number; itemsNoAnulados: number }
+  pedidos: { diasConsultados: number; pedidosInsertados: number; pedidosExcluidos: number; pedidosPendientes: number; itemsTotal: number; itemsNoAnulados: number }
   ms: number
 }>> {
   try {
@@ -305,10 +305,8 @@ export async function sincronizarFuerasDeRuta(input: {
     if (days < 0) return { error: "El rango es inválido: 'desde' posterior a 'hasta'." }
     if (days > 90) return { error: "El rango máximo permitido es 90 días." }
 
-    const today = new Date().toISOString().slice(0, 10)
-    if (input.hasta > today) {
-      return { error: "El 'hasta' no puede ser una fecha futura." }
-    }
+    // Se permite que 'hasta' sea futura: los pedidos con fecha de entrega
+    // posterior a hoy están pendientes de rutear y el indicador los muestra.
 
     const profile = await getProfile()
     const admin = createAdminClient()

@@ -35,6 +35,8 @@ export interface ChessPedido {
   fechaEntrega: string                         // "YYYY-MM-DD"
   idDeposito?: number
   eliminado?: string                           // "false" | "true"
+  IdReparto?: number | null                    // id del reparto asignado
+  Reparto?: string | null                      // patente del vehículo, o nombre del transporte (SEGUNDA VUELTA, GESTION, etc.)
   items: ChessPedidoItem[]
 }
 

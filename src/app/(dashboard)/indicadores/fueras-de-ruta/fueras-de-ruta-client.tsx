@@ -204,7 +204,7 @@ export function FuerasDeRutaClient({
       const { rutas, clientes, pedidos, ms } = res.data
       setSyncMsg({
         tipo: "ok",
-        texto: `Sync OK · ${rutas.preVigentes} rutas PRE · ${clientes.conRutaPre}/${clientes.total} clientes con ruta · ${pedidos.pedidosInsertados} filas pedidos en ${pedidos.diasConsultados} días (${(ms / 1000).toFixed(1)}s)`,
+        texto: `Sync OK · ${rutas.preVigentes} rutas PRE · ${clientes.conRutaPre}/${clientes.total} clientes con ruta · ${pedidos.pedidosInsertados} filas pedidos en ${pedidos.diasConsultados} días · ${pedidos.pedidosPendientes} pendientes · ${pedidos.pedidosExcluidos} transportes sin patente excluidos (${(ms / 1000).toFixed(1)}s)`,
       })
       router.refresh()
     })
