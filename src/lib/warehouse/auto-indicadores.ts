@@ -430,6 +430,7 @@ interface DepositoIndicadoresSerieDiaria {
   scl: Record<string, number | null>
   roturas?: Record<string, number | null>
   faltantes?: Record<string, number | null>
+  precision?: Record<string, number | null>
   targets?: Partial<WarehouseTargets>
 }
 
@@ -541,6 +542,7 @@ async function fetchSerieExtra(
 ): Promise<{
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
+  precision: Record<string, number | null>
   targets: WarehouseTargets
 }> {
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
@@ -552,10 +554,14 @@ async function fetchSerieExtra(
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
+  // Precisión de picking: valor del día (no acumulado, no se oculta el día
+  // en curso). El snapshot no la trae — viene de este endpoint cacheado.
+  const precision: Record<string, number | null> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
     roturas[f] = visible ? (res?.roturas?.[f] ?? null) : null
     faltantes[f] = visible ? (res?.faltantes?.[f] ?? null) : null
+    precision[f] = res?.precision?.[f] ?? null
   }
 
   // Target de WQI (PPM): HL de roturas presupuestadas / HL de ventas
@@ -571,6 +577,7 @@ async function fetchSerieExtra(
   return {
     roturas,
     faltantes,
+    precision,
     targets: {
       fgli: res?.targets?.fgli ?? null,
       roturas: roturasTarget,
