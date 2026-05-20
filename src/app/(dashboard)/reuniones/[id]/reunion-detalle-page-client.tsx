@@ -1228,7 +1228,8 @@ export function ReunionDetallePageClient({
                           const esKm = ind.id === "auto_km_recorridos"
                           const esHorasCalle = ind.id === "auto_horas_calle"
                           const esAperturaPicking =
-                            ind.id === "auto_productividad_picking"
+                            ind.id === "auto_productividad_picking" ||
+                            ind.id === "auto_errores_picking"
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||

@@ -3307,9 +3307,61 @@ export async function getIndicadoresMes(
         }
       }
 
+      // Indicadores con doble vista: cada celda muestra el valor del día
+      // (no acumulado), pero el MTD del indicador toma el último valor
+      // de la serie MTD acumulada del mes. Se usa para WQI/Roturas/
+      // Faltantes/FGLI/SCL en la reunión de logística.
+      function buildDiarioConMtdRow(
+        id: string,
+        nombre: string,
+        unidad: string,
+        porFechaDia: Record<string, number | null>,
+        porFechaMtd: Record<string, number | null>,
+        meta: number | null,
+        mejorSi: "menor" | "mayor" | undefined,
+      ): ReunionIndicadoresMes["indicadores"][number] {
+        const valoresPorFecha: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        for (const f of fechas) {
+          valoresPorFecha[f] = {
+            reunion_id: "auto",
+            valor: porFechaDia[f] ?? null,
+            observacion: null,
+          }
+        }
+        let mtd: number | null = null
+        for (const f of fechas) {
+          if (f > fecha) break
+          const v = porFechaMtd[f]
+          if (v != null && Number.isFinite(v)) mtd = v
+        }
+        return {
+          id,
+          nombre,
+          unidad,
+          meta,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresPorFecha,
+          mtd,
+          auto: true,
+          mejor_si: mejorSi,
+        }
+      }
+
       // Comunes a warehouse + logística
       indicadoresAuto.push(
-        buildAcumuladoRow("auto_wqi", "WQI", "PPM", serie.wqi, serie.targets.wqi, "menor"),
+        buildDiarioConMtdRow(
+          "auto_wqi",
+          "WQI",
+          "PPM",
+          serie.wqi_dia,
+          serie.wqi,
+          serie.targets.wqi,
+          "menor",
+        ),
         buildSerieRow(
           "auto_productividad_picking",
           "Productividad de picking",
@@ -3322,8 +3374,8 @@ export async function getIndicadoresMes(
       )
 
       // Solo logística: Precisión de picking (bultos pickeados vs errores),
-      // y Roturas/Faltantes en HL (acumulado MTD) con target mensual del
-      // presupuesto (bultos × HL/bulto).
+      // errores totales del día con drill por operador,
+      // y Roturas/Faltantes en HL (celdas diarias, MTD acumulado).
       if (tipo === "logistica") {
         indicadoresAuto.push(
           buildSerieRow(
@@ -3332,21 +3384,32 @@ export async function getIndicadoresMes(
             "%",
             serie.precision,
             "promedio",
-            100,
+            99.8,
             "mayor",
           ),
-          buildAcumuladoRow(
+          buildSerieRow(
+            "auto_errores_picking",
+            "Errores de picking",
+            "bultos",
+            serie.errores_dia,
+            "suma",
+            null,
+            "menor",
+          ),
+          buildDiarioConMtdRow(
             "auto_roturas",
             "Roturas",
             "HL",
+            serie.roturas_dia,
             serie.roturas,
             serie.targets.roturas,
             "menor",
           ),
-          buildAcumuladoRow(
+          buildDiarioConMtdRow(
             "auto_faltantes",
             "Faltantes",
             "HL",
+            serie.faltantes_dia,
             serie.faltantes,
             serie.targets.faltantes,
             "menor",
@@ -3357,8 +3420,24 @@ export async function getIndicadoresMes(
       // Solo warehouse (rol de depósito)
       if (tipo === "warehouse") {
         indicadoresAuto.push(
-          buildAcumuladoRow("auto_fgli", "FGLI", "HL", serie.fgli, serie.targets.fgli, "menor"),
-          buildAcumuladoRow("auto_scl", "SCL", "$", serie.scl, null, "menor"),
+          buildDiarioConMtdRow(
+            "auto_fgli",
+            "FGLI",
+            "HL",
+            serie.fgli_dia,
+            serie.fgli,
+            serie.targets.fgli,
+            "menor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_scl",
+            "SCL",
+            "$",
+            serie.scl_dia,
+            serie.scl,
+            serie.targets.scl,
+            "menor",
+          ),
           buildSerieRow(
             "auto_capacidad_utilizada",
             "Capacidad utilizada",
@@ -3374,7 +3453,7 @@ export async function getIndicadoresMes(
             "%",
             serie.precision,
             "promedio",
-            100,
+            99.8,
             "mayor",
           ),
         )

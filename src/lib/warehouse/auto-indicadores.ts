@@ -66,13 +66,15 @@ export interface AperturaPickingDelDia {
   precision_promedio: number | null
 }
 
-/** Targets mensuales: HL para fgli/roturas/faltantes; PPM para wqi. */
+/** Targets mensuales: HL para fgli/roturas/faltantes; PPM para wqi; $ para scl. */
 export interface WarehouseTargets {
   fgli: number | null
   roturas: number | null
   faltantes: number | null
   /** WQI objetivo en PPM = HL roturas presup. / HL ventas esperadas × 1M. */
   wqi: number | null
+  /** SCL objetivo en $ = roturas + faltantes + vencidos del presupuesto $. */
+  scl: number | null
 }
 
 /**
@@ -91,20 +93,28 @@ const VENTAS_HL_PRESUPUESTO: Record<number, Record<number, number>> = {
 
 /** Series que provee el snapshot pre-cocinado (o el fallback legacy). */
 export interface WarehouseSerieBase {
-  /** Por fecha YYYY-MM-DD → valor (o null si no hay dato). */
+  /** Por fecha YYYY-MM-DD → valor (o null si no hay dato). MTD acumulado. */
   wqi: Record<string, number | null>
   fgli: Record<string, number | null>
   scl: Record<string, number | null>
   capacidad: Record<string, number | null>
   precision: Record<string, number | null>
   productividad: Record<string, number | null>
+  /** Errores de picking del día (suma de los 3 operadores). */
+  errores_dia: Record<string, number | null>
 }
 
 export interface WarehouseSerieDiaria extends WarehouseSerieBase {
   /** Sub-series de pérdida para la reunión de logística (acumulado MTD). */
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
-  /** Targets mensuales en HL del mes consultado. */
+  /** Valores DEL DÍA (no acumulado). Para mostrar en cada celda de la grilla. */
+  wqi_dia: Record<string, number | null>
+  fgli_dia: Record<string, number | null>
+  scl_dia: Record<string, number | null>
+  roturas_dia: Record<string, number | null>
+  faltantes_dia: Record<string, number | null>
+  /** Targets mensuales del mes consultado. */
   targets: WarehouseTargets
 }
 
@@ -225,6 +235,7 @@ export async function buildWarehouseSerieDiaria(
     roturas: null,
     faltantes: null,
     wqi: null,
+    scl: null,
   }
   if (fechas.length === 0) {
     return {
@@ -234,8 +245,14 @@ export async function buildWarehouseSerieDiaria(
       capacidad: {},
       precision: {},
       productividad: {},
+      errores_dia: {},
       roturas: {},
       faltantes: {},
+      wqi_dia: {},
+      fgli_dia: {},
+      scl_dia: {},
+      roturas_dia: {},
+      faltantes_dia: {},
       targets: sinTargets,
     }
   }
@@ -248,9 +265,9 @@ export async function buildWarehouseSerieDiaria(
         // pegar a las 4 fuentes originales.
         await buildSerieLegacy(fechas, fechaReunion)
 
-  // roturas/faltantes/targets no están en el snapshot pre-cocinado → se leen
-  // directo de serie-diaria (1 fetch cacheado; en el camino legacy es la
-  // misma URL ya cacheada por fetchJsonSafe).
+  // roturas/faltantes/targets + series diarias no están en el snapshot
+  // pre-cocinado → se leen directo de serie-diaria (1 fetch cacheado;
+  // en el camino legacy es la misma URL ya cacheada por fetchJsonSafe).
   const extra = await fetchSerieExtra(fechas, fechaReunion)
 
   return { ...base, ...extra }
@@ -267,23 +284,44 @@ function buildSerieFromSnapshot(
   const capacidad: Record<string, number | null> = {}
   const precision: Record<string, number | null> = {}
   const productividad: Record<string, number | null> = {}
+  const errores_dia: Record<string, number | null> = {}
 
   for (const f of fechas) {
     const dia = dias[f]
     const visible = f <= fechaReunion
-    // WQI: hasta el día ANTERIOR a la reunión — la reunión analiza el
-    // valor de ayer, no el del día en curso (recién arranca).
-    wqi[f] = f < fechaReunion ? (dia?.wqi ?? null) : null
-    // FGLI/SCL: hasta la fecha de la reunión inclusive (acumulado MTD)
+    // WQI/FGLI/SCL: serie MTD acumulada. Sólo se conserva para que la
+    // columna MTD del indicador tome el último acumulado del mes; las
+    // celdas diarias se renderizan con la serie *_dia (ver fetchSerieExtra).
+    wqi[f] = visible ? (dia?.wqi ?? null) : null
     fgli[f] = visible ? (dia?.fgli ?? null) : null
     scl[f] = visible ? (dia?.scl ?? null) : null
     // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
     capacidad[f] = dia?.capacidad ?? null
-    precision[f] = dia?.precision ?? null
     productividad[f] = dia?.productividad ?? null
+    // Precisión: ocultar el día actual y futuros (aún no se pickeó →
+    // no hay errores cargados, el valor sería falso 100%).
+    precision[f] = f < fechaReunion ? (dia?.precision ?? null) : null
+
+    // Errores del día = suma de errores de los 3 operadores.
+    // Aplicamos la misma máscara que precisión: día actual y futuros
+    // sin valor — no hay carga aún.
+    if (f < fechaReunion && dia?.apertura) {
+      let sumErr = 0
+      let hayDato = false
+      for (const alias of OPERADORES_APERTURA) {
+        const op = dia.apertura[alias]
+        if (op && op.errores !== null && op.errores !== undefined) {
+          sumErr += op.errores
+          hayDato = true
+        }
+      }
+      errores_dia[f] = hayDato ? sumErr : null
+    } else {
+      errores_dia[f] = null
+    }
   }
 
-  return { wqi, fgli, scl, capacidad, precision, productividad }
+  return { wqi, fgli, scl, capacidad, precision, productividad, errores_dia }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -430,6 +468,11 @@ interface DepositoIndicadoresSerieDiaria {
   scl: Record<string, number | null>
   roturas?: Record<string, number | null>
   faltantes?: Record<string, number | null>
+  wqi_dia?: Record<string, number | null>
+  fgli_dia?: Record<string, number | null>
+  scl_dia?: Record<string, number | null>
+  roturas_dia?: Record<string, number | null>
+  faltantes_dia?: Record<string, number | null>
   precision?: Record<string, number | null>
   targets?: Partial<WarehouseTargets>
 }
@@ -485,8 +528,9 @@ async function buildSerieLegacy(
   const scl: Record<string, number | null> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
-    // WQI: hasta el día anterior a la reunión (analiza el valor de ayer).
-    wqi[f] = f < fechaReunion ? (serieRes?.wqi?.[f] ?? null) : null
+    // Serie MTD acumulada — sólo se usa para el MTD del indicador.
+    // Las celdas diarias se renderizan con la serie *_dia (fetchSerieExtra).
+    wqi[f] = visible ? (serieRes?.wqi?.[f] ?? null) : null
     fgli[f] = visible ? (serieRes?.fgli?.[f] ?? null) : null
     scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
@@ -517,6 +561,7 @@ async function buildSerieLegacy(
 
   const precision: Record<string, number | null> = {}
   const productividad: Record<string, number | null> = {}
+  const errores_dia: Record<string, number | null> = {}
   for (const f of fechas) {
     const apertura = computeAperturaLegacy(
       f,
@@ -524,17 +569,37 @@ async function buildSerieLegacy(
       erroresPorFecha.get(f) ?? new Map<string, number>(),
       new Map<OperadorApertura, number | null>(),
     )
-    precision[f] = apertura.precision_promedio
+    // Misma máscara que el path snapshot: precisión y errores ocultos para
+    // el día actual y futuros.
+    precision[f] = f < fechaReunion ? apertura.precision_promedio : null
     productividad[f] = apertura.productividad_promedio_bul_hh
+    if (f < fechaReunion) {
+      const sumErr = apertura.filas.reduce(
+        (acc, fila) =>
+          fila.errores !== null && Number.isFinite(fila.errores)
+            ? acc + (fila.errores ?? 0)
+            : acc,
+        0,
+      )
+      const hayDato = apertura.filas.some((fila) => fila.errores !== null)
+      errores_dia[f] = hayDato ? sumErr : null
+    } else {
+      errores_dia[f] = null
+    }
   }
 
-  return { wqi, fgli, scl, capacidad, precision, productividad }
+  return { wqi, fgli, scl, capacidad, precision, productividad, errores_dia }
 }
 
 /**
- * roturas/faltantes (acumulado MTD, sólo hasta la fecha de reunión) y los
- * targets del mes en HL. Se leen directo de /api/indicadores/serie-diaria
- * porque el snapshot pre-cocinado no los incluye.
+ * Trae de /api/indicadores/serie-diaria:
+ *  - Series MTD acumuladas (roturas/faltantes) para que la columna MTD del
+ *    indicador tome el último acumulado del mes.
+ *  - Series DIARIAS (wqi_dia/fgli_dia/scl_dia/roturas_dia/faltantes_dia) que
+ *    son las que se renderizan en cada celda de la grilla.
+ *  - Precisión del día (ya enmascarada en el snapshot, acá se hace lo mismo
+ *    como red de seguridad para el path legacy).
+ *  - Targets mensuales (HL para roturas/faltantes/fgli, PPM para WQI, $ para SCL).
  */
 async function fetchSerieExtra(
   fechas: string[],
@@ -542,6 +607,11 @@ async function fetchSerieExtra(
 ): Promise<{
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
+  wqi_dia: Record<string, number | null>
+  fgli_dia: Record<string, number | null>
+  scl_dia: Record<string, number | null>
+  roturas_dia: Record<string, number | null>
+  faltantes_dia: Record<string, number | null>
   precision: Record<string, number | null>
   targets: WarehouseTargets
 }> {
@@ -554,14 +624,23 @@ async function fetchSerieExtra(
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
-  // Precisión de picking: valor del día (no acumulado, no se oculta el día
-  // en curso). El snapshot no la trae — viene de este endpoint cacheado.
+  const wqi_dia: Record<string, number | null> = {}
+  const fgli_dia: Record<string, number | null> = {}
+  const scl_dia: Record<string, number | null> = {}
+  const roturas_dia: Record<string, number | null> = {}
+  const faltantes_dia: Record<string, number | null> = {}
   const precision: Record<string, number | null> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
     roturas[f] = visible ? (res?.roturas?.[f] ?? null) : null
     faltantes[f] = visible ? (res?.faltantes?.[f] ?? null) : null
-    precision[f] = res?.precision?.[f] ?? null
+    wqi_dia[f] = visible ? (res?.wqi_dia?.[f] ?? null) : null
+    fgli_dia[f] = visible ? (res?.fgli_dia?.[f] ?? null) : null
+    scl_dia[f] = visible ? (res?.scl_dia?.[f] ?? null) : null
+    roturas_dia[f] = visible ? (res?.roturas_dia?.[f] ?? null) : null
+    faltantes_dia[f] = visible ? (res?.faltantes_dia?.[f] ?? null) : null
+    // Precisión: ocultar día actual y futuros (todavía no se pickeó).
+    precision[f] = f < fechaReunion ? (res?.precision?.[f] ?? null) : null
   }
 
   // Target de WQI (PPM): HL de roturas presupuestadas / HL de ventas
@@ -577,12 +656,18 @@ async function fetchSerieExtra(
   return {
     roturas,
     faltantes,
+    wqi_dia,
+    fgli_dia,
+    scl_dia,
+    roturas_dia,
+    faltantes_dia,
     precision,
     targets: {
       fgli: res?.targets?.fgli ?? null,
       roturas: roturasTarget,
       faltantes: res?.targets?.faltantes ?? null,
       wqi: wqiTarget,
+      scl: res?.targets?.scl ?? null,
     },
   }
 }
