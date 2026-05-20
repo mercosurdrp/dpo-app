@@ -88,6 +88,8 @@ import {
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import { createEvidencia } from "@/actions/gestion"
 import { createClient } from "@/lib/supabase/client"
+import { AvancesSection } from "@/components/planes/avances-section"
+import type { PlanAvanceConAutor } from "@/actions/plan-avances"
 import { ResponsablesMultiPicker } from "@/components/planes/responsables-multi-picker"
 import { ReprogramarDialog } from "@/components/planes/reprogramar-dialog"
 import { CerrarPlanDialog } from "@/components/planes/cerrar-plan-dialog"
@@ -1199,10 +1201,14 @@ export function PlanDetailClient({
   plan: initialPlan,
   currentRole,
   canEditPunto = false,
+  avancesIniciales = [],
+  puedeIntervenirEnAvances = false,
 }: {
   plan: PlanAccionFull
   currentRole: UserRole
   canEditPunto?: boolean
+  avancesIniciales?: PlanAvanceConAutor[]
+  puedeIntervenirEnAvances?: boolean
 }) {
   const router = useRouter()
   const [plan, setPlan] = useState(initialPlan)
@@ -1402,6 +1408,14 @@ export function PlanDetailClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Avances (responder con comentario + archivo/foto, estilo Action Log) */}
+      <AvancesSection
+        planId={plan.id}
+        avancesIniciales={avancesIniciales}
+        estadoActual={plan.estado}
+        puedeIntervenir={puedeIntervenirEnAvances}
+      />
 
       {/* Comentarios */}
       <ComentariosSection
