@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  LayoutGrid,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,11 +39,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  eliminarCategoria,
   eliminarRequisito,
   getSignedUrl,
 } from "@/actions/requisitos-legales"
 import { RequisitoFormDialog } from "@/components/requisitos-legales/requisito-form-dialog"
 import { RenovarDialog } from "@/components/requisitos-legales/renovar-dialog"
+import { CategoriaFormDialog } from "@/components/requisitos-legales/categoria-form-dialog"
 import type {
   EstadoRequisitoLegal,
   Profile,
@@ -363,6 +366,9 @@ export function RequisitosLegalesClient({
   const [renovando, setRenovando] = useState<RequisitoLegalConResponsable | null>(
     null,
   )
+  const [openCategoria, setOpenCategoria] = useState(false)
+  const [editingCategoria, setEditingCategoria] =
+    useState<RequisitoLegalCategoria | null>(null)
 
   const responsablesMap = useMemo(
     () => new Map(responsables.map((r) => [r.id, r.nombre])),
@@ -423,6 +429,25 @@ export function RequisitosLegalesClient({
     })
   }
 
+  function handleEliminarCategoria(c: RequisitoLegalCategoria) {
+    if (
+      !confirm(
+        `¿Eliminar la tarjeta "${c.nombre}"? Solo se puede borrar si no tiene requisitos cargados.`,
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const result = await eliminarCategoria(c.id)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      if (tab === c.id) setTab(categorias[0]?.id ?? "")
+      refrescar()
+    })
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -438,7 +463,22 @@ export function RequisitosLegalesClient({
 
       {/* Matriz general — resumen por categoría */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Matriz general</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">Matriz general</h2>
+          {puedeEditar && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setEditingCategoria(null)
+                setOpenCategoria(true)
+              }}
+            >
+              <LayoutGrid className="mr-2 size-4" />
+              Agregar tarjeta
+            </Button>
+          )}
+        </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {resumenPorCategoria.map(({ categoria, total, counts, cumplimiento, estadoAgregado }) => {
             const colors =
@@ -449,11 +489,18 @@ export function RequisitosLegalesClient({
                   : { bg: "bg-slate-50", border: "border-slate-200",   icon: "text-slate-500",   iconBg: "bg-slate-100",   txt: "text-slate-600",   label: "Sin items",  Icon: ScrollText }
             const Icon = colors.Icon
             return (
-              <button
+              <div
                 key={categoria.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setTab(categoria.id)}
-                className={`group rounded-lg border ${colors.border} ${colors.bg} p-3 text-left transition hover:shadow-md`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    setTab(categoria.id)
+                  }
+                }}
+                className={`group relative cursor-pointer rounded-lg border ${colors.border} ${colors.bg} p-3 text-left transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -506,7 +553,35 @@ export function RequisitosLegalesClient({
                     )}
                   </p>
                 )}
-              </button>
+
+                {puedeEditar && (
+                  <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingCategoria(categoria)
+                        setOpenCategoria(true)
+                      }}
+                      title="Editar tarjeta"
+                      className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-700"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEliminarCategoria(categoria)
+                      }}
+                      title="Eliminar tarjeta"
+                      className="rounded p-1 text-slate-500 hover:bg-white hover:text-red-600"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
@@ -576,6 +651,12 @@ export function RequisitosLegalesClient({
             open={openRenovar}
             onOpenChange={setOpenRenovar}
             requisito={renovando}
+            onSaved={refrescar}
+          />
+          <CategoriaFormDialog
+            open={openCategoria}
+            onOpenChange={setOpenCategoria}
+            categoria={editingCategoria}
             onSaved={refrescar}
           />
         </>

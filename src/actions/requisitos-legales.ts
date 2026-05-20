@@ -44,6 +44,16 @@ async function requireEditor() {
   return profile
 }
 
+function slugify(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+}
+
 // =============================================
 // Lectura
 // =============================================
@@ -163,6 +173,170 @@ export async function getSignedUrl(
 // =============================================
 // Mutaciones de categorías
 // =============================================
+
+export async function crearCategoria(
+  formData: FormData,
+): Promise<Result<RequisitoLegalCategoria>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const nombre = String(formData.get("nombre") ?? "").trim()
+    const tipo_identificador = String(
+      formData.get("tipo_identificador") ?? "ninguno",
+    ).trim() as RequisitoLegalCategoria["tipo_identificador"]
+    const identificador_label =
+      String(formData.get("identificador_label") ?? "").trim() || null
+    const ordenRaw = String(formData.get("orden") ?? "").trim()
+
+    if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
+    if (
+      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
+        tipo_identificador,
+      )
+    ) {
+      return { error: "Tipo de identificador inválido" }
+    }
+
+    let orden: number
+    if (ordenRaw) {
+      const parsed = Number(ordenRaw)
+      if (!Number.isFinite(parsed)) return { error: "Orden inválido" }
+      orden = Math.trunc(parsed)
+    } else {
+      const { data: maxRow } = await supabase
+        .from("requisitos_legales_categorias")
+        .select("orden")
+        .order("orden", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      orden = ((maxRow?.orden as number | undefined) ?? 0) + 10
+    }
+
+    const baseSlug = slugify(nombre) || `tarjeta-${Date.now()}`
+    let slug = baseSlug
+    for (let i = 2; i < 50; i++) {
+      const { data: clash } = await supabase
+        .from("requisitos_legales_categorias")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle()
+      if (!clash) break
+      slug = `${baseSlug}-${i}`
+    }
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_categorias")
+      .insert({
+        nombre,
+        slug,
+        tipo_identificador,
+        identificador_label,
+        orden,
+        activa: true,
+      })
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalCategoria }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error creando tarjeta",
+    }
+  }
+}
+
+export async function actualizarCategoria(
+  id: string,
+  formData: FormData,
+): Promise<Result<RequisitoLegalCategoria>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const nombre = String(formData.get("nombre") ?? "").trim()
+    const tipo_identificador = String(
+      formData.get("tipo_identificador") ?? "ninguno",
+    ).trim() as RequisitoLegalCategoria["tipo_identificador"]
+    const identificador_label =
+      String(formData.get("identificador_label") ?? "").trim() || null
+    const ordenRaw = String(formData.get("orden") ?? "").trim()
+
+    if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
+    if (
+      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
+        tipo_identificador,
+      )
+    ) {
+      return { error: "Tipo de identificador inválido" }
+    }
+
+    const update: Record<string, unknown> = {
+      nombre,
+      tipo_identificador,
+      identificador_label,
+    }
+    if (ordenRaw) {
+      const parsed = Number(ordenRaw)
+      if (!Number.isFinite(parsed)) return { error: "Orden inválido" }
+      update.orden = Math.trunc(parsed)
+    }
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_categorias")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalCategoria }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando tarjeta",
+    }
+  }
+}
+
+export async function eliminarCategoria(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const { count, error: countErr } = await supabase
+      .from("requisitos_legales")
+      .select("id", { count: "exact", head: true })
+      .eq("categoria_id", id)
+    if (countErr) return { error: countErr.message }
+    if ((count ?? 0) > 0) {
+      return {
+        error: `No se puede eliminar: la tarjeta tiene ${count} requisito${
+          count === 1 ? "" : "s"
+        } cargado${count === 1 ? "" : "s"}. Mové o eliminá los items primero.`,
+      }
+    }
+
+    const { error } = await supabase
+      .from("requisitos_legales_categorias")
+      .delete()
+      .eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando tarjeta",
+    }
+  }
+}
 
 export async function actualizarResponsablePrincipal(
   categoriaId: string,
