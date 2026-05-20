@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { requireRole } from "@/lib/session"
 import type {
   RrhhInasistenciaRow,
   RrhhTotalHorasRow,
@@ -40,6 +41,7 @@ export interface MarcaAsistencia {
   tipo_marca: "E" | "S"
   reloj_marca: string | null
   created_at: string
+  origen?: "biometrica" | "manual"
 }
 
 export type TipoNovedad = "vacaciones" | "licencia_medica" | "ausente" | "pergamino"
@@ -63,6 +65,8 @@ export interface ResumenDiarioEmpleado {
   horas_trabajadas: number | null
   novedad: TipoNovedad | null
   marcas: MarcaAsistencia[]
+  /** true si la primera entrada del día fue cargada manualmente (reloj caído). */
+  entrada_manual: boolean
 }
 
 export interface ResumenMensualEmpleado {
@@ -152,6 +156,7 @@ export async function getMarcasDiarias(
         horas_trabajadas: horasTrabajadas,
         novedad: novedadMap.get(emp.legajo) ?? null,
         marcas: marcasEmp.map((m) => ({ ...m, fecha_marca: normalizarUtc(m.fecha_marca) })),
+        entrada_manual: entradas.length > 0 && entradas[0].origen === "manual",
       }
     })
 
@@ -357,6 +362,255 @@ export async function removeNovedad(
     return { success: true }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error removing novedad" }
+  }
+}
+
+// ===================================================
+// Marca de presente MANUAL (admin / admin_rrhh)
+// Para días en que el reloj biométrico no funcionó. Inserta una marca
+// de Entrada con origen='manual' a las 12:00 del día (simbólico, NO se
+// usa para horas trabajadas: una marca sin salida tiene horas=null).
+// ===================================================
+
+export async function setPresenteManual(
+  legajo: number,
+  fecha: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "admin_rrhh"])
+    const supabase = await createClient()
+
+    // 12:00 ARG del día, formato ISO. La convención de timestamps del
+    // tenant (UTC verdadero vs ARG disfrazada UTC) la respeta el resto
+    // del código al leer; al insertar usamos el mismo string-format que
+    // tienen las marcas de la sync para no inventar otra convención.
+    const fechaMarca = `${fecha}T12:00:00.000Z`
+
+    const { error } = await supabase
+      .from("asistencia_marcas")
+      .insert({
+        codigo_empresa: "MPAMP",
+        legajo,
+        fecha_marca: fechaMarca,
+        tipo_marca: "E",
+        reloj_marca: "MANUAL",
+        origen: "manual",
+        creado_por: profile.id,
+        creado_en: new Date().toISOString(),
+      })
+
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error marcando presente" }
+  }
+}
+
+export async function quitarPresenteManual(
+  legajo: number,
+  fecha: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "admin_rrhh"])
+    const supabase = await createClient()
+
+    // Borra solo las marcas manuales del día — nunca las biométricas.
+    const desde = `${fecha}T00:00:00.000Z`
+    const hasta = `${fecha}T23:59:59.999Z`
+    const { error } = await supabase
+      .from("asistencia_marcas")
+      .delete()
+      .eq("legajo", legajo)
+      .eq("origen", "manual")
+      .gte("fecha_marca", desde)
+      .lte("fecha_marca", hasta)
+
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error quitando presente manual" }
+  }
+}
+
+// ===================================================
+// Ausentismo: serie diaria + detalle por persona del mes
+// Para el indicador "Ausentismo" en la reunión de logística (Depósito +
+// Distribución). Cuenta empleados con novedad 'ausente' o 'licencia_medica'
+// — sin marca biométrica NI manual cuenta como ausente implícito sólo si
+// no es fin de semana y no hay otra novedad.
+// ===================================================
+
+export interface AusentismoPersona {
+  legajo: number
+  nombre: string
+  sector: string
+  /** 'licencia_medica' | 'ausente' (incluye implícitos por no fichar). */
+  tipo: "licencia_medica" | "ausente"
+  observaciones: string | null
+}
+
+export interface AusentismoSerie {
+  /** Sectores incluidos en el cálculo (info, para la UI). */
+  sectores: string[]
+  /** Por fecha YYYY-MM-DD → cantidad de ausentes + licencias médicas. null si
+   *  la fecha es futura (no hay info aún). */
+  por_fecha: Record<string, number | null>
+  /** Detalle por fecha para el drill-down. */
+  detalle_por_fecha: Record<string, AusentismoPersona[]>
+}
+
+export async function getAusentismoDelDia(
+  fecha: string,
+  sectores: string[] = ["Depósito", "Distribución"],
+): Promise<{ data: AusentismoPersona[] } | { error: string }> {
+  const partes = fecha.split("-").map((s) => parseInt(s, 10))
+  if (partes.length !== 3 || !partes.every(Number.isFinite)) {
+    return { error: "Fecha inválida" }
+  }
+  const res = await getAusentismoSerie(partes[1], partes[0], sectores)
+  if ("error" in res) return res
+  return { data: res.data.detalle_por_fecha[fecha] ?? [] }
+}
+
+export async function getAusentismoSerie(
+  mes: number,
+  anio: number,
+  sectores: string[] = ["Depósito", "Distribución"],
+): Promise<{ data: AusentismoSerie } | { error: string }> {
+  try {
+    const supabase = await createClient()
+
+    const ultimoDia = new Date(anio, mes, 0).getDate()
+    const mm = String(mes).padStart(2, "0")
+    const fechaDesde = `${anio}-${mm}-01`
+    const fechaHasta = `${anio}-${mm}-${String(ultimoDia).padStart(2, "0")}`
+
+    const [empleadosRes, novedadesRes, marcasRes] = await Promise.all([
+      supabase
+        .from("empleados")
+        .select("legajo, nombre, sector")
+        .eq("activo", true)
+        .in("sector", sectores),
+      // Traemos TODAS las novedades del mes para los empleados (no sólo
+      // ausente/licencia): vacaciones y pergamino justifican la ausencia
+      // implícita y NO deben sumar al indicador.
+      supabase
+        .from("asistencia_novedades")
+        .select("legajo, fecha, tipo, observaciones")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta),
+      supabase
+        .from("asistencia_marcas")
+        .select("legajo, fecha_marca")
+        .eq("tipo_marca", "E")
+        .gte("fecha_marca", `${fechaDesde}T00:00:00`)
+        .lte("fecha_marca", `${fechaHasta}T23:59:59`),
+    ])
+
+    if (empleadosRes.error) return { error: empleadosRes.error.message }
+    if (novedadesRes.error) return { error: novedadesRes.error.message }
+    if (marcasRes.error) return { error: marcasRes.error.message }
+
+    const empleados = (empleadosRes.data ?? []) as Array<{
+      legajo: number
+      nombre: string
+      sector: string
+    }>
+    const empleadoByLegajo = new Map(empleados.map((e) => [e.legajo, e]))
+
+    // Set de empleado|fecha con marca de entrada (= vino, ya sea biométrica o manual).
+    const conMarca = new Set<string>()
+    for (const m of (marcasRes.data ?? []) as Array<{ legajo: number; fecha_marca: string }>) {
+      const f = m.fecha_marca.slice(0, 10)
+      if (empleadoByLegajo.has(m.legajo)) conMarca.add(`${m.legajo}|${f}`)
+    }
+
+    // Novedades del mes (todas: ausente, licencia, vacaciones, pergamino).
+    const novedadByEmpFecha = new Map<
+      string,
+      { tipo: TipoNovedad; observaciones: string | null }
+    >()
+    for (const n of (novedadesRes.data ?? []) as Array<{
+      legajo: number
+      fecha: string
+      tipo: TipoNovedad
+      observaciones: string | null
+    }>) {
+      novedadByEmpFecha.set(`${n.legajo}|${n.fecha}`, {
+        tipo: n.tipo,
+        observaciones: n.observaciones,
+      })
+    }
+
+    // Recorrer día por día del mes y armar el detalle.
+    const por_fecha: Record<string, number | null> = {}
+    const detalle_por_fecha: Record<string, AusentismoPersona[]> = {}
+    const hoyIso = new Date().toISOString().slice(0, 10)
+
+    for (let d = 1; d <= ultimoDia; d++) {
+      const fecha = `${anio}-${mm}-${String(d).padStart(2, "0")}`
+      // Futuro: no hay info aún.
+      if (fecha > hoyIso) {
+        por_fecha[fecha] = null
+        continue
+      }
+      // Domingo: no laborable en Pampeana, no se cuenta ausentismo
+      // (igual que el cálculo de días laborales en /asistencia).
+      const diaSemana = new Date(`${fecha}T12:00:00Z`).getUTCDay()
+      if (diaSemana === 0) {
+        por_fecha[fecha] = null
+        continue
+      }
+      const personas: AusentismoPersona[] = []
+      for (const emp of empleados) {
+        const nov = novedadByEmpFecha.get(`${emp.legajo}|${fecha}`)
+        const tieneMarca = conMarca.has(`${emp.legajo}|${fecha}`)
+
+        if (nov?.tipo === "licencia_medica") {
+          personas.push({
+            legajo: emp.legajo,
+            nombre: emp.nombre,
+            sector: emp.sector,
+            tipo: "licencia_medica",
+            observaciones: nov.observaciones,
+          })
+        } else if (nov?.tipo === "ausente") {
+          personas.push({
+            legajo: emp.legajo,
+            nombre: emp.nombre,
+            sector: emp.sector,
+            tipo: "ausente",
+            observaciones: nov.observaciones,
+          })
+        } else if (!nov && !tieneMarca) {
+          // Sin marca + sin ninguna novedad: ausente implícito. El admin
+          // puede revertirlo cargando una marca manual ("Marcar presente")
+          // o una novedad de vacaciones/pergamino, según corresponda.
+          personas.push({
+            legajo: emp.legajo,
+            nombre: emp.nombre,
+            sector: emp.sector,
+            tipo: "ausente",
+            observaciones: null,
+          })
+        }
+        // vacaciones / pergamino: justifican la ausencia, no suman.
+      }
+      por_fecha[fecha] = personas.length
+      detalle_por_fecha[fecha] = personas
+    }
+
+    return {
+      data: {
+        sectores,
+        por_fecha,
+        detalle_por_fecha,
+      },
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error calculando ausentismo",
+    }
   }
 }
 

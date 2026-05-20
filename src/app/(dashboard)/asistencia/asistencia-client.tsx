@@ -35,7 +35,8 @@ import {
   TrendingUp,
 } from "lucide-react"
 import type { ResumenDiarioEmpleado, ResumenMensualEmpleado, MarcaAsistencia, TipoNovedad } from "@/actions/asistencia"
-import { getMarcasDiarias, getResumenMensual, setNovedad, removeNovedad } from "@/actions/asistencia"
+import { getMarcasDiarias, getResumenMensual, setNovedad, removeNovedad, setPresenteManual, quitarPresenteManual } from "@/actions/asistencia"
+import type { UserRole } from "@/types/database"
 import type { ReunionKpis, ReunionResumenMensual } from "@/actions/reunion-preruta"
 import { getReunionKpis, getReunionResumenMensual } from "@/actions/reunion-preruta"
 import { ReportesRrhhTab } from "@/components/asistencia/reportes-rrhh-tab"
@@ -103,9 +104,11 @@ interface Props {
   fechaInicial: string
   mesInicial: number
   anioInicial: number
+  userRole: UserRole
 }
 
-export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunionMensual, fechaInicial, mesInicial, anioInicial }: Props) {
+export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunionMensual, fechaInicial, mesInicial, anioInicial, userRole }: Props) {
+  const esAdmin = userRole === "admin" || userRole === "admin_rrhh"
   const [tab, setTab] = useState("diaria")
   const [fecha, setFecha] = useState(fechaInicial)
   const [mes, setMes] = useState(mesInicial)
@@ -163,6 +166,18 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
     }
     const res = await getMarcasDiarias(fecha)
     if ("data" in res) setDiariaData(res.data)
+  }
+
+  async function handlePresenteManual(legajo: number, quitar: boolean) {
+    const res = quitar
+      ? await quitarPresenteManual(legajo, fecha)
+      : await setPresenteManual(legajo, fecha)
+    if ("error" in res) {
+      alert(res.error)
+      return
+    }
+    const recargar = await getMarcasDiarias(fecha)
+    if ("data" in recargar) setDiariaData(recargar.data)
   }
 
   // Reunión pre-ruta handlers
@@ -382,7 +397,47 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                               {emp.sector}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-mono text-sm">{formatHora(emp.primera_entrada)}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {emp.primera_entrada === null ? (
+                              esAdmin && !emp.novedad ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={isPending}
+                                  onClick={() => handlePresenteManual(emp.legajo, false)}
+                                >
+                                  Marcar presente
+                                </Button>
+                              ) : (
+                                "—"
+                              )
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                {formatHora(emp.primera_entrada)}
+                                {emp.entrada_manual && (
+                                  esAdmin ? (
+                                    <button
+                                      type="button"
+                                      title="Marca manual — clic para quitar"
+                                      className="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-200"
+                                      onClick={() => handlePresenteManual(emp.legajo, true)}
+                                      disabled={isPending}
+                                    >
+                                      M
+                                    </button>
+                                  ) : (
+                                    <span
+                                      title="Marca manual"
+                                      className="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700"
+                                    >
+                                      M
+                                    </span>
+                                  )
+                                )}
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className="font-mono text-sm">{formatHora(emp.ultima_salida)}</TableCell>
                           <TableCell className="text-right">
                             <HorasBadge horas={emp.horas_trabajadas} />

@@ -1,8 +1,10 @@
 import { getMarcasDiarias, getResumenMensual, getUltimasMarcas } from "@/actions/asistencia"
 import { getReunionKpis, getReunionResumenMensual } from "@/actions/reunion-preruta"
+import { requireAuth } from "@/lib/session"
 import { AsistenciaClient } from "./asistencia-client"
 
 export default async function AsistenciaPage() {
+  const profile = await requireAuth()
   const hoy = new Date().toISOString().slice(0, 10)
   const mes = new Date().getMonth() + 1
   const anio = new Date().getFullYear()
@@ -25,6 +27,7 @@ export default async function AsistenciaPage() {
       fechaInicial={hoy}
       mesInicial={mes}
       anioInicial={anio}
+      userRole={profile.role}
     />
   )
 }

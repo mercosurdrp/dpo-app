@@ -17,6 +17,7 @@ import {
   type AperturaPickingDelDia,
   type OperadorApertura,
 } from "@/lib/warehouse/auto-indicadores"
+import { getAusentismoSerie } from "@/actions/asistencia"
 import type {
   Profile,
   TipoReunion,
@@ -3377,6 +3378,13 @@ export async function getIndicadoresMes(
       // errores totales del día con drill por operador,
       // y Roturas/Faltantes en HL (celdas diarias, MTD acumulado).
       if (tipo === "logistica") {
+        // Ausentismo del mes (Depósito + Distribución), valor del día.
+        // Drill por día desde la grilla muestra quién está ausente.
+        const ausentismoRes = await getAusentismoSerie(mes, anio)
+        const ausentismoPorFecha = "data" in ausentismoRes
+          ? ausentismoRes.data.por_fecha
+          : {}
+
         indicadoresAuto.push(
           buildSerieRow(
             "auto_precision_picking",
@@ -3412,6 +3420,15 @@ export async function getIndicadoresMes(
             serie.faltantes_dia,
             serie.faltantes,
             serie.targets.faltantes,
+            "menor",
+          ),
+          buildSerieRow(
+            "auto_ausentismo",
+            "Ausentismo",
+            "personas",
+            ausentismoPorFecha,
+            "suma",
+            null,
             "menor",
           ),
         )

@@ -56,6 +56,7 @@ import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detall
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
+import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
@@ -750,6 +751,10 @@ export function ReunionDetallePageClient({
     null,
   )
 
+  // Detalle del día al hacer click en la celda Ausentismo: lista de personas
+  // ausentes / con licencia médica de los sectores Depósito + Distribución.
+  const [ausentismoFecha, setAusentismoFecha] = useState<string | null>(null)
+
   // Detalle del día al hacer click en la celda del indicador Checklist:
   // unidades liberadas con sus ítems en falla + las que salieron sin checklist.
   const [checklistDetalleFecha, setChecklistDetalleFecha] = useState<
@@ -1230,6 +1235,7 @@ export function ReunionDetallePageClient({
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking" ||
                             ind.id === "auto_errores_picking"
+                          const esAusentismo = ind.id === "auto_ausentismo"
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -1238,7 +1244,8 @@ export function ReunionDetallePageClient({
                               esChecklist ||
                               esKm ||
                               esHorasCalle ||
-                              esAperturaPicking) &&
+                              esAperturaPicking ||
+                              esAusentismo) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -1249,6 +1256,7 @@ export function ReunionDetallePageClient({
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
+                            else if (esAusentismo) setAusentismoFecha(f)
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -1571,6 +1579,14 @@ export function ReunionDetallePageClient({
         fecha={aperturaPickingFecha}
         puedeEditar={puedeEditarTablero}
         onChange={refrescar}
+      />
+
+      <AusentismoDetalleDiaDialog
+        open={ausentismoFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setAusentismoFecha(null)
+        }}
+        fecha={ausentismoFecha}
       />
 
       <ChecklistDetalleDiaDialog
