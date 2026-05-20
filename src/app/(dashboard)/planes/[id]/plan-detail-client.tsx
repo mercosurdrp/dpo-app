@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useTransition } from "react"
+import { useState, useRef, useTransition, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -1517,6 +1517,13 @@ function ReprogramacionesSection({
   )
 }
 
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp"]
+function esArchivoImagen(a: DpoArchivo): boolean {
+  if (a.mime_type?.startsWith("image/")) return true
+  const ext = (a.file_ext ?? "").toLowerCase().replace(/^\./, "")
+  return IMAGE_EXTS.includes(ext)
+}
+
 function ArchivosDpoSection({
   planId,
   archivos: initialArchivos,
@@ -1531,6 +1538,29 @@ function ArchivosDpoSection({
   const [results, setResults] = useState<DpoArchivo[]>([])
   const [searching, setSearching] = useState(false)
   const [linking, startLinking] = useTransition()
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(null)
+
+  useEffect(() => {
+    const pendientes = archivos.filter(
+      (a) => esArchivoImagen(a) && !imageUrls[a.id]
+    )
+    if (pendientes.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const updates: Record<string, string> = {}
+      for (const a of pendientes) {
+        const r = await getDownloadUrl({ archivo_id: a.id })
+        if ("data" in r) updates[a.id] = r.data.url
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setImageUrls((prev) => ({ ...prev, ...updates }))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [archivos, imageUrls])
 
   async function runSearch(q: string) {
     setSearching(true)
@@ -1613,7 +1643,24 @@ function ArchivosDpoSection({
                 className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
               >
                 <div className="flex flex-1 items-center gap-3 min-w-0">
-                  <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                  {esArchivoImagen(a) && imageUrls[a.id] ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightbox({ url: imageUrls[a.id], titulo: a.titulo })
+                      }
+                      className="shrink-0 overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                      title="Ver imagen"
+                    >
+                      <img
+                        src={imageUrls[a.id]}
+                        alt={a.titulo}
+                        className="h-14 w-14 object-cover"
+                      />
+                    </button>
+                  ) : (
+                    <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="truncate text-sm font-medium">{a.titulo}</p>
                     <p className="truncate text-xs text-slate-500">
@@ -1698,6 +1745,24 @@ function ArchivosDpoSection({
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={lightbox !== null}
+        onOpenChange={(o) => !o && setLightbox(null)}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{lightbox?.titulo ?? "Vista previa"}</DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <img
+              src={lightbox.url}
+              alt={lightbox.titulo}
+              className="h-auto max-h-[80vh] w-full rounded object-contain"
+            />
+          )}
         </DialogContent>
       </Dialog>
     </Card>
