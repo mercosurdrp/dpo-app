@@ -49,7 +49,10 @@ function matchOperador(
 export interface OperadorAperturaRow {
   operador: OperadorApertura
   bultos: number | null
+  /** Bultos involucrados en errores (col "CANTIDAD DE BULTOS" del Sheet). */
   errores: number | null
+  /** Cantidad de errores = filas del Sheet "Errores picking" del operador. */
+  errores_count: number | null
   /** 0..1 (donde 1 = sin errores). null si no hay bultos. */
   precision: number | null
   bul_hh_auto: number | null
@@ -100,7 +103,7 @@ export interface WarehouseSerieBase {
   capacidad: Record<string, number | null>
   precision: Record<string, number | null>
   productividad: Record<string, number | null>
-  /** Errores de picking del día (suma de los 3 operadores). */
+  /** Cantidad de errores de picking del día (filas del Sheet, cada fila = 1 error). */
   errores_dia: Record<string, number | null>
 }
 
@@ -114,6 +117,8 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
   scl_dia: Record<string, number | null>
   roturas_dia: Record<string, number | null>
   faltantes_dia: Record<string, number | null>
+  /** Errores por operador por día (para el drill-down). { fecha: { Troli/Galvez/Ovejero: count } } */
+  errores_por_operador_dia: Record<string, Record<string, number>>
   /** Targets mensuales del mes consultado. */
   targets: WarehouseTargets
 }
@@ -253,6 +258,7 @@ export async function buildWarehouseSerieDiaria(
       scl_dia: {},
       roturas_dia: {},
       faltantes_dia: {},
+      errores_por_operador_dia: {},
       targets: sinTargets,
     }
   }
@@ -302,24 +308,10 @@ function buildSerieFromSnapshot(
     // no hay errores cargados, el valor sería falso 100%).
     precision[f] = f < fechaReunion ? (dia?.precision ?? null) : null
 
-    // Errores del día = suma de errores de los 3 operadores. Cantidad
-    // entera por definición — si el Sheet trae decimal (dato mal cargado),
-    // redondeamos al entero más cercano.
-    // Misma máscara que precisión: día actual y futuros sin valor.
-    if (f < fechaReunion && dia?.apertura) {
-      let sumErr = 0
-      let hayDato = false
-      for (const alias of OPERADORES_APERTURA) {
-        const op = dia.apertura[alias]
-        if (op && op.errores !== null && op.errores !== undefined) {
-          sumErr += Math.round(op.errores)
-          hayDato = true
-        }
-      }
-      errores_dia[f] = hayDato ? sumErr : null
-    } else {
-      errores_dia[f] = null
-    }
+    // errores_dia (cantidad de errores) lo provee fetchSerieExtra desde
+    // el endpoint serie-diaria (cuenta filas del Sheet). El snapshot
+    // pre-cocinado expone `op.errores` que es BULTOS errados, no conteo.
+    errores_dia[f] = null
   }
 
   return { wqi, fgli, scl, capacidad, precision, productividad, errores_dia }
@@ -333,11 +325,37 @@ export async function buildAperturaPickingDelDia(
   fecha: string,
   overridesHlHh: Map<OperadorApertura, number | null>,
 ): Promise<AperturaPickingDelDia> {
+  // Conteo de errores por operador (= filas del Sheet). Se enriquece
+  // sobre la apertura, que el snapshot expone con bultos errados.
+  const erroresPorOpPromise = fetchErroresCountPorOperador(fecha)
   const snap = await fetchSnapshot()
-  if (snap && snap.dias && snap.dias[fecha]) {
-    return buildAperturaFromSnapshot(fecha, snap.dias[fecha], overridesHlHh)
+  const base =
+    snap && snap.dias && snap.dias[fecha]
+      ? buildAperturaFromSnapshot(fecha, snap.dias[fecha], overridesHlHh)
+      : await buildAperturaLegacy(fecha, overridesHlHh)
+  const erroresPorOp = await erroresPorOpPromise
+  if (erroresPorOp) {
+    for (const fila of base.filas) {
+      const c = erroresPorOp[fila.operador]
+      fila.errores_count = typeof c === "number" ? c : 0
+    }
   }
-  return buildAperturaLegacy(fecha, overridesHlHh)
+  return base
+}
+
+/** Trae { Troli, Galvez, Ovejero } con la cantidad de errores (= filas
+ *  del Sheet "Errores picking") de un día puntual. */
+async function fetchErroresCountPorOperador(
+  fecha: string,
+): Promise<Record<string, number> | null> {
+  const partes = fecha.split("-").map((s) => parseInt(s, 10))
+  const year = partes[0]
+  const month = partes[1]
+  if (!year || !month) return null
+  const res = await fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
+    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+  )
+  return res?.errores_count_por_operador_dia?.[fecha] ?? null
 }
 
 function buildAperturaFromSnapshot(
@@ -362,6 +380,7 @@ function buildAperturaFromSnapshot(
       operador: alias,
       bultos,
       errores,
+      errores_count: null,
       precision,
       bul_hh_auto,
       bul_hh_manual: manual,
@@ -480,6 +499,8 @@ interface DepositoIndicadoresSerieDiaria {
   roturas_dia?: Record<string, number | null>
   faltantes_dia?: Record<string, number | null>
   precision?: Record<string, number | null>
+  errores_count_dia?: Record<string, number>
+  errores_count_por_operador_dia?: Record<string, Record<string, number>>
   targets?: Partial<WarehouseTargets>
 }
 
@@ -575,25 +596,13 @@ async function buildSerieLegacy(
       erroresPorFecha.get(f) ?? new Map<string, number>(),
       new Map<OperadorApertura, number | null>(),
     )
-    // Misma máscara que el path snapshot: precisión y errores ocultos para
-    // el día actual y futuros.
+    // Misma máscara que el path snapshot: precisión oculta para día
+    // actual y futuros.
     precision[f] = f < fechaReunion ? apertura.precision_promedio : null
     productividad[f] = apertura.productividad_promedio_bul_hh
-    if (f < fechaReunion) {
-      // Errores son enteros por definición — redondeamos por si el Sheet
-      // trae decimal mal cargado.
-      const sumErr = apertura.filas.reduce(
-        (acc, fila) =>
-          fila.errores !== null && Number.isFinite(fila.errores)
-            ? acc + Math.round(fila.errores ?? 0)
-            : acc,
-        0,
-      )
-      const hayDato = apertura.filas.some((fila) => fila.errores !== null)
-      errores_dia[f] = hayDato ? sumErr : null
-    } else {
-      errores_dia[f] = null
-    }
+    // errores_dia (conteo) lo provee fetchSerieExtra desde el endpoint
+    // serie-diaria (cuenta filas del Sheet).
+    errores_dia[f] = null
   }
 
   return { wqi, fgli, scl, capacidad, precision, productividad, errores_dia }
@@ -621,6 +630,8 @@ async function fetchSerieExtra(
   roturas_dia: Record<string, number | null>
   faltantes_dia: Record<string, number | null>
   precision: Record<string, number | null>
+  errores_dia: Record<string, number | null>
+  errores_por_operador_dia: Record<string, Record<string, number>>
   targets: WarehouseTargets
 }> {
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
@@ -638,6 +649,8 @@ async function fetchSerieExtra(
   const roturas_dia: Record<string, number | null> = {}
   const faltantes_dia: Record<string, number | null> = {}
   const precision: Record<string, number | null> = {}
+  const errores_dia: Record<string, number | null> = {}
+  const errores_por_operador_dia: Record<string, Record<string, number>> = {}
   for (const f of fechas) {
     const visible = f <= fechaReunion
     roturas[f] = visible ? (res?.roturas?.[f] ?? null) : null
@@ -647,8 +660,16 @@ async function fetchSerieExtra(
     scl_dia[f] = visible ? (res?.scl_dia?.[f] ?? null) : null
     roturas_dia[f] = visible ? (res?.roturas_dia?.[f] ?? null) : null
     faltantes_dia[f] = visible ? (res?.faltantes_dia?.[f] ?? null) : null
-    // Precisión: ocultar día actual y futuros (todavía no se pickeó).
+    // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó).
     precision[f] = f < fechaReunion ? (res?.precision?.[f] ?? null) : null
+    if (f < fechaReunion) {
+      const cnt = res?.errores_count_dia?.[f]
+      errores_dia[f] = typeof cnt === "number" ? cnt : null
+      const porOp = res?.errores_count_por_operador_dia?.[f]
+      if (porOp) errores_por_operador_dia[f] = porOp
+    } else {
+      errores_dia[f] = null
+    }
   }
 
   // Target de WQI (PPM): HL de roturas presupuestadas / HL de ventas
@@ -670,6 +691,8 @@ async function fetchSerieExtra(
     roturas_dia,
     faltantes_dia,
     precision,
+    errores_dia,
+    errores_por_operador_dia,
     targets: {
       fgli: res?.targets?.fgli ?? null,
       roturas: roturasTarget,
@@ -740,6 +763,7 @@ function computeAperturaLegacy(
       operador: alias,
       bultos: null,
       errores: erroresVal,
+      errores_count: null,
       precision,
       bul_hh_auto,
       bul_hh_manual: manual,

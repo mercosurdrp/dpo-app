@@ -169,6 +169,7 @@ export function AperturaPickingDetalleDiaDialog({
                 <TableHead>Operador</TableHead>
                 <TableHead className="text-right">Bultos</TableHead>
                 <TableHead className="text-right">Errores</TableHead>
+                <TableHead className="text-right">Bultos errados</TableHead>
                 <TableHead className="text-right">Precisión</TableHead>
                 <TableHead className="text-right">bul/HH</TableHead>
               </TableRow>
@@ -179,6 +180,9 @@ export function AperturaPickingDetalleDiaDialog({
                   <TableCell className="font-medium">{fila.operador}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatNum(fila.bultos)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatNum(fila.errores_count)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatNum(fila.errores)}
