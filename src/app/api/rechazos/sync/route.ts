@@ -34,8 +34,26 @@ type SyncSource = "cron" | "manual-bearer" | "manual-session" | "script"
 
 export const maxDuration = 300
 
-export async function GET() {
-  return NextResponse.json({ status: "ok", service: "rechazos-sync" })
+// Vercel Cron sólo dispara GET. Convertimos a un POST con body amplio
+// (últimos 7 días → hoy) y delegamos al handler real. Captura los rechazos
+// que Chess publica con 2-4 días de delay. Health-check rápido con `?ping=1`.
+export async function GET(request: NextRequest) {
+  if (request.nextUrl.searchParams.get("ping") === "1") {
+    return NextResponse.json({ status: "ok", service: "rechazos-sync" })
+  }
+  const hoy = new Date()
+  hoy.setUTCHours(0, 0, 0, 0)
+  const desde = new Date(hoy)
+  desde.setUTCDate(desde.getUTCDate() - 7)
+  const proxied = new NextRequest(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify({
+      fechaDesde: desde.toISOString().slice(0, 10),
+      fechaHasta: hoy.toISOString().slice(0, 10),
+    }),
+  })
+  return POST(proxied)
 }
 
 export async function POST(request: NextRequest) {
