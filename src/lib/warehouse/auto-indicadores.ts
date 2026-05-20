@@ -302,16 +302,17 @@ function buildSerieFromSnapshot(
     // no hay errores cargados, el valor sería falso 100%).
     precision[f] = f < fechaReunion ? (dia?.precision ?? null) : null
 
-    // Errores del día = suma de errores de los 3 operadores.
-    // Aplicamos la misma máscara que precisión: día actual y futuros
-    // sin valor — no hay carga aún.
+    // Errores del día = suma de errores de los 3 operadores. Cantidad
+    // entera por definición — si el Sheet trae decimal (dato mal cargado),
+    // redondeamos al entero más cercano.
+    // Misma máscara que precisión: día actual y futuros sin valor.
     if (f < fechaReunion && dia?.apertura) {
       let sumErr = 0
       let hayDato = false
       for (const alias of OPERADORES_APERTURA) {
         const op = dia.apertura[alias]
         if (op && op.errores !== null && op.errores !== undefined) {
-          sumErr += op.errores
+          sumErr += Math.round(op.errores)
           hayDato = true
         }
       }
@@ -347,7 +348,12 @@ function buildAperturaFromSnapshot(
   const filas: OperadorAperturaRow[] = OPERADORES_APERTURA.map((alias) => {
     const op = dia.apertura?.[alias] ?? null
     const bultos = op?.bultos ?? null
-    const errores = op?.errores ?? null
+    // Errores: entero por definición. Si el Sheet trae decimal (carga
+    // erronea), lo redondeamos para que el drill no muestre coma.
+    const errores =
+      op?.errores !== null && op?.errores !== undefined
+        ? Math.round(op.errores)
+        : null
     const precision = op?.precision ?? null
     const bul_hh_auto = op?.bul_hh ?? null
     const manual = overridesHlHh.get(alias) ?? null
@@ -574,10 +580,12 @@ async function buildSerieLegacy(
     precision[f] = f < fechaReunion ? apertura.precision_promedio : null
     productividad[f] = apertura.productividad_promedio_bul_hh
     if (f < fechaReunion) {
+      // Errores son enteros por definición — redondeamos por si el Sheet
+      // trae decimal mal cargado.
       const sumErr = apertura.filas.reduce(
         (acc, fila) =>
           fila.errores !== null && Number.isFinite(fila.errores)
-            ? acc + (fila.errores ?? 0)
+            ? acc + Math.round(fila.errores ?? 0)
             : acc,
         0,
       )
@@ -721,7 +729,8 @@ function computeAperturaLegacy(
 
     const bul_hh_auto =
       bulHhCnt > 0 ? Math.round((bulHhSum / bulHhCnt) * 10) / 10 : null
-    const erroresVal = hayError ? errores : bulHhCnt > 0 ? 0 : null
+    // Errores: entero por definición (redondea si el Sheet trae decimal).
+    const erroresVal = hayError ? Math.round(errores) : bulHhCnt > 0 ? 0 : null
     // Sin raw bultos no podemos calcular precision por operador
     const precision = null
     const manual = overridesHlHh.get(alias) ?? null
