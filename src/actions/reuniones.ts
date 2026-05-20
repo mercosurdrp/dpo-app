@@ -2461,6 +2461,9 @@ export async function getIndicadoresMes(
       NOMBRES_AUTO.add("roturas")
       NOMBRES_AUTO.add("faltantes")
     }
+    if (tipo === "logistica" || tipo === "matinal-distribucion") {
+      NOMBRES_AUTO.add("fte")
+    }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
     )
@@ -3124,6 +3127,74 @@ export async function getIndicadoresMes(
           auto: true,
         })
       }
+
+      // Fila "FTE": personas únicas que tocaron al menos un viaje del día
+      // (chofer + ayudante1 + ayudante2 deduplicados, ignorando "SIN AYUDANTE").
+      // MTD = promedio diario sobre días con egresos.
+      const { data: regsRaw } = await supabase
+        .from("registros_vehiculos")
+        .select("fecha, chofer, ayudante1, ayudante2")
+        .eq("tipo", "egreso")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+
+      const personasPorFecha: Record<string, Set<string>> = {}
+      const normPersona = (s: string | null) => {
+        if (!s) return null
+        const t = s.trim().toUpperCase()
+        if (!t || t === "SIN AYUDANTE") return null
+        return t
+      }
+      for (const r of (regsRaw ?? []) as Array<{
+        fecha: string
+        chofer: string | null
+        ayudante1: string | null
+        ayudante2: string | null
+      }>) {
+        if (!personasPorFecha[r.fecha]) personasPorFecha[r.fecha] = new Set()
+        const set = personasPorFecha[r.fecha]
+        for (const p of [r.chofer, r.ayudante1, r.ayudante2]) {
+          const n = normPersona(p)
+          if (n) set.add(n)
+        }
+      }
+
+      const fteValores: Record<
+        string,
+        {
+          reunion_id: string
+          valor: number | null
+          observacion: string | null
+        } | null
+      > = {}
+      let fteSuma = 0
+      let fteDias = 0
+      for (const f of fechas) {
+        const n = personasPorFecha[f]?.size ?? 0
+        if (n > 0) {
+          fteValores[f] = { reunion_id: "auto", valor: n, observacion: null }
+          if (f <= fecha) {
+            fteSuma += n
+            fteDias++
+          }
+        } else {
+          fteValores[f] = null
+        }
+      }
+      indicadoresAuto.push({
+        id: "auto_fte",
+        nombre: "FTE",
+        unidad: null,
+        meta: null,
+        orden: -1,
+        agregacion: "promedio",
+        valores: fteValores,
+        mtd:
+          fteDias > 0
+            ? Math.round((fteSuma / fteDias) * 10) / 10
+            : null,
+        auto: true,
+      })
     }
 
     // 7d. Indicadores AUTO warehouse + logistica — KPIs del handbook 2025.
