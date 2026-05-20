@@ -3128,35 +3128,32 @@ export async function getIndicadoresMes(
         })
       }
 
-      // Fila "FTE": personas únicas que tocaron al menos un viaje del día
-      // (chofer + ayudante1 + ayudante2 deduplicados, ignorando "SIN AYUDANTE").
-      // MTD = promedio diario sobre días con egresos.
+      // Fila "FTE": personas-viaje por egreso del día.
+      // Por día: Σ (1 chofer + ayud1?1 + ayud2?1) / cantidad de egresos.
+      // MTD: Σ personas-viaje del mes / Σ egresos del mes (= mismo cálculo
+      //   que el card "FTE Promedio" del tablero /indicadores/tml).
       const { data: regsRaw } = await supabase
         .from("registros_vehiculos")
-        .select("fecha, chofer, ayudante1, ayudante2")
+        .select("fecha, ayudante1, ayudante2")
         .eq("tipo", "egreso")
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
 
-      const personasPorFecha: Record<string, Set<string>> = {}
-      const normPersona = (s: string | null) => {
-        if (!s) return null
+      const personasViajeDia: Record<string, number> = {}
+      const egresosDia: Record<string, number> = {}
+      const esAyudante = (s: string | null) => {
+        if (!s) return false
         const t = s.trim().toUpperCase()
-        if (!t || t === "SIN AYUDANTE") return null
-        return t
+        return t.length > 0 && t !== "SIN AYUDANTE"
       }
       for (const r of (regsRaw ?? []) as Array<{
         fecha: string
-        chofer: string | null
         ayudante1: string | null
         ayudante2: string | null
       }>) {
-        if (!personasPorFecha[r.fecha]) personasPorFecha[r.fecha] = new Set()
-        const set = personasPorFecha[r.fecha]
-        for (const p of [r.chofer, r.ayudante1, r.ayudante2]) {
-          const n = normPersona(p)
-          if (n) set.add(n)
-        }
+        const ft = 1 + (esAyudante(r.ayudante1) ? 1 : 0) + (esAyudante(r.ayudante2) ? 1 : 0)
+        personasViajeDia[r.fecha] = (personasViajeDia[r.fecha] ?? 0) + ft
+        egresosDia[r.fecha] = (egresosDia[r.fecha] ?? 0) + 1
       }
 
       const fteValores: Record<
@@ -3167,15 +3164,20 @@ export async function getIndicadoresMes(
           observacion: string | null
         } | null
       > = {}
-      let fteSuma = 0
-      let fteDias = 0
+      let ftePersonasMtd = 0
+      let fteEgresosMtd = 0
       for (const f of fechas) {
-        const n = personasPorFecha[f]?.size ?? 0
-        if (n > 0) {
-          fteValores[f] = { reunion_id: "auto", valor: n, observacion: null }
+        const eg = egresosDia[f] ?? 0
+        if (eg > 0) {
+          const personas = personasViajeDia[f] ?? 0
+          fteValores[f] = {
+            reunion_id: "auto",
+            valor: Math.round((personas / eg) * 100) / 100,
+            observacion: null,
+          }
           if (f <= fecha) {
-            fteSuma += n
-            fteDias++
+            ftePersonasMtd += personas
+            fteEgresosMtd += eg
           }
         } else {
           fteValores[f] = null
@@ -3190,8 +3192,8 @@ export async function getIndicadoresMes(
         agregacion: "promedio",
         valores: fteValores,
         mtd:
-          fteDias > 0
-            ? Math.round((fteSuma / fteDias) * 10) / 10
+          fteEgresosMtd > 0
+            ? Math.round((ftePersonasMtd / fteEgresosMtd) * 100) / 100
             : null,
         auto: true,
       })
