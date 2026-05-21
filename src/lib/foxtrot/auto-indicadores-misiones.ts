@@ -54,6 +54,8 @@ export interface MisionesLogisticaSerie {
   ob: Record<string, number | null>
   /** TLP = promedio por ruta de CEq_entregadas / (2 × horas_ruta). */
   tlp: Record<string, number | null>
+  /** Tiempo por PDV en minutos = promedio por ruta del tiempo de servicio por visita. */
+  tiempo_pdv: Record<string, number | null>
 }
 
 type RouteRow = {
@@ -63,6 +65,10 @@ type RouteRow = {
   tiempo_ruta_minutos: number | null
   total_deliveries: number | null
   deliveries_successful: number | null
+  raw_data: {
+    tml_authorized_stops_seconds?: number | null
+    tml_visited_customers?: number | null
+  } | null
 }
 
 type AttemptRow = {
@@ -157,6 +163,7 @@ export async function buildMisionesLogisticaSerie(
     hl: {},
     ob: {},
     tlp: {},
+    tiempo_pdv: {},
   }
   for (const f of fechas) {
     for (const k of Object.keys(series) as (keyof MisionesLogisticaSerie)[]) {
@@ -168,7 +175,7 @@ export async function buildMisionesLogisticaSerie(
   const { data: routesRaw } = await supabase
     .from("foxtrot_routes")
     .select(
-      "route_id, fecha, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful",
+      "route_id, fecha, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful, raw_data",
     )
     .in("dc_id", dcsActivos)
     .gte("fecha", fechaDesde)
@@ -177,6 +184,9 @@ export async function buildMisionesLogisticaSerie(
   const horasPorRuta = new Map<string, number>() // route_id → horas
   const fechaPorRuta = new Map<string, string>()
   const porFechaRoute = new Map<string, RouteAgg>()
+  // Tiempo por PDV (desde ROUTE_ANALYTICS): seg de paradas autorizadas /
+  // clientes visitados, por ruta; el día = promedio entre rutas.
+  const pdvPorFecha = new Map<string, { sumMin: number; nRutas: number }>()
   for (const r of (routesRaw ?? []) as RouteRow[]) {
     fechaPorRuta.set(r.route_id, r.fecha)
     if (r.tiempo_ruta_minutos != null && r.tiempo_ruta_minutos > 0) {
@@ -199,6 +209,19 @@ export async function buildMisionesLogisticaSerie(
     a.totalDel += r.total_deliveries ?? 0
     a.successDel += r.deliveries_successful ?? 0
     porFechaRoute.set(r.fecha, a)
+
+    const authSec = r.raw_data?.tml_authorized_stops_seconds
+    const visited = r.raw_data?.tml_visited_customers
+    if (authSec != null && visited != null && visited > 0) {
+      const minPorPdv = authSec / visited / 60
+      const acc = pdvPorFecha.get(r.fecha) ?? { sumMin: 0, nRutas: 0 }
+      acc.sumMin += minPorPdv
+      acc.nRutas++
+      pdvPorFecha.set(r.fecha, acc)
+    }
+  }
+  for (const [f, acc] of pdvPorFecha) {
+    if (acc.nRutas > 0) series.tiempo_pdv[f] = round1(acc.sumMin / acc.nRutas)
   }
   for (const [f, a] of porFechaRoute) {
     series.rutas_distribucion[f] = a.rutas
@@ -291,11 +314,11 @@ export async function buildMisionesLogisticaSerie(
   }
 
   for (const [f, b] of bultosPorFecha) {
-    series.bultos_salida_reparto[f] = b.total
+    series.bultos_salida_reparto[f] = Math.round(b.total)
     const denom = b.ok + b.rech
     if (denom > 0) series.pct_rechazo[f] = round2((100 * b.rech) / denom)
   }
-  for (const [f, hl] of hlPorFecha) series.hl[f] = round1(hl)
+  for (const [f, hl] of hlPorFecha) series.hl[f] = Math.round(hl)
 
   // OB y TLP: agregar las CEq por ruta a su fecha.
   type ObTlp = { ceqCargadaSum: number; nRutas: number; tlpSum: number; tlpN: number }
@@ -314,7 +337,7 @@ export async function buildMisionesLogisticaSerie(
     obtlp.set(f, o)
   }
   for (const [f, o] of obtlp) {
-    if (o.nRutas > 0) series.ob[f] = round1(o.ceqCargadaSum / o.nRutas)
+    if (o.nRutas > 0) series.ob[f] = Math.round(o.ceqCargadaSum / o.nRutas)
     if (o.tlpN > 0) series.tlp[f] = round2(o.tlpSum / o.tlpN)
   }
 

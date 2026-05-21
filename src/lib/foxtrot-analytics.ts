@@ -146,21 +146,39 @@ export async function syncFoxtrotRouteAnalytics(
     const header = parseCsvLine(lines[0])
     const idxRoute = header.indexOf("Route ID")
     const idxDep = header.indexOf("Actual Route Departure Time")
+    // Tiempo por PDV: segundos de paradas autorizadas / clientes visitados.
+    const idxAuthSec = header.indexOf("Total Authorized Stops Seconds")
+    const idxVisited = header.indexOf("Total Visited Customers Count")
     if (idxRoute < 0 || idxDep < 0) {
       return { ok: false, rutas_actualizadas: 0, rutas_sin_departure: 0, error: "columnas faltantes en CSV" }
     }
 
-    const departureByRoute = new Map<string, string>()
+    type Metrics = {
+      departure?: string
+      authStopsSec?: number
+      visited?: number
+    }
+    const metricsByRoute = new Map<string, Metrics>()
     let sinDeparture = 0
     for (let i = 1; i < lines.length; i++) {
       const row = parseCsvLine(lines[i])
       const routeId = row[idxRoute]
       if (!routeId) continue
+      const m: Metrics = metricsByRoute.get(routeId) ?? {}
       const iso = arLocalToIso(row[idxDep])
-      if (iso) departureByRoute.set(routeId, iso)
+      if (iso) m.departure = iso
       else sinDeparture++
+      if (idxAuthSec >= 0) {
+        const v = Number(row[idxAuthSec])
+        if (Number.isFinite(v)) m.authStopsSec = v
+      }
+      if (idxVisited >= 0) {
+        const v = Number(row[idxVisited])
+        if (Number.isFinite(v)) m.visited = v
+      }
+      metricsByRoute.set(routeId, m)
     }
-    if (departureByRoute.size === 0) {
+    if (metricsByRoute.size === 0) {
       return { ok: true, rutas_actualizadas: 0, rutas_sin_departure: sinDeparture }
     }
 
@@ -187,18 +205,22 @@ export async function syncFoxtrotRouteAnalytics(
     }
 
     const updates = existentes
-      .filter((r) => departureByRoute.has(r.route_id))
-      .map((r) => ({
-        route_id: r.route_id,
-        dc_id: r.dc_id,
-        fecha: r.fecha,
-        driver_id: r.driver_id,
-        driver_name: r.driver_name,
-        raw_data: {
-          ...(r.raw_data ?? {}),
-          tml_actual_departure: departureByRoute.get(r.route_id),
-        },
-      }))
+      .filter((r) => metricsByRoute.has(r.route_id))
+      .map((r) => {
+        const m = metricsByRoute.get(r.route_id)!
+        const extra: Record<string, unknown> = {}
+        if (m.departure) extra.tml_actual_departure = m.departure
+        if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
+        if (m.visited != null) extra.tml_visited_customers = m.visited
+        return {
+          route_id: r.route_id,
+          dc_id: r.dc_id,
+          fecha: r.fecha,
+          driver_id: r.driver_id,
+          driver_name: r.driver_name,
+          raw_data: { ...(r.raw_data ?? {}), ...extra },
+        }
+      })
 
     for (let i = 0; i < updates.length; i += 500) {
       const { error } = await supabase

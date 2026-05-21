@@ -2475,6 +2475,8 @@ export async function getIndicadoresMes(
         NOMBRES_AUTO.add("bultos totales")
         NOMBRES_AUTO.add("rechazo")
         NOMBRES_AUTO.add("tiempo en ruta")
+        NOMBRES_AUTO.add("horas en ruta")
+        NOMBRES_AUTO.add("tiempo por pdv")
         NOMBRES_AUTO.add("tml")
         NOMBRES_AUTO.add("tlp")
         NOMBRES_AUTO.add("hl")
@@ -3258,123 +3260,106 @@ export async function getIndicadoresMes(
           const ausentismoPorFecha =
             "data" in ausentismoRes ? ausentismoRes.data.por_fecha : {}
 
-          // Tiempo en ruta: la fuente está en minutos, el indicador es en horas.
-          const tiempoEnRutaHs: Record<string, number | null> = {}
-          for (const f of fechas) {
-            const v = ms.tiempo_ruta_promedio[f]
-            tiempoEnRutaHs[f] = v == null ? null : Math.round((v / 60) * 100) / 100
+          // Formato HH:MM a partir de minutos (para "Horas en ruta"). El valor
+          // numérico (minutos) se preserva para que el MTD promedie bien; el
+          // texto formateado se muestra en celda y MTD.
+          const fmtHHMM = (min: number): string => {
+            const tot = Math.max(0, Math.round(min))
+            return `${Math.floor(tot / 60)}:${String(tot % 60).padStart(2, "0")}`
+          }
+          const aplicarHHMM = (
+            row: ReunionIndicadoresMes["indicadores"][number],
+          ) => {
+            for (const f of fechas) {
+              const cell = row.valores[f]
+              if (cell && cell.valor != null) cell.texto = fmtHHMM(cell.valor)
+            }
+            if (row.mtd != null) row.mtd_texto = fmtHHMM(row.mtd)
+            return row
           }
 
-          // Los AUTO de Foxtrot adoptan los nombres ya configurados por el
-          // usuario para reemplazar el manual equivalente (no duplicar).
-          const misAuto = [
+          // Filas AUTO de Foxtrot/Chess (adoptan los nombres que el usuario ya
+          // tenía configurados como manuales, para reemplazarlos sin duplicar).
+          const cantCamionesRow = buildSerieRow(
+            "auto_cantidad_camiones", "Cantidad de camiones", "u.",
+            ms.rutas_distribucion, "promedio", null, "mayor",
+          )
+          const bultosRow = buildSerieRow(
+            "auto_bultos_totales", "Bultos totales", "bultos",
+            ms.bultos_salida_reparto, "suma", null, "mayor",
+          )
+          const hlRow = buildSerieRow(
+            "auto_hl", "HL", "HL", ms.hl, "suma", null, "mayor",
+          )
+          const obRow = buildSerieRow(
+            "auto_ob", "Ocupación de bodega", "CEq", ms.ob, "promedio", null, "mayor",
+          )
+          // OB se muestra sin decimales (el MTD es promedio → redondear).
+          if (obRow.mtd != null) obRow.mtd = Math.round(obRow.mtd)
+          const rechazoRow = buildSerieRow(
+            "auto_rechazo", "Rechazo", "%", ms.pct_rechazo, "promedio", 2, "menor",
+          )
+          const entregasRow = buildSerieRow(
+            "auto_pct_entregas_exitosas", "% Entregas exitosas", "%",
+            ms.pct_entregas_exitosas, "promedio", 98, "mayor",
+          )
+          // Horas en ruta: valor en minutos, display HH:MM.
+          const horasRutaRow = aplicarHHMM(
             buildSerieRow(
-              "auto_cantidad_camiones",
-              "Cantidad de camiones",
-              "u.",
-              ms.rutas_distribucion,
-              "promedio",
-              null,
-              "mayor",
+              "auto_horas_en_ruta", "Horas en ruta", "hs",
+              ms.tiempo_ruta_promedio, "promedio", null, "menor",
             ),
-            buildSerieRow(
-              "auto_bultos_totales",
-              "Bultos totales",
-              "bultos",
-              ms.bultos_salida_reparto,
-              "suma",
-              null,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_hl",
-              "HL",
-              "HL",
-              ms.hl,
-              "suma",
-              null,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_ob",
-              "Ocupación de bodega",
-              "CEq",
-              ms.ob,
-              "promedio",
-              null,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_rechazo",
-              "Rechazo",
-              "%",
-              ms.pct_rechazo,
-              "promedio",
-              2,
-              "menor",
-            ),
-            buildSerieRow(
-              "auto_tiempo_en_ruta",
-              "Tiempo en ruta",
-              "hs",
-              tiempoEnRutaHs,
-              "promedio",
-              null,
-              "menor",
-            ),
-            buildSerieRow(
-              "auto_tlp",
-              "TLP",
-              "CEq/h",
-              ms.tlp,
-              "promedio",
-              null,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_tml",
-              "TML",
-              "min",
-              ms.tml_promedio,
-              "promedio",
-              30,
-              "menor",
-            ),
-            buildSerieRow(
-              "auto_pct_rutas_finalizadas",
-              "% Rutas finalizadas",
-              "%",
-              ms.pct_rutas_finalizadas,
-              "promedio",
-              100,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_pct_entregas_exitosas",
-              "% Entregas exitosas",
-              "%",
-              ms.pct_entregas_exitosas,
-              "promedio",
-              98,
-              "mayor",
-            ),
-            buildSerieRow(
-              "auto_ausentismo",
-              "Ausentismo",
-              "personas",
-              ausentismoPorFecha,
-              "suma",
-              null,
-              "menor",
-            ),
+          )
+          const tlpRow = buildSerieRow(
+            "auto_tlp", "TLP", "CEq/h", ms.tlp, "promedio", null, "mayor",
+          )
+          const tiempoPdvRow = buildSerieRow(
+            "auto_tiempo_pdv", "Tiempo por PDV", "min", ms.tiempo_pdv, "promedio", null, "menor",
+          )
+          const tmlRow = buildSerieRow(
+            "auto_tml", "TML", "min", ms.tml_promedio, "promedio", 30, "menor",
+          )
+          const ausentismoRow = buildSerieRow(
+            "auto_ausentismo", "Ausentismo", "personas",
+            ausentismoPorFecha, "suma", null, "menor",
+          )
+
+          // Reordenamiento pedido: LTI, TRI (manuales) y Ausentismo (auto) al
+          // inicio; luego los KPIs operativos; al final el resto de manuales.
+          const esLtiTri = (n: string) => {
+            const l = n.trim().toLowerCase()
+            return l === "lti" || l === "tri"
+          }
+          const ltiTriRows = indicadores
+            .filter((i) => esLtiTri(i.nombre))
+            .sort((a) => (a.nombre.trim().toLowerCase() === "lti" ? -1 : 1))
+          const otrosManuales = indicadores.filter((i) => !esLtiTri(i.nombre))
+
+          const autosOrdenados = [
+            bultosRow,
+            hlRow,
+            cantCamionesRow,
+            obRow,
+            rechazoRow,
+            entregasRow,
+            horasRutaRow,
+            tlpRow,
+            tiempoPdvRow,
+            tmlRow,
           ]
+
           return {
             data: {
               anio,
               mes,
               fechas,
               reuniones_por_fecha: reunionesPorFecha,
-              indicadores: [...misAuto, ...indicadores],
+              indicadores: [
+                ...ltiTriRows,
+                ausentismoRow,
+                ...autosOrdenados,
+                ...otrosManuales,
+              ],
             },
           }
         }
