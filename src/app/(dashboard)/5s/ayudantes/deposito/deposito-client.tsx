@@ -340,12 +340,53 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
         </CardContent>
       </Card>
 
-      {/* Tabla ranking */}
+      {/* Distribución (manual) — debajo de depósito */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Detalle del ranking</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Truck className="size-4 text-emerald-600" /> Ganadores de distribución (manual)
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="grid gap-3 md:grid-cols-3">
+            {[1, 2, 3].map((pos) => {
+              const m = MEDAL[pos - 1]
+              const Icon = m.icon
+              const saved = premioDe("distribucion", pos)
+              return (
+                <div key={pos} className={`rounded-lg border p-4 ${m.bg}`}>
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                    <Icon className={`size-4 ${m.color}`} /> {m.label}
+                  </span>
+                  <div className="mt-2 text-lg font-bold text-slate-900">
+                    {saved?.nombre ?? <span className="text-muted-foreground">—</span>}
+                  </div>
+                  {canEdit && (
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => abrirEdit("distribucion", pos)} disabled={pending}>
+                        <Pencil className="mr-1 size-3.5" /> Editar
+                      </Button>
+                      {saved && (
+                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => quitarPremio("distribucion", pos)} disabled={pending}>
+                          Quitar
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detalle del ranking (desplegable, cerrado por defecto) */}
+      <Accordion>
+        <AccordionItem value="detalle" className="rounded-lg border px-4">
+          <AccordionTrigger className="text-base font-semibold">
+            Detalle del ranking
+          </AccordionTrigger>
+          <AccordionContent>
           {data.ranking.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No hay datos de 5S ni errores en este bimestre.
@@ -409,48 +450,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Distribución (manual) */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Truck className="size-4 text-emerald-600" /> Ganadores de distribución (manual)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-3">
-            {[1, 2, 3].map((pos) => {
-              const m = MEDAL[pos - 1]
-              const Icon = m.icon
-              const saved = premioDe("distribucion", pos)
-              return (
-                <div key={pos} className={`rounded-lg border p-4 ${m.bg}`}>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                    <Icon className={`size-4 ${m.color}`} /> {m.label}
-                  </span>
-                  <div className="mt-2 text-lg font-bold text-slate-900">
-                    {saved?.nombre ?? <span className="text-muted-foreground">—</span>}
-                  </div>
-                  {canEdit && (
-                    <div className="mt-3 flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => abrirEdit("distribucion", pos)} disabled={pending}>
-                        <Pencil className="mr-1 size-3.5" /> Editar
-                      </Button>
-                      {saved && (
-                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => quitarPremio("distribucion", pos)} disabled={pending}>
-                          Quitar
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       {/* Panel fórmula */}
       {canEdit && (
