@@ -123,6 +123,111 @@ export async function listarAvancesPlan(
   }
 }
 
+export interface ArchivoRespuesta {
+  id: string
+  archivo_nombre: string | null
+  archivo_mime: string | null
+  archivo_bytes: number | null
+  url: string
+  autor_nombre: string | null
+  created_at: string
+  plan_id: string
+  plan_titulo: string
+}
+
+/**
+ * Historial de archivos de un punto del manual: todos los archivos subidos en
+ * las respuestas (avances) de todas las tareas/planes de esa pregunta.
+ * Read-only, con URL firmada lista para abrir.
+ */
+export async function listarArchivosDeRespuestas(
+  preguntaId: string,
+): Promise<Result<ArchivoRespuesta[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!preguntaId) return { error: "ID de pregunta inválido" }
+
+    const { data: planes } = await supabase
+      .from("planes_accion")
+      .select("id, titulo, descripcion")
+      .eq("pregunta_id", preguntaId)
+    const planList = (planes ?? []) as Array<{
+      id: string
+      titulo: string | null
+      descripcion: string
+    }>
+    if (planList.length === 0) return { data: [] }
+    const planMap = new Map(
+      planList.map((p) => [p.id, p.titulo || p.descripcion]),
+    )
+    const planIds = planList.map((p) => p.id)
+
+    const { data: avances, error } = await supabase
+      .from("planes_accion_avances")
+      .select(
+        "id, plan_id, archivo_path, archivo_nombre, archivo_mime, archivo_bytes, autor_id, created_at",
+      )
+      .in("plan_id", planIds)
+      .not("archivo_path", "is", null)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+    const avList = (avances ?? []) as Array<{
+      id: string
+      plan_id: string
+      archivo_path: string
+      archivo_nombre: string | null
+      archivo_mime: string | null
+      archivo_bytes: number | null
+      autor_id: string | null
+      created_at: string
+    }>
+    if (avList.length === 0) return { data: [] }
+
+    const autorIds = Array.from(
+      new Set(avList.map((a) => a.autor_id).filter(Boolean)),
+    ) as string[]
+    const { data: profiles } = autorIds.length
+      ? await supabase.from("profiles").select("id, nombre").in("id", autorIds)
+      : { data: [] as Array<{ id: string; nombre: string }> }
+    const autorMap = new Map(
+      ((profiles ?? []) as Array<{ id: string; nombre: string }>).map((p) => [
+        p.id,
+        p.nombre,
+      ]),
+    )
+
+    const paths = avList.map((a) => a.archivo_path)
+    const { data: signed } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrls(paths, 60 * 30)
+    const urlMap = new Map<string, string>()
+    for (const s of (signed ?? []) as Array<{
+      path: string | null
+      signedUrl: string
+    }>) {
+      if (s.path) urlMap.set(s.path, s.signedUrl)
+    }
+
+    const items: ArchivoRespuesta[] = avList.map((a) => ({
+      id: a.id,
+      archivo_nombre: a.archivo_nombre,
+      archivo_mime: a.archivo_mime,
+      archivo_bytes: a.archivo_bytes,
+      url: urlMap.get(a.archivo_path) ?? "",
+      autor_nombre: a.autor_id ? autorMap.get(a.autor_id) ?? "Usuario" : null,
+      created_at: a.created_at,
+      plan_id: a.plan_id,
+      plan_titulo: planMap.get(a.plan_id) ?? "",
+    }))
+    return { data: items }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error listando archivos",
+    }
+  }
+}
+
 // Clona una tarea como "seguimiento" de la original (al reprogramar al cerrar).
 // Hereda título/descr/tipo/punto/prioridad/evidencia + responsables, nace
 // pendiente con la nueva fecha y queda enlazada por origen_plan_id.

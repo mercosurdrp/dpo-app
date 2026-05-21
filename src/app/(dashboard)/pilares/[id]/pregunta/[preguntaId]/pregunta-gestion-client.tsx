@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -20,9 +20,6 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
-  Link as LinkIcon,
-  Image,
-  StickyNote,
   ExternalLink,
   AlertCircle,
   Eye,
@@ -73,7 +70,6 @@ import {
   PRIORIDAD_COLORS,
   PRIORIDAD_LABELS,
   TENDENCIA_LABELS,
-  TIPO_EVIDENCIA_LABELS,
   ESTADO_CAPACITACION_COLORS,
   ESTADO_CAPACITACION_LABELS,
 } from "@/lib/constants"
@@ -84,10 +80,12 @@ import {
   createPlanAccion,
   updatePlanAccion,
   deletePlanAccion,
-  createEvidencia,
-  deleteEvidencia,
 } from "@/actions/gestion"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
+import {
+  listarArchivosDeRespuestas,
+  type ArchivoRespuesta,
+} from "@/actions/plan-avances"
 import {
   TareaForm,
   type PuntoFijo,
@@ -98,9 +96,7 @@ import type {
   Pilar,
   Indicador,
   PlanAccion,
-  Evidencia,
   Tendencia,
-  TipoEvidencia,
   EstadoPlan,
   PrioridadPlan,
   CapacitacionParaPregunta,
@@ -112,13 +108,6 @@ const SCORE_COLORS: Record<number, string> = {
   1: "#F97316",
   3: "#EAB308",
   5: "#22C55E",
-}
-
-const TIPO_EVIDENCIA_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  documento: FileText,
-  foto: Image,
-  link: LinkIcon,
-  nota: StickyNote,
 }
 
 function TendenciaIcon({ tendencia }: { tendencia: string }) {
@@ -787,249 +776,145 @@ function PlanesTab({
   )
 }
 
-// ==================== EVIDENCIAS TAB ====================
+// ==================== EVIDENCIAS TAB (historial de archivos de respuestas) ====================
 
-function EvidenciasTab({
-  preguntaId,
-  evidencias: initialEvidencias,
-  planes,
-}: {
-  preguntaId: string
-  evidencias: Evidencia[]
-  planes: PlanAccion[]
-}) {
-  const [evidencias, setEvidencias] = useState(initialEvidencias)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [form, setForm] = useState({
-    titulo: "",
-    descripcion: "",
-    url: "",
-    tipo: "documento" as TipoEvidencia,
-  })
-  const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([])
-  const [saving, setSaving] = useState(false)
+function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
+  const [archivos, setArchivos] = useState<ArchivoRespuesta[]>([])
+  const [loading, setLoading] = useState(true)
+  const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(
+    null
+  )
 
-  function resetForm() {
-    setForm({ titulo: "", descripcion: "", url: "", tipo: "documento" })
-    setSelectedPlanIds([])
-  }
-
-  function togglePlanId(id: string) {
-    setSelectedPlanIds((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    )
-  }
-
-  async function handleSave() {
-    if (!form.titulo) {
-      toast.error("El titulo es requerido")
-      return
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const r = await listarArchivosDeRespuestas(preguntaId)
+      if (cancelled) return
+      if ("data" in r) setArchivos(r.data)
+      else toast.error(r.error)
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
     }
-    setSaving(true)
-    const result = await createEvidencia({
-      pregunta_id: preguntaId,
-      titulo: form.titulo,
-      descripcion: form.descripcion || undefined,
-      url: form.url || undefined,
-      tipo: form.tipo,
-      plan_ids: selectedPlanIds.length > 0 ? selectedPlanIds : undefined,
-    })
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setEvidencias((prev) => [...prev, result.data])
-      toast.success("Evidencia agregada")
-      setDialogOpen(false)
-      resetForm()
-    }
-    setSaving(false)
-  }
+  }, [preguntaId])
 
-  async function handleDelete(id: string) {
-    const result = await deleteEvidencia(id)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setEvidencias((prev) => prev.filter((e) => e.id !== id))
-      toast.success("Evidencia eliminada")
-    }
+  function esImg(mime: string | null, nombre: string | null): boolean {
+    if (mime?.startsWith("image/")) return true
+    const ext = (nombre ?? "").split(".").pop()?.toLowerCase() ?? ""
+    return ["jpg", "jpeg", "png", "webp", "gif", "bmp"].includes(ext)
+  }
+  function fmtBytes(b: number | null): string {
+    if (!b || b <= 0) return ""
+    if (b < 1024) return `${b} B`
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`
+    return `${(b / 1024 / 1024).toFixed(1)} MB`
   }
 
   return (
-    <div className="space-y-4 pt-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {evidencias.length} evidencia{evidencias.length !== 1 ? "s" : ""}
-        </p>
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open)
-            if (!open) resetForm()
-          }}
-        >
-          <DialogTrigger
-            render={
-              <Button variant="outline" size="sm">
-                <Plus className="mr-1 h-3 w-3" />
-                Agregar Evidencia
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Nueva Evidencia</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-3">
-              <div>
-                <Label htmlFor="ev-titulo">Titulo</Label>
-                <Input
-                  id="ev-titulo"
-                  value={form.titulo}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, titulo: e.target.value }))
-                  }
-                  placeholder="Titulo de la evidencia"
-                />
-              </div>
-              <div>
-                <Label htmlFor="ev-desc">Descripcion</Label>
-                <Textarea
-                  id="ev-desc"
-                  value={form.descripcion}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, descripcion: e.target.value }))
-                  }
-                  placeholder="Descripcion opcional..."
-                  className="min-h-12"
-                />
-              </div>
-              <div>
-                <Label>Tipo</Label>
-                <Select
-                  value={form.tipo}
-                  onValueChange={(val) =>
-                    setForm((f) => ({ ...f, tipo: val as TipoEvidencia }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(["documento", "foto", "link", "nota"] as const).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {TIPO_EVIDENCIA_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="ev-url">URL</Label>
-                <Input
-                  id="ev-url"
-                  value={form.url}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, url: e.target.value }))
-                  }
-                  placeholder="https://..."
-                />
-              </div>
-              {planes.length > 0 && (
-                <div>
-                  <Label>Vincular a Planes (opcional)</Label>
-                  <div className="mt-1 max-h-32 overflow-y-auto space-y-1 rounded-md border p-2">
-                    {planes.map((p) => (
-                      <label
-                        key={p.id}
-                        className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-muted/50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPlanIds.includes(p.id)}
-                          onChange={() => togglePlanId(p.id)}
-                          className="rounded"
-                        />
-                        <span className="text-xs text-slate-700 line-clamp-1">
-                          {p.descripcion}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>
-                Cancelar
-              </DialogClose>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? "Guardando..." : "Agregar"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {evidencias.length === 0 ? (
+    <div className="space-y-3 pt-4">
+      <p className="text-xs text-muted-foreground">
+        Historial de archivos subidos en las respuestas de las tareas de este
+        punto.
+      </p>
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : archivos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
           <FileCheck className="mb-2 h-8 w-8 opacity-40" />
-          <p className="text-sm">Sin evidencias</p>
-          <p className="text-xs">Agrega documentos, fotos o links como evidencia</p>
+          <p className="text-sm">Sin archivos todavía</p>
+          <p className="text-xs">
+            Los archivos que adjuntes al responder tareas aparecen acá.
+          </p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {evidencias.map((ev) => {
-            const TipoIcon = TIPO_EVIDENCIA_ICONS[ev.tipo] ?? FileText
+        <div className="space-y-2">
+          {archivos.map((a) => {
+            const isImg = esImg(a.archivo_mime, a.archivo_nombre)
             return (
-              <Card key={ev.id} size="sm">
-                <CardContent className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
-                        <TipoIcon className="h-4 w-4 text-slate-500" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-800 truncate">
-                          {ev.titulo}
-                        </p>
-                        <span className="text-[10px] text-muted-foreground">
-                          {TIPO_EVIDENCIA_LABELS[ev.tipo]}
-                          {ev.created_at &&
-                            ` - ${format(new Date(ev.created_at), "dd/MM/yyyy")}`}
-                        </span>
-                      </div>
-                    </div>
+              <div
+                key={a.id}
+                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                {isImg && a.url ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightbox({
+                        url: a.url,
+                        titulo: a.archivo_nombre ?? "Imagen",
+                      })
+                    }
+                    className="shrink-0 overflow-hidden rounded-md border border-slate-200 hover:opacity-80"
+                    title="Ver imagen"
+                  >
+                    <img
+                      src={a.url}
+                      alt={a.archivo_nombre ?? ""}
+                      className="h-12 w-12 object-cover"
+                    />
+                  </button>
+                ) : (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100">
+                    <FileText className="h-4 w-4 text-slate-500" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800">
+                    {a.archivo_nombre ?? "Archivo"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {a.plan_titulo} · {a.autor_nombre ?? "—"} ·{" "}
+                    {format(new Date(a.created_at), "dd/MM/yyyy HH:mm")}
+                    {fmtBytes(a.archivo_bytes)
+                      ? ` · ${fmtBytes(a.archivo_bytes)}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Link
+                    href={`/planes/${a.plan_id}`}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Ver tarea
+                  </Link>
+                  {a.url && (
                     <Button
                       variant="ghost"
-                      size="icon-xs"
-                      onClick={() => handleDelete(ev.id)}
+                      size="icon-sm"
+                      onClick={() => window.open(a.url, "_blank")}
+                      title="Abrir / descargar"
                     >
-                      <Trash2 className="h-3 w-3 text-red-500" />
+                      <FileDown className="h-4 w-4" />
                     </Button>
-                  </div>
-                  {ev.descripcion && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {ev.descripcion}
-                    </p>
                   )}
-                  {ev.url && (
-                    <a
-                      href={ev.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Ver recurso
-                    </a>
-                  )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             )
           })}
         </div>
       )}
+
+      <Dialog
+        open={lightbox !== null}
+        onOpenChange={(o) => !o && setLightbox(null)}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{lightbox?.titulo ?? "Vista previa"}</DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <img
+              src={lightbox.url}
+              alt={lightbox.titulo}
+              className="h-auto max-h-[80vh] w-full rounded object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1415,9 +1300,6 @@ export function PreguntaGestionClient({
           <TabsTrigger value="evidencias">
             <FileCheck className="mr-1 h-3.5 w-3.5" />
             Evidencias
-            <span className="ml-1 text-[10px] text-muted-foreground">
-              ({pregunta.evidencias.length})
-            </span>
           </TabsTrigger>
           <TabsTrigger value="capacitaciones">
             <GraduationCap className="mr-1 h-3.5 w-3.5" />
@@ -1451,11 +1333,7 @@ export function PreguntaGestionClient({
           />
         </TabsContent>
         <TabsContent value="evidencias">
-          <EvidenciasTab
-            preguntaId={pregunta.id}
-            evidencias={pregunta.evidencias}
-            planes={pregunta.planes_accion}
-          />
+          <EvidenciasTab preguntaId={pregunta.id} />
         </TabsContent>
         <TabsContent value="capacitaciones">
           <CapacitacionesTab capacitaciones={capacitaciones} />
