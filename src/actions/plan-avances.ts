@@ -123,10 +123,69 @@ export async function listarAvancesPlan(
   }
 }
 
+// Clona una tarea como "seguimiento" de la original (al reprogramar al cerrar).
+// Hereda título/descr/tipo/punto/prioridad/evidencia + responsables, nace
+// pendiente con la nueva fecha y queda enlazada por origen_plan_id.
+async function crearSeguimiento(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  origen: {
+    titulo: string | null
+    descripcion: string
+    tipo: string
+    pregunta_id: string | null
+    prioridad: string
+    evidencia_obligatoria: boolean
+  },
+  planId: string,
+  fechaLimite: string,
+  profileId: string,
+): Promise<{ id: string } | { error: string }> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const { data: nuevo, error } = await supabase
+    .from("planes_accion")
+    .insert({
+      pregunta_id: origen.pregunta_id,
+      tipo: origen.tipo,
+      titulo: origen.titulo,
+      descripcion: origen.descripcion,
+      responsable: "",
+      fecha_inicio: hoy,
+      fecha_limite: fechaLimite,
+      estado: "pendiente",
+      prioridad: origen.prioridad,
+      evidencia_obligatoria: origen.evidencia_obligatoria,
+      origen_plan_id: planId,
+      created_by: profileId,
+    })
+    .select("id")
+    .single()
+  if (error || !nuevo) {
+    return { error: error?.message ?? "No se pudo crear el seguimiento" }
+  }
+  const segId = (nuevo as { id: string }).id
+
+  const { data: resps } = await supabase
+    .from("plan_responsables")
+    .select("profile_id, rol")
+    .eq("plan_id", planId)
+  const filas = (
+    (resps ?? []) as Array<{ profile_id: string; rol: string }>
+  ).map((r) => ({
+    plan_id: segId,
+    profile_id: r.profile_id,
+    rol: r.rol,
+    asignado_por: profileId,
+  }))
+  if (filas.length > 0) {
+    await supabase.from("plan_responsables").insert(filas)
+  }
+  return { id: segId }
+}
+
 export async function agregarAvancePlan(
   planId: string,
   formData: FormData,
-): Promise<Result<PlanAvance>> {
+): Promise<{ data: PlanAvance; seguimientoId?: string } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
@@ -143,18 +202,31 @@ export async function agregarAvancePlan(
 
     const { data: planActual, error: errActual } = await supabase
       .from("planes_accion")
-      .select("estado")
+      .select(
+        "estado, titulo, descripcion, tipo, pregunta_id, prioridad, evidencia_obligatoria",
+      )
       .eq("id", planId)
       .single()
     if (errActual || !planActual) {
       return { error: errActual?.message ?? "Plan no encontrado" }
     }
-    const estadoAnterior = (planActual as { estado: EstadoPlan }).estado
+    const planOrigen = planActual as {
+      estado: EstadoPlan
+      titulo: string | null
+      descripcion: string
+      tipo: string
+      pregunta_id: string | null
+      prioridad: string
+      evidencia_obligatoria: boolean
+    }
+    const estadoAnterior = planOrigen.estado
 
     const comentarioRaw = String(formData.get("comentario") ?? "").trim()
     const comentario = comentarioRaw || null
     const file = formData.get("archivo") as File | null
     const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
+    const seguimientoFecha =
+      String(formData.get("seguimiento_fecha") ?? "").trim() || null
     const tieneArchivo = file && file instanceof File && file.size > 0
 
     let nuevoEstado: EstadoPlan | null = null
@@ -214,9 +286,13 @@ export async function agregarAvancePlan(
     }
 
     if (nuevoEstado && nuevoEstado !== estadoAnterior) {
+      const updates: { estado: EstadoPlan; progreso?: number } = {
+        estado: nuevoEstado,
+      }
+      if (nuevoEstado === "completado") updates.progreso = 100
       const { error: errUpd } = await supabase
         .from("planes_accion")
-        .update({ estado: nuevoEstado })
+        .update(updates)
         .eq("id", planId)
       if (errUpd) {
         await supabase
@@ -237,9 +313,31 @@ export async function agregarAvancePlan(
       })
     }
 
-    revalidatePath(`/planes/${planId}`)
+    // Reprogramar al cerrar: crea una tarea de seguimiento con nueva fecha.
+    let seguimientoId: string | undefined
+    if (nuevoEstado === "completado" && seguimientoFecha) {
+      const seg = await crearSeguimiento(
+        supabase,
+        planOrigen,
+        planId,
+        seguimientoFecha,
+        profile.id,
+      )
+      if ("error" in seg) {
+        return {
+          error: `Tarea cerrada, pero no se pudo crear el seguimiento: ${seg.error}`,
+        }
+      }
+      seguimientoId = seg.id
+      revalidatePath(`/planes/${seguimientoId}`)
+      revalidatePath("/registro-tareas")
+    }
 
-    return { data: avance as PlanAvance }
+    revalidatePath(`/planes/${planId}`)
+    revalidatePath("/planes")
+    revalidatePath("/mis-tareas")
+
+    return { data: avance as PlanAvance, seguimientoId }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error registrando el avance",

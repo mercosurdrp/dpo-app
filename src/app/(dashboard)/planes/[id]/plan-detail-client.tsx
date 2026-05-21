@@ -8,9 +8,7 @@ import { format } from "date-fns"
 import {
   ArrowLeft,
   AlertCircle,
-  Clock,
   CheckCircle2,
-  ChevronDown,
   FileCheck,
   Plus,
   Trash2,
@@ -50,12 +48,6 @@ import {
   DialogClose,
 } from "@/components/ui/dialog"
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu"
-import {
   ESTADO_PLAN_COLORS,
   ESTADO_PLAN_LABELS,
   PRIORIDAD_COLORS,
@@ -63,10 +55,8 @@ import {
   TIPO_EVIDENCIA_LABELS,
 } from "@/lib/constants"
 import {
-  updatePlanEstado,
   updatePlanProgreso,
   updatePlanNotas,
-  togglePlanEvidenciaObligatoria,
   linkEvidenciaToPlan,
   unlinkEvidenciaFromPlan,
   getUnlinkedEvidencias,
@@ -85,12 +75,9 @@ import { createClient } from "@/lib/supabase/client"
 import { AvancesSection } from "@/components/planes/avances-section"
 import type { PlanAvanceConAutor } from "@/actions/plan-avances"
 import { ResponsablesMultiPicker } from "@/components/planes/responsables-multi-picker"
-import { ReprogramarDialog } from "@/components/planes/reprogramar-dialog"
-import { CerrarPlanDialog } from "@/components/planes/cerrar-plan-dialog"
 import type {
   PlanAccionFull,
   Evidencia,
-  EstadoPlan,
   TipoEvidencia,
   DpoArchivo,
   UserRole,
@@ -107,12 +94,10 @@ const TIPO_EVIDENCIA_ICONS: Record<string, React.ComponentType<{ className?: str
 
 function InfoSection({
   plan,
-  onEstadoChange,
   onProgresoChange,
   onNotasChange,
 }: {
   plan: PlanAccionFull
-  onEstadoChange: (estado: EstadoPlan) => void
   onProgresoChange: (progreso: number) => void
   onNotasChange: (notas: string) => void
 }) {
@@ -144,12 +129,14 @@ function InfoSection({
   return (
     <Card>
       <CardContent className="space-y-4 pt-4">
-        {/* Estado + Prioridad row */}
+        {/* Estado + Prioridad row (estado de sólo lectura: se cambia respondiendo) */}
         <div className="flex flex-wrap items-center gap-3">
-          <EstadoDropdown
-            estado={plan.estado}
-            onChange={onEstadoChange}
-          />
+          <span
+            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium text-white"
+            style={{ backgroundColor: ESTADO_PLAN_COLORS[plan.estado] }}
+          >
+            {ESTADO_PLAN_LABELS[plan.estado]}
+          </span>
           <span
             className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium text-white"
             style={{ backgroundColor: PRIORIDAD_COLORS[plan.prioridad] }}
@@ -635,51 +622,6 @@ function EvidenciasSection({
   )
 }
 
-// ==================== ESTADO DROPDOWN ====================
-
-function EstadoDropdown({
-  estado,
-  onChange,
-}: {
-  estado: EstadoPlan
-  onChange: (estado: EstadoPlan) => void
-}) {
-  const estados: EstadoPlan[] = ["pendiente", "en_progreso", "completado"]
-  const icons: Record<EstadoPlan, React.ReactNode> = {
-    pendiente: <AlertCircle className="size-3.5" />,
-    en_progreso: <Clock className="size-3.5" />,
-    completado: <CheckCircle2 className="size-3.5" />,
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-white cursor-pointer transition-opacity hover:opacity-80"
-        style={{ backgroundColor: ESTADO_PLAN_COLORS[estado] }}
-      >
-        {icons[estado]}
-        {ESTADO_PLAN_LABELS[estado]}
-        <ChevronDown className="size-3" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {estados.map((e) => (
-          <DropdownMenuItem
-            key={e}
-            onClick={() => onChange(e)}
-            className="gap-2"
-          >
-            <span
-              className="size-2 rounded-full"
-              style={{ backgroundColor: ESTADO_PLAN_COLORS[e] }}
-            />
-            {ESTADO_PLAN_LABELS[e]}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 // ==================== PUNTO MANUAL SECTION (tarea directa) ====================
 
 function PuntoManualSection({
@@ -914,32 +856,9 @@ export function PlanDetailClient({
 }) {
   const router = useRouter()
   const [plan, setPlan] = useState(initialPlan)
-  const [reprogramarOpen, setReprogramarOpen] = useState(false)
-  const [cerrarOpen, setCerrarOpen] = useState(false)
-  const [togglingEvidencia, startToggle] = useTransition()
 
   const canEditResponsables =
     currentRole === "admin" || currentRole === "auditor"
-  const isAdmin = currentRole === "admin"
-  // El plan está "respondido" con cualquier respuesta: avances (comentario o
-  // archivo) + comentarios legacy + evidencias/archivos vinculados (coherente
-  // con cerrarPlan en el server).
-  const totalEvidencias =
-    (plan.evidencias?.length ?? 0) +
-    (plan.archivos_dpo?.length ?? 0) +
-    avancesIniciales.length +
-    (plan.comentarios?.length ?? 0)
-
-  async function handleEstadoChange(nuevoEstado: EstadoPlan) {
-    const result = await updatePlanEstado(plan.id, nuevoEstado)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setPlan((prev) => ({ ...prev, estado: nuevoEstado }))
-      toast.success(`Estado actualizado a ${ESTADO_PLAN_LABELS[nuevoEstado]}`)
-      router.refresh()
-    }
-  }
 
   async function handleProgresoChange(progreso: number) {
     const result = await updatePlanProgreso(plan.id, progreso)
@@ -959,22 +878,6 @@ export function PlanDetailClient({
       setPlan((prev) => ({ ...prev, notas: notas || null }))
       toast.success("Notas guardadas")
     }
-  }
-
-  function handleToggleEvidencia(value: boolean) {
-    startToggle(async () => {
-      const res = await togglePlanEvidenciaObligatoria(plan.id, value)
-      if (!res.ok) {
-        toast.error(res.error)
-        return
-      }
-      setPlan((prev) => ({ ...prev, evidencia_obligatoria: value }))
-      toast.success(
-        value
-          ? "Evidencia obligatoria activada"
-          : "Evidencia obligatoria desactivada",
-      )
-    })
   }
 
   return (
@@ -1072,7 +975,6 @@ export function PlanDetailClient({
       {/* Info */}
       <InfoSection
         plan={plan}
-        onEstadoChange={handleEstadoChange}
         onProgresoChange={handleProgresoChange}
         onNotasChange={handleNotasChange}
       />
@@ -1095,80 +997,7 @@ export function PlanDetailClient({
         </CardContent>
       </Card>
 
-      {/* Acciones del plan */}
-      <Card>
-        <CardContent className="space-y-3 pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-semibold text-slate-800">
-                Acciones del plan
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Reprogramar fecha límite o cerrar el plan.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setReprogramarOpen(true)}
-              >
-                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
-                Reprogramar
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setCerrarOpen(true)}
-                disabled={plan.estado === "completado"}
-              >
-                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                {plan.estado === "completado" ? "Plan cerrado" : "Cerrar plan"}
-              </Button>
-            </div>
-          </div>
-
-          {/* Evidencia obligatoria switch (solo admin) */}
-          {isAdmin && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-slate-500" />
-                <div>
-                  <p className="text-xs font-medium text-slate-700">
-                    Requiere respuesta al cerrar
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {plan.evidencia_obligatoria
-                      ? "Activada — no se puede cerrar sin un comentario o archivo"
-                      : "Desactivada — se puede cerrar sin responder"}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={plan.evidencia_obligatoria}
-                disabled={togglingEvidencia}
-                onClick={() =>
-                  handleToggleEvidencia(!plan.evidencia_obligatoria)
-                }
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
-                  plan.evidencia_obligatoria ? "bg-blue-500" : "bg-slate-300"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    plan.evidencia_obligatoria
-                      ? "translate-x-4"
-                      : "translate-x-0.5"
-                  }`}
-                />
-              </button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Action Log unificado: avances + comentarios + estados + reprogramaciones */}
+      {/* Action Log: único lugar de acción (responder + cambiar estado + repetir) */}
       <AvancesSection
         planId={plan.id}
         avancesIniciales={avancesIniciales}
@@ -1177,6 +1006,7 @@ export function PlanDetailClient({
         reprogramaciones={plan.reprogramaciones ?? []}
         estadoActual={plan.estado}
         puedeIntervenir={puedeIntervenirEnAvances}
+        onChanged={() => router.refresh()}
       />
 
       {/* Evidencias */}
@@ -1190,24 +1020,6 @@ export function PlanDetailClient({
       <ArchivosDpoSection
         planId={plan.id}
         archivos={plan.archivos_dpo}
-      />
-
-      {/* Dialogs */}
-      <ReprogramarDialog
-        planId={plan.id}
-        fechaActual={plan.fecha_limite}
-        open={reprogramarOpen}
-        onOpenChange={setReprogramarOpen}
-        onDone={() => router.refresh()}
-      />
-      <CerrarPlanDialog
-        planId={plan.id}
-        evidenciaObligatoria={plan.evidencia_obligatoria}
-        totalEvidencias={totalEvidencias}
-        esAdmin={isAdmin}
-        open={cerrarOpen}
-        onOpenChange={setCerrarOpen}
-        onDone={() => router.refresh()}
       />
     </div>
   )

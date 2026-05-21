@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
@@ -22,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -91,6 +92,17 @@ type TimelineItem =
   | { key: string; at: number; type: "estado"; h: PlanHistorialConAutor }
   | { key: string; at: number; type: "reprog"; r: PlanReprogramacionConAutor }
 
+type Resultado = "igual" | "en_progreso" | "completado"
+type TipoCierre = "definitivo" | "reprogramar"
+type RepetPreset = "15d" | "1m" | "custom"
+
+function ymd(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+function plusDays(days: number): string {
+  return ymd(new Date(Date.now() + days * 86400000))
+}
+
 interface Props {
   planId: string
   avancesIniciales: PlanAvanceConAutor[]
@@ -99,6 +111,8 @@ interface Props {
   reprogramaciones?: PlanReprogramacionConAutor[]
   estadoActual: EstadoPlan
   puedeIntervenir: boolean
+  /** Se llama tras una respuesta que cambia el estado, para refrescar el padre. */
+  onChanged?: () => void
 }
 
 export function AvancesSection({
@@ -109,13 +123,18 @@ export function AvancesSection({
   reprogramaciones = [],
   estadoActual,
   puedeIntervenir,
+  onChanged,
 }: Props) {
+  const router = useRouter()
   const [avances, setAvances] = useState(avancesIniciales)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, startSubmit] = useTransition()
   const [comentario, setComentario] = useState("")
   const [archivo, setArchivo] = useState<File | null>(null)
-  const [cerrar, setCerrar] = useState(false)
+  const [resultado, setResultado] = useState<Resultado>("igual")
+  const [tipoCierre, setTipoCierre] = useState<TipoCierre>("definitivo")
+  const [repetPreset, setRepetPreset] = useState<RepetPreset>("15d")
+  const [repetCustom, setRepetCustom] = useState<string>(plusDays(15))
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [lightbox, setLightbox] = useState<{
     url: string
@@ -205,10 +224,20 @@ export function AvancesSection({
     return () => window.removeEventListener("paste", onPaste)
   }, [dialogOpen])
 
+  const fechaSeguimiento =
+    repetPreset === "15d"
+      ? plusDays(15)
+      : repetPreset === "1m"
+        ? plusDays(30)
+        : repetCustom
+
   function resetForm() {
     setComentario("")
     setArchivo(null)
-    setCerrar(false)
+    setResultado("igual")
+    setTipoCierre("definitivo")
+    setRepetPreset("15d")
+    setRepetCustom(plusDays(15))
   }
 
   async function handleAbrirArchivo(path: string) {
@@ -230,20 +259,35 @@ export function AvancesSection({
       toast.error("Respondé con un comentario o adjuntá un archivo")
       return
     }
+    if (resultado === "completado" && tipoCierre === "reprogramar" && !fechaSeguimiento) {
+      toast.error("Elegí la fecha de la tarea repetida")
+      return
+    }
     const fd = new FormData()
     fd.append("comentario", comentario.trim())
     if (archivo) fd.append("archivo", archivo)
-    if (cerrar) fd.append("nuevo_estado", "completado")
+    if (resultado !== "igual") fd.append("nuevo_estado", resultado)
+    if (resultado === "completado" && tipoCierre === "reprogramar" && fechaSeguimiento) {
+      fd.append("seguimiento_fecha", fechaSeguimiento)
+    }
     startSubmit(async () => {
       const r = await agregarAvancePlan(planId, fd)
       if ("error" in r) {
         toast.error(r.error)
         return
       }
-      toast.success("Avance registrado")
       await refrescarAvances()
       setDialogOpen(false)
       resetForm()
+      if (r.seguimientoId) {
+        toast.success("Tarea cerrada · tarea repetida creada")
+        router.push(`/planes/${r.seguimientoId}`)
+      } else {
+        toast.success(
+          resultado === "completado" ? "Tarea cerrada" : "Avance registrado",
+        )
+        onChanged?.()
+      }
     })
   }
 
@@ -574,14 +618,104 @@ export function AvancesSection({
                 </label>
               )}
             </div>
-            {!planCerrado && (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={cerrar}
-                  onCheckedChange={(c) => setCerrar(c === true)}
-                />
-                <span>Cerrar la tarea con este avance (estado = Cerrada)</span>
-              </label>
+            {/* Resultado: cambia el estado y, si cierra, definitivo o reprogramar */}
+            <div className="space-y-2">
+              <Label>Resultado</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["igual", "Dejar como está"],
+                    ["en_progreso", "En curso"],
+                    ["completado", "Cerrada"],
+                  ] as const
+                ).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setResultado(val)}
+                    className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      resultado === val
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {resultado === "completado" && (
+              <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                <Label className="text-xs text-muted-foreground">
+                  ¿Cómo se cierra?
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTipoCierre("definitivo")}
+                    className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      tipoCierre === "definitivo"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    Cierre definitivo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoCierre("reprogramar")}
+                    className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      tipoCierre === "reprogramar"
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    Reprogramar
+                  </button>
+                </div>
+
+                {tipoCierre === "reprogramar" && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["15d", "+15 días"],
+                          ["1m", "+1 mes"],
+                          ["custom", "Fecha"],
+                        ] as const
+                      ).map(([val, label]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setRepetPreset(val)}
+                          className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                            repetPreset === val
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {repetPreset === "custom" && (
+                      <Input
+                        type="date"
+                        value={repetCustom}
+                        onChange={(e) => setRepetCustom(e.target.value)}
+                      />
+                    )}
+                    <div className="flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      Se crea una tarea repetida con vencimiento{" "}
+                      <span className="font-semibold">
+                        {fechaCorta(fechaSeguimiento)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <DialogFooter>
@@ -598,7 +732,11 @@ export function AvancesSection({
             </Button>
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Guardar avance
+              {resultado === "completado"
+                ? tipoCierre === "reprogramar"
+                  ? "Cerrar y repetir"
+                  : "Cerrar tarea"
+                : "Guardar respuesta"}
             </Button>
           </DialogFooter>
         </DialogContent>
