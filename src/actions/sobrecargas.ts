@@ -186,9 +186,14 @@ export async function getSobrecargasIndicador(
       })
       .sort((a, b) => (b.sobrecargas + b.medias / 2) - (a.sobrecargas + a.medias / 2))
 
-    // ── 2) Serie temporal: últimos 6 meses (incluido el seleccionado) ────────
+    // ── 2) Serie temporal: últimos 6 meses ───────────────────────────────────
+    // La ventana siempre cubre hasta el mes actual (vista anual rolling), aun
+    // si el usuario selecciona un mes pasado. Garantiza que el mes corriente
+    // aparezca con barra (aunque sea 0) y no quede "perdido" en el gráfico.
+    const mesActualVal = mesActualISO()
+    const mesFinSerie = mes > mesActualVal ? mes : mesActualVal
     const mesesSerie: string[] = []
-    for (let i = 5; i >= 0; i--) mesesSerie.push(restarMes(mes, i))
+    for (let i = 5; i >= 0; i--) mesesSerie.push(restarMes(mesFinSerie, i))
     const { desde: serieDesde } = rangoMes(mesesSerie[0])
     const { hasta: serieHasta } = rangoMes(mesesSerie[5])
 
@@ -234,15 +239,13 @@ export async function getSobrecargasIndicador(
         .order("fecha", { ascending: true })
     )
     if (errDisp) return { error: errDisp.message }
-    const mesesDisponibles = Array.from(
-      new Set((filasConSobrec ?? []).map((f) => f.fecha.slice(0, 7)))
-    ).sort()
-    // El mes actualmente seleccionado siempre debe figurar en el dropdown,
-    // incluso si está vacío, para no "saltar" al elegirlo.
-    if (!mesesDisponibles.includes(mes)) {
-      mesesDisponibles.push(mes)
-      mesesDisponibles.sort()
-    }
+    const mesesSet = new Set((filasConSobrec ?? []).map((f) => f.fecha.slice(0, 7)))
+    // Garantizar que el mes seleccionado y el mes corriente siempre aparezcan
+    // en el dropdown — aunque tengan 0 sobrecargas — para sostener la vista
+    // anual rolling y permitir navegar al mes en curso al cargar la página.
+    mesesSet.add(mes)
+    mesesSet.add(mesActualVal)
+    const mesesDisponibles = Array.from(mesesSet).sort()
 
     return {
       data: { mes, totalSobrecargas, totalMedias, empleados, serie, mesesDisponibles },

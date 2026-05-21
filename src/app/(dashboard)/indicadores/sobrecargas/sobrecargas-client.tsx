@@ -98,6 +98,7 @@ export function SobrecargasClient({
   }
 
   function cambiarMes(nuevoMes: string) {
+    if (nuevoMes === data.mes) return
     const params = new URLSearchParams(sp.toString())
     if (nuevoMes) params.set("mes", nuevoMes)
     else params.delete("mes")
@@ -134,6 +135,8 @@ export function SobrecargasClient({
               <ChevronLeft className="h-4 w-4" />
             </button>
             <select
+              key={data.mes}
+              autoComplete="off"
               value={data.mes}
               onChange={(e) => cambiarMes(e.target.value)}
               className="h-9 min-w-[140px] border-x border-slate-200 bg-white px-2 text-sm focus:outline-none"
