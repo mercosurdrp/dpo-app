@@ -3557,9 +3557,16 @@ export async function getIndicadoresMes(
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
         const ausentismoRes = await getAusentismoSerie(mes, anio)
-        const ausentismoPorFecha = "data" in ausentismoRes
+        const ausentismoPorFechaRaw = "data" in ausentismoRes
           ? ausentismoRes.data.por_fecha
           : {}
+        // Ocultar el día de la reunión (y futuros): a la hora del matinal el
+        // ausentismo de hoy todavía no está confirmado, igual que precisión y
+        // productividad. Solo se muestran días < fecha de la reunión.
+        const ausentismoPorFecha: Record<string, number | null> = {}
+        for (const [f, v] of Object.entries(ausentismoPorFechaRaw)) {
+          ausentismoPorFecha[f] = f < fecha ? v : null
+        }
 
         indicadoresAuto.push(
           buildSerieRow(
