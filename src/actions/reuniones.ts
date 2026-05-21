@@ -2482,6 +2482,7 @@ export async function getIndicadoresMes(
         NOMBRES_AUTO.add("hl")
         NOMBRES_AUTO.add("ocupación de bodega")
         NOMBRES_AUTO.add("ocupacion de bodega")
+        NOMBRES_AUTO.add("errores")
         NOMBRES_AUTO.add("ausentismo")
       } else {
         NOMBRES_AUTO.add("wqi")
@@ -3324,6 +3325,10 @@ export async function getIndicadoresMes(
           const tmlRow = buildSerieRow(
             "auto_tml_fx", "TML", "min", ms.tml_promedio, "promedio", 30, "menor",
           )
+          // Errores operativos de depósito (Analía). Fila nueva, sin manual homónimo.
+          const erroresRow = buildSerieRow(
+            "auto_errores_deposito", "Errores", "errores", ms.errores, "suma", null, "menor",
+          )
           const ausentismoRow = buildSerieRow(
             "auto_ausentismo", "Ausentismo", "personas",
             ausentismoPorFecha, "suma", null, "menor",
@@ -3351,6 +3356,7 @@ export async function getIndicadoresMes(
             tlpRow,
             tiempoPdvRow,
             tmlRow,
+            erroresRow,
           ]
 
           return {

@@ -28,6 +28,7 @@ import {
   normNombre,
   type FactoresMap,
 } from "@/lib/chess/articulos-factores"
+import { getErroresPorFecha } from "@/lib/analia/client"
 
 export type MisionesSucursal = "todo" | "eldorado" | "iguazu"
 
@@ -56,6 +57,8 @@ export interface MisionesLogisticaSerie {
   tlp: Record<string, number | null>
   /** Tiempo por PDV en minutos = promedio por ruta del tiempo de servicio por visita. */
   tiempo_pdv: Record<string, number | null>
+  /** Errores operativos de depósito (picking + descarga) por día. Fuente: Analía. */
+  errores: Record<string, number | null>
 }
 
 type RouteRow = {
@@ -164,6 +167,7 @@ export async function buildMisionesLogisticaSerie(
     ob: {},
     tlp: {},
     tiempo_pdv: {},
+    errores: {},
   }
   for (const f of fechas) {
     for (const k of Object.keys(series) as (keyof MisionesLogisticaSerie)[]) {
@@ -363,6 +367,17 @@ export async function buildMisionesLogisticaSerie(
     } catch {
       // dejar el valor de DB
     }
+  }
+
+  // 3b. Errores operativos de depósito — Analía (público). No tiene desglose
+  //     por sucursal (es un depósito central), se muestra igual en todas.
+  try {
+    const erroresPorFecha = await getErroresPorFecha()
+    for (const f of fechas) {
+      if (erroresPorFecha[f] != null) series.errores[f] = erroresPorFecha[f]
+    }
+  } catch {
+    // si Analía no responde, queda vacío
   }
 
   // 4. TML — getTmlFoxtrotRango (híbrido) con desglose por sucursal.
