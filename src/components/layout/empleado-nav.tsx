@@ -9,13 +9,19 @@ import {
   Truck,
   LogOut,
   CalendarRange,
+  Boxes,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { IS_MISIONES } from "@/lib/empresa"
 
 const items = [
   { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
+  // Clasificar envases: solo Pampeana (Depósito Esteban).
+  ...(IS_MISIONES
+    ? []
+    : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: Boxes }]),
   { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: CalendarRange },
   { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   { label: "Vehículos", href: "/vehiculos/checklist", icon: Truck },

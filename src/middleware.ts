@@ -22,6 +22,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/reuniones/cron-crear-diarias" ||
     pathname === "/api/requisitos-legales/cron-alertas" ||
     pathname === "/api/orden-salida/cron-sync" ||
+    pathname === "/api/clasificacion-envases/productividad" ||
     pathname === "/api/foxtrot/cron-sync" ||
     pathname === "/api/wa-bot/sync-clientes" ||
     pathname === "/api/wa-bot/webhook"

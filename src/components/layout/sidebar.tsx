@@ -31,9 +31,11 @@ import {
   CalendarCheck,
   Wallet,
   Presentation,
+  Boxes,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { IS_MISIONES } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 
@@ -43,6 +45,8 @@ interface NavItem {
   icon: React.ReactNode
   adminOnly?: boolean
   hideForEmpleado?: boolean
+  /** Solo se muestra en el tenant Pampeana (se oculta si IS_MISIONES). */
+  pampeanaOnly?: boolean
   /**
    * Si está presente, sólo se muestra a estos roles. Tiene prioridad sobre
    * adminOnly y hideForEmpleado.
@@ -94,6 +98,12 @@ const navItems: NavItem[] = [
     label: "Indicadores",
     href: "/indicadores",
     icon: <BarChart3 className="size-5" />,
+  },
+  {
+    label: "Clasificar envases",
+    href: "/clasificacion-envases",
+    icon: <Boxes className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Presupuesto",
@@ -295,6 +305,7 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
             .filter(
               (item) =>
                 !(item.hideForEmpleado && role === "empleado") &&
+                !(item.pampeanaOnly && IS_MISIONES) &&
                 (!item.roles || item.roles.includes(role)),
             )
             .map((item) => {
