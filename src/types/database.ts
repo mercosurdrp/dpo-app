@@ -138,6 +138,8 @@ export interface PlanAccion {
   notas: string | null
   evidencia_obligatoria: boolean
   cerrado_sin_evidencia_motivo: string | null
+  // Si esta tarea es un seguimiento, apunta a la tarea original que la generó.
+  origen_plan_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -237,6 +239,11 @@ export interface EvidenciaConPlanes extends Evidencia {
   plan_ids: string[]
 }
 
+export interface PlanSeguimientoRef {
+  id: string
+  titulo: string
+}
+
 export interface PlanAccionFull extends PlanAccion {
   pregunta_numero: string
   pregunta_texto: string
@@ -250,6 +257,10 @@ export interface PlanAccionFull extends PlanAccion {
   archivos_dpo: DpoArchivo[]
   responsables: PlanResponsableConProfile[]
   reprogramaciones: PlanReprogramacionConAutor[]
+  // Tarea original de la que ésta es seguimiento (si aplica).
+  origen: PlanSeguimientoRef | null
+  // Tareas de seguimiento que esta tarea generó al cerrarse.
+  seguimientos: PlanSeguimientoRef[]
 }
 
 // Estado unificado para Mis Tareas (todos los orígenes mapean a estos 3 valores)

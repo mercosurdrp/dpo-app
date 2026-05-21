@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server"
 import { getPreguntaGestion } from "@/actions/gestion"
 import { getArchivos } from "@/actions/dpo-evidencia"
 import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
+import {
+  getOperadoresParaAsignar,
+  getPermisoCrearTareas,
+} from "@/actions/tareas-directas"
 import type { Pilar } from "@/types/database"
 import { PreguntaGestionClient } from "./pregunta-gestion-client"
 
@@ -38,10 +42,12 @@ export default async function PreguntaPage({
     )
   }
 
-  // Get pregunta with all gestion data + linked capacitaciones
-  const [result, capsResult] = await Promise.all([
+  // Get pregunta with all gestion data + linked capacitaciones + operadores
+  const [result, capsResult, operadores, puedeCrearTareas] = await Promise.all([
     getPreguntaGestion(preguntaId),
     getCapacitacionesForPregunta(preguntaId),
+    getOperadoresParaAsignar(),
+    getPermisoCrearTareas(),
   ])
 
   if ("error" in result) {
@@ -68,6 +74,8 @@ export default async function PreguntaPage({
       pregunta={result.data}
       capacitaciones={capacitaciones}
       archivos={archivos}
+      operadores={operadores}
+      puedeCrearTareas={puedeCrearTareas}
     />
   )
 }

@@ -7,6 +7,7 @@ import type {
   EstadoPlan,
   Profile,
   PrioridadPlan,
+  PlanTipo,
 } from "@/types/database"
 
 // ============================================================
@@ -199,10 +200,14 @@ export async function crearTareaDirecta(input: {
   titulo: string
   descripcion: string
   responsable_ids: string[]
+  fecha_inicio?: string | null
   fecha_limite: string | null
   prioridad?: PrioridadPlan
   evidencia_obligatoria: boolean
   pregunta_id?: string | null
+  // 'directa' (default) para tareas sueltas; 'auditoria' cuando se crea
+  // desde la solapa de un punto del manual (pilar).
+  tipo?: PlanTipo
 }): Promise<{ data: { id: string } } | { error: string }> {
   try {
     const profile = await getProfileWithFlags()
@@ -224,10 +229,11 @@ export async function crearTareaDirecta(input: {
       .from("planes_accion")
       .insert({
         pregunta_id: input.pregunta_id ?? null,
-        tipo: "directa",
+        tipo: input.tipo ?? "directa",
         titulo: input.titulo.trim(),
         descripcion: input.descripcion.trim(),
         responsable: "", // legacy column NOT NULL → string vacío; los reales viven en plan_responsables
+        fecha_inicio: input.fecha_inicio ?? null,
         fecha_limite: input.fecha_limite,
         prioridad: input.prioridad ?? "media",
         evidencia_obligatoria: input.evidencia_obligatoria,

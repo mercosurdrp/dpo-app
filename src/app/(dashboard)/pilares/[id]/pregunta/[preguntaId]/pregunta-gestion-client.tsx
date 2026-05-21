@@ -88,6 +88,11 @@ import {
   deleteEvidencia,
 } from "@/actions/gestion"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
+import {
+  TareaForm,
+  type PuntoFijo,
+  type Operador,
+} from "@/components/planes/tarea-form"
 import type { PreguntaGestionFull } from "@/actions/gestion"
 import type {
   Pilar,
@@ -410,11 +415,19 @@ function IndicadoresTab({
 function PlanesTab({
   preguntaId,
   planes: initialPlanes,
+  operadores,
+  puntoFijo,
+  puedeCrear,
 }: {
   preguntaId: string
   planes: PlanAccion[]
+  operadores: Operador[]
+  puntoFijo: PuntoFijo
+  puedeCrear: boolean
 }) {
+  const router = useRouter()
   const [planes, setPlanes] = useState(initialPlanes)
+  const [createOpen, setCreateOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -527,6 +540,35 @@ function PlanesTab({
         <p className="text-sm text-muted-foreground">
           {planes.length} plan{planes.length !== 1 ? "es" : ""} de accion
         </p>
+        {puedeCrear && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Nueva acción
+            </Button>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Nueva acción / tarea</DialogTitle>
+                </DialogHeader>
+                {createOpen && (
+                  <TareaForm
+                    operadores={operadores}
+                    puntoFijo={puntoFijo}
+                    submitLabel="Crear acción"
+                    onCancel={() => setCreateOpen(false)}
+                    onCreated={(id) => router.push(`/planes/${id}`)}
+                  />
+                )}
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
+        {/* Edición rápida de un plan existente (form clásico) */}
         <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
@@ -534,19 +576,9 @@ function PlanesTab({
             if (!open) resetForm()
           }}
         >
-          <DialogTrigger
-            render={
-              <Button variant="outline" size="sm">
-                <Plus className="mr-1 h-3 w-3" />
-                Nueva Accion
-              </Button>
-            }
-          />
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Editar Plan" : "Nuevo Plan de Accion"}
-              </DialogTitle>
+              <DialogTitle>Editar Plan</DialogTitle>
             </DialogHeader>
             <div className="grid gap-3">
               <div>
@@ -1101,11 +1133,15 @@ export function PreguntaGestionClient({
   pregunta,
   capacitaciones = [],
   archivos = [],
+  operadores = [],
+  puedeCrearTareas = false,
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
   capacitaciones?: CapacitacionParaPregunta[]
   archivos?: DpoArchivo[]
+  operadores?: Operador[]
+  puedeCrearTareas?: boolean
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
@@ -1403,6 +1439,15 @@ export function PreguntaGestionClient({
           <PlanesTab
             preguntaId={pregunta.id}
             planes={pregunta.planes_accion}
+            operadores={operadores}
+            puedeCrear={puedeCrearTareas}
+            puntoFijo={{
+              pregunta_id: pregunta.id,
+              numero: pregunta.numero,
+              texto: pregunta.texto,
+              pilar_nombre: pilar.nombre,
+              pilar_color: pilar.color,
+            }}
           />
         </TabsContent>
         <TabsContent value="evidencias">

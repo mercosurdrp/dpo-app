@@ -143,13 +143,16 @@ export async function agregarAvancePlan(
 
     const { data: planActual, error: errActual } = await supabase
       .from("planes_accion")
-      .select("estado")
+      .select("estado, evidencia_obligatoria")
       .eq("id", planId)
       .single()
     if (errActual || !planActual) {
       return { error: errActual?.message ?? "Plan no encontrado" }
     }
     const estadoAnterior = (planActual as { estado: EstadoPlan }).estado
+    const evidenciaObligatoria = (
+      planActual as { evidencia_obligatoria: boolean }
+    ).evidencia_obligatoria
 
     const comentarioRaw = String(formData.get("comentario") ?? "").trim()
     const comentario = comentarioRaw || null
@@ -172,6 +175,28 @@ export async function agregarAvancePlan(
     }
     if (!tieneArchivo && !comentario) {
       return { error: "Adjuntá un archivo o escribí un comentario" }
+    }
+
+    // Si la tarea exige evidencia para cerrar, el archivo de este avance la
+    // satisface; si no lo adjuntan acá, validamos que ya haya evidencia
+    // vinculada (evidencia_planes o dpo_archivo_planes).
+    if (nuevoEstado === "completado" && evidenciaObligatoria && !tieneArchivo) {
+      const [{ count: evCount }, { count: archCount }] = await Promise.all([
+        supabase
+          .from("evidencia_planes")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId),
+        supabase
+          .from("dpo_archivo_planes")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId),
+      ])
+      if ((evCount ?? 0) + (archCount ?? 0) === 0) {
+        return {
+          error:
+            "Esta tarea requiere evidencia para cerrarse. Adjuntá un archivo o foto en este avance.",
+        }
+      }
     }
 
     let archivoPath: string | null = null

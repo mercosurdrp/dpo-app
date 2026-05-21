@@ -18,6 +18,7 @@ import type {
   PlanResponsableRol,
   PlanReprogramacion,
   PlanReprogramacionConAutor,
+  PlanSeguimientoRef,
   MisTareasItem,
   UserRole,
 } from "@/types/database"
@@ -168,6 +169,38 @@ export async function getPlanDetail(
     // Get reprogramaciones (con autor)
     const reprogramaciones = await getReprogramacionesPlan(planId)
 
+    // Origen (si esta tarea es un seguimiento) y seguimientos generados
+    const planRow = plan as PlanAccion
+    let origen: PlanSeguimientoRef | null = null
+    if (planRow.origen_plan_id) {
+      const { data: orig } = await supabase
+        .from("planes_accion")
+        .select("id, titulo, descripcion")
+        .eq("id", planRow.origen_plan_id)
+        .maybeSingle()
+      if (orig) {
+        const o = orig as {
+          id: string
+          titulo: string | null
+          descripcion: string
+        }
+        origen = { id: o.id, titulo: o.titulo || o.descripcion }
+      }
+    }
+
+    const { data: segData } = await supabase
+      .from("planes_accion")
+      .select("id, titulo, descripcion")
+      .eq("origen_plan_id", planId)
+      .order("created_at", { ascending: false })
+    const seguimientos: PlanSeguimientoRef[] = (
+      (segData ?? []) as Array<{
+        id: string
+        titulo: string | null
+        descripcion: string
+      }>
+    ).map((s) => ({ id: s.id, titulo: s.titulo || s.descripcion }))
+
     const result: PlanAccionFull = {
       ...(plan as PlanAccion),
       pregunta_numero: pregunta?.numero ?? "",
@@ -182,6 +215,8 @@ export async function getPlanDetail(
       archivos_dpo,
       responsables,
       reprogramaciones,
+      origen,
+      seguimientos,
     }
 
     return { data: result }
@@ -1271,17 +1306,66 @@ export async function getReprogramacionesPlan(
   }))
 }
 
+// ---------- Evidencia obligatoria ----------
+
+/**
+ * Activa/desactiva la evidencia obligatoria de un plan. Solo admin.
+ */
+export async function togglePlanEvidenciaObligatoria(
+  planId: string,
+  obligatoria: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return {
+        ok: false,
+        error: "Sólo un administrador puede cambiar este ajuste.",
+      }
+    }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("planes_accion")
+      .update({ evidencia_obligatoria: obligatoria })
+      .eq("id", planId)
+    if (error) return { ok: false, error: error.message }
+
+    revalidatePath(`/planes/${planId}`)
+    revalidatePath("/planes")
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error actualizando el ajuste de evidencia",
+    }
+  }
+}
+
 // ---------- Cerrar plan ----------
 
 /**
  * Cierra un plan (estado=completado, progreso=100).
  * Si el plan tiene evidencia_obligatoria=true, requiere al menos 1 evidencia
  * (vía evidencia_planes o dpo_archivo_planes) o cierre forzado por admin con motivo.
+ *
+ * Si se pasa `opts.seguimiento`, además crea una tarea de seguimiento nueva
+ * que hereda título/descripción/responsables/punto/prioridad/evidencia de la
+ * original, nace "pendiente" con la nueva fecha límite y queda enlazada vía
+ * origen_plan_id. La original queda cerrada.
  */
 export async function cerrarPlan(
   planId: string,
-  opts: { sinEvidencia?: boolean; motivoSinEvidencia?: string }
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  opts: {
+    sinEvidencia?: boolean
+    motivoSinEvidencia?: string
+    seguimiento?: { fecha_limite: string }
+  }
+): Promise<
+  { ok: true; seguimientoId?: string } | { ok: false; error: string }
+> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
@@ -1289,7 +1373,9 @@ export async function cerrarPlan(
     // 1) leer plan
     const { data: planRow, error: getErr } = await supabase
       .from("planes_accion")
-      .select("estado, evidencia_obligatoria")
+      .select(
+        "estado, evidencia_obligatoria, titulo, descripcion, tipo, pregunta_id, prioridad"
+      )
       .eq("id", planId)
       .single()
 
@@ -1297,21 +1383,37 @@ export async function cerrarPlan(
       return { ok: false, error: getErr?.message ?? "Plan no encontrado" }
     }
 
-    const plan = planRow as { estado: EstadoPlan; evidencia_obligatoria: boolean }
+    const plan = planRow as {
+      estado: EstadoPlan
+      evidencia_obligatoria: boolean
+      titulo: string | null
+      descripcion: string
+      tipo: string
+      pregunta_id: string | null
+      prioridad: string
+    }
 
-    // contar evidencias vinculadas (ambas tablas)
-    const [{ count: evCount }, { count: archCount }] = await Promise.all([
-      supabase
-        .from("evidencia_planes")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-      supabase
-        .from("dpo_archivo_planes")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-    ])
+    // contar evidencias: vinculadas (evidencia_planes + dpo_archivo_planes)
+    // y archivos adjuntos en avances del Action Log.
+    const [{ count: evCount }, { count: archCount }, { count: avanceFileCount }] =
+      await Promise.all([
+        supabase
+          .from("evidencia_planes")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId),
+        supabase
+          .from("dpo_archivo_planes")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId),
+        supabase
+          .from("planes_accion_avances")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId)
+          .not("archivo_path", "is", null),
+      ])
 
-    const totalEvidencias = (evCount ?? 0) + (archCount ?? 0)
+    const totalEvidencias =
+      (evCount ?? 0) + (archCount ?? 0) + (avanceFileCount ?? 0)
 
     // 2) validaciones de evidencia
     const updates: {
@@ -1367,10 +1469,67 @@ export async function cerrarPlan(
       })
     }
 
+    // 5) tarea de seguimiento (opcional): clona la original y la enlaza
+    let seguimientoId: string | undefined
+    if (opts.seguimiento?.fecha_limite) {
+      const hoy = new Date().toISOString().slice(0, 10)
+      const { data: nuevo, error: segErr } = await supabase
+        .from("planes_accion")
+        .insert({
+          pregunta_id: plan.pregunta_id,
+          tipo: plan.tipo,
+          titulo: plan.titulo,
+          descripcion: plan.descripcion,
+          responsable: "", // los reales se copian a plan_responsables abajo
+          fecha_inicio: hoy,
+          fecha_limite: opts.seguimiento.fecha_limite,
+          estado: "pendiente",
+          prioridad: plan.prioridad,
+          evidencia_obligatoria: plan.evidencia_obligatoria,
+          origen_plan_id: planId,
+          created_by: profile.id,
+        })
+        .select("id")
+        .single()
+
+      if (segErr || !nuevo) {
+        // La original ya quedó cerrada; informamos pero no abortamos el cierre.
+        return {
+          ok: false,
+          error: `Tarea cerrada, pero no se pudo crear el seguimiento: ${
+            segErr?.message ?? "error desconocido"
+          }`,
+        }
+      }
+
+      seguimientoId = (nuevo as { id: string }).id
+
+      // Copiar responsables (mismos profile_id y rol) a la nueva tarea
+      const { data: resps } = await supabase
+        .from("plan_responsables")
+        .select("profile_id, rol")
+        .eq("plan_id", planId)
+
+      const filas = (
+        (resps ?? []) as Array<{ profile_id: string; rol: PlanResponsableRol }>
+      ).map((r) => ({
+        plan_id: seguimientoId!,
+        profile_id: r.profile_id,
+        rol: r.rol,
+        asignado_por: profile.id,
+      }))
+      if (filas.length > 0) {
+        await supabase.from("plan_responsables").insert(filas)
+      }
+
+      revalidatePath(`/planes/${seguimientoId}`)
+      revalidatePath("/registro-tareas")
+    }
+
     revalidatePath("/planes")
     revalidatePath(`/planes/${planId}`)
     revalidatePath("/mis-tareas")
-    return { ok: true }
+    return { ok: true, seguimientoId }
   } catch (err) {
     return {
       ok: false,

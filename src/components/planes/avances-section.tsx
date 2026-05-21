@@ -1,13 +1,15 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
 import {
+  CalendarClock,
   CheckCircle2,
   Download,
   FileText,
+  History,
   Image as ImageIcon,
   Loader2,
   MessageSquare,
@@ -39,7 +41,12 @@ import {
   type PlanAvanceConAutor,
 } from "@/actions/plan-avances"
 import { ESTADO_PLAN_COLORS, ESTADO_PLAN_LABELS } from "@/lib/constants"
-import type { EstadoPlan } from "@/types/database"
+import type {
+  EstadoPlan,
+  PlanComentarioConAutor,
+  PlanHistorialConAutor,
+  PlanReprogramacionConAutor,
+} from "@/types/database"
 
 const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp"]
 function esImagen(mime: string | null, nombre: string | null): boolean {
@@ -67,9 +74,29 @@ function formatBytes(b: number | null): string {
   return `${(b / 1024 / 1024).toFixed(1)} MB`
 }
 
+function fechaCorta(iso: string | null): string {
+  if (!iso) return "—"
+  try {
+    return format(new Date(iso + "T00:00:00"), "dd/MM/yyyy")
+  } catch {
+    return iso
+  }
+}
+
+// Línea de tiempo unificada (Action Log): avances + comentarios legacy +
+// cambios de estado + reprogramaciones, todo ordenado cronológicamente.
+type TimelineItem =
+  | { key: string; at: number; type: "avance"; a: PlanAvanceConAutor }
+  | { key: string; at: number; type: "comentario"; c: PlanComentarioConAutor }
+  | { key: string; at: number; type: "estado"; h: PlanHistorialConAutor }
+  | { key: string; at: number; type: "reprog"; r: PlanReprogramacionConAutor }
+
 interface Props {
   planId: string
   avancesIniciales: PlanAvanceConAutor[]
+  comentarios?: PlanComentarioConAutor[]
+  historial?: PlanHistorialConAutor[]
+  reprogramaciones?: PlanReprogramacionConAutor[]
   estadoActual: EstadoPlan
   puedeIntervenir: boolean
 }
@@ -77,6 +104,9 @@ interface Props {
 export function AvancesSection({
   planId,
   avancesIniciales,
+  comentarios = [],
+  historial = [],
+  reprogramaciones = [],
   estadoActual,
   puedeIntervenir,
 }: Props) {
@@ -85,12 +115,49 @@ export function AvancesSection({
   const [submitting, startSubmit] = useTransition()
   const [comentario, setComentario] = useState("")
   const [archivo, setArchivo] = useState<File | null>(null)
-  const [cerrarPlan, setCerrarPlan] = useState(false)
+  const [cerrar, setCerrar] = useState(false)
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [lightbox, setLightbox] = useState<{
     url: string
     titulo: string
   } | null>(null)
+
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = []
+    for (const a of avances) {
+      items.push({
+        key: `a-${a.id}`,
+        at: new Date(a.created_at).getTime(),
+        type: "avance",
+        a,
+      })
+    }
+    for (const c of comentarios) {
+      items.push({
+        key: `c-${c.id}`,
+        at: new Date(c.created_at).getTime(),
+        type: "comentario",
+        c,
+      })
+    }
+    for (const h of historial) {
+      items.push({
+        key: `h-${h.id}`,
+        at: new Date(h.changed_at).getTime(),
+        type: "estado",
+        h,
+      })
+    }
+    for (const r of reprogramaciones) {
+      items.push({
+        key: `r-${r.id}`,
+        at: new Date(r.reprogramado_at).getTime(),
+        type: "reprog",
+        r,
+      })
+    }
+    return items.sort((x, y) => y.at - x.at)
+  }, [avances, comentarios, historial, reprogramaciones])
 
   useEffect(() => {
     const pendientes = avances.filter(
@@ -141,7 +208,7 @@ export function AvancesSection({
   function resetForm() {
     setComentario("")
     setArchivo(null)
-    setCerrarPlan(false)
+    setCerrar(false)
   }
 
   async function handleAbrirArchivo(path: string) {
@@ -160,17 +227,17 @@ export function AvancesSection({
 
   async function handleSubmit() {
     if (!comentario.trim() && !archivo) {
-      toast.error("Adjuntá un archivo o escribí un comentario")
+      toast.error("Adjuntá un archivo o escribí una observación")
       return
     }
-    if (cerrarPlan && !comentario.trim()) {
-      toast.error("Para cerrar el plan tenés que escribir un comentario")
+    if (cerrar && !comentario.trim()) {
+      toast.error("Para cerrar la tarea tenés que escribir una observación")
       return
     }
     const fd = new FormData()
     fd.append("comentario", comentario.trim())
     if (archivo) fd.append("archivo", archivo)
-    if (cerrarPlan) fd.append("nuevo_estado", "completado")
+    if (cerrar) fd.append("nuevo_estado", "completado")
     startSubmit(async () => {
       const r = await agregarAvancePlan(planId, fd)
       if ("error" in r) {
@@ -203,127 +270,249 @@ export function AvancesSection({
         <CardTitle className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
-            Avances ({avances.length})
+            Action Log ({timeline.length})
           </span>
           {puedeIntervenir && !planCerrado && (
             <Button size="sm" onClick={() => setDialogOpen(true)}>
               <Plus className="mr-1 h-4 w-4" />
-              Cargar avance
+              Responder / cargar avance
             </Button>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="border-t pt-4">
-        {avances.length === 0 ? (
+        {timeline.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">
-            Sin avances cargados todavía.
+            Sin actividad todavía.
             {puedeIntervenir && !planCerrado
-              ? ' Usá "Cargar avance" para responder con comentario, archivo o foto.'
+              ? ' Usá "Responder / cargar avance" para sumar una observación, archivo o foto.'
               : ""}
           </p>
         ) : (
           <ol className="space-y-4">
-            {avances.map((a) => {
-              const isImg = esImagen(a.archivo_mime, a.archivo_nombre)
-              const thumbUrl = imageUrls[a.id]
-              return (
-                <li key={a.id} className="flex gap-3">
-                  <Avatar className="h-9 w-9 shrink-0">
-                    <AvatarFallback className="text-xs">
-                      {initials(a.autor_nombre)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span className="font-medium text-slate-700">
-                        {a.autor_nombre ?? "—"}
-                      </span>
-                      <span>·</span>
-                      <span
-                        title={format(new Date(a.created_at), "Pp", { locale: es })}
-                      >
-                        {formatDistanceToNow(new Date(a.created_at), {
-                          locale: es,
-                          addSuffix: true,
-                        })}
-                      </span>
-                      {a.estado_resultante && (
-                        <Badge
-                          variant="outline"
-                          className="ml-auto text-[10px]"
-                          style={{
-                            backgroundColor:
-                              ESTADO_PLAN_COLORS[a.estado_resultante] + "20",
-                            color: ESTADO_PLAN_COLORS[a.estado_resultante],
-                            borderColor:
-                              ESTADO_PLAN_COLORS[a.estado_resultante] + "40",
-                          }}
+            {timeline.map((item) => {
+              if (item.type === "avance") {
+                const a = item.a
+                const isImg = esImagen(a.archivo_mime, a.archivo_nombre)
+                const thumbUrl = imageUrls[a.id]
+                return (
+                  <li key={item.key} className="flex gap-3">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className="text-xs">
+                        {initials(a.autor_nombre)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-700">
+                          {a.autor_nombre ?? "—"}
+                        </span>
+                        <span>·</span>
+                        <span
+                          title={format(new Date(a.created_at), "Pp", {
+                            locale: es,
+                          })}
                         >
-                          {a.estado_resultante === "completado" && (
-                            <CheckCircle2 className="mr-1 h-3 w-3" />
-                          )}
-                          {ESTADO_PLAN_LABELS[a.estado_resultante] ?? a.estado_resultante}
-                        </Badge>
+                          {formatDistanceToNow(new Date(a.created_at), {
+                            locale: es,
+                            addSuffix: true,
+                          })}
+                        </span>
+                        {a.estado_resultante && (
+                          <Badge
+                            variant="outline"
+                            className="ml-auto text-[10px]"
+                            style={{
+                              backgroundColor:
+                                ESTADO_PLAN_COLORS[a.estado_resultante] + "20",
+                              color: ESTADO_PLAN_COLORS[a.estado_resultante],
+                              borderColor:
+                                ESTADO_PLAN_COLORS[a.estado_resultante] + "40",
+                            }}
+                          >
+                            {a.estado_resultante === "completado" && (
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                            )}
+                            {ESTADO_PLAN_LABELS[a.estado_resultante] ??
+                              a.estado_resultante}
+                          </Badge>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleEliminar(a.id)}
+                          className={`text-slate-400 hover:text-red-500 ${
+                            a.estado_resultante ? "" : "ml-auto"
+                          }`}
+                          title="Eliminar avance"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {a.comentario && (
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
+                          {a.comentario}
+                        </p>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleEliminar(a.id)}
-                        className="text-slate-400 hover:text-red-500"
-                        title="Eliminar avance"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {a.archivo_path && (
+                        <div className="mt-2 flex items-center gap-2">
+                          {isImg && thumbUrl ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLightbox({
+                                  url: thumbUrl,
+                                  titulo: a.archivo_nombre ?? "Imagen",
+                                })
+                              }
+                              className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                              title="Ver imagen"
+                            >
+                              <img
+                                src={thumbUrl}
+                                alt={a.archivo_nombre ?? ""}
+                                className="h-20 w-20 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={() => handleAbrirArchivo(a.archivo_path!)}
+                            >
+                              {isImg ? (
+                                <ImageIcon className="h-3.5 w-3.5" />
+                              ) : (
+                                <FileText className="h-3.5 w-3.5" />
+                              )}
+                              {a.archivo_nombre ?? "Descargar archivo"}
+                              <Download className="ml-1 h-3 w-3" />
+                            </Button>
+                          )}
+                          {isImg && thumbUrl && (
+                            <div className="text-xs text-slate-500">
+                              <p className="truncate">{a.archivo_nombre}</p>
+                              <p>{formatBytes(a.archivo_bytes)}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {a.comentario && (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
-                        {a.comentario}
+                  </li>
+                )
+              }
+
+              if (item.type === "comentario") {
+                const c = item.c
+                return (
+                  <li key={item.key} className="flex gap-3">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className="text-xs">
+                        {initials(c.autor_nombre)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-700">
+                          {c.autor_nombre}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {format(new Date(c.created_at), "dd/MM/yyyy HH:mm")}
+                        </span>
+                        <Badge variant="outline" className="ml-auto text-[10px]">
+                          comentario
+                        </Badge>
+                      </div>
+                      {c.texto && (
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
+                          {c.texto}
+                        </p>
+                      )}
+                      {c.foto_url && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLightbox({ url: c.foto_url!, titulo: "Imagen" })
+                          }
+                          className="mt-2 overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                          title="Ver imagen"
+                        >
+                          <img
+                            src={c.foto_url}
+                            alt="Foto adjunta"
+                            className="h-20 w-20 object-cover"
+                          />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                )
+              }
+
+              if (item.type === "estado") {
+                const h = item.h
+                return (
+                  <li key={item.key} className="flex items-center gap-3 text-xs">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                      <History className="h-4 w-4" />
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                        style={{
+                          backgroundColor:
+                            ESTADO_PLAN_COLORS[h.estado_anterior],
+                        }}
+                      >
+                        {ESTADO_PLAN_LABELS[h.estado_anterior]}
+                      </span>
+                      <span className="text-slate-400">→</span>
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                        style={{
+                          backgroundColor: ESTADO_PLAN_COLORS[h.estado_nuevo],
+                        }}
+                      >
+                        {ESTADO_PLAN_LABELS[h.estado_nuevo]}
+                      </span>
+                      <span className="text-slate-500">
+                        · {h.autor_nombre} ·{" "}
+                        {format(new Date(h.changed_at), "dd/MM/yyyy HH:mm")}
+                      </span>
+                    </div>
+                  </li>
+                )
+              }
+
+              // reprog
+              const r = item.r
+              return (
+                <li key={item.key} className="flex items-start gap-3 text-xs">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-500">
+                    <CalendarClock className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-slate-600">Reprogramó:</span>
+                      <span className="rounded bg-white px-1.5 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
+                        {fechaCorta(r.fecha_anterior)}
+                      </span>
+                      <span className="text-slate-400">→</span>
+                      <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700 ring-1 ring-blue-200">
+                        {fechaCorta(r.fecha_nueva)}
+                      </span>
+                    </div>
+                    {r.motivo && (
+                      <p className="mt-1 whitespace-pre-line text-slate-700">
+                        {r.motivo}
                       </p>
                     )}
-                    {a.archivo_path && (
-                      <div className="mt-2 flex items-center gap-2">
-                        {isImg && thumbUrl ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setLightbox({
-                                url: thumbUrl,
-                                titulo: a.archivo_nombre ?? "Imagen",
-                              })
-                            }
-                            className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
-                            title="Ver imagen"
-                          >
-                            <img
-                              src={thumbUrl}
-                              alt={a.archivo_nombre ?? ""}
-                              className="h-20 w-20 object-cover"
-                            />
-                          </button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="gap-1.5"
-                            onClick={() => handleAbrirArchivo(a.archivo_path!)}
-                          >
-                            {isImg ? (
-                              <ImageIcon className="h-3.5 w-3.5" />
-                            ) : (
-                              <FileText className="h-3.5 w-3.5" />
-                            )}
-                            {a.archivo_nombre ?? "Descargar archivo"}
-                            <Download className="ml-1 h-3 w-3" />
-                          </Button>
-                        )}
-                        {isImg && thumbUrl && (
-                          <div className="text-xs text-slate-500">
-                            <p className="truncate">{a.archivo_nombre}</p>
-                            <p>{formatBytes(a.archivo_bytes)}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <p className="mt-0.5 text-slate-500">
+                      {r.autor_nombre} ·{" "}
+                      {format(new Date(r.reprogramado_at), "dd/MM/yyyy HH:mm")}
+                    </p>
                   </div>
                 </li>
               )
@@ -341,12 +530,12 @@ export function AvancesSection({
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Cargar avance</DialogTitle>
+            <DialogTitle>Responder / cargar avance</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label htmlFor="avance-comentario">
-                Comentario {cerrarPlan && <span className="text-red-500">*</span>}
+                Observación {cerrar && <span className="text-red-500">*</span>}
               </Label>
               <Textarea
                 id="avance-comentario"
@@ -358,7 +547,9 @@ export function AvancesSection({
               />
             </div>
             <div>
-              <Label>Archivo o foto (opcional — podés pegar con Ctrl+V)</Label>
+              <Label>
+                Evidencia: archivo o foto (podés pegar con Ctrl+V)
+              </Label>
               {archivo ? (
                 <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-sm">
                   <div className="flex min-w-0 items-center gap-2">
@@ -394,10 +585,10 @@ export function AvancesSection({
             {!planCerrado && (
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
-                  checked={cerrarPlan}
-                  onCheckedChange={(c) => setCerrarPlan(c === true)}
+                  checked={cerrar}
+                  onCheckedChange={(c) => setCerrar(c === true)}
                 />
-                <span>Cerrar el plan con este avance (estado = Completado)</span>
+                <span>Cerrar la tarea con este avance (estado = Cerrada)</span>
               </label>
             )}
           </div>

@@ -11,13 +11,9 @@ import {
   Clock,
   CheckCircle2,
   ChevronDown,
-  MessageSquare,
-  History,
   FileCheck,
   Plus,
   Trash2,
-  Camera,
-  Send,
   Loader2,
   ExternalLink,
   FileText,
@@ -33,7 +29,6 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -71,8 +66,7 @@ import {
   updatePlanEstado,
   updatePlanProgreso,
   updatePlanNotas,
-  createPlanComentario,
-  deletePlanComentario,
+  togglePlanEvidenciaObligatoria,
   linkEvidenciaToPlan,
   unlinkEvidenciaFromPlan,
   getUnlinkedEvidencias,
@@ -95,9 +89,6 @@ import { ReprogramarDialog } from "@/components/planes/reprogramar-dialog"
 import { CerrarPlanDialog } from "@/components/planes/cerrar-plan-dialog"
 import type {
   PlanAccionFull,
-  PlanComentarioConAutor,
-  PlanHistorialConAutor,
-  PlanReprogramacionConAutor,
   Evidencia,
   EstadoPlan,
   TipoEvidencia,
@@ -252,295 +243,6 @@ function InfoSection({
               Guardar notas
             </Button>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ==================== COMENTARIOS SECTION ====================
-
-function ComentariosSection({
-  planId,
-  comentarios: initialComentarios,
-}: {
-  planId: string
-  comentarios: PlanComentarioConAutor[]
-}) {
-  const [comentarios, setComentarios] = useState(initialComentarios)
-  const [texto, setTexto] = useState("")
-  const [fotoFile, setFotoFile] = useState<File | null>(null)
-  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
-  const [sending, setSending] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setFotoFile(file)
-    const reader = new FileReader()
-    reader.onload = () => setFotoPreview(reader.result as string)
-    reader.readAsDataURL(file)
-  }
-
-  function clearFoto() {
-    setFotoFile(null)
-    setFotoPreview(null)
-    if (fileInputRef.current) fileInputRef.current.value = ""
-  }
-
-  async function handleSend() {
-    if (!texto.trim() && !fotoFile) {
-      toast.error("Escribe un comentario o adjunta una foto")
-      return
-    }
-
-    setSending(true)
-
-    let foto_url: string | undefined
-
-    // Upload photo if present
-    if (fotoFile) {
-      try {
-        const supabase = createClient()
-        const ext = fotoFile.name.split(".").pop() ?? "jpg"
-        const path = `comentarios/${planId}/${Date.now()}.${ext}`
-
-        const { error: uploadErr } = await supabase.storage
-          .from("evidencias")
-          .upload(path, fotoFile)
-
-        if (uploadErr) {
-          toast.error("Error subiendo foto: " + uploadErr.message)
-          setSending(false)
-          return
-        }
-
-        const { data: urlData } = supabase.storage
-          .from("evidencias")
-          .getPublicUrl(path)
-
-        foto_url = urlData.publicUrl
-      } catch {
-        toast.error("Error subiendo foto")
-        setSending(false)
-        return
-      }
-    }
-
-    const result = await createPlanComentario({
-      plan_id: planId,
-      texto: texto.trim() || "(foto adjunta)",
-      foto_url,
-    })
-
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setComentarios((prev) => [result.data, ...prev])
-      setTexto("")
-      clearFoto()
-      toast.success("Comentario agregado")
-    }
-
-    setSending(false)
-  }
-
-  async function handleDelete(id: string) {
-    const result = await deletePlanComentario(id)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setComentarios((prev) => prev.filter((c) => c.id !== id))
-      toast.success("Comentario eliminado")
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <MessageSquare className="h-4 w-4" />
-          Comentarios ({comentarios.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 border-t pt-4">
-        {/* New comment form */}
-        <div className="space-y-2 rounded-lg bg-muted/30 p-3">
-          <Textarea
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            placeholder="Escribe un comentario..."
-            className="min-h-16 bg-white"
-          />
-          {fotoPreview && (
-            <div className="relative inline-block">
-              <img
-                src={fotoPreview}
-                alt="Preview"
-                className="h-20 w-20 rounded-lg object-cover"
-              />
-              <button
-                onClick={clearFoto}
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs"
-              >
-                x
-              </button>
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Camera className="mr-1 h-3.5 w-3.5" />
-                Foto
-              </Button>
-            </div>
-            <Button
-              size="sm"
-              onClick={handleSend}
-              disabled={sending || (!texto.trim() && !fotoFile)}
-            >
-              {sending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Send className="mr-1 h-3.5 w-3.5" />
-              )}
-              Enviar
-            </Button>
-          </div>
-        </div>
-
-        {/* Comments list */}
-        {comentarios.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Sin comentarios aun
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {comentarios.map((c) => (
-              <div
-                key={c.id}
-                className="rounded-lg border bg-white p-3 space-y-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-sm font-medium text-slate-800">
-                      {c.autor_nombre}
-                    </span>
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {format(new Date(c.created_at), "dd/MM/yyyy HH:mm")}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => handleDelete(c.id)}
-                  >
-                    <Trash2 className="h-3 w-3 text-red-500" />
-                  </Button>
-                </div>
-                <p className="text-sm text-slate-700 whitespace-pre-line">
-                  {c.texto}
-                </p>
-                {c.foto_url && (
-                  <a
-                    href={c.foto_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <img
-                      src={c.foto_url}
-                      alt="Foto adjunta"
-                      className="mt-1 max-h-48 rounded-lg object-cover"
-                    />
-                  </a>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ==================== HISTORIAL SECTION ====================
-
-function HistorialSection({
-  historial,
-}: {
-  historial: PlanHistorialConAutor[]
-}) {
-  if (historial.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <History className="h-4 w-4" />
-            Historial de Estados
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="border-t pt-4">
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Sin cambios de estado registrados
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <History className="h-4 w-4" />
-          Historial de Estados ({historial.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="border-t pt-4">
-        <div className="space-y-3">
-          {historial.map((h) => (
-            <div
-              key={h.id}
-              className="flex items-center gap-3 text-sm"
-            >
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                  style={{
-                    backgroundColor: ESTADO_PLAN_COLORS[h.estado_anterior],
-                  }}
-                >
-                  {ESTADO_PLAN_LABELS[h.estado_anterior]}
-                </span>
-                <span className="text-muted-foreground">→</span>
-                <span
-                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                  style={{
-                    backgroundColor: ESTADO_PLAN_COLORS[h.estado_nuevo],
-                  }}
-                >
-                  {ESTADO_PLAN_LABELS[h.estado_nuevo]}
-                </span>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {h.autor_nombre} -{" "}
-                {format(new Date(h.changed_at), "dd/MM/yyyy HH:mm")}
-              </span>
-            </div>
-          ))}
         </div>
       </CardContent>
     </Card>
@@ -1214,12 +916,18 @@ export function PlanDetailClient({
   const [plan, setPlan] = useState(initialPlan)
   const [reprogramarOpen, setReprogramarOpen] = useState(false)
   const [cerrarOpen, setCerrarOpen] = useState(false)
+  const [togglingEvidencia, startToggle] = useTransition()
 
   const canEditResponsables =
     currentRole === "admin" || currentRole === "auditor"
   const isAdmin = currentRole === "admin"
+  // Cualquier archivo adjunto cuenta como evidencia: vinculadas + archivos
+  // subidos en avances del Action Log (coherente con cerrarPlan en el server).
+  const avancesConArchivo = avancesIniciales.filter((a) => a.archivo_path).length
   const totalEvidencias =
-    (plan.evidencias?.length ?? 0) + (plan.archivos_dpo?.length ?? 0)
+    (plan.evidencias?.length ?? 0) +
+    (plan.archivos_dpo?.length ?? 0) +
+    avancesConArchivo
 
   async function handleEstadoChange(nuevoEstado: EstadoPlan) {
     const result = await updatePlanEstado(plan.id, nuevoEstado)
@@ -1250,6 +958,22 @@ export function PlanDetailClient({
       setPlan((prev) => ({ ...prev, notas: notas || null }))
       toast.success("Notas guardadas")
     }
+  }
+
+  function handleToggleEvidencia(value: boolean) {
+    startToggle(async () => {
+      const res = await togglePlanEvidenciaObligatoria(plan.id, value)
+      if (!res.ok) {
+        toast.error(res.error)
+        return
+      }
+      setPlan((prev) => ({ ...prev, evidencia_obligatoria: value }))
+      toast.success(
+        value
+          ? "Evidencia obligatoria activada"
+          : "Evidencia obligatoria desactivada",
+      )
+    })
   }
 
   return (
@@ -1290,7 +1014,7 @@ export function PlanDetailClient({
             )}
           </div>
           <h1 className="mt-1 text-lg font-bold text-slate-900 leading-snug">
-            {plan.tipo === "directa" && plan.titulo ? plan.titulo : plan.descripcion}
+            {plan.titulo || plan.descripcion}
           </h1>
           {plan.pregunta_texto && plan.tipo !== "directa" && (
             <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
@@ -1299,6 +1023,45 @@ export function PlanDetailClient({
           )}
         </div>
       </div>
+
+      {/* Banners de seguimiento (trazabilidad entre tareas encadenadas) */}
+      {plan.origen && (
+        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <CalendarClock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <span>
+            Seguimiento de{" "}
+            <Link
+              href={`/planes/${plan.origen.id}`}
+              className="font-medium text-blue-600 hover:underline"
+            >
+              {plan.origen.titulo}
+            </Link>
+          </span>
+        </div>
+      )}
+      {plan.seguimientos && plan.seguimientos.length > 0 && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <span className="font-medium">
+              Generó {plan.seguimientos.length} tarea
+              {plan.seguimientos.length === 1 ? "" : "s"} de seguimiento:
+            </span>
+          </div>
+          <ul className="mt-1 space-y-0.5 pl-5">
+            {plan.seguimientos.map((s) => (
+              <li key={s.id}>
+                <Link
+                  href={`/planes/${s.id}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {s.titulo}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Punto del manual (asociar/cambiar) — solo para tareas directas */}
       {plan.tipo === "directa" && (
@@ -1363,12 +1126,9 @@ export function PlanDetailClient({
             </div>
           </div>
 
-          {/* Evidencia obligatoria switch (solo admin, deshabilitado por ahora) */}
+          {/* Evidencia obligatoria switch (solo admin) */}
           {isAdmin && (
-            <div
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2"
-              title="Próximamente"
-            >
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-slate-500" />
                 <div>
@@ -1382,52 +1142,41 @@ export function PlanDetailClient({
                   </p>
                 </div>
               </div>
-              {/* TODO: implementar togglePlanEvidenciaObligatoria server action */}
-              <label
-                className="inline-flex cursor-not-allowed items-center gap-2 opacity-60"
-                title="Próximamente"
+              <button
+                type="button"
+                role="switch"
+                aria-checked={plan.evidencia_obligatoria}
+                disabled={togglingEvidencia}
+                onClick={() =>
+                  handleToggleEvidencia(!plan.evidencia_obligatoria)
+                }
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
+                  plan.evidencia_obligatoria ? "bg-blue-500" : "bg-slate-300"
+                }`}
               >
-                <span className="text-[11px] text-muted-foreground">
-                  Próximamente
-                </span>
                 <span
-                  role="switch"
-                  aria-checked={plan.evidencia_obligatoria}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    plan.evidencia_obligatoria ? "bg-blue-500" : "bg-slate-300"
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    plan.evidencia_obligatoria
+                      ? "translate-x-4"
+                      : "translate-x-0.5"
                   }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                      plan.evidencia_obligatoria ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                  />
-                </span>
-              </label>
+                />
+              </button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Avances (responder con comentario + archivo/foto, estilo Action Log) */}
+      {/* Action Log unificado: avances + comentarios + estados + reprogramaciones */}
       <AvancesSection
         planId={plan.id}
         avancesIniciales={avancesIniciales}
+        comentarios={plan.comentarios}
+        historial={plan.historial}
+        reprogramaciones={plan.reprogramaciones ?? []}
         estadoActual={plan.estado}
         puedeIntervenir={puedeIntervenirEnAvances}
       />
-
-      {/* Comentarios */}
-      <ComentariosSection
-        planId={plan.id}
-        comentarios={plan.comentarios}
-      />
-
-      {/* Historial */}
-      <HistorialSection historial={plan.historial} />
-
-      {/* Historial de reprogramaciones */}
-      <ReprogramacionesSection reprogramaciones={plan.reprogramaciones ?? []} />
 
       {/* Evidencias */}
       <EvidenciasSection
@@ -1460,74 +1209,6 @@ export function PlanDetailClient({
         onDone={() => router.refresh()}
       />
     </div>
-  )
-}
-
-// ==================== REPROGRAMACIONES SECTION ====================
-
-function ReprogramacionesSection({
-  reprogramaciones,
-}: {
-  reprogramaciones: PlanReprogramacionConAutor[]
-}) {
-  if (reprogramaciones.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <CalendarClock className="h-4 w-4" />
-            Historial de reprogramaciones
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="border-t pt-4">
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Sin reprogramaciones registradas
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <CalendarClock className="h-4 w-4" />
-          Historial de reprogramaciones ({reprogramaciones.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="border-t pt-4">
-        <div className="space-y-3">
-          {reprogramaciones.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"
-            >
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-white px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
-                  {r.fecha_anterior
-                    ? format(new Date(r.fecha_anterior), "dd/MM/yyyy")
-                    : "—"}
-                </span>
-                <span className="text-muted-foreground">→</span>
-                <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">
-                  {format(new Date(r.fecha_nueva), "dd/MM/yyyy")}
-                </span>
-              </div>
-              {r.motivo && (
-                <p className="mt-2 text-xs text-slate-700 whitespace-pre-line">
-                  {r.motivo}
-                </p>
-              )}
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                {r.autor_nombre} ·{" "}
-                {format(new Date(r.reprogramado_at), "dd/MM/yyyy HH:mm")}
-              </p>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 
