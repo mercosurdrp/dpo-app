@@ -25,9 +25,11 @@ import {
   X,
   LogOut,
   Presentation,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { IS_MISIONES } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 import type { PilarNav } from "./sidebar"
@@ -38,6 +40,8 @@ interface NavItem {
   icon: React.ReactNode
   adminOnly?: boolean
   hideForEmpleado?: boolean
+  /** Solo se muestra en el tenant Pampeana (se oculta si IS_MISIONES). */
+  pampeanaOnly?: boolean
   /** Si está presente, sólo se muestra a estos roles. */
   roles?: UserRole[]
 }
@@ -62,6 +66,12 @@ const navItems: NavItem[] = [
     label: "Planes",
     href: "/planes",
     icon: <ClipboardList className="size-5" />,
+  },
+  {
+    label: "Herramientas de Gestión",
+    href: "/herramientas-gestion",
+    icon: <Wrench className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Mis tareas",
@@ -233,6 +243,7 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
               .filter(
                 (item) =>
                   !(item.hideForEmpleado && role === "empleado") &&
+                  !(item.pampeanaOnly && IS_MISIONES) &&
                   (!item.roles || item.roles.includes(role)),
               )
               .map((item) => {

@@ -18,6 +18,7 @@ import {
   Plus,
   Trash2,
   Upload,
+  Wrench,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -44,10 +45,16 @@ import {
 import { ESTADO_PLAN_COLORS, ESTADO_PLAN_LABELS } from "@/lib/constants"
 import type {
   EstadoPlan,
+  HerramientaGestionConContexto,
   PlanComentarioConAutor,
   PlanHistorialConAutor,
   PlanReprogramacionConAutor,
 } from "@/types/database"
+import { IS_MISIONES } from "@/lib/empresa"
+import { listarHerramientasPlan } from "@/actions/herramientas-gestion"
+import { HerramientaGestionDialog } from "@/components/herramientas-gestion/herramienta-gestion-dialog"
+import { HerramientaGestionView } from "@/components/herramientas-gestion/herramienta-gestion-view"
+import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
 
 const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp"]
 function esImagen(mime: string | null, nombre: string | null): boolean {
@@ -140,6 +147,26 @@ export function AvancesSection({
     url: string
     titulo: string
   } | null>(null)
+  const [toolDialogOpen, setToolDialogOpen] = useState(false)
+  const [herramientas, setHerramientas] = useState<
+    HerramientaGestionConContexto[]
+  >([])
+  const [verHerramienta, setVerHerramienta] =
+    useState<HerramientaGestionConContexto | null>(null)
+
+  // Herramientas de gestión aplicadas a este plan (solo Pampeana).
+  useEffect(() => {
+    if (IS_MISIONES || !planId) return
+    listarHerramientasPlan(planId).then((r) => {
+      if ("data" in r) setHerramientas(r.data)
+    })
+  }, [planId])
+
+  function recargarHerramientas() {
+    listarHerramientasPlan(planId).then((r) => {
+      if ("data" in r) setHerramientas(r.data)
+    })
+  }
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = []
@@ -313,14 +340,62 @@ export function AvancesSection({
             Respuestas ({timeline.length})
           </span>
           {puedeIntervenir && !planCerrado && (
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" />
-              Responder
-            </Button>
+            <span className="flex items-center gap-2">
+              {!IS_MISIONES && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setToolDialogOpen(true)}
+                >
+                  <Wrench className="mr-1 h-4 w-4" />
+                  Herramienta de gestión
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <Plus className="mr-1 h-4 w-4" />
+                Responder
+              </Button>
+            </span>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="border-t pt-4">
+        {herramientas.length > 0 && (
+          <details
+            className="mb-4 rounded-md border border-slate-200 bg-slate-50/60 p-3"
+            open
+          >
+            <summary className="cursor-pointer text-sm font-medium text-slate-700">
+              Herramientas de gestión aplicadas ({herramientas.length})
+            </summary>
+            <ul className="mt-3 space-y-2">
+              {herramientas.map((h) => (
+                <li
+                  key={h.id}
+                  className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      {HERRAMIENTA_GESTION_LABELS[h.tipo]}
+                    </Badge>
+                    <span className="truncate text-sm text-slate-700">
+                      {h.titulo || "—"}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setVerHerramienta(h)}
+                  >
+                    Ver
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {timeline.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">
             Sin respuestas todavía.
@@ -759,6 +834,35 @@ export function AvancesSection({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Ver herramienta de gestión aplicada (solo lectura) */}
+      <Dialog
+        open={verHerramienta !== null}
+        onOpenChange={(o) => !o && setVerHerramienta(null)}
+      >
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {verHerramienta
+                ? HERRAMIENTA_GESTION_LABELS[verHerramienta.tipo]
+                : "Herramienta de gestión"}
+            </DialogTitle>
+          </DialogHeader>
+          {verHerramienta && (
+            <HerramientaGestionView herramienta={verHerramienta} />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Aplicar nueva herramienta de gestión (solo Pampeana) */}
+      {!IS_MISIONES && (
+        <HerramientaGestionDialog
+          planId={planId}
+          open={toolDialogOpen}
+          onOpenChange={setToolDialogOpen}
+          onSaved={recargarHerramientas}
+        />
+      )}
     </Card>
   )
 }

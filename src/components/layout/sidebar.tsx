@@ -32,6 +32,7 @@ import {
   Wallet,
   Presentation,
   Boxes,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -83,6 +84,12 @@ const navItems: NavItem[] = [
     label: "Planes",
     href: "/planes",
     icon: <ClipboardList className="size-5" />,
+  },
+  {
+    label: "Herramientas de Gestión",
+    href: "/herramientas-gestion",
+    icon: <Wrench className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Mis tareas",
