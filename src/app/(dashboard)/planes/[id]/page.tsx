@@ -37,6 +37,9 @@ export default async function PlanDetailPage({
     (r) => r.profile_id === profile?.id,
   )
   const puedeIntervenirEnAvances = !!(isEditor || isCreator || isResponsable)
+  // Editar el plan (título, descripción, fechas, prioridad, responsables):
+  // admin/auditor/quien puede asignar, o el creador.
+  const canEditar = !!(canEditPunto || isCreator)
 
   const avancesIniciales =
     "data" in avancesResult ? avancesResult.data : []
@@ -46,6 +49,7 @@ export default async function PlanDetailPage({
       plan={result.data}
       currentRole={profile?.role ?? "viewer"}
       canEditPunto={canEditPunto}
+      canEditar={canEditar}
       avancesIniciales={avancesIniciales}
       puedeIntervenirEnAvances={puedeIntervenirEnAvances}
     />

@@ -406,6 +406,7 @@ export async function createPlanAccion(data: {
 export async function updatePlanAccion(
   id: string,
   data: {
+    titulo?: string
     descripcion?: string
     responsable?: string
     fecha_inicio?: string

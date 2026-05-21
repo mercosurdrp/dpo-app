@@ -10,14 +10,13 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  Users,
+  Pencil,
   CalendarClock,
   ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -31,7 +30,6 @@ import {
   PRIORIDAD_COLORS,
   PRIORIDAD_LABELS,
 } from "@/lib/constants"
-import { updatePlanProgreso, updatePlanNotas } from "@/actions/planes"
 import {
   asociarPuntoManual,
   searchPuntosManual,
@@ -39,50 +37,125 @@ import {
 } from "@/actions/tareas-directas"
 import { AvancesSection } from "@/components/planes/avances-section"
 import type { PlanAvanceConAutor } from "@/actions/plan-avances"
-import { ResponsablesMultiPicker } from "@/components/planes/responsables-multi-picker"
-import type { PlanAccionFull, UserRole } from "@/types/database"
+import { EditarPlanDialog } from "@/components/planes/editar-plan-dialog"
+import type {
+  PlanAccionFull,
+  PlanResponsableConProfile,
+  UserRole,
+} from "@/types/database"
 
-// ==================== INFO SECTION ====================
+// ==================== FICHA (cabecera consolidada) ====================
 
-function InfoSection({
+function iniciales(nombre: string): string {
+  return nombre
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase()
+}
+
+function ResponsablesResumen({
+  responsables,
+}: {
+  responsables: PlanResponsableConProfile[]
+}) {
+  if (responsables.length === 0) {
+    return <span className="text-slate-400">Sin responsable asignado</span>
+  }
+  const principal =
+    responsables.find((r) => r.rol === "responsable_principal") ??
+    responsables[0]
+  const otros = responsables.length - 1
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-700">
+        {iniciales(principal.profile_nombre)}
+      </span>
+      <span className="font-medium text-slate-800">
+        {principal.profile_nombre}
+      </span>
+      {otros > 0 && (
+        <span className="text-xs text-muted-foreground">+{otros}</span>
+      )}
+    </div>
+  )
+}
+
+function FichaCard({
   plan,
-  onProgresoChange,
-  onNotasChange,
+  canEditar,
+  onEditar,
 }: {
   plan: PlanAccionFull
-  onProgresoChange: (progreso: number) => void
-  onNotasChange: (notas: string) => void
+  canEditar: boolean
+  onEditar: () => void
 }) {
-  const [progreso, setProgreso] = useState(plan.progreso)
-  const [notas, setNotas] = useState(plan.notas ?? "")
-  const [savingNotas, setSavingNotas] = useState(false)
-  const [savingProgreso, setSavingProgreso] = useState(false)
-  const now = new Date()
   const overdue =
     plan.fecha_limite &&
     plan.estado !== "completado" &&
-    new Date(plan.fecha_limite) < now
-
+    new Date(plan.fecha_limite) < new Date()
   const progresoColor =
-    progreso >= 67 ? "#22C55E" : progreso >= 34 ? "#F59E0B" : "#EF4444"
-
-  async function handleProgresoSave() {
-    setSavingProgreso(true)
-    onProgresoChange(progreso)
-    setSavingProgreso(false)
-  }
-
-  async function handleNotasSave() {
-    setSavingNotas(true)
-    onNotasChange(notas)
-    setSavingNotas(false)
-  }
+    plan.progreso >= 67 ? "#22C55E" : plan.progreso >= 34 ? "#F59E0B" : "#EF4444"
 
   return (
     <Card>
       <CardContent className="space-y-4 pt-4">
-        {/* Estado + Prioridad row (estado de sólo lectura: se cambia respondiendo) */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {plan.pregunta_id ? (
+                <>
+                  <span
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                    style={{ backgroundColor: plan.pilar_color || "#64748B" }}
+                  >
+                    {plan.pilar_nombre}
+                  </span>
+                  <span>/</span>
+                  <span>{plan.bloque_nombre}</span>
+                  <span>/</span>
+                  <Link
+                    href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`}
+                    className="hover:underline"
+                  >
+                    {plan.pregunta_numero}
+                  </Link>
+                </>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                  Tarea directa · sin punto del manual
+                </span>
+              )}
+            </div>
+            <h1 className="mt-1 text-lg font-bold leading-snug text-slate-900">
+              {plan.titulo || plan.descripcion}
+            </h1>
+          </div>
+          {canEditar && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEditar}
+              className="shrink-0"
+            >
+              <Pencil className="mr-1.5 h-3.5 w-3.5" />
+              Editar
+            </Button>
+          )}
+        </div>
+
+        {plan.titulo && plan.descripcion && (
+          <p className="whitespace-pre-line text-sm text-slate-600">
+            {plan.descripcion}
+          </p>
+        )}
+        {plan.pregunta_texto && plan.tipo !== "directa" && (
+          <p className="text-sm text-muted-foreground">{plan.pregunta_texto}</p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium text-white"
             style={{ backgroundColor: ESTADO_PLAN_COLORS[plan.estado] }}
@@ -97,26 +170,27 @@ function InfoSection({
           </span>
         </div>
 
-        {/* Details grid */}
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground">Fecha inicio</p>
-            <p className="font-medium text-slate-800">
-              {plan.fecha_inicio
-                ? format(new Date(plan.fecha_inicio), "dd/MM/yyyy")
-                : "-"}
-            </p>
+            <p className="text-xs text-muted-foreground">Responsable</p>
+            <div className="mt-1">
+              <ResponsablesResumen responsables={plan.responsables ?? []} />
+            </div>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Fecha limite</p>
+            <p className="text-xs text-muted-foreground">Fechas</p>
             <p
-              className={`font-medium ${
+              className={`mt-1 font-medium ${
                 overdue ? "text-red-600" : "text-slate-800"
               }`}
             >
+              {plan.fecha_inicio
+                ? format(new Date(plan.fecha_inicio), "dd/MM/yyyy")
+                : "—"}
+              {" · vence "}
               {plan.fecha_limite
                 ? format(new Date(plan.fecha_limite), "dd/MM/yyyy")
-                : "-"}
+                : "—"}
               {overdue && (
                 <AlertCircle className="ml-1 inline h-3.5 w-3.5 text-red-500" />
               )}
@@ -124,61 +198,32 @@ function InfoSection({
           </div>
         </div>
 
-        {/* Progress */}
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">Progreso</p>
             <span className="text-sm font-bold" style={{ color: progresoColor }}>
-              {progreso}%
+              {plan.progreso}%
             </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={progreso}
-              onChange={(e) => setProgreso(Number(e.target.value))}
-              className="flex-1 accent-blue-600"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleProgresoSave}
-              disabled={savingProgreso || progreso === plan.progreso}
-            >
-              Guardar
-            </Button>
           </div>
           <div className="h-2.5 w-full rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${progreso}%`, backgroundColor: progresoColor }}
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${plan.progreso}%`,
+                backgroundColor: progresoColor,
+              }}
             />
           </div>
         </div>
 
-        {/* Notas */}
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Notas</p>
-          <Textarea
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-            placeholder="Notas del plan..."
-            className="min-h-16"
-          />
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNotasSave}
-              disabled={savingNotas || notas === (plan.notas ?? "")}
-            >
-              Guardar notas
-            </Button>
+        {plan.notas && (
+          <div>
+            <p className="text-xs text-muted-foreground">Notas</p>
+            <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+              {plan.notas}
+            </p>
           </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -404,91 +449,31 @@ function PuntoSearchDialogContent({
 // ==================== MAIN COMPONENT ====================
 
 export function PlanDetailClient({
-  plan: initialPlan,
+  plan,
   currentRole,
   canEditPunto = false,
+  canEditar = false,
   avancesIniciales = [],
   puedeIntervenirEnAvances = false,
 }: {
   plan: PlanAccionFull
   currentRole: UserRole
   canEditPunto?: boolean
+  canEditar?: boolean
   avancesIniciales?: PlanAvanceConAutor[]
   puedeIntervenirEnAvances?: boolean
 }) {
   const router = useRouter()
-  const [plan, setPlan] = useState(initialPlan)
-
+  const [editOpen, setEditOpen] = useState(false)
   const canEditResponsables =
     currentRole === "admin" || currentRole === "auditor"
 
-  async function handleProgresoChange(progreso: number) {
-    const result = await updatePlanProgreso(plan.id, progreso)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setPlan((prev) => ({ ...prev, progreso }))
-      toast.success("Progreso actualizado")
-    }
-  }
-
-  async function handleNotasChange(notas: string) {
-    const result = await updatePlanNotas(plan.id, notas)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      setPlan((prev) => ({ ...prev, notas: notas || null }))
-      toast.success("Notas guardadas")
-    }
-  }
-
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          render={<Link href="/planes" />}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {plan.pregunta_id ? (
-              <>
-                <span
-                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                  style={{ backgroundColor: plan.pilar_color || "#64748B" }}
-                >
-                  {plan.pilar_nombre}
-                </span>
-                <span>/</span>
-                <span>{plan.bloque_nombre}</span>
-                <span>/</span>
-                <Link
-                  href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`}
-                  className="hover:underline"
-                >
-                  {plan.pregunta_numero}
-                </Link>
-              </>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                Tarea directa · sin punto del manual
-              </span>
-            )}
-          </div>
-          <h1 className="mt-1 text-lg font-bold text-slate-900 leading-snug">
-            {plan.titulo || plan.descripcion}
-          </h1>
-          {plan.pregunta_texto && plan.tipo !== "directa" && (
-            <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
-              {plan.pregunta_texto}
-            </p>
-          )}
-        </div>
-      </div>
+      <Button variant="ghost" size="sm" render={<Link href="/planes" />}>
+        <ArrowLeft className="mr-1.5 h-4 w-4" />
+        Volver a planes
+      </Button>
 
       {/* Banners de seguimiento (trazabilidad entre tareas encadenadas) */}
       {plan.origen && (
@@ -529,35 +514,17 @@ export function PlanDetailClient({
         </div>
       )}
 
+      {/* Ficha consolidada (cabecera amigable) */}
+      <FichaCard
+        plan={plan}
+        canEditar={canEditar}
+        onEditar={() => setEditOpen(true)}
+      />
+
       {/* Punto del manual (asociar/cambiar) — solo para tareas directas */}
       {plan.tipo === "directa" && (
         <PuntoManualSection plan={plan} canEdit={canEditPunto} />
       )}
-
-      {/* Info */}
-      <InfoSection
-        plan={plan}
-        onProgresoChange={handleProgresoChange}
-        onNotasChange={handleNotasChange}
-      />
-
-      {/* Responsables */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Users className="h-4 w-4" />
-            Responsables ({plan.responsables?.length ?? 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="border-t pt-4">
-          <ResponsablesMultiPicker
-            planId={plan.id}
-            responsables={plan.responsables ?? []}
-            canEdit={canEditResponsables}
-            onChange={() => router.refresh()}
-          />
-        </CardContent>
-      </Card>
 
       {/* Respuestas: único lugar de acción (responder + cambiar estado + repetir) */}
       <AvancesSection
@@ -569,6 +536,14 @@ export function PlanDetailClient({
         estadoActual={plan.estado}
         puedeIntervenir={puedeIntervenirEnAvances}
         onChanged={() => router.refresh()}
+      />
+
+      <EditarPlanDialog
+        plan={plan}
+        canEditResponsables={canEditResponsables}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={() => router.refresh()}
       />
     </div>
   )
