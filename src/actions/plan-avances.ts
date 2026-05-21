@@ -131,14 +131,15 @@ export interface ArchivoRespuesta {
   url: string
   autor_nombre: string | null
   created_at: string
-  plan_id: string
+  fuente: "respuesta" | "manual"
+  plan_id: string | null
   plan_titulo: string
 }
 
 /**
- * Historial de archivos de un punto del manual: todos los archivos subidos en
- * las respuestas (avances) de todas las tareas/planes de esa pregunta.
- * Read-only, con URL firmada lista para abrir.
+ * Historial de archivos de un punto del manual: archivos subidos en las
+ * respuestas (avances) de las tareas de esa pregunta + evidencias cargadas
+ * manualmente para el punto (tabla `evidencias`). Read-only.
  */
 export async function listarArchivosDeRespuestas(
   preguntaId: string,
@@ -148,6 +149,7 @@ export async function listarArchivosDeRespuestas(
     const supabase = await createClient()
     if (!preguntaId) return { error: "ID de pregunta inválido" }
 
+    // 1) planes de la pregunta (para el nombre de la tarea)
     const { data: planes } = await supabase
       .from("planes_accion")
       .select("id, titulo, descripcion")
@@ -157,35 +159,60 @@ export async function listarArchivosDeRespuestas(
       titulo: string | null
       descripcion: string
     }>
-    if (planList.length === 0) return { data: [] }
     const planMap = new Map(
       planList.map((p) => [p.id, p.titulo || p.descripcion]),
     )
     const planIds = planList.map((p) => p.id)
 
-    const { data: avances, error } = await supabase
-      .from("planes_accion_avances")
-      .select(
-        "id, plan_id, archivo_path, archivo_nombre, archivo_mime, archivo_bytes, autor_id, created_at",
-      )
-      .in("plan_id", planIds)
-      .not("archivo_path", "is", null)
+    // 2) avances con archivo de esas tareas
+    const avList = planIds.length
+      ? (((
+          await supabase
+            .from("planes_accion_avances")
+            .select(
+              "id, plan_id, archivo_path, archivo_nombre, archivo_mime, archivo_bytes, autor_id, created_at",
+            )
+            .in("plan_id", planIds)
+            .not("archivo_path", "is", null)
+            .order("created_at", { ascending: false })
+        ).data ?? []) as Array<{
+          id: string
+          plan_id: string
+          archivo_path: string
+          archivo_nombre: string | null
+          archivo_mime: string | null
+          archivo_bytes: number | null
+          autor_id: string | null
+          created_at: string
+        }>)
+      : []
+
+    // 3) evidencias cargadas manualmente para el punto (legacy, no se borran)
+    const { data: evRows } = await supabase
+      .from("evidencias")
+      .select("id, titulo, url, file_path, tipo, created_by, created_at")
+      .eq("pregunta_id", preguntaId)
       .order("created_at", { ascending: false })
-    if (error) return { error: error.message }
-    const avList = (avances ?? []) as Array<{
+    const evList = (evRows ?? []) as Array<{
       id: string
-      plan_id: string
-      archivo_path: string
-      archivo_nombre: string | null
-      archivo_mime: string | null
-      archivo_bytes: number | null
-      autor_id: string | null
+      titulo: string
+      url: string | null
+      file_path: string | null
+      tipo: string
+      created_by: string | null
       created_at: string
     }>
-    if (avList.length === 0) return { data: [] }
 
+    if (avList.length === 0 && evList.length === 0) return { data: [] }
+
+    // 4) autores de ambos orígenes
     const autorIds = Array.from(
-      new Set(avList.map((a) => a.autor_id).filter(Boolean)),
+      new Set(
+        [
+          ...avList.map((a) => a.autor_id),
+          ...evList.map((e) => e.created_by),
+        ].filter(Boolean),
+      ),
     ) as string[]
     const { data: profiles } = autorIds.length
       ? await supabase.from("profiles").select("id, nombre").in("id", autorIds)
@@ -197,29 +224,62 @@ export async function listarArchivosDeRespuestas(
       ]),
     )
 
-    const paths = avList.map((a) => a.archivo_path)
-    const { data: signed } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrls(paths, 60 * 30)
+    // 5) firmar URLs de los avances (bucket privado)
     const urlMap = new Map<string, string>()
-    for (const s of (signed ?? []) as Array<{
-      path: string | null
-      signedUrl: string
-    }>) {
-      if (s.path) urlMap.set(s.path, s.signedUrl)
+    if (avList.length) {
+      const { data: signed } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrls(
+          avList.map((a) => a.archivo_path),
+          60 * 30,
+        )
+      for (const s of (signed ?? []) as Array<{
+        path: string | null
+        signedUrl: string
+      }>) {
+        if (s.path) urlMap.set(s.path, s.signedUrl)
+      }
     }
 
-    const items: ArchivoRespuesta[] = avList.map((a) => ({
-      id: a.id,
+    const itemsAvances: ArchivoRespuesta[] = avList.map((a) => ({
+      id: `av-${a.id}`,
       archivo_nombre: a.archivo_nombre,
       archivo_mime: a.archivo_mime,
       archivo_bytes: a.archivo_bytes,
       url: urlMap.get(a.archivo_path) ?? "",
       autor_nombre: a.autor_id ? autorMap.get(a.autor_id) ?? "Usuario" : null,
       created_at: a.created_at,
+      fuente: "respuesta",
       plan_id: a.plan_id,
       plan_titulo: planMap.get(a.plan_id) ?? "",
     }))
+
+    const itemsManual: ArchivoRespuesta[] = evList.map((e) => {
+      let url = e.url ?? ""
+      if (!url && e.file_path) {
+        url = supabase.storage.from("evidencias").getPublicUrl(e.file_path).data
+          .publicUrl
+      }
+      return {
+        id: `ev-${e.id}`,
+        archivo_nombre: e.titulo,
+        archivo_mime: e.tipo === "foto" ? "image/*" : null,
+        archivo_bytes: null,
+        url,
+        autor_nombre: e.created_by
+          ? autorMap.get(e.created_by) ?? "Usuario"
+          : null,
+        created_at: e.created_at,
+        fuente: "manual",
+        plan_id: null,
+        plan_titulo: "Evidencia cargada manualmente",
+      }
+    })
+
+    const items = [...itemsAvances, ...itemsManual].sort(
+      (x, y) =>
+        new Date(y.created_at).getTime() - new Date(x.created_at).getTime(),
+    )
     return { data: items }
   } catch (err) {
     return {

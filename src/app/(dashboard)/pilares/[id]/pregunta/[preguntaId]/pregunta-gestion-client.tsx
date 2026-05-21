@@ -875,12 +875,14 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Link
-                    href={`/planes/${a.plan_id}`}
-                    className="text-xs text-blue-600 hover:underline"
-                  >
-                    Ver tarea
-                  </Link>
+                  {a.plan_id && (
+                    <Link
+                      href={`/planes/${a.plan_id}`}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Ver tarea
+                    </Link>
+                  )}
                   {a.url && (
                     <Button
                       variant="ghost"
