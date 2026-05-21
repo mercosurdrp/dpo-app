@@ -175,22 +175,26 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
 
     if ("error" in result) {
       toast.error(result.error)
-    } else {
-      const label = tipo === "liberacion" ? "liberación" : "retorno"
-      if (result.data.resultado === "rechazado") {
-        toast.error(`Checklist de ${label} RECHAZADO — ítems críticos no aprobados`)
-      } else {
-        toast.success(`Checklist de ${label} registrado correctamente`)
-      }
-      if (result.data.tiempo_ruta_minutos != null) {
-        const hh = Math.floor(result.data.tiempo_ruta_minutos / 60)
-        const mm = result.data.tiempo_ruta_minutos % 60
-        toast.info(`Tiempo en ruta: ${hh}h ${mm.toString().padStart(2, "0")}m`)
-      }
-      router.push("/mis-capacitaciones")
-      router.refresh()
+      setSaving(false)
+      return
     }
-    setSaving(false)
+
+    const label = tipo === "liberacion" ? "liberación" : "retorno"
+    if (result.data.resultado === "rechazado") {
+      toast.error(`Checklist de ${label} RECHAZADO — ítems críticos no aprobados`)
+    } else {
+      toast.success(`Checklist de ${label} registrado correctamente`)
+    }
+    if (result.data.tiempo_ruta_minutos != null) {
+      const hh = Math.floor(result.data.tiempo_ruta_minutos / 60)
+      const mm = result.data.tiempo_ruta_minutos % 60
+      toast.info(`Tiempo en ruta: ${hh}h ${mm.toString().padStart(2, "0")}m`)
+    }
+    // Redirige al home del empleado. NO re-habilitamos el botón (no llamamos a
+    // setSaving(false)): el form se desmonta al navegar, así el chofer no puede
+    // reenviar mientras /mis-capacitaciones carga. Era la causa de los checklists
+    // duplicados. replace en vez de push: con "atrás" no vuelve al form enviado.
+    router.replace("/mis-capacitaciones")
   }
 
   return (

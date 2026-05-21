@@ -66,17 +66,21 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
 
     if ("error" in result) {
       toast.error(result.error)
-    } else {
-      toast.success("Carga de combustible registrada")
-      if (result.data.rendimiento != null) {
-        toast.info(`Rendimiento: ${result.data.rendimiento} km/l (${result.data.km_recorridos} km recorridos)`)
-      } else {
-        toast.info("Primera carga para este vehículo — el rendimiento se calculará en la próxima")
-      }
-      router.push("/mis-capacitaciones")
-      router.refresh()
+      setSaving(false)
+      return
     }
-    setSaving(false)
+
+    toast.success("Carga de combustible registrada")
+    if (result.data.rendimiento != null) {
+      toast.info(`Rendimiento: ${result.data.rendimiento} km/l (${result.data.km_recorridos} km recorridos)`)
+    } else {
+      toast.info("Primera carga para este vehículo — el rendimiento se calculará en la próxima")
+    }
+    // Redirige al home del empleado. NO re-habilitamos el botón (no llamamos a
+    // setSaving(false)): el form se desmonta al navegar, así el chofer no puede
+    // reenviar mientras /mis-capacitaciones carga. Era la causa de las cargas
+    // duplicadas. replace en vez de push: con "atrás" no vuelve al form enviado.
+    router.replace("/mis-capacitaciones")
   }
 
   return (
