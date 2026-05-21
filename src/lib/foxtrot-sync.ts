@@ -168,6 +168,10 @@ export async function syncFoxtrotDay(
 
         const visitPayload: Record<string, unknown>[] = []
         const attemptPayload: Record<string, unknown>[] = []
+        // Manifiesto de carga: TODAS las deliveries de la ruta (entregadas o no),
+        // para medir "lo que salió a la calle". A diferencia de attemptPayload,
+        // acá entran también las paradas sin intento todavía.
+        const manifestPayload: Record<string, unknown>[] = []
 
         for (const wp of waypoints) {
           if (!wp.waypoint_id) continue
@@ -198,6 +202,20 @@ export async function syncFoxtrotDay(
             if (c.successful) stats.successful++
             if (c.failed) stats.failed++
             if (c.visitLater) stats.visitLater++
+
+            // Manifiesto: la delivery está cargada en el camión exista o no un
+            // intento todavía. Guardamos nombre + cantidad para cruzar a HL/CEq
+            // en lectura.
+            manifestPayload.push({
+              route_id: route.id,
+              dc_id: dc.id,
+              fecha,
+              waypoint_id: wp.waypoint_id,
+              delivery_id: delivery.id,
+              delivery_name: delivery.name ?? null,
+              quantity: delivery.quantity ?? null,
+              last_synced: new Date().toISOString(),
+            })
 
             if (delivery.attempts && delivery.attempts.length > 0) {
               for (const a of delivery.attempts) {
@@ -301,6 +319,19 @@ export async function syncFoxtrotDay(
             if (attErr) {
               errores++
               errorMessages.push(`insert attempts ${route.id}: ${attErr.message}`)
+            }
+          }
+          if (manifestPayload.length > 0) {
+            await supabase
+              .from("foxtrot_route_deliveries")
+              .delete()
+              .eq("route_id", route.id)
+            const { error: manErr } = await supabase
+              .from("foxtrot_route_deliveries")
+              .insert(manifestPayload)
+            if (manErr) {
+              errores++
+              errorMessages.push(`insert manifest ${route.id}: ${manErr.message}`)
             }
           }
         }

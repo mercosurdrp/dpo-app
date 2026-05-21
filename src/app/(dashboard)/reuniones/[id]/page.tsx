@@ -10,6 +10,11 @@ import { listarRubrosMantenimiento } from "@/actions/mantenimiento-edilicio"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
+// getIndicadoresMes (logística Misiones) trae en vivo el manifiesto de carga
+// del día (waypoints + deliveries de cada ruta iniciada, ~8s) además de Chess,
+// TML, ausentismo y Analía. Damos margen para que no corte por timeout.
+export const maxDuration = 60
+
 export default async function ReunionDetallePage({
   params,
 }: {
