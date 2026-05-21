@@ -2464,14 +2464,18 @@ export async function getIndicadoresMes(
       NOMBRES_AUTO.add("productividad de picking")
     } else if (tipo === "logistica") {
       if (IS_MISIONES) {
-        NOMBRES_AUTO.add("rutas en distribución")
-        NOMBRES_AUTO.add("bultos salida a reparto")
-        NOMBRES_AUTO.add("% rechazo")
-        NOMBRES_AUTO.add("tiempo medio de ruta")
-        NOMBRES_AUTO.add("% rutas finalizadas")
-        NOMBRES_AUTO.add("% entregas exitosas")
-        NOMBRES_AUTO.add("tml promedio")
-        NOMBRES_AUTO.add("% equipos en meta tml")
+        // En Misiones reseteamos el set base (LTI/TRI/Bultos vendidos/TML
+        // liberación/etc. son de Pampeana y no aplican). Los AUTO de Foxtrot
+        // adoptan los nombres que el usuario ya configuró como manuales para
+        // REEMPLAZARLOS (no duplicar). El resto de los manuales (Roturas, WQI,
+        // Faltantes, Productividad picking, LTI, TRI, WNP, Driver Click Score,
+        // TLP) sobreviven como filas de carga manual.
+        NOMBRES_AUTO.clear()
+        NOMBRES_AUTO.add("cantidad de camiones")
+        NOMBRES_AUTO.add("bultos totales")
+        NOMBRES_AUTO.add("rechazo")
+        NOMBRES_AUTO.add("tiempo en ruta")
+        NOMBRES_AUTO.add("tml")
         NOMBRES_AUTO.add("ausentismo")
       } else {
         NOMBRES_AUTO.add("wqi")
@@ -3236,6 +3240,9 @@ export async function getIndicadoresMes(
       // (perdidas-deposito) podremos cubrirlo. Por ahora si alguien crea una
       // reunión 'warehouse' en Misiones, los AUTO de warehouse no se llenan.
       if (IS_MISIONES) {
+        // En Misiones descartamos los AUTO de Pampeana (LTI/TRI/Rechazos %/
+        // Bultos-HL vendidos/TML liberación/Camiones/Checklist/Km/Horas/FTE)
+        // ya acumulados en `indicadoresAuto`: armamos una lista limpia.
         if (tipo === "logistica") {
           const ms = await buildMisionesLogisticaSerie(
             supabase,
@@ -3247,19 +3254,28 @@ export async function getIndicadoresMes(
           const ausentismoPorFecha =
             "data" in ausentismoRes ? ausentismoRes.data.por_fecha : {}
 
-          indicadoresAuto.push(
+          // Tiempo en ruta: la fuente está en minutos, el indicador es en horas.
+          const tiempoEnRutaHs: Record<string, number | null> = {}
+          for (const f of fechas) {
+            const v = ms.tiempo_ruta_promedio[f]
+            tiempoEnRutaHs[f] = v == null ? null : Math.round((v / 60) * 100) / 100
+          }
+
+          // Los AUTO de Foxtrot adoptan los nombres ya configurados por el
+          // usuario para reemplazar el manual equivalente (no duplicar).
+          const misAuto = [
             buildSerieRow(
-              "auto_rutas_distribucion",
-              "Rutas en distribución",
-              "rutas",
+              "auto_cantidad_camiones",
+              "Cantidad de camiones",
+              "u.",
               ms.rutas_distribucion,
               "promedio",
               null,
               "mayor",
             ),
             buildSerieRow(
-              "auto_bultos_salida_reparto",
-              "Bultos salida a reparto",
+              "auto_bultos_totales",
+              "Bultos totales",
               "bultos",
               ms.bultos_salida_reparto,
               "suma",
@@ -3267,8 +3283,8 @@ export async function getIndicadoresMes(
               "mayor",
             ),
             buildSerieRow(
-              "auto_pct_rechazo",
-              "% Rechazo",
+              "auto_rechazo",
+              "Rechazo",
               "%",
               ms.pct_rechazo,
               "promedio",
@@ -3276,12 +3292,21 @@ export async function getIndicadoresMes(
               "menor",
             ),
             buildSerieRow(
-              "auto_tiempo_ruta",
-              "Tiempo medio de ruta",
-              "min",
-              ms.tiempo_ruta_promedio,
+              "auto_tiempo_en_ruta",
+              "Tiempo en ruta",
+              "hs",
+              tiempoEnRutaHs,
               "promedio",
               null,
+              "menor",
+            ),
+            buildSerieRow(
+              "auto_tml",
+              "TML",
+              "min",
+              ms.tml_promedio,
+              "promedio",
+              30,
               "menor",
             ),
             buildSerieRow(
@@ -3303,24 +3328,6 @@ export async function getIndicadoresMes(
               "mayor",
             ),
             buildSerieRow(
-              "auto_tml_misiones",
-              "TML promedio",
-              "min",
-              ms.tml_promedio,
-              "promedio",
-              30,
-              "menor",
-            ),
-            buildSerieRow(
-              "auto_tml_en_meta",
-              "% Equipos en meta TML",
-              "%",
-              ms.tml_pct_en_meta,
-              "promedio",
-              65,
-              "mayor",
-            ),
-            buildSerieRow(
               "auto_ausentismo",
               "Ausentismo",
               "personas",
@@ -3329,7 +3336,16 @@ export async function getIndicadoresMes(
               null,
               "menor",
             ),
-          )
+          ]
+          return {
+            data: {
+              anio,
+              mes,
+              fechas,
+              reuniones_por_fecha: reunionesPorFecha,
+              indicadores: [...misAuto, ...indicadores],
+            },
+          }
         }
         // Misiones · warehouse: sin AUTO por ahora (fase 2 = integrar Analía)
         return {
@@ -3338,7 +3354,7 @@ export async function getIndicadoresMes(
             mes,
             fechas,
             reuniones_por_fecha: reunionesPorFecha,
-            indicadores: [...indicadoresAuto, ...indicadores],
+            indicadores: [...indicadores],
           },
         }
       }

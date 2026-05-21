@@ -21,6 +21,7 @@ import {
   ListTodo,
   Pencil,
   Plus,
+  RefreshCw,
   Settings,
   Trash2,
   UserPlus,
@@ -740,6 +741,39 @@ export function ReunionDetallePageClient({
     })
   }
 
+  // Sincronización manual de Foxtrot (últimos 4 días) — solo Misiones/logística.
+  const [sincronizando, setSincronizando] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const sincronizarReciente = async () => {
+    if (sincronizando) return
+    setSincronizando(true)
+    setSyncMsg(null)
+    try {
+      const res = await fetch("/api/foxtrot/sync-manual?dias=4", {
+        method: "POST",
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSyncMsg(`Error: ${json.error ?? res.statusText}`)
+        return
+      }
+      setSyncMsg(
+        `Sincronizados ${json.dias} días · ${json.rutas} rutas` +
+          (json.errores ? ` · ${json.errores} errores` : ""),
+      )
+      // Refrescar el tablero con la sucursal actual.
+      const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
+      if ("data" in ind) setIndicadoresMes(ind.data)
+      router.refresh()
+    } catch (e) {
+      setSyncMsg(
+        `Error: ${e instanceof Error ? e.message : "no se pudo sincronizar"}`,
+      )
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   const [openConfigInd, setOpenConfigInd] = useState(false)
   const [openActForm, setOpenActForm] = useState(false)
   const [actividadEditando, setActividadEditando] =
@@ -1069,17 +1103,34 @@ export function ReunionDetallePageClient({
               </span>
             )}
           </CardTitle>
-          {puedeEditar && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setOpenConfigInd(true)}
-            >
-              <Settings className="mr-2 size-4" />
-              Configurar indicadores
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {muestraToggleSucursal && puedeEditar && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={sincronizarReciente}
+                disabled={sincronizando}
+                title="Descarga de Foxtrot los últimos 4 días"
+              >
+                <RefreshCw
+                  className={cn("mr-2 size-4", sincronizando && "animate-spin")}
+                />
+                {sincronizando ? "Sincronizando…" : "Sincronizar (4 días)"}
+              </Button>
+            )}
+            {puedeEditar && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setOpenConfigInd(true)}
+              >
+                <Settings className="mr-2 size-4" />
+                Configurar indicadores
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           {muestraToggleSucursal && (
@@ -1110,6 +1161,18 @@ export function ReunionDetallePageClient({
               {sucursalSel !== "todo" && (
                 <span className="ml-2 text-[10px] italic text-slate-500">
                   Ausentismo se muestra siempre total
+                </span>
+              )}
+              {syncMsg && (
+                <span
+                  className={cn(
+                    "ml-auto text-[11px]",
+                    syncMsg.startsWith("Error")
+                      ? "text-red-600"
+                      : "text-emerald-600",
+                  )}
+                >
+                  {syncMsg}
                 </span>
               )}
             </div>
