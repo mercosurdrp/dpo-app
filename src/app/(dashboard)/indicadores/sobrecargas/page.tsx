@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { connection } from "next/server"
 import { getSobrecargasIndicador } from "@/actions/sobrecargas"
 import { IS_MISIONES } from "@/lib/empresa"
 import { requireAuth } from "@/lib/session"
@@ -7,13 +8,14 @@ import { SobrecargasClient } from "./sobrecargas-client"
 
 const ROLES_PUEDEN_SYNC = ["admin", "admin_rrhh", "supervisor"]
 
-export const dynamic = "force-dynamic"
-
 export default async function SobrecargasPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
+  // Garantiza render dynamic en Next.js 16: cada request lee searchParams
+  // y la hora actual del servidor en vivo (no prerendered).
+  await connection()
   const profile = await requireAuth()
   const canSync = ROLES_PUEDEN_SYNC.includes(profile.role)
 
