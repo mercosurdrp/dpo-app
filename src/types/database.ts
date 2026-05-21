@@ -1814,6 +1814,59 @@ export interface S5RankingAyudanteRow {
   notas_por_s_promedio: Record<S5Categoria, number>
 }
 
+// ── Ranking de ayudantes de DEPÓSITO (bimestral, fórmula editable) ──
+export interface S5AyudantesConfig {
+  peso_errores: number
+  peso_5s: number
+  peso_productividad: number
+  /** Bultos errados acumulados en la ventana que valen 0 puntos. */
+  tope_errores: number
+  /** bul/HH que vale 100 puntos de productividad. */
+  prod_target: number
+  meses_ventana: number
+}
+
+export interface S5AyudanteDepositoRow {
+  empleado_id: string | null
+  nombre: string
+  es_picker: boolean
+  es_responsable: boolean
+  /** Sectores que tuvo asignados en la ventana (ej. "Nave"). */
+  sectores: string[]
+  nota_5s: number | null
+  /** Bultos errados acumulados en la ventana. */
+  errores_bultos: number | null
+  errores_score: number | null
+  productividad: number | null
+  productividad_score: number | null
+  score: number
+  /** Posición sugerida por la fórmula (1..3) o null si fuera del podio. */
+  posicion_sugerida: number | null
+}
+
+export type S5PremioArea = "deposito" | "distribucion"
+
+export interface S5AyudantePremio {
+  id: string
+  periodo_desde: string
+  area: S5PremioArea
+  posicion: number
+  empleado_id: string | null
+  nombre: string
+  score: number | null
+  origen: "auto" | "manual"
+}
+
+export interface S5RankingDepositoData {
+  periodo_desde: string
+  periodo_hasta: string
+  meses: string[]
+  ranking: S5AyudanteDepositoRow[]
+  premios_deposito: S5AyudantePremio[]
+  premios_distribucion: S5AyudantePremio[]
+  config: S5AyudantesConfig
+}
+
 export interface S5AuditoriaFull extends S5AuditoriaConMeta {
   items: S5AuditoriaItemConCatalogo[]
 }
