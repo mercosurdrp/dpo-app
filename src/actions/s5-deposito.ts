@@ -12,12 +12,16 @@ import type {
   S5RankingDepositoData,
 } from "@/types/database"
 
-const PAGE_PATH = "/5s/ayudantes/deposito"
+const PAGE_PATH = "/5s/ayudantes"
 
 // Sheet "Errores picking" — cada fila = 1 error (col0 fecha, col1 operario,
 // col2 bultos errados). Misma fuente que usa deposito-esteban.
 const ERRORES_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
+
+// Productividad por operario (bul/HH) — deposito-esteban. Solo tasas.
+const PRODUCTIVIDAD_URL =
+  "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-picking"
 
 const DEFAULT_CONFIG: S5AyudantesConfig = {
   peso_errores: 0.6,
@@ -131,6 +135,39 @@ async function fetchErroresPorOperario(
   return out
 }
 
+// ── Productividad por operario (promedio bul/HH en la ventana) ──
+async function fetchProductividadPorOperario(
+  prefijosMes: string[],
+): Promise<Map<string, number>> {
+  const acc = new Map<string, { sum: number; n: number }>()
+  try {
+    const res = await fetch(PRODUCTIVIDAD_URL, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(9000),
+    })
+    if (!res.ok) return new Map()
+    const json = (await res.json()) as {
+      data?: { filas?: Array<{ fecha?: string; operario?: string; bul_hh?: number }> }
+    }
+    for (const f of json.data?.filas ?? []) {
+      const fecha = String(f.fecha ?? "")
+      if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
+      const op = (f.operario ?? "").trim()
+      const bh = f.bul_hh
+      if (!op || typeof bh !== "number" || !Number.isFinite(bh)) continue
+      const cur = acc.get(op) ?? { sum: 0, n: 0 }
+      cur.sum += bh
+      cur.n += 1
+      acc.set(op, cur)
+    }
+  } catch {
+    /* best-effort: sin productividad queda en null */
+  }
+  const out = new Map<string, number>()
+  for (const [op, v] of acc.entries()) if (v.n > 0) out.set(op, v.sum / v.n)
+  return out
+}
+
 // ── Config ──
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
@@ -173,7 +210,7 @@ export async function getRankingDeposito(
     const hasta = meses[meses.length - 1]
     const prefijos = meses.map((m) => m.slice(0, 7))
 
-    const [audRes, respRes, sectoresRes, erroresMap, premiosRes] =
+    const [audRes, respRes, sectoresRes, erroresMap, prodMap, premiosRes] =
       await Promise.all([
         supabase
           .from("s5_auditorias")
@@ -190,6 +227,7 @@ export async function getRankingDeposito(
           .in("periodo", meses),
         supabase.from("s5_sectores_almacen").select("numero, nombre"),
         fetchErroresPorOperario(prefijos),
+        fetchProductividadPorOperario(prefijos),
         supabase
           .from("s5_ayudantes_premios")
           .select("id, periodo_desde, area, posicion, empleado_id, nombre, score, origen")
@@ -229,6 +267,7 @@ export async function getRankingDeposito(
       notas5s: number[]
       sectores: Set<string>
       errores_bultos: number | null
+      productividad: number | null
       es_picker: boolean
       es_responsable: boolean
       _tokens: Set<string>
@@ -249,6 +288,7 @@ export async function getRankingDeposito(
           notas5s: [],
           sectores: new Set<string>(),
           errores_bultos: null,
+          productividad: null,
           es_picker: false,
           es_responsable: true,
           _tokens: tokens(emp.nombre),
@@ -261,8 +301,9 @@ export async function getRankingDeposito(
       c.sectores.add(sectorNombre.get(r.sector_numero) ?? `Sector ${r.sector_numero}`)
     }
 
-    // Pickers (errores). Matchear con un responsable por tokens o crear nuevo.
-    for (const [operario, bultos] of erroresMap.entries()) {
+    // Helper para matchear un operario (del Sheet/productividad) a un
+    // candidato por tokens del nombre, o crear uno nuevo (picker).
+    function matchOCrear(operario: string): Cand {
       const tk = tokens(operario)
       let c = cands.find((x) => comparten(x._tokens, tk))
       if (!c) {
@@ -271,7 +312,8 @@ export async function getRankingDeposito(
           nombre: operario,
           notas5s: [],
           sectores: new Set<string>(),
-          errores_bultos: 0,
+          errores_bultos: null,
+          productividad: null,
           es_picker: true,
           es_responsable: false,
           _tokens: tk,
@@ -279,7 +321,19 @@ export async function getRankingDeposito(
         cands.push(c)
       }
       c.es_picker = true
+      return c
+    }
+
+    // Pickers (errores).
+    for (const [operario, bultos] of erroresMap.entries()) {
+      const c = matchOCrear(operario)
       c.errores_bultos = (c.errores_bultos ?? 0) + bultos
+    }
+
+    // Pickers (productividad bul/HH promedio de la ventana).
+    for (const [operario, bulhh] of prodMap.entries()) {
+      const c = matchOCrear(operario)
+      c.productividad = bulhh
     }
 
     // Scoring
@@ -298,9 +352,14 @@ export async function getRankingDeposito(
         c.errores_bultos != null
           ? clamp(100 * (1 - c.errores_bultos / tope), 0, 100)
           : null
-      // Productividad: fuera por ahora (peso 0). Slot listo para enchufar.
-      const productividad: number | null = null
-      const productividad_score: number | null = null
+      // Productividad: bul/HH promedio de la ventana, normalizada vs target.
+      // Solo afecta el score si peso_productividad > 0 (editable en el panel).
+      const target = config.prod_target > 0 ? config.prod_target : 300
+      const productividad = c.productividad
+      const productividad_score =
+        c.productividad != null
+          ? clamp((c.productividad / target) * 100, 0, 100)
+          : null
 
       const parts: Array<[number, number]> = []
       if (nota_5s != null && config.peso_5s > 0)

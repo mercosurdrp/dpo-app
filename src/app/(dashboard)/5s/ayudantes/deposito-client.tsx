@@ -133,7 +133,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
 
   function navegar(delta: number) {
     const next = addMonths(data.periodo_desde, delta * ventana)
-    startTransition(() => router.push(`/5s/ayudantes/deposito?periodo=${next}`))
+    startTransition(() => router.push(`/5s/ayudantes?periodo=${next}`))
   }
 
   function refrescar() {
@@ -259,7 +259,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-            <Package className="size-6 text-blue-600" /> Ranking de ayudantes — Depósito
+            <Package className="size-6 text-blue-600" /> Ranking de ayudantes
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Ganadores cada 2 meses · 5S del sector + errores de picking
