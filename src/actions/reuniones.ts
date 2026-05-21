@@ -3316,8 +3316,13 @@ export async function getIndicadoresMes(
           const tiempoPdvRow = buildSerieRow(
             "auto_tiempo_pdv", "Tiempo por PDV", "min", ms.tiempo_pdv, "promedio", null, "menor",
           )
+          // id distinto de "auto_tml" a propósito: ese id dispara en el cliente
+          // el dialog de TML de liberación (Pampeana) que consulta
+          // registros_vehiculos.hora_entrada — tabla/columna inexistente en
+          // Misiones. Con "auto_tml_fx" la celda no es clickeable (el detalle
+          // del TML Foxtrot está en /indicadores/tml-foxtrot).
           const tmlRow = buildSerieRow(
-            "auto_tml", "TML", "min", ms.tml_promedio, "promedio", 30, "menor",
+            "auto_tml_fx", "TML", "min", ms.tml_promedio, "promedio", 30, "menor",
           )
           const ausentismoRow = buildSerieRow(
             "auto_ausentismo", "Ausentismo", "personas",
