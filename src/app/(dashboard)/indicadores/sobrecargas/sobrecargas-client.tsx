@@ -110,9 +110,21 @@ export function SobrecargasClient({
   const mesPrev = idxMes > 0 ? opcionesMes[idxMes - 1] : null
   const mesNext = idxMes >= 0 && idxMes < opcionesMes.length - 1 ? opcionesMes[idxMes + 1] : null
   const totalEmpleadosConSobrecarga = data.empleados.length
+  const debugClient = sp.get("debug") === "1"
 
   return (
     <div className="space-y-4">
+      {debugClient && (
+        <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900 font-mono whitespace-pre-wrap">
+          {"DEBUG client (SobrecargasClient):\n"}
+          {"  data.mes (prop): " + data.mes + "\n"}
+          {"  data.mesesDisponibles: " + JSON.stringify(data.mesesDisponibles) + "\n"}
+          {"  url.mes (useSearchParams): " + (sp.get("mes") ?? "(none)") + "\n"}
+          {"  opcionesMes (select options): " + JSON.stringify(opcionesMes) + "\n"}
+          {"  idxMes: " + idxMes + " | mesPrev: " + (mesPrev ?? "null") + " | mesNext: " + (mesNext ?? "null")}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
