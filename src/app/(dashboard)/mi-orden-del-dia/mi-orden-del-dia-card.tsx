@@ -212,7 +212,9 @@ function MesBlock({
 function nombreMes(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number)
   const d = new Date(Date.UTC(y, m - 1, 1))
-  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
+  // timeZone UTC: sin fijarlo, en ARG (UTC-3) la medianoche UTC del día 1
+  // se corre al mes anterior y muestra el mes equivocado.
+  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric", timeZone: "UTC" })
 }
 
 function fmtNum(n: number): string {

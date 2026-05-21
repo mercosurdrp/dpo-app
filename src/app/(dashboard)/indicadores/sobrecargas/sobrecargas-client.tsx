@@ -32,7 +32,9 @@ type SortKey = "sobrecargas" | "medias" | "dias" | "total_eq"
 function nombreMes(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number)
   const d = new Date(Date.UTC(y, m - 1, 1))
-  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
+  // timeZone UTC: el Date es medianoche UTC del día 1; sin fijarlo, en ARG
+  // (UTC-3) toLocaleDateString lo corre al mes anterior (30 a las 21hs).
+  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric", timeZone: "UTC" })
 }
 
 // 1.5 → "1.5", 2 → "2", 2.0 → "2". Evita trailing zeros sin perder decimales.
@@ -43,7 +45,7 @@ function fmtNum(n: number): string {
 function mesCorto(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number)
   const d = new Date(Date.UTC(y, m - 1, 1))
-  return d.toLocaleDateString("es-AR", { month: "short" }).replace(".", "")
+  return d.toLocaleDateString("es-AR", { month: "short", timeZone: "UTC" }).replace(".", "")
     + " '" + String(y).slice(2)
 }
 
@@ -110,21 +112,9 @@ export function SobrecargasClient({
   const mesPrev = idxMes > 0 ? opcionesMes[idxMes - 1] : null
   const mesNext = idxMes >= 0 && idxMes < opcionesMes.length - 1 ? opcionesMes[idxMes + 1] : null
   const totalEmpleadosConSobrecarga = data.empleados.length
-  const debugClient = sp.get("debug") === "1"
 
   return (
     <div className="space-y-4">
-      {debugClient && (
-        <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900 font-mono whitespace-pre-wrap">
-          {"DEBUG client (SobrecargasClient):\n"}
-          {"  data.mes (prop): " + data.mes + "\n"}
-          {"  data.mesesDisponibles: " + JSON.stringify(data.mesesDisponibles) + "\n"}
-          {"  url.mes (useSearchParams): " + (sp.get("mes") ?? "(none)") + "\n"}
-          {"  opcionesMes (select options): " + JSON.stringify(opcionesMes) + "\n"}
-          {"  idxMes: " + idxMes + " | mesPrev: " + (mesPrev ?? "null") + " | mesNext: " + (mesNext ?? "null")}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>

@@ -37,8 +37,6 @@ export default async function SobrecargasPage({
 
   const sp = await searchParams
   const mesParam = typeof sp.mes === "string" ? sp.mes : undefined
-  const debugMode = sp.debug === "1"
-  const serverNowISO = new Date().toISOString()
   const res = await getSobrecargasIndicador(mesParam)
 
   return (
@@ -49,17 +47,6 @@ export default async function SobrecargasPage({
       >
         <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
       </Link>
-      {debugMode && (
-        <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3 text-xs text-fuchsia-900 font-mono whitespace-pre-wrap">
-          {"DEBUG sobrecargas:\n"}
-          {"  sp (raw): " + JSON.stringify(sp) + "\n"}
-          {"  mesParam: " + JSON.stringify(mesParam) + "\n"}
-          {"  serverNowISO: " + serverNowISO + "\n"}
-          {"  data.mes: " + ("error" in res ? "(ERROR)" : res.data.mes) + "\n"}
-          {"  mesesDisponibles: " + ("error" in res ? "-" : JSON.stringify(res.data.mesesDisponibles)) + "\n"}
-          {"  serie.mes[]: " + ("error" in res ? "-" : JSON.stringify(res.data.serie.map((s) => s.mes)))}
-        </div>
-      )}
       {"error" in res ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
           <h1 className="text-lg font-semibold text-red-900">
