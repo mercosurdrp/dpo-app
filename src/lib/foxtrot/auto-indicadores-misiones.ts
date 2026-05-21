@@ -1,28 +1,33 @@
 /**
  * Indicadores AUTO para reuniones de tipo 'logistica' en Misiones.
  *
- * Reemplaza el path warehouse/Pampeana (deposito-esteban) que no aplica acá:
- * Misiones no tiene esos endpoints ni mostraría datos correctos.
+ * Reemplaza el path warehouse/Pampeana (deposito-esteban) que no aplica acá.
  *
  * Fuentes:
- *   - foxtrot_routes (Supabase) → KPIs agregados de ruta (tiempo, finalización,
- *     visitas) cerrados por el cron `/api/foxtrot/cron-sync` (20:30 AR).
- *   - foxtrot_delivery_attempts (Supabase) → bultos salida a reparto y %
- *     rechazo siguiendo la misma lógica de `/indicadores/foxtrot-tracking`
- *     (último attempt FAILED sin SUCCESSFUL previo = rechazado).
+ *   - foxtrot_routes (Supabase) → KPIs de ruta (tiempo, finalización, horas).
+ *   - foxtrot_delivery_attempts (Supabase) → bultos, % rechazo, y el desglose
+ *     por ruta para CEq/HL.
+ *   - articulos-factores (Chess, cacheado) → bultos/pallet y HL por bulto para
+ *     cajas equivalentes (CEq) y hectolitros.
  *   - listDcs + findRoutesByDate (live) → rutas en distribución HOY.
- *   - getTmlFoxtrotRango → TML híbrido (live para hoy, DB para previos).
+ *   - getTmlFoxtrotRango → TML híbrido.
  *
- * Ausentismo lo agrega el caller con getAusentismoSerie (mismo que Pampeana).
- *
- * Fase 2: integrar dashboard de Analía (perdidas-deposito.vercel.app) para
- * Carga/Descarga, Reempaque, Pérdidas, 5S, y Cloudfleet para checklists
- * pre-uso del día.
+ * Definiciones (validadas con el usuario):
+ *   CEq_SKU = 120 × bultos / bultosPallet           (caja patrón = 120 por pallet)
+ *   HL      = Σ valorUM × bultos                     (salida a reparto, sin envases)
+ *   OB      = promedio por ruta de las CEq cargadas  (ocupación de bodega)
+ *   TLP     = promedio por ruta de CEq_entregadas/(2×horas_ruta)
+ * Todo excluyendo envases retornables.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { findRoutesByDate, listDcs } from "@/lib/foxtrot"
 import { getTmlFoxtrotRango } from "@/actions/tml-foxtrot"
+import {
+  getArticulosFactores,
+  normNombre,
+  type FactoresMap,
+} from "@/lib/chess/articulos-factores"
 
 export type MisionesSucursal = "todo" | "eldorado" | "iguazu"
 
@@ -43,9 +48,16 @@ export interface MisionesLogisticaSerie {
   tml_promedio: Record<string, number | null>
   /** % equipos con TML ≤ 30 min. */
   tml_pct_en_meta: Record<string, number | null>
+  /** Hectolitros salidos a reparto (sin envases). */
+  hl: Record<string, number | null>
+  /** Ocupación de bodega = promedio por ruta de las CEq cargadas. */
+  ob: Record<string, number | null>
+  /** TLP = promedio por ruta de CEq_entregadas / (2 × horas_ruta). */
+  tlp: Record<string, number | null>
 }
 
 type RouteRow = {
+  route_id: string
   fecha: string
   is_finalized: boolean | null
   tiempo_ruta_minutos: number | null
@@ -55,7 +67,9 @@ type RouteRow = {
 
 type AttemptRow = {
   fecha: string
+  route_id: string
   delivery_id: string
+  delivery_name: string | null
   delivery_quantity: number | null
   attempt_status: string
   attempt_timestamp: string | null
@@ -70,23 +84,16 @@ type RouteAgg = {
   successDel: number
 }
 
-type BultoAgg = {
-  bultosTotal: number
-  bultosOk: number
-  bultosRech: number
-}
-
 const MISIONES_DCS = new Set(["eldorado", "iguazu"])
 const PAGE_SIZE = 1000
+const CAJA_PATRON = 120
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
-
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
-
 function todayARG(): string {
   return new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -99,24 +106,20 @@ async function fetchAttemptsRange(
   fechaHasta: string,
   routeIdsFilter: string[] | null,
 ): Promise<AttemptRow[]> {
-  // Si hay filtro de sucursal, ya nos vino la lista de route_ids del DC.
-  // Si la lista está vacía → no hay nada que traer.
   if (routeIdsFilter !== null && routeIdsFilter.length === 0) return []
-
   const all: AttemptRow[] = []
   let from = 0
-  // Loop con tope de seguridad (~200k filas — un mes de Misiones cabe holgado).
   for (let i = 0; i < 200; i++) {
     let q = supabase
       .from("foxtrot_delivery_attempts")
-      .select("fecha, delivery_id, delivery_quantity, attempt_status, attempt_timestamp")
+      .select(
+        "fecha, route_id, delivery_id, delivery_name, delivery_quantity, attempt_status, attempt_timestamp",
+      )
       .gte("fecha", fechaDesde)
       .lte("fecha", fechaHasta)
       .order("attempt_timestamp", { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
-    if (routeIdsFilter !== null) {
-      q = q.in("route_id", routeIdsFilter)
-    }
+    if (routeIdsFilter !== null) q = q.in("route_id", routeIdsFilter)
     const { data, error } = await q
     if (error || !data || data.length === 0) break
     all.push(...(data as AttemptRow[]))
@@ -124,82 +127,6 @@ async function fetchAttemptsRange(
     from += PAGE_SIZE
   }
   return all
-}
-
-async function fetchRouteIdsForDcs(
-  supabase: SupabaseClient,
-  fechaDesde: string,
-  fechaHasta: string,
-  dcs: string[],
-): Promise<string[]> {
-  const all: string[] = []
-  let from = 0
-  for (let i = 0; i < 200; i++) {
-    const { data, error } = await supabase
-      .from("foxtrot_routes")
-      .select("route_id")
-      .in("dc_id", dcs)
-      .gte("fecha", fechaDesde)
-      .lte("fecha", fechaHasta)
-      .range(from, from + PAGE_SIZE - 1)
-    if (error || !data || data.length === 0) break
-    for (const r of data as { route_id: string }[]) all.push(r.route_id)
-    if (data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-  return all
-}
-
-/**
- * Para cada (fecha, delivery_id) consolida los attempts en una sola entrada:
- *   - último attempt = SUCCESSFUL  → bultos_ok += qty
- *   - último attempt = FAILED con SUCCESSFUL previo (parcial) → bultos_ok += qty
- *   - último attempt = FAILED sin SUCCESSFUL previo → bultos_rech += qty
- *   - bultos_total siempre += qty (todo lo planificado = salida a reparto)
- *
- * Esta es la misma lógica de foxtrot-snapshot/build.ts (la grilla de
- * /indicadores/foxtrot-tracking), portada a SQL+TS sin necesidad de
- * rehacer todo el snapshot.
- */
-function aggregateBultos(attempts: AttemptRow[]): Map<string, BultoAgg> {
-  // Agrupar por (fecha, delivery_id) — los attempts ya vienen ordenados por timestamp.
-  type Group = { qty: number; statuses: string[] }
-  const groups = new Map<string, Group>()
-  for (const a of attempts) {
-    if (!a.delivery_id) continue
-    const key = `${a.fecha}|${a.delivery_id}`
-    const g = groups.get(key) ?? {
-      qty: a.delivery_quantity ?? 0,
-      statuses: [],
-    }
-    // qty siempre es la misma para un delivery_id, pero por las dudas
-    // tomamos el primero no-null.
-    if (g.qty === 0 && a.delivery_quantity) g.qty = a.delivery_quantity
-    g.statuses.push(a.attempt_status)
-    groups.set(key, g)
-  }
-
-  const porFecha = new Map<string, BultoAgg>()
-  for (const [key, g] of groups) {
-    const fecha = key.split("|")[0]
-    const agg = porFecha.get(fecha) ?? {
-      bultosTotal: 0,
-      bultosOk: 0,
-      bultosRech: 0,
-    }
-    agg.bultosTotal += g.qty
-    const last = g.statuses[g.statuses.length - 1]
-    if (last === "SUCCESSFUL") {
-      agg.bultosOk += g.qty
-    } else if (last === "FAILED") {
-      const hadSuccessful = g.statuses.some((s) => s === "SUCCESSFUL")
-      if (hadSuccessful) agg.bultosOk += g.qty
-      else agg.bultosRech += g.qty
-    }
-    // VISIT_LATER o estados desconocidos: cuentan solo en bultosTotal.
-    porFecha.set(fecha, agg)
-  }
-  return porFecha
 }
 
 export async function buildMisionesLogisticaSerie(
@@ -227,30 +154,34 @@ export async function buildMisionesLogisticaSerie(
     pct_entregas_exitosas: {},
     tml_promedio: {},
     tml_pct_en_meta: {},
+    hl: {},
+    ob: {},
+    tlp: {},
   }
   for (const f of fechas) {
-    series.rutas_distribucion[f] = null
-    series.bultos_salida_reparto[f] = null
-    series.pct_rechazo[f] = null
-    series.tiempo_ruta_promedio[f] = null
-    series.pct_rutas_finalizadas[f] = null
-    series.pct_entregas_exitosas[f] = null
-    series.tml_promedio[f] = null
-    series.tml_pct_en_meta[f] = null
+    for (const k of Object.keys(series) as (keyof MisionesLogisticaSerie)[]) {
+      series[k][f] = null
+    }
   }
 
-  // 1. KPIs de ruta — foxtrot_routes (filtrado por DC).
+  // 1. KPIs de ruta + horas por ruta — foxtrot_routes (filtrado por DC).
   const { data: routesRaw } = await supabase
     .from("foxtrot_routes")
     .select(
-      "fecha, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful",
+      "route_id, fecha, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful",
     )
     .in("dc_id", dcsActivos)
     .gte("fecha", fechaDesde)
     .lte("fecha", fechaHasta)
 
+  const horasPorRuta = new Map<string, number>() // route_id → horas
+  const fechaPorRuta = new Map<string, string>()
   const porFechaRoute = new Map<string, RouteAgg>()
   for (const r of (routesRaw ?? []) as RouteRow[]) {
+    fechaPorRuta.set(r.route_id, r.fecha)
+    if (r.tiempo_ruta_minutos != null && r.tiempo_ruta_minutos > 0) {
+      horasPorRuta.set(r.route_id, r.tiempo_ruta_minutos / 60)
+    }
     const a = porFechaRoute.get(r.fecha) ?? {
       rutas: 0,
       finalizadas: 0,
@@ -269,46 +200,125 @@ export async function buildMisionesLogisticaSerie(
     a.successDel += r.deliveries_successful ?? 0
     porFechaRoute.set(r.fecha, a)
   }
-
   for (const [f, a] of porFechaRoute) {
     series.rutas_distribucion[f] = a.rutas
-    if (a.rutas > 0) {
+    if (a.rutas > 0)
       series.pct_rutas_finalizadas[f] = round1((100 * a.finalizadas) / a.rutas)
-    }
-    if (a.tiempoN > 0) {
+    if (a.tiempoN > 0)
       series.tiempo_ruta_promedio[f] = Math.round(a.tiempoSum / a.tiempoN)
-    }
-    if (a.totalDel > 0) {
-      series.pct_entregas_exitosas[f] = round1(
-        (100 * a.successDel) / a.totalDel,
-      )
-    }
+    if (a.totalDel > 0)
+      series.pct_entregas_exitosas[f] = round1((100 * a.successDel) / a.totalDel)
   }
 
-  // 2. Bultos + % rechazo — foxtrot_delivery_attempts (paginado).
-  //    Lógica idéntica a /indicadores/foxtrot-tracking (foxtrot-snapshot/build.ts).
-  //    Si hay filtro de sucursal, traemos primero los route_ids del DC y
-  //    filtramos attempts por esa lista (la tabla no tiene dc_id propio).
+  // 2. Attempts: bultos/rechazo (por fecha) + CEq/HL (por ruta) cruzando Chess.
   const routeIdsFilter: string[] | null =
     sucursal === "todo"
       ? null
-      : await fetchRouteIdsForDcs(supabase, fechaDesde, fechaHasta, dcsActivos)
+      : Array.from(fechaPorRuta.keys())
   const attempts = await fetchAttemptsRange(
     supabase,
     fechaDesde,
     fechaHasta,
     routeIdsFilter,
   )
-  const porFechaBultos = aggregateBultos(attempts)
-  for (const [f, b] of porFechaBultos) {
-    series.bultos_salida_reparto[f] = b.bultosTotal
-    const denom = b.bultosOk + b.bultosRech
-    if (denom > 0) {
-      series.pct_rechazo[f] = round2((100 * b.bultosRech) / denom)
+  const factores: FactoresMap | null = await getArticulosFactores()
+
+  // Consolidar por (fecha, route_id, delivery_id): un delivery pertenece a una
+  // ruta; los attempts vienen ordenados por timestamp para tomar el último.
+  type DelAgg = {
+    fecha: string
+    routeId: string
+    qty: number
+    nm: string
+    statuses: string[]
+  }
+  const dels = new Map<string, DelAgg>()
+  for (const a of attempts) {
+    if (!a.delivery_id) continue
+    const key = `${a.fecha}|${a.route_id}|${a.delivery_id}`
+    const g =
+      dels.get(key) ??
+      ({
+        fecha: a.fecha,
+        routeId: a.route_id,
+        qty: a.delivery_quantity ?? 0,
+        nm: normNombre(a.delivery_name),
+        statuses: [],
+      } as DelAgg)
+    if (g.qty === 0 && a.delivery_quantity) g.qty = a.delivery_quantity
+    g.statuses.push(a.attempt_status)
+    dels.set(key, g)
+  }
+
+  // Acumuladores
+  const bultosPorFecha = new Map<
+    string,
+    { total: number; ok: number; rech: number }
+  >()
+  const hlPorFecha = new Map<string, number>()
+  // CEq por ruta: route_id → { cargada, entregada }
+  const ceqPorRuta = new Map<string, { cargada: number; entregada: number }>()
+
+  for (const g of dels.values()) {
+    const last = g.statuses[g.statuses.length - 1]
+    const entregado =
+      last === "SUCCESSFUL" ||
+      (last === "FAILED" && g.statuses.includes("SUCCESSFUL"))
+
+    // Bultos / rechazo por fecha (no dependen de Chess)
+    const bf = bultosPorFecha.get(g.fecha) ?? { total: 0, ok: 0, rech: 0 }
+    bf.total += g.qty
+    if (last === "SUCCESSFUL") bf.ok += g.qty
+    else if (last === "FAILED") {
+      if (g.statuses.includes("SUCCESSFUL")) bf.ok += g.qty
+      else bf.rech += g.qty
+    }
+    bultosPorFecha.set(g.fecha, bf)
+
+    // CEq / HL: requieren el factor del SKU; se excluyen envases.
+    const fac = factores?.get(g.nm)
+    if (!fac || fac.esEnvase) continue
+    if (fac.valorUM > 0) {
+      hlPorFecha.set(g.fecha, (hlPorFecha.get(g.fecha) ?? 0) + fac.valorUM * g.qty)
+    }
+    if (fac.bultosPallet > 0) {
+      const ceq = (CAJA_PATRON * g.qty) / fac.bultosPallet
+      const c = ceqPorRuta.get(g.routeId) ?? { cargada: 0, entregada: 0 }
+      c.cargada += ceq
+      if (entregado) c.entregada += ceq
+      ceqPorRuta.set(g.routeId, c)
     }
   }
 
-  // 3. Rutas en distribución HOY (live). Cuenta rutas con started_timestamp.
+  for (const [f, b] of bultosPorFecha) {
+    series.bultos_salida_reparto[f] = b.total
+    const denom = b.ok + b.rech
+    if (denom > 0) series.pct_rechazo[f] = round2((100 * b.rech) / denom)
+  }
+  for (const [f, hl] of hlPorFecha) series.hl[f] = round1(hl)
+
+  // OB y TLP: agregar las CEq por ruta a su fecha.
+  type ObTlp = { ceqCargadaSum: number; nRutas: number; tlpSum: number; tlpN: number }
+  const obtlp = new Map<string, ObTlp>()
+  for (const [routeId, c] of ceqPorRuta) {
+    const f = fechaPorRuta.get(routeId)
+    if (!f) continue
+    const o = obtlp.get(f) ?? { ceqCargadaSum: 0, nRutas: 0, tlpSum: 0, tlpN: 0 }
+    o.ceqCargadaSum += c.cargada
+    o.nRutas++
+    const horas = horasPorRuta.get(routeId)
+    if (horas && horas > 0) {
+      o.tlpSum += c.entregada / (2 * horas)
+      o.tlpN++
+    }
+    obtlp.set(f, o)
+  }
+  for (const [f, o] of obtlp) {
+    if (o.nRutas > 0) series.ob[f] = round1(o.ceqCargadaSum / o.nRutas)
+    if (o.tlpN > 0) series.tlp[f] = round2(o.tlpSum / o.tlpN)
+  }
+
+  // 3. Rutas en distribución HOY (live).
   if (fechas.includes(hoy)) {
     try {
       const dcsRes = await listDcs()
@@ -332,14 +342,9 @@ export async function buildMisionesLogisticaSerie(
     }
   }
 
-  // 4. TML — getTmlFoxtrotRango ya hace híbrido (live hoy + DB previos)
-  //    y expone serie_diaria con desglose por sucursal.
+  // 4. TML — getTmlFoxtrotRango (híbrido) con desglose por sucursal.
   try {
-    const tmlRes = await getTmlFoxtrotRango(
-      fechaDesde,
-      fechaHasta,
-      "personalizado",
-    )
+    const tmlRes = await getTmlFoxtrotRango(fechaDesde, fechaHasta, "personalizado")
     if ("data" in tmlRes) {
       for (const dia of tmlRes.data.serie_diaria) {
         const t =
@@ -348,14 +353,12 @@ export async function buildMisionesLogisticaSerie(
             : sucursal === "iguazu"
               ? dia.iguazu
               : dia.total
-        if (t.promedio_real_min != null) {
+        if (t.promedio_real_min != null)
           series.tml_promedio[dia.fecha] = Math.round(t.promedio_real_min)
-        }
-        if (t.equipos_con_tml > 0) {
+        if (t.equipos_con_tml > 0)
           series.tml_pct_en_meta[dia.fecha] = round1(
             (100 * t.en_meta_real) / t.equipos_con_tml,
           )
-        }
       }
     }
   } catch {

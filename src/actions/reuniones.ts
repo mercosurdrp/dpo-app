@@ -2476,6 +2476,10 @@ export async function getIndicadoresMes(
         NOMBRES_AUTO.add("rechazo")
         NOMBRES_AUTO.add("tiempo en ruta")
         NOMBRES_AUTO.add("tml")
+        NOMBRES_AUTO.add("tlp")
+        NOMBRES_AUTO.add("hl")
+        NOMBRES_AUTO.add("ocupación de bodega")
+        NOMBRES_AUTO.add("ocupacion de bodega")
         NOMBRES_AUTO.add("ausentismo")
       } else {
         NOMBRES_AUTO.add("wqi")
@@ -3283,6 +3287,24 @@ export async function getIndicadoresMes(
               "mayor",
             ),
             buildSerieRow(
+              "auto_hl",
+              "HL",
+              "HL",
+              ms.hl,
+              "suma",
+              null,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_ob",
+              "Ocupación de bodega",
+              "CEq",
+              ms.ob,
+              "promedio",
+              null,
+              "mayor",
+            ),
+            buildSerieRow(
               "auto_rechazo",
               "Rechazo",
               "%",
@@ -3299,6 +3321,15 @@ export async function getIndicadoresMes(
               "promedio",
               null,
               "menor",
+            ),
+            buildSerieRow(
+              "auto_tlp",
+              "TLP",
+              "CEq/h",
+              ms.tlp,
+              "promedio",
+              null,
+              "mayor",
             ),
             buildSerieRow(
               "auto_tml",
