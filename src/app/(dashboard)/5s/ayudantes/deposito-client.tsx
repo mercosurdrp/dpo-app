@@ -253,6 +253,26 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
     [empleados],
   )
 
+  // Aporte de cada componente al score final = (peso × valor) / Σ pesos
+  // presentes. Los tres aportes suman exactamente el Score. Refleja la misma
+  // reponderación que hace el server.
+  function aportes(r: S5RankingDepositoData["ranking"][number]) {
+    const c = data.config
+    const parts: Array<{ k: "e" | "s" | "p"; w: number; v: number }> = []
+    if (r.errores_score != null && c.peso_errores > 0)
+      parts.push({ k: "e", w: c.peso_errores, v: r.errores_score })
+    if (r.nota_5s != null && c.peso_5s > 0)
+      parts.push({ k: "s", w: c.peso_5s, v: r.nota_5s })
+    if (r.productividad_score != null && c.peso_productividad > 0)
+      parts.push({ k: "p", w: c.peso_productividad, v: r.productividad_score })
+    const tw = parts.reduce((a, p) => a + p.w, 0)
+    const get = (k: "e" | "s" | "p") => {
+      const p = parts.find((x) => x.k === k)
+      return p && tw > 0 ? (p.w * p.v) / tw : null
+    }
+    return { e: get("e"), s: get("s"), p: get("p") }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header + selector bimestre */}
@@ -393,6 +413,11 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
             </p>
           ) : (
             <div className="overflow-x-auto">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Cada componente muestra su valor, entre paréntesis su puntaje
+                0–100, y abajo en <span className="text-emerald-600">verde</span> lo
+                que <strong>aporta al Score</strong>. Los tres aportes suman el Score.
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -405,16 +430,18 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.ranking.map((r, i) => (
+                  {data.ranking.map((r, i) => {
+                    const ap = aportes(r)
+                    return (
                     <TableRow key={r.empleado_id ?? r.nombre} className={r.posicion_sugerida ? "bg-amber-50/40" : ""}>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-muted-foreground align-top">
                         {r.posicion_sugerida ? (
                           <Badge className="bg-amber-500 hover:bg-amber-500">{r.posicion_sugerida}°</Badge>
                         ) : (
                           i + 1
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <div className="font-medium">{r.nombre}</div>
                         <div className="flex flex-wrap gap-1 pt-0.5">
                           {r.es_picker && (
@@ -425,27 +452,56 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        {r.nota_5s != null ? `${r.nota_5s.toFixed(1)}%` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {r.errores_cant != null ? (
-                          <span>
-                            {r.errores_cant}
-                            <span className="ml-1 text-xs text-muted-foreground">
-                              ({r.errores_score?.toFixed(0)} pts)
-                            </span>
-                          </span>
+                      <TableCell className="text-right align-top">
+                        {r.nota_5s != null ? (
+                          <>
+                            <div>{r.nota_5s.toFixed(1)}%</div>
+                            {ap.s != null && (
+                              <div className="text-[11px] text-emerald-600">+{ap.s.toFixed(1)}</div>
+                            )}
+                          </>
                         ) : (
                           "—"
                         )}
                       </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {r.productividad != null ? r.productividad.toFixed(0) : "—"}
+                      <TableCell className="text-right align-top">
+                        {r.errores_cant != null ? (
+                          <>
+                            <div>
+                              {r.errores_cant}
+                              <span className="ml-1 text-xs text-muted-foreground">
+                                ({r.errores_score?.toFixed(0)})
+                              </span>
+                            </div>
+                            {ap.e != null && (
+                              <div className="text-[11px] text-emerald-600">+{ap.e.toFixed(1)}</div>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
-                      <TableCell className="text-right font-bold">{r.score.toFixed(1)}</TableCell>
+                      <TableCell className="text-right align-top">
+                        {r.productividad != null ? (
+                          <>
+                            <div className="text-muted-foreground">
+                              {r.productividad.toFixed(0)}
+                              <span className="ml-1 text-xs">
+                                ({r.productividad_score?.toFixed(0)})
+                              </span>
+                            </div>
+                            {ap.p != null && (
+                              <div className="text-[11px] text-emerald-600">+{ap.p.toFixed(1)}</div>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right align-top font-bold">{r.score.toFixed(1)}</TableCell>
                     </TableRow>
-                  ))}
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
