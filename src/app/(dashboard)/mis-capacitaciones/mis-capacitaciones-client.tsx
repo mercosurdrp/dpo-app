@@ -56,6 +56,7 @@ interface Props {
   nombre: string
   reunion: { marcado: boolean; hora_checkin: string | null; minutos: number | null }
   reunionWarehouse: MiAsistenciaReunionHoy | null
+  reunionLogistica: MiAsistenciaReunionHoy | null
   dashboard: MiDashboardData | null
   entrega: MiEntregaData | null
   sobrecargas: MisSobrecargasResumen | null
@@ -93,14 +94,17 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, dashboard, entrega, sobrecargas }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
   const [warehouseState, setWarehouseState] = useState(reunionWarehouse)
+  const [logisticaState, setLogisticaState] = useState(reunionLogistica)
   const [loading, setLoading] = useState(false)
   const [loadingWh, setLoadingWh] = useState(false)
+  const [loadingLog, setLoadingLog] = useState(false)
 
   const esDeposito = dashboard?.sector === "Depósito"
+  const esDistribucion = dashboard?.sector === "Distribución"
 
   async function handleLogout() {
     const supabase = createClient()
@@ -133,6 +137,18 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
       alert(res.error)
     }
     setLoadingWh(false)
+  }
+
+  async function handleMarcarLogistica() {
+    if (!logisticaState) return
+    setLoadingLog(true)
+    const res = await marcarMiAsistencia(logisticaState.reunion_id)
+    if ("data" in res) {
+      setLogisticaState({ ...logisticaState, presente: true })
+    } else {
+      alert(res.error)
+    }
+    setLoadingLog(false)
   }
 
   const pendientes = capacitaciones.filter(
@@ -197,8 +213,35 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
               )}
             </CardContent>
           </Card>
-        ) : (
-          /* Reunión Pre-Ruta */
+        ) : logisticaState ? (
+          /* Reunión de Logística (empleado asistente del módulo de reuniones) */
+          <Card className={logisticaState.presente ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Hand className="size-5" />
+                  Reunión de Logística
+                </CardTitle>
+                <Badge className={logisticaState.presente ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
+                  {logisticaState.presente ? "Presente" : "Hoy"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {logisticaState.presente ? (
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="size-6 text-green-500" />
+                  <p className="font-semibold text-green-700 text-sm">Asistencia confirmada</p>
+                </div>
+              ) : (
+                <Button onClick={handleMarcarLogistica} disabled={loadingLog} className="w-full bg-blue-600 hover:bg-blue-700" size="lg">
+                  {loadingLog ? "Marcando..." : <><Hand className="mr-2 size-5" /> Marcar Asistencia</>}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : esDistribucion ? (
+          /* Reunión Pre-Ruta — solo personal de Distribución */
           <Card className={reunionState.marcado ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -242,7 +285,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
               )}
             </CardContent>
           </Card>
-        )}
+        ) : null}
 
         {/* Fichaje Hoy */}
         <Card className="border-slate-200">

@@ -9,11 +9,12 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
-  const [result, profile, reunionRes, warehouseRes, dashRes, entregaRes, sobreRes] = await Promise.all([
+  const [result, profile, reunionRes, warehouseRes, logisticaRes, dashRes, entregaRes, sobreRes] = await Promise.all([
     getMisCapacitaciones(),
     getProfile(),
     getEstadoReunionHoy(),
     getMiAsistenciaReunionHoy("warehouse"),
+    getMiAsistenciaReunionHoy("logistica"),
     getMiDashboard(),
     getMiEntrega(),
     IS_MISIONES ? getMisSobrecargas() : Promise.resolve(null),
@@ -30,6 +31,7 @@ export default async function MisCapacitacionesPage() {
 
   const reunion = "data" in reunionRes ? reunionRes.data : { marcado: false, hora_checkin: null, minutos: null }
   const reunionWarehouse = "data" in warehouseRes ? warehouseRes.data : null
+  const reunionLogistica = "data" in logisticaRes ? logisticaRes.data : null
   const dashboard = "data" in dashRes ? dashRes.data : null
   const entrega = "data" in entregaRes ? entregaRes.data : null
   const sobrecargas = sobreRes && "data" in sobreRes ? sobreRes.data : null
@@ -40,6 +42,7 @@ export default async function MisCapacitacionesPage() {
       nombre={profile?.nombre ?? ""}
       reunion={reunion}
       reunionWarehouse={reunionWarehouse}
+      reunionLogistica={reunionLogistica}
       dashboard={dashboard}
       entrega={entrega}
       sobrecargas={sobrecargas}
