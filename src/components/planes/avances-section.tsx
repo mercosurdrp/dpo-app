@@ -310,12 +310,12 @@ export function AvancesSection({
         <CardTitle className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
-            Action Log ({timeline.length})
+            Respuestas ({timeline.length})
           </span>
           {puedeIntervenir && !planCerrado && (
             <Button size="sm" onClick={() => setDialogOpen(true)}>
               <Plus className="mr-1 h-4 w-4" />
-              Responder / cargar avance
+              Responder
             </Button>
           )}
         </CardTitle>
@@ -323,9 +323,9 @@ export function AvancesSection({
       <CardContent className="border-t pt-4">
         {timeline.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">
-            Sin actividad todavía.
+            Sin respuestas todavía.
             {puedeIntervenir && !planCerrado
-              ? ' Usá "Responder / cargar avance" para sumar una observación, archivo o foto.'
+              ? ' Usá "Responder" para sumar una observación, archivo o foto.'
               : ""}
           </p>
         ) : (
@@ -570,7 +570,7 @@ export function AvancesSection({
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Responder / cargar avance</DialogTitle>
+            <DialogTitle>Responder</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
