@@ -394,7 +394,7 @@ export function TareaForm({
                   checked={requiereEvidencia}
                   onCheckedChange={(v) => setRequiereEvidencia(v === true)}
                 />
-                Requiere evidencia al cerrar
+                Requiere respuesta (comentario o archivo) al cerrar
               </label>
             </div>
           </div>

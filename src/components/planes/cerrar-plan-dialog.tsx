@@ -147,11 +147,9 @@ function CerrarPlanForm({
           <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
             <FileCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             <div className="text-sm text-emerald-900">
-              Hay <span className="font-semibold">{totalEvidencias}</span>{" "}
-              {totalEvidencias === 1
-                ? "evidencia vinculada"
-                : "evidencias vinculadas"}
-              . ¿Querés cerrar el plan?
+              El plan tiene <span className="font-semibold">{totalEvidencias}</span>{" "}
+              {totalEvidencias === 1 ? "respuesta" : "respuestas"} (comentarios
+              o archivos). ¿Querés cerrar el plan?
             </div>
           </div>
         )}
@@ -163,8 +161,8 @@ function CerrarPlanForm({
               <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-3">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                 <div className="text-sm text-red-800">
-                  Este plan requiere evidencia. Subí al menos una antes de
-                  cerrarlo.
+                  Este plan tiene que estar respondido. Cargá un comentario o
+                  archivo en el Action Log antes de cerrarlo.
                 </div>
               </div>
             ) : (
@@ -172,8 +170,9 @@ function CerrarPlanForm({
                 <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <div className="text-sm text-amber-900">
-                    Este plan requiere evidencia y no hay ninguna vinculada.
-                    Como admin podés cerrarlo igualmente, dejando un motivo.
+                    Este plan todavía no tiene ninguna respuesta (comentario o
+                    archivo). Como admin podés cerrarlo igualmente, dejando un
+                    motivo.
                   </div>
                 </div>
 
@@ -184,7 +183,7 @@ function CerrarPlanForm({
                     disabled={pending}
                   />
                   <span className="text-sm text-slate-700">
-                    Cerrar sin evidencia
+                    Cerrar sin respuesta
                   </span>
                 </label>
 
@@ -219,7 +218,7 @@ function CerrarPlanForm({
         {/* Caso 3: no obligatoria, no hay evidencias → cierre directo */}
         {!tieneEvidencias && !evidenciaObligatoria && (
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            Este plan no requiere evidencia. ¿Cerrar plan?
+            Este plan no exige respuesta para cerrarse. ¿Cerrar plan?
           </div>
         )}
 

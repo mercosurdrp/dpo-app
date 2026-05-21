@@ -227,11 +227,7 @@ export function AvancesSection({
 
   async function handleSubmit() {
     if (!comentario.trim() && !archivo) {
-      toast.error("Adjuntá un archivo o escribí una observación")
-      return
-    }
-    if (cerrar && !comentario.trim()) {
-      toast.error("Para cerrar la tarea tenés que escribir una observación")
+      toast.error("Respondé con un comentario o adjuntá un archivo")
       return
     }
     const fd = new FormData()
@@ -534,9 +530,7 @@ export function AvancesSection({
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label htmlFor="avance-comentario">
-                Observación {cerrar && <span className="text-red-500">*</span>}
-              </Label>
+              <Label htmlFor="avance-comentario">Observación</Label>
               <Textarea
                 id="avance-comentario"
                 value={comentario}
@@ -547,9 +541,7 @@ export function AvancesSection({
               />
             </div>
             <div>
-              <Label>
-                Evidencia: archivo o foto (podés pegar con Ctrl+V)
-              </Label>
+              <Label>Archivo o foto (opcional — podés pegar con Ctrl+V)</Label>
               {archivo ? (
                 <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-sm">
                   <div className="flex min-w-0 items-center gap-2">

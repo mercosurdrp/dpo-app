@@ -1393,27 +1393,35 @@ export async function cerrarPlan(
       prioridad: string
     }
 
-    // contar evidencias: vinculadas (evidencia_planes + dpo_archivo_planes)
-    // y archivos adjuntos en avances del Action Log.
-    const [{ count: evCount }, { count: archCount }, { count: avanceFileCount }] =
-      await Promise.all([
-        supabase
-          .from("evidencia_planes")
-          .select("id", { count: "exact", head: true })
-          .eq("plan_id", planId),
-        supabase
-          .from("dpo_archivo_planes")
-          .select("id", { count: "exact", head: true })
-          .eq("plan_id", planId),
-        supabase
-          .from("planes_accion_avances")
-          .select("id", { count: "exact", head: true })
-          .eq("plan_id", planId)
-          .not("archivo_path", "is", null),
-      ])
+    // El plan se considera "respondido" si tiene al menos una respuesta:
+    // un avance del Action Log (comentario o archivo), un comentario, o una
+    // evidencia/archivo vinculado. Un comentario solo ya cuenta.
+    const [
+      { count: evCount },
+      { count: archCount },
+      { count: avanceCount },
+      { count: comentCount },
+    ] = await Promise.all([
+      supabase
+        .from("evidencia_planes")
+        .select("id", { count: "exact", head: true })
+        .eq("plan_id", planId),
+      supabase
+        .from("dpo_archivo_planes")
+        .select("id", { count: "exact", head: true })
+        .eq("plan_id", planId),
+      supabase
+        .from("planes_accion_avances")
+        .select("id", { count: "exact", head: true })
+        .eq("plan_id", planId),
+      supabase
+        .from("plan_comentarios")
+        .select("id", { count: "exact", head: true })
+        .eq("plan_id", planId),
+    ])
 
     const totalEvidencias =
-      (evCount ?? 0) + (archCount ?? 0) + (avanceFileCount ?? 0)
+      (evCount ?? 0) + (archCount ?? 0) + (avanceCount ?? 0) + (comentCount ?? 0)
 
     // 2) validaciones de evidencia
     const updates: {
@@ -1429,7 +1437,8 @@ export async function cerrarPlan(
       if (totalEvidencias === 0 && opts.sinEvidencia !== true) {
         return {
           ok: false,
-          error: "Este plan requiere evidencia para cerrar. Adjuntá al menos una o forzá el cierre con motivo.",
+          error:
+            "Este plan tiene que estar respondido (un comentario o archivo) antes de cerrarse. Respondé al menos una vez o forzá el cierre con motivo.",
         }
       }
 

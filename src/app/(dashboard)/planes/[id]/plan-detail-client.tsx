@@ -921,13 +921,14 @@ export function PlanDetailClient({
   const canEditResponsables =
     currentRole === "admin" || currentRole === "auditor"
   const isAdmin = currentRole === "admin"
-  // Cualquier archivo adjunto cuenta como evidencia: vinculadas + archivos
-  // subidos en avances del Action Log (coherente con cerrarPlan en el server).
-  const avancesConArchivo = avancesIniciales.filter((a) => a.archivo_path).length
+  // El plan está "respondido" con cualquier respuesta: avances (comentario o
+  // archivo) + comentarios legacy + evidencias/archivos vinculados (coherente
+  // con cerrarPlan en el server).
   const totalEvidencias =
     (plan.evidencias?.length ?? 0) +
     (plan.archivos_dpo?.length ?? 0) +
-    avancesConArchivo
+    avancesIniciales.length +
+    (plan.comentarios?.length ?? 0)
 
   async function handleEstadoChange(nuevoEstado: EstadoPlan) {
     const result = await updatePlanEstado(plan.id, nuevoEstado)
@@ -1133,12 +1134,12 @@ export function PlanDetailClient({
                 <ShieldCheck className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs font-medium text-slate-700">
-                    Evidencia obligatoria
+                    Requiere respuesta al cerrar
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {plan.evidencia_obligatoria
-                      ? "Activada — no se puede cerrar sin evidencia"
-                      : "Desactivada — se puede cerrar sin evidencia"}
+                      ? "Activada — no se puede cerrar sin un comentario o archivo"
+                      : "Desactivada — se puede cerrar sin responder"}
                   </p>
                 </div>
               </div>
