@@ -335,20 +335,11 @@ export async function getRankingDeposito(
     })
     rows.sort((a, b) => b.score - a.score)
 
-    // Podio sugerido: 1° y 2° pickers; 3° el mejor de los que quedan
-    // (puede ser el ganador de auditorías). Regla pedida por el usuario.
-    const pickers = rows.filter((r) => r.es_picker)
-    const usados = new Set<S5AyudanteDepositoRow>()
-    if (pickers[0]) {
-      pickers[0].posicion_sugerida = 1
-      usados.add(pickers[0])
-    }
-    if (pickers[1]) {
-      pickers[1].posicion_sugerida = 2
-      usados.add(pickers[1])
-    }
-    const resto = rows.filter((r) => !usados.has(r))
-    if (resto[0]) resto[0].posicion_sugerida = 3
+    // Podio sugerido: los 3 mejores por score, sin reservar puestos.
+    // (Regla pedida por el usuario 2026-05-21: que queden los primeros 3.)
+    rows.slice(0, 3).forEach((r, i) => {
+      r.posicion_sugerida = i + 1
+    })
 
     // Premios guardados
     const premios = ((premiosRes.data ?? []) as S5AyudantePremio[]).sort(

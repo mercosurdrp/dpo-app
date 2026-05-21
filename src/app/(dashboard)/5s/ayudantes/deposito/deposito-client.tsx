@@ -485,8 +485,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
               <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
                 <Info className="mt-0.5 size-3.5 shrink-0" />
                 Los pesos se reponderan automáticamente para quien no tenga alguna
-                métrica. El 1° y 2° puesto se reservan a pickers; el 3° puede ser el
-                mejor de auditorías.
+                métrica. El podio sugerido son los 3 mejores por score (sin reservar
+                puestos): subí el peso de errores/productividad si querés que pesen
+                más que la auditoría.
               </p>
               <div className="mt-3">
                 <Button size="sm" onClick={guardarConfig} disabled={pending}>
