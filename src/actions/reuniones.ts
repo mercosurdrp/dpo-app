@@ -17,6 +17,11 @@ import {
   type AperturaPickingDelDia,
   type OperadorApertura,
 } from "@/lib/warehouse/auto-indicadores"
+import {
+  buildMisionesLogisticaSerie,
+  type MisionesSucursal,
+} from "@/lib/foxtrot/auto-indicadores-misiones"
+import { IS_MISIONES } from "@/lib/empresa"
 import { getAusentismoSerie } from "@/actions/asistencia"
 import type {
   Profile,
@@ -2370,12 +2375,14 @@ export async function getResumenSemanal(
  */
 export async function getIndicadoresMes(
   reunionId: string,
+  opts?: { sucursal?: MisionesSucursal },
 ): Promise<Result<ReunionIndicadoresMes>> {
   try {
     await requireAuth()
     const supabase = await createClient()
 
     if (!reunionId) return { error: "ID de reunión inválido" }
+    const sucursal: MisionesSucursal = opts?.sucursal ?? "todo"
 
     // 1. Obtener tipo + fecha de la reunión actual
     const { data: reunion, error: errReunion } = await supabase
@@ -2456,11 +2463,23 @@ export async function getIndicadoresMes(
       NOMBRES_AUTO.add("capacidad utilizada")
       NOMBRES_AUTO.add("productividad de picking")
     } else if (tipo === "logistica") {
-      NOMBRES_AUTO.add("wqi")
-      NOMBRES_AUTO.add("productividad de picking")
-      NOMBRES_AUTO.add("precision picking")
-      NOMBRES_AUTO.add("roturas")
-      NOMBRES_AUTO.add("faltantes")
+      if (IS_MISIONES) {
+        NOMBRES_AUTO.add("rutas en distribución")
+        NOMBRES_AUTO.add("bultos salida a reparto")
+        NOMBRES_AUTO.add("% rechazo")
+        NOMBRES_AUTO.add("tiempo medio de ruta")
+        NOMBRES_AUTO.add("% rutas finalizadas")
+        NOMBRES_AUTO.add("% entregas exitosas")
+        NOMBRES_AUTO.add("tml promedio")
+        NOMBRES_AUTO.add("% equipos en meta tml")
+        NOMBRES_AUTO.add("ausentismo")
+      } else {
+        NOMBRES_AUTO.add("wqi")
+        NOMBRES_AUTO.add("productividad de picking")
+        NOMBRES_AUTO.add("precision picking")
+        NOMBRES_AUTO.add("roturas")
+        NOMBRES_AUTO.add("faltantes")
+      }
     }
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       NOMBRES_AUTO.add("fte")
@@ -3210,6 +3229,120 @@ export async function getIndicadoresMes(
     //     Logistica: solo Productividad de picking y WQI (los otros 4 son
     //     específicos del rol de depósito, no relevantes en logística).
     if (tipo === "warehouse" || tipo === "logistica") {
+      // Misiones: la fuente warehouse (deposito-esteban) es de Pampeana y no
+      // aplica acá. Para 'logistica' usamos un set de KPIs basado en Foxtrot
+      // (rutas, entregas, TML) + ausentismo. 'warehouse' no tiene equivalente
+      // en Misiones por ahora; cuando integremos el dashboard de Analía
+      // (perdidas-deposito) podremos cubrirlo. Por ahora si alguien crea una
+      // reunión 'warehouse' en Misiones, los AUTO de warehouse no se llenan.
+      if (IS_MISIONES) {
+        if (tipo === "logistica") {
+          const ms = await buildMisionesLogisticaSerie(
+            supabase,
+            fechas,
+            fecha,
+            sucursal,
+          )
+          const ausentismoRes = await getAusentismoSerie(mes, anio)
+          const ausentismoPorFecha =
+            "data" in ausentismoRes ? ausentismoRes.data.por_fecha : {}
+
+          indicadoresAuto.push(
+            buildSerieRow(
+              "auto_rutas_distribucion",
+              "Rutas en distribución",
+              "rutas",
+              ms.rutas_distribucion,
+              "promedio",
+              null,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_bultos_salida_reparto",
+              "Bultos salida a reparto",
+              "bultos",
+              ms.bultos_salida_reparto,
+              "suma",
+              null,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_pct_rechazo",
+              "% Rechazo",
+              "%",
+              ms.pct_rechazo,
+              "promedio",
+              2,
+              "menor",
+            ),
+            buildSerieRow(
+              "auto_tiempo_ruta",
+              "Tiempo medio de ruta",
+              "min",
+              ms.tiempo_ruta_promedio,
+              "promedio",
+              null,
+              "menor",
+            ),
+            buildSerieRow(
+              "auto_pct_rutas_finalizadas",
+              "% Rutas finalizadas",
+              "%",
+              ms.pct_rutas_finalizadas,
+              "promedio",
+              100,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_pct_entregas_exitosas",
+              "% Entregas exitosas",
+              "%",
+              ms.pct_entregas_exitosas,
+              "promedio",
+              98,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_tml_misiones",
+              "TML promedio",
+              "min",
+              ms.tml_promedio,
+              "promedio",
+              30,
+              "menor",
+            ),
+            buildSerieRow(
+              "auto_tml_en_meta",
+              "% Equipos en meta TML",
+              "%",
+              ms.tml_pct_en_meta,
+              "promedio",
+              65,
+              "mayor",
+            ),
+            buildSerieRow(
+              "auto_ausentismo",
+              "Ausentismo",
+              "personas",
+              ausentismoPorFecha,
+              "suma",
+              null,
+              "menor",
+            ),
+          )
+        }
+        // Misiones · warehouse: sin AUTO por ahora (fase 2 = integrar Analía)
+        return {
+          data: {
+            anio,
+            mes,
+            fechas,
+            reuniones_por_fecha: reunionesPorFecha,
+            indicadores: [...indicadoresAuto, ...indicadores],
+          },
+        }
+      }
+
       const serie = await buildWarehouseSerieDiaria(fechas, fecha)
 
       // Métricas diarias (cada celda tiene valor del día, no acumulado).

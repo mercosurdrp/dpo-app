@@ -43,11 +43,13 @@ import {
   agregarAsistente,
   eliminarActividad,
   eliminarReunion,
+  getIndicadoresMes,
   getSignedUrl,
   marcarMiAsistencia,
   quitarAsistente,
   setIndicadorValor,
 } from "@/actions/reuniones"
+import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
@@ -707,7 +709,7 @@ function ActividadListItem({
 // =============================================
 export function ReunionDetallePageClient({
   detalle,
-  indicadoresMes,
+  indicadoresMes: indicadoresMesInicial,
   responsables,
   sectoresAlmacen,
   vehiculos,
@@ -717,6 +719,26 @@ export function ReunionDetallePageClient({
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+
+  // Indicadores como state — se refetchan al cambiar el filtro de sucursal
+  // (sólo aplica en reuniones de logística en Misiones).
+  const [indicadoresMes, setIndicadoresMes] = useState<IndicadoresMesData | null>(
+    indicadoresMesInicial,
+  )
+  const muestraToggleSucursal = IS_MISIONES && detalle.tipo === "logistica"
+  const [sucursalSel, setSucursalSel] = useState<
+    "todo" | "eldorado" | "iguazu"
+  >("todo")
+  const [cargandoIndicadores, startCargaIndicadores] = useTransition()
+
+  const cambiarSucursal = (s: "todo" | "eldorado" | "iguazu") => {
+    if (s === sucursalSel) return
+    setSucursalSel(s)
+    startCargaIndicadores(async () => {
+      const res = await getIndicadoresMes(detalle.id, { sucursal: s })
+      if ("data" in res) setIndicadoresMes(res.data)
+    })
+  }
 
   const [openConfigInd, setOpenConfigInd] = useState(false)
   const [openActForm, setOpenActForm] = useState(false)
@@ -1041,6 +1063,11 @@ export function ReunionDetallePageClient({
                 · {nombreMes(indicadoresMes.mes)} {indicadoresMes.anio}
               </span>
             )}
+            {cargandoIndicadores && (
+              <span className="text-xs font-normal text-muted-foreground">
+                actualizando…
+              </span>
+            )}
           </CardTitle>
           {puedeEditar && (
             <Button
@@ -1055,6 +1082,38 @@ export function ReunionDetallePageClient({
           )}
         </CardHeader>
         <CardContent className="px-0">
+          {muestraToggleSucursal && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
+              <span className="mr-1 font-medium text-slate-600">Sucursal:</span>
+              {(
+                [
+                  { key: "todo", label: "Todas" },
+                  { key: "eldorado", label: "Eldorado" },
+                  { key: "iguazu", label: "Iguazú" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => cambiarSucursal(opt.key)}
+                  disabled={cargandoIndicadores}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition disabled:opacity-50",
+                    sucursalSel === opt.key
+                      ? "border-blue-500 bg-blue-50 font-semibold text-blue-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {sucursalSel !== "todo" && (
+                <span className="ml-2 text-[10px] italic text-slate-500">
+                  Ausentismo se muestra siempre total
+                </span>
+              )}
+            </div>
+          )}
           {indicadoresMes && indicadoresMes.indicadores.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
               <span className="mr-1 font-medium text-slate-600">Vista:</span>
