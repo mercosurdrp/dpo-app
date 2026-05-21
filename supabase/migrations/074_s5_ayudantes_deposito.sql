@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS s5_ayudantes_config (
   peso_errores NUMERIC NOT NULL DEFAULT 0.60,
   peso_5s NUMERIC NOT NULL DEFAULT 0.40,
   peso_productividad NUMERIC NOT NULL DEFAULT 0.00,
-  -- bultos errados acumulados en la ventana que valen 0 puntos
-  tope_errores NUMERIC NOT NULL DEFAULT 200,
+  -- cantidad de errores HUMANOS acumulados en la ventana que valen 0 puntos
+  tope_errores NUMERIC NOT NULL DEFAULT 50,
   -- bul/HH que vale 100 puntos de productividad
   prod_target NUMERIC NOT NULL DEFAULT 300,
   meses_ventana INT NOT NULL DEFAULT 2 CHECK (meses_ventana BETWEEN 1 AND 6),

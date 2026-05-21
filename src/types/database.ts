@@ -1834,8 +1834,8 @@ export interface S5AyudanteDepositoRow {
   /** Sectores que tuvo asignados en la ventana (ej. "Nave"). */
   sectores: string[]
   nota_5s: number | null
-  /** Bultos errados acumulados en la ventana. */
-  errores_bultos: number | null
+  /** Cantidad de errores HUMANOS (filas del Sheet) acumulados en la ventana. */
+  errores_cant: number | null
   errores_score: number | null
   productividad: number | null
   productividad_score: number | null
@@ -2648,4 +2648,54 @@ export interface RiesgoExternoAccion {
 export interface RiesgoExternoAccionConResponsable extends RiesgoExternoAccion {
   responsable_nombre: string | null
   responsable_email: string | null
+}
+
+// ==================== HERRAMIENTAS DE GESTIÓN ====================
+// 5 Porqués, Causa-Efecto (Ishikawa) y PDCA aplicadas a un plan/tarea.
+
+export type HerramientaGestionTipo = "cinco_porques" | "causa_efecto" | "pdca"
+
+export interface CincoPorquesContenido {
+  problema: string
+  porques: { pregunta: string; respuesta: string }[]
+  causa_raiz: string
+  contramedida: string
+}
+
+export interface CausaEfectoContenido {
+  problema: string
+  efecto: string
+  categorias: { nombre: string; causas: string[] }[]
+  causa_raiz: string
+}
+
+export interface PdcaContenido {
+  plan: { problema: string; brechas: string; objetivos: string; causas: string }
+  hacer: { acciones: string }
+  verificar: { resultados: string }
+  actuar: { estandarizacion: string }
+}
+
+export type HerramientaGestionContenido =
+  | CincoPorquesContenido
+  | CausaEfectoContenido
+  | PdcaContenido
+
+export interface HerramientaGestion {
+  id: string
+  plan_id: string
+  tipo: HerramientaGestionTipo
+  titulo: string
+  contenido: HerramientaGestionContenido
+  pdf_path: string | null
+  autor_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface HerramientaGestionConContexto extends HerramientaGestion {
+  autor_nombre: string | null
+  plan_titulo: string | null
+  plan_pregunta_numero: number | null
+  plan_pilar_nombre: string | null
 }

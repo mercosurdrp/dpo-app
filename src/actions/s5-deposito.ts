@@ -14,8 +14,9 @@ import type {
 
 const PAGE_PATH = "/5s/ayudantes"
 
-// Sheet "Errores picking" — cada fila = 1 error (col0 fecha, col1 operario,
-// col2 bultos errados). Misma fuente que usa deposito-esteban.
+// Sheet "Errores picking": col0 FECHA, col1 OPERARIO, col2 CANTIDAD DE BULTOS,
+// col3 FALTANTE/SOBRANTE, col4 TIPO DE ERROR (HUMANO/SISTEMA).
+// El error se cuenta por FILA (cada fila = 1 error) y SOLO si es HUMANO.
 const ERRORES_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
 
@@ -78,10 +79,6 @@ function parseFechaSheet(raw: string): string | null {
   return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`
 }
 
-function parseDecimalEs(s: string): number {
-  const n = parseFloat(String(s).replace(/\./g, "").replace(",", "."))
-  return Number.isFinite(n) ? n : 0
-}
 
 /** Tokens en mayúscula sin acentos, >=4 chars, para matchear personas. */
 function tokens(nombre: string): Set<string> {
@@ -104,7 +101,7 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
 }
 
-// ── Errores por operario desde el Sheet, acumulado en la ventana ──
+// ── Errores por operario: CANTIDAD de errores HUMANOS (filas) en la ventana ──
 async function fetchErroresPorOperario(
   prefijosMes: string[],
 ): Promise<Map<string, number>> {
@@ -119,15 +116,17 @@ async function fetchErroresPorOperario(
     const lines = csv.split(/\r?\n/).filter((l) => l.trim())
     for (let i = 1; i < lines.length; i++) {
       const cells = parseCsvRow(lines[i])
-      if (cells.length < 3) continue
+      if (cells.length < 5) continue
       const fecha = parseFechaSheet(cells[0])
       if (!fecha) continue
       if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
       const operario = (cells[1] ?? "").trim()
       if (!operario) continue
-      const bultos = parseDecimalEs(cells[2] ?? "0")
-      if (!Number.isFinite(bultos) || bultos <= 0) continue
-      out.set(operario, (out.get(operario) ?? 0) + bultos)
+      // Solo errores HUMANOS (col E). Los del SISTEMA no cuentan.
+      const tipo = (cells[4] ?? "").trim().toUpperCase()
+      if (!tipo.includes("HUMANO")) continue
+      // Cada fila = 1 error (cuenta de ocurrencias, no bultos).
+      out.set(operario, (out.get(operario) ?? 0) + 1)
     }
   } catch {
     /* best-effort: sin errores la fila queda en null */
@@ -266,7 +265,7 @@ export async function getRankingDeposito(
       nombre: string
       notas5s: number[]
       sectores: Set<string>
-      errores_bultos: number | null
+      errores_cant: number | null
       productividad: number | null
       es_picker: boolean
       es_responsable: boolean
@@ -287,7 +286,7 @@ export async function getRankingDeposito(
           nombre: emp.nombre,
           notas5s: [],
           sectores: new Set<string>(),
-          errores_bultos: null,
+          errores_cant: null,
           productividad: null,
           es_picker: false,
           es_responsable: true,
@@ -312,7 +311,7 @@ export async function getRankingDeposito(
           nombre: operario,
           notas5s: [],
           sectores: new Set<string>(),
-          errores_bultos: null,
+          errores_cant: null,
           productividad: null,
           es_picker: true,
           es_responsable: false,
@@ -324,10 +323,10 @@ export async function getRankingDeposito(
       return c
     }
 
-    // Pickers (errores).
-    for (const [operario, bultos] of erroresMap.entries()) {
+    // Pickers (errores): cantidad de errores humanos en la ventana.
+    for (const [operario, cant] of erroresMap.entries()) {
       const c = matchOCrear(operario)
-      c.errores_bultos = (c.errores_bultos ?? 0) + bultos
+      c.errores_cant = (c.errores_cant ?? 0) + cant
     }
 
     // Pickers (productividad bul/HH promedio de la ventana).
@@ -349,8 +348,8 @@ export async function getRankingDeposito(
         ? c.notas5s.reduce((a, b) => a + b, 0) / c.notas5s.length
         : null
       const errores_score =
-        c.errores_bultos != null
-          ? clamp(100 * (1 - c.errores_bultos / tope), 0, 100)
+        c.errores_cant != null
+          ? clamp(100 * (1 - c.errores_cant / tope), 0, 100)
           : null
       // Productividad: bul/HH promedio de la ventana, normalizada vs target.
       // Solo afecta el score si peso_productividad > 0 (editable en el panel).
@@ -382,8 +381,8 @@ export async function getRankingDeposito(
         es_responsable: c.es_responsable,
         sectores: Array.from(c.sectores),
         nota_5s: s.nota_5s != null ? Number(s.nota_5s.toFixed(1)) : null,
-        errores_bultos:
-          c.errores_bultos != null ? Number(c.errores_bultos.toFixed(1)) : null,
+        errores_cant:
+          c.errores_cant != null ? Number(c.errores_cant.toFixed(1)) : null,
         errores_score:
           s.errores_score != null ? Number(s.errores_score.toFixed(1)) : null,
         productividad: s.productividad,

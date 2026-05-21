@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS s5_ayudantes_config (
   peso_errores NUMERIC NOT NULL DEFAULT 0.60,
   peso_5s NUMERIC NOT NULL DEFAULT 0.40,
   peso_productividad NUMERIC NOT NULL DEFAULT 0.00,
-  tope_errores NUMERIC NOT NULL DEFAULT 200,   -- bultos errados en la ventana = 0 puntos
+  tope_errores NUMERIC NOT NULL DEFAULT 50,    -- cant. de errores HUMANOS en la ventana = 0 puntos
   prod_target NUMERIC NOT NULL DEFAULT 300,     -- bul/HH = 100 puntos
   meses_ventana INT NOT NULL DEFAULT 2 CHECK (meses_ventana BETWEEN 1 AND 6),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

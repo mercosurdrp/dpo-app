@@ -399,7 +399,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Ayudante</TableHead>
                     <TableHead className="text-right">5S</TableHead>
-                    <TableHead className="text-right">Errores (bultos)</TableHead>
+                    <TableHead className="text-right">Errores (cant.)</TableHead>
                     <TableHead className="text-right">Productividad</TableHead>
                     <TableHead className="text-right">Score</TableHead>
                   </TableRow>
@@ -429,9 +429,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                         {r.nota_5s != null ? `${r.nota_5s.toFixed(1)}%` : "—"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {r.errores_bultos != null ? (
+                        {r.errores_cant != null ? (
                           <span>
-                            {r.errores_bultos.toFixed(1)}
+                            {r.errores_cant}
                             <span className="ml-1 text-xs text-muted-foreground">
                               ({r.errores_score?.toFixed(0)} pts)
                             </span>
@@ -469,7 +469,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   ["peso_errores", "Peso errores"],
                   ["peso_5s", "Peso 5S"],
                   ["peso_productividad", "Peso productividad"],
-                  ["tope_errores", "Tope errores (bultos = 0 pts)"],
+                  ["tope_errores", "Tope errores (cant. = 0 pts)"],
                   ["prod_target", "Target prod. (bul/HH = 100)"],
                   ["meses_ventana", "Meses de ventana"],
                 ].map(([key, label]) => (
