@@ -3336,9 +3336,10 @@ async function getIndicadoresMesCore(
     //     queda en null pero el resto sigue. Para detalle por operador del
     //     día, ver getAperturaPickingDia() y el dialog AperturaPickingDetalleDiaDialog.
     //
-    //     Warehouse: los 6 KPIs (WQI/FGLI/SCL/Capacidad/Precision/Productividad).
-    //     Logistica: solo Productividad de picking y WQI (los otros 4 son
-    //     específicos del rol de depósito, no relevantes en logística).
+    //     Warehouse: Productividad, Errores, Precisión, Roturas y Faltantes
+    //     (hasta el día anterior). WQI/FGLI/SCL/Capacidad quedan fuera por ahora.
+    //     Logistica: WQI + Productividad + Precisión, Errores, Roturas,
+    //     Faltantes y Ausentismo.
     if (
       tipo === "warehouse" ||
       tipo === "logistica" ||
@@ -3656,31 +3657,9 @@ async function getIndicadoresMesCore(
         }
       }
 
-      // Comunes a warehouse + logística
-      indicadoresAuto.push(
-        buildDiarioConMtdRow(
-          "auto_wqi",
-          "WQI",
-          "PPM",
-          serie.wqi_dia,
-          serie.wqi,
-          serie.targets.wqi,
-          "menor",
-        ),
-        buildSerieRow(
-          "auto_productividad_picking",
-          "Productividad de picking",
-          "bul/HH",
-          serie.productividad,
-          "promedio",
-          300,
-          "mayor",
-        ),
-      )
-
-      // Solo logística: Precisión de picking (bultos pickeados vs errores),
-      // errores totales del día con drill por operador,
-      // y Roturas/Faltantes en HL (celdas diarias, MTD acumulado).
+      // Logística: WQI y Productividad de picking + Precisión, errores totales
+      // del día con drill por operador, Roturas/Faltantes en HL (celdas
+      // diarias, MTD acumulado) y Ausentismo.
       if (tipo === "logistica") {
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
@@ -3697,6 +3676,24 @@ async function getIndicadoresMesCore(
         }
 
         indicadoresAuto.push(
+          buildDiarioConMtdRow(
+            "auto_wqi",
+            "WQI",
+            "PPM",
+            serie.wqi_dia,
+            serie.wqi,
+            serie.targets.wqi,
+            "menor",
+          ),
+          buildSerieRow(
+            "auto_productividad_picking",
+            "Productividad de picking",
+            "bul/HH",
+            serie.productividad,
+            "promedio",
+            300,
+            "mayor",
+          ),
           buildSerieRow(
             "auto_precision_picking",
             "Precision picking",
@@ -3745,34 +3742,36 @@ async function getIndicadoresMesCore(
         )
       }
 
-      // Solo warehouse (rol de depósito)
+      // Solo warehouse (rol de depósito): por pedido, sólo Productividad,
+      // Errores, Precisión, Roturas y Faltantes — todos hasta el último día
+      // cerrado (se oculta el día en curso). WQI/FGLI/SCL/Capacidad quedan
+      // fuera por ahora.
       if (tipo === "warehouse") {
+        // Productividad: enmascarar el día en curso (igual que precisión,
+        // errores y ausentismo). La serie cruda la trae con el día de hoy.
+        const productividadHastaAyer: Record<string, number | null> = {}
+        for (const f of fechas) {
+          productividadHastaAyer[f] =
+            f < fecha ? (serie.productividad[f] ?? null) : null
+        }
+
         indicadoresAuto.push(
-          buildDiarioConMtdRow(
-            "auto_fgli",
-            "FGLI",
-            "HL",
-            serie.fgli_dia,
-            serie.fgli,
-            serie.targets.fgli,
-            "menor",
-          ),
-          buildDiarioConMtdRow(
-            "auto_scl",
-            "SCL",
-            "$",
-            serie.scl_dia,
-            serie.scl,
-            serie.targets.scl,
-            "menor",
+          buildSerieRow(
+            "auto_productividad_picking",
+            "Productividad de picking",
+            "bul/HH",
+            productividadHastaAyer,
+            "promedio",
+            300,
+            "mayor",
           ),
           buildSerieRow(
-            "auto_capacidad_utilizada",
-            "Capacidad utilizada",
-            "%",
-            serie.capacidad,
-            "promedio",
-            90,
+            "auto_errores_picking",
+            "Errores de picking",
+            "bultos",
+            serie.errores_dia,
+            "suma",
+            null,
             "menor",
           ),
           buildSerieRow(
@@ -3783,6 +3782,24 @@ async function getIndicadoresMesCore(
             "promedio",
             99.8,
             "mayor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_roturas",
+            "Roturas",
+            "HL",
+            serie.roturas_dia,
+            serie.roturas,
+            serie.targets.roturas,
+            "menor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_faltantes",
+            "Faltantes",
+            "HL",
+            serie.faltantes_dia,
+            serie.faltantes,
+            serie.targets.faltantes,
+            "menor",
           ),
         )
       }
