@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import {
+  ArrowLeft,
+  Loader2,
+  Check,
+  HelpCircle,
+  Fish,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -32,29 +40,28 @@ import { CincoPorquesForm, cincoPorquesVacio } from "./cinco-porques-form"
 import { CausaEfectoForm, causaEfectoVacio } from "./causa-efecto-form"
 import { PdcaForm, pdcaVacio } from "./pdca-form"
 
-// Íconos textuales por tipo
-const TIPO_ICON: Record<HerramientaGestionTipo, string> = {
-  cinco_porques: "5P",
-  causa_efecto: "CE",
-  pdca: "PDCA",
+const TIPO_ICON: Record<HerramientaGestionTipo, LucideIcon> = {
+  cinco_porques: HelpCircle,
+  causa_efecto: Fish,
+  pdca: RefreshCw,
 }
 
-// Colores para el selector de burbujas
-const TIPO_COLORS: Record<
+// Acento de color por herramienta (ícono + hover de la tarjeta)
+const TIPO_STYLE: Record<
   HerramientaGestionTipo,
-  { active: string; inactive: string }
+  { icon: string; ring: string }
 > = {
   cinco_porques: {
-    active: "border-blue-500 bg-blue-50 text-blue-700",
-    inactive: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+    icon: "text-blue-600 bg-blue-50",
+    ring: "hover:border-blue-400 hover:bg-blue-50/50",
   },
   causa_efecto: {
-    active: "border-violet-500 bg-violet-50 text-violet-700",
-    inactive: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+    icon: "text-violet-600 bg-violet-50",
+    ring: "hover:border-violet-400 hover:bg-violet-50/50",
   },
   pdca: {
-    active: "border-emerald-500 bg-emerald-50 text-emerald-700",
-    inactive: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+    icon: "text-emerald-600 bg-emerald-50",
+    ring: "hover:border-emerald-400 hover:bg-emerald-50/50",
   },
 }
 
@@ -97,7 +104,7 @@ export function HerramientaGestionDialog({
   )
   const [submitting, startSubmit] = useTransition()
 
-  // Sincronizar estado cuando cambia la herramienta (por si se re-abre con otra)
+  // Sincronizar estado cuando cambia la herramienta o se reabre
   useEffect(() => {
     if (open) {
       setTipo(herramienta?.tipo ?? null)
@@ -121,7 +128,6 @@ export function HerramientaGestionDialog({
 
   function handleClose(o: boolean) {
     if (!o) {
-      // Reset solo al cerrar
       setTipo(null)
       setTitulo("")
       setContenido(null as unknown as HerramientaGestionContenido)
@@ -170,99 +176,104 @@ export function HerramientaGestionDialog({
       )
       onSaved?.()
       onOpenChange(false)
-      // Reset estado
       setTipo(null)
       setTitulo("")
       setContenido(null as unknown as HerramientaGestionContenido)
     })
   }
 
+  const Icono = tipo ? TIPO_ICON[tipo] : null
   const tituloDialog = modoEdicion
     ? `Editar — ${HERRAMIENTA_GESTION_LABELS[herramienta!.tipo]}`
     : tipo
       ? HERRAMIENTA_GESTION_LABELS[tipo]
-      : "Nueva herramienta de gestión"
+      : "Aplicar herramienta de gestión"
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{tituloDialog}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {tipo && Icono && (
+              <span
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${TIPO_STYLE[tipo].icon}`}
+              >
+                <Icono className="h-4 w-4" />
+              </span>
+            )}
+            {tituloDialog}
+          </DialogTitle>
+          {!modoEdicion && (
+            <p className="text-xs font-medium text-slate-400">
+              {tipo
+                ? "Paso 2 de 2 · Completá el análisis"
+                : "Paso 1 de 2 · Elegí la herramienta"}
+            </p>
+          )}
         </DialogHeader>
 
-        {/* ── PASO 1: selección de tipo (solo modo nuevo sin tipo elegido) ─── */}
+        {/* ── PASO 1: elegir herramienta ──────────────────────────────────── */}
         {!tipo && !modoEdicion && (
-          <div className="space-y-3 py-2">
-            <p className="text-sm text-slate-500">
-              Elegí la herramienta de análisis que querés aplicar:
-            </p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {HERRAMIENTA_GESTION_TIPOS.map((t) => {
-                const colors = TIPO_COLORS[t]
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => handleElegirTipo(t)}
-                    className={`flex flex-col items-start gap-1.5 rounded-lg border-2 p-4 text-left transition-colors ${colors.inactive}`}
+          <div className="grid gap-3 py-2 sm:grid-cols-3">
+            {HERRAMIENTA_GESTION_TIPOS.map((t) => {
+              const I = TIPO_ICON[t]
+              const s = TIPO_STYLE[t]
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => handleElegirTipo(t)}
+                  className={`flex flex-col items-center gap-2 rounded-xl border-2 border-slate-200 bg-white p-4 text-center transition-colors ${s.ring}`}
+                >
+                  <span
+                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full ${s.icon}`}
                   >
-                    <span className="inline-flex items-center justify-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
-                      {TIPO_ICON[t]}
-                    </span>
-                    <span className="text-sm font-semibold">
-                      {HERRAMIENTA_GESTION_LABELS[t]}
-                    </span>
-                    <span className="text-xs text-slate-500 leading-snug">
-                      {HERRAMIENTA_GESTION_DESCRIPCIONES[t]}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+                    <I className="h-6 w-6" />
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800">
+                    {HERRAMIENTA_GESTION_LABELS[t]}
+                  </span>
+                  <span className="text-xs leading-snug text-slate-500">
+                    {HERRAMIENTA_GESTION_DESCRIPCIONES[t]}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
-        {/* ── PASO 2: formulario del tipo elegido ─────────────────────────── */}
+        {/* ── PASO 2: formulario ──────────────────────────────────────────── */}
         {tipo && (
           <div className="space-y-4 py-2">
-            {/* Indicador de tipo + botón volver (solo modo nuevo) */}
             {!modoEdicion && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleVolver}
-                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Cambiar tipo
-                </button>
-                <span className="text-slate-300">|</span>
-                <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                  {TIPO_ICON[tipo]}
-                </span>
-                <span className="text-xs text-slate-500">
-                  {HERRAMIENTA_GESTION_LABELS[tipo]}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={handleVolver}
+                className="flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-slate-800"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Cambiar herramienta
+              </button>
             )}
 
-            {/* Título */}
             <div>
               <Label htmlFor="hg-titulo">
-                Título / Problema a analizar
+                Título
                 <span className="ml-1 text-red-500">*</span>
               </Label>
               <Input
                 id="hg-titulo"
                 value={titulo}
                 onChange={(e) => setTitulo(e.target.value)}
-                placeholder="Ej: Rechazos reiterados en zona norte…"
+                placeholder="Nombre corto del análisis"
                 className="mt-1"
                 autoFocus
               />
+              <p className="mt-1 text-xs text-slate-400">
+                Lo prellenamos con el nombre de la tarea/actividad; podés ajustarlo.
+              </p>
             </div>
 
-            {/* Form específico */}
             {tipo === "cinco_porques" && contenido && (
               <CincoPorquesForm
                 value={contenido as ReturnType<typeof cincoPorquesVacio>}
@@ -300,10 +311,12 @@ export function HerramientaGestionDialog({
               onClick={handleGuardar}
               disabled={submitting || !titulo.trim()}
             >
-              {submitting && (
+              {submitting ? (
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-1.5 h-4 w-4" />
               )}
-              {modoEdicion ? "Actualizar" : "Guardar"}
+              {modoEdicion ? "Actualizar" : "Guardar análisis"}
             </Button>
           )}
         </DialogFooter>
