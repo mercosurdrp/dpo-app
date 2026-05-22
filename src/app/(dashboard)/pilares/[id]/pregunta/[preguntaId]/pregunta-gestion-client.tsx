@@ -91,6 +91,7 @@ import {
   type PuntoFijo,
   type Operador,
 } from "@/components/planes/tarea-form"
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 import type { PreguntaGestionFull } from "@/actions/gestion"
 import type {
   Pilar,
@@ -766,6 +767,7 @@ function PlanesTab({
                   {plan.notas && (
                     <p className="text-xs text-muted-foreground">{plan.notas}</p>
                   )}
+                  <PlanHerramientasInline planId={plan.id} />
                 </CardContent>
               </Card>
             )

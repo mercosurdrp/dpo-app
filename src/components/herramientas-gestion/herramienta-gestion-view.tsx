@@ -1,7 +1,12 @@
 "use client"
 
+import { useState } from "react"
+import { Download, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { getHerramientaPdfUrl } from "@/actions/herramientas-gestion"
 import type {
   HerramientaGestion,
   HerramientaGestionConContexto,
@@ -249,6 +254,21 @@ function PdcaView({ c }: { c: PdcaContenido }) {
 
 export function HerramientaGestionView({ herramienta }: Props) {
   const conContexto = herramienta as HerramientaGestionConContexto
+  const [descargando, setDescargando] = useState(false)
+
+  async function descargarPdf() {
+    setDescargando(true)
+    try {
+      const r = await getHerramientaPdfUrl(herramienta.id)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      window.open(r.data.url, "_blank")
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -273,9 +293,25 @@ export function HerramientaGestionView({ herramienta }: Props) {
             </p>
           )}
         </div>
-        <Badge variant="outline" className="shrink-0 text-xs">
-          {HERRAMIENTA_GESTION_LABELS[herramienta.tipo]}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <Badge variant="outline" className="text-xs">
+            {HERRAMIENTA_GESTION_LABELS[herramienta.tipo]}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={descargarPdf}
+            disabled={descargando}
+          >
+            {descargando ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            PDF
+          </Button>
+        </div>
       </div>
 
       <Separator />

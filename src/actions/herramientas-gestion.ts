@@ -9,8 +9,11 @@ import type {
   HerramientaGestionContenido,
   HerramientaGestionTipo,
 } from "@/types/database"
+import { generarPdfHerramienta } from "@/lib/herramientas-gestion-pdf"
 
 type Result<T> = { data: T } | { error: string }
+
+const PDF_BUCKET = "plan-herramientas"
 
 // ---------------------------------------------------------------------------
 // Helpers (copiados de plan-avances.ts)
@@ -156,6 +159,40 @@ function mapRow(
   }
 }
 
+function getNombre(p: unknown): string | null {
+  return (p as { nombre?: string | null })?.nombre ?? null
+}
+
+// Genera el PDF de la herramienta, lo sube al bucket y guarda pdf_path.
+// No lanza: si algo falla, devuelve null y el guardado de la herramienta sigue.
+async function generarYGuardarPdf(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  herramienta: HerramientaGestionConContexto,
+): Promise<string | null> {
+  try {
+    const bytes = await generarPdfHerramienta(herramienta)
+    const path = `${herramienta.plan_id}/${herramienta.id}.pdf`
+    const { error: upErr } = await supabase.storage
+      .from(PDF_BUCKET)
+      .upload(path, Buffer.from(bytes), {
+        contentType: "application/pdf",
+        upsert: true,
+      })
+    if (upErr) {
+      console.error("[herramientas-gestion] upload PDF:", upErr.message)
+      return null
+    }
+    await supabase
+      .from("plan_herramientas_gestion")
+      .update({ pdf_path: path })
+      .eq("id", herramienta.id)
+    return path
+  } catch (e) {
+    console.error("[herramientas-gestion] generar PDF:", e)
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // crearHerramientaGestion
 // ---------------------------------------------------------------------------
@@ -196,11 +233,17 @@ export async function crearHerramientaGestion(
       return { error: error?.message ?? "No se pudo crear la herramienta" }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any
+
+    // Generar el PDF y adjuntarlo (no bloquea el guardado si falla)
+    const ctx = await getPlanContexto(supabase, planId)
+    const conCtx = mapRow(row, ctx, getNombre(profile))
+    const pdfPath = await generarYGuardarPdf(supabase, conCtx)
+
     revalidatePath(`/planes/${planId}`)
     revalidatePath("/herramientas-gestion")
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const row = data as any
     return {
       data: {
         id: row.id,
@@ -208,7 +251,7 @@ export async function crearHerramientaGestion(
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
-        pdf_path: row.pdf_path ?? null,
+        pdf_path: pdfPath ?? row.pdf_path ?? null,
         autor_id: row.autor_id ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -270,11 +313,17 @@ export async function actualizarHerramientaGestion(
       return { error: error?.message ?? "No se pudo actualizar la herramienta" }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any
+
+    // Regenerar el PDF con el contenido actualizado
+    const ctx = await getPlanContexto(supabase, planId)
+    const conCtx = mapRow(row, ctx, getNombre(profile))
+    const pdfPath = await generarYGuardarPdf(supabase, conCtx)
+
     revalidatePath(`/planes/${planId}`)
     revalidatePath("/herramientas-gestion")
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const row = data as any
     return {
       data: {
         id: row.id,
@@ -282,7 +331,7 @@ export async function actualizarHerramientaGestion(
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
-        pdf_path: row.pdf_path ?? null,
+        pdf_path: pdfPath ?? row.pdf_path ?? null,
         autor_id: row.autor_id ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -477,6 +526,54 @@ export async function eliminarHerramientaGestion(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Error eliminando la herramienta",
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getHerramientaPdfUrl — URL firmada del PDF (lo regenera si no existe)
+// ---------------------------------------------------------------------------
+
+export async function getHerramientaPdfUrl(
+  id: string,
+): Promise<Result<{ url: string }>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    if (!id) return { error: "ID de herramienta inválido" }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .select("pdf_path")
+      .eq("id", id)
+      .single()
+    if (error || !data) {
+      return { error: error?.message ?? "Herramienta no encontrada" }
+    }
+
+    let path = (data as { pdf_path: string | null }).pdf_path
+
+    // Compat: si no tiene PDF (registro viejo o falló al crear), lo generamos ahora.
+    if (!path) {
+      const full = await getHerramientaGestion(id)
+      if ("error" in full) return { error: full.error }
+      const generado = await generarYGuardarPdf(supabase, full.data)
+      if (!generado) return { error: "No se pudo generar el PDF" }
+      path = generado
+    }
+
+    const { data: signed, error: sErr } = await supabase.storage
+      .from(PDF_BUCKET)
+      .createSignedUrl(path, 3600)
+    if (sErr || !signed) {
+      return { error: sErr?.message ?? "No se pudo generar el enlace de descarga" }
+    }
+
+    return { data: { url: signed.signedUrl } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error obteniendo el PDF",
     }
   }
 }
