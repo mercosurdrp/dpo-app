@@ -218,29 +218,201 @@ function cincoPorques(b: Builder, c: CincoPorquesContenido) {
   }
 }
 
-function causaEfecto(b: Builder, c: CausaEfectoContenido) {
-  b.label("Efecto / problema observado")
-  b.text(c.efecto || "—", { gap: 8 })
-  if (c.problema?.trim()) {
-    b.label("Contexto adicional")
-    b.text(c.problema, { gap: 8 })
+// Word-wrap para dibujo posicional (sin cursor del Builder).
+function wrapPdf(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxW: number,
+): string[] {
+  const out: string[] = []
+  for (const raw of limpiar(text).split("\n")) {
+    const words = raw.split(/\s+/).filter(Boolean)
+    if (!words.length) continue
+    let line = ""
+    for (const w of words) {
+      const cand = line ? `${line} ${w}` : w
+      if (font.widthOfTextAtSize(cand, size) > maxW && line) {
+        out.push(line)
+        line = w
+      } else {
+        line = cand
+      }
+    }
+    if (line) out.push(line)
+  }
+  return out
+}
+
+// Color por cada una de las 6 M (según orden de las categorías)
+const CAT_COLORS = [
+  rgb(0.15, 0.39, 0.92), // azul
+  rgb(0.55, 0.36, 0.96), // violeta
+  rgb(0.96, 0.45, 0.13), // naranja
+  rgb(0.08, 0.55, 0.52), // teal
+  rgb(0.91, 0.3, 0.5), // rosa
+  rgb(0.02, 0.59, 0.41), // esmeralda
+]
+
+// Diagrama de espina de pescado (Ishikawa) en una página A4 horizontal.
+async function generarPdfIshikawa(
+  h: HerramientaGestion | HerramientaGestionConContexto,
+): Promise<Uint8Array> {
+  const c = h.contenido as CausaEfectoContenido
+  const ctx = h as HerramientaGestionConContexto
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const W = 841.89
+  const H = 595.28
+  const page = doc.addPage([W, H])
+
+  const T = (
+    s: string,
+    x: number,
+    y: number,
+    size: number,
+    f: PDFFont = font,
+    color = C.texto,
+  ) => page.drawText(limpiar(s), { x, y, size, font: f, color })
+
+  // ── Encabezado ──
+  T("HERRAMIENTA DE GESTIÓN · CAUSA-EFECTO (ISHIKAWA)", 40, H - 30, 8, bold, CAT_COLORS[1])
+  let hy = H - 48
+  for (const ln of wrapPdf(h.titulo || "(sin título)", bold, 14, W - 80).slice(0, 2)) {
+    T(ln, 40, hy, 14, bold)
+    hy -= 17
+  }
+  const partes: string[] = []
+  if (h.reunion_actividad_id || ctx.actividad_descripcion) {
+    partes.push("Actividad de reunión")
+    if (ctx.reunion_tipo) partes.push(`Reunión: ${ctx.reunion_tipo}`)
+    if (ctx.actividad_descripcion) partes.push(ctx.actividad_descripcion)
+  } else {
+    if (ctx.plan_pilar_nombre) partes.push(`Pilar: ${ctx.plan_pilar_nombre}`)
+    if (ctx.plan_pregunta_numero != null) partes.push(`Pregunta ${ctx.plan_pregunta_numero}`)
+    if (ctx.plan_titulo) partes.push(ctx.plan_titulo)
+  }
+  if (partes.length) T(partes.join("  ·  "), 40, hy, 8.5, font, C.label)
+
+  // ── Espina + cabeza ──
+  const spineY = 315
+  const headW = 150
+  const headH = 96
+  const headX = W - 40 - headW // 651.89
+  const spineX0 = 55
+  const spineX1 = headX - 6
+
+  page.drawLine({
+    start: { x: spineX0, y: spineY },
+    end: { x: spineX1, y: spineY },
+    thickness: 2.5,
+    color: C.texto,
+  })
+  // punta de flecha hacia la cabeza
+  page.drawLine({ start: { x: spineX1 - 11, y: spineY + 6 }, end: { x: spineX1, y: spineY }, thickness: 2.5, color: C.texto })
+  page.drawLine({ start: { x: spineX1 - 11, y: spineY - 6 }, end: { x: spineX1, y: spineY }, thickness: 2.5, color: C.texto })
+
+  // cabeza = problema/efecto
+  page.drawRectangle({
+    x: headX,
+    y: spineY - headH / 2,
+    width: headW,
+    height: headH,
+    color: rgb(0.97, 0.96, 0.99),
+    borderColor: C.texto,
+    borderWidth: 1.5,
+  })
+  T("PROBLEMA", headX + 8, spineY + headH / 2 - 13, 7, bold, C.label)
+  let py = spineY + headH / 2 - 26
+  for (const ln of wrapPdf(c.efecto || h.titulo || "—", bold, 9, headW - 16).slice(0, 6)) {
+    T(ln, headX + 8, py, 9, bold)
+    py -= 11
   }
 
-  const conCausas = (c.categorias ?? []).filter((cat) => cat.causas?.some((x) => x.trim()))
-  if (conCausas.length) {
-    b.label("Causas por categoría (6M)")
-    b.gap(2)
-    for (const cat of conCausas) {
-      b.text(cat.nombre, { bold: true, size: 10 })
-      for (const causa of cat.causas.filter((x) => x.trim())) b.bullet(causa)
-      b.gap(4)
+  // ── 6 espinas (3 arriba / 3 abajo) con sus causas ──
+  const cats = c.categorias ?? []
+  const baseXs = [200, 385, 565] // dónde nace cada diagonal sobre la espina
+  for (let i = 0; i < 6; i++) {
+    const cat = cats[i]
+    if (!cat) continue
+    const arriba = i < 3
+    const baseX = baseXs[i % 3]
+    const tipX = baseX - 70
+    const tipY = arriba ? spineY + 150 : spineY - 150
+    const col = CAT_COLORS[i % CAT_COLORS.length]
+
+    // diagonal
+    page.drawLine({
+      start: { x: baseX, y: spineY },
+      end: { x: tipX, y: tipY },
+      thickness: 1.5,
+      color: col,
+    })
+    // etiqueta de la M
+    const label = cat.nombre.toUpperCase()
+    const lw = bold.widthOfTextAtSize(label, 8) + 12
+    const ly = arriba ? tipY + 3 : tipY - 16
+    page.drawRectangle({ x: tipX - lw / 2, y: ly, width: lw, height: 14, color: col })
+    T(label, tipX - lw / 2 + 6, ly + 4, 8, bold, rgb(1, 1, 1))
+
+    // causas legibles, en columna a la izquierda del extremo
+    const causas = (cat.causas ?? []).filter((x) => x.trim())
+    const boxW = 132
+    const boxX = tipX - boxW
+    let cyTop = arriba ? tipY - 4 : spineY - 42
+    const lineas: { txt: string; first: boolean }[] = []
+    for (const causa of causas) {
+      const ws = wrapPdf(causa, font, 8.5, boxW - 8)
+      ws.forEach((w, k) => lineas.push({ txt: w, first: k === 0 }))
+    }
+    const maxLineas = Math.floor((150 - 18) / 10.5)
+    const visibles = lineas.slice(0, maxLineas)
+    for (const l of visibles) {
+      T(l.first ? `- ${l.txt}` : `  ${l.txt}`, boxX, cyTop, 8.5, font, C.texto)
+      cyTop -= 10.5
+    }
+    if (causas.length === 0) {
+      T("(sin causas)", boxX, cyTop, 8, font, C.tenue)
+    } else if (lineas.length > visibles.length) {
+      T("…", boxX, cyTop, 8.5, font, C.tenue)
     }
   }
 
-  if (c.causa_raiz?.trim()) {
-    b.label("Causa raíz priorizada", C.amber)
-    b.text(c.causa_raiz, { color: C.amber })
+  // ── Causa raíz + Contraacción (abajo) ──
+  function recuadro(
+    x: number,
+    w: number,
+    titulo: string,
+    texto: string,
+    borde: ReturnType<typeof rgb>,
+    fondo: ReturnType<typeof rgb>,
+    colTexto: ReturnType<typeof rgb>,
+  ) {
+    const yB = 28
+    const hB = 110
+    page.drawRectangle({ x, y: yB, width: w, height: hB, color: fondo, borderColor: borde, borderWidth: 1 })
+    T(titulo, x + 10, yB + hB - 16, 8, bold, borde)
+    let ty = yB + hB - 32
+    for (const ln of wrapPdf(texto || "—", font, 9.5, w - 20).slice(0, 6)) {
+      T(ln, x + 10, ty, 9.5, font, colTexto)
+      ty -= 12
+    }
   }
+  recuadro(55, 365, "CAUSA RAÍZ", c.causa_raiz, C.amber, rgb(0.99, 0.97, 0.9), rgb(0.4, 0.26, 0.02))
+  recuadro(440, W - 40 - 440, "CONTRAACCIÓN", c.contramedida, C.emerald, rgb(0.92, 0.98, 0.95), rgb(0.03, 0.34, 0.24))
+
+  // pie
+  T(
+    `Generado automáticamente por DPO · ${fechaCorta(new Date().toISOString())}`,
+    40,
+    14,
+    7,
+    font,
+    C.tenue,
+  )
+
+  return doc.save()
 }
 
 function pdca(b: Builder, c: PdcaContenido) {
@@ -291,13 +463,15 @@ function pdca(b: Builder, c: PdcaContenido) {
 export async function generarPdfHerramienta(
   h: HerramientaGestion | HerramientaGestionConContexto,
 ): Promise<Uint8Array> {
+  // Ishikawa se dibuja como espina de pescado en página horizontal aparte.
+  if (h.tipo === "causa_efecto") return generarPdfIshikawa(h)
+
   const b = new Builder()
   await b.init()
 
   encabezado(b, h)
 
   if (h.tipo === "cinco_porques") cincoPorques(b, h.contenido as CincoPorquesContenido)
-  else if (h.tipo === "causa_efecto") causaEfecto(b, h.contenido as CausaEfectoContenido)
   else if (h.tipo === "pdca") pdca(b, h.contenido as PdcaContenido)
 
   // Pie en la última página

@@ -150,6 +150,17 @@ function CausaEfectoView({ c }: { c: CausaEfectoContenido }) {
           </p>
         </div>
       )}
+
+      {c.contramedida && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
+            Contraacción
+          </p>
+          <p className="text-sm text-emerald-900 whitespace-pre-wrap">
+            {c.contramedida}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

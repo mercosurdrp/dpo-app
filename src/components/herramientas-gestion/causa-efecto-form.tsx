@@ -17,6 +17,7 @@ export function causaEfectoVacio(): CausaEfectoContenido {
       causas: [],
     })),
     causa_raiz: "",
+    contramedida: "",
   }
 }
 
@@ -180,9 +181,22 @@ export function CausaEfectoForm({ value, onChange }: Props) {
           id="ce-causa-raiz"
           value={value.causa_raiz}
           onChange={(e) => onChange({ ...value, causa_raiz: e.target.value })}
-          placeholder="¿Cuál es la causa raíz más probable o priorizada?"
+          placeholder="De todas las causas, ¿cuál es la raíz más probable?"
           rows={2}
           className="mt-1 border-amber-200 bg-amber-50 placeholder:text-amber-400 focus-visible:ring-amber-300"
+        />
+      </div>
+
+      {/* Contraacción */}
+      <div>
+        <Label htmlFor="ce-contramedida">Contraacción</Label>
+        <Textarea
+          id="ce-contramedida"
+          value={value.contramedida}
+          onChange={(e) => onChange({ ...value, contramedida: e.target.value })}
+          placeholder="Acción para eliminar la causa raíz y evitar que se repita"
+          rows={2}
+          className="mt-1 border-emerald-200 bg-emerald-50 placeholder:text-emerald-400 focus-visible:ring-emerald-300"
         />
       </div>
     </div>
