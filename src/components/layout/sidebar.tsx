@@ -108,6 +108,12 @@ export const navItems: NavItem[] = [
     icon: <BarChart3 className="size-5" />,
   },
   {
+    label: "OWD",
+    href: "/owd",
+    icon: <ClipboardCheck className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
     label: "Clasificar envases",
     href: "/clasificacion-envases",
     icon: <Boxes className="size-5" />,

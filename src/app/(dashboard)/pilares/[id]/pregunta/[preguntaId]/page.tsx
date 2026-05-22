@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/server"
+import { requireAuth } from "@/lib/session"
 import { getPreguntaGestion } from "@/actions/gestion"
 import { getArchivos } from "@/actions/dpo-evidencia"
 import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
+import { getOwdTemplateByPregunta, getOwdKpis } from "@/actions/owd"
 import {
   getOperadoresParaAsignar,
   getPermisoCrearTareas,
@@ -68,6 +70,13 @@ export default async function PreguntaPage({
 
   const capacitaciones = "error" in capsResult ? [] : capsResult.data
 
+  // OWD del punto (plantilla + KPIs) + rol para el tab OWD
+  const profile = await requireAuth()
+  const owdTplRes = await getOwdTemplateByPregunta(preguntaId)
+  const owdTemplate = "data" in owdTplRes ? owdTplRes.data : null
+  const owdKpisRes = owdTemplate ? await getOwdKpis(owdTemplate.id) : null
+  const owdKpis = owdKpisRes && "data" in owdKpisRes ? owdKpisRes.data : null
+
   return (
     <PreguntaGestionClient
       pilar={pilar as Pilar}
@@ -76,6 +85,9 @@ export default async function PreguntaPage({
       archivos={archivos}
       operadores={operadores}
       puedeCrearTareas={puedeCrearTareas}
+      owdTemplate={owdTemplate}
+      owdKpis={owdKpis}
+      isAdmin={profile.role === "admin"}
     />
   )
 }

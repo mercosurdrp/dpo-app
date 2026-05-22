@@ -26,13 +26,7 @@ import {
   Cell,
 } from "recharts"
 import type { OwdObservacion, OwdMensual, OwdItemStats } from "@/types/database"
-import {
-  Plus,
-  ClipboardCheck,
-  Target,
-  AlertTriangle,
-  CalendarCheck,
-} from "lucide-react"
+import { Plus, ClipboardCheck, Target, AlertTriangle, CalendarCheck, Settings } from "lucide-react"
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -41,14 +35,26 @@ interface KpiData {
   promedioCumplimiento: number
   obsMesActual: number
   metaMensual: number
+  metaCumplimiento: number
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
 }
 
+interface Contexto {
+  template: { id: string; nombre: string; descripcion: string | null }
+  pregunta_numero: string
+  pregunta_texto: string
+  pilar_nombre: string
+  pilar_color: string
+}
+
 interface Props {
+  templateId: string
+  contexto: Contexto
   kpis: KpiData
   observaciones: OwdObservacion[]
+  isAdmin: boolean
 }
 
 function PctBadge({ pct }: { pct: number }) {
@@ -57,7 +63,8 @@ function PctBadge({ pct }: { pct: number }) {
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{pct.toFixed(0)}%</Badge>
 }
 
-export function OwdClient({ kpis, observaciones }: Props) {
+export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, isAdmin }: Props) {
+  const meta = kpis.metaCumplimiento
   const mensualData = kpis.mensual.map((m) => ({
     name: MESES[m.mes],
     cumplimiento: m.promedio_cumplimiento,
@@ -66,18 +73,34 @@ export function OwdClient({ kpis, observaciones }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">OWD Pre-Ruta</h1>
-          <p className="text-sm text-muted-foreground">
-            Observación en el puesto de trabajo — Pilar Entrega 1.1 R1.1.2
-          </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
+              style={{ backgroundColor: contexto.pilar_color }}
+            />
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {contexto.pilar_nombre} · {contexto.pregunta_numero}
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">{contexto.template.nombre}</h1>
+          <p className="text-sm text-muted-foreground">{contexto.pregunta_texto}</p>
         </div>
-        <Link href="/indicadores/owd-pre-ruta/nueva">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Nueva OWD
-          </Button>
-        </Link>
+        <div className="flex flex-shrink-0 gap-2">
+          {isAdmin && (
+            <Link href={`/owd/admin/${templateId}`}>
+              <Button variant="outline">
+                <Settings className="mr-2 h-4 w-4" /> Editar plantilla
+              </Button>
+            </Link>
+          )}
+          <Link href={`/owd/${templateId}/nueva`}>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" /> Nueva OWD
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -89,9 +112,9 @@ export function OwdClient({ kpis, observaciones }: Props) {
                 <p className="text-sm text-muted-foreground">% Cumplimiento</p>
                 <p
                   className={`text-3xl font-bold ${
-                    kpis.promedioCumplimiento >= 90
+                    kpis.promedioCumplimiento >= meta
                       ? "text-green-600"
-                      : kpis.promedioCumplimiento >= 75
+                      : kpis.promedioCumplimiento >= meta - 15
                       ? "text-amber-600"
                       : "text-red-600"
                   }`}
@@ -101,25 +124,17 @@ export function OwdClient({ kpis, observaciones }: Props) {
               </div>
               <div
                 className={`rounded-full p-3 ${
-                  kpis.promedioCumplimiento >= 90
-                    ? "bg-green-100"
-                    : kpis.promedioCumplimiento >= 75
-                    ? "bg-amber-100"
-                    : "bg-red-100"
+                  kpis.promedioCumplimiento >= meta ? "bg-green-100" : "bg-amber-100"
                 }`}
               >
                 <Target
                   className={`h-5 w-5 ${
-                    kpis.promedioCumplimiento >= 90
-                      ? "text-green-600"
-                      : kpis.promedioCumplimiento >= 75
-                      ? "text-amber-600"
-                      : "text-red-600"
+                    kpis.promedioCumplimiento >= meta ? "text-green-600" : "text-amber-600"
                   }`}
                 />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Meta: ≥ 90%</p>
+            <p className="mt-2 text-xs text-muted-foreground">Meta: ≥ {meta.toFixed(0)}%</p>
           </CardContent>
         </Card>
 
@@ -139,9 +154,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
                 <CalendarCheck className="h-5 w-5 text-blue-600" />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Meta: {kpis.metaMensual} OWD / mes
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">Meta: {kpis.metaMensual} OWD / mes</p>
           </CardContent>
         </Card>
 
@@ -150,9 +163,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total acumulado</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kpis.totalObservaciones}
-                </p>
+                <p className="text-3xl font-bold text-slate-900">{kpis.totalObservaciones}</p>
               </div>
               <div className="rounded-full bg-slate-100 p-3">
                 <ClipboardCheck className="h-5 w-5 text-slate-600" />
@@ -167,9 +178,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Ítems con desvíos</p>
-                <p className="text-3xl font-bold text-red-600">
-                  {kpis.itemsMasFallados.length}
-                </p>
+                <p className="text-3xl font-bold text-red-600">{kpis.itemsMasFallados.length}</p>
               </div>
               <div className="rounded-full bg-red-100 p-3">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -200,10 +209,10 @@ export function OwdClient({ kpis, observaciones }: Props) {
                     <YAxis fontSize={11} unit="%" domain={[0, 100]} />
                     <Tooltip formatter={(v) => [`${v}%`, "Cumplimiento"]} />
                     <ReferenceLine
-                      y={90}
+                      y={meta}
                       stroke="#10B981"
                       strokeDasharray="5 5"
-                      label={{ value: "Meta 90%", position: "right", fontSize: 10 }}
+                      label={{ value: `Meta ${meta.toFixed(0)}%`, position: "right", fontSize: 10 }}
                     />
                     <Line
                       type="monotone"
@@ -221,7 +230,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">% Cumplimiento por Etapa del SOP</CardTitle>
+            <CardTitle className="text-base">% Cumplimiento por Etapa</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -234,25 +243,14 @@ export function OwdClient({ kpis, observaciones }: Props) {
                   <BarChart data={kpis.porEtapa} layout="vertical" margin={{ left: 80 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis type="number" fontSize={11} unit="%" domain={[0, 100]} />
-                    <YAxis
-                      type="category"
-                      dataKey="etapa"
-                      fontSize={10}
-                      width={120}
-                    />
+                    <YAxis type="category" dataKey="etapa" fontSize={10} width={120} />
                     <Tooltip formatter={(v) => [`${v}%`, "Cumplimiento"]} />
-                    <ReferenceLine x={90} stroke="#10B981" strokeDasharray="5 5" />
+                    <ReferenceLine x={meta} stroke="#10B981" strokeDasharray="5 5" />
                     <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
                       {kpis.porEtapa.map((entry, i) => (
                         <Cell
                           key={i}
-                          fill={
-                            entry.pct >= 90
-                              ? "#10B981"
-                              : entry.pct >= 75
-                              ? "#F59E0B"
-                              : "#EF4444"
-                          }
+                          fill={entry.pct >= meta ? "#10B981" : entry.pct >= meta - 15 ? "#F59E0B" : "#EF4444"}
                         />
                       ))}
                     </Bar>
@@ -278,9 +276,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
                   className="flex items-center justify-between gap-3 rounded-md border bg-slate-50 p-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      {item.etapa}
-                    </p>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">{item.etapa}</p>
                     <p className="text-sm font-medium text-slate-900">{item.texto}</p>
                   </div>
                   <div className="flex flex-shrink-0 items-center gap-2">
@@ -300,7 +296,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Últimas observaciones</CardTitle>
-          <Link href="/indicadores/owd-pre-ruta/nueva">
+          <Link href={`/owd/${templateId}/nueva`}>
             <Button variant="outline" size="sm">
               <Plus className="mr-1 h-4 w-4" /> Nueva
             </Button>
@@ -330,9 +326,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
                     <TableRow key={o.id}>
                       <TableCell className="text-sm">{o.fecha}</TableCell>
                       <TableCell className="text-sm">{o.supervisor}</TableCell>
-                      <TableCell className="text-sm font-medium">
-                        {o.empleado_observado}
-                      </TableCell>
+                      <TableCell className="text-sm font-medium">{o.empleado_observado}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {o.rol_empleado || "—"}
                       </TableCell>
@@ -345,7 +339,7 @@ export function OwdClient({ kpis, observaciones }: Props) {
                         <PctBadge pct={Number(o.pct_cumplimiento)} />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/indicadores/owd-pre-ruta/${o.id}`}>
+                        <Link href={`/owd/${templateId}/${o.id}`}>
                           <Button variant="ghost" size="sm">
                             Ver
                           </Button>
