@@ -59,7 +59,7 @@ interface Props {
   tipoLabel: string
 }
 
-type FiltroModo = "hoy" | "semana_actual" | "semana_iso" | "rango"
+type FiltroModo = "hoy" | "semana_actual" | "semana_iso" | "mes" | "rango"
 
 interface ResumenSemanal {
   fechas: string[]
@@ -160,6 +160,33 @@ function todayIso(): string {
   ].join("-")
 }
 
+const MES_NOMBRES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+]
+
+// Convierte (year, month 1-indexado) en { desde, hasta } como ISO date
+// YYYY-MM-DD: primer y último día calendario de ese mes.
+function rangoMes(year: number, month: number): {
+  desde: string
+  hasta: string
+} {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  // Día 0 del mes siguiente = último día del mes pedido (month es 1-indexado).
+  const ultimo = new Date(Date.UTC(year, month, 0))
+  return { desde, hasta: ultimo.toISOString().slice(0, 10) }
+}
+
 export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
   const router = useRouter()
   const [config, setConfig] = useState<ReunionTipoConfig | null>(null)
@@ -181,6 +208,12 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
   const [semanaIsoWeek, setSemanaIsoWeek] = useState<number>(isoHoy.week)
   const [rangoDesde, setRangoDesde] = useState<string>(todayIso())
   const [rangoHasta, setRangoHasta] = useState<string>(todayIso())
+  const [mesSelYear, setMesSelYear] = useState<number>(() =>
+    new Date().getFullYear(),
+  )
+  const [mesSelMonth, setMesSelMonth] = useState<number>(() =>
+    new Date().getMonth() + 1,
+  )
 
   // Resumen semanal
   const [showResumen, setShowResumen] = useState(false)
@@ -256,13 +289,25 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
       }
       return rangoSemanaIso(semanaIsoYear, semanaIsoWeek)
     }
+    if (modo === "mes") {
+      return rangoMes(mesSelYear, mesSelMonth)
+    }
     if (modo === "rango") {
       if (!rangoDesde || !rangoHasta) return null
       if (rangoDesde > rangoHasta) return null
       return { desde: rangoDesde, hasta: rangoHasta }
     }
     return null
-  }, [modo, isoHoy, semanaIsoYear, semanaIsoWeek, rangoDesde, rangoHasta])
+  }, [
+    modo,
+    isoHoy,
+    semanaIsoYear,
+    semanaIsoWeek,
+    mesSelYear,
+    mesSelMonth,
+    rangoDesde,
+    rangoHasta,
+  ])
 
   // Reuniones filtradas localmente
   const reunionesFiltradas = useMemo(() => {
@@ -375,6 +420,7 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
               <SelectContent>
                 <SelectItem value="hoy">Hoy</SelectItem>
                 <SelectItem value="semana_actual">Esta semana</SelectItem>
+                <SelectItem value="mes">Mes</SelectItem>
                 <SelectItem value="semana_iso">
                   Semana ISO específica
                 </SelectItem>
@@ -382,6 +428,53 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
               </SelectContent>
             </Select>
           </div>
+
+          {modo === "mes" && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Mes
+                </span>
+                <Select
+                  value={String(mesSelMonth)}
+                  onValueChange={(v) => setMesSelMonth(Number(v))}
+                >
+                  <SelectTrigger className="h-9 w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MES_NOMBRES.map((nombre, idx) => (
+                      <SelectItem key={idx + 1} value={String(idx + 1)}>
+                        {nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Año
+                </span>
+                <Select
+                  value={String(mesSelYear)}
+                  onValueChange={(v) => setMesSelYear(Number(v))}
+                >
+                  <SelectTrigger className="h-9 w-[110px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[isoHoy.year - 2, isoHoy.year - 1, isoHoy.year, isoHoy.year + 1].map(
+                      (y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
 
           {modo === "semana_iso" && (
             <>
