@@ -298,7 +298,9 @@ function buildSerieFromSnapshot(
     // WQI/FGLI/SCL: serie MTD acumulada. Sólo se conserva para que la
     // columna MTD del indicador tome el último acumulado del mes; las
     // celdas diarias se renderizan con la serie *_dia (ver fetchSerieExtra).
-    wqi[f] = visible ? (dia?.wqi ?? null) : null
+    // WQI oculta el día de la reunión (cierre de hoy aún no confirmado en el
+    // matinal): el MTD toma el último acumulado hasta el día anterior.
+    wqi[f] = f < fechaReunion ? (dia?.wqi ?? null) : null
     fgli[f] = visible ? (dia?.fgli ?? null) : null
     scl[f] = visible ? (dia?.scl ?? null) : null
     // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
@@ -557,7 +559,9 @@ async function buildSerieLegacy(
     const visible = f <= fechaReunion
     // Serie MTD acumulada — sólo se usa para el MTD del indicador.
     // Las celdas diarias se renderizan con la serie *_dia (fetchSerieExtra).
-    wqi[f] = visible ? (serieRes?.wqi?.[f] ?? null) : null
+    // WQI oculta el día de la reunión (cierre de hoy aún no confirmado): el
+    // MTD toma el último acumulado hasta el día anterior.
+    wqi[f] = f < fechaReunion ? (serieRes?.wqi?.[f] ?? null) : null
     fgli[f] = visible ? (serieRes?.fgli?.[f] ?? null) : null
     scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
@@ -652,14 +656,19 @@ async function fetchSerieExtra(
   const errores_dia: Record<string, number | null> = {}
   const errores_por_operador_dia: Record<string, Record<string, number>> = {}
   for (const f of fechas) {
+    // FGLI y SCL conservan el día en curso.
     const visible = f <= fechaReunion
-    roturas[f] = visible ? (res?.roturas?.[f] ?? null) : null
-    faltantes[f] = visible ? (res?.faltantes?.[f] ?? null) : null
-    wqi_dia[f] = visible ? (res?.wqi_dia?.[f] ?? null) : null
+    // WQI, roturas y faltantes ocultan el día de la reunión (y futuros): a la
+    // hora del matinal el cierre de hoy todavía no está confirmado, igual que
+    // precisión, errores y ausentismo. Se muestran hasta el último día cerrado.
+    const cerrado = f < fechaReunion
+    roturas[f] = cerrado ? (res?.roturas?.[f] ?? null) : null
+    faltantes[f] = cerrado ? (res?.faltantes?.[f] ?? null) : null
+    wqi_dia[f] = cerrado ? (res?.wqi_dia?.[f] ?? null) : null
     fgli_dia[f] = visible ? (res?.fgli_dia?.[f] ?? null) : null
     scl_dia[f] = visible ? (res?.scl_dia?.[f] ?? null) : null
-    roturas_dia[f] = visible ? (res?.roturas_dia?.[f] ?? null) : null
-    faltantes_dia[f] = visible ? (res?.faltantes_dia?.[f] ?? null) : null
+    roturas_dia[f] = cerrado ? (res?.roturas_dia?.[f] ?? null) : null
+    faltantes_dia[f] = cerrado ? (res?.faltantes_dia?.[f] ?? null) : null
     // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó).
     precision[f] = f < fechaReunion ? (res?.precision?.[f] ?? null) : null
     if (f < fechaReunion) {
