@@ -10,6 +10,7 @@ const ALLOWED_PATHS = [
   "/vehiculos/checklist",
   "/vehiculos/combustible",
   "/reportar-seguridad",
+  "/clasificacion-envases",
 ]
 
 function isAllowed(pathname: string) {
