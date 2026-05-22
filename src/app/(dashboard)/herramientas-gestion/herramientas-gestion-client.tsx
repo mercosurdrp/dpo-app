@@ -121,9 +121,15 @@ export function HerramientasGestionClient({ items }: Props) {
                         {HERRAMIENTA_GESTION_LABELS[item.tipo]}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {item.plan_pilar_nombre && item.plan_pregunta_numero
-                          ? `Pilar: ${item.plan_pilar_nombre} · Pregunta ${item.plan_pregunta_numero}`
-                          : "Tarea"}
+                        {item.reunion_actividad_id
+                          ? `Reunión${item.reunion_tipo ? ` (${item.reunion_tipo})` : ""}${
+                              item.actividad_descripcion
+                                ? ` · ${item.actividad_descripcion.slice(0, 50)}`
+                                : ""
+                            }`
+                          : item.plan_pilar_nombre && item.plan_pregunta_numero
+                            ? `Pilar: ${item.plan_pilar_nombre} · Pregunta ${item.plan_pregunta_numero}`
+                            : "Tarea"}
                       </span>
                     </div>
 
@@ -148,9 +154,15 @@ export function HerramientasGestionClient({ items }: Props) {
 
                   {/* Acciones */}
                   <div className="flex shrink-0 items-center gap-2">
-                    <Link href={`/planes/${item.plan_id}`}>
+                    <Link
+                      href={
+                        item.plan_id
+                          ? `/planes/${item.plan_id}`
+                          : `/reuniones/${item.reunion_id}`
+                      }
+                    >
                       <Button variant="ghost" size="sm" className="text-xs">
-                        Ir a la tarea
+                        {item.plan_id ? "Ir a la tarea" : "Ir a la reunión"}
                       </Button>
                     </Link>
                     <Button

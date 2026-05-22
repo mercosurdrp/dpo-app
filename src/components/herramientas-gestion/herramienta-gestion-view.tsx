@@ -292,6 +292,13 @@ export function HerramientaGestionView({ herramienta }: Props) {
               {conContexto.plan_titulo}
             </p>
           )}
+          {conContexto.actividad_descripcion && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              Actividad de reunión
+              {conContexto.reunion_tipo ? ` (${conContexto.reunion_tipo})` : ""}:{" "}
+              {conContexto.actividad_descripcion}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <Badge variant="outline" className="text-xs">
