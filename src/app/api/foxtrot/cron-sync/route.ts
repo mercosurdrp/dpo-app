@@ -49,14 +49,20 @@ async function handle(request: NextRequest) {
     )
   }
 
-  // Por defecto el cron sincroniza el día de hoy. Para backfill manual se
-  // pueden pasar ?desde=&hasta= (tramos cortos para no exceder maxDuration).
+  // El cron corre 01:00 ARG = 04:00 UTC, que YA es el día siguiente en UTC.
+  // Por eso el default sincroniza AYER + HOY (UTC): "ayer" es el día operativo
+  // que cerró (rutas completas + ROUTE_ANALYTICS ya generado a esa hora, lo que
+  // antes fallaba al correr a las 20:30 ARG); "hoy" no daña (aún sin rutas, el
+  // sync es idempotente). Para backfill manual se pasan ?desde=&hasta= (tramos
+  // cortos para no exceder maxDuration); con solo ?desde se sincroniza ese día.
   const url = new URL(request.url)
   const hoy = new Date().toISOString().slice(0, 10)
+  const ayer = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
   const qDesde = url.searchParams.get("desde")
   const qHasta = url.searchParams.get("hasta")
-  const desde = qDesde && FECHA_RE.test(qDesde) ? qDesde : hoy
-  const hasta = qHasta && FECHA_RE.test(qHasta) ? qHasta : desde
+  const tieneDesde = !!qDesde && FECHA_RE.test(qDesde)
+  const desde = tieneDesde ? qDesde! : ayer
+  const hasta = qHasta && FECHA_RE.test(qHasta) ? qHasta : tieneDesde ? qDesde! : hoy
 
   const fechas: string[] = []
   const d = new Date(`${desde}T12:00:00.000Z`)

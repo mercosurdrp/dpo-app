@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/foxtrot/cron-sync",
-      "schedule": "30 23 * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }
