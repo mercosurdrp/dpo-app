@@ -189,12 +189,15 @@ function AsistenciaPrerutaPanel({ data }: { data: AsistenciaRango }) {
   })
   const { resumen } = data
   return (
-    <Card className="border-emerald-200 bg-emerald-50/30">
+    <Card className="border-emerald-200 bg-emerald-50/30 lg:sticky lg:top-2 lg:z-10">
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           <Hand className="size-5 text-emerald-600" />
-          Asistencia Pre-Ruta
-          <Badge className="border-emerald-200 bg-emerald-100 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">
+          Asistencia
+          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+            Pre-Ruta
+          </span>
+          <Badge className="border-emerald-200 bg-emerald-100 text-base font-semibold text-emerald-800 hover:bg-emerald-100">
             {resumen.asistencias} / {resumen.total_empleados} ({resumen.pct_asistencia}%)
           </Badge>
           {resumen.promedio_minutos != null && (
@@ -1121,7 +1124,10 @@ export function ReunionDetallePageClient({
         )}
       </div>
 
-      {/* ASISTENCIA — sticky en pantallas grandes */}
+      {/* ASISTENCIA manual (Marcar/Agregar). Oculta en la matinal de
+          distribución: ahí la asistencia es la de Pre-Ruta (fichaje), abajo,
+          para no tener dos contadores midiendo lo mismo. */}
+      {detalle.tipo !== "matinal-distribucion" && (
       <Card className="lg:sticky lg:top-2 lg:z-10">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -1179,8 +1185,10 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* ASISTENCIA PRE-RUTA — replicada del módulo Pre-Ruta (solo matinal) */}
+      {/* ASISTENCIA — en la matinal de distribución ES la de Pre-Ruta (fichaje
+          del personal de Distribución), unificada con el apartado de arriba. */}
       {detalle.tipo === "matinal-distribucion" && asistenciaPreruta && (
         <AsistenciaPrerutaPanel data={asistenciaPreruta} />
       )}
