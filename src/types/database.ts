@@ -824,6 +824,7 @@ export type OwdResultado = "ok" | "nook" | "na"
 
 export interface OwdItem {
   id: string
+  template_id: string | null
   version: number
   etapa: string
   orden: number
@@ -842,6 +843,7 @@ export interface OwdObservacion {
   empleado_observado: string
   rol_empleado: string | null
   dominio: string | null
+  template_id: string | null
   template_version: number
   total_items: number
   total_ok: number
@@ -878,6 +880,35 @@ export interface OwdItemStats {
   total_nook: number
   total_na: number
   pct_cumplimiento: number
+}
+
+// Plantilla OWD: una por punto del manual DPO (vinculada a preguntas.id)
+export interface OwdTemplate {
+  id: string
+  pregunta_id: string
+  nombre: string
+  descripcion: string | null
+  meta_mensual: number
+  meta_cumplimiento_pct: number
+  activo: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Plantilla + contexto del punto + KPIs del mes, para la landing /owd
+export interface OwdTemplateResumen {
+  template: OwdTemplate
+  pregunta_numero: string
+  pregunta_texto: string
+  bloque_nombre: string
+  pilar_id: string
+  pilar_nombre: string
+  pilar_color: string
+  total_items: number
+  obs_mes: number
+  pct_cumplimiento_mes: number
+  pct_cumplimiento_global: number
 }
 
 // Plan de Acción TML (R1.1.4)

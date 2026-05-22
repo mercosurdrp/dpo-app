@@ -84,6 +84,12 @@ const navItems: NavItem[] = [
     icon: <BarChart3 className="size-5" />,
   },
   {
+    label: "OWD",
+    href: "/owd",
+    icon: <ClipboardCheck className="size-5" />,
+    hideForEmpleado: true,
+  },
+  {
     label: "Presupuesto",
     href: "/presupuesto",
     icon: <Wallet className="size-5" />,

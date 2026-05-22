@@ -15,23 +15,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type {
-  OwdItem,
-  OwdResultado,
-  CatalogoVehiculo,
-} from "@/types/database"
+import type { OwdItem, OwdResultado, CatalogoVehiculo } from "@/types/database"
 import { Loader2, CheckCircle2, XCircle, MinusCircle } from "lucide-react"
-import { createObservacion } from "@/actions/owd-pre-ruta"
+import { createObservacion } from "@/actions/owd"
 
 interface Props {
+  templateId: string
+  titulo: string
   items: OwdItem[]
-  empleados: { nombre: string }[]
+  empleados: { nombre: string; sector: string | null }[]
   vehiculos: CatalogoVehiculo[]
 }
 
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
 
-export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
+export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -81,6 +79,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
     }
     setSaving(true)
     const result = await createObservacion({
+      templateId,
       fecha,
       supervisor,
       empleadoObservado: empleado,
@@ -100,18 +99,27 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
       return
     }
     toast.success("OWD guardada")
-    router.push(`/indicadores/owd-pre-ruta/${result.data.id}`)
+    router.push(`/owd/${templateId}/${result.data.id}`)
   }
 
   const personasOptions = empleados.map((e) => e.nombre)
 
+  if (items.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-muted-foreground">
+          Esta plantilla todavía no tiene ítems en el checklist. Pedile a un administrador que los
+          cargue desde el editor de plantillas.
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Nueva OWD Pre-Ruta</h1>
-        <p className="text-sm text-muted-foreground">
-          Observación en el puesto de trabajo — SOP 1.1
-        </p>
+        <h1 className="text-2xl font-bold text-slate-900">Nueva observación</h1>
+        <p className="text-sm text-muted-foreground">{titulo}</p>
       </div>
 
       {/* Cabecera */}
@@ -128,7 +136,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
             <div className="space-y-1.5">
               <Label>Supervisor</Label>
               <Input
-                placeholder="Nombre del SDR"
+                placeholder="Nombre del observador"
                 value={supervisor}
                 onChange={(e) => setSupervisor(e.target.value)}
               />
@@ -144,7 +152,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
                 <SelectContent>
                   {personasOptions.length === 0 ? (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Sin personal de Distribución cargado
+                      Sin empleados activos cargados
                     </div>
                   ) : (
                     personasOptions.map((p) => (
@@ -165,6 +173,8 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
                 <SelectContent>
                   <SelectItem value="Chofer">Chofer</SelectItem>
                   <SelectItem value="Ayudante">Ayudante</SelectItem>
+                  <SelectItem value="Operario">Operario</SelectItem>
+                  <SelectItem value="Otro">Otro</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -215,18 +225,13 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
       {itemsPorEtapa.map(([etapa, grupo]) => (
         <Card key={etapa}>
           <CardHeader>
-            <CardTitle className="text-sm uppercase tracking-wide text-slate-500">
-              {etapa}
-            </CardTitle>
+            <CardTitle className="text-sm uppercase tracking-wide text-slate-500">{etapa}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {grupo.map((item) => {
               const r = respuestas[item.id]
               return (
-                <div
-                  key={item.id}
-                  className="space-y-2 rounded-md border bg-slate-50 p-3"
-                >
+                <div key={item.id} className="space-y-2 rounded-md border bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-900">
@@ -236,9 +241,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
                         )}
                       </p>
                       {item.descripcion && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {item.descripcion}
-                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{item.descripcion}</p>
                       )}
                     </div>
                   </div>
@@ -247,9 +250,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
                       type="button"
                       size="sm"
                       variant={r.resultado === "ok" ? "default" : "outline"}
-                      className={
-                        r.resultado === "ok" ? "bg-green-600 hover:bg-green-700" : ""
-                      }
+                      className={r.resultado === "ok" ? "bg-green-600 hover:bg-green-700" : ""}
                       onClick={() => setResultado(item.id, "ok")}
                     >
                       OK
@@ -258,9 +259,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
                       type="button"
                       size="sm"
                       variant={r.resultado === "nook" ? "default" : "outline"}
-                      className={
-                        r.resultado === "nook" ? "bg-red-600 hover:bg-red-700" : ""
-                      }
+                      className={r.resultado === "nook" ? "bg-red-600 hover:bg-red-700" : ""}
                       onClick={() => setResultado(item.id, "nook")}
                     >
                       NO OK
@@ -315,11 +314,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label>Observaciones generales</Label>
-            <Textarea
-              rows={3}
-              value={obsGeneral}
-              onChange={(e) => setObsGeneral(e.target.value)}
-            />
+            <Textarea rows={3} value={obsGeneral} onChange={(e) => setObsGeneral(e.target.value)} />
           </div>
         </CardContent>
       </Card>
@@ -328,7 +323,7 @@ export function NuevaOwdClient({ items, empleados, vehiculos }: Props) {
         <Button
           variant="outline"
           className="flex-1"
-          onClick={() => router.push("/indicadores/owd-pre-ruta")}
+          onClick={() => router.push(`/owd/${templateId}`)}
           disabled={saving}
         >
           Cancelar

@@ -11,6 +11,7 @@ import {
   BarChart3,
   ListTodo,
   FileCheck,
+  ClipboardCheck,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -102,7 +103,9 @@ import type {
   PrioridadPlan,
   CapacitacionParaPregunta,
   DpoArchivo,
+  OwdTemplate,
 } from "@/types/database"
+import { OwdTab, type OwdKpisMini } from "./owd-tab"
 
 const SCORE_COLORS: Record<number, string> = {
   0: "#EF4444",
@@ -1027,6 +1030,9 @@ export function PreguntaGestionClient({
   archivos = [],
   operadores = [],
   puedeCrearTareas = false,
+  owdTemplate = null,
+  owdKpis = null,
+  isAdmin = false,
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
@@ -1034,6 +1040,9 @@ export function PreguntaGestionClient({
   archivos?: DpoArchivo[]
   operadores?: Operador[]
   puedeCrearTareas?: boolean
+  owdTemplate?: OwdTemplate | null
+  owdKpis?: OwdKpisMini | null
+  isAdmin?: boolean
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
@@ -1316,6 +1325,15 @@ export function PreguntaGestionClient({
               ({capacitaciones.length})
             </span>
           </TabsTrigger>
+          <TabsTrigger value="owd">
+            <ClipboardCheck className="mr-1 h-3.5 w-3.5" />
+            OWD
+            {owdTemplate && owdKpis && (
+              <span className="ml-1 text-[10px] text-muted-foreground">
+                ({owdKpis.obsMesActual}/{owdKpis.metaMensual})
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="indicadores">
@@ -1344,6 +1362,14 @@ export function PreguntaGestionClient({
         </TabsContent>
         <TabsContent value="capacitaciones">
           <CapacitacionesTab capacitaciones={capacitaciones} />
+        </TabsContent>
+        <TabsContent value="owd">
+          <OwdTab
+            preguntaId={pregunta.id}
+            template={owdTemplate}
+            kpis={owdKpis}
+            isAdmin={isAdmin}
+          />
         </TabsContent>
       </Tabs>
     </div>

@@ -14,32 +14,24 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  CheckCircle2,
-  XCircle,
-  MinusCircle,
-  Trash2,
-  Loader2,
-} from "lucide-react"
+import { CheckCircle2, XCircle, MinusCircle, Trash2, Loader2 } from "lucide-react"
 import type { OwdObservacion, OwdRespuesta, OwdItem } from "@/types/database"
-import { deleteObservacion } from "@/actions/owd-pre-ruta"
+import { deleteObservacion } from "@/actions/owd"
 
 interface Props {
+  templateId: string
   observacion: OwdObservacion
   respuestas: OwdRespuesta[]
   items: OwdItem[]
 }
 
-export function DetalleOwdClient({ observacion, respuestas, items }: Props) {
+export function DetalleOwdClient({ templateId, observacion, respuestas, items }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const respMap = useMemo(
-    () => new Map(respuestas.map((r) => [r.item_id, r])),
-    [respuestas],
-  )
+  const respMap = useMemo(() => new Map(respuestas.map((r) => [r.item_id, r])), [respuestas])
   const itemsUsados = items.filter((i) => respMap.has(i.id))
 
   const etapas = useMemo(() => {
@@ -60,7 +52,7 @@ export function DetalleOwdClient({ observacion, respuestas, items }: Props) {
       return
     }
     toast.success("OWD eliminada")
-    startTransition(() => router.push("/indicadores/owd-pre-ruta"))
+    startTransition(() => router.push(`/owd/${templateId}`))
   }
 
   const pct = Number(observacion.pct_cumplimiento)
@@ -69,7 +61,7 @@ export function DetalleOwdClient({ observacion, respuestas, items }: Props) {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">OWD Pre-Ruta</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Observación OWD</h1>
           <p className="text-sm text-muted-foreground">
             {observacion.fecha} · {observacion.supervisor}
           </p>
@@ -128,9 +120,7 @@ export function DetalleOwdClient({ observacion, respuestas, items }: Props) {
       {etapas.map(([etapa, grupo]) => (
         <Card key={etapa}>
           <CardHeader>
-            <CardTitle className="text-sm uppercase tracking-wide text-slate-500">
-              {etapa}
-            </CardTitle>
+            <CardTitle className="text-sm uppercase tracking-wide text-slate-500">{etapa}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {grupo.map((item) => {
@@ -142,20 +132,15 @@ export function DetalleOwdClient({ observacion, respuestas, items }: Props) {
                   : r.resultado === "nook"
                   ? "bg-red-100 text-red-700"
                   : "bg-slate-100 text-slate-600"
-              const label =
-                r.resultado === "ok" ? "OK" : r.resultado === "nook" ? "NO OK" : "N/A"
+              const label = r.resultado === "ok" ? "OK" : r.resultado === "nook" ? "NO OK" : "N/A"
               return (
                 <div key={item.id} className="rounded-md border bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="flex-1 text-sm font-medium text-slate-900">
-                      {item.texto}
-                    </p>
+                    <p className="flex-1 text-sm font-medium text-slate-900">{item.texto}</p>
                     <Badge className={`${color} hover:${color}`}>{label}</Badge>
                   </div>
                   {r.comentario && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {r.comentario}
-                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{r.comentario}</p>
                   )}
                 </div>
               )
