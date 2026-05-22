@@ -1,7 +1,6 @@
 "use client"
 
 import { Plus, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -46,11 +45,7 @@ const CATEGORIA_HEADER_COLORS: Record<string, string> = {
 }
 
 export function CausaEfectoForm({ value, onChange }: Props) {
-  function updateCategoriaCausa(
-    catIdx: number,
-    causaIdx: number,
-    text: string,
-  ) {
+  function updateCategoriaCausa(catIdx: number, causaIdx: number, text: string) {
     const categorias = value.categorias.map((cat, ci) => {
       if (ci !== catIdx) return cat
       return {
@@ -77,6 +72,64 @@ export function CausaEfectoForm({ value, onChange }: Props) {
     onChange({ ...value, categorias })
   }
 
+  // Tarjeta de una M (espina del diagrama)
+  function renderCategoria(catIdx: number) {
+    const cat = value.categorias[catIdx]
+    if (!cat) return null
+    const colorBorder =
+      CATEGORIA_COLORS[cat.nombre] ?? "border-slate-200 bg-slate-50"
+    const colorHeader = CATEGORIA_HEADER_COLORS[cat.nombre] ?? "text-slate-700"
+    return (
+      <div
+        key={cat.nombre}
+        className={`space-y-1.5 rounded-md border p-2.5 ${colorBorder}`}
+      >
+        <p
+          className={`text-[11px] font-semibold uppercase tracking-wide ${colorHeader}`}
+        >
+          {cat.nombre}
+        </p>
+
+        {cat.causas.map((causa, causaIdx) => (
+          <div key={causaIdx} className="flex items-center gap-1">
+            <Input
+              value={causa}
+              onChange={(e) =>
+                updateCategoriaCausa(catIdx, causaIdx, e.target.value)
+              }
+              placeholder={`Causa ${causaIdx + 1}…`}
+              className="h-8 bg-white text-sm"
+            />
+            {cat.causas.length > 1 && (
+              <button
+                type="button"
+                onClick={() => quitarCausa(catIdx, causaIdx)}
+                className="shrink-0 text-slate-400 transition-colors hover:text-red-500"
+                title="Quitar causa"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => agregarCausa(catIdx)}
+          className="flex items-center gap-1 text-[11px] text-slate-500 transition-colors hover:text-slate-800"
+        >
+          <Plus className="h-3 w-3" />
+          Agregar causa
+        </button>
+      </div>
+    )
+  }
+
+  const efectoCorto = value.efecto.trim()
+    ? value.efecto.trim().slice(0, 36) +
+      (value.efecto.trim().length > 36 ? "…" : "")
+    : "PROBLEMA"
+
   return (
     <div className="space-y-4">
       {/* Efecto / problema observado */}
@@ -92,7 +145,7 @@ export function CausaEfectoForm({ value, onChange }: Props) {
         />
       </div>
 
-      {/* Descripción adicional del problema (opcional) */}
+      {/* Contexto adicional (opcional) */}
       <div>
         <Label htmlFor="ce-problema" className="text-slate-600">
           Contexto adicional{" "}
@@ -108,69 +161,37 @@ export function CausaEfectoForm({ value, onChange }: Props) {
         />
       </div>
 
-      {/* Categorías 6M */}
+      {/* Diagrama de causas (6M) — disposición de espina de pescado */}
       <div>
         <Label className="text-sm font-medium text-slate-700">
-          Causas por categoría (6M)
+          Diagrama de causas (6M)
         </Label>
         <p className="mt-0.5 text-xs text-slate-500">
-          Completá las causas detectadas en cada categoría del diagrama.
+          Completá las causas de cada categoría, ordenadas como en la espina de
+          pescado: 3 arriba y 3 abajo de la espina, que apunta al problema.
         </p>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          {value.categorias.map((cat, catIdx) => {
-            const colorBorder =
-              CATEGORIA_COLORS[cat.nombre] ?? "border-slate-200 bg-slate-50"
-            const colorHeader =
-              CATEGORIA_HEADER_COLORS[cat.nombre] ?? "text-slate-700"
-            return (
-              <div
-                key={cat.nombre}
-                className={`rounded-md border p-3 space-y-2 ${colorBorder}`}
-              >
-                <p
-                  className={`text-xs font-semibold uppercase tracking-wide ${colorHeader}`}
-                >
-                  {cat.nombre}
-                </p>
 
-                {cat.causas.length === 0 && (
-                  <p className="text-xs text-slate-400 italic">
-                    Sin causas registradas.
-                  </p>
-                )}
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+          {/* Fila superior: Mano de obra · Método · Máquina */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            {[0, 1, 2].map(renderCategoria)}
+          </div>
 
-                {cat.causas.map((causa, causaIdx) => (
-                  <div key={causaIdx} className="flex items-center gap-1.5">
-                    <Input
-                      value={causa}
-                      onChange={(e) =>
-                        updateCategoriaCausa(catIdx, causaIdx, e.target.value)
-                      }
-                      placeholder={`Causa ${causaIdx + 1}…`}
-                      className="text-sm bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => quitarCausa(catIdx, causaIdx)}
-                      className="shrink-0 text-slate-400 hover:text-red-500 transition-colors"
-                      title="Quitar causa"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+          {/* Espina central + cabeza (problema) */}
+          <div className="my-3 flex items-center gap-2">
+            <div className="h-1 flex-1 rounded-full bg-slate-300" />
+            <span
+              className="shrink-0 rounded-md bg-slate-800 px-3 py-1 text-xs font-semibold text-white"
+              title={value.efecto || "Problema"}
+            >
+              {efectoCorto} ▸
+            </span>
+          </div>
 
-                <button
-                  type="button"
-                  onClick={() => agregarCausa(catIdx)}
-                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <Plus className="h-3 w-3" />
-                  Agregar causa
-                </button>
-              </div>
-            )
-          })}
+          {/* Fila inferior: Material · Medición · Medio ambiente */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            {[3, 4, 5].map(renderCategoria)}
+          </div>
         </div>
       </div>
 
