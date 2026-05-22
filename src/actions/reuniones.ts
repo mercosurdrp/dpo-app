@@ -1950,6 +1950,8 @@ export async function crearIndicadorConfig(
     const metaRaw = String(formData.get("meta") ?? "").trim()
     const ordenRaw = String(formData.get("orden") ?? "").trim()
     const agregacionRaw = String(formData.get("agregacion") ?? "").trim()
+    const gatilloRaw = String(formData.get("gatillo") ?? "").trim()
+    const mejorSiRaw = String(formData.get("mejor_si") ?? "").trim()
 
     if (!tipoRaw) return { error: "El tipo es obligatorio" }
     if (
@@ -1983,6 +1985,21 @@ export async function crearIndicadorConfig(
       agregacion = agregacionRaw as AgregacionIndicador
     }
 
+    let gatillo: number | null = null
+    if (gatilloRaw) {
+      const n = Number(gatilloRaw)
+      if (!Number.isFinite(n)) return { error: "Gatillo inválido" }
+      gatillo = n
+    }
+
+    let mejorSi: "mayor" | "menor" | null = null
+    if (mejorSiRaw) {
+      if (!["mayor", "menor"].includes(mejorSiRaw)) {
+        return { error: "Polaridad inválida (debe ser 'mayor' o 'menor')" }
+      }
+      mejorSi = mejorSiRaw as "mayor" | "menor"
+    }
+
     const { data, error } = await supabase
       .from("reuniones_indicadores_config")
       .insert({
@@ -1990,6 +2007,8 @@ export async function crearIndicadorConfig(
         nombre,
         unidad,
         meta,
+        gatillo,
+        mejor_si: mejorSi,
         orden,
         activo: true,
         agregacion,
@@ -2025,6 +2044,8 @@ export async function actualizarIndicadorConfig(
     const ordenRaw = String(formData.get("orden") ?? "").trim()
     const activoRaw = String(formData.get("activo") ?? "").trim()
     const agregacionRaw = String(formData.get("agregacion") ?? "").trim()
+    const gatilloRaw = String(formData.get("gatillo") ?? "").trim()
+    const mejorSiRaw = String(formData.get("mejor_si") ?? "").trim()
 
     if (!nombre) return { error: "El nombre es obligatorio" }
 
@@ -2035,11 +2056,28 @@ export async function actualizarIndicadorConfig(
       meta = n
     }
 
+    let gatillo: number | null = null
+    if (gatilloRaw) {
+      const n = Number(gatilloRaw)
+      if (!Number.isFinite(n)) return { error: "Gatillo inválido" }
+      gatillo = n
+    }
+
+    let mejorSi: "mayor" | "menor" | null = null
+    if (mejorSiRaw) {
+      if (!["mayor", "menor"].includes(mejorSiRaw)) {
+        return { error: "Polaridad inválida (debe ser 'mayor' o 'menor')" }
+      }
+      mejorSi = mejorSiRaw as "mayor" | "menor"
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const update: Record<string, any> = {
       nombre,
       unidad,
       meta,
+      gatillo,
+      mejor_si: mejorSi,
     }
 
     if (ordenRaw) {
@@ -2373,7 +2411,64 @@ export async function getResumenSemanal(
  *    `valores` (mapa fecha -> { reunion_id, valor, observacion } o null si no
  *    hay reunión ese día) y `mtd` (acumulado del mes según `agregacion`).
  */
+// Wrapper: corre el cálculo base y luego inyecta en cada indicador el `gatillo`
+// y la polaridad `mejor_si` configurados (match por nombre, case-insensitive).
+// Así el semáforo de 3 zonas (verde/amarillo/rojo + ♻) funciona tanto en filas
+// auto (que ya traen meta/mejor_si del código + gatillo de config) como en las
+// manuales (que toman meta/mejor_si/gatillo de la config). Defensivo: si las
+// columnas gatillo/mejor_si todavía no existen en la DB, devuelve el base.
 export async function getIndicadoresMes(
+  reunionId: string,
+  opts?: { sucursal?: MisionesSucursal },
+): Promise<Result<ReunionIndicadoresMes>> {
+  const base = await getIndicadoresMesCore(reunionId, opts)
+  if (!("data" in base)) return base
+  try {
+    const supabase = await createClient()
+    const { data: reu } = await supabase
+      .from("reuniones")
+      .select("tipo")
+      .eq("id", reunionId)
+      .single()
+    const tipo = (reu as { tipo?: string } | null)?.tipo
+    if (!tipo) return base
+    const { data: cfg, error } = await supabase
+      .from("reuniones_indicadores_config")
+      .select("nombre, gatillo, mejor_si")
+      .eq("tipo", tipo)
+    if (error || !cfg) return base
+    const porNombre = new Map<
+      string,
+      { gatillo: number | null; mejor_si: "mayor" | "menor" | null }
+    >()
+    for (const c of cfg as Array<{
+      nombre: string
+      gatillo: number | null
+      mejor_si: "mayor" | "menor" | null
+    }>) {
+      porNombre.set(c.nombre.trim().toLowerCase(), {
+        gatillo: c.gatillo ?? null,
+        mejor_si: c.mejor_si ?? null,
+      })
+    }
+    const indicadores = base.data.indicadores.map((ind) => {
+      const c = porNombre.get(ind.nombre.trim().toLowerCase())
+      if (!c) return ind
+      return {
+        ...ind,
+        gatillo: c.gatillo,
+        // La polaridad del código (filas auto) tiene prioridad; para las
+        // manuales viene de la config.
+        mejor_si: ind.mejor_si ?? c.mejor_si ?? undefined,
+      }
+    })
+    return { data: { ...base.data, indicadores } }
+  } catch {
+    return base
+  }
+}
+
+async function getIndicadoresMesCore(
   reunionId: string,
   opts?: { sucursal?: MisionesSucursal },
 ): Promise<Result<ReunionIndicadoresMes>> {

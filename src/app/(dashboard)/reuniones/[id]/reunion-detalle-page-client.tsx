@@ -100,6 +100,7 @@ interface IndicadorMesItem {
   auto?: boolean
   mostrar_cero?: boolean
   mejor_si?: "menor" | "mayor"
+  gatillo?: number | null
 }
 
 interface IndicadoresMesData {
@@ -108,6 +109,36 @@ interface IndicadoresMesData {
   fechas: string[]
   reuniones_por_fecha: Record<string, string | null>
   indicadores: IndicadorMesItem[]
+}
+
+type ZonaIndicador = "verde" | "amarillo" | "rojo"
+
+// Semáforo de 3 zonas a partir del target (meta), el gatillo y la polaridad.
+// Devuelve null si no hay datos para colorear (sin meta o sin polaridad).
+// `cruzoGatillo` = zona roja por haber cruzado el gatillo (→ ♻ mejora continua).
+//   mayor mejor: v>=meta verde · gatillo<=v<meta amarillo · v<gatillo rojo+♻
+//   menor mejor: v<=meta verde · meta<v<=gatillo amarillo · v>gatillo rojo+♻
+//   (sin gatillo: solo verde/rojo por meta, sin ♻)
+function evaluarZona(
+  valor: number,
+  meta: number | null | undefined,
+  gatillo: number | null | undefined,
+  mejorSi: "mayor" | "menor" | undefined,
+): { zona: ZonaIndicador; cruzoGatillo: boolean } | null {
+  if (meta == null || !mejorSi) return null
+  const cumpleMeta = mejorSi === "menor" ? valor <= meta : valor >= meta
+  if (cumpleMeta) return { zona: "verde", cruzoGatillo: false }
+  if (gatillo == null) return { zona: "rojo", cruzoGatillo: false }
+  const cruzo = mejorSi === "menor" ? valor > gatillo : valor < gatillo
+  return cruzo
+    ? { zona: "rojo", cruzoGatillo: true }
+    : { zona: "amarillo", cruzoGatillo: false }
+}
+
+const CLASE_ZONA: Record<ZonaIndicador, string> = {
+  verde: "bg-emerald-50 font-semibold text-emerald-700",
+  amarillo: "bg-amber-50 font-semibold text-amber-700",
+  rojo: "bg-red-50 font-semibold text-red-700",
 }
 
 interface SectorOpt {
@@ -1364,7 +1395,10 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[220px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Target
                     </th>
-                    <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[280px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600" title="Umbral de alarma: cruzarlo exige análisis con herramientas de gestión">
+                      Gatillo
+                    </th>
+                    <th className="sticky left-[340px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
                     {fechasFiltradas.map((f) => {
@@ -1400,7 +1434,10 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[220px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums">
                         {ind.meta == null ? "—" : formatearValor(ind.meta)}
                       </td>
-                      <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td className="sticky left-[280px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums text-slate-500">
+                        {ind.gatillo == null ? "—" : formatearValor(ind.gatillo)}
+                      </td>
+                      <td className="sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
                         {ind.mtd_texto != null
                           ? ind.mtd_texto
                           : ind.mtd == null
@@ -1430,14 +1467,18 @@ export function ReunionDetallePageClient({
                           // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
                           // hay valor (mismo comportamiento histórico).
                           let colorClass = "bg-red-50 font-semibold text-red-700"
-                          if (ind.mejor_si && ind.meta != null && valor != null) {
-                            const cumple =
-                              ind.mejor_si === "menor"
-                                ? valor <= ind.meta
-                                : valor >= ind.meta
-                            colorClass = cumple
-                              ? "bg-emerald-50 font-semibold text-emerald-700"
-                              : "bg-red-50 font-semibold text-red-700"
+                          let cruzoGatillo = false
+                          if (valor != null) {
+                            const z = evaluarZona(
+                              valor,
+                              ind.meta,
+                              ind.gatillo,
+                              ind.mejor_si,
+                            )
+                            if (z) {
+                              colorClass = CLASE_ZONA[z.zona]
+                              cruzoGatillo = z.cruzoGatillo
+                            }
                           }
                           // Camiones a la calle: es un conteo neutro, no un
                           // accidente — no se pinta de rojo.
@@ -1497,6 +1538,17 @@ export function ReunionDetallePageClient({
                                 ? `${formatearValor(valor!)}%`
                                 : formatearValor(valor!)
                             : "—"
+                          // ♻ mejora continua: la celda cruzó el gatillo → debe
+                          // analizarse con herramientas de gestión.
+                          const contenidoNodo =
+                            cruzoGatillo && muestra ? (
+                              <span className="inline-flex items-center gap-1">
+                                <RefreshCw className="size-3 shrink-0 text-red-600" />
+                                {contenido}
+                              </span>
+                            ) : (
+                              contenido
+                            )
                           return (
                             <td
                               key={f}
@@ -1514,10 +1566,10 @@ export function ReunionDetallePageClient({
                                   className="w-full cursor-pointer rounded px-1 py-0.5 underline-offset-2 hover:underline focus:outline-none focus:ring-1 focus:ring-blue-400"
                                   title="Ver detalle del día"
                                 >
-                                  {contenido}
+                                  {contenidoNodo}
                                 </button>
                               ) : (
-                                contenido
+                                contenidoNodo
                               )}
                             </td>
                           )
@@ -1560,20 +1612,38 @@ export function ReunionDetallePageClient({
                           )
                         }
 
-                        // Otra reunión → read-only
+                        // Otra reunión → read-only, coloreado por target/gatillo.
+                        const vManual = cell?.valor ?? null
+                        const zManual =
+                          vManual != null
+                            ? evaluarZona(
+                                vManual,
+                                ind.meta,
+                                ind.gatillo,
+                                ind.mejor_si,
+                              )
+                            : null
                         return (
                           <td
                             key={f}
                             className={cn(
-                              "px-2 py-1 text-center align-middle text-sm tabular-nums text-slate-500",
-                              esHoy && "bg-blue-50",
-                              dom && "bg-slate-50",
+                              "px-2 py-1 text-center align-middle text-sm tabular-nums",
+                              zManual ? CLASE_ZONA[zManual.zona] : "text-slate-500",
+                              !zManual && esHoy && "bg-blue-50",
+                              !zManual && dom && "bg-slate-50",
                             )}
                             title={`Cargado en otra reunión (${formatFechaCorta(f)})`}
                           >
-                            {cell?.valor == null
-                              ? "—"
-                              : formatearValor(cell.valor)}
+                            {vManual == null ? (
+                              "—"
+                            ) : zManual?.cruzoGatillo ? (
+                              <span className="inline-flex items-center gap-1">
+                                <RefreshCw className="size-3 shrink-0 text-red-600" />
+                                {formatearValor(vManual)}
+                              </span>
+                            ) : (
+                              formatearValor(vManual)
+                            )}
                           </td>
                         )
                       })}

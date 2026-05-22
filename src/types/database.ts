@@ -2510,6 +2510,10 @@ export interface ReunionIndicadorConfig {
   nombre: string
   unidad: string | null
   meta: number | null
+  /** Umbral de alarma. Cruzarlo (lado malo según mejor_si) = zona roja + ♻. */
+  gatillo: number | null
+  /** Polaridad: "mayor" = más es mejor (meta = piso); "menor" = menos es mejor (meta = techo). */
+  mejor_si: "mayor" | "menor" | null
   orden: number
   activo: boolean
   agregacion: AgregacionIndicador
@@ -2548,6 +2552,8 @@ export interface ReunionIndicadoresMes {
     mostrar_cero?: boolean
     /** Para filas auto con meta: define la polaridad del cumplimiento. "menor" = mejor cuando valor ≤ meta (ej. Rechazos %); "mayor" = mejor cuando valor ≥ meta (ej. Bultos vendidos). */
     mejor_si?: "menor" | "mayor"
+    /** Umbral de alarma configurado. Si el valor lo cruza (lado malo según mejor_si) la celda entra en zona roja y se marca con ♻ (mejora continua). */
+    gatillo?: number | null
   }>
 }
 
