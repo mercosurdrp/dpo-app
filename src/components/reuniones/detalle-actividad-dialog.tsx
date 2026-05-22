@@ -228,6 +228,7 @@ export function DetalleActividadDialog({
           )}
           <PlanHerramientasInline
             reunionActividadId={actividad.id}
+            tituloSugerido={actividad.descripcion}
             puedeAplicar={puedeResponder}
           />
         </div>

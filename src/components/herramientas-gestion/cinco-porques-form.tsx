@@ -1,19 +1,24 @@
 "use client"
 
-import { Plus, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { CincoPorquesContenido } from "@/types/database"
 
+const CANT = 5
+
 export function cincoPorquesVacio(): CincoPorquesContenido {
   return {
     problema: "",
-    porques: [{ pregunta: "¿Por qué ocurrió?", respuesta: "" }],
+    porques: Array.from({ length: CANT }, () => ({ pregunta: "", respuesta: "" })),
     causa_raiz: "",
     contramedida: "",
   }
+}
+
+// La pregunta del Por qué N se deriva del paso anterior (problema o respuesta N-1).
+function preguntaDe(fuente: string): string {
+  const f = (fuente ?? "").trim()
+  return f ? `¿Por qué ${f}?` : ""
 }
 
 interface Props {
@@ -21,147 +26,112 @@ interface Props {
   onChange: (v: CincoPorquesContenido) => void
 }
 
+/**
+ * 5 Porqués encadenado: el usuario escribe el problema y las respuestas; cada
+ * pregunta se arma sola desde la respuesta anterior, y la causa raíz es la
+ * última respuesta cargada (ambas de solo lectura).
+ */
 export function CincoPorquesForm({ value, onChange }: Props) {
-  function updatePorque(
-    index: number,
-    field: "pregunta" | "respuesta",
-    text: string,
-  ) {
-    const updated = value.porques.map((p, i) =>
-      i === index ? { ...p, [field]: text } : p,
-    )
-    onChange({ ...value, porques: updated })
-  }
+  const respuestas = Array.from(
+    { length: CANT },
+    (_, i) => value.porques?.[i]?.respuesta ?? "",
+  )
 
-  function agregarPorque() {
-    if (value.porques.length >= 5) return
-    onChange({
-      ...value,
-      porques: [
-        ...value.porques,
-        { pregunta: "¿Por qué ocurrió?", respuesta: "" },
-      ],
-    })
-  }
-
-  function quitarPorque(index: number) {
-    if (value.porques.length <= 1) return
-    onChange({
-      ...value,
-      porques: value.porques.filter((_, i) => i !== index),
-    })
+  function emit(problema: string, resp: string[], contramedida: string) {
+    const porques = resp.map((respuesta, i) => ({
+      pregunta: preguntaDe(i === 0 ? problema : resp[i - 1]),
+      respuesta,
+    }))
+    let causa_raiz = ""
+    for (let i = resp.length - 1; i >= 0; i--) {
+      if (resp[i].trim()) {
+        causa_raiz = resp[i].trim()
+        break
+      }
+    }
+    onChange({ problema, porques, causa_raiz, contramedida })
   }
 
   return (
     <div className="space-y-4">
-      {/* Problema */}
+      {/* Problema (a completar) */}
       <div>
-        <Label htmlFor="cp-problema">Problema inicial</Label>
+        <Label htmlFor="cp-problema">Problema</Label>
         <Textarea
           id="cp-problema"
           value={value.problema}
-          onChange={(e) => onChange({ ...value, problema: e.target.value })}
-          placeholder="Describí el problema observado…"
+          onChange={(e) => emit(e.target.value, respuestas, value.contramedida)}
+          placeholder="Describí el problema concreto que se va a analizar…"
           rows={2}
           className="mt-1"
         />
       </div>
 
-      {/* Cadena de porqués */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-slate-700">
-          Cadena de &quot;¿Por qué?&quot;
-        </Label>
-        {value.porques.map((p, i) => (
-          <div
-            key={i}
-            className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Por qué {i + 1}
-              </span>
-              {value.porques.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => quitarPorque(i)}
-                  className="text-slate-400 hover:text-red-500 transition-colors"
-                  title="Quitar este porqué"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <div>
-              <Label htmlFor={`cp-pregunta-${i}`} className="text-xs text-slate-500">
-                Pregunta
-              </Label>
-              <Input
-                id={`cp-pregunta-${i}`}
-                value={p.pregunta}
-                onChange={(e) => updatePorque(i, "pregunta", e.target.value)}
-                placeholder="¿Por qué ocurrió?"
-                className="mt-1 text-sm"
-              />
-            </div>
-            <div>
-              <Label htmlFor={`cp-respuesta-${i}`} className="text-xs text-slate-500">
-                Respuesta
-              </Label>
+      {/* Cadena de porqués: pregunta automática + respuesta a completar */}
+      <div className="space-y-2.5">
+        {respuestas.map((resp, i) => {
+          const fuente = i === 0 ? value.problema : respuestas[i - 1]
+          const pregunta = preguntaDe(fuente)
+          const habilitado = (fuente ?? "").trim().length > 0
+          return (
+            <div
+              key={i}
+              className={`rounded-md border p-3 ${
+                habilitado
+                  ? "border-slate-200 bg-slate-50"
+                  : "border-dashed border-slate-200 opacity-60"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-semibold text-white">
+                  {i + 1}
+                </span>
+                <p className="text-sm font-medium text-slate-700">
+                  {pregunta || "Completá el paso anterior"}
+                </p>
+              </div>
               <Textarea
-                id={`cp-respuesta-${i}`}
-                value={p.respuesta}
-                onChange={(e) => updatePorque(i, "respuesta", e.target.value)}
-                placeholder="Respuesta…"
+                value={resp}
+                disabled={!habilitado}
+                onChange={(e) => {
+                  const next = [...respuestas]
+                  next[i] = e.target.value
+                  emit(value.problema, next, value.contramedida)
+                }}
+                placeholder={
+                  habilitado
+                    ? "Tu respuesta…"
+                    : "Respondé el «por qué» anterior primero"
+                }
                 rows={2}
-                className="mt-1 text-sm"
+                className="mt-2 text-sm"
               />
             </div>
-          </div>
-        ))}
+          )
+        })}
+      </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={agregarPorque}
-          disabled={value.porques.length >= 5}
-          className="gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Agregar por qué
-          {value.porques.length >= 5 && (
-            <span className="text-xs text-slate-400">(máx. 5)</span>
+      {/* Causa raíz automática (= última respuesta) */}
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+          Causa raíz (última respuesta)
+        </p>
+        <p className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+          {value.causa_raiz || (
+            <span className="italic text-amber-700/60">
+              Se completa sola con la última respuesta que cargues.
+            </span>
           )}
-        </Button>
+        </p>
       </div>
 
-      {/* Causa raíz */}
+      {/* Contramedida (a completar) */}
       <div>
-        <Label htmlFor="cp-causa-raiz">
-          Causa raíz identificada
-        </Label>
-        <Textarea
-          id="cp-causa-raiz"
-          value={value.causa_raiz}
-          onChange={(e) => onChange({ ...value, causa_raiz: e.target.value })}
-          placeholder="¿Cuál es la causa raíz del problema?"
-          rows={2}
-          className="mt-1 border-amber-200 bg-amber-50 placeholder:text-amber-400 focus-visible:ring-amber-300"
-        />
-      </div>
-
-      {/* Contramedida */}
-      <div>
-        <Label htmlFor="cp-contramedida">
-          Contramedida propuesta
-        </Label>
+        <Label htmlFor="cp-contramedida">Contramedida propuesta</Label>
         <Textarea
           id="cp-contramedida"
           value={value.contramedida}
-          onChange={(e) =>
-            onChange({ ...value, contramedida: e.target.value })
-          }
+          onChange={(e) => emit(value.problema, respuestas, e.target.value)}
           placeholder="¿Qué acción se tomará para eliminar la causa raíz?"
           rows={2}
           className="mt-1 border-emerald-200 bg-emerald-50 placeholder:text-emerald-400 focus-visible:ring-emerald-300"

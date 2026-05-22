@@ -118,6 +118,8 @@ interface Props {
   reprogramaciones?: PlanReprogramacionConAutor[]
   estadoActual: EstadoPlan
   puedeIntervenir: boolean
+  /** Título/descripción del plan, para prellenar la herramienta de gestión. */
+  planTitulo?: string
   /** Se llama tras una respuesta que cambia el estado, para refrescar el padre. */
   onChanged?: () => void
 }
@@ -130,6 +132,7 @@ export function AvancesSection({
   reprogramaciones = [],
   estadoActual,
   puedeIntervenir,
+  planTitulo,
   onChanged,
 }: Props) {
   const router = useRouter()
@@ -858,6 +861,7 @@ export function AvancesSection({
       {!IS_MISIONES && (
         <HerramientaGestionDialog
           planId={planId}
+          tituloSugerido={planTitulo}
           open={toolDialogOpen}
           onOpenChange={setToolDialogOpen}
           onSaved={recargarHerramientas}

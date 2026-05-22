@@ -26,10 +26,12 @@ import type { HerramientaGestionConContexto } from "@/types/database"
 export function PlanHerramientasInline({
   planId,
   reunionActividadId,
+  tituloSugerido,
   puedeAplicar = true,
 }: {
   planId?: string
   reunionActividadId?: string
+  tituloSugerido?: string
   puedeAplicar?: boolean
 }) {
   const [items, setItems] = useState<HerramientaGestionConContexto[]>([])
@@ -92,6 +94,7 @@ export function PlanHerramientasInline({
       <HerramientaGestionDialog
         planId={planId}
         reunionActividadId={reunionActividadId}
+        tituloSugerido={tituloSugerido}
         open={aplicar}
         onOpenChange={setAplicar}
         onSaved={recargar}

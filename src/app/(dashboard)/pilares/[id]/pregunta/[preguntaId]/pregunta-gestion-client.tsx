@@ -767,7 +767,10 @@ function PlanesTab({
                   {plan.notas && (
                     <p className="text-xs text-muted-foreground">{plan.notas}</p>
                   )}
-                  <PlanHerramientasInline planId={plan.id} />
+                  <PlanHerramientasInline
+                    planId={plan.id}
+                    tituloSugerido={plan.descripcion}
+                  />
                 </CardContent>
               </Card>
             )
