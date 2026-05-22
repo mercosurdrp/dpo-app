@@ -78,6 +78,15 @@ function normalizar(s: string): string {
     .trim()
 }
 
+// Las patentes conviven en dos formatos: las viejas (3 letras + 3 números) se
+// cargan en el Sheet con espacio ("HJR 136") pero en el catálogo van sin él
+// ("HJR136"); las nuevas Mercosur ("AB386KU") no tienen separador. Para que
+// matcheen sin importar el formato, al comparar patentes quitamos TODO espacio
+// y guion. No usar esto para nombres de empleados (les borraría los espacios).
+function normalizarPatente(s: string): string {
+  return normalizar(s).replace(/[\s-]+/g, "")
+}
+
 const MAPEO_MOTIVOS_SHEET: Record<string, MotivoNoSale> = {
   "VACACIONES": "vacaciones",
   "DEPOSITO": "deposito",
@@ -157,7 +166,7 @@ export async function runOrdenSalidaSync(
   }>) {
     const dom = f.vehiculo?.dominio
     if (!dom) continue
-    camionPorPatente.set(normalizar(dom), f.vehiculo_id)
+    camionPorPatente.set(normalizarPatente(dom), f.vehiculo_id)
   }
 
   const advertencias: string[] = []
@@ -187,7 +196,7 @@ export async function runOrdenSalidaSync(
     if (fechaIso < rangoDesde || fechaIso > rangoHasta) continue
 
     const patenteRaw = fila["CAMIÓN"] || fila["CAMION"] || ""
-    const camionId = camionPorPatente.get(normalizar(patenteRaw))
+    const camionId = camionPorPatente.get(normalizarPatente(patenteRaw))
     if (!camionId) {
       if (patenteRaw.trim()) advertir(`Patente desconocida en FORMACIÓN: ${patenteRaw}`)
       continue
