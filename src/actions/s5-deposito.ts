@@ -45,9 +45,20 @@ function addMonths(periodo: string, delta: number): string {
   return firstDayOfMonth(new Date(y, m - 1 + delta, 1))
 }
 
-/** Primer mes del bimestre por defecto: mes anterior al actual. */
-export async function getBimestreActual(): Promise<string> {
-  return addMonths(firstDayOfMonth(new Date()), -1)
+/**
+ * Bimestre por defecto al abrir la página: primer mes del último bimestre
+ * CALENDARIO cerrado. Los bimestres se anclan al año (Ene-Feb, Mar-Abr,
+ * May-Jun, …) para que la grilla no quede corrida; navegar ±1 desde acá (paso
+ * = ventana) mantiene esa alineación. Hoy May 2026 → devuelve Mar (Mar-Abr,
+ * último cerrado); el bimestre en curso May-Jun queda a un click de distancia.
+ * Asume ventana de 2 meses (config por defecto).
+ */
+export async function getBimestreDefault(): Promise<string> {
+  const now = new Date()
+  const m = now.getMonth() + 1 // 1..12
+  const primerMesEnCurso = m - ((m - 1) % 2) // ancla al bimestre calendario: 1,3,5,7,9,11
+  const enCurso = `${now.getFullYear()}-${String(primerMesEnCurso).padStart(2, "0")}-01`
+  return addMonths(enCurso, -2) // retrocede un bimestre completo → último cerrado
 }
 
 // ── CSV / nombres ──
@@ -202,7 +213,7 @@ export async function getRankingDeposito(
     const supabase = await createClient()
     const config = await readConfig(supabase)
 
-    const desde = periodoDesde ?? (await getBimestreActual())
+    const desde = periodoDesde ?? (await getBimestreDefault())
     const ventana = Math.max(1, Math.min(6, config.meses_ventana))
     const meses: string[] = []
     for (let i = 0; i < ventana; i++) meses.push(addMonths(desde, i))
