@@ -2683,7 +2683,9 @@ export type HerramientaGestionContenido =
 
 export interface HerramientaGestion {
   id: string
-  plan_id: string
+  // Target: exactamente uno de plan_id / reunion_actividad_id está presente.
+  plan_id: string | null
+  reunion_actividad_id: string | null
   tipo: HerramientaGestionTipo
   titulo: string
   contenido: HerramientaGestionContenido
@@ -2695,7 +2697,12 @@ export interface HerramientaGestion {
 
 export interface HerramientaGestionConContexto extends HerramientaGestion {
   autor_nombre: string | null
+  // Contexto cuando el target es un plan
   plan_titulo: string | null
   plan_pregunta_numero: number | null
   plan_pilar_nombre: string | null
+  // Contexto cuando el target es una actividad de reunión
+  reunion_id: string | null
+  reunion_tipo: string | null
+  actividad_descripcion: string | null
 }

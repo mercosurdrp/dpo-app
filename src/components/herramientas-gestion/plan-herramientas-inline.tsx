@@ -10,22 +10,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { IS_MISIONES } from "@/lib/empresa"
-import { listarHerramientasPlan } from "@/actions/herramientas-gestion"
+import {
+  listarHerramientasPlan,
+  listarHerramientasActividad,
+} from "@/actions/herramientas-gestion"
 import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
 import { HerramientaGestionDialog } from "./herramienta-gestion-dialog"
 import { HerramientaGestionView } from "./herramienta-gestion-view"
 import type { HerramientaGestionConContexto } from "@/types/database"
 
 /**
- * Tira compacta para ver/aplicar herramientas de gestión sobre un plan,
- * embebible en cualquier lista de planes (ej. el tab de planes del pilar).
- * Solo Pampeana.
+ * Tira compacta para ver/aplicar herramientas de gestión sobre un plan o una
+ * actividad de reunión. Pasar `planId` O `reunionActividadId`. Solo Pampeana.
  */
 export function PlanHerramientasInline({
   planId,
+  reunionActividadId,
   puedeAplicar = true,
 }: {
-  planId: string
+  planId?: string
+  reunionActividadId?: string
   puedeAplicar?: boolean
 }) {
   const [items, setItems] = useState<HerramientaGestionConContexto[]>([])
@@ -33,15 +37,20 @@ export function PlanHerramientasInline({
   const [ver, setVer] = useState<HerramientaGestionConContexto | null>(null)
 
   function recargar() {
-    listarHerramientasPlan(planId).then((r) => {
+    const p = planId
+      ? listarHerramientasPlan(planId)
+      : reunionActividadId
+        ? listarHerramientasActividad(reunionActividadId)
+        : null
+    p?.then((r) => {
       if ("data" in r) setItems(r.data)
     })
   }
 
   useEffect(() => {
-    if (!IS_MISIONES && planId) recargar()
+    if (!IS_MISIONES && (planId || reunionActividadId)) recargar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId])
+  }, [planId, reunionActividadId])
 
   if (IS_MISIONES) return null
 
@@ -82,6 +91,7 @@ export function PlanHerramientasInline({
 
       <HerramientaGestionDialog
         planId={planId}
+        reunionActividadId={reunionActividadId}
         open={aplicar}
         onOpenChange={setAplicar}
         onSaved={recargar}

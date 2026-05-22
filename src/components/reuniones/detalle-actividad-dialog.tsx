@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 import {
   Select,
   SelectContent,
@@ -225,6 +226,10 @@ export function DetalleActividadDialog({
               <span className="font-medium">Motivo:</span> {actividad.motivo}
             </p>
           )}
+          <PlanHerramientasInline
+            reunionActividadId={actividad.id}
+            puedeAplicar={puedeResponder}
+          />
         </div>
 
         {/* Línea de tiempo de avances */}

@@ -26,6 +26,7 @@ import {
 import {
   crearHerramientaGestion,
   actualizarHerramientaGestion,
+  crearHerramientaActividad,
 } from "@/actions/herramientas-gestion"
 import { CincoPorquesForm, cincoPorquesVacio } from "./cinco-porques-form"
 import { CausaEfectoForm, causaEfectoVacio } from "./causa-efecto-form"
@@ -64,7 +65,10 @@ function contenidoVacioPorTipo(t: HerramientaGestionTipo): HerramientaGestionCon
 }
 
 export interface HerramientaGestionDialogProps {
-  planId: string
+  /** Target = plan. Pasar planId O reunionActividadId (no ambos). */
+  planId?: string
+  /** Target = actividad de reunión. */
+  reunionActividadId?: string
   open: boolean
   onOpenChange: (o: boolean) => void
   herramienta?: HerramientaGestionConContexto | null
@@ -73,6 +77,7 @@ export interface HerramientaGestionDialogProps {
 
 export function HerramientaGestionDialog({
   planId,
+  reunionActividadId,
   open,
   onOpenChange,
   herramienta,
@@ -136,8 +141,18 @@ export function HerramientaGestionDialog({
           titulo.trim(),
           contenido,
         )
-      } else {
+      } else if (reunionActividadId) {
+        res = await crearHerramientaActividad(
+          reunionActividadId,
+          tipo,
+          titulo.trim(),
+          contenido,
+        )
+      } else if (planId) {
         res = await crearHerramientaGestion(planId, tipo, titulo.trim(), contenido)
+      } else {
+        toast.error("Falta el destino (plan o actividad)")
+        return
       }
 
       if ("error" in res) {

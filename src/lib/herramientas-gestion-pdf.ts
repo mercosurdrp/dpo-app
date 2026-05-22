@@ -173,10 +173,16 @@ function encabezado(b: Builder, h: HerramientaGestion | HerramientaGestionConCon
   b.text(h.titulo || "(sin título)", { size: 16, bold: true, gap: 2 })
 
   const partes: string[] = []
-  if (ctx.plan_pilar_nombre) partes.push(`Pilar: ${ctx.plan_pilar_nombre}`)
-  if (ctx.plan_pregunta_numero != null) partes.push(`Pregunta ${ctx.plan_pregunta_numero}`)
-  if (ctx.plan_titulo) partes.push(ctx.plan_titulo)
-  if (partes.length === 0) partes.push("Tarea / plan de acción")
+  if (h.reunion_actividad_id || ctx.actividad_descripcion) {
+    partes.push("Actividad de reunión")
+    if (ctx.reunion_tipo) partes.push(`Reunión: ${ctx.reunion_tipo}`)
+    if (ctx.actividad_descripcion) partes.push(ctx.actividad_descripcion)
+  } else {
+    if (ctx.plan_pilar_nombre) partes.push(`Pilar: ${ctx.plan_pilar_nombre}`)
+    if (ctx.plan_pregunta_numero != null) partes.push(`Pregunta ${ctx.plan_pregunta_numero}`)
+    if (ctx.plan_titulo) partes.push(ctx.plan_titulo)
+    if (partes.length === 0) partes.push("Tarea / plan de acción")
+  }
   b.text(partes.join("  ·  "), { size: 9, color: C.label })
 
   const meta: string[] = []
