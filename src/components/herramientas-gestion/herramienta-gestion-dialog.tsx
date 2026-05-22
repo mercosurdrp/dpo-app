@@ -69,6 +69,8 @@ export interface HerramientaGestionDialogProps {
   planId?: string
   /** Target = actividad de reunión. */
   reunionActividadId?: string
+  /** Título prellenado al crear (nombre del plan / actividad). */
+  tituloSugerido?: string
   open: boolean
   onOpenChange: (o: boolean) => void
   herramienta?: HerramientaGestionConContexto | null
@@ -78,6 +80,7 @@ export interface HerramientaGestionDialogProps {
 export function HerramientaGestionDialog({
   planId,
   reunionActividadId,
+  tituloSugerido,
   open,
   onOpenChange,
   herramienta,
@@ -98,13 +101,13 @@ export function HerramientaGestionDialog({
   useEffect(() => {
     if (open) {
       setTipo(herramienta?.tipo ?? null)
-      setTitulo(herramienta?.titulo ?? "")
+      setTitulo(herramienta?.titulo ?? tituloSugerido ?? "")
       setContenido(
         herramienta?.contenido ??
           (null as unknown as HerramientaGestionContenido),
       )
     }
-  }, [open, herramienta])
+  }, [open, herramienta, tituloSugerido])
 
   function handleElegirTipo(t: HerramientaGestionTipo) {
     setTipo(t)

@@ -535,6 +535,7 @@ export function PlanDetailClient({
         reprogramaciones={plan.reprogramaciones ?? []}
         estadoActual={plan.estado}
         puedeIntervenir={puedeIntervenirEnAvances}
+        planTitulo={plan.titulo || plan.descripcion}
         onChanged={() => router.refresh()}
       />
 
