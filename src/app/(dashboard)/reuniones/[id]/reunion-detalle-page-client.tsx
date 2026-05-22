@@ -70,6 +70,7 @@ import type {
   ReunionDetalle,
   TipoReunion,
 } from "@/types/database"
+import type { AsistenciaRango } from "@/actions/reunion-preruta"
 
 interface ResponsableOpt {
   id: string
@@ -129,6 +130,7 @@ interface RubroOpt {
 interface Props {
   detalle: ReunionDetalle & { actividades?: ReunionActividadConResponsable[] }
   indicadoresMes: IndicadoresMesData | null
+  asistenciaPreruta: AsistenciaRango | null
   responsables: ResponsableOpt[]
   sectoresAlmacen: SectorOpt[]
   vehiculos: VehiculoOpt[]
@@ -163,6 +165,98 @@ function formatFechaCorta(iso: string | null): string {
     month: "2-digit",
     year: "numeric",
   })
+}
+
+// Hora del check-in (timestamptz) mostrada en hora de Argentina (UTC-3).
+function formatHoraAr(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
+}
+
+// Panel read-only que replica las marcaciones de la reunión Pre-Ruta del día
+// (check-in por legajo + minutos respecto al fichaje biométrico). Se nutre del
+// mismo origen que /indicadores/asistencia-matinal (getAsistenciaRango).
+function AsistenciaPrerutaPanel({ data }: { data: AsistenciaRango }) {
+  const presentes = [...data.detalle_dia].sort((a, b) => {
+    if (a.asistio !== b.asistio) return a.asistio ? -1 : 1
+    return a.nombre.localeCompare(b.nombre, "es")
+  })
+  const { resumen } = data
+  return (
+    <Card className="border-emerald-200 bg-emerald-50/30">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <Hand className="size-5 text-emerald-600" />
+          Asistencia Pre-Ruta
+          <Badge className="border-emerald-200 bg-emerald-100 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">
+            {resumen.asistencias} / {resumen.total_empleados} ({resumen.pct_asistencia}%)
+          </Badge>
+          {resumen.promedio_minutos != null && (
+            <span className="text-xs font-normal text-muted-foreground">
+              · prom. {resumen.promedio_minutos} min desde fichaje
+            </span>
+          )}
+        </CardTitle>
+        <Link
+          href="/indicadores/asistencia-matinal"
+          className="shrink-0 text-xs font-medium text-emerald-700 hover:underline"
+        >
+          Ver tablero →
+        </Link>
+      </CardHeader>
+      <CardContent>
+        {presentes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sin personal de Distribución registrado para esta fecha.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {presentes.map((e) => (
+              <div
+                key={e.legajo}
+                className={cn(
+                  "flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
+                  e.asistio
+                    ? "border-emerald-200 bg-white"
+                    : "border-slate-200 bg-slate-50 text-slate-400",
+                )}
+              >
+                {e.asistio ? (
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <X className="size-4 shrink-0 text-slate-300" />
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {e.nombre}
+                  {e.sucursal && (
+                    <span className="ml-1 text-[10px] uppercase text-slate-400">
+                      {e.sucursal}
+                    </span>
+                  )}
+                </span>
+                {e.asistio && (
+                  <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                    {formatHoraAr(e.hora_checkin)}
+                    {e.minutos_fichaje_reunion != null && (
+                      <span className="ml-1 text-slate-400">
+                        (+{e.minutos_fichaje_reunion}′)
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 function formatFechaHoraCorta(iso: string | null): string {
@@ -711,6 +805,7 @@ function ActividadListItem({
 export function ReunionDetallePageClient({
   detalle,
   indicadoresMes: indicadoresMesInicial,
+  asistenciaPreruta,
   responsables,
   sectoresAlmacen,
   vehiculos,
@@ -726,7 +821,9 @@ export function ReunionDetallePageClient({
   const [indicadoresMes, setIndicadoresMes] = useState<IndicadoresMesData | null>(
     indicadoresMesInicial,
   )
-  const muestraToggleSucursal = IS_MISIONES && detalle.tipo === "logistica"
+  const muestraToggleSucursal =
+    IS_MISIONES &&
+    (detalle.tipo === "logistica" || detalle.tipo === "matinal-distribucion")
   const [sucursalSel, setSucursalSel] = useState<
     "todo" | "eldorado" | "iguazu"
   >("todo")
@@ -1082,6 +1179,11 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
+
+      {/* ASISTENCIA PRE-RUTA — replicada del módulo Pre-Ruta (solo matinal) */}
+      {detalle.tipo === "matinal-distribucion" && asistenciaPreruta && (
+        <AsistenciaPrerutaPanel data={asistenciaPreruta} />
+      )}
 
       {/* ETAPA 1: SEGURIDAD */}
       <EtapaSeguridad fechaReunion={detalle.fecha} />

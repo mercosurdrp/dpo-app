@@ -2462,7 +2462,12 @@ export async function getIndicadoresMes(
       NOMBRES_AUTO.add("precision picking")
       NOMBRES_AUTO.add("capacidad utilizada")
       NOMBRES_AUTO.add("productividad de picking")
-    } else if (tipo === "logistica") {
+    } else if (
+      tipo === "logistica" ||
+      (IS_MISIONES && tipo === "matinal-distribucion")
+    ) {
+      // En Misiones la matinal de distribución reusa el set basado en Foxtrot
+      // de logística (acotado más abajo), así que comparte el mismo dedupe.
       if (IS_MISIONES) {
         // En Misiones reseteamos el set base (LTI/TRI/Bultos vendidos/TML
         // liberación/etc. son de Pampeana y no aplican). Los AUTO de Foxtrot
@@ -3239,7 +3244,11 @@ export async function getIndicadoresMes(
     //     Warehouse: los 6 KPIs (WQI/FGLI/SCL/Capacidad/Precision/Productividad).
     //     Logistica: solo Productividad de picking y WQI (los otros 4 son
     //     específicos del rol de depósito, no relevantes en logística).
-    if (tipo === "warehouse" || tipo === "logistica") {
+    if (
+      tipo === "warehouse" ||
+      tipo === "logistica" ||
+      (IS_MISIONES && tipo === "matinal-distribucion")
+    ) {
       // Misiones: la fuente warehouse (deposito-esteban) es de Pampeana y no
       // aplica acá. Para 'logistica' usamos un set de KPIs basado en Foxtrot
       // (rutas, entregas, TML) + ausentismo. 'warehouse' no tiene equivalente
@@ -3250,7 +3259,7 @@ export async function getIndicadoresMes(
         // En Misiones descartamos los AUTO de Pampeana (LTI/TRI/Rechazos %/
         // Bultos-HL vendidos/TML liberación/Camiones/Checklist/Km/Horas/FTE)
         // ya acumulados en `indicadoresAuto`: armamos una lista limpia.
-        if (tipo === "logistica") {
+        if (tipo === "logistica" || tipo === "matinal-distribucion") {
           const ms = await buildMisionesLogisticaSerie(
             supabase,
             fechas,
@@ -3333,6 +3342,30 @@ export async function getIndicadoresMes(
             "auto_ausentismo", "Ausentismo", "personas",
             ausentismoPorFecha, "suma", null, "menor",
           )
+
+          // Matinal Distribución (Misiones): set acotado pedido por operación
+          // — solo Bultos totales, TML, Tiempo por PDV, Rechazo y Horas en
+          // ruta (auto Foxtrot) + los indicadores manuales configurados (ej.
+          // RMD). No arrastra LTI/TRI/Ausentismo ni el resto del set completo
+          // de la reunión de Logística.
+          if (tipo === "matinal-distribucion") {
+            return {
+              data: {
+                anio,
+                mes,
+                fechas,
+                reuniones_por_fecha: reunionesPorFecha,
+                indicadores: [
+                  bultosRow,
+                  tmlRow,
+                  tiempoPdvRow,
+                  rechazoRow,
+                  horasRutaRow,
+                  ...indicadores,
+                ],
+              },
+            }
+          }
 
           // Reordenamiento pedido: LTI, TRI (manuales) y Ausentismo (auto) al
           // inicio; luego los KPIs operativos; al final el resto de manuales.
