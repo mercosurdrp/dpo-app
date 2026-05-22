@@ -646,7 +646,7 @@ export function AvancesSection({
           if (!o) resetForm()
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Responder</DialogTitle>
           </DialogHeader>

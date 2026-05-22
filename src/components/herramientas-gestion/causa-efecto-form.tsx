@@ -14,7 +14,7 @@ export function causaEfectoVacio(): CausaEfectoContenido {
     efecto: "",
     categorias: CAUSA_EFECTO_CATEGORIAS_6M.map((nombre) => ({
       nombre,
-      causas: [],
+      causas: [""], // cada M arranca con un campo de causa listo para completar
     })),
     causa_raiz: "",
     contramedida: "",

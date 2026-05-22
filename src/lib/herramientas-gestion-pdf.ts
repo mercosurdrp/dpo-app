@@ -244,6 +244,17 @@ function wrapPdf(
   return out
 }
 
+// Trunca a una sola línea con elipsis si excede el ancho dado.
+function truncarA(txt: string, font: PDFFont, size: number, maxW: number): string {
+  const s = limpiar(txt)
+  if (font.widthOfTextAtSize(s, size) <= maxW) return s
+  let t = s
+  while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > maxW) {
+    t = t.slice(0, -1)
+  }
+  return `${t.trimEnd()}…`
+}
+
 // Color por cada una de las 6 M (según orden de las categorías)
 const CAT_COLORS = [
   rgb(0.15, 0.39, 0.92), // azul
@@ -332,7 +343,7 @@ async function generarPdfIshikawa(
 
   // ── 6 espinas (3 arriba / 3 abajo) con sus causas ──
   const cats = c.categorias ?? []
-  const baseXs = [200, 385, 565] // dónde nace cada diagonal sobre la espina
+  const baseXs = [235, 415, 595] // dónde nace cada diagonal sobre la espina
   for (let i = 0; i < 6; i++) {
     const cat = cats[i]
     if (!cat) continue
@@ -356,26 +367,29 @@ async function generarPdfIshikawa(
     page.drawRectangle({ x: tipX - lw / 2, y: ly, width: lw, height: 14, color: col })
     T(label, tipX - lw / 2 + 6, ly + 4, 8, bold, rgb(1, 1, 1))
 
-    // causas legibles, en columna a la izquierda del extremo
-    const causas = (cat.causas ?? []).filter((x) => x.trim())
-    const boxW = 132
-    const boxX = tipX - boxW
-    let cyTop = arriba ? tipY - 4 : spineY - 42
-    const lineas: { txt: string; first: boolean }[] = []
-    for (const causa of causas) {
-      const ws = wrapPdf(causa, font, 8.5, boxW - 8)
-      ws.forEach((w, k) => lineas.push({ txt: w, first: k === 0 }))
-    }
-    const maxLineas = Math.floor((150 - 18) / 10.5)
-    const visibles = lineas.slice(0, maxLineas)
-    for (const l of visibles) {
-      T(l.first ? `- ${l.txt}` : `  ${l.txt}`, boxX, cyTop, 8.5, font, C.texto)
-      cyTop -= 10.5
-    }
-    if (causas.length === 0) {
-      T("(sin causas)", boxX, cyTop, 8, font, C.tenue)
-    } else if (lineas.length > visibles.length) {
-      T("…", boxX, cyTop, 8.5, font, C.tenue)
+    // causas pegadas a la diagonal, distribuidas a lo largo de la espina
+    const causas = (cat.causas ?? []).filter((x) => x.trim()).slice(0, 6)
+    const n = causas.length
+    causas.forEach((causa, k) => {
+      const frac = n === 1 ? 0.5 : 0.2 + (0.62 * k) / (n - 1)
+      const ax = tipX + (baseX - tipX) * frac
+      const ay = tipY + (spineY - tipY) * frac
+      // conector corto desde la diagonal hacia la izquierda
+      page.drawLine({
+        start: { x: ax, y: ay },
+        end: { x: ax - 8, y: ay },
+        thickness: 0.75,
+        color: C.tenue,
+      })
+      const txt = truncarA(causa, font, 8, 120)
+      const tw = font.widthOfTextAtSize(txt, 8)
+      T(txt, ax - 11 - tw, ay - 2.6, 8, font, C.texto)
+    })
+    if (n === 0) {
+      const mx = tipX + (baseX - tipX) * 0.5
+      const my = tipY + (spineY - tipY) * 0.5
+      const ph = "(sin causas)"
+      T(ph, mx - 11 - font.widthOfTextAtSize(ph, 8), my - 2.6, 8, font, C.tenue)
     }
   }
 
