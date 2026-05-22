@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -84,7 +85,7 @@ function MaterialLink({ url }: { url: string | null }) {
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
-        window.open(url, "_blank", "noopener,noreferrer")
+        abrirArchivo(url)
       }}
       className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
     >

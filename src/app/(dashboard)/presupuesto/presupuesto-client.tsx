@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -223,7 +224,7 @@ export function PresupuestoClient({
       alert(`Error abriendo archivo: ${result.error}`)
       return
     }
-    window.open(result.data.url, "_blank", "noopener,noreferrer")
+    abrirArchivoEnVisor(result.data.url)
   }
 
   function handleEliminarEerr() {

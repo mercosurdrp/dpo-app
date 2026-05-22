@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import {
   useCallback,
   useEffect,
@@ -1085,7 +1086,7 @@ export function ReunionDetallePageClient({
       alert(`Error abriendo archivo: ${result.error}`)
       return
     }
-    window.open(result.data.url, "_blank", "noopener,noreferrer")
+    abrirArchivoEnVisor(result.data.url)
   }
 
   function handleEliminarReunion() {

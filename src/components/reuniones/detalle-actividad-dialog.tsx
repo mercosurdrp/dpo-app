@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { useEffect, useState, useTransition } from "react"
 import {
   CalendarClock,
@@ -145,7 +146,7 @@ export function DetalleActividadDialog({
       alert(`Error abriendo archivo: ${result.error}`)
       return
     }
-    window.open(result.data.url, "_blank", "noopener,noreferrer")
+    abrirArchivoEnVisor(result.data.url)
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {

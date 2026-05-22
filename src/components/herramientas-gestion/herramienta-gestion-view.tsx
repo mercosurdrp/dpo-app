@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useState } from "react"
 import { Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -275,7 +276,7 @@ export function HerramientaGestionView({ herramienta }: Props) {
         toast.error(r.error)
         return
       }
-      window.open(r.data.url, "_blank")
+      abrirArchivo(r.data.url)
     } finally {
       setDescargando(false)
     }

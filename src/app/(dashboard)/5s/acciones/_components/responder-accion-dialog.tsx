@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import {
@@ -226,7 +227,7 @@ export function ResponderAccionDialog({
       toast.error(res.error)
       return
     }
-    window.open(res.data.url, "_blank", "noopener,noreferrer")
+    abrirArchivo(res.data.url)
   }
 
   return (

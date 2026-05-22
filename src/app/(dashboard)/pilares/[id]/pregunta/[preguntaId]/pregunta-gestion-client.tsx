@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -892,7 +893,7 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => window.open(a.url, "_blank")}
+                      onClick={() => abrirArchivoEnVisor(a.url)}
                       title="Abrir / descargar"
                     >
                       <FileDown className="h-4 w-4" />
@@ -1047,7 +1048,7 @@ export function PreguntaGestionClient({
         alert(`Error abriendo archivo: ${result.error}`)
         return
       }
-      window.open(result.data.url, "_blank", "noopener,noreferrer")
+      abrirArchivoEnVisor(result.data.url)
     } finally {
       setArchivoLoadingId(null)
     }

@@ -1,5 +1,6 @@
 "use client"
 
+import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -276,7 +277,7 @@ export function AvancesSection({
       toast.error(r.error)
       return
     }
-    window.open(r.data.url, "_blank")
+    abrirArchivo(r.data.url)
   }
 
   async function refrescarAvances() {
