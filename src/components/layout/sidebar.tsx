@@ -33,6 +33,7 @@ import {
   Presentation,
   Boxes,
   Wrench,
+  Route,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -111,6 +112,13 @@ const navItems: NavItem[] = [
     href: "/clasificacion-envases",
     icon: <Boxes className="size-5" />,
     pampeanaOnly: true,
+  },
+  {
+    label: "Ruteo",
+    href: "/ruteo",
+    icon: <Route className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor"],
   },
   {
     label: "Presupuesto",

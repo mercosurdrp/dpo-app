@@ -26,6 +26,7 @@ import {
   LogOut,
   Presentation,
   Wrench,
+  Route,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -104,6 +105,13 @@ const navItems: NavItem[] = [
     href: "/orden-salida",
     icon: <CalendarCheck className="size-5" />,
     hideForEmpleado: true,
+  },
+  {
+    label: "Ruteo",
+    href: "/ruteo",
+    icon: <Route className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor"],
   },
   {
     label: "Mi orden del día",
