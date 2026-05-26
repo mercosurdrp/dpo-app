@@ -2586,6 +2586,7 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("ausentismo")
       } else {
         NOMBRES_AUTO.add("wqi")
+        NOMBRES_AUTO.add("wnp")
         NOMBRES_AUTO.add("productividad de picking")
         NOMBRES_AUTO.add("precision picking")
         NOMBRES_AUTO.add("roturas")
@@ -3684,6 +3685,15 @@ async function getIndicadoresMesCore(
             serie.wqi,
             serie.targets.wqi,
             "menor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_wnp",
+            "WNP",
+            "HL/HH",
+            serie.wnp_dia,
+            serie.wnp,
+            null,
+            "mayor",
           ),
           buildSerieRow(
             "auto_productividad_picking",

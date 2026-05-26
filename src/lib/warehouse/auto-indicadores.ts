@@ -111,12 +111,15 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
   /** Sub-series de pérdida para la reunión de logística (acumulado MTD). */
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
+  /** WNP = productividad total del almacén (HL/HH). Acumulado MTD. */
+  wnp: Record<string, number | null>
   /** Valores DEL DÍA (no acumulado). Para mostrar en cada celda de la grilla. */
   wqi_dia: Record<string, number | null>
   fgli_dia: Record<string, number | null>
   scl_dia: Record<string, number | null>
   roturas_dia: Record<string, number | null>
   faltantes_dia: Record<string, number | null>
+  wnp_dia: Record<string, number | null>
   /** Errores por operador por día (para el drill-down). { fecha: { Troli/Galvez/Ovejero: count } } */
   errores_por_operador_dia: Record<string, Record<string, number>>
   /** Targets mensuales del mes consultado. */
@@ -253,11 +256,13 @@ export async function buildWarehouseSerieDiaria(
       errores_dia: {},
       roturas: {},
       faltantes: {},
+      wnp: {},
       wqi_dia: {},
       fgli_dia: {},
       scl_dia: {},
       roturas_dia: {},
       faltantes_dia: {},
+      wnp_dia: {},
       errores_por_operador_dia: {},
       targets: sinTargets,
     }
@@ -495,11 +500,13 @@ interface DepositoIndicadoresSerieDiaria {
   scl: Record<string, number | null>
   roturas?: Record<string, number | null>
   faltantes?: Record<string, number | null>
+  wnp?: Record<string, number | null>
   wqi_dia?: Record<string, number | null>
   fgli_dia?: Record<string, number | null>
   scl_dia?: Record<string, number | null>
   roturas_dia?: Record<string, number | null>
   faltantes_dia?: Record<string, number | null>
+  wnp_dia?: Record<string, number | null>
   precision?: Record<string, number | null>
   errores_count_dia?: Record<string, number>
   errores_count_por_operador_dia?: Record<string, Record<string, number>>
@@ -628,11 +635,13 @@ async function fetchSerieExtra(
 ): Promise<{
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
+  wnp: Record<string, number | null>
   wqi_dia: Record<string, number | null>
   fgli_dia: Record<string, number | null>
   scl_dia: Record<string, number | null>
   roturas_dia: Record<string, number | null>
   faltantes_dia: Record<string, number | null>
+  wnp_dia: Record<string, number | null>
   precision: Record<string, number | null>
   errores_dia: Record<string, number | null>
   errores_por_operador_dia: Record<string, Record<string, number>>
@@ -647,28 +656,32 @@ async function fetchSerieExtra(
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
+  const wnp: Record<string, number | null> = {}
   const wqi_dia: Record<string, number | null> = {}
   const fgli_dia: Record<string, number | null> = {}
   const scl_dia: Record<string, number | null> = {}
   const roturas_dia: Record<string, number | null> = {}
   const faltantes_dia: Record<string, number | null> = {}
+  const wnp_dia: Record<string, number | null> = {}
   const precision: Record<string, number | null> = {}
   const errores_dia: Record<string, number | null> = {}
   const errores_por_operador_dia: Record<string, Record<string, number>> = {}
   for (const f of fechas) {
     // FGLI y SCL conservan el día en curso.
     const visible = f <= fechaReunion
-    // WQI, roturas y faltantes ocultan el día de la reunión (y futuros): a la
-    // hora del matinal el cierre de hoy todavía no está confirmado, igual que
+    // WQI, roturas, faltantes y WNP ocultan el día de la reunión (y futuros): a
+    // la hora del matinal el cierre de hoy todavía no está confirmado, igual que
     // precisión, errores y ausentismo. Se muestran hasta el último día cerrado.
     const cerrado = f < fechaReunion
     roturas[f] = cerrado ? (res?.roturas?.[f] ?? null) : null
     faltantes[f] = cerrado ? (res?.faltantes?.[f] ?? null) : null
+    wnp[f] = cerrado ? (res?.wnp?.[f] ?? null) : null
     wqi_dia[f] = cerrado ? (res?.wqi_dia?.[f] ?? null) : null
     fgli_dia[f] = visible ? (res?.fgli_dia?.[f] ?? null) : null
     scl_dia[f] = visible ? (res?.scl_dia?.[f] ?? null) : null
     roturas_dia[f] = cerrado ? (res?.roturas_dia?.[f] ?? null) : null
     faltantes_dia[f] = cerrado ? (res?.faltantes_dia?.[f] ?? null) : null
+    wnp_dia[f] = cerrado ? (res?.wnp_dia?.[f] ?? null) : null
     // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó).
     precision[f] = f < fechaReunion ? (res?.precision?.[f] ?? null) : null
     if (f < fechaReunion) {
@@ -694,11 +707,13 @@ async function fetchSerieExtra(
   return {
     roturas,
     faltantes,
+    wnp,
     wqi_dia,
     fgli_dia,
     scl_dia,
     roturas_dia,
     faltantes_dia,
+    wnp_dia,
     precision,
     errores_dia,
     errores_por_operador_dia,
