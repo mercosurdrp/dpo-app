@@ -78,6 +78,8 @@ export interface WarehouseTargets {
   wqi: number | null
   /** SCL objetivo en $ = roturas + faltantes + vencidos del presupuesto $. */
   scl: number | null
+  /** WNP objetivo en HL/HH = (HL ventas presup. − pérdidas presup.) / horas plan. */
+  wnp: number | null
 }
 
 /**
@@ -244,6 +246,7 @@ export async function buildWarehouseSerieDiaria(
     faltantes: null,
     wqi: null,
     scl: null,
+    wnp: null,
   }
   if (fechas.length === 0) {
     return {
@@ -495,6 +498,8 @@ async function fetchErroresPickingPorFecha(): Promise<
 interface DepositoIndicadoresSerieDiaria {
   year: number
   month: number
+  /** Σ horas planificadas del mes (72h L-V / 32h sáb). Denominador del target WNP. */
+  horas_plan_mes?: number
   wqi: Record<string, number | null>
   fgli: Record<string, number | null>
   scl: Record<string, number | null>
@@ -704,6 +709,16 @@ async function fetchSerieExtra(
       ? Math.round((roturasTarget / ventasHl) * 1_000_000)
       : null
 
+  // Target de WNP (HL/HH): (HL ventas presupuestadas − pérdidas presupuestadas)
+  // / horas planificadas del mes. Ventas esperadas de la tabla fija del
+  // presupuesto; pérdidas (targets.fgli) y horas plan. del endpoint de deposito.
+  const perdidasHl = res?.targets?.fgli ?? 0
+  const horasPlan = res?.horas_plan_mes ?? null
+  const wnpTarget =
+    ventasHl && horasPlan
+      ? Math.round(((ventasHl - perdidasHl) / horasPlan) * 100) / 100
+      : null
+
   return {
     roturas,
     faltantes,
@@ -723,6 +738,7 @@ async function fetchSerieExtra(
       faltantes: res?.targets?.faltantes ?? null,
       wqi: wqiTarget,
       scl: res?.targets?.scl ?? null,
+      wnp: wnpTarget,
     },
   }
 }

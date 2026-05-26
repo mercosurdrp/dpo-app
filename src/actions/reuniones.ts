@@ -3692,7 +3692,7 @@ async function getIndicadoresMesCore(
             "HL/HH",
             serie.wnp_dia,
             serie.wnp,
-            null,
+            serie.targets.wnp,
             "mayor",
           ),
           buildSerieRow(
