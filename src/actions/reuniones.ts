@@ -3531,7 +3531,7 @@ async function getIndicadoresMesCore(
           )
           // Errores operativos de depósito (Analía). Fila nueva, sin manual homónimo.
           const erroresRow = buildSerieRow(
-            "auto_errores_deposito", "Errores", "errores", ms.errores, "suma", null, "menor",
+            "auto_errores_deposito", "Errores de picking", "errores", ms.errores, "suma", null, "menor",
           )
 
           // Matinal Distribución (Misiones): set acotado pedido por operación
@@ -3571,12 +3571,30 @@ async function getIndicadoresMesCore(
             return null
           }
           const esAusentismo = (n: string) => n.trim().toLowerCase() === "ausentismo"
+          // Productividad de picking y Pérdidas (manuales) van inmediatamente
+          // debajo de "Errores de picking", dentro del bloque AUTO. El resto de
+          // los manuales queda al final.
+          const pickPerdRank = (n: string): number | null => {
+            const l = n.trim().toLowerCase()
+            if (l === "productividad de picking") return 0
+            if (l === "pérdidas" || l === "perdidas") return 1
+            return null
+          }
           const sifRows = indicadores
             .filter((i) => sifRank(i.nombre) !== null)
             .sort((a, b) => (sifRank(a.nombre) ?? 99) - (sifRank(b.nombre) ?? 99))
           const ausentismoRows = indicadores.filter((i) => esAusentismo(i.nombre))
+          const pickingPerdidasRows = indicadores
+            .filter((i) => pickPerdRank(i.nombre) !== null)
+            .sort(
+              (a, b) =>
+                (pickPerdRank(a.nombre) ?? 99) - (pickPerdRank(b.nombre) ?? 99),
+            )
           const otrosManuales = indicadores.filter(
-            (i) => sifRank(i.nombre) === null && !esAusentismo(i.nombre),
+            (i) =>
+              sifRank(i.nombre) === null &&
+              !esAusentismo(i.nombre) &&
+              pickPerdRank(i.nombre) === null,
           )
 
           // Checks de Cloudfleet (liberación/retorno/AE) — solo Misiones. Se
@@ -3623,6 +3641,7 @@ async function getIndicadoresMesCore(
             tiempoPdvRow,
             tmlRow,
             erroresRow,
+            ...pickingPerdidasRows,
             checksAprobadosRow,
             checksRechazadosRow,
             aeAprobadosRow,

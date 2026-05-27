@@ -1013,6 +1013,16 @@ export function ReunionDetallePageClient({
     return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
   }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
 
+  // Orden de columnas para mostrar. En Misiones las fechas van descendentes
+  // (más reciente a la izquierda) para facilitar la lectura del tablero; el
+  // resto de los datos (MTD, valores) son por fecha, así que invertir solo
+  // cambia el orden visual de las columnas. `fechasFiltradas` sigue ascendente
+  // para cualquier cálculo que dependa del orden cronológico.
+  const fechasMostradas = useMemo(
+    () => (IS_MISIONES ? [...fechasFiltradas].reverse() : fechasFiltradas),
+    [fechasFiltradas],
+  )
+
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
   const actividades: ReunionActividadConResponsable[] = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1406,7 +1416,7 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[340px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
-                    {fechasFiltradas.map((f) => {
+                    {fechasMostradas.map((f) => {
                       const esHoy = f === detalle.fecha
                       const dom = esFinDeSemana(f)
                       return (
@@ -1449,7 +1459,7 @@ export function ReunionDetallePageClient({
                             ? "—"
                             : formatearValor(ind.mtd)}
                       </td>
-                      {fechasFiltradas.map((f) => {
+                      {fechasMostradas.map((f) => {
                         const cell = ind.valores[f] ?? null
                         const esHoy = f === detalle.fecha
                         const dom = esFinDeSemana(f)
