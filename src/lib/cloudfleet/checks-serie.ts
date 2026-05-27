@@ -98,6 +98,12 @@ export async function buildCloudfleetChecksSerie(
     return cc === CC_POR_SUCURSAL[sucursal]
   }
 
+  // AE Aprobados cuenta EQUIPOS distintos por día (TOYOTA4/5/6 con al menos un
+  // preoperacional aprobado), no la cantidad total de checks. Junta los códigos
+  // en un Set por fecha y al final cuenta su tamaño (0–3 por día).
+  const aeAprobPorFecha: Record<string, Set<string>> = {}
+  for (const f of fechas) aeAprobPorFecha[f] = new Set<string>()
+
   for (const r of data as ChecklistRow[]) {
     const f = r.fecha
     if (!(f in serie.checks_aprobados)) continue
@@ -107,7 +113,7 @@ export async function buildCloudfleetChecksSerie(
 
     if (tipo === "PREOPERACIONAL AE") {
       if (AE_VEHICLES.has(code) && ccPermitido(r.cost_center) && aprobado) {
-        serie.ae_aprobados[f] = (serie.ae_aprobados[f] ?? 0) + 1
+        aeAprobPorFecha[f].add(code)
       }
       continue
     }
@@ -127,6 +133,8 @@ export async function buildCloudfleetChecksSerie(
       serie.ret_count[f] = (serie.ret_count[f] ?? 0) + 1
     }
   }
+
+  for (const f of fechas) serie.ae_aprobados[f] = aeAprobPorFecha[f].size
 
   return serie
 }
