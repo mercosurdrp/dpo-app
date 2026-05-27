@@ -116,7 +116,7 @@ function MisSobrecargasBloque({ resumen }: { resumen: MisSobrecargasResumen }) {
       <div className="mb-3">
         <p className="text-xs uppercase tracking-wide text-slate-500">Mis sobrecargas</p>
         <p className="text-sm text-slate-700">
-          Acumulado de tus sobrecargas y medias (1/4 cuenta como 0.5) sumando salidas como chofer y como ayudante.
+          Acumulado de tus sobrecargas y medias sumando salidas como chofer y como ayudante.
         </p>
       </div>
 
