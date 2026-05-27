@@ -41,7 +41,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 
-interface NavItem {
+export interface NavItem {
   label: string
   href: string
   icon: React.ReactNode
@@ -56,7 +56,7 @@ interface NavItem {
   roles?: UserRole[]
 }
 
-interface NavSection {
+export interface NavSection {
   title: string
   items: NavItem[]
   /**
@@ -65,7 +65,7 @@ interface NavSection {
   visibleFor?: UserRole[]
 }
 
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
   {
     label: "Inicio",
     href: "/",
@@ -194,7 +194,7 @@ const navItems: NavItem[] = [
   },
 ]
 
-const adminItems: NavItem[] = [
+export const adminItems: NavItem[] = [
   {
     label: "Usuarios",
     href: "/admin/usuarios",
@@ -210,7 +210,7 @@ const adminItems: NavItem[] = [
 ]
 
 // ===== Secciones RRHH (visibles según rol) =====
-const rrhhSections: NavSection[] = [
+export const rrhhSections: NavSection[] = [
   {
     title: "Mi área",
     visibleFor: ["empleado", "supervisor", "admin", "admin_rrhh"],

@@ -4,174 +4,13 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import {
-  LayoutDashboard,
-  ClipboardCheck,
-  ListTodo,
-  ClipboardList,
-  BarChart3,
-  Fingerprint,
-  GraduationCap,
-  Truck,
-  Users,
-  Settings,
-  Lightbulb,
-  ScrollText,
-  ShieldAlert,
-  Target,
-  CalendarCheck,
-  Wallet,
-  Menu,
-  X,
-  LogOut,
-  Presentation,
-  Wrench,
-  Route,
-} from "lucide-react"
+import { Menu, X, LogOut, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { IS_MISIONES } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
-import type { PilarNav } from "./sidebar"
-
-interface NavItem {
-  label: string
-  href: string
-  icon: React.ReactNode
-  adminOnly?: boolean
-  hideForEmpleado?: boolean
-  /** Solo se muestra en el tenant Pampeana (se oculta si IS_MISIONES). */
-  pampeanaOnly?: boolean
-  /** Si está presente, sólo se muestra a estos roles. */
-  roles?: UserRole[]
-}
-
-const navItems: NavItem[] = [
-  {
-    label: "Inicio",
-    href: "/",
-    icon: <LayoutDashboard className="size-5" />,
-  },
-  {
-    label: "Auditorias",
-    href: "/auditorias",
-    icon: <ClipboardCheck className="size-5" />,
-  },
-  {
-    label: "Acciones",
-    href: "/acciones",
-    icon: <ListTodo className="size-5" />,
-  },
-  {
-    label: "Planes",
-    href: "/planes",
-    icon: <ClipboardList className="size-5" />,
-  },
-  {
-    label: "Herramientas de Gestión",
-    href: "/herramientas-gestion",
-    icon: <Wrench className="size-5" />,
-    pampeanaOnly: true,
-  },
-  {
-    label: "Mis tareas",
-    href: "/mis-tareas",
-    icon: <ClipboardList className="size-5" />,
-  },
-  {
-    label: "Indicadores",
-    href: "/indicadores",
-    icon: <BarChart3 className="size-5" />,
-  },
-  {
-    label: "Presupuesto",
-    href: "/presupuesto",
-    icon: <Wallet className="size-5" />,
-    hideForEmpleado: true,
-  },
-  {
-    label: "Asistencia",
-    href: "/asistencia",
-    icon: <Fingerprint className="size-5" />,
-  },
-  {
-    label: "Vehículos",
-    href: "/vehiculos",
-    icon: <Truck className="size-5" />,
-  },
-  {
-    label: "Orden de salida",
-    href: "/orden-salida",
-    icon: <CalendarCheck className="size-5" />,
-    hideForEmpleado: true,
-  },
-  {
-    label: "Ruteo",
-    href: "/ruteo",
-    icon: <Route className="size-5" />,
-    pampeanaOnly: true,
-    roles: ["admin", "supervisor"],
-  },
-  {
-    label: "Mi orden del día",
-    href: "/mi-orden-del-dia",
-    icon: <CalendarCheck className="size-5" />,
-  },
-  {
-    label: "Capacitaciones",
-    href: "/capacitaciones",
-    icon: <GraduationCap className="size-5" />,
-  },
-  {
-    label: "Mis Capacitaciones",
-    href: "/mis-capacitaciones",
-    icon: <GraduationCap className="size-5" />,
-    roles: ["auditor"],
-  },
-  {
-    label: "Reuniones",
-    href: "/reuniones",
-    icon: <Presentation className="size-5" />,
-  },
-  {
-    label: "Reportes de Seguridad",
-    href: "/reportes-seguridad",
-    icon: <ShieldAlert className="size-5" />,
-  },
-  {
-    label: "5S",
-    href: "/5s",
-    icon: <Target className="size-5" />,
-    hideForEmpleado: true,
-  },
-  {
-    label: "Requisitos Legales",
-    href: "/requisitos-legales",
-    icon: <ScrollText className="size-5" />,
-    hideForEmpleado: true,
-  },
-  {
-    label: "Riesgos Externos",
-    href: "/riesgos-externos",
-    icon: <ShieldAlert className="size-5" />,
-    hideForEmpleado: true,
-  },
-  {
-    label: "Sugerencias",
-    href: "/sugerencias",
-    icon: <Lightbulb className="size-5" />,
-  },
-]
-
-const adminItems: NavItem[] = [
-  {
-    label: "Usuarios",
-    href: "/admin/usuarios",
-    icon: <Users className="size-5" />,
-    adminOnly: true,
-  },
-]
+import { navItems, adminItems, rrhhSections, type PilarNav } from "./sidebar"
 
 interface MobileNavProps {
   role: UserRole
@@ -315,6 +154,40 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
               </div>
             </div>
           )}
+
+          {/* RRHH sections (filtran por rol) */}
+          {rrhhSections
+            .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
+            .map((sec) => (
+              <div key={sec.title} className="mt-5">
+                <div className="px-3 pb-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    {sec.title}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  {sec.items.map((item) => {
+                    const isActive = pathname.startsWith(item.href)
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          isActive
+                            ? "bg-white/10 text-white"
+                            : "text-slate-400 hover:bg-white/5 hover:text-white"
+                        )}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
 
           {/* Admin section */}
           {role === "admin" && (
