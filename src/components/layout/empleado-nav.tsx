@@ -9,6 +9,7 @@ import {
   Truck,
   LogOut,
   CalendarRange,
+  CalendarCheck,
   Boxes,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -16,6 +17,10 @@ import { createClient } from "@/lib/supabase/client"
 import { IS_MISIONES } from "@/lib/empresa"
 
 const items = [
+  // Orden de salida del día: módulo de distribución (solo Misiones).
+  ...(IS_MISIONES
+    ? [{ label: "Mi orden del día", href: "/mi-orden-del-dia", icon: CalendarCheck }]
+    : []),
   { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
   // Clasificar envases: solo Pampeana (Depósito Esteban).
