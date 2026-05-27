@@ -22,14 +22,15 @@ const items = [
     ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: CalendarCheck }]
     : []),
   { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
-  { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
+  { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   // Clasificar envases: solo Pampeana (Depósito Esteban).
   ...(IS_MISIONES
     ? []
     : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: Boxes }]),
   { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: CalendarRange },
-  { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   { label: "Vehículos", href: "/vehiculos/checklist", icon: Truck },
+  // "Mis tareas" al final del menú (preferencia del usuario).
+  { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
 ]
 
 export function EmpleadoNav() {
