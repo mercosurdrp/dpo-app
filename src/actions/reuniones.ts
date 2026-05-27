@@ -2567,9 +2567,11 @@ async function getIndicadoresMesCore(
         // En Misiones reseteamos el set base (LTI/TRI/Bultos vendidos/TML
         // liberación/etc. son de Pampeana y no aplican). Los AUTO de Foxtrot
         // adoptan los nombres que el usuario ya configuró como manuales para
-        // REEMPLAZARLOS (no duplicar). El resto de los manuales (Roturas, WQI,
-        // Faltantes, Productividad picking, LTI, TRI, WNP, Driver Click Score,
-        // TLP) sobreviven como filas de carga manual.
+        // REEMPLAZARLOS (no duplicar). El resto de los manuales (SIF
+        // Actual/Potencial/Precursor, Ausentismo, Pérdidas, Productividad
+        // picking) sobreviven como filas de carga manual.
+        // OJO: Ausentismo NO se incluye acá a propósito — pasó a carga manual
+        // (ver más abajo: ya no se calcula desde Foxtrot).
         NOMBRES_AUTO.clear()
         NOMBRES_AUTO.add("cantidad de camiones")
         NOMBRES_AUTO.add("bultos totales")
@@ -2583,7 +2585,6 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("ocupación de bodega")
         NOMBRES_AUTO.add("ocupacion de bodega")
         NOMBRES_AUTO.add("errores")
-        NOMBRES_AUTO.add("ausentismo")
       } else {
         NOMBRES_AUTO.add("wqi")
         NOMBRES_AUTO.add("wnp")
@@ -3363,9 +3364,8 @@ async function getIndicadoresMesCore(
             fecha,
             sucursal,
           )
-          const ausentismoRes = await getAusentismoSerie(mes, anio)
-          const ausentismoPorFecha =
-            "data" in ausentismoRes ? ausentismoRes.data.por_fecha : {}
+          // Ausentismo ya no se calcula desde Foxtrot: ahora es un indicador de
+          // carga manual (sobrevive como fila de config, ver más abajo).
 
           // Formato HH:MM a partir de minutos (para "Horas en ruta"). El valor
           // numérico (minutos) se preserva para que el MTD promedie bien; el
@@ -3435,10 +3435,6 @@ async function getIndicadoresMesCore(
           const erroresRow = buildSerieRow(
             "auto_errores_deposito", "Errores", "errores", ms.errores, "suma", null, "menor",
           )
-          const ausentismoRow = buildSerieRow(
-            "auto_ausentismo", "Ausentismo", "personas",
-            ausentismoPorFecha, "suma", null, "menor",
-          )
 
           // Matinal Distribución (Misiones): set acotado pedido por operación
           // — solo Bultos totales, TML, Tiempo por PDV, Rechazo y Horas en
@@ -3464,16 +3460,26 @@ async function getIndicadoresMesCore(
             }
           }
 
-          // Reordenamiento pedido: LTI, TRI (manuales) y Ausentismo (auto) al
-          // inicio; luego los KPIs operativos; al final el resto de manuales.
-          const esLtiTri = (n: string) => {
+          // Reordenamiento pedido: el bloque SIF (Actual/Potencial/Precursor,
+          // ex-LTI/TRI) y Ausentismo —todos de carga manual— van al inicio;
+          // luego los KPIs operativos AUTO; al final el resto de los manuales.
+          // sifRank ordena el bloque SIF y reconoce los nombres viejos (lti/tri)
+          // por si el deploy va antes que el rename en la base.
+          const sifRank = (n: string): number | null => {
             const l = n.trim().toLowerCase()
-            return l === "lti" || l === "tri"
+            if (l === "sif actual" || l === "lti") return 0
+            if (l === "sif potencial" || l === "tri") return 1
+            if (l === "sif precursor") return 2
+            return null
           }
-          const ltiTriRows = indicadores
-            .filter((i) => esLtiTri(i.nombre))
-            .sort((a) => (a.nombre.trim().toLowerCase() === "lti" ? -1 : 1))
-          const otrosManuales = indicadores.filter((i) => !esLtiTri(i.nombre))
+          const esAusentismo = (n: string) => n.trim().toLowerCase() === "ausentismo"
+          const sifRows = indicadores
+            .filter((i) => sifRank(i.nombre) !== null)
+            .sort((a, b) => (sifRank(a.nombre) ?? 99) - (sifRank(b.nombre) ?? 99))
+          const ausentismoRows = indicadores.filter((i) => esAusentismo(i.nombre))
+          const otrosManuales = indicadores.filter(
+            (i) => sifRank(i.nombre) === null && !esAusentismo(i.nombre),
+          )
 
           const autosOrdenados = [
             bultosRow,
@@ -3496,8 +3502,8 @@ async function getIndicadoresMesCore(
               fechas,
               reuniones_por_fecha: reunionesPorFecha,
               indicadores: [
-                ...ltiTriRows,
-                ausentismoRow,
+                ...sifRows,
+                ...ausentismoRows,
                 ...autosOrdenados,
                 ...otrosManuales,
               ],
