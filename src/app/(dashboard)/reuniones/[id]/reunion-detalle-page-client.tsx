@@ -876,6 +876,60 @@ export function ReunionDetallePageClient({
   // Sincronización manual de Foxtrot (últimos 4 días) — solo Misiones/logística.
   const [sincronizando, setSincronizando] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  // Sync del día de hoy de todas las fuentes auto (Foxtrot + Cloudfleet, …).
+  // Cada fuente es un POST independiente; si una falla, las demás igual corren.
+  // Pensado para refrescar las liberaciones/rutas recién cargadas en la matinal.
+  const [sincronizandoHoy, setSincronizandoHoy] = useState(false)
+  const sincronizarHoy = async () => {
+    if (sincronizandoHoy || sincronizando) return
+    setSincronizandoHoy(true)
+    setSyncMsg(null)
+    const fuentes: {
+      nombre: string
+      url: string
+      resumen: (j: Record<string, unknown>) => string
+    }[] = [
+      {
+        nombre: "Foxtrot",
+        url: "/api/foxtrot/sync-manual?dias=1",
+        resumen: (j) => `Foxtrot: ${Number(j.rutas ?? 0)} rutas`,
+      },
+      {
+        nombre: "Cloudfleet",
+        url: "/api/cloudfleet/sync-manual",
+        resumen: (j) => `Cloudfleet: ${Number(j.total ?? 0)} checklists`,
+      },
+    ]
+    try {
+      const partes = await Promise.all(
+        fuentes.map(async (f) => {
+          try {
+            const res = await fetch(f.url, { method: "POST" })
+            const json = (await res.json().catch(() => ({}))) as Record<
+              string,
+              unknown
+            >
+            if (!res.ok) {
+              return `${f.nombre}: error (${json.error ?? res.statusText})`
+            }
+            return f.resumen(json)
+          } catch (e) {
+            return `${f.nombre}: ${e instanceof Error ? e.message : "error"}`
+          }
+        }),
+      )
+      const huboError = partes.some((p) => p.toLowerCase().includes("error"))
+      const cuerpo = `Hoy · ${partes.join(" · ")}`
+      setSyncMsg(huboError ? `Error: ${cuerpo}` : cuerpo)
+      const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
+      if ("data" in ind) setIndicadoresMes(ind.data)
+      router.refresh()
+    } finally {
+      setSincronizandoHoy(false)
+    }
+  }
+
   const sincronizarReciente = async () => {
     if (sincronizando) return
     setSincronizando(true)
@@ -1265,8 +1319,26 @@ export function ReunionDetallePageClient({
                 type="button"
                 variant="outline"
                 size="sm"
+                onClick={sincronizarHoy}
+                disabled={sincronizandoHoy || sincronizando}
+                title="Sincroniza el día de hoy: Foxtrot + Cloudfleet"
+              >
+                <RefreshCw
+                  className={cn(
+                    "mr-2 size-4",
+                    sincronizandoHoy && "animate-spin",
+                  )}
+                />
+                {sincronizandoHoy ? "Sincronizando…" : "Sync hoy"}
+              </Button>
+            )}
+            {muestraToggleSucursal && puedeEditar && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={sincronizarReciente}
-                disabled={sincronizando}
+                disabled={sincronizando || sincronizandoHoy}
                 title="Descarga de Foxtrot los últimos 4 días"
               >
                 <RefreshCw
