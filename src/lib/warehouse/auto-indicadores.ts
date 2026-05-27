@@ -23,6 +23,9 @@
 // ────────────────────────────────────────────────────────────────────
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+// Objetivo de venta mensual (HL) por categoría — denominador del target WQI.
+// Alias estable del team (mismo que consume Acarreo-RDF para planificador).
+const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
 
@@ -84,9 +87,12 @@ export interface WarehouseTargets {
 
 /**
  * Ventas esperadas en HL por mes — presupuesto, hoja "PRESUPUESTO 2026 MRP"
- * fila 17 ("Total en HL") del archivo cargado en dpo-app /presupuesto. Es el
- * denominador del target de WQI. Valores fijos por año: se agrega una entrada
- * nueva cuando se sube el presupuesto del año siguiente.
+ * fila 17 ("Total en HL") del archivo cargado en dpo-app /presupuesto.
+ *
+ * Denominador del target de WNP, y FALLBACK del denominador del target de WQI:
+ * para el WQI el valor preferido es el objetivo de venta del mes cargado en
+ * chess-dashboard /gerencial (ver fetchObjetivoVentaHl); esta tabla fija se usa
+ * sólo si ese objetivo no está cargado o el fetch falla. Valores fijos por año.
  */
 const VENTAS_HL_PRESUPUESTO: Record<number, Record<number, number>> = {
   2026: {
@@ -624,6 +630,28 @@ async function buildSerieLegacy(
   return { wqi, fgli, scl, capacidad, precision, productividad, errores_dia }
 }
 
+interface ObjetivoVentaResponse {
+  total?: number | null
+}
+
+/**
+ * Total de venta esperada del mes en HL (cervezas+aguas+ung) desde
+ * chess-dashboard /gerencial (empresa pampeana, que es la operación del módulo
+ * warehouse). Denominador preferido del target de WQI. Devuelve null si el fetch
+ * falla o el mes no tiene objetivo cargado (total 0), para que el caller caiga
+ * al presupuesto fijo.
+ */
+async function fetchObjetivoVentaHl(
+  year: number,
+  month: number,
+): Promise<number | null> {
+  const res = await fetchJsonSafe<ObjetivoVentaResponse>(
+    `${CHESS_DASHBOARD_BASE}/api/objetivos-venta?anio=${year}&mes=${month}&empresa=pampeana`,
+  )
+  const total = res?.total
+  return typeof total === "number" && total > 0 ? total : null
+}
+
 /**
  * Trae de /api/indicadores/serie-diaria:
  *  - Series MTD acumuladas (roturas/faltantes) para que la columna MTD del
@@ -700,13 +728,17 @@ async function fetchSerieExtra(
   }
 
   // Target de WQI (PPM): HL de roturas presupuestadas / HL de ventas
-  // esperadas del mes × 1M. Las roturas presupuestadas vienen del endpoint;
-  // las ventas esperadas, de la tabla fija del presupuesto.
+  // esperadas del mes × 1M. Roturas presupuestadas: del endpoint serie-diaria.
+  // Ventas esperadas: objetivo de venta del mes cargado en chess-dashboard
+  // /gerencial (cervezas+aguas+ung); si no está cargado o el fetch falla, se cae
+  // al presupuesto fijo (ventasHl). El target de WNP, más abajo, sigue usando el
+  // presupuesto.
   const roturasTarget = res?.targets?.roturas ?? null
   const ventasHl = VENTAS_HL_PRESUPUESTO[year]?.[month] ?? null
+  const ventasHlWqi = (await fetchObjetivoVentaHl(year, month)) ?? ventasHl
   const wqiTarget =
-    roturasTarget !== null && ventasHl
-      ? Math.round((roturasTarget / ventasHl) * 1_000_000)
+    roturasTarget !== null && ventasHlWqi
+      ? Math.round((roturasTarget / ventasHlWqi) * 1_000_000)
       : null
 
   // Target de WNP (HL/HH): (HL ventas presupuestadas − pérdidas presupuestadas)
