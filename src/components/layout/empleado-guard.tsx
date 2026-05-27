@@ -11,6 +11,8 @@ const ALLOWED_PATHS = [
   "/vehiculos/combustible",
   "/reportar-seguridad",
   "/clasificacion-envases",
+  "/mi-orden-del-dia",
+  "/rrhh/mis-solicitudes",
 ]
 
 function isAllowed(pathname: string) {

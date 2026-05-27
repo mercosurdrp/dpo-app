@@ -19,7 +19,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 const items = [
   // Orden de salida del día: módulo de distribución (solo Misiones).
   ...(IS_MISIONES
-    ? [{ label: "Mi orden del día", href: "/mi-orden-del-dia", icon: CalendarCheck }]
+    ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: CalendarCheck }]
     : []),
   { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
