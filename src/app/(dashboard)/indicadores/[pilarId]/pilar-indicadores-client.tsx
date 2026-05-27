@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
   Accordion,
@@ -20,10 +20,18 @@ import {
   Minus,
   Target,
   ChevronRight,
+  Calculator,
+  ExternalLink,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
 import type { BloqueIndicadores } from "@/actions/indicadores"
 import { TENDENCIA_LABELS } from "@/lib/constants"
+import { IS_MISIONES } from "@/lib/empresa"
+
+// Simulador de Dimensionamiento Operativo (app standalone, tenant Misiones).
+// Se muestra como acceso dentro del pilar Planeamiento sólo en Misiones.
+const SIMULADOR_URL =
+  process.env.NEXT_PUBLIC_SIMULADOR_URL ?? "https://dimensionamiento-misiones.vercel.app"
 
 interface Props {
   pilar: Pilar
@@ -122,6 +130,42 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
           </p>
         </div>
       </div>
+
+      {/* Acceso al Simulador de Dimensionamiento (sólo Misiones, pilar Planeamiento) */}
+      {IS_MISIONES && pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <Calculator className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Simulador de Dimensionamiento Operativo
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Escenarios de dotación, plan vs. real y plan de acción del almacén
+                  </p>
+                </div>
+              </div>
+              <a
+                href={SIMULADOR_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir simulador
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
