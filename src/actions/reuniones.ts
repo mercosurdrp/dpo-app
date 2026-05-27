@@ -2276,6 +2276,99 @@ export async function setIndicadorValor(
   }
 }
 
+// =====================================================================
+// Semáforo de seguridad del día (Etapa 1, al lado de la pirámide).
+// Solo Misiones — la tabla reuniones_seguridad_semaforo existe únicamente
+// en ese tenant (ver APLICAR_EN_MISIONES_REUNIONES_SEGURIDAD_SEMAFORO.sql).
+// El componente gatea con IS_MISIONES, así que estas acciones no se llaman
+// en Pampeana.
+// =====================================================================
+export type SemaforoEstado = "rojo" | "amarillo" | "verde"
+const SEMAFORO_ESTADOS: SemaforoEstado[] = ["rojo", "amarillo", "verde"]
+
+export async function getSeguridadSemaforo(
+  reunionId: string,
+): Promise<Result<{ estado: SemaforoEstado | null }>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!reunionId) return { error: "ID de reunión inválido" }
+
+    const { data, error } = await supabase
+      .from("reuniones_seguridad_semaforo")
+      .select("estado")
+      .eq("reunion_id", reunionId)
+      .maybeSingle()
+
+    if (error) return { error: error.message }
+    return {
+      data: { estado: (data?.estado ?? null) as SemaforoEstado | null },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error cargando semáforo de seguridad",
+    }
+  }
+}
+
+export async function setSeguridadSemaforo(
+  reunionId: string,
+  estado: SemaforoEstado,
+): Promise<Result<{ estado: SemaforoEstado }>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!SEMAFORO_ESTADOS.includes(estado))
+      return { error: "Estado de semáforo inválido" }
+
+    // Permiso: editor O asistente activo de la reunión (igual que indicadores).
+    if (!isEditorRole(profile.role)) {
+      const { data: asis } = await supabase
+        .from("reuniones_asistentes")
+        .select("id")
+        .eq("reunion_id", reunionId)
+        .eq("profile_id", profile.id)
+        .maybeSingle()
+      if (!asis) {
+        return {
+          error:
+            "Solo editores o asistentes de la reunión pueden marcar el semáforo",
+        }
+      }
+    }
+
+    // UPSERT por reunion_id (una marca por reunión / día).
+    const { error } = await supabase
+      .from("reuniones_seguridad_semaforo")
+      .upsert(
+        {
+          reunion_id: reunionId,
+          estado,
+          actualizado_por: profile.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "reunion_id" },
+      )
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { estado } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error guardando semáforo de seguridad",
+    }
+  }
+}
+
 export async function getResumenSemanal(
   tipo: TipoReunion,
   fechaDesde: string,

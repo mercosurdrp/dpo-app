@@ -1226,7 +1226,11 @@ export function ReunionDetallePageClient({
       )}
 
       {/* ETAPA 1: SEGURIDAD */}
-      <EtapaSeguridad fechaReunion={detalle.fecha} />
+      <EtapaSeguridad
+        fechaReunion={detalle.fecha}
+        reunionId={detalle.id}
+        puedeEditar={puedeEditarTablero}
+      />
 
       {/* ETAPA 2: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">
