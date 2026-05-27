@@ -21,6 +21,7 @@ import {
   buildMisionesLogisticaSerie,
   type MisionesSucursal,
 } from "@/lib/foxtrot/auto-indicadores-misiones"
+import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getAusentismoSerie } from "@/actions/asistencia"
 import type {
@@ -2678,6 +2679,10 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("ocupación de bodega")
         NOMBRES_AUTO.add("ocupacion de bodega")
         NOMBRES_AUTO.add("errores")
+        NOMBRES_AUTO.add("checks aprobados")
+        NOMBRES_AUTO.add("checks rechazados")
+        NOMBRES_AUTO.add("ae aprobados")
+        NOMBRES_AUTO.add("adherencia a checks")
       } else {
         NOMBRES_AUTO.add("wqi")
         NOMBRES_AUTO.add("wnp")
@@ -3574,6 +3579,38 @@ async function getIndicadoresMesCore(
             (i) => sifRank(i.nombre) === null && !esAusentismo(i.nombre),
           )
 
+          // Checks de Cloudfleet (liberación/retorno/AE) — solo Misiones. Se
+          // leen de cloudfleet_checklists (con refresh best-effort del día de
+          // hoy adentro del helper). Adherencia usa la Cantidad de camiones de
+          // Foxtrot como denominador: (LIB + RET) / (2 × camiones) × 100.
+          const cf = await buildCloudfleetChecksSerie(supabase, fechas, sucursal)
+          const adherenciaChecks: Record<string, number | null> = {}
+          for (const f of fechas) {
+            const camiones = ms.rutas_distribucion[f]
+            const lib = cf.lib_count[f] ?? 0
+            const ret = cf.ret_count[f] ?? 0
+            adherenciaChecks[f] =
+              camiones && camiones > 0
+                ? ((lib + ret) / (2 * camiones)) * 100
+                : null
+          }
+          const checksAprobadosRow = buildSerieRow(
+            "auto_checks_aprobados", "Checks Aprobados", "checks",
+            cf.checks_aprobados, "suma", null, "mayor",
+          )
+          const checksRechazadosRow = buildSerieRow(
+            "auto_checks_rechazados", "Checks Rechazados", "checks",
+            cf.checks_rechazados, "suma", 0, "menor",
+          )
+          const aeAprobadosRow = buildSerieRow(
+            "auto_ae_aprobados", "AE Aprobados", "checks",
+            cf.ae_aprobados, "suma", null, "mayor",
+          )
+          const adherenciaChecksRow = buildSerieRow(
+            "auto_adherencia_checks", "Adherencia a checks", "%",
+            adherenciaChecks, "promedio", 100, "mayor",
+          )
+
           const autosOrdenados = [
             bultosRow,
             hlRow,
@@ -3586,6 +3623,10 @@ async function getIndicadoresMesCore(
             tiempoPdvRow,
             tmlRow,
             erroresRow,
+            checksAprobadosRow,
+            checksRechazadosRow,
+            aeAprobadosRow,
+            adherenciaChecksRow,
           ]
 
           return {
