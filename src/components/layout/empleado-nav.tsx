@@ -21,7 +21,7 @@ const items = [
   ...(IS_MISIONES
     ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: CalendarCheck }]
     : []),
-  { label: "Capacitaciones", href: "/mis-capacitaciones", icon: GraduationCap },
+  { label: "Inicio", href: "/mis-capacitaciones", icon: GraduationCap },
   { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   // Clasificar envases: solo Pampeana (Depósito Esteban).
   ...(IS_MISIONES
