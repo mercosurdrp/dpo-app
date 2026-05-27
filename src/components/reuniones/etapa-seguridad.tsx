@@ -101,9 +101,9 @@ function SemaforoDelDia({
   onElegir: (estado: SemaforoEstado) => void
 }) {
   return (
-    <div className="flex shrink-0 flex-col items-center gap-2 self-center rounded-lg border border-slate-200 bg-white p-3">
-      <p className="text-xs font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-2.5 rounded-md bg-slate-800 px-2.5 py-3">
+    <div className="flex shrink-0 flex-col items-center gap-2.5 self-center rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-sm font-semibold text-slate-700">Estado del día</p>
+      <div className="flex flex-col items-center gap-3.5 rounded-lg bg-slate-800 px-4 py-5">
         {SEMAFORO_LUCES.map((luz) => {
           const activo = estado === luz.estado
           return (
@@ -116,9 +116,9 @@ function SemaforoDelDia({
               aria-label={luz.label}
               aria-pressed={activo}
               className={cn(
-                "size-7 rounded-full transition",
+                "size-11 rounded-full transition",
                 activo
-                  ? `${luz.on} shadow ring-2 ring-white`
+                  ? `${luz.on} shadow ring-[3px] ring-white`
                   : "bg-slate-600/50",
                 puedeEditar && !guardando
                   ? "cursor-pointer hover:opacity-90"
@@ -128,7 +128,7 @@ function SemaforoDelDia({
           )
         })}
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {formatFechaCorta(fecha)}
       </p>
       {!puedeEditar && (
