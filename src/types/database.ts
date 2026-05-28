@@ -2552,6 +2552,8 @@ export interface ReunionIndicadorConfig {
   nombre: string
   unidad: string | null
   meta: number | null
+  gatillo: number | null
+  mejor_si: "alto" | "bajo" | "sin" | null
   orden: number
   activo: boolean
   agregacion: AgregacionIndicador
