@@ -22,6 +22,11 @@ import {
   type ChessCredentials,
   type SyncDayResult,
 } from "@/lib/sync/rechazos-sync"
+import {
+  syncChessArticulos,
+  recalcOcupacionBodegaDia,
+  updateIndicadorOB,
+} from "@/lib/sync/ocupacion-bodega"
 
 const CHESS_BASE = process.env.CHESS_API_BASE_URL
 const CHESS_USER = process.env.CHESS_API_USER
@@ -182,6 +187,34 @@ export async function POST(request: NextRequest) {
       if ("data" in result) kpisCalculados += result.data.calculados
     }
 
+    // ---- Ocupación de Bodega (CEq) ----
+    // 1) sync maestro de SKU (skip si fue corrido hace <20h)
+    // 2) recalcular OB diaria para cada fecha procesada
+    // 3) update indicador OB con AVG MTD
+    let obMaestroNew = 0, obMaestroSkip = false, obDias = 0, obViajes = 0
+    let obIndUpdated = false, obIndAvg = 0
+    try {
+      const m = await syncChessArticulos(supabase, chess, sessionId)
+      obMaestroSkip = m.skipped
+      obMaestroNew = m.total
+      const ob = new Date(desde)
+      while (ob <= hasta) {
+        const f = ob.toISOString().slice(0, 10)
+        const r = await recalcOcupacionBodegaDia(supabase, chess, sessionId, f)
+        obDias++; obViajes += r.viajes
+        ob.setDate(ob.getDate() + 1)
+      }
+      const ind = await updateIndicadorOB(supabase)
+      obIndUpdated = ind.updated; obIndAvg = ind.avg
+    } catch (eOB) {
+      console.error("[ob] error:", eOB instanceof Error ? eOB.message : String(eOB))
+      errors.push({ day: null, kind: "ocupacion_bodega", message: eOB instanceof Error ? eOB.message : String(eOB) })
+    }
+    console.log(
+      `[ob] maestro_skipped=${obMaestroSkip} maestro_total=${obMaestroNew} ` +
+      `dias=${obDias} viajes=${obViajes} indicador_avg=${obIndAvg} updated=${obIndUpdated}`
+    )
+
     const durationMs = Date.now() - startedAt
     console.log(
       `[sync] done source=${source} dias=${totalDias} sin_datos=${diasSinDatos} ` +
@@ -211,6 +244,14 @@ export async function POST(request: NextRequest) {
       dias_sin_datos: diasSinDatos,
       kpis_calculados: kpisCalculados,
       chofer: { mapeo: chMap, sin_resolver: chSin },
+      ocupacion_bodega: {
+        maestro_skipped: obMaestroSkip,
+        maestro_total: obMaestroNew,
+        dias: obDias,
+        viajes: obViajes,
+        indicador_updated: obIndUpdated,
+        indicador_avg_ceq: obIndAvg,
+      },
       errors,
       duration_ms: durationMs,
     })

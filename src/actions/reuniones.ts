@@ -3127,6 +3127,58 @@ async function getIndicadoresMesCore(
       }
     }
 
+    // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos.
+    //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos):
+    //   CEq = 120/bultosPallet × cantidadesTotal sumado por (patente, día).
+    //   Valor diario = AVG(ceq_total) de los viajes del día. MTD análogo.
+    //   Unidad: CEq · Meta: 450 · mejor_si=mayor.
+    {
+      const { data: obRaw, error: errOB } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("fecha, ceq_total")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .gt("ceq_total", 0)
+      if (!errOB) {
+        const sumPorFecha: Record<string, number> = {}
+        const countPorFecha: Record<string, number> = {}
+        for (const r of (obRaw ?? []) as Array<{ fecha: string; ceq_total: number | null }>) {
+          const v = Number(r.ceq_total ?? 0)
+          if (!Number.isFinite(v) || v === 0) continue
+          sumPorFecha[r.fecha] = (sumPorFecha[r.fecha] ?? 0) + v
+          countPorFecha[r.fecha] = (countPorFecha[r.fecha] ?? 0) + 1
+        }
+        const valoresOB: Record<string, { reunion_id: string; valor: number | null; observacion: string | null } | null> = {}
+        let sumMtd = 0
+        let countMtd = 0
+        for (const f of fechas) {
+          const cnt = countPorFecha[f] ?? 0
+          if (cnt === 0) {
+            valoresOB[f] = null
+          } else {
+            const avgDia = sumPorFecha[f] / cnt
+            valoresOB[f] = { reunion_id: "", valor: Math.round(avgDia * 10) / 10, observacion: null }
+            sumMtd += sumPorFecha[f]
+            countMtd += cnt
+          }
+        }
+        const mtdOB = countMtd > 0 ? Math.round((sumMtd / countMtd) * 10) / 10 : null
+
+        indicadoresAuto.push({
+          id: "auto_ocupacion_bodega",
+          nombre: "Ocupación de Bodega",
+          unidad: "CEq",
+          meta: 450,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresOB,
+          mtd: mtdOB,
+          auto: true,
+          mejor_si: "mayor",
+        })
+      }
+    }
+
     // 7e. Indicadores AUTO "Camiones a la calle" + "Checklist" — solo en
     //     reuniones de Logística y Matinal Distribución. Cada checklist de
     //     liberación (checklist_vehiculos.tipo='liberacion') = un camión

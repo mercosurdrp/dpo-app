@@ -32,7 +32,7 @@ export interface SyncDayResult {
   ventas_diarias_upserted: number
   total_rechazos_intentados: number
   chofer: { mapeo: number; sin_resolver: number }
-  errors: Array<{ day: string; kind: "rechazo" | "ventas_diarias"; message: string }>
+  errors: Array<{ day: string | null; kind: "rechazo" | "ventas_diarias" | "ocupacion_bodega" | "fatal"; message: string }>
 }
 
 export interface ChessCredentials {
