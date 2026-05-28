@@ -741,15 +741,8 @@ async function fetchSerieExtra(
       ? Math.round((roturasTarget / ventasHlWqi) * 1_000_000)
       : null
 
-  // Target de WNP (HL/HH): (HL ventas presupuestadas − pérdidas presupuestadas)
-  // / horas planificadas del mes. Ventas esperadas de la tabla fija del
-  // presupuesto; pérdidas (targets.fgli) y horas plan. del endpoint de deposito.
-  const perdidasHl = res?.targets?.fgli ?? 0
-  const horasPlan = res?.horas_plan_mes ?? null
-  const wnpTarget =
-    ventasHl && horasPlan
-      ? Math.round(((ventasHl - perdidasHl) / horasPlan) * 100) / 100
-      : null
+  // Target de WNP (HL/HH): fijo en 6 por pedido de logística.
+  const wnpTarget = 6
 
   return {
     roturas,
