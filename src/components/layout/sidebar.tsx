@@ -259,6 +259,12 @@ export const rrhhSections: NavSection[] = [
         icon: <CalendarRange className="size-5" />,
       },
       {
+        label: "Ausentismo",
+        href: "/ausentismo",
+        icon: <ClockAlert className="size-5" />,
+        pampeanaOnly: true,
+      },
+      {
         label: "Jornadas",
         href: "/rrhh/jornadas",
         icon: <ClockAlert className="size-5" />,
@@ -406,7 +412,9 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
                 </div>
               )}
               <div className="space-y-1">
-                {sec.items.map((item) => {
+                {sec.items
+                  .filter((item) => !(item.pampeanaOnly && IS_MISIONES))
+                  .map((item) => {
                   const isActive = pathname.startsWith(item.href)
                   return (
                     <Link

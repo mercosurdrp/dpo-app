@@ -2744,3 +2744,110 @@ export interface HerramientaGestionConContexto extends HerramientaGestion {
   reunion_tipo: string | null
   actividad_descripcion: string | null
 }
+
+// ===== Ausentismo (Pampeana) =====
+export type AusentismoMotivo =
+  | "ausencia"
+  | "licencia_medica"
+  | "enfermedad_profesional"
+  | "accidente"
+  | "otras_licencias"
+  | "licencia_gremial"
+
+export const AUSENTISMO_MOTIVOS: AusentismoMotivo[] = [
+  "ausencia",
+  "licencia_medica",
+  "enfermedad_profesional",
+  "accidente",
+  "otras_licencias",
+  "licencia_gremial",
+]
+
+export const AUSENTISMO_MOTIVO_LABELS: Record<AusentismoMotivo, string> = {
+  ausencia: "Ausencia",
+  licencia_medica: "Licencia Médica",
+  enfermedad_profesional: "Enfermedad Profesional",
+  accidente: "Accidente",
+  otras_licencias: "Otras licencias",
+  licencia_gremial: "Licencia Gremial",
+}
+
+export const AUSENTISMO_MOTIVO_COLORS: Record<AusentismoMotivo, string> = {
+  ausencia: "#64748B",
+  licencia_medica: "#3B82F6",
+  enfermedad_profesional: "#A855F7",
+  accidente: "#EF4444",
+  otras_licencias: "#F59E0B",
+  licencia_gremial: "#10B981",
+}
+
+export interface AusentismoEvento {
+  id: string
+  empleado_id: string
+  fecha_inicio: string
+  dias: number
+  fecha_fin: string
+  motivo: AusentismoMotivo
+  comentario: string | null
+  archivo_path: string | null
+  archivo_nombre: string | null
+  archivo_mime: string | null
+  archivo_size: number | null
+  created_at: string
+  created_by: string | null
+  updated_at: string
+  updated_by: string | null
+}
+
+export interface AusentismoEventoConEmpleado extends AusentismoEvento {
+  empleado_nombre: string
+  empleado_legajo: number
+  empleado_sector: string | null
+}
+
+export interface AusentismoEmpleadoOpcion {
+  id: string
+  legajo: number
+  nombre: string
+  sector: string | null
+}
+
+export interface AusentismoResumenMotivo {
+  motivo: AusentismoMotivo
+  eventos: number
+  dias_totales: number
+}
+
+export interface AusentismoResumenMes {
+  year_month: string // YYYY-MM
+  eventos_total: number
+  dias_total: number
+  por_motivo: AusentismoResumenMotivo[]
+}
+
+export interface AusentismoRepitenciaEmpleado {
+  empleado_id: string
+  empleado_nombre: string
+  empleado_legajo: number
+  empleado_sector: string | null
+  eventos: number
+  dias_totales: number
+  promedio_dias: number
+  ultimo_evento: string // ISO date
+  motivo_predominante: AusentismoMotivo
+}
+
+export interface AusentismoLicenciasMedicasMesBucket {
+  year_month: string // YYYY-MM
+  eventos: number
+  dias_totales: number
+}
+
+export interface AusentismoLicenciasMedicasReporte {
+  total_eventos: number
+  total_dias: number
+  empleados_con_lm: number
+  empleados_con_repitencia: number
+  top_empleados: AusentismoRepitenciaEmpleado[]
+  por_mes: AusentismoLicenciasMedicasMesBucket[]
+}
