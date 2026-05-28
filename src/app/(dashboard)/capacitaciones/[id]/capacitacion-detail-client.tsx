@@ -152,7 +152,8 @@ export function CapacitacionDetailClient({
     const presentes = cap.asistencias.filter((a) => a.presente).length
     const aprobados = cap.asistencias.filter((a) => a.resultado === "aprobado").length
     const desaprobados = cap.asistencias.filter((a) => a.resultado === "desaprobado").length
-    return { total, presentes, aprobados, desaprobados }
+    const pctAprobados = total > 0 ? Math.round((aprobados / total) * 100) : null
+    return { total, presentes, aprobados, desaprobados, pctAprobados }
   }, [cap.asistencias])
 
   async function handleEstadoChange(estado: EstadoCapacitacion) {
@@ -445,11 +446,16 @@ export function CapacitacionDetailClient({
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Inscriptos" value={stats.total} color="#6366F1" />
         <StatCard label="Presentes" value={stats.presentes} color="#3B82F6" />
         <StatCard label="Aprobados" value={stats.aprobados} color="#10B981" />
         <StatCard label="Desaprobados" value={stats.desaprobados} color="#EF4444" />
+        <StatCard
+          label="% Aprobados / Inscriptos"
+          value={stats.pctAprobados != null ? `${stats.pctAprobados}%` : "—"}
+          color="#0EA5E9"
+        />
       </div>
 
       {/* Puntos DPO vinculados */}
@@ -1619,14 +1625,17 @@ function StatCard({
   color,
 }: {
   label: string
-  value: number
+  value: number | string
   color: string
 }) {
+  const isLong = typeof value === "string" && value.length > 3
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-4">
         <div
-          className="flex size-10 items-center justify-center rounded-lg text-lg font-bold text-white"
+          className={`flex h-10 min-w-10 items-center justify-center rounded-lg font-bold text-white ${
+            isLong ? "px-2 text-base" : "text-lg"
+          }`}
           style={{ backgroundColor: color }}
         >
           {value}
