@@ -15,6 +15,7 @@ import {
   Send,
   Eye,
   Info,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +43,7 @@ import {
 import { SubirPresupuestoAnualDialog } from "@/components/presupuesto/subir-presupuesto-anual-dialog"
 import { SubirEerrAnualDialog } from "@/components/presupuesto/subir-eerr-anual-dialog"
 import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
+import { GenerarTareasDialog } from "@/components/presupuesto/generar-tareas-dialog"
 import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-dialog"
 import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type {
@@ -191,6 +193,8 @@ export function PresupuestoClient({
   const [openEerr, setOpenEerr] = useState(false)
   // Diálogos: tarea
   const [openTarea, setOpenTarea] = useState(false)
+  // Diálogos: generar tareas desde EERR
+  const [openGenerar, setOpenGenerar] = useState(false)
   const [tareaEditando, setTareaEditando] =
     useState<PresupuestoTareaConResponsable | null>(null)
   // Diálogos: responder tarea
@@ -540,17 +544,30 @@ export function PresupuestoClient({
             </span>
           </h2>
           {puedeEditar && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setTareaEditando(null)
-                setOpenTarea(true)
-              }}
-            >
-              <Plus className="mr-2 size-4" />
-              Nueva tarea
-            </Button>
+            <div className="flex gap-2">
+              {eerr && eerr.archivo_url && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setOpenGenerar(true)}
+                >
+                  <Sparkles className="mr-2 size-4" />
+                  Generar tareas sugeridas
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setTareaEditando(null)
+                  setOpenTarea(true)
+                }}
+              >
+                <Plus className="mr-2 size-4" />
+                Nueva tarea
+              </Button>
+            </div>
           )}
         </div>
 
@@ -775,6 +792,14 @@ export function PresupuestoClient({
             anio={anioActivo}
             defaultMes={mesActivo}
             tarea={tareaEditando}
+            responsables={responsables}
+            onSaved={refrescar}
+          />
+          <GenerarTareasDialog
+            open={openGenerar}
+            onOpenChange={setOpenGenerar}
+            anio={anioActivo}
+            defaultMes={mesActivo}
             responsables={responsables}
             onSaved={refrescar}
           />

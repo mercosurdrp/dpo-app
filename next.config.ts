@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   },
   // pdfkit lee archivos .afm via fs.readFileSync — debe quedar como native
   // require de Node para que los assets se resuelvan correctamente en runtime.
-  serverExternalPackages: ["pdfkit"],
+  serverExternalPackages: ["pdfkit", "xlsx"],
 };
 
 export default nextConfig;
