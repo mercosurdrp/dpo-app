@@ -414,7 +414,7 @@ async function generarPdfIshikawa(
     }
   }
   recuadro(55, 365, "CAUSA RAÍZ", c.causa_raiz, C.amber, rgb(0.99, 0.97, 0.9), rgb(0.4, 0.26, 0.02))
-  recuadro(440, W - 40 - 440, "CONTRAACCIÓN", c.contramedida, C.emerald, rgb(0.92, 0.98, 0.95), rgb(0.03, 0.34, 0.24))
+  recuadro(440, W - 40 - 440, "CONTRAACCIÓN", c.contramedida ?? "", C.emerald, rgb(0.92, 0.98, 0.95), rgb(0.03, 0.34, 0.24))
 
   // pie
   T(
