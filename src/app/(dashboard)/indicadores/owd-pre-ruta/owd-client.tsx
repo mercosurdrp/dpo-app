@@ -320,7 +320,6 @@ export function OwdClient({ kpis, observaciones }: Props) {
                     <TableHead>Supervisor</TableHead>
                     <TableHead>Empleado observado</TableHead>
                     <TableHead>Rol</TableHead>
-                    <TableHead>Dominio</TableHead>
                     <TableHead className="text-right">OK/NOOK</TableHead>
                     <TableHead className="text-right">%</TableHead>
                     <TableHead className="text-right">Detalle</TableHead>
@@ -336,9 +335,6 @@ export function OwdClient({ kpis, observaciones }: Props) {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {o.rol_empleado || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {o.dominio || "—"}
                       </TableCell>
                       <TableCell className="text-right text-sm">
                         <span className="text-green-600">{o.total_ok}</span>
