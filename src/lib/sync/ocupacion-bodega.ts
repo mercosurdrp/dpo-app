@@ -74,30 +74,12 @@ export async function syncChessArticulos(
     return null
   }
 
+  // Chess pagina y a veces devuelve el mismo idArticulo en lotes distintos
+  // (versiones, alias). Deduplicamos en memoria por idArticulo antes de
+  // upsertear — quedan los datos del lote más reciente.
+  const dedup = new Map<number, ChessArticulo>()
   let page = 0
   let total = 0
-  let conBp = 0
-  const batchSize = 500
-  let batch: ChessArticulo[] = []
-
-  const flush = async () => {
-    if (batch.length === 0) return
-    const rows = batch.map(a => ({
-      id_articulo: a.idArticulo,
-      des_articulo: a.desArticulo,
-      des_corta: a.desCortaArticulo,
-      bultos_pallet: a.bultosPallet && a.bultosPallet > 0 ? a.bultosPallet : null,
-      unidades_bulto: a.unidadesBulto,
-      valor_unidad_medida: a.valorUnidadMedida,
-      peso_bulto: a.pesoBulto,
-      des_unidad_medida: a.desUnidadMedida,
-      anulado: a.anulado,
-      last_synced_at: new Date().toISOString(),
-    }))
-    const { error } = await supabase.from("chess_articulos").upsert(rows, { onConflict: "id_articulo" })
-    if (error) console.error(`[OB] upsert chess_articulos: ${error.message}`)
-    batch = []
-  }
 
   while (page < 200) {
     const r = await chessFetch(`${creds.baseUrl}/articulos/?nroLote=${page}`, {
@@ -109,13 +91,32 @@ export async function syncChessArticulos(
     if (!arr || arr.length === 0) break
     for (const a of arr) {
       total++
-      if (a.bultosPallet && a.bultosPallet > 0) conBp++
-      batch.push(a)
-      if (batch.length >= batchSize) await flush()
+      dedup.set(a.idArticulo, a)
     }
     page++
   }
-  await flush()
+
+  const rows = [...dedup.values()].map(a => ({
+    id_articulo: a.idArticulo,
+    des_articulo: a.desArticulo,
+    des_corta: a.desCortaArticulo,
+    bultos_pallet: a.bultosPallet && a.bultosPallet > 0 ? a.bultosPallet : null,
+    unidades_bulto: a.unidadesBulto,
+    valor_unidad_medida: a.valorUnidadMedida,
+    peso_bulto: a.pesoBulto,
+    des_unidad_medida: a.desUnidadMedida,
+    anulado: a.anulado,
+    last_synced_at: new Date().toISOString(),
+  }))
+  const conBp = rows.filter(r => r.bultos_pallet !== null).length
+
+  const batchSize = 500
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const { error } = await supabase
+      .from("chess_articulos")
+      .upsert(rows.slice(i, i + batchSize), { onConflict: "id_articulo" })
+    if (error) console.error(`[OB] upsert chess_articulos: ${error.message}`)
+  }
 
   return { skipped: false, total, conBp }
 }
@@ -147,15 +148,25 @@ export async function recalcOcupacionBodegaDia(
   sessionId: string,
   fecha: string,
 ): Promise<{ fecha: string; viajes: number; ceqTotal: number; lineas: number; skipNoBp: number }> {
-  // 1) Cargar maestro (idArticulo → bultos_pallet) desde la tabla local
-  const { data: maestroRows, error: errM } = await supabase
-    .from("chess_articulos")
-    .select("id_articulo, bultos_pallet")
-    .not("bultos_pallet", "is", null)
-  if (errM) console.error(`[OB] read maestro: ${errM.message}`)
+  // 1) Cargar maestro (idArticulo → bultos_pallet) desde la tabla local.
+  //    PostgREST tope a 1000 filas: paginamos con .range() hasta agotar.
   const bp = new Map<number, number>()
-  for (const r of maestroRows || []) {
-    if (r.bultos_pallet && r.bultos_pallet > 0) bp.set(r.id_articulo, r.bultos_pallet)
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data: rows, error: errM } = await supabase
+      .from("chess_articulos")
+      .select("id_articulo, bultos_pallet")
+      .not("bultos_pallet", "is", null)
+      .order("id_articulo", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (errM) { console.error(`[OB] read maestro: ${errM.message}`); break }
+    if (!rows || rows.length === 0) break
+    for (const r of rows) {
+      if (r.bultos_pallet && r.bultos_pallet > 0) bp.set(r.id_articulo, r.bultos_pallet)
+    }
+    if (rows.length < PAGE) break
+    from += PAGE
   }
 
   // 2) Bajar /ventas del día
