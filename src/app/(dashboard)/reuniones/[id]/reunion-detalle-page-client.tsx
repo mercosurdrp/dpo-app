@@ -1,6 +1,5 @@
 "use client"
 
-import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import {
   useCallback,
   useEffect,
@@ -70,8 +69,8 @@ import type {
   ReunionAsistenteConProfile,
   ReunionDetalle,
   TipoReunion,
+  UserRole,
 } from "@/types/database"
-import type { AsistenciaRango } from "@/actions/reunion-preruta"
 
 interface ResponsableOpt {
   id: string
@@ -101,7 +100,6 @@ interface IndicadorMesItem {
   auto?: boolean
   mostrar_cero?: boolean
   mejor_si?: "menor" | "mayor"
-  gatillo?: number | null
 }
 
 interface IndicadoresMesData {
@@ -110,36 +108,6 @@ interface IndicadoresMesData {
   fechas: string[]
   reuniones_por_fecha: Record<string, string | null>
   indicadores: IndicadorMesItem[]
-}
-
-type ZonaIndicador = "verde" | "amarillo" | "rojo"
-
-// Semáforo de 3 zonas a partir del target (meta), el gatillo y la polaridad.
-// Devuelve null si no hay datos para colorear (sin meta o sin polaridad).
-// `cruzoGatillo` = zona roja por haber cruzado el gatillo (→ ♻ mejora continua).
-//   mayor mejor: v>=meta verde · gatillo<=v<meta amarillo · v<gatillo rojo+♻
-//   menor mejor: v<=meta verde · meta<v<=gatillo amarillo · v>gatillo rojo+♻
-//   (sin gatillo: solo verde/rojo por meta, sin ♻)
-function evaluarZona(
-  valor: number,
-  meta: number | null | undefined,
-  gatillo: number | null | undefined,
-  mejorSi: "mayor" | "menor" | undefined,
-): { zona: ZonaIndicador; cruzoGatillo: boolean } | null {
-  if (meta == null || !mejorSi) return null
-  const cumpleMeta = mejorSi === "menor" ? valor <= meta : valor >= meta
-  if (cumpleMeta) return { zona: "verde", cruzoGatillo: false }
-  if (gatillo == null) return { zona: "rojo", cruzoGatillo: false }
-  const cruzo = mejorSi === "menor" ? valor > gatillo : valor < gatillo
-  return cruzo
-    ? { zona: "rojo", cruzoGatillo: true }
-    : { zona: "amarillo", cruzoGatillo: false }
-}
-
-const CLASE_ZONA: Record<ZonaIndicador, string> = {
-  verde: "bg-emerald-50 font-semibold text-emerald-700",
-  amarillo: "bg-amber-50 font-semibold text-amber-700",
-  rojo: "bg-red-50 font-semibold text-red-700",
 }
 
 interface SectorOpt {
@@ -162,13 +130,13 @@ interface RubroOpt {
 interface Props {
   detalle: ReunionDetalle & { actividades?: ReunionActividadConResponsable[] }
   indicadoresMes: IndicadoresMesData | null
-  asistenciaPreruta: AsistenciaRango | null
   responsables: ResponsableOpt[]
   sectoresAlmacen: SectorOpt[]
   vehiculos: VehiculoOpt[]
   rubrosMantenimiento: RubroOpt[]
   puedeEditar: boolean
   currentProfileId: string | null
+  currentRole: UserRole
 }
 
 const TIPO_LABELS: Record<TipoReunion, string> = {
@@ -197,101 +165,6 @@ function formatFechaCorta(iso: string | null): string {
     month: "2-digit",
     year: "numeric",
   })
-}
-
-// Hora del check-in (timestamptz) mostrada en hora de Argentina (UTC-3).
-function formatHoraAr(iso: string | null): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return d.toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Argentina/Buenos_Aires",
-  })
-}
-
-// Panel read-only que replica las marcaciones de la reunión Pre-Ruta del día
-// (check-in por legajo + minutos respecto al fichaje biométrico). Se nutre del
-// mismo origen que /indicadores/asistencia-matinal (getAsistenciaRango).
-function AsistenciaPrerutaPanel({ data }: { data: AsistenciaRango }) {
-  const presentes = [...data.detalle_dia].sort((a, b) => {
-    if (a.asistio !== b.asistio) return a.asistio ? -1 : 1
-    return a.nombre.localeCompare(b.nombre, "es")
-  })
-  const { resumen } = data
-  return (
-    <Card className="border-emerald-200 bg-emerald-50/30 lg:sticky lg:top-2 lg:z-10">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <Hand className="size-5 text-emerald-600" />
-          Asistencia
-          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-            Pre-Ruta
-          </span>
-          <Badge className="border-emerald-200 bg-emerald-100 text-base font-semibold text-emerald-800 hover:bg-emerald-100">
-            {resumen.asistencias} / {resumen.total_empleados} ({resumen.pct_asistencia}%)
-          </Badge>
-          {resumen.promedio_minutos != null && (
-            <span className="text-xs font-normal text-muted-foreground">
-              · prom. {resumen.promedio_minutos} min desde fichaje
-            </span>
-          )}
-        </CardTitle>
-        <Link
-          href="/indicadores/asistencia-matinal"
-          className="shrink-0 text-xs font-medium text-emerald-700 hover:underline"
-        >
-          Ver tablero →
-        </Link>
-      </CardHeader>
-      <CardContent>
-        {presentes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Sin personal de Distribución registrado para esta fecha.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {presentes.map((e) => (
-              <div
-                key={e.legajo}
-                className={cn(
-                  "flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
-                  e.asistio
-                    ? "border-emerald-200 bg-white"
-                    : "border-slate-200 bg-slate-50 text-slate-400",
-                )}
-              >
-                {e.asistio ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <X className="size-4 shrink-0 text-slate-300" />
-                )}
-                <span className="min-w-0 flex-1 truncate">
-                  {e.nombre}
-                  {e.sucursal && (
-                    <span className="ml-1 text-[10px] uppercase text-slate-400">
-                      {e.sucursal}
-                    </span>
-                  )}
-                </span>
-                {e.asistio && (
-                  <span className="shrink-0 text-xs tabular-nums text-slate-500">
-                    {formatHoraAr(e.hora_checkin)}
-                    {e.minutos_fichaje_reunion != null && (
-                      <span className="ml-1 text-slate-400">
-                        (+{e.minutos_fichaje_reunion}′)
-                      </span>
-                    )}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
 }
 
 function formatFechaHoraCorta(iso: string | null): string {
@@ -840,13 +713,13 @@ function ActividadListItem({
 export function ReunionDetallePageClient({
   detalle,
   indicadoresMes: indicadoresMesInicial,
-  asistenciaPreruta,
   responsables,
   sectoresAlmacen,
   vehiculos,
   rubrosMantenimiento,
   puedeEditar,
   currentProfileId,
+  currentRole,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -856,9 +729,7 @@ export function ReunionDetallePageClient({
   const [indicadoresMes, setIndicadoresMes] = useState<IndicadoresMesData | null>(
     indicadoresMesInicial,
   )
-  const muestraToggleSucursal =
-    IS_MISIONES &&
-    (detalle.tipo === "logistica" || detalle.tipo === "matinal-distribucion")
+  const muestraToggleSucursal = IS_MISIONES && detalle.tipo === "logistica"
   const [sucursalSel, setSucursalSel] = useState<
     "todo" | "eldorado" | "iguazu"
   >("todo")
@@ -876,60 +747,6 @@ export function ReunionDetallePageClient({
   // Sincronización manual de Foxtrot (últimos 4 días) — solo Misiones/logística.
   const [sincronizando, setSincronizando] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
-
-  // Sync del día de hoy de todas las fuentes auto (Foxtrot + Cloudfleet, …).
-  // Cada fuente es un POST independiente; si una falla, las demás igual corren.
-  // Pensado para refrescar las liberaciones/rutas recién cargadas en la matinal.
-  const [sincronizandoHoy, setSincronizandoHoy] = useState(false)
-  const sincronizarHoy = async () => {
-    if (sincronizandoHoy || sincronizando) return
-    setSincronizandoHoy(true)
-    setSyncMsg(null)
-    const fuentes: {
-      nombre: string
-      url: string
-      resumen: (j: Record<string, unknown>) => string
-    }[] = [
-      {
-        nombre: "Foxtrot",
-        url: "/api/foxtrot/sync-manual?dias=1",
-        resumen: (j) => `Foxtrot: ${Number(j.rutas ?? 0)} rutas`,
-      },
-      {
-        nombre: "Cloudfleet",
-        url: "/api/cloudfleet/sync-manual",
-        resumen: (j) => `Cloudfleet: ${Number(j.total ?? 0)} checklists`,
-      },
-    ]
-    try {
-      const partes = await Promise.all(
-        fuentes.map(async (f) => {
-          try {
-            const res = await fetch(f.url, { method: "POST" })
-            const json = (await res.json().catch(() => ({}))) as Record<
-              string,
-              unknown
-            >
-            if (!res.ok) {
-              return `${f.nombre}: error (${json.error ?? res.statusText})`
-            }
-            return f.resumen(json)
-          } catch (e) {
-            return `${f.nombre}: ${e instanceof Error ? e.message : "error"}`
-          }
-        }),
-      )
-      const huboError = partes.some((p) => p.toLowerCase().includes("error"))
-      const cuerpo = `Hoy · ${partes.join(" · ")}`
-      setSyncMsg(huboError ? `Error: ${cuerpo}` : cuerpo)
-      const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
-      if ("data" in ind) setIndicadoresMes(ind.data)
-      router.refresh()
-    } finally {
-      setSincronizandoHoy(false)
-    }
-  }
-
   const sincronizarReciente = async () => {
     if (sincronizando) return
     setSincronizando(true)
@@ -1067,16 +884,6 @@ export function ReunionDetallePageClient({
     return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
   }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
 
-  // Orden de columnas para mostrar. En Misiones las fechas van descendentes
-  // (más reciente a la izquierda) para facilitar la lectura del tablero; el
-  // resto de los datos (MTD, valores) son por fecha, así que invertir solo
-  // cambia el orden visual de las columnas. `fechasFiltradas` sigue ascendente
-  // para cualquier cálculo que dependa del orden cronológico.
-  const fechasMostradas = useMemo(
-    () => (IS_MISIONES ? [...fechasFiltradas].reverse() : fechasFiltradas),
-    [fechasFiltradas],
-  )
-
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
   const actividades: ReunionActividadConResponsable[] = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1150,7 +957,7 @@ export function ReunionDetallePageClient({
       alert(`Error abriendo archivo: ${result.error}`)
       return
     }
-    abrirArchivoEnVisor(result.data.url)
+    window.open(result.data.url, "_blank", "noopener,noreferrer")
   }
 
   function handleEliminarReunion() {
@@ -1220,10 +1027,7 @@ export function ReunionDetallePageClient({
         )}
       </div>
 
-      {/* ASISTENCIA manual (Marcar/Agregar). Oculta en la matinal de
-          distribución: ahí la asistencia es la de Pre-Ruta (fichaje), abajo,
-          para no tener dos contadores midiendo lo mismo. */}
-      {detalle.tipo !== "matinal-distribucion" && (
+      {/* ASISTENCIA — sticky en pantallas grandes */}
       <Card className="lg:sticky lg:top-2 lg:z-10">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -1281,19 +1085,12 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
-      )}
-
-      {/* ASISTENCIA — en la matinal de distribución ES la de Pre-Ruta (fichaje
-          del personal de Distribución), unificada con el apartado de arriba. */}
-      {detalle.tipo === "matinal-distribucion" && asistenciaPreruta && (
-        <AsistenciaPrerutaPanel data={asistenciaPreruta} />
-      )}
 
       {/* ETAPA 1: SEGURIDAD */}
       <EtapaSeguridad
         fechaReunion={detalle.fecha}
-        reunionId={detalle.id}
-        puedeEditar={puedeEditarTablero}
+        currentProfileId={currentProfileId}
+        currentRole={currentRole}
       />
 
       {/* ETAPA 2: TABLERO DE CONTROL */}
@@ -1319,26 +1116,8 @@ export function ReunionDetallePageClient({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={sincronizarHoy}
-                disabled={sincronizandoHoy || sincronizando}
-                title="Sincroniza el día de hoy: Foxtrot + Cloudfleet"
-              >
-                <RefreshCw
-                  className={cn(
-                    "mr-2 size-4",
-                    sincronizandoHoy && "animate-spin",
-                  )}
-                />
-                {sincronizandoHoy ? "Sincronizando…" : "Sync hoy"}
-              </Button>
-            )}
-            {muestraToggleSucursal && puedeEditar && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
                 onClick={sincronizarReciente}
-                disabled={sincronizando || sincronizandoHoy}
+                disabled={sincronizando}
                 title="Descarga de Foxtrot los últimos 4 días"
               >
                 <RefreshCw
@@ -1482,13 +1261,10 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[220px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Target
                     </th>
-                    <th className="sticky left-[280px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600" title="Umbral de alarma: cruzarlo exige análisis con herramientas de gestión">
-                      Gatillo
-                    </th>
-                    <th className="sticky left-[340px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
-                    {fechasMostradas.map((f) => {
+                    {fechasFiltradas.map((f) => {
                       const esHoy = f === detalle.fecha
                       const dom = esFinDeSemana(f)
                       return (
@@ -1521,17 +1297,14 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[220px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums">
                         {ind.meta == null ? "—" : formatearValor(ind.meta)}
                       </td>
-                      <td className="sticky left-[280px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums text-slate-500">
-                        {ind.gatillo == null ? "—" : formatearValor(ind.gatillo)}
-                      </td>
-                      <td className="sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
                         {ind.mtd_texto != null
                           ? ind.mtd_texto
                           : ind.mtd == null
                             ? "—"
                             : formatearValor(ind.mtd)}
                       </td>
-                      {fechasMostradas.map((f) => {
+                      {fechasFiltradas.map((f) => {
                         const cell = ind.valores[f] ?? null
                         const esHoy = f === detalle.fecha
                         const dom = esFinDeSemana(f)
@@ -1554,18 +1327,14 @@ export function ReunionDetallePageClient({
                           // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
                           // hay valor (mismo comportamiento histórico).
                           let colorClass = "bg-red-50 font-semibold text-red-700"
-                          let cruzoGatillo = false
-                          if (valor != null) {
-                            const z = evaluarZona(
-                              valor,
-                              ind.meta,
-                              ind.gatillo,
-                              ind.mejor_si,
-                            )
-                            if (z) {
-                              colorClass = CLASE_ZONA[z.zona]
-                              cruzoGatillo = z.cruzoGatillo
-                            }
+                          if (ind.mejor_si && ind.meta != null && valor != null) {
+                            const cumple =
+                              ind.mejor_si === "menor"
+                                ? valor <= ind.meta
+                                : valor >= ind.meta
+                            colorClass = cumple
+                              ? "bg-emerald-50 font-semibold text-emerald-700"
+                              : "bg-red-50 font-semibold text-red-700"
                           }
                           // Camiones a la calle: es un conteo neutro, no un
                           // accidente — no se pinta de rojo.
@@ -1625,17 +1394,6 @@ export function ReunionDetallePageClient({
                                 ? `${formatearValor(valor!)}%`
                                 : formatearValor(valor!)
                             : "—"
-                          // ♻ mejora continua: la celda cruzó el gatillo → debe
-                          // analizarse con herramientas de gestión.
-                          const contenidoNodo =
-                            cruzoGatillo && muestra ? (
-                              <span className="inline-flex items-center gap-1">
-                                <RefreshCw className="size-3 shrink-0 text-red-600" />
-                                {contenido}
-                              </span>
-                            ) : (
-                              contenido
-                            )
                           return (
                             <td
                               key={f}
@@ -1653,10 +1411,10 @@ export function ReunionDetallePageClient({
                                   className="w-full cursor-pointer rounded px-1 py-0.5 underline-offset-2 hover:underline focus:outline-none focus:ring-1 focus:ring-blue-400"
                                   title="Ver detalle del día"
                                 >
-                                  {contenidoNodo}
+                                  {contenido}
                                 </button>
                               ) : (
-                                contenidoNodo
+                                contenido
                               )}
                             </td>
                           )
@@ -1699,38 +1457,20 @@ export function ReunionDetallePageClient({
                           )
                         }
 
-                        // Otra reunión → read-only, coloreado por target/gatillo.
-                        const vManual = cell?.valor ?? null
-                        const zManual =
-                          vManual != null
-                            ? evaluarZona(
-                                vManual,
-                                ind.meta,
-                                ind.gatillo,
-                                ind.mejor_si,
-                              )
-                            : null
+                        // Otra reunión → read-only
                         return (
                           <td
                             key={f}
                             className={cn(
-                              "px-2 py-1 text-center align-middle text-sm tabular-nums",
-                              zManual ? CLASE_ZONA[zManual.zona] : "text-slate-500",
-                              !zManual && esHoy && "bg-blue-50",
-                              !zManual && dom && "bg-slate-50",
+                              "px-2 py-1 text-center align-middle text-sm tabular-nums text-slate-500",
+                              esHoy && "bg-blue-50",
+                              dom && "bg-slate-50",
                             )}
                             title={`Cargado en otra reunión (${formatFechaCorta(f)})`}
                           >
-                            {vManual == null ? (
-                              "—"
-                            ) : zManual?.cruzoGatillo ? (
-                              <span className="inline-flex items-center gap-1">
-                                <RefreshCw className="size-3 shrink-0 text-red-600" />
-                                {formatearValor(vManual)}
-                              </span>
-                            ) : (
-                              formatearValor(vManual)
-                            )}
+                            {cell?.valor == null
+                              ? "—"
+                              : formatearValor(cell.valor)}
                           </td>
                         )
                       })}

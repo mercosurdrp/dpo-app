@@ -7,7 +7,6 @@ import {
 } from "@/actions/reuniones"
 import { getSectoresAlmacen, getVehiculosActivos } from "@/actions/s5"
 import { listarRubrosMantenimiento } from "@/actions/mantenimiento-edilicio"
-import { getAsistenciaRango, type AsistenciaRango } from "@/actions/reunion-preruta"
 import { getProfile } from "@/lib/session"
 import { ReunionDetallePageClient } from "./reunion-detalle-page-client"
 
@@ -53,24 +52,9 @@ export default async function ReunionDetallePage({
     )
   }
 
-  // Asistencia a la reunión Pre-Ruta del día (check-in por legajo cruzado
-  // contra el reloj biométrico). Solo se replica en la Matinal Distribución;
-  // el resto de reuniones no tiene personal afectado a pre-ruta.
-  let asistenciaPreruta: AsistenciaRango | null = null
-  if (detalleRes.data.tipo === "matinal-distribucion") {
-    const preRes = await getAsistenciaRango(
-      detalleRes.data.fecha,
-      detalleRes.data.fecha,
-      "dia",
-      { soloDistribucion: true, sucursal: "TODAS" },
-    )
-    if ("data" in preRes) asistenciaPreruta = preRes.data
-  }
-
   return (
     <ReunionDetallePageClient
       detalle={detalleRes.data}
-      asistenciaPreruta={asistenciaPreruta}
       indicadoresMes={
         "data" in indicadoresMesRes ? indicadoresMesRes.data : null
       }
@@ -80,6 +64,7 @@ export default async function ReunionDetallePage({
       rubrosMantenimiento={rubrosRes.data ?? []}
       puedeEditar={puedeEditar}
       currentProfileId={profile.id}
+      currentRole={profile.role}
     />
   )
 }

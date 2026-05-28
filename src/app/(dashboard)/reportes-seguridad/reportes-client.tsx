@@ -21,8 +21,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs"
 import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-reporte-dialog"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
+import { PlanesTablero } from "@/components/reportes-seguridad/planes-tablero"
 import {
   PiramideSeguridad,
   type PiramideConteos,
@@ -266,6 +273,15 @@ export function ReportesSeguridadClient({
           </Button>
         </div>
       </div>
+
+      {/* Tabs: Reportes / Planes de acción */}
+      <Tabs defaultValue="reportes" className="gap-4">
+        <TabsList>
+          <TabsTrigger value="reportes">Reportes</TabsTrigger>
+          <TabsTrigger value="planes">Planes de acción</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="reportes" className="space-y-5">
 
       {/* Pirámide de Seguridad */}
       <div className="space-y-2">
@@ -600,6 +616,16 @@ export function ReportesSeguridadClient({
           </table>
         </div>
       </div>
+
+        </TabsContent>
+
+        <TabsContent value="planes" className="space-y-5">
+          <PlanesTablero
+            currentProfileId={currentProfileId}
+            currentRole={currentRole}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Dialogs */}
       <NuevoReporteDialog open={openNuevo} onOpenChange={setOpenNuevo} />

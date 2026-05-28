@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { deleteReporte, getReporte } from "@/actions/reportes-seguridad"
 import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-reporte-dialog"
 import { PlanAccionSection } from "@/components/reportes-seguridad/plan-accion-section"
+import { ReporteHerramientasSection } from "@/components/reportes-seguridad/reporte-herramientas-section"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
@@ -56,7 +57,6 @@ export function ReporteDetalleDialog({
   reporteId,
   open,
   onOpenChange,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   currentProfileId,
   currentRole,
 }: {
@@ -324,6 +324,15 @@ export function ReporteDetalleDialog({
                 plan={detalle.plan}
                 isAdmin={isAdmin}
                 onChanged={() => setRefreshKey((k) => k + 1)}
+              />
+
+              {/* Herramientas de gestión aplicadas al reporte */}
+              <ReporteHerramientasSection
+                reporteId={detalle.id}
+                reporteDescripcion={detalle.descripcion}
+                reporteCreadoPor={detalle.creado_por}
+                currentProfileId={currentProfileId}
+                currentRole={currentRole}
               />
 
               {/* Acciones admin */}

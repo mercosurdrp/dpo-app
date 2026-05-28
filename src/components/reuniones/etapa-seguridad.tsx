@@ -19,21 +19,16 @@ import {
 } from "@/components/ui/card"
 import { getReportes } from "@/actions/reportes-seguridad"
 import {
-  getSeguridadSemaforo,
-  setSeguridadSemaforo,
-  type SemaforoEstado,
-} from "@/actions/reuniones"
-import { IS_MISIONES } from "@/lib/empresa"
-import { cn } from "@/lib/utils"
-import {
   PiramideSeguridad,
   type PiramideConteos,
 } from "@/components/reportes-seguridad/piramide-seguridad"
+import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
   type ReporteSeguridadConAutor,
+  type UserRole,
 } from "@/types/database"
 
 const MESES = [
@@ -77,89 +72,27 @@ function formatFechaCorta(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`
 }
 
-const SEMAFORO_LUCES: {
-  estado: SemaforoEstado
-  label: string
-  on: string
-}[] = [
-  { estado: "rojo", label: "Rojo", on: "bg-red-500" },
-  { estado: "amarillo", label: "Amarillo", on: "bg-amber-400" },
-  { estado: "verde", label: "Verde", on: "bg-emerald-500" },
-]
-
-function SemaforoDelDia({
-  estado,
-  fecha,
-  puedeEditar,
-  guardando,
-  onElegir,
-}: {
-  estado: SemaforoEstado | null
-  fecha: string
-  puedeEditar: boolean
-  guardando: boolean
-  onElegir: (estado: SemaforoEstado) => void
-}) {
-  return (
-    <div className="flex shrink-0 flex-col items-center gap-2.5 self-center rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-sm font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-3.5 rounded-lg bg-slate-800 px-4 py-5">
-        {SEMAFORO_LUCES.map((luz) => {
-          const activo = estado === luz.estado
-          return (
-            <button
-              key={luz.estado}
-              type="button"
-              disabled={!puedeEditar || guardando}
-              onClick={() => onElegir(luz.estado)}
-              title={luz.label}
-              aria-label={luz.label}
-              aria-pressed={activo}
-              className={cn(
-                "size-11 rounded-full transition",
-                activo
-                  ? `${luz.on} shadow ring-[3px] ring-white`
-                  : "bg-slate-600/50",
-                puedeEditar && !guardando
-                  ? "cursor-pointer hover:opacity-90"
-                  : "cursor-default",
-              )}
-            />
-          )
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {formatFechaCorta(fecha)}
-      </p>
-      {!puedeEditar && (
-        <p className="text-[10px] text-muted-foreground">Solo lectura</p>
-      )}
-    </div>
-  )
-}
-
 export function EtapaSeguridad({
   fechaReunion,
-  reunionId,
-  puedeEditar = false,
+  currentProfileId,
+  currentRole,
 }: {
   fechaReunion: string
-  reunionId?: string
-  puedeEditar?: boolean
+  /** Profile actual; si se pasa junto con `currentRole`, las cards abren el detalle del reporte. */
+  currentProfileId?: string | null
+  currentRole?: UserRole
 }) {
   const [reportes, setReportes] = useState<ReporteSeguridadConAutor[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [, startTransition] = useTransition()
   const [cargando, setCargando] = useState(true)
+  const [reporteAbiertoId, setReporteAbiertoId] = useState<string | null>(null)
+
+  const cardsClickables = !!currentProfileId && !!currentRole
 
   const anioReunion = Number(fechaReunion.slice(0, 4)) || new Date().getFullYear()
   const [piramideAnio, setPiramideAnio] = useState<number>(anioReunion)
   const [piramideMes, setPiramideMes] = useState<number | "all">("all")
-
-  // Semáforo de seguridad del día (solo Misiones).
-  const muestraSemaforo = IS_MISIONES && !!reunionId
-  const [semaforo, setSemaforo] = useState<SemaforoEstado | null>(null)
-  const [guardandoSemaforo, setGuardandoSemaforo] = useState(false)
 
   useEffect(() => {
     setCargando(true)
@@ -173,27 +106,6 @@ export function EtapaSeguridad({
       setCargando(false)
     })
   }, [])
-
-  useEffect(() => {
-    if (!muestraSemaforo || !reunionId) return
-    getSeguridadSemaforo(reunionId).then((r) => {
-      if ("data" in r) setSemaforo(r.data.estado)
-    })
-  }, [muestraSemaforo, reunionId])
-
-  function elegirSemaforo(estado: SemaforoEstado) {
-    if (!reunionId || !puedeEditar || guardandoSemaforo) return
-    const previo = semaforo
-    setSemaforo(estado) // optimista
-    setGuardandoSemaforo(true)
-    setSeguridadSemaforo(reunionId, estado).then((r) => {
-      setGuardandoSemaforo(false)
-      if ("error" in r) {
-        setSemaforo(previo) // revertir
-        setErrorMsg(r.error)
-      }
-    })
-  }
 
   const aniosDisponibles = useMemo(() => {
     const set = new Set<number>([anioReunion])
@@ -362,20 +274,7 @@ export function EtapaSeguridad({
               Cargando datos…
             </div>
           ) : (
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-              <div className="min-w-0 flex-1">
-                <PiramideSeguridad conteos={piramideConteos} />
-              </div>
-              {muestraSemaforo && (
-                <SemaforoDelDia
-                  estado={semaforo}
-                  fecha={fechaReunion}
-                  puedeEditar={puedeEditar}
-                  guardando={guardandoSemaforo}
-                  onElegir={elegirSemaforo}
-                />
-              )}
-            </div>
+            <PiramideSeguridad conteos={piramideConteos} />
           )}
         </section>
 
@@ -402,7 +301,29 @@ export function EtapaSeguridad({
               {reportesUltimoHabil.map((r) => (
                 <li
                   key={r.id}
-                  className="rounded-md border border-slate-200 bg-white p-3"
+                  className={
+                    "rounded-md border border-slate-200 bg-white p-3 transition-colors" +
+                    (cardsClickables
+                      ? " cursor-pointer hover:border-red-300 hover:bg-red-50/40"
+                      : "")
+                  }
+                  onClick={
+                    cardsClickables
+                      ? () => setReporteAbiertoId(r.id)
+                      : undefined
+                  }
+                  onKeyDown={
+                    cardsClickables
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            setReporteAbiertoId(r.id)
+                          }
+                        }
+                      : undefined
+                  }
+                  role={cardsClickables ? "button" : undefined}
+                  tabIndex={cardsClickables ? 0 : undefined}
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
@@ -449,6 +370,20 @@ export function EtapaSeguridad({
           )}
         </section>
       </CardContent>
+
+      {/* Detalle del reporte (cards clickables) */}
+      {cardsClickables && reporteAbiertoId && (
+        <ReporteDetalleDialog
+          key={reporteAbiertoId}
+          reporteId={reporteAbiertoId}
+          open={true}
+          onOpenChange={(v) => {
+            if (!v) setReporteAbiertoId(null)
+          }}
+          currentProfileId={currentProfileId!}
+          currentRole={currentRole!}
+        />
+      )}
     </Card>
   )
 }

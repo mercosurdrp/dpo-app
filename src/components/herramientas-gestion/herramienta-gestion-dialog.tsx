@@ -35,6 +35,7 @@ import {
   crearHerramientaGestion,
   actualizarHerramientaGestion,
   crearHerramientaActividad,
+  crearHerramientaReporte,
 } from "@/actions/herramientas-gestion"
 import { CincoPorquesForm, cincoPorquesVacio } from "./cinco-porques-form"
 import { CausaEfectoForm, causaEfectoVacio } from "./causa-efecto-form"
@@ -72,11 +73,13 @@ function contenidoVacioPorTipo(t: HerramientaGestionTipo): HerramientaGestionCon
 }
 
 export interface HerramientaGestionDialogProps {
-  /** Target = plan. Pasar planId O reunionActividadId (no ambos). */
+  /** Target = plan. Pasar exactamente uno de planId / reunionActividadId / reporteId. */
   planId?: string
   /** Target = actividad de reunión. */
   reunionActividadId?: string
-  /** Título prellenado al crear (nombre del plan / actividad). */
+  /** Target = reporte de seguridad. */
+  reporteId?: string
+  /** Título prellenado al crear (nombre del plan / actividad / descripción del reporte). */
   tituloSugerido?: string
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -87,6 +90,7 @@ export interface HerramientaGestionDialogProps {
 export function HerramientaGestionDialog({
   planId,
   reunionActividadId,
+  reporteId,
   tituloSugerido,
   open,
   onOpenChange,
@@ -157,10 +161,17 @@ export function HerramientaGestionDialog({
           titulo.trim(),
           contenido,
         )
+      } else if (reporteId) {
+        res = await crearHerramientaReporte(
+          reporteId,
+          tipo,
+          titulo.trim(),
+          contenido,
+        )
       } else if (planId) {
         res = await crearHerramientaGestion(planId, tipo, titulo.trim(), contenido)
       } else {
-        toast.error("Falta el destino (plan o actividad)")
+        toast.error("Falta el destino (plan, actividad o reporte)")
         return
       }
 

@@ -1142,7 +1142,7 @@ export interface TmlFoxtrotResumen {
   promedio_desde7_min: number | null
   peor_real_min: number | null
   mejor_real_min: number | null
-  // Equipos dentro de meta (TML ≤ 25 min) según cada métrica. El % dentro de
+  // Equipos dentro de meta (TML ≤ 30 min) según cada métrica. El % dentro de
   // meta (objetivo DPO ≥ 65%) = en_meta_X / equipos_con_tml.
   en_meta_real: number
   en_meta_desde7: number
@@ -1826,8 +1826,19 @@ export interface S5AuditoriaItem {
   observaciones: string | null
 }
 
+export interface S5ItemFoto {
+  id: string
+  auditoria_item_id: string
+  storage_path: string
+  mime_type: string
+  tamano_bytes: number
+  subido_por: string
+  created_at: string
+}
+
 export interface S5AuditoriaItemConCatalogo extends S5AuditoriaItem {
   catalogo: S5ItemCatalogo
+  fotos: S5ItemFoto[]
 }
 
 export interface S5AuditoriaConMeta extends S5Auditoria {
@@ -2541,10 +2552,6 @@ export interface ReunionIndicadorConfig {
   nombre: string
   unidad: string | null
   meta: number | null
-  /** Umbral de alarma. Cruzarlo (lado malo según mejor_si) = zona roja + ♻. */
-  gatillo: number | null
-  /** Polaridad: "mayor" = más es mejor (meta = piso); "menor" = menos es mejor (meta = techo). */
-  mejor_si: "mayor" | "menor" | null
   orden: number
   activo: boolean
   agregacion: AgregacionIndicador
@@ -2583,8 +2590,6 @@ export interface ReunionIndicadoresMes {
     mostrar_cero?: boolean
     /** Para filas auto con meta: define la polaridad del cumplimiento. "menor" = mejor cuando valor ≤ meta (ej. Rechazos %); "mayor" = mejor cuando valor ≥ meta (ej. Bultos vendidos). */
     mejor_si?: "menor" | "mayor"
-    /** Umbral de alarma configurado. Si el valor lo cruza (lado malo según mejor_si) la celda entra en zona roja y se marca con ♻ (mejora continua). */
-    gatillo?: number | null
   }>
 }
 
@@ -2704,7 +2709,6 @@ export interface CausaEfectoContenido {
   efecto: string
   categorias: { nombre: string; causas: string[] }[]
   causa_raiz: string
-  contramedida: string
 }
 
 export interface PdcaContenido {
@@ -2721,9 +2725,10 @@ export type HerramientaGestionContenido =
 
 export interface HerramientaGestion {
   id: string
-  // Target: exactamente uno de plan_id / reunion_actividad_id está presente.
+  // Target: exactamente uno de plan_id / reunion_actividad_id / reporte_seguridad_id.
   plan_id: string | null
   reunion_actividad_id: string | null
+  reporte_seguridad_id: string | null
   tipo: HerramientaGestionTipo
   titulo: string
   contenido: HerramientaGestionContenido
@@ -2743,6 +2748,9 @@ export interface HerramientaGestionConContexto extends HerramientaGestion {
   reunion_id: string | null
   reunion_tipo: string | null
   actividad_descripcion: string | null
+  // Contexto cuando el target es un reporte de seguridad
+  reporte_tipo: string | null
+  reporte_descripcion: string | null
 }
 
 // ===== Ausentismo (Pampeana) =====

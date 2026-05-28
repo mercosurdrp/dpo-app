@@ -83,6 +83,32 @@ async function puedeIntervenirEnActividad(
   }
 }
 
+async function puedeIntervenirEnReporte(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string,
+  profileRole: string,
+  reporteId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (isEditorRole(profileRole)) return { ok: true }
+
+  const { data: rep, error: repErr } = await supabase
+    .from("reportes_seguridad")
+    .select("creado_por")
+    .eq("id", reporteId)
+    .single()
+  if (repErr || !rep) {
+    return { ok: false, error: repErr?.message ?? "Reporte no encontrado" }
+  }
+  if ((rep as { creado_por: string | null }).creado_por === profileId) {
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    error: "Solo el autor del reporte o editores pueden aplicar herramientas",
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Contexto del target (plan → pilar/pregunta · actividad → reunión)
 // ---------------------------------------------------------------------------
@@ -94,6 +120,8 @@ interface Contexto {
   reunion_id: string | null
   reunion_tipo: string | null
   actividad_descripcion: string | null
+  reporte_tipo: string | null
+  reporte_descripcion: string | null
 }
 
 const CONTEXTO_VACIO: Contexto = {
@@ -103,6 +131,8 @@ const CONTEXTO_VACIO: Contexto = {
   reunion_id: null,
   reunion_tipo: null,
   actividad_descripcion: null,
+  reporte_tipo: null,
+  reporte_descripcion: null,
 }
 
 // Cadena plan → pregunta → bloque → pilar. Falla suave (null) en cada eslabón.
@@ -173,13 +203,37 @@ async function getActividadContexto(
   }
 }
 
+async function getReporteContexto(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  reporteId: string,
+): Promise<Contexto> {
+  const { data: rep } = await supabase
+    .from("reportes_seguridad")
+    .select("tipo, descripcion")
+    .eq("id", reporteId)
+    .single()
+  if (!rep) return { ...CONTEXTO_VACIO }
+  const r = rep as { tipo: string | null; descripcion: string | null }
+  return {
+    ...CONTEXTO_VACIO,
+    reporte_tipo: r.tipo ?? null,
+    reporte_descripcion: r.descripcion ?? null,
+  }
+}
+
 async function getContexto(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  row: { plan_id: string | null; reunion_actividad_id: string | null },
+  row: {
+    plan_id: string | null
+    reunion_actividad_id: string | null
+    reporte_seguridad_id: string | null
+  },
 ): Promise<Contexto> {
   if (row.plan_id) return getPlanContexto(supabase, row.plan_id)
   if (row.reunion_actividad_id)
     return getActividadContexto(supabase, row.reunion_actividad_id)
+  if (row.reporte_seguridad_id)
+    return getReporteContexto(supabase, row.reporte_seguridad_id)
   return { ...CONTEXTO_VACIO }
 }
 
@@ -193,6 +247,7 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     id: row.id,
     plan_id: row.plan_id ?? null,
     reunion_actividad_id: row.reunion_actividad_id ?? null,
+    reporte_seguridad_id: row.reporte_seguridad_id ?? null,
     tipo: row.tipo as HerramientaGestionTipo,
     titulo: row.titulo ?? "",
     contenido: row.contenido as HerramientaGestionContenido,
@@ -207,13 +262,19 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     reunion_id: ctx.reunion_id,
     reunion_tipo: ctx.reunion_tipo,
     actividad_descripcion: ctx.actividad_descripcion,
+    reporte_tipo: ctx.reporte_tipo,
+    reporte_descripcion: ctx.reporte_descripcion,
   }
 }
 
 // Path a revalidar según el target.
-function targetPath(ctx: Contexto, row: { plan_id: string | null }): string | null {
+function targetPath(
+  ctx: Contexto,
+  row: { plan_id: string | null; reporte_seguridad_id: string | null },
+): string | null {
   if (row.plan_id) return `/planes/${row.plan_id}`
   if (ctx.reunion_id) return `/reuniones/${ctx.reunion_id}`
+  if (row.reporte_seguridad_id) return "/reportes-seguridad"
   return null
 }
 
@@ -224,7 +285,11 @@ async function generarYGuardarPdf(
 ): Promise<string | null> {
   try {
     const bytes = await generarPdfHerramienta(herramienta)
-    const carpeta = herramienta.plan_id ?? herramienta.reunion_actividad_id ?? "otros"
+    const carpeta =
+      herramienta.plan_id ??
+      herramienta.reunion_actividad_id ??
+      herramienta.reporte_seguridad_id ??
+      "otros"
     const path = `${carpeta}/${herramienta.id}.pdf`
     const { error: upErr } = await supabase.storage
       .from(PDF_BUCKET)
@@ -276,6 +341,7 @@ async function insertarHerramienta(
       id: row.id,
       plan_id: row.plan_id ?? null,
       reunion_actividad_id: row.reunion_actividad_id ?? null,
+      reporte_seguridad_id: row.reporte_seguridad_id ?? null,
       tipo: row.tipo as HerramientaGestionTipo,
       titulo: row.titulo ?? "",
       contenido: row.contenido as HerramientaGestionContenido,
@@ -361,6 +427,45 @@ export async function crearHerramientaActividad(
 }
 
 // ---------------------------------------------------------------------------
+// crearHerramientaReporte — target = reporte de seguridad
+// ---------------------------------------------------------------------------
+
+export async function crearHerramientaReporte(
+  reporteId: string,
+  tipo: HerramientaGestionTipo,
+  titulo: string,
+  contenido: HerramientaGestionContenido,
+): Promise<Result<HerramientaGestion>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!reporteId) return { error: "ID de reporte inválido" }
+
+    const permiso = await puedeIntervenirEnReporte(
+      supabase,
+      profile.id,
+      profile.role,
+      reporteId,
+    )
+    if (!permiso.ok) return { error: permiso.error }
+
+    return insertarHerramienta(
+      supabase,
+      {
+        reporte_seguridad_id: reporteId,
+        tipo,
+        titulo: titulo.trim() || null,
+        contenido,
+        autor_id: profile.id,
+      },
+      getNombre(profile),
+    )
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // actualizarHerramientaGestion
 // ---------------------------------------------------------------------------
 
@@ -376,22 +481,33 @@ export async function actualizarHerramientaGestion(
 
     const { data: actual, error: errH } = await supabase
       .from("plan_herramientas_gestion")
-      .select("plan_id, reunion_actividad_id")
+      .select("plan_id, reunion_actividad_id, reporte_seguridad_id")
       .eq("id", id)
       .single()
     if (errH || !actual) {
       return { error: errH?.message ?? "Herramienta no encontrada" }
     }
-    const tgt = actual as { plan_id: string | null; reunion_actividad_id: string | null }
+    const tgt = actual as {
+      plan_id: string | null
+      reunion_actividad_id: string | null
+      reporte_seguridad_id: string | null
+    }
 
     const permiso = tgt.plan_id
       ? await puedeIntervenirEnPlan(supabase, profile.id, profile.role, tgt.plan_id)
-      : await puedeIntervenirEnActividad(
-          supabase,
-          profile.id,
-          profile.role,
-          tgt.reunion_actividad_id!,
-        )
+      : tgt.reunion_actividad_id
+        ? await puedeIntervenirEnActividad(
+            supabase,
+            profile.id,
+            profile.role,
+            tgt.reunion_actividad_id,
+          )
+        : await puedeIntervenirEnReporte(
+            supabase,
+            profile.id,
+            profile.role,
+            tgt.reporte_seguridad_id!,
+          )
     if (!permiso.ok) return { error: permiso.error }
 
     const { data, error } = await supabase
@@ -419,6 +535,7 @@ export async function actualizarHerramientaGestion(
         id: row.id,
         plan_id: row.plan_id ?? null,
         reunion_actividad_id: row.reunion_actividad_id ?? null,
+        reporte_seguridad_id: row.reporte_seguridad_id ?? null,
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
@@ -494,6 +611,33 @@ export async function listarHerramientasActividad(
   }
 }
 
+export async function listarHerramientasReporte(
+  reporteId: string,
+): Promise<Result<HerramientaGestionConContexto[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!reporteId) return { error: "ID de reporte inválido" }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .select(SELECT_CON_AUTOR)
+      .eq("reporte_seguridad_id", reporteId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+
+    const ctx = await getReporteContexto(supabase, reporteId)
+    const items = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = row as any
+      return mapRow(r, ctx, r.autor?.nombre ?? null)
+    })
+    return { data: items }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando herramientas del reporte" }
+  }
+}
+
 export async function listarHerramientasGestion(
   tipo?: HerramientaGestionTipo,
 ): Promise<Result<HerramientaGestionConContexto[]>> {
@@ -513,10 +657,25 @@ export async function listarHerramientasGestion(
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>
 
     // Resolver contexto por target único, en paralelo.
-    const keys = new Map<string, { plan_id: string | null; reunion_actividad_id: string | null }>()
+    const keys = new Map<
+      string,
+      {
+        plan_id: string | null
+        reunion_actividad_id: string | null
+        reporte_seguridad_id: string | null
+      }
+    >()
     for (const r of rows) {
-      const row = r as { plan_id: string | null; reunion_actividad_id: string | null }
-      const k = row.plan_id ? `p:${row.plan_id}` : `a:${row.reunion_actividad_id}`
+      const row = r as {
+        plan_id: string | null
+        reunion_actividad_id: string | null
+        reporte_seguridad_id: string | null
+      }
+      const k = row.plan_id
+        ? `p:${row.plan_id}`
+        : row.reunion_actividad_id
+          ? `a:${row.reunion_actividad_id}`
+          : `r:${row.reporte_seguridad_id}`
       if (!keys.has(k)) keys.set(k, row)
     }
     const ctxMap = new Map<string, Contexto>()
@@ -529,7 +688,11 @@ export async function listarHerramientasGestion(
     const items = rows.map((row) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = row as any
-      const k = r.plan_id ? `p:${r.plan_id}` : `a:${r.reunion_actividad_id}`
+      const k = r.plan_id
+        ? `p:${r.plan_id}`
+        : r.reunion_actividad_id
+          ? `a:${r.reunion_actividad_id}`
+          : `r:${r.reporte_seguridad_id}`
       return mapRow(r, ctxMap.get(k) ?? { ...CONTEXTO_VACIO }, r.autor?.nombre ?? null)
     })
     return { data: items }
@@ -577,7 +740,7 @@ export async function eliminarHerramientaGestion(
 
     const { data: herramienta, error: errH } = await supabase
       .from("plan_herramientas_gestion")
-      .select("plan_id, reunion_actividad_id, autor_id")
+      .select("plan_id, reunion_actividad_id, reporte_seguridad_id, autor_id")
       .eq("id", id)
       .single()
     if (errH || !herramienta) {
@@ -586,6 +749,7 @@ export async function eliminarHerramientaGestion(
     const row = herramienta as {
       plan_id: string | null
       reunion_actividad_id: string | null
+      reporte_seguridad_id: string | null
       autor_id: string | null
     }
 
@@ -601,6 +765,7 @@ export async function eliminarHerramientaGestion(
 
     revalidatePath("/herramientas-gestion")
     if (row.plan_id) revalidatePath(`/planes/${row.plan_id}`)
+    if (row.reporte_seguridad_id) revalidatePath("/reportes-seguridad")
 
     return { ok: true }
   } catch (err) {
