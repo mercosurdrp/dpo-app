@@ -48,6 +48,8 @@ interface NavItem {
   hideForEmpleado?: boolean
   /** Solo se muestra en el tenant Pampeana (se oculta si IS_MISIONES). */
   pampeanaOnly?: boolean
+  /** Solo se muestra en el tenant Misiones (se oculta en Pampeana). */
+  misionesOnly?: boolean
   /**
    * Si está presente, sólo se muestra a estos roles. Tiene prioridad sobre
    * adminOnly y hideForEmpleado.
@@ -319,6 +321,7 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
               (item) =>
                 !(item.hideForEmpleado && role === "empleado") &&
                 !(item.pampeanaOnly && IS_MISIONES) &&
+                !(item.misionesOnly && !IS_MISIONES) &&
                 (!item.roles || item.roles.includes(role)),
             )
             .map((item) => {
@@ -398,7 +401,13 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
                 </div>
               )}
               <div className="space-y-1">
-                {sec.items.map((item) => {
+                {sec.items
+                  .filter(
+                    (item) =>
+                      !(item.pampeanaOnly && IS_MISIONES) &&
+                      !(item.misionesOnly && !IS_MISIONES),
+                  )
+                  .map((item) => {
                   const isActive = pathname.startsWith(item.href)
                   return (
                     <Link
