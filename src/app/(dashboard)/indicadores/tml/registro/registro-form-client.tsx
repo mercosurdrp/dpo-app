@@ -319,7 +319,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
           <div className="space-y-4">
             <Card className={
               tmlPreview !== null
-                ? tmlPreview <= 30
+                ? tmlPreview <= 25
                   ? "border-green-300 bg-green-50/50"
                   : tmlPreview <= 45
                     ? "border-amber-300 bg-amber-50/50"
@@ -336,7 +336,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                 {tmlPreview !== null ? (
                   <div className="text-center space-y-2">
                     <div className={`text-5xl font-bold ${
-                      tmlPreview <= 30
+                      tmlPreview <= 25
                         ? "text-green-600"
                         : tmlPreview <= 45
                           ? "text-amber-600"
@@ -348,13 +348,13 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                       Hora salida: {hora} — Hora entrada: {horaEntrada === 6 ? "06:00" : "07:00"}
                     </p>
                     <div className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
-                      tmlPreview <= 30
+                      tmlPreview <= 25
                         ? "bg-green-100 text-green-700"
                         : tmlPreview <= 45
                           ? "bg-amber-100 text-amber-700"
                           : "bg-red-100 text-red-700"
                     }`}>
-                      {tmlPreview <= 30 ? "Dentro de meta (≤30 min)" : tmlPreview <= 45 ? "Fuera de meta" : "Muy fuera de meta"}
+                      {tmlPreview <= 25 ? "Dentro de meta (≤25 min)" : tmlPreview <= 45 ? "Fuera de meta" : "Muy fuera de meta"}
                     </div>
                   </div>
                 ) : (
@@ -371,7 +371,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                   <h3 className="font-semibold text-slate-900">Meta DPO 2.0</h3>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">TML objetivo</span>
-                    <span className="font-medium">≤ 30 minutos</span>
+                    <span className="font-medium">≤ 25 minutos</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">% dentro de meta</span>

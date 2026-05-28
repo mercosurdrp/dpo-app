@@ -111,11 +111,11 @@ export function ChoferDetalleClient({ data, desde, hasta }: Props) {
               valueClass={
                 data.kpis.tml_promedio == null
                   ? "text-slate-400"
-                  : data.kpis.tml_promedio <= 21
+                  : data.kpis.tml_promedio <= 25
                     ? "text-emerald-700"
                     : "text-red-700"
               }
-              sub="meta 21 min"
+              sub="meta 25 min"
             />
             <Kpi
               label="% Rechazo"
@@ -197,7 +197,7 @@ function DiaRow({ dia }: { dia: ChoferDetalleDia }) {
           "text-right tabular-nums",
           dia.tml_minutos == null
             ? "text-slate-400"
-            : dia.tml_minutos <= 21
+            : dia.tml_minutos <= 25
               ? "text-emerald-700"
               : "text-red-700",
         )}

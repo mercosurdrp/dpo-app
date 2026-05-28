@@ -90,9 +90,9 @@ export async function getPackAuditoria11(): Promise<
     const pctConPlan =
       mesesFuera.length === 0 ? 100 : Math.round((mesesConPlan / mesesFuera.length) * 100)
 
-    const mensualEnMeta = tml.mensual.filter((m) => m.promedio_tml <= 30 && m.pct_dentro_meta >= 65).length
+    const mensualEnMeta = tml.mensual.filter((m) => m.promedio_tml <= 25 && m.pct_dentro_meta >= 65).length
 
-    const r1_1_5_cumple = tml.promedioTml <= 30 && tml.pctDentroMeta >= 65
+    const r1_1_5_cumple = tml.promedioTml <= 25 && tml.pctDentroMeta >= 65
     const r1_1_4_cumple = pctConPlan === 100
     const r1_1_3_cumple = skap.pct_cobertura >= 90
     const r1_1_3_parcial = skap.pct_cobertura >= 70 && skap.pct_cobertura < 90
@@ -134,7 +134,7 @@ export async function getPackAuditoria11(): Promise<
         codigo: "R1.1.5",
         descripcion: "TML muestra mejoras o resultados consistentes",
         estado: estado(r1_1_5_cumple),
-        evidencia: `TML global ${tml.promedioTml} min, ${tml.pctDentroMeta}% dentro meta 30 min`,
+        evidencia: `TML global ${tml.promedioTml} min, ${tml.pctDentroMeta}% dentro meta 25 min`,
       },
     ]
 
@@ -200,7 +200,7 @@ export async function getPackAuditoria11(): Promise<
         r1_1_5_tml: {
           promedio_tml_actual: tml.promedioTml,
           pct_dentro_meta_actual: tml.pctDentroMeta,
-          meta_minutos: 30,
+          meta_minutos: 25,
           meta_pct: 65,
           mensual: tml.mensual,
           comparado_yoy: tml.comparadoYoY,

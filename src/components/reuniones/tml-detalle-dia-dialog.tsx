@@ -61,7 +61,7 @@ export function TmlDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
   }, [open, fecha])
 
   const cumpleMeta =
-    data?.promedio != null && data.promedio <= (data?.meta_minutos ?? 21)
+    data?.promedio != null && data.promedio <= (data?.meta_minutos ?? 25)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,7 +133,7 @@ export function TmlDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                     ? "text-emerald-700"
                     : "text-red-700"
                 }
-                sub="≤ 21 min"
+                sub="≤ 25 min"
               />
             </div>
 

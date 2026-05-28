@@ -56,7 +56,7 @@ export interface MisionesLogisticaSerie {
   pct_entregas_exitosas: Record<string, number | null>
   /** TML promedio del día en minutos (de getTmlFoxtrotRango). */
   tml_promedio: Record<string, number | null>
-  /** % equipos con TML ≤ 30 min. */
+  /** % equipos con TML ≤ 25 min. */
   tml_pct_en_meta: Record<string, number | null>
   /** Hectolitros salidos a reparto (sin envases). */
   hl: Record<string, number | null>

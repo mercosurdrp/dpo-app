@@ -452,8 +452,8 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                   <p className="text-[11px] text-slate-600">Rechazo</p>
                 </div>
                 <div className="rounded-lg bg-white p-2.5 text-center">
-                  <Gauge className="mx-auto size-4 mb-1" style={{ color: (entrega.hoy.tml_minutos ?? 99) <= 30 ? "#16a34a" : (entrega.hoy.tml_minutos ?? 99) <= 45 ? "#d97706" : "#dc2626" }} />
-                  <p className="text-xl font-bold" style={{ color: (entrega.hoy.tml_minutos ?? 99) <= 30 ? "#16a34a" : (entrega.hoy.tml_minutos ?? 99) <= 45 ? "#d97706" : "#dc2626" }}>
+                  <Gauge className="mx-auto size-4 mb-1" style={{ color: (entrega.hoy.tml_minutos ?? 99) <= 25 ? "#16a34a" : (entrega.hoy.tml_minutos ?? 99) <= 45 ? "#d97706" : "#dc2626" }} />
+                  <p className="text-xl font-bold" style={{ color: (entrega.hoy.tml_minutos ?? 99) <= 25 ? "#16a34a" : (entrega.hoy.tml_minutos ?? 99) <= 45 ? "#d97706" : "#dc2626" }}>
                     {entrega.hoy.tml_minutos ?? "—"}
                   </p>
                   <p className="text-[11px] text-slate-600">TML min</p>
@@ -595,7 +595,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                         <TableCell className="text-right">
                           {dia.tml_minutos !== null ? (
                             <Badge className={
-                              dia.tml_minutos <= 30 ? "bg-green-100 text-green-700 hover:bg-green-100" :
+                              dia.tml_minutos <= 25 ? "bg-green-100 text-green-700 hover:bg-green-100" :
                               dia.tml_minutos <= 45 ? "bg-amber-100 text-amber-700 hover:bg-amber-100" :
                               "bg-red-100 text-red-700 hover:bg-red-100"
                             }>

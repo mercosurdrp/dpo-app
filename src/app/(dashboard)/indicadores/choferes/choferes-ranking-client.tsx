@@ -254,7 +254,7 @@ export function ChoferesRankingClient({ data, desde, hasta }: Props) {
                           "text-right tabular-nums",
                           f.tml_promedio == null
                             ? "text-slate-400"
-                            : f.tml_promedio <= 21
+                            : f.tml_promedio <= 25
                               ? "text-emerald-700"
                               : "text-red-700",
                         )}

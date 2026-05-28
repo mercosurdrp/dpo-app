@@ -12,7 +12,7 @@ import type {
   RegistroVehiculo,
 } from "@/types/database"
 
-const TML_META_MINUTOS = 21
+const TML_META_MINUTOS = 25
 const PCT_META_MINIMO = 65
 
 function mesFueraDeMeta(promedio: number, pct: number): boolean {

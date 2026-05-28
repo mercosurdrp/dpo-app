@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { PreRutaEnVivo, PreRutaEquipoLive } from "@/types/database"
 
-const META_MIN = 30
+const META_MIN = 25
 
 interface EmpleadoRow {
   id: string
