@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { CalendarRange, FlaskConical, Settings, ListTree } from "lucide-react"
 import { SimuladorTab } from "./simulador"
 import { ConfiguracionTab } from "./configuracion"
+import { PeriodosTab } from "./periodos-tab"
 
 export type DiaCalendario = {
   fecha: string
@@ -204,7 +205,7 @@ export function PeriodosCriticosClient({
         </TabsContent>
 
         <TabsContent value="periodos">
-          <PlaceholderTab text="Detección automática de períodos críticos (días ALTO agrupados en bloques de 1–7 días) — próximo paso." />
+          <PeriodosTab dias={dias} />
         </TabsContent>
         <TabsContent value="simulador">
           <SimuladorTab dias={dias} cfg={cfg} />
@@ -226,10 +227,3 @@ function Legend({ color, label }: { color: string; label: string }) {
   )
 }
 
-function PlaceholderTab({ text }: { text: string }) {
-  return (
-    <Card>
-      <CardContent className="p-8 text-center text-sm text-slate-500">{text}</CardContent>
-    </Card>
-  )
-}
