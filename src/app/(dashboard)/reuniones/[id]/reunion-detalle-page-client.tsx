@@ -58,6 +58,7 @@ import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
+import { OcupacionBodegaDetalleDiaDialog } from "@/components/reuniones/ocupacion-bodega-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
@@ -803,6 +804,7 @@ export function ReunionDetallePageClient({
   const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
+  const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
   // Detalle del día al hacer click en la celda Productividad de picking:
   // abre el sub-cuadro con los 3 operadores Troli/Galvez/Ovejero. La fila
   // Precisión de picking NO abre este detalle (es un valor global del día).
@@ -1365,6 +1367,7 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_productividad_picking" ||
                             ind.id === "auto_errores_picking"
                           const esAusentismo = ind.id === "auto_ausentismo"
+                          const esOB = ind.id === "auto_ocupacion_bodega"
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -1374,7 +1377,8 @@ export function ReunionDetallePageClient({
                               esKm ||
                               esHorasCalle ||
                               esAperturaPicking ||
-                              esAusentismo) &&
+                              esAusentismo ||
+                              esOB) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -1386,6 +1390,7 @@ export function ReunionDetallePageClient({
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                             else if (esAusentismo) setAusentismoFecha(f)
+                            else if (esOB) setObDetalleFecha(f)
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -1697,6 +1702,14 @@ export function ReunionDetallePageClient({
           if (!o) setTmlDetalleFecha(null)
         }}
         fecha={tmlDetalleFecha}
+      />
+
+      <OcupacionBodegaDetalleDiaDialog
+        open={obDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setObDetalleFecha(null)
+        }}
+        fecha={obDetalleFecha}
       />
 
       <AperturaPickingDetalleDiaDialog

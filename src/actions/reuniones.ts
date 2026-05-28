@@ -3128,10 +3128,10 @@ async function getIndicadoresMesCore(
     }
 
     // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos.
-    //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos):
-    //   CEq = 120/bultosPallet × cantidadesTotal sumado por (patente, día).
-    //   Valor diario = AVG(ceq_total) de los viajes del día. MTD análogo.
-    //   Unidad: CEq · Meta: 450 · mejor_si=mayor.
+    //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
+    //   Valor diario = AVG(ceq_total/450 × 100) de los viajes del día — % del target.
+    //   MTD = (Σ ceq / (450 × Σ viajes)) × 100 (% promedio ponderado por viaje).
+    //   Unidad: % · Meta: 100 · mejor_si=mayor.
     {
       const { data: obRaw, error: errOB } = await supabase
         .from("ocupacion_bodega_diaria")
@@ -3140,6 +3140,7 @@ async function getIndicadoresMesCore(
         .lte("fecha", fechaHasta)
         .gt("ceq_total", 0)
       if (!errOB) {
+        const TARGET_OB = 450
         const sumPorFecha: Record<string, number> = {}
         const countPorFecha: Record<string, number> = {}
         for (const r of (obRaw ?? []) as Array<{ fecha: string; ceq_total: number | null }>) {
@@ -3149,26 +3150,28 @@ async function getIndicadoresMesCore(
           countPorFecha[r.fecha] = (countPorFecha[r.fecha] ?? 0) + 1
         }
         const valoresOB: Record<string, { reunion_id: string; valor: number | null; observacion: string | null } | null> = {}
-        let sumMtd = 0
+        let sumCeqMtd = 0
         let countMtd = 0
         for (const f of fechas) {
           const cnt = countPorFecha[f] ?? 0
           if (cnt === 0) {
             valoresOB[f] = null
           } else {
-            const avgDia = sumPorFecha[f] / cnt
-            valoresOB[f] = { reunion_id: "", valor: Math.round(avgDia * 10) / 10, observacion: null }
-            sumMtd += sumPorFecha[f]
+            const pctDia = (sumPorFecha[f] / cnt / TARGET_OB) * 100
+            valoresOB[f] = { reunion_id: "", valor: Math.round(pctDia * 10) / 10, observacion: null }
+            sumCeqMtd += sumPorFecha[f]
             countMtd += cnt
           }
         }
-        const mtdOB = countMtd > 0 ? Math.round((sumMtd / countMtd) * 10) / 10 : null
+        const mtdOB = countMtd > 0
+          ? Math.round((sumCeqMtd / countMtd / TARGET_OB) * 1000) / 10
+          : null
 
         indicadoresAuto.push({
           id: "auto_ocupacion_bodega",
           nombre: "Ocupación de Bodega",
-          unidad: "CEq",
-          meta: 450,
+          unidad: "%",
+          meta: 100,
           orden: -1,
           agregacion: "promedio",
           valores: valoresOB,
