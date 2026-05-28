@@ -40,6 +40,7 @@ import type { UserRole } from "@/types/database"
 import type { ReunionKpis, ReunionResumenMensual } from "@/actions/reunion-preruta"
 import { getReunionKpis, getReunionResumenMensual } from "@/actions/reunion-preruta"
 import { ReportesRrhhTab } from "@/components/asistencia/reportes-rrhh-tab"
+import { IS_MISIONES } from "@/lib/empresa"
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
@@ -48,6 +49,7 @@ const NOVEDAD_LABELS: Record<string, string> = {
   licencia_medica: "Licencia Médica",
   ausente: "Ausente",
   pergamino: "Pergamino",
+  licencia_gremial: "Licencia Gremial",
 }
 
 const NOVEDAD_COLORS: Record<string, string> = {
@@ -55,6 +57,7 @@ const NOVEDAD_COLORS: Record<string, string> = {
   licencia_medica: "bg-purple-100 text-purple-700",
   ausente: "bg-red-100 text-red-700",
   pergamino: "bg-slate-100 text-slate-700",
+  licencia_gremial: "bg-amber-100 text-amber-700",
 }
 
 function formatHora(fecha: string | null): string {
@@ -457,8 +460,13 @@ export function AsistenciaClient({ diaria, mensual, ultimas, reunionKpis, reunio
                                 <SelectItem value="none">Sin novedad</SelectItem>
                                 <SelectItem value="vacaciones">Vacaciones</SelectItem>
                                 <SelectItem value="licencia_medica">Licencia Médica</SelectItem>
+                                {IS_MISIONES && (
+                                  <SelectItem value="licencia_gremial">Licencia Gremial</SelectItem>
+                                )}
                                 <SelectItem value="ausente">Ausente</SelectItem>
-                                <SelectItem value="pergamino">Pergamino</SelectItem>
+                                {!IS_MISIONES && (
+                                  <SelectItem value="pergamino">Pergamino</SelectItem>
+                                )}
                               </SelectContent>
                             </Select>
                           </TableCell>

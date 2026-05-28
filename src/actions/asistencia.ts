@@ -44,7 +44,7 @@ export interface MarcaAsistencia {
   origen?: "biometrica" | "manual"
 }
 
-export type TipoNovedad = "vacaciones" | "licencia_medica" | "ausente" | "pergamino"
+export type TipoNovedad = "vacaciones" | "licencia_medica" | "ausente" | "pergamino" | "licencia_gremial"
 
 export interface NovedadAsistencia {
   id: string
