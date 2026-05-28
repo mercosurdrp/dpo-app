@@ -2553,7 +2553,7 @@ export interface ReunionIndicadorConfig {
   unidad: string | null
   meta: number | null
   gatillo: number | null
-  mejor_si: "alto" | "bajo" | "sin" | null
+  mejor_si: "mayor" | "menor" | "sin" | null
   orden: number
   activo: boolean
   agregacion: AgregacionIndicador
