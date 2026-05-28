@@ -7,12 +7,11 @@
 BEGIN;
 
 -- ---------------------------------------------------------------
--- 1) Tabla catálogo de rubros
+-- 1) Tabla catálogo de rubros (sin columna generada — índice funcional)
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS presupuesto_rubros_catalogo (
   id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   rubro                    text NOT NULL,
-  rubro_normalizado        text GENERATED ALWAYS AS (UPPER(TRIM(rubro))) STORED,
   categoria                text NOT NULL,
   tipo_costo               text NOT NULL CHECK (tipo_costo IN ('fijo','variable')),
   responsable_default_id   uuid REFERENCES profiles(id) ON DELETE SET NULL,
@@ -22,7 +21,7 @@ CREATE TABLE IF NOT EXISTS presupuesto_rubros_catalogo (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rubros_catalogo_norm
-  ON presupuesto_rubros_catalogo(rubro_normalizado);
+  ON presupuesto_rubros_catalogo (UPPER(BTRIM(rubro)));
 
 CREATE INDEX IF NOT EXISTS idx_rubros_catalogo_categoria
   ON presupuesto_rubros_catalogo(categoria);
@@ -42,7 +41,7 @@ ALTER TABLE presupuestos_tareas
 -- ---------------------------------------------------------------
 INSERT INTO presupuesto_rubros_catalogo (rubro, categoria, tipo_costo, responsable_default_id)
 VALUES
-('SUTIAGA- DESCUENTO OBTENIDO POR CMQ', 'GENTE', 'fijo', '03ae6cd9-58e8-4512-be8d-48102cc165d8'),
+  ('SUTIAGA- DESCUENTO OBTENIDO POR CMQ', 'GENTE', 'fijo', '03ae6cd9-58e8-4512-be8d-48102cc165d8'),
   ('SUELDO BRUTO', 'GENTE', 'variable', '03ae6cd9-58e8-4512-be8d-48102cc165d8'),
   ('HORAS EXTRAS', 'ALMACEN', 'variable', 'abde2766-605c-41de-a734-71f9e27cea69'),
   ('ANTIGÜEDAD', 'GENTE', 'variable', '03ae6cd9-58e8-4512-be8d-48102cc165d8'),
@@ -194,7 +193,7 @@ VALUES
   ('CUOTA MENSUAL DE SISTEMAS ENTREGA', 'ENTREGA', 'fijo', 'e579be0a-64ef-4572-8a55-c0fbfe03e57f'),
   ('ROBO EFECTIVO Y CHEQUES', 'ADMINISTRACION', 'fijo', '58b73552-4e3a-415c-bd6d-444a5e656a15'),
   ('BILLETES FALSOS', 'ADMINISTRACION', 'variable', '58b73552-4e3a-415c-bd6d-444a5e656a15')
-ON CONFLICT (rubro_normalizado) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------
 -- 4) RLS

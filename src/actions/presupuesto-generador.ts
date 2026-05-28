@@ -31,7 +31,6 @@ export interface PreviewTareaItem {
 
 interface CatalogoRow {
   rubro: string
-  rubro_normalizado: string
   categoria: string
   tipo_costo: "fijo" | "variable"
   responsable_default_id: string | null
@@ -188,10 +187,10 @@ export async function previewTareasDesdeEerr(
 
     const { data: catalogoRaw } = await supabase
       .from("presupuesto_rubros_catalogo")
-      .select("rubro, rubro_normalizado, categoria, tipo_costo, responsable_default_id")
+      .select("rubro, categoria, tipo_costo, responsable_default_id")
       .eq("activo", true)
     const catalogo = (catalogoRaw ?? []) as CatalogoRow[]
-    const byNorm = new Map(catalogo.map((c) => [c.rubro_normalizado, c]))
+    const byNorm = new Map(catalogo.map((c) => [normalizar(c.rubro), c]))
 
     const respIds = Array.from(
       new Set(catalogo.map((c) => c.responsable_default_id).filter(Boolean)),
