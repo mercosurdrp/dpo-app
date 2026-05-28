@@ -56,6 +56,10 @@ export async function fetchChecklists(
     })
     if (!res.ok) {
       const body = await res.text().catch(() => "")
+      // 404 con "No Checklists found" = rango sin checklists (típico en días
+      // sin reparto o antes de la primera liberación del día). Lista vacía,
+      // no error.
+      if (res.status === 404 && body.includes("No Checklists found")) break
       throw new Error(`Cloudfleet checklist ${res.status}: ${body.slice(0, 200)}`)
     }
     const chunk = (await res.json()) as CloudfleetChecklist[]
