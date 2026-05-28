@@ -12,6 +12,7 @@ import type {
   S5AuditoriaFull,
   S5AuditoriaItem,
   S5AuditoriaItemConCatalogo,
+  S5ItemFoto,
   S5SectorAlmacen,
   S5SectorResponsableFull,
   S5VehiculoPendiente,
@@ -440,6 +441,24 @@ export async function getAuditoria(
 
     if (errItems) return { error: errItems.message }
 
+    // Fotos por ítem (tabla s5_auditoria_item_fotos, bucket 's5-auditorias').
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const itemRowIds = ((itemsRaw ?? []) as any[]).map((r) => r.id as string)
+    const fotosPorItem = new Map<string, S5ItemFoto[]>()
+    if (itemRowIds.length > 0) {
+      const { data: fotosRaw, error: errFotos } = await supabase
+        .from("s5_auditoria_item_fotos")
+        .select("*")
+        .in("auditoria_item_id", itemRowIds)
+        .order("created_at", { ascending: true })
+      if (errFotos) return { error: errFotos.message }
+      for (const f of (fotosRaw ?? []) as S5ItemFoto[]) {
+        const arr = fotosPorItem.get(f.auditoria_item_id) ?? []
+        arr.push(f)
+        fotosPorItem.set(f.auditoria_item_id, arr)
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items: S5AuditoriaItemConCatalogo[] = ((itemsRaw ?? []) as any[])
       .map((r) => ({
@@ -449,6 +468,7 @@ export async function getAuditoria(
         puntaje: r.puntaje,
         observaciones: r.observaciones,
         catalogo: r.catalogo as S5ItemCatalogo,
+        fotos: fotosPorItem.get(r.id) ?? [],
       }))
       .sort((a, b) => {
         const catOrden =
@@ -695,6 +715,144 @@ export async function guardarPuntajeItem(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error guardando puntaje",
+    }
+  }
+}
+
+// ===================================================
+// Fotos por ítem de auditoría (bucket 's5-auditorias')
+// ===================================================
+
+const S5_BUCKET = "s5-auditorias"
+
+/** Verifica que el ítem exista y que su auditoría siga editable (borrador). */
+async function assertItemEditable(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  auditoriaItemId: string
+): Promise<{ auditoriaId: string } | { error: string }> {
+  const { data: item, error } = await supabase
+    .from("s5_auditoria_items")
+    .select("id, auditoria_id")
+    .eq("id", auditoriaItemId)
+    .single()
+  if (error || !item) return { error: error?.message ?? "Ítem no encontrado" }
+
+  const { data: aud, error: errAud } = await supabase
+    .from("s5_auditorias")
+    .select("estado")
+    .eq("id", item.auditoria_id)
+    .single()
+  if (errAud || !aud)
+    return { error: errAud?.message ?? "Auditoría no encontrada" }
+  if (aud.estado === "completada") {
+    return { error: "La auditoría ya fue completada y no admite cambios." }
+  }
+  return { auditoriaId: item.auditoria_id as string }
+}
+
+/**
+ * Registra en BD una foto ya subida al bucket. La subida del binario se hace
+ * client-side (browser supabase) para no chocar con el límite de 4.5MB de las
+ * Server Functions; acá sólo guardamos el path + metadata.
+ */
+export async function registrarFotoItem(input: {
+  auditoriaItemId: string
+  storagePath: string
+  mimeType: string
+  tamanoBytes: number
+}): Promise<{ data: S5ItemFoto } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    const supabase = await createClient()
+    const chk = await assertItemEditable(supabase, input.auditoriaItemId)
+    if ("error" in chk) return { error: chk.error }
+
+    const { data, error } = await supabase
+      .from("s5_auditoria_item_fotos")
+      .insert({
+        auditoria_item_id: input.auditoriaItemId,
+        storage_path: input.storagePath,
+        mime_type: input.mimeType,
+        tamano_bytes: input.tamanoBytes,
+        subido_por: profile.id,
+      })
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(`${DASHBOARD_PATH}/auditoria/${chk.auditoriaId}`)
+    return { data: data as S5ItemFoto }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error registrando foto",
+    }
+  }
+}
+
+export async function eliminarFotoItem(
+  fotoId: string
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    const supabase = await createClient()
+
+    const { data: foto, error: errFoto } = await supabase
+      .from("s5_auditoria_item_fotos")
+      .select("id, storage_path, auditoria_item_id")
+      .eq("id", fotoId)
+      .single()
+    if (errFoto || !foto)
+      return { error: errFoto?.message ?? "Foto no encontrada" }
+
+    const chk = await assertItemEditable(supabase, foto.auditoria_item_id)
+    if ("error" in chk) return { error: chk.error }
+
+    const { error } = await supabase
+      .from("s5_auditoria_item_fotos")
+      .delete()
+      .eq("id", fotoId)
+    if (error) return { error: error.message }
+
+    // Borrado del objeto en Storage: best-effort (la fila ya se borró, así que
+    // la foto desaparece de la UI aunque falte policy de delete en el bucket).
+    await supabase.storage.from(S5_BUCKET).remove([foto.storage_path])
+
+    revalidatePath(`${DASHBOARD_PATH}/auditoria/${chk.auditoriaId}`)
+    return { ok: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando foto",
+    }
+  }
+}
+
+/** URLs firmadas (batch) para mostrar las miniaturas de las fotos de ítems. */
+export async function getFotosItemSignedUrls(
+  paths: string[],
+  expiresIn = 60 * 60 * 2 // 2 horas
+): Promise<{ data: Record<string, string> } | { error: string }> {
+  try {
+    await requireAuth()
+    if (paths.length === 0) return { data: {} }
+    const supabase = await createClient()
+    const { data, error } = await supabase.storage
+      .from(S5_BUCKET)
+      .createSignedUrls(paths, expiresIn)
+    if (error) return { error: error.message }
+    const map: Record<string, string> = {}
+    for (const r of data ?? []) {
+      if (r.path && r.signedUrl) map[r.path] = r.signedUrl
+    }
+    return { data: map }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error generando URLs",
     }
   }
 }
