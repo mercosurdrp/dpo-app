@@ -505,11 +505,11 @@ export function PresupuestoClient({
                 <p className="font-medium text-slate-800">Costos fijos</p>
                 <ul className="ml-4 list-disc space-y-0.5">
                   <li>
-                    Desvío mayor al <strong>15% en valor absoluto</strong> → se
-                    analiza <strong>mensualmente</strong>.
+                    Desvío mayor a <strong>±15%</strong> → se analiza{" "}
+                    <strong>mensualmente</strong>.
                   </li>
                   <li>
-                    Desvío dentro del <strong>±15%</strong> → se analiza{" "}
+                    Desvío dentro de <strong>±15%</strong> → se analiza{" "}
                     <strong>trimestralmente</strong> (Q1, Q2, Q3, Q4).
                   </li>
                 </ul>
@@ -517,9 +517,8 @@ export function PresupuestoClient({
               <div>
                 <p className="font-medium text-slate-800">Costos variables</p>
                 <p className="ml-4">
-                  Se analiza cuando el desvío supera{" "}
-                  <strong>15% en valor absoluto</strong> <em>o</em>{" "}
-                  <strong>$250.000 en valor absoluto</strong>.
+                  Se analiza cuando el desvío supera <strong>±15%</strong>{" "}
+                  <em>o</em> <strong>±$250.000</strong>.
                 </p>
               </div>
               <p className="text-slate-600">
