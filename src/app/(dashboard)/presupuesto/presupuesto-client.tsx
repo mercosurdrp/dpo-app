@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Send,
   Eye,
+  Info,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -489,6 +490,45 @@ export function PresupuestoClient({
           Se sube un único archivo por año que se va pisando mes a mes (contiene
           todos los meses adentro).
         </p>
+      </section>
+
+      {/* Criterio de análisis de desvíos */}
+      <section>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex gap-3">
+            <Info className="size-5 shrink-0 text-blue-600" />
+            <div className="space-y-2 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">
+                Criterio de análisis de desvíos
+              </p>
+              <div>
+                <p className="font-medium text-slate-800">Costos fijos</p>
+                <ul className="ml-4 list-disc space-y-0.5">
+                  <li>
+                    Desvío mayor al <strong>15% en valor absoluto</strong> → se
+                    analiza <strong>mensualmente</strong>.
+                  </li>
+                  <li>
+                    Desvío dentro del <strong>±15%</strong> → se analiza{" "}
+                    <strong>trimestralmente</strong> (Q1, Q2, Q3, Q4).
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-medium text-slate-800">Costos variables</p>
+                <p className="ml-4">
+                  Se analiza cuando el desvío supera{" "}
+                  <strong>15% en valor absoluto</strong> <em>o</em>{" "}
+                  <strong>$250.000 en valor absoluto</strong>.
+                </p>
+              </div>
+              <p className="text-slate-600">
+                Además, todo desvío en rubros <strong>no presupuestados</strong>{" "}
+                debe analizarse.
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Sección 3 — Tareas de análisis */}
