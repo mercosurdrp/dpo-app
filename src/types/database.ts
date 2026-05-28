@@ -2709,6 +2709,7 @@ export interface CausaEfectoContenido {
   efecto: string
   categorias: { nombre: string; causas: string[] }[]
   causa_raiz: string
+  contramedida?: string
 }
 
 export interface PdcaContenido {
