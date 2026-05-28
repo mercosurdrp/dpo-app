@@ -1,10 +1,12 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -22,6 +24,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  BarChart3,
+  CalendarDays,
 } from "lucide-react"
 import type { PreRutaEnVivo, PreRutaEquipoLive } from "@/types/database"
 import type { TmlFoxtrotEnVivo } from "@/actions/tml-foxtrot"
@@ -86,17 +90,51 @@ export function PreRutaClient({ initial, tmlFoxtrotByDominio }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
             <Activity className="h-6 w-6 text-indigo-600" />
-            Pre-Ruta en Vivo
+            Pre-Ruta {isHoy ? "en Vivo" : "— Histórico"}
           </h1>
           <p className="text-sm text-muted-foreground">
             Tablero operativo · {initial.fecha} · meta TML {initial.meta_minutos} min
+            {!isHoy && " · solo lectura"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-md border bg-white px-2 py-1">
+            <CalendarDays className="h-4 w-4 text-slate-500" />
+            <Input
+              type="date"
+              value={initial.fecha}
+              max={HOY}
+              onChange={(e) => {
+                const v = e.target.value
+                if (!v) return
+                const qs = v === HOY ? "" : `?fecha=${v}`
+                startTransition(() => router.push(`/indicadores/pre-ruta-en-vivo${qs}`))
+              }}
+              className="h-7 w-[140px] border-0 p-0 text-sm focus-visible:ring-0"
+            />
+            {!isHoy && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() =>
+                  startTransition(() => router.push("/indicadores/pre-ruta-en-vivo"))
+                }
+              >
+                Hoy
+              </Button>
+            )}
+          </div>
+          <Link
+            href="/indicadores/tml"
+            className="inline-flex items-center gap-1 rounded-md border bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <BarChart3 className="h-4 w-4" /> Vista mensual
+          </Link>
           {showFoxtrot && (
             <div className="flex items-center rounded-md border bg-white p-1 text-xs">
               <button
@@ -119,9 +157,11 @@ export function PreRutaClient({ initial, tmlFoxtrotByDominio }: Props) {
               </button>
             </div>
           )}
-          <div className="rounded-md bg-slate-900 px-4 py-2 font-mono text-2xl font-bold text-white tabular-nums">
-            {fmtClock(now)}
-          </div>
+          {isHoy && (
+            <div className="rounded-md bg-slate-900 px-4 py-2 font-mono text-2xl font-bold text-white tabular-nums">
+              {fmtClock(now)}
+            </div>
+          )}
           <Button
             variant="outline"
             size="sm"
