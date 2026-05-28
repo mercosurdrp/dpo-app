@@ -330,7 +330,18 @@ export async function runFuerasRutaSync(
       const idRuta = f?.idRuta ?? null
       if (idRuta) conRutaPre++
       else sinRutaPre++
-      const razon = c.eClialias?.find((a) => String(a.anulado ?? "").toLowerCase() !== "true")?.razonSocial
+      // Preferir el alias marcado como vigente por Chess (idAliasVigente).
+      // Why: un cliente puede tener varios alias no anulados cuando hay cambio
+      // de titular del PDV (mismo idCliente, distinto CUIT/razonSocial). El
+      // orden del array NO refleja vigencia, así que tomar el primer no
+      // anulado mostraba el dueño viejo.
+      const aliasNoAnulado = (a: { anulado?: string | boolean }) =>
+        String(a.anulado ?? "").toLowerCase() !== "true"
+      const razon =
+        c.eClialias?.find(
+          (a) => a.idAlias != null && a.idAlias === c.idAliasVigente && aliasNoAnulado(a),
+        )?.razonSocial
+        ?? c.eClialias?.find(aliasNoAnulado)?.razonSocial
         ?? c.eClialias?.[0]?.razonSocial
         ?? null
       clientesRows.push({

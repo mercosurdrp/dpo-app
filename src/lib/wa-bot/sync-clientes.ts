@@ -47,7 +47,15 @@ export async function syncClientesCache(
     const idPromotor = pickPromotor(c, rutaToPromotor)
     if (idPromotor != null) conPromotor++; else sinPromotor++
 
-    const nombre = c.eClialias?.find((a) => a.anulado !== "true")?.razonSocial
+    // Preferir el alias marcado vigente por Chess (idAliasVigente). El primer
+    // no anulado puede ser el dueño viejo si hubo cambio de titular del PDV.
+    const aliasNoAnulado = (a: { anulado?: string | boolean }) =>
+      String(a.anulado ?? "").toLowerCase() !== "true"
+    const nombre =
+      c.eClialias?.find(
+        (a) => a.idAlias != null && a.idAlias === c.idAliasVigente && aliasNoAnulado(a),
+      )?.razonSocial
+      ?? c.eClialias?.find(aliasNoAnulado)?.razonSocial
       ?? c.eClialias?.[0]?.razonSocial
       ?? null
 

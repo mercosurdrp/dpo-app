@@ -49,13 +49,20 @@ export interface ChessClienteFuerza {
 
 export interface ChessCliente {
   idCliente: number
+  idAliasVigente?: number | null
   calleEntrega?: string | null
   alturaEntrega?: string | number | null
   desLocalidad?: string | null
   longitudGeo?: number | null
   latitudGeo?: number | null
   desCanalMkt?: string | null
-  eClialias?: { razonSocial?: string; anulado?: string; fechaHoraAlta?: string }[]
+  eClialias?: {
+    idAlias?: number
+    razonSocial?: string
+    fantasiaSocial?: string
+    anulado?: string | boolean
+    fechaHoraAlta?: string
+  }[]
   eClifuerza?: ChessClienteFuerza[]
   telefono?: string | null
 }
