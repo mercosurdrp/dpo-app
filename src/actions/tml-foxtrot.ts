@@ -20,7 +20,7 @@ import type {
   TmlFoxtrotPeriodo,
 } from "@/types/database"
 
-const META_MIN = 30
+const META_MIN = 25
 // Tope de días que se pueden pedir de una sola vez (YTD ≈ 365 + margen).
 const MAX_RANGO_DIAS = 400
 

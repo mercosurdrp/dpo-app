@@ -95,7 +95,7 @@ interface Props {
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 function TmlBadge({ tml }: { tml: number }) {
-  if (tml <= 30) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{tml} min</Badge>
+  if (tml <= 25) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{tml} min</Badge>
   if (tml <= 45) return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{tml} min</Badge>
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{tml} min</Badge>
 }
@@ -168,20 +168,20 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
               <div>
                 <p className="text-sm text-muted-foreground">TML Promedio</p>
                 <p className={`text-3xl font-bold ${
-                  kpis.promedioTml <= 30 ? "text-green-600" : kpis.promedioTml <= 45 ? "text-amber-600" : "text-red-600"
+                  kpis.promedioTml <= 25 ? "text-green-600" : kpis.promedioTml <= 45 ? "text-amber-600" : "text-red-600"
                 }`}>
                   {kpis.promedioTml} min
                 </p>
               </div>
               <div className={`rounded-full p-3 ${
-                kpis.promedioTml <= 30 ? "bg-green-100" : kpis.promedioTml <= 45 ? "bg-amber-100" : "bg-red-100"
+                kpis.promedioTml <= 25 ? "bg-green-100" : kpis.promedioTml <= 45 ? "bg-amber-100" : "bg-red-100"
               }`}>
                 <Clock className={`h-5 w-5 ${
-                  kpis.promedioTml <= 30 ? "text-green-600" : kpis.promedioTml <= 45 ? "text-amber-600" : "text-red-600"
+                  kpis.promedioTml <= 25 ? "text-green-600" : kpis.promedioTml <= 45 ? "text-amber-600" : "text-red-600"
                 }`} />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Meta: ≤ 30 min</p>
+            <p className="mt-2 text-xs text-muted-foreground">Meta: ≤ 25 min</p>
           </CardContent>
         </Card>
 
@@ -288,12 +288,12 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
                         formatter={(value) => [`${value} min`, "TML"]}
                         labelFormatter={(label) => `Semana ${label}`}
                       />
-                      <ReferenceLine y={30} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 30min", position: "right", fontSize: 10 }} />
+                      <ReferenceLine y={25} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 25min", position: "right", fontSize: 10 }} />
                       <Bar dataKey="tml" radius={[4, 4, 0, 0]}>
                         {semanalData.map((entry, index) => (
                           <Cell
                             key={index}
-                            fill={entry.tml <= 30 ? "#10B981" : entry.tml <= 45 ? "#F59E0B" : "#EF4444"}
+                            fill={entry.tml <= 25 ? "#10B981" : entry.tml <= 45 ? "#F59E0B" : "#EF4444"}
                           />
                         ))}
                       </Bar>
@@ -349,12 +349,12 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
                       <Tooltip
                         formatter={(value) => [`${value} min`, "TML"]}
                       />
-                      <ReferenceLine y={30} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 30min", position: "right", fontSize: 10 }} />
+                      <ReferenceLine y={25} stroke="#10B981" strokeDasharray="5 5" label={{ value: "Meta 25min", position: "right", fontSize: 10 }} />
                       <Bar dataKey="tml" radius={[4, 4, 0, 0]}>
                         {mensualData.map((entry, index) => (
                           <Cell
                             key={index}
-                            fill={entry.tml <= 30 ? "#10B981" : entry.tml <= 45 ? "#F59E0B" : "#EF4444"}
+                            fill={entry.tml <= 25 ? "#10B981" : entry.tml <= 45 ? "#F59E0B" : "#EF4444"}
                           />
                         ))}
                       </Bar>
@@ -415,10 +415,10 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
                   }}
                 />
                 <ReferenceLine
-                  y={30}
+                  y={25}
                   stroke="#10B981"
                   strokeDasharray="5 5"
-                  label={{ value: "Meta 30min", position: "right", fontSize: 10 }}
+                  label={{ value: "Meta 25min", position: "right", fontSize: 10 }}
                 />
                 <Line
                   type="monotone"
@@ -441,7 +441,7 @@ export function TmlClient({ kpis, registros, choferes, vehiculos, planesResumen 
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Línea azul: año actual · línea gris dashed: año anterior · línea verde: meta 30 min
+            Línea azul: año actual · línea gris dashed: año anterior · línea verde: meta 25 min
           </p>
         </CardContent>
       </Card>

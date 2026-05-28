@@ -424,7 +424,7 @@ export function PackAuditoria11Client({ pack, archivos }: Props) {
               <p className="text-xs text-muted-foreground">TML global</p>
               <p
                 className={`text-2xl font-bold ${
-                  pack.r1_1_5_tml.promedio_tml_actual <= 30
+                  pack.r1_1_5_tml.promedio_tml_actual <= 25
                     ? "text-green-600"
                     : pack.r1_1_5_tml.promedio_tml_actual <= 45
                     ? "text-amber-600"
@@ -482,7 +482,7 @@ export function PackAuditoria11Client({ pack, archivos }: Props) {
                         <Cell
                           key={i}
                           fill={
-                            entry.tml <= 30
+                            entry.tml <= 25
                               ? "#10B981"
                               : entry.tml <= 45
                               ? "#F59E0B"

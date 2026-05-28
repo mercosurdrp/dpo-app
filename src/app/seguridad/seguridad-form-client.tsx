@@ -102,7 +102,7 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
       {/* TML Preview */}
       {tmlPreview !== null && (
         <Card className={
-          tmlPreview <= 30
+          tmlPreview <= 25
             ? "border-green-300 bg-green-50/50"
             : tmlPreview <= 45
               ? "border-amber-300 bg-amber-50/50"
@@ -116,7 +116,7 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
               </div>
               <div className="flex items-center gap-3">
                 <span className={`text-3xl font-bold ${
-                  tmlPreview <= 30
+                  tmlPreview <= 25
                     ? "text-green-600"
                     : tmlPreview <= 45
                       ? "text-amber-600"
@@ -125,13 +125,13 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
                   {tmlPreview} min
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  tmlPreview <= 30
+                  tmlPreview <= 25
                     ? "bg-green-100 text-green-700"
                     : tmlPreview <= 45
                       ? "bg-amber-100 text-amber-700"
                       : "bg-red-100 text-red-700"
                 }`}>
-                  {tmlPreview <= 30 ? "OK" : tmlPreview <= 45 ? "Fuera" : "Crítico"}
+                  {tmlPreview <= 25 ? "OK" : tmlPreview <= 45 ? "Fuera" : "Crítico"}
                 </span>
               </div>
             </div>

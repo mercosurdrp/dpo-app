@@ -1142,7 +1142,7 @@ export interface TmlFoxtrotResumen {
   promedio_desde7_min: number | null
   peor_real_min: number | null
   mejor_real_min: number | null
-  // Equipos dentro de meta (TML ≤ 30 min) según cada métrica. El % dentro de
+  // Equipos dentro de meta (TML ≤ 25 min) según cada métrica. El % dentro de
   // meta (objetivo DPO ≥ 65%) = en_meta_X / equipos_con_tml.
   en_meta_real: number
   en_meta_desde7: number

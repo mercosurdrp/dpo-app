@@ -3066,7 +3066,7 @@ async function getIndicadoresMesCore(
 
     // 7d. Indicador AUTO "TML" (Tiempo Medio de Liberación) — todos los tipos.
     //     Promedio diario de tml_minutos en registros_vehiculos (tipo=egreso,
-    //     tml_minutos NOT NULL). Meta 21 min. mejor_si=menor.
+    //     tml_minutos NOT NULL). Meta 25 min. mejor_si=menor.
     //     MTD = promedio ponderado por # de egresos (Σ minutos / Σ egresos).
     {
       const { data: tmlRaw, error: errTml } = await supabase
@@ -3116,7 +3116,7 @@ async function getIndicadoresMesCore(
           id: "auto_tml",
           nombre: "TML",
           unidad: "min",
-          meta: 21,
+          meta: 25,
           orden: -1,
           agregacion: "promedio",
           valores: valoresPorFecha,
@@ -3527,7 +3527,7 @@ async function getIndicadoresMesCore(
           // Misiones. Con "auto_tml_fx" la celda no es clickeable (el detalle
           // del TML Foxtrot está en /indicadores/tml-foxtrot).
           const tmlRow = buildSerieRow(
-            "auto_tml_fx", "TML", "min", ms.tml_promedio, "promedio", 30, "menor",
+            "auto_tml_fx", "TML", "min", ms.tml_promedio, "promedio", 25, "menor",
           )
           // Errores operativos de depósito (Analía). Fila nueva, sin manual homónimo.
           const erroresRow = buildSerieRow(

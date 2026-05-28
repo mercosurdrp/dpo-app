@@ -4,7 +4,7 @@
  */
 import type { SupaClient } from "@/lib/rechazos/comparado"
 
-const META_MINUTOS = 21
+const META_MINUTOS = 25
 
 export interface TmlRegistroRow {
   id: string
