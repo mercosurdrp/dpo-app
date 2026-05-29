@@ -60,10 +60,10 @@ function recalcular(
   const trigger_otif = hl > 0 && otif_estimado < umbrales.otif_min
   const trigger_aus = pct_ausentismo >= umbrales.ausentismo_max
   const codigo =
-    (trigger_otif ? "A" : "") +
-    (trigger_vol ? "A" : "") +
-    (trigger_cli ? "A" : "") +
-    (trigger_aus ? "A" : "")
+    (trigger_otif ? "P" : "") +
+    (trigger_vol ? "P" : "") +
+    (trigger_cli ? "P" : "") +
+    (trigger_aus ? "P" : "")
   const triggerCount = codigo.length
   const estatus: "CRITICO" | "NORMAL" =
     triggerCount >= umbrales.min_triggers ? "CRITICO" : "NORMAL"

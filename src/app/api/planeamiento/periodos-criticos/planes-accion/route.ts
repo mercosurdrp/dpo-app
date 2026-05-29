@@ -33,8 +33,8 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "codigo (≤4 chars) y plan_texto requeridos" }, { status: 400 })
   }
   // Solo aceptamos códigos del set válido para evitar polución
-  if (!/^A{0,4}$/.test(codigo)) {
-    return NextResponse.json({ error: 'codigo debe ser "", "A", "AA", "AAA" o "AAAA"' }, { status: 400 })
+  if (!/^P{0,4}$/.test(codigo)) {
+    return NextResponse.json({ error: 'codigo debe ser "", "P", "PP", "PPP" o "PPPP"' }, { status: 400 })
   }
 
   const supabase = await createClient()

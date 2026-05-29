@@ -1,9 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon } from "lucide-react"
 import { SimuladorTab } from "./simulador"
@@ -264,18 +266,21 @@ export function PeriodosCriticosClient({
             </select>
           </label>
           <span className="text-xs text-slate-600">
-            <b>{conteo.criticos}</b> días CRÍTICOS · Codifica V (vol) · C (clientes) · O (OTIF) · U (ausentismo)
+            <b>{conteo.criticos}</b> días CRÍTICOS · 1 PICO = 1 variable que cruzó su umbral
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-700" label={`4 trig (${conteo.t4})`} />
-            <Legend color="bg-red-500" label={`3 trig (${conteo.t3})`} />
-            <Legend color="bg-orange-500" label={`2 trig (${conteo.t2})`} />
-            <Legend color="bg-amber-300" label={`1 trig (${conteo.t1})`} />
+            <Legend color="bg-red-700" label={`4 PICOS (${conteo.t4})`} />
+            <Legend color="bg-red-500" label={`3 PICOS (${conteo.t3})`} />
+            <Legend color="bg-orange-500" label={`2 PICOS (${conteo.t2})`} />
+            <Legend color="bg-amber-300" label={`1 PICO (${conteo.t1})`} />
             <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>
         </CardContent>
       </Card>
+
+      <UmbralesInlineCard umbrales={umbrales} />
+
 
       <Tabs defaultValue="calendario">
         <TabsList>
@@ -327,6 +332,119 @@ function Legend({ color, label }: { color: string; label: string }) {
       <span className={`inline-block w-3 h-3 rounded-sm ${color}`} />
       <span className="text-slate-700">{label}</span>
     </div>
+  )
+}
+
+// ============================================================================
+// Card inline con los 6 umbrales editables al toque. Mismo endpoint que el
+// tab Configuración, pero accesible mientras se mira el calendario.
+// ============================================================================
+function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
+  const router = useRouter()
+  const [vp, setVP] = useState(umbrales.vol_pico)
+  const [va, setVA] = useState(umbrales.vol_alto)
+  const [vm, setVM] = useState(umbrales.vol_medio)
+  const [cli, setCli] = useState(umbrales.clientes)
+  const [otif, setOtif] = useState(umbrales.otif_min)
+  const [aus, setAus] = useState(umbrales.ausentismo_max)
+  const [mt, setMt] = useState(umbrales.min_triggers)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  const dirty =
+    vp !== umbrales.vol_pico ||
+    va !== umbrales.vol_alto ||
+    vm !== umbrales.vol_medio ||
+    cli !== umbrales.clientes ||
+    otif !== umbrales.otif_min ||
+    aus !== umbrales.ausentismo_max ||
+    mt !== umbrales.min_triggers
+
+  async function guardar() {
+    setSaving(true); setMsg(null)
+    try {
+      const res = await fetch("/api/planeamiento/periodos-criticos/umbrales", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vol_pico: vp, vol_alto: va, vol_medio: vm,
+          clientes: cli, otif_min: otif, ausentismo_max: aus, min_triggers: mt,
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `HTTP ${res.status}`)
+      }
+      setMsg("Guardado")
+      router.refresh()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+      setTimeout(() => setMsg(null), 2500)
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="text-xs font-semibold text-slate-700 mr-1">Umbrales (1 PICO si cruzan):</div>
+          <UInput label="Vol PICO ≥" value={vp} onChange={setVP} step={50} suffix="HL" />
+          <UInput label="Vol ALTO ≥" value={va} onChange={setVA} step={50} suffix="HL" />
+          <UInput label="Vol MEDIO ≥" value={vm} onChange={setVM} step={50} suffix="HL" />
+          <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
+          <UInput label="OTIF <" value={otif} onChange={setOtif} step={0.01} pct />
+          <UInput label="Aus ≥" value={aus} onChange={setAus} step={0.005} pct />
+          <UInput label="CRÍTICO si #PICOS ≥" value={mt} onChange={setMt} step={1} min={1} max={4} integer />
+          <Button onClick={guardar} disabled={!dirty || saving} size="sm" className="ml-auto">
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+          {msg && (
+            <span className={msg === "Guardado" ? "text-xs text-emerald-700" : "text-xs text-red-700"}>
+              {msg}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function UInput({
+  label, value, onChange, step, min = 0, max, suffix, pct, integer,
+}: {
+  label: string
+  value: number
+  onChange: (n: number) => void
+  step: number
+  min?: number
+  max?: number
+  suffix?: string
+  pct?: boolean
+  integer?: boolean
+}) {
+  return (
+    <label className="flex flex-col text-[10px] text-slate-500">
+      <span>{label}</span>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            if (!Number.isFinite(n)) return
+            onChange(integer ? Math.round(n) : n)
+          }}
+          className="h-7 w-20 rounded-md border border-slate-200 px-1.5 text-sm"
+        />
+        {suffix && <span className="text-[10px] text-slate-500">{suffix}</span>}
+        {pct && <span className="text-[10px] text-slate-500">(0-1)</span>}
+      </div>
+    </label>
   )
 }
 

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Upload, Save, FileSpreadsheet } from "lucide-react"
 import type { CfgPC, UmbralesPC, PlanAccion } from "./client"
 
-const CODIGOS = ["AAAA", "AAA", "AA", "A", ""]
+const CODIGOS = ["PPPP", "PPP", "PP", "P", ""]
 
 export function ConfiguracionTab({
   cfg,
