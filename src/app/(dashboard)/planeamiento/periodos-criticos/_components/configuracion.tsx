@@ -220,10 +220,18 @@ function AusentismoUploadCard() {
         <CardTitle className="text-base flex items-center gap-2">
           <FileSpreadsheet className="w-4 h-4" /> Carga de ausentismo mensual
         </CardTitle>
-        <p className="text-xs text-slate-500">
-          Formato esperado: <b>anio · mes · pct_ausentismo</b> (decimal 0.045 o porcentaje 4.5).
-          Columnas opcionales: <code>total_planta</code>, <code>total_ausentes</code>, <code>comentario</code>. Upsert por (anio, mes).
-        </p>
+        <div className="text-xs text-slate-500 space-y-1">
+          <p>Se aceptan 2 formatos (el endpoint detecta cuál usar):</p>
+          <p>
+            <b>1) Licencias (export Quilmes):</b> 1 fila por licencia con <code>Sector · Fecha inicio · Fecha fin</code>.
+            Filtra automático Sector = &ldquo;Distribución&rdquo;, excluye domingos, agrupa por mes y calcula
+            % con universo por temporada (Alta=32, Media=25, Baja=18).
+          </p>
+          <p>
+            <b>2) Simple:</b> 1 fila por mes con <code>anio · mes · pct_ausentismo</code> (decimal 0.045 o porcentaje 4.5).
+          </p>
+          <p className="text-slate-400">Upsert por (anio, mes).</p>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
         <input
