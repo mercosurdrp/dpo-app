@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Calculator,
   ExternalLink,
+  CalendarRange,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
 import type { BloqueIndicadores } from "@/actions/indicadores"
@@ -131,40 +132,67 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
         </div>
       </div>
 
-      {/* Acceso al Simulador de Dimensionamiento (sólo Misiones, pilar Planeamiento) */}
+      {/* Herramientas del pilar Planeamiento (sólo Misiones) */}
       {IS_MISIONES && pilar.nombre === "Planeamiento" && (
-        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className="rounded-xl p-3"
-                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                  >
+                    <Calculator className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Simulador de Dimensionamiento</p>
+                    <p className="text-sm text-muted-foreground">
+                      Escenarios de dotación, plan vs. real, plan de acción
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={SIMULADOR_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants({ size: "sm" })}
+                  style={{ backgroundColor: pilar.color, color: "#fff" }}
                 >
-                  <Calculator className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    Simulador de Dimensionamiento Operativo
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Escenarios de dotación, plan vs. real y plan de acción del almacén
-                  </p>
-                </div>
+                  Abrir <ExternalLink className="h-4 w-4" />
+                </a>
               </div>
-              <a
-                href={SIMULADOR_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonVariants({ size: "lg" })}
-                style={{ backgroundColor: pilar.color, color: "#fff" }}
-              >
-                Abrir simulador
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                  >
+                    <CalendarRange className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Períodos Críticos (3.4)</p>
+                    <p className="text-sm text-muted-foreground">
+                      Calendario por volumen + OTIF + ausentismo · simulador de días pico
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/planeamiento/periodos-criticos"
+                  className={buttonVariants({ size: "sm" })}
+                  style={{ backgroundColor: pilar.color, color: "#fff" }}
+                >
+                  Abrir <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Summary cards */}
