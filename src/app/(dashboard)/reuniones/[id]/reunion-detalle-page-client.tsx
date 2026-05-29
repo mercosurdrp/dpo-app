@@ -1321,9 +1321,15 @@ export function ReunionDetallePageClient({
                         // `mostrar_cero` para que los días con 0% también se vean.
                         if (ind.auto) {
                           const valor = cell?.valor ?? null
+                          const esLtiTri =
+                            ind.id === "auto_lti" || ind.id === "auto_tri"
                           const valorValido =
                             valor != null && Number.isFinite(valor) && f <= detalle.fecha
-                          const muestra = valorValido && (ind.mostrar_cero ? true : valor! > 0)
+                          // LTI/TRI muestran 0 (días sin accidente) como el resto
+                          // de indicadores con `mostrar_cero`.
+                          const muestra =
+                            valorValido &&
+                            (ind.mostrar_cero || esLtiTri ? true : valor! > 0)
                           const esPct = ind.unidad === "%"
                           // Color por polaridad de la meta (mejor_si). Si no hay
                           // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
@@ -1346,6 +1352,11 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_horas_calle"
                           ) {
                             colorClass = "font-medium text-slate-700"
+                          }
+                          // LTI/TRI: un 0 (día sin accidente) en gris neutro,
+                          // el rojo se reserva para los días con evento.
+                          if (esLtiTri && valor === 0) {
+                            colorClass = "text-slate-300"
                           }
                           // Checklist "X/Y": verde si todas aprobadas, ámbar
                           // si hubo algún rechazo en las liberaciones del día.

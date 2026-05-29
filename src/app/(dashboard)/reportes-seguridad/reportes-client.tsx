@@ -607,7 +607,7 @@ export function ReportesSeguridadClient({
                           : "text-slate-300")
                       }
                     >
-                      {v > 0 ? v : "—"}
+                      {v}
                     </td>
                   ))}
                 </tr>
