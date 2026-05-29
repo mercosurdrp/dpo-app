@@ -2,12 +2,16 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
 import type {
   HerramientaGestion,
   HerramientaGestionConContexto,
   HerramientaGestionContenido,
   HerramientaGestionTipo,
+  CincoPorquesContenido,
+  CausaEfectoContenido,
+  PdcaContenido,
 } from "@/types/database"
 import { generarPdfHerramienta } from "@/lib/herramientas-gestion-pdf"
 
@@ -427,6 +431,64 @@ export async function crearHerramientaActividad(
 }
 
 // ---------------------------------------------------------------------------
+// Volcado de la contramedida → plan de acción del reporte de seguridad
+//
+// En un reporte de seguridad la contramedida de la herramienta ES el plan de
+// acción: al guardar/actualizar la herramienta, la contramedida llena el
+// apartado "Plan de acción" del reporte (tabla reporte_seguridad_planes, 1:1).
+// ---------------------------------------------------------------------------
+
+// La contramedida vive en `contramedida` (5 Porqués / Causa-Efecto) o en
+// `hacer.acciones` (PDCA). Devuelve "" si no hay nada cargado.
+function extraerContramedida(
+  tipo: HerramientaGestionTipo,
+  contenido: HerramientaGestionContenido,
+): string {
+  if (tipo === "pdca") {
+    return ((contenido as PdcaContenido).hacer?.acciones ?? "").trim()
+  }
+  return (
+    (contenido as CincoPorquesContenido | CausaEfectoContenido).contramedida ?? ""
+  ).trim()
+}
+
+// Crea o actualiza el plan de acción del reporte con la contramedida.
+// Usa el cliente service_role porque escribir el plan es admin-only por RLS,
+// pero la herramienta la puede aplicar el autor/supervisor (permiso ya validado).
+// Si la contramedida está vacía no toca el plan (no borra uno existente). No lanza.
+async function sincronizarPlanReporte(
+  reporteId: string,
+  contramedida: string,
+  autorId: string,
+): Promise<void> {
+  const texto = contramedida.trim()
+  if (!texto) return
+  try {
+    const admin = createAdminClient()
+    const { data: existing } = await admin
+      .from("reporte_seguridad_planes")
+      .select("id")
+      .eq("reporte_id", reporteId)
+      .maybeSingle()
+
+    if (existing) {
+      await admin
+        .from("reporte_seguridad_planes")
+        .update({ descripcion: texto })
+        .eq("id", (existing as { id: string }).id)
+    } else {
+      await admin.from("reporte_seguridad_planes").insert({
+        reporte_id: reporteId,
+        descripcion: texto,
+        creado_por: autorId,
+      })
+    }
+  } catch (e) {
+    console.error("[herramientas-gestion] sincronizar plan del reporte:", e)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // crearHerramientaReporte — target = reporte de seguridad
 // ---------------------------------------------------------------------------
 
@@ -449,7 +511,7 @@ export async function crearHerramientaReporte(
     )
     if (!permiso.ok) return { error: permiso.error }
 
-    return insertarHerramienta(
+    const res = await insertarHerramienta(
       supabase,
       {
         reporte_seguridad_id: reporteId,
@@ -460,6 +522,18 @@ export async function crearHerramientaReporte(
       },
       getNombre(profile),
     )
+
+    // La contramedida vuelca al plan de acción del reporte.
+    if (!("error" in res)) {
+      await sincronizarPlanReporte(
+        reporteId,
+        extraerContramedida(tipo, contenido),
+        profile.id,
+      )
+      revalidatePath("/reportes-seguridad")
+    }
+
+    return res
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error creando la herramienta" }
   }
@@ -525,6 +599,16 @@ export async function actualizarHerramientaGestion(
     const ctx = await getContexto(supabase, row)
     const conCtx = mapRow(row, ctx, getNombre(profile))
     const pdfPath = await generarYGuardarPdf(supabase, conCtx)
+
+    // Si la herramienta es de un reporte, re-volcar la contramedida al plan.
+    if (tgt.reporte_seguridad_id) {
+      await sincronizarPlanReporte(
+        tgt.reporte_seguridad_id,
+        extraerContramedida(row.tipo as HerramientaGestionTipo, row.contenido),
+        profile.id,
+      )
+      revalidatePath("/reportes-seguridad")
+    }
 
     revalidatePath("/herramientas-gestion")
     const path = targetPath(ctx, row)
