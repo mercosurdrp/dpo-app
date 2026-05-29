@@ -75,19 +75,13 @@ function agruparPorSemana(dias: DiaCalendario[]): Semana[] {
   )
 }
 
-// Agrupa semanas por mes natural y reparte en 3 columnas (4 meses cada una).
-function agruparPorMesYColumna(semanas: Semana[]): Semana[][][] {
-  // 12 buckets uno por mes
+// Agrupa semanas por mes natural. Devuelve 12 buckets (uno por mes 1..12).
+function agruparPorMes(semanas: Semana[]): Semana[][] {
   const porMes: Semana[][] = Array.from({ length: 12 }, () => [])
   for (const s of semanas) {
     porMes[s.mesPertenencia - 1].push(s)
   }
-  // 3 columnas: [Ene-Abr, May-Ago, Sep-Dic]
-  return [
-    porMes.slice(0, 4),
-    porMes.slice(4, 8),
-    porMes.slice(8, 12),
-  ]
+  return porMes
 }
 
 // ---------------------------------------------------------------------------
@@ -110,8 +104,9 @@ export function DetalleSemanalTab({
     )
   }
 
-  // 12 meses repartidos en 3 columnas (Ene-Abr / May-Ago / Sep-Dic)
-  const columnas = agruparPorMesYColumna(semanas)
+  // 12 meses en orden consecutivo. El grid CSS los acomoda 3 por fila:
+  // [Ene Feb Mar] [Abr May Jun] [Jul Ago Sep] [Oct Nov Dic]
+  const meses = agruparPorMes(semanas)
 
   return (
     <div className="space-y-2">
@@ -119,34 +114,11 @@ export function DetalleSemanalTab({
         4 variables día a día agrupadas por semana ISO. Celda <span className="text-red-700 font-semibold">roja</span> si gatilla su trigger,
         <span className="text-emerald-700 font-semibold"> verde</span> si bajo umbral, gris si sin datos. Fila TIPO con el código (P/PP/PPP/PPPP).
       </p>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {columnas.map((meses, i) => (
-          <ColumnaMeses key={i} meses={meses} umbrales={umbrales} mesOffset={i * 4} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {meses.map((sems, i) => (
+          <TablaMes key={i} mes={i + 1} semanas={sems} umbrales={umbrales} />
         ))}
       </div>
-    </div>
-  )
-}
-
-function ColumnaMeses({
-  meses,
-  umbrales,
-  mesOffset,
-}: {
-  meses: Semana[][]   // 4 meses × N semanas
-  umbrales: UmbralesPC
-  mesOffset: number   // 0, 4, 8 — para saber el número del mes
-}) {
-  return (
-    <div className="space-y-3">
-      {meses.map((semanas, i) => (
-        <TablaMes
-          key={i}
-          mes={mesOffset + i + 1}
-          semanas={semanas}
-          umbrales={umbrales}
-        />
-      ))}
     </div>
   )
 }
