@@ -955,6 +955,98 @@ export interface TmlPlanResumen {
   items_completados: number
 }
 
+// ===== TI — Tiempo Interno (R1.3.x) =====
+// TI = (fichaje biométrico de salida) − (hora del checklist de retorno),
+// por chofer/día. Meta: ≤30 min y ≥65% en meta.
+export interface TiSemanal {
+  semana: number
+  year: number
+  promedio_minutos: number
+  total: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+export interface TiMensual {
+  mes: number
+  year: number
+  promedio_minutos: number
+  total: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+// Un registro individual de TI (un retorno con su salida cruzada).
+export interface TiRegistro {
+  fecha: string
+  chofer: string
+  legajo: number | null
+  dominio: string
+  hora_retorno: string // ISO UTC del checklist de retorno
+  hora_salida: string | null // ISO UTC normalizado del biométrico
+  ti_minutos: number | null
+  motivo_sin_dato: "sin_match" | "sin_biometrico" | "negativo" | "outlier" | null
+}
+
+export interface TiKpis {
+  totalRetornos: number
+  conTi: number // retornos con TI calculable
+  sinBiometrico: number
+  excluidos: number // negativos + outliers
+  promedioMinutos: number
+  mediana: number
+  dentroMeta: number
+  pctDentroMeta: number
+  metaMinutos: number
+  pctMetaMinimo: number
+  semanal: TiSemanal[]
+  mensual: TiMensual[]
+  registros: TiRegistro[]
+}
+
+export type PlanTiEstado = "abierto" | "en_progreso" | "cerrado"
+export type PlanTiItemEstado = "pendiente" | "en_progreso" | "completado"
+
+export interface TiPlanAccion {
+  id: string
+  mes: number
+  year: number
+  promedio_ti_mes: number
+  pct_dentro_meta_mes: number
+  causa_raiz: string
+  estado: PlanTiEstado
+  fecha_cierre: string | null
+  resultado_cierre: string | null
+  evidencia_cierre_url: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TiPlanAccionItem {
+  id: string
+  plan_id: string
+  accion: string
+  responsable: string
+  fecha_compromiso: string
+  estado: PlanTiItemEstado
+  fecha_completado: string | null
+  observaciones: string | null
+  orden: number
+  created_at: string
+}
+
+export interface TiPlanResumen {
+  year: number
+  mes: number
+  promedio_ti: number
+  pct_dentro_meta: number
+  fuera_meta: boolean
+  plan: TiPlanAccion | null
+  items_total: number
+  items_completados: number
+}
+
 // Plan list item (for /planes page)
 export interface PlanAccionListItem extends PlanAccion {
   pregunta_numero: string

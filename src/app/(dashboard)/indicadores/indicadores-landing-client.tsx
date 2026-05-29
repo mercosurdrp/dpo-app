@@ -227,6 +227,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          {!IS_MISIONES && (
+            <Link href="/indicadores/tiempo-interno">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-cyan-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-cyan-100 text-cyan-600 group-hover:bg-cyan-200 transition-colors">
+                    <Clock className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Tiempo Interno
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Retorno al CD → fichaje de salida — Pilar Entrega 1.3
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           {IS_MISIONES && (
             <Link href="/indicadores/sobrecargas">
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-rose-300">
