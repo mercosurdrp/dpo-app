@@ -31,9 +31,25 @@ type Semana = {
   id: string
   nro: number
   anio: number
+  mesPertenencia: number           // 1-12 según el jueves (criterio ISO)
   dias: (DiaCalendario | null)[]   // 7 slots Lun..Dom
   totalPicos: number               // Σ trigger_count en la semana
   criticos: number                 // # días con estatus=CRITICO
+}
+
+const NOMBRES_MES = [
+  "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+  "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+]
+
+// Mes "pertenencia" de la semana ISO: el del jueves (mismo criterio que el
+// año ISO, así una semana que cruza meses queda asignada a uno solo).
+function mesDeSemanaIso(fechaCualquiera: string): number {
+  const d = new Date(fechaCualquiera + "T00:00:00")
+  const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const dayNum = utc.getUTCDay() || 7
+  utc.setUTCDate(utc.getUTCDate() + 4 - dayNum)   // jueves de la misma semana ISO
+  return utc.getUTCMonth() + 1
 }
 
 function agruparPorSemana(dias: DiaCalendario[]): Semana[] {
@@ -44,6 +60,7 @@ function agruparPorSemana(dias: DiaCalendario[]): Semana[] {
     if (!grupos[id]) {
       grupos[id] = {
         id, nro: week, anio: year,
+        mesPertenencia: mesDeSemanaIso(d.fecha),
         dias: Array(7).fill(null),
         totalPicos: 0, criticos: 0,
       }
@@ -56,6 +73,21 @@ function agruparPorSemana(dias: DiaCalendario[]): Semana[] {
   return Object.values(grupos).sort((a, b) =>
     a.anio !== b.anio ? a.anio - b.anio : a.nro - b.nro,
   )
+}
+
+// Agrupa semanas por mes natural y reparte en 3 columnas (4 meses cada una).
+function agruparPorMesYColumna(semanas: Semana[]): Semana[][][] {
+  // 12 buckets uno por mes
+  const porMes: Semana[][] = Array.from({ length: 12 }, () => [])
+  for (const s of semanas) {
+    porMes[s.mesPertenencia - 1].push(s)
+  }
+  // 3 columnas: [Ene-Abr, May-Ago, Sep-Dic]
+  return [
+    porMes.slice(0, 4),
+    porMes.slice(4, 8),
+    porMes.slice(8, 12),
+  ]
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +110,8 @@ export function DetalleSemanalTab({
     )
   }
 
-  // Dividir las semanas en 3 columnas (más o menos balanceadas).
-  // 53 semanas / 3 ≈ 18 → primeras 18, siguientes 18, últimas 17.
-  const totalSemanas = semanas.length
-  const tramo = Math.ceil(totalSemanas / 3)
-  const grupos = [
-    semanas.slice(0, tramo),
-    semanas.slice(tramo, tramo * 2),
-    semanas.slice(tramo * 2),
-  ]
+  // 12 meses repartidos en 3 columnas (Ene-Abr / May-Ago / Sep-Dic)
+  const columnas = agruparPorMesYColumna(semanas)
 
   return (
     <div className="space-y-2">
@@ -94,35 +119,81 @@ export function DetalleSemanalTab({
         4 variables día a día agrupadas por semana ISO. Celda <span className="text-red-700 font-semibold">roja</span> si gatilla su trigger,
         <span className="text-emerald-700 font-semibold"> verde</span> si bajo umbral, gris si sin datos. Fila TIPO con el código (P/PP/PPP/PPPP).
       </p>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-        {grupos.map((g, i) => (
-          <TablaSemanas key={i} semanas={g} umbrales={umbrales} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {columnas.map((meses, i) => (
+          <ColumnaMeses key={i} meses={meses} umbrales={umbrales} mesOffset={i * 4} />
         ))}
       </div>
     </div>
   )
 }
 
-function TablaSemanas({ semanas, umbrales }: { semanas: Semana[]; umbrales: UmbralesPC }) {
-  if (semanas.length === 0) return null
+function ColumnaMeses({
+  meses,
+  umbrales,
+  mesOffset,
+}: {
+  meses: Semana[][]   // 4 meses × N semanas
+  umbrales: UmbralesPC
+  mesOffset: number   // 0, 4, 8 — para saber el número del mes
+}) {
   return (
-    <div className="overflow-auto rounded-md border border-slate-200">
-      <table className="w-full text-[10px] border-collapse">
-        <thead className="sticky top-0 z-10 bg-slate-100">
-          <tr>
-            <th className="border border-slate-200 px-1 py-0.5 w-10 text-left">SEM</th>
-            <th className="border border-slate-200 px-1 py-0.5 w-12 text-left">Var</th>
-            {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
-              <th key={i} className="border border-slate-200 px-1 py-0.5 text-center">{d}</th>
+    <div className="space-y-3">
+      {meses.map((semanas, i) => (
+        <TablaMes
+          key={i}
+          mes={mesOffset + i + 1}
+          semanas={semanas}
+          umbrales={umbrales}
+        />
+      ))}
+    </div>
+  )
+}
+
+function TablaMes({
+  mes,
+  semanas,
+  umbrales,
+}: {
+  mes: number
+  semanas: Semana[]
+  umbrales: UmbralesPC
+}) {
+  const criticosDelMes = semanas.reduce((s, w) => s + w.criticos, 0)
+  return (
+    <div className="rounded-md border border-slate-200 overflow-hidden">
+      {/* Banner mes */}
+      <div className="bg-slate-800 text-white px-2 py-1 flex items-center justify-between text-xs">
+        <span className="font-bold tracking-wider">{NOMBRES_MES[mes - 1]}</span>
+        {criticosDelMes > 0 ? (
+          <span className="text-[10px] bg-red-600 text-white rounded px-1.5 py-0.5">
+            {criticosDelMes} críticos
+          </span>
+        ) : (
+          <span className="text-[10px] opacity-60">— normal —</span>
+        )}
+      </div>
+      {semanas.length === 0 ? (
+        <div className="text-[10px] text-slate-400 text-center py-2">— sin semanas —</div>
+      ) : (
+        <table className="w-full text-[10px] border-collapse">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="border border-slate-200 px-1 py-0.5 w-10 text-left">SEM</th>
+              <th className="border border-slate-200 px-1 py-0.5 w-12 text-left">Var</th>
+              {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
+                <th key={i} className="border border-slate-200 px-1 py-0.5 text-center">{d}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {semanas.map((sem) => (
+              <SemanaBloque key={sem.id} sem={sem} umbrales={umbrales} />
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {semanas.map((sem) => (
-            <SemanaBloque key={sem.id} sem={sem} umbrales={umbrales} />
-          ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
