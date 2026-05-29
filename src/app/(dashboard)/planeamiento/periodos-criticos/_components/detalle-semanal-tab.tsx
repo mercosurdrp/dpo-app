@@ -75,11 +75,21 @@ function agruparPorSemana(dias: DiaCalendario[]): Semana[] {
   )
 }
 
-// Agrupa semanas por mes natural. Devuelve 12 buckets (uno por mes 1..12).
+// Agrupa semanas por mes natural. Cada semana aparece en TODOS los meses
+// donde tiene al menos un día visible (lun-sáb) del año en curso. Esto evita
+// el bug de las semanas que cruzan diciembre→enero: la semana 1-2026 (cuyo
+// jueves cae en enero) igual aparece en diciembre 2025 mientras tenga días
+// 29/30/31-dic en el array.
 function agruparPorMes(semanas: Semana[]): Semana[][] {
   const porMes: Semana[][] = Array.from({ length: 12 }, () => [])
   for (const s of semanas) {
-    porMes[s.mesPertenencia - 1].push(s)
+    const mesesPresentes = new Set<number>()
+    for (const d of s.dias) {
+      if (d && d.dow !== 0) mesesPresentes.add(d.mes)
+    }
+    for (const m of mesesPresentes) {
+      porMes[m - 1].push(s)
+    }
   }
   return porMes
 }
@@ -132,7 +142,13 @@ function TablaMes({
   semanas: Semana[]
   umbrales: UmbralesPC
 }) {
-  const criticosDelMes = semanas.reduce((s, w) => s + w.criticos, 0)
+  // Contar críticos SOLO de los días del bloque que pertenecen a este mes
+  // (porque las semanas cruzadas aparecen en 2 meses y w.criticos suma toda
+  // la semana, no este mes).
+  const criticosDelMes = semanas.reduce(
+    (s, w) => s + w.dias.filter((d) => d != null && d.mes === mes && d.estatus === "CRITICO").length,
+    0,
+  )
   return (
     <div className="rounded-md border border-slate-200 overflow-hidden">
       {/* Banner mes */}
