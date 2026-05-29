@@ -78,32 +78,51 @@ export function DetalleSemanalTab({
     )
   }
 
+  // Dividir las semanas en 3 columnas (más o menos balanceadas).
+  // 53 semanas / 3 ≈ 18 → primeras 18, siguientes 18, últimas 17.
+  const totalSemanas = semanas.length
+  const tramo = Math.ceil(totalSemanas / 3)
+  const grupos = [
+    semanas.slice(0, tramo),
+    semanas.slice(tramo, tramo * 2),
+    semanas.slice(tramo * 2),
+  ]
+
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-600">
-        Detalle semanal con las 4 variables día a día. Cada celda se pone <span className="text-red-700 font-semibold">en rojo</span> si gatilla su trigger,
-        <span className="text-emerald-700 font-semibold"> verde</span> si está bajo el umbral, gris si no hay datos.
-        La fila TIPO muestra el código del día (P/PP/PPP/PPPP) y al final la suma de PICOS de la semana.
+        4 variables día a día agrupadas por semana ISO. Celda <span className="text-red-700 font-semibold">roja</span> si gatilla su trigger,
+        <span className="text-emerald-700 font-semibold"> verde</span> si bajo umbral, gris si sin datos. Fila TIPO con el código (P/PP/PPP/PPPP).
       </p>
-      <div className="overflow-auto rounded-md border border-slate-200 max-h-[78vh]">
-        <table className="w-full text-[11px] border-collapse">
-          <thead className="sticky top-0 z-10 bg-slate-100">
-            <tr>
-              <th className="border border-slate-200 px-2 py-1 w-14 text-left">SEM</th>
-              <th className="border border-slate-200 px-2 py-1 w-16 text-left">Variable</th>
-              {["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"].map((d) => (
-                <th key={d} className="border border-slate-200 px-2 py-1 text-center">{d}</th>
-              ))}
-              <th className="border border-slate-200 px-2 py-1 text-center w-20">Σ PICOS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {semanas.map((sem) => (
-              <SemanaBloque key={sem.id} sem={sem} umbrales={umbrales} />
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+        {grupos.map((g, i) => (
+          <TablaSemanas key={i} semanas={g} umbrales={umbrales} />
+        ))}
       </div>
+    </div>
+  )
+}
+
+function TablaSemanas({ semanas, umbrales }: { semanas: Semana[]; umbrales: UmbralesPC }) {
+  if (semanas.length === 0) return null
+  return (
+    <div className="overflow-auto rounded-md border border-slate-200">
+      <table className="w-full text-[10px] border-collapse">
+        <thead className="sticky top-0 z-10 bg-slate-100">
+          <tr>
+            <th className="border border-slate-200 px-1 py-0.5 w-10 text-left">SEM</th>
+            <th className="border border-slate-200 px-1 py-0.5 w-12 text-left">Var</th>
+            {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
+              <th key={i} className="border border-slate-200 px-1 py-0.5 text-center">{d}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {semanas.map((sem) => (
+            <SemanaBloque key={sem.id} sem={sem} umbrales={umbrales} />
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -118,70 +137,69 @@ function SemanaBloque({ sem, umbrales }: { sem: Semana; umbrales: UmbralesPC }) 
     <>
       {/* Fila FECHA — encabezado del bloque, número de semana con rowSpan=6 */}
       <tr className="border-t-2 border-slate-300">
-        <td rowSpan={6} className={`border border-slate-200 px-2 py-1 align-top font-semibold ${semColor}`}>
-          <div className="text-sm">SEM {sem.nro}</div>
-          <div className="text-[10px] font-normal opacity-70">{sem.anio}</div>
-          <div className="mt-1 text-[10px] font-semibold">{sem.criticos} crit.</div>
+        <td rowSpan={6} className={`border border-slate-200 px-1 py-0.5 align-top font-semibold text-center ${semColor}`}>
+          <div className="text-xs font-bold leading-tight">{sem.nro}</div>
+          <div className="text-[9px] opacity-70">{sem.anio}</div>
+          <div className="text-[9px] font-semibold mt-0.5">{sem.criticos}c</div>
         </td>
-        <td className="border border-slate-200 px-2 py-0.5 text-[10px] uppercase text-slate-500">Fecha</td>
+        <td className="border border-slate-200 px-1 py-0.5 text-[9px] uppercase text-slate-500">Fecha</td>
         {sem.dias.map((d, i) => (
-          <td key={i} className="border border-slate-200 px-2 py-0.5 text-center text-slate-700">
+          <td key={i} className="border border-slate-200 px-1 py-0.5 text-center text-slate-700">
             {d ? fmtDM(d.fecha) : "—"}
           </td>
         ))}
-        <td className="border border-slate-200 px-2 py-0.5 text-center font-bold">{sem.totalPicos}</td>
       </tr>
-      <FilaVariable label="VOL" sem={sem} render={(d) => `${fmtHL(Number(d.hl))}`} gatillo={(d) => d.trigger_vol} sufijo="HL" umbral={`PICO ≥ ${umbrales.vol_pico}`} />
-      <FilaVariable label="OTIF" sem={sem} render={(d) => fmtPct(Number(d.otif_estimado))} gatillo={(d) => d.trigger_otif} umbral={`< ${fmtPct(umbrales.otif_min)}`} />
-      <FilaVariable label="AUS" sem={sem} render={(d) => fmtPct(Number(d.pct_ausentismo))} gatillo={(d) => d.trigger_aus} umbral={`≥ ${fmtPct(umbrales.ausentismo_max)}`} />
+      <FilaVariable label="VOL" sem={sem} render={(d) => fmtHL(Number(d.hl))} gatillo={(d) => d.trigger_vol} umbral={`PICO ≥ ${umbrales.vol_pico}`} />
+      <FilaVariable label="OTIF" sem={sem} render={(d) => fmtPctC(Number(d.otif_estimado))} gatillo={(d) => d.trigger_otif} umbral={`< ${fmtPct(umbrales.otif_min)}`} />
+      <FilaVariable label="AUS" sem={sem} render={(d) => fmtPctC(Number(d.pct_ausentismo))} gatillo={(d) => d.trigger_aus} umbral={`≥ ${fmtPct(umbrales.ausentismo_max)}`} />
       <FilaVariable label="#CL" sem={sem} render={(d) => String(d.clientes_dia)} gatillo={(d) => d.trigger_cli} umbral={`> ${umbrales.clientes}`} />
       <FilaTipo sem={sem} />
     </>
   )
 }
 
+// Versión compacta del % (sin decimales) para que entre en celdas chicas
+const fmtPctC = (n: number) => Math.round(n * 100) + "%"
+
 function FilaVariable({
   label,
   sem,
   render,
   gatillo,
-  sufijo,
   umbral,
 }: {
   label: string
   sem: Semana
   render: (d: DiaCalendario) => string
   gatillo: (d: DiaCalendario) => boolean
-  sufijo?: string
   umbral: string
 }) {
   return (
     <tr>
       <td
-        className="border border-slate-200 px-2 py-0.5 text-[10px] uppercase font-semibold text-slate-600 bg-slate-50"
+        className="border border-slate-200 px-1 py-0.5 text-[9px] uppercase font-semibold text-slate-600 bg-slate-50"
         title={umbral}
       >
         {label}
       </td>
       {sem.dias.map((d, i) => {
-        if (!d || Number(d.hl) === 0 && d.dow !== 0 && label !== "AUS") {
-          // Día sin datos (excepto AUS que es mensual y puede tener valor)
-          return <td key={i} className="border border-slate-200 px-2 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
-        }
         if (!d) {
-          return <td key={i} className="border border-slate-200 px-2 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
+          return <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
+        }
+        // Día sin volumen real (excepto AUS que es mensual y puede tener valor)
+        if (Number(d.hl) === 0 && label !== "AUS") {
+          return <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
         }
         const g = gatillo(d)
         const cls = g
           ? "bg-red-100 text-red-900 font-semibold"
           : "bg-emerald-50 text-emerald-900"
         return (
-          <td key={i} className={`border border-slate-200 px-2 py-0.5 text-center ${cls}`}>
-            {render(d)}{sufijo ? <span className="text-[9px] opacity-70 ml-0.5">{sufijo}</span> : null}
+          <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center ${cls}`}>
+            {render(d)}
           </td>
         )
       })}
-      <td className="border border-slate-200 px-2 py-0.5"></td>
     </tr>
   )
 }
@@ -189,11 +207,11 @@ function FilaVariable({
 function FilaTipo({ sem }: { sem: Semana }) {
   return (
     <tr>
-      <td className="border border-slate-200 px-2 py-0.5 text-[10px] uppercase font-semibold text-slate-600 bg-slate-50">
+      <td className="border border-slate-200 px-1 py-0.5 text-[9px] uppercase font-semibold text-slate-600 bg-slate-50">
         TIPO
       </td>
       {sem.dias.map((d, i) => {
-        if (!d) return <td key={i} className="border border-slate-200 px-2 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
+        if (!d) return <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
         const n = d.trigger_count
         if (d.estatus === "CRITICO") {
           const cls =
@@ -201,27 +219,24 @@ function FilaTipo({ sem }: { sem: Semana }) {
             n === 3 ? "bg-red-500 text-white" :
             "bg-orange-500 text-white"
           return (
-            <td key={i} className={`border border-slate-200 px-2 py-0.5 text-center font-bold ${cls}`}>
+            <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center font-bold ${cls}`}>
               {d.codigo || "PP"}
             </td>
           )
         }
         if (n === 1) {
           return (
-            <td key={i} className="border border-slate-200 px-2 py-0.5 text-center bg-amber-200 text-amber-900 font-semibold">
+            <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-amber-200 text-amber-900 font-semibold">
               {d.codigo}
             </td>
           )
         }
         return (
-          <td key={i} className="border border-slate-200 px-2 py-0.5 text-center bg-emerald-100 text-emerald-900">
+          <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-emerald-100 text-emerald-900">
             —
           </td>
         )
       })}
-      <td className="border border-slate-200 px-2 py-0.5 text-center font-bold bg-slate-100">
-        {sem.totalPicos}
-      </td>
     </tr>
   )
 }
