@@ -2862,3 +2862,78 @@ export interface AusentismoLicenciasMedicasReporte {
   top_empleados: AusentismoRepitenciaEmpleado[]
   por_mes: AusentismoLicenciasMedicasMesBucket[]
 }
+
+// =============================================
+// SLA (Acuerdos de Nivel de Servicio) — exigidos por el manual DPO
+// =============================================
+export type SlaPilar =
+  | "planeamiento"
+  | "almacen"
+  | "entrega"
+  | "flota"
+  | "gestion"
+
+// Estado guardado en DB. "vencido" NO es un valor persistido: se deriva en
+// lectura cuando fecha_vencimiento < hoy (ver campo `vencido` de SlaConAutor).
+export type SlaEstado = "pendiente" | "firmado" | "no_aplica"
+
+export interface Sla {
+  id: string
+  codigo: string
+  nombre: string
+  pilar: SlaPilar
+  parte_cliente: string | null
+  parte_proveedor: string | null
+  requisito_manual: string | null
+  descripcion: string | null
+  estado: SlaEstado
+  fecha_firma: string | null
+  fecha_vencimiento: string | null
+  es_predefinido: boolean
+  orden: number
+  notas: string | null
+  creado_por: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaAdjunto {
+  id: string
+  sla_id: string
+  storage_path: string
+  nombre_original: string | null
+  mime_type: string
+  tamaño_bytes: number
+  subido_por: string | null
+  created_at: string
+  /** URL pública del archivo en Storage (la arma el server al leer). */
+  url: string
+}
+
+export interface SlaConAutor extends Sla {
+  adjuntos: SlaAdjunto[]
+  /** Derivado: fecha_vencimiento pasada y estado != no_aplica. */
+  vencido: boolean
+}
+
+export const SLA_PILAR_LABELS: Record<SlaPilar, string> = {
+  planeamiento: "Planeamiento",
+  almacen: "Almacén",
+  entrega: "Entrega",
+  flota: "Flota",
+  gestion: "Gestión",
+}
+
+export const SLA_PILAR_ORDEN: SlaPilar[] = [
+  "planeamiento",
+  "almacen",
+  "entrega",
+  "flota",
+  "gestion",
+]
+
+export const SLA_ESTADO_LABELS: Record<SlaEstado, string> = {
+  pendiente: "Pendiente",
+  firmado: "Firmado",
+  no_aplica: "No aplica",
+}

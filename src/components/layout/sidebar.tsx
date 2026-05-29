@@ -34,6 +34,7 @@ import {
   Boxes,
   Wrench,
   Route,
+  Handshake,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -168,6 +169,13 @@ export const navItems: NavItem[] = [
     label: "Reportes de Seguridad",
     href: "/reportes-seguridad",
     icon: <ShieldAlert className="size-5" />,
+  },
+  {
+    label: "SLA",
+    href: "/sla",
+    icon: <Handshake className="size-5" />,
+    pampeanaOnly: true,
+    hideForEmpleado: true,
   },
   {
     label: "Línea Ética",
