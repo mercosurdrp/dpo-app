@@ -224,7 +224,7 @@ export function TareaForm({
           <p className="mt-1 text-sm text-slate-700">{puntoFijo.texto}</p>
         </div>
       ) : (
-        <Card>
+        <Card className="relative z-30 overflow-visible">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Punto del manual (opcional)</CardTitle>
           </CardHeader>
@@ -275,7 +275,7 @@ export function TareaForm({
                   />
                 </div>
                 {puntoOpen && (
-                  <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-md border bg-white shadow-lg">
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-md border bg-white shadow-lg">
                     {searchingPuntos && (
                       <div className="flex items-center justify-center gap-2 p-3 text-xs text-slate-500">
                         <Loader2 className="h-3 w-3 animate-spin" /> Buscando…
