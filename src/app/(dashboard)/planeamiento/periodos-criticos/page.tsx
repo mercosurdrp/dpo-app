@@ -8,6 +8,30 @@ import { PeriodosCriticosClient, type DiaCalendario, type CfgPC, type UmbralesPC
 
 export const dynamic = "force-dynamic"
 
+// Pagina manual la vista multi-año (PostgREST trunca a 1000 filas y la vista
+// devuelve ~1100 con 3 años). Cada página es 1000 filas; se itera hasta que
+// vuelva una página incompleta o vacía.
+async function fetchMultianio(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<{ data: DiaCalendario[]; error: { message: string } | null }> {
+  const PAGE = 1000
+  const all: DiaCalendario[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from("v_pc_calendario_dia_multianio")
+      .select("*")
+      .order("fecha", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) return { data: [], error: { message: error.message } }
+    if (!data || data.length === 0) break
+    all.push(...(data as DiaCalendario[]))
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return { data: all, error: null }
+}
+
 export default async function PeriodosCriticosPage() {
   if (!IS_MISIONES) notFound()
   await requireAuth()
@@ -17,14 +41,19 @@ export default async function PeriodosCriticosPage() {
   const [
     { data: cfgRow, error: cfgErr },
     { data: umbralesRow },
-    { data: dias, error: diasErr },
+    diasResult,
     { data: planes },
   ] = await Promise.all([
     supabase.from("pc_config").select("*").eq("id", 1).single(),
     supabase.from("pc_umbrales").select("*").eq("id", 1).single(),
-    supabase.from("v_pc_calendario_dia").select("*").order("fecha", { ascending: true }),
+    // Vista multi-año: trae 2024..año+1 con columna `anio`. PostgREST trunca a
+    // 1000 filas por default y la vista devuelve ~1095 (3 años × 365), por eso
+    // paginamos manual con .range() hasta agotar.
+    fetchMultianio(supabase),
     supabase.from("pc_planes_accion").select("codigo,descripcion,plan_texto"),
   ])
+  const dias = diasResult.data
+  const diasErr = diasResult.error
 
   if (cfgErr || !cfgRow) {
     return (
@@ -80,7 +109,7 @@ export default async function PeriodosCriticosPage() {
       <PeriodosCriticosClient
         cfg={cfg}
         umbrales={umbrales}
-        dias={(dias ?? []) as DiaCalendario[]}
+        dias={dias}
         planes={(planes ?? []) as { codigo: string; descripcion: string; plan_texto: string }[]}
         errorDias={diasErr?.message ?? null}
       />

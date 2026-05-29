@@ -1,16 +1,17 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { CalendarRange, FlaskConical, Settings, ListTree } from "lucide-react"
+import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon } from "lucide-react"
 import { SimuladorTab } from "./simulador"
 import { ConfiguracionTab } from "./configuracion"
 import { PeriodosTab } from "./periodos-tab"
 
 export type DiaCalendario = {
+  anio: number
   fecha: string
   dow: number
   dia_semana: string
@@ -198,13 +199,35 @@ export function PeriodosCriticosClient({
 }: {
   cfg: CfgPC
   umbrales: UmbralesPC
-  dias: DiaCalendario[]
+  dias: DiaCalendario[]      // todos los años del v_pc_calendario_dia_multianio
   planes: PlanAccion[]
   errorDias: string | null
 }) {
+  // Mapa por año + lista ordenada de años disponibles (con al menos 1 día con datos)
+  const { aniosDisponibles, diasPorAnio } = useMemo(() => {
+    const byAnio: Record<number, DiaCalendario[]> = {}
+    const conDatos = new Set<number>()
+    for (const d of dias) {
+      const a = d.anio
+      if (!byAnio[a]) byAnio[a] = []
+      byAnio[a].push(d)
+      if (d.hl > 0 || d.pct_ausentismo > 0) conDatos.add(a)
+    }
+    const anios = Array.from(conDatos).sort((a, b) => a - b)
+    return { aniosDisponibles: anios, diasPorAnio: byAnio }
+  }, [dias])
+
+  // Año activo del selector. Default = anio_vigente de la config si está disponible.
+  const [anioActivo, setAnioActivo] = useState<number>(() =>
+    aniosDisponibles.includes(cfg.anio) ? cfg.anio
+      : aniosDisponibles[aniosDisponibles.length - 1] ?? cfg.anio
+  )
+
+  const diasActivos = diasPorAnio[anioActivo] ?? []
+
   const conteo = useMemo(() => {
     const c = { criticos: 0, t1: 0, t2: 0, t3: 0, t4: 0, normales: 0, sin_datos: 0 }
-    for (const d of dias) {
+    for (const d of diasActivos) {
       if (d.hl === 0 && d.dow !== 0) { c.sin_datos++; continue }
       if (d.estatus === "CRITICO") c.criticos++
       const n = d.trigger_count
@@ -215,7 +238,7 @@ export function PeriodosCriticosClient({
       else if (n >= 4) c.t4++
     }
     return c
-  }, [dias])
+  }, [diasActivos])
 
   return (
     <div className="space-y-4">
@@ -228,7 +251,18 @@ export function PeriodosCriticosClient({
 
       <Card>
         <CardContent className="p-4 flex flex-wrap items-center gap-4">
-          <Badge variant="outline">Año {cfg.anio}</Badge>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Año:</span>
+            <select
+              value={anioActivo}
+              onChange={(e) => setAnioActivo(Number(e.target.value))}
+              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
+            >
+              {aniosDisponibles.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </label>
           <span className="text-xs text-slate-600">
             <b>{conteo.criticos}</b> días CRÍTICOS · Codifica V (vol) · C (clientes) · O (OTIF) · U (ausentismo)
           </span>
@@ -247,6 +281,7 @@ export function PeriodosCriticosClient({
         <TabsList>
           <TabsTrigger value="calendario"><CalendarRange className="w-4 h-4 mr-1.5" /> Calendario</TabsTrigger>
           <TabsTrigger value="periodos"><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
+          <TabsTrigger value="comparativo"><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
           <TabsTrigger value="simulador"><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
           <TabsTrigger value="config"><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
         </TabsList>
@@ -260,17 +295,23 @@ export function PeriodosCriticosClient({
           <TooltipProvider delay={150}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {Array.from({ length: 12 }, (_, i) => (
-                <MesGrid key={i} mes={i + 1} dias={dias} />
+                <MesGrid key={i} mes={i + 1} dias={diasActivos} />
               ))}
             </div>
           </TooltipProvider>
         </TabsContent>
 
         <TabsContent value="periodos">
-          <PeriodosTab dias={dias} planes={planes} />
+          <PeriodosTab dias={diasActivos} planes={planes} />
+        </TabsContent>
+        <TabsContent value="comparativo">
+          <ComparativoTab
+            aniosDisponibles={aniosDisponibles}
+            diasPorAnio={diasPorAnio}
+          />
         </TabsContent>
         <TabsContent value="simulador">
-          <SimuladorTab dias={dias} cfg={cfg} umbrales={umbrales} />
+          <SimuladorTab dias={diasActivos} cfg={cfg} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="config">
           <ConfiguracionTab cfg={cfg} umbrales={umbrales} planes={planes} />
@@ -285,6 +326,93 @@ function Legend({ color, label }: { color: string; label: string }) {
     <div className="flex items-center gap-1">
       <span className={`inline-block w-3 h-3 rounded-sm ${color}`} />
       <span className="text-slate-700">{label}</span>
+    </div>
+  )
+}
+
+// ============================================================================
+// Pestaña "Comparativo" — dos años lado a lado para ver el solapamiento
+// (¿qué semana fue crítica el año pasado y cómo viene este?).
+// ============================================================================
+function ComparativoTab({
+  aniosDisponibles,
+  diasPorAnio,
+}: {
+  aniosDisponibles: number[]
+  diasPorAnio: Record<number, DiaCalendario[]>
+}) {
+  const ultimo = aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
+  const anterior = aniosDisponibles[aniosDisponibles.length - 2] ?? ultimo - 1
+  const [anioA, setAnioA] = useState<number>(anterior)
+  const [anioB, setAnioB] = useState<number>(ultimo)
+  const diasA = diasPorAnio[anioA] ?? []
+  const diasB = diasPorAnio[anioB] ?? []
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Año A:</span>
+            <select
+              value={anioA}
+              onChange={(e) => setAnioA(Number(e.target.value))}
+              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
+            >
+              {aniosDisponibles.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </label>
+          <span className="text-slate-400">vs</span>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Año B:</span>
+            <select
+              value={anioB}
+              onChange={(e) => setAnioB(Number(e.target.value))}
+              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
+            >
+              {aniosDisponibles.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </label>
+          <ResumenAnio anio={anioA} dias={diasA} />
+          <ResumenAnio anio={anioB} dias={diasB} />
+        </CardContent>
+      </Card>
+
+      <TooltipProvider delay={150}>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <ColumnaAnio anio={anioA} dias={diasA} />
+          <ColumnaAnio anio={anioB} dias={diasB} />
+        </div>
+      </TooltipProvider>
+    </div>
+  )
+}
+
+function ResumenAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
+  const criticos = dias.filter((d) => d.estatus === "CRITICO").length
+  const conDatos = dias.filter((d) => d.hl > 0).length
+  return (
+    <div className="text-xs text-slate-600 border-l border-slate-200 pl-3">
+      <b className="text-slate-900">{anio}:</b> {criticos} críticos · {conDatos} días con datos
+    </div>
+  )
+}
+
+function ColumnaAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-semibold text-slate-900 sticky top-0 bg-white py-1 z-10">
+        Año {anio}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+        {Array.from({ length: 12 }, (_, i) => (
+          <MesGrid key={i} mes={i + 1} dias={dias} />
+        ))}
+      </div>
     </div>
   )
 }
