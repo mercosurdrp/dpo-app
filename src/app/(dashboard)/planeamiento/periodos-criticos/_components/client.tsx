@@ -18,11 +18,23 @@ export type DiaCalendario = {
   hl: number
   hl_rechazo: number
   camiones: number
+  clientes_dia: number
   pct_rechazo: number
+  otif_estimado: number
   pct_ausentismo: number
+  clasif_vol: "PICO" | "ALTO" | "MEDIO" | "BAJO"
   es_feriado: boolean
   nombre_feriado: string | null
   score: number
+  // Triggers booleanos (modelo Mercosur)
+  trigger_vol: boolean
+  trigger_cli: boolean
+  trigger_otif: boolean
+  trigger_aus: boolean
+  trigger_count: number
+  codigo: string             // "AAAA" / "AAA" / "AA" / "A" / ""
+  estatus: "CRITICO" | "NORMAL"
+  // Compatibilidad con simulador / configuración del score continuo
   nivel: "BAJO" | "MEDIO" | "ALTO"
 }
 
@@ -34,6 +46,22 @@ export type CfgPC = {
   umbral_alto: number
   umbral_medio: number
   hl_p90_2025: number | null
+}
+
+export type PlanAccion = {
+  codigo: string
+  descripcion: string
+  plan_texto: string
+}
+
+export type UmbralesPC = {
+  vol_pico: number
+  vol_alto: number
+  vol_medio: number
+  clientes: number
+  otif_min: number
+  ausentismo_max: number
+  min_triggers: number
 }
 
 const MESES = [
@@ -49,12 +77,27 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-function estiloNivel(nivel: "BAJO" | "MEDIO" | "ALTO" | null, hl: number): string {
-  if (nivel === "ALTO") return "bg-red-500 text-white font-semibold"
-  if (nivel === "MEDIO") return "bg-amber-400 text-amber-950 font-medium"
-  if (nivel === "BAJO" && hl > 0) return "bg-emerald-500/80 text-white"
-  return "bg-slate-100 text-slate-400"  // sin datos / domingo
+// Modelo Mercosur: el color del día sale del "codigo" (cantidad de triggers).
+// Cuanto más triggers activos, más intenso el rojo. Días sin triggers van
+// verde si tienen datos y gris si no.
+function estiloCelda(d: DiaCalendario): string {
+  if (d.hl === 0 && d.dow !== 0) return "bg-slate-100 text-slate-400"  // sin datos
+  if (d.dow === 0) return "bg-slate-100 text-slate-400"               // domingo
+  const n = d.trigger_count
+  if (n >= 4) return "bg-red-700 text-white font-bold"
+  if (n === 3) return "bg-red-500 text-white font-semibold"
+  if (n === 2) return "bg-orange-500 text-white font-semibold"
+  if (n === 1) return "bg-amber-300 text-amber-950 font-medium"
+  return "bg-emerald-500/80 text-white"                                // sin triggers, día normal
 }
+
+// Etiquetas humanas de los triggers (para tooltip).
+const TRIGGER_LABELS: Array<[keyof DiaCalendario, string]> = [
+  ["trigger_otif", "OTIF < umbral"],
+  ["trigger_vol", "Volumen = PICO"],
+  ["trigger_cli", "Clientes > umbral"],
+  ["trigger_aus", "Ausentismo ≥ umbral"],
+]
 
 function MesGrid({ mes, dias }: { mes: number; dias: DiaCalendario[] }) {
   // Construir 6 semanas x 7 días (dom..sáb) con dias del mes
@@ -74,7 +117,7 @@ function MesGrid({ mes, dias }: { mes: number; dias: DiaCalendario[] }) {
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-sm font-semibold text-slate-900">{MESES[mes - 1]}</h3>
           <span className="text-xs text-slate-500">
-            {delMes.filter((d) => d.nivel === "ALTO").length} ALTO · {delMes.filter((d) => d.nivel === "MEDIO").length} MEDIO
+            {delMes.filter((d) => d.estatus === "CRITICO").length} críticos
           </span>
         </div>
         <div className="grid grid-cols-7 gap-1">
@@ -96,8 +139,9 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
   if (!d) return <div className="aspect-square rounded-sm" />
 
   const fecha = new Date(d.fecha + "T00:00:00")
-  const cls = estiloNivel(d.nivel, d.hl)
+  const cls = estiloCelda(d)
   const dayNum = fecha.getDate()
+  const triggersActivos = TRIGGER_LABELS.filter(([k]) => d[k] === true)
 
   return (
     <Tooltip>
@@ -111,20 +155,34 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
         }
       />
       <TooltipContent side="top" className="text-xs">
-        <div className="space-y-0.5">
-          <div className="font-semibold">
-            {d.dia_semana} {fecha.toLocaleDateString("es-AR")}
+        <div className="space-y-0.5 min-w-[200px]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold">
+              {d.dia_semana} {fecha.toLocaleDateString("es-AR")}
+            </span>
+            {d.estatus === "CRITICO" && (
+              <span className="rounded bg-red-700 text-white px-1.5 py-0.5 text-[10px] font-bold">
+                {d.codigo} · CRÍTICO
+              </span>
+            )}
           </div>
           {d.es_feriado && (
             <div className="text-yellow-700 font-medium">★ {d.nombre_feriado}</div>
           )}
-          <div>HL: <b>{fmtHL(d.hl)}</b></div>
-          <div>% Rechazo: <b>{fmtPct(d.pct_rechazo)}</b></div>
-          <div>% Ausentismo: <b>{fmtPct(d.pct_ausentismo)}</b></div>
-          <div>Camiones: <b>{d.camiones}</b></div>
-          <div className="mt-1 pt-1 border-t border-slate-200">
-            Score: <b>{d.score.toFixed(3)}</b> → <b>{d.nivel}</b>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 border-t border-slate-200">
+            <span>HL:</span><span className="text-right"><b>{fmtHL(d.hl)}</b> · {d.clasif_vol}</span>
+            <span>Clientes:</span><span className="text-right"><b>{d.clientes_dia}</b></span>
+            <span>OTIF est:</span><span className="text-right"><b>{fmtPct(d.otif_estimado)}</b></span>
+            <span>Ausentismo:</span><span className="text-right"><b>{fmtPct(d.pct_ausentismo)}</b></span>
           </div>
+          {triggersActivos.length > 0 && (
+            <div className="mt-1 pt-1 border-t border-slate-200">
+              <div className="text-[10px] uppercase text-slate-500 mb-0.5">Triggers activos</div>
+              {triggersActivos.map(([k, label]) => (
+                <div key={k as string} className="text-[10px]">• {label}</div>
+              ))}
+            </div>
+          )}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -133,18 +191,28 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
 
 export function PeriodosCriticosClient({
   cfg,
+  umbrales,
   dias,
+  planes,
   errorDias,
 }: {
   cfg: CfgPC
+  umbrales: UmbralesPC
   dias: DiaCalendario[]
+  planes: PlanAccion[]
   errorDias: string | null
 }) {
   const conteo = useMemo(() => {
-    const c = { ALTO: 0, MEDIO: 0, BAJO: 0, sin_datos: 0 }
+    const c = { criticos: 0, t1: 0, t2: 0, t3: 0, t4: 0, normales: 0, sin_datos: 0 }
     for (const d of dias) {
-      if (d.hl === 0 && d.dow !== 0) c.sin_datos++
-      else c[d.nivel]++
+      if (d.hl === 0 && d.dow !== 0) { c.sin_datos++; continue }
+      if (d.estatus === "CRITICO") c.criticos++
+      const n = d.trigger_count
+      if (n === 0) c.normales++
+      else if (n === 1) c.t1++
+      else if (n === 2) c.t2++
+      else if (n === 3) c.t3++
+      else if (n >= 4) c.t4++
     }
     return c
   }, [dias])
@@ -154,7 +222,7 @@ export function PeriodosCriticosClient({
       <header>
         <h1 className="text-2xl font-semibold text-slate-900">Períodos Críticos</h1>
         <p className="text-sm text-slate-600">
-          Pilar Planeamiento · Bloque 3.4 — Calendario basado en volumen, OTIF (1−rechazo) y ausentismo.
+          Pilar Planeamiento · Bloque 3.4 — Calendario por triggers (Volumen · Clientes · OTIF · Ausentismo).
         </p>
       </header>
 
@@ -162,20 +230,14 @@ export function PeriodosCriticosClient({
         <CardContent className="p-4 flex flex-wrap items-center gap-4">
           <Badge variant="outline">Año {cfg.anio}</Badge>
           <span className="text-xs text-slate-600">
-            Pesos: <b>Vol {(cfg.w_vol * 100).toFixed(0)}%</b> · <b>OTIF {(cfg.w_otif * 100).toFixed(0)}%</b> · <b>Aus {(cfg.w_aus * 100).toFixed(0)}%</b>
+            <b>{conteo.criticos}</b> días CRÍTICOS · Codifica V (vol) · C (clientes) · O (OTIF) · U (ausentismo)
           </span>
-          <span className="text-xs text-slate-600">
-            Umbrales: ALTO ≥ {cfg.umbral_alto} · MEDIO ≥ {cfg.umbral_medio}
-          </span>
-          {cfg.hl_p90_2025 == null && (
-            <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
-              ⚠ Falta seed 2025 (P90 sin cachear): el score normaliza con valor 1
-            </span>
-          )}
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-500" label={`ALTO (${conteo.ALTO})`} />
-            <Legend color="bg-amber-400" label={`MEDIO (${conteo.MEDIO})`} />
-            <Legend color="bg-emerald-500/80" label={`BAJO (${conteo.BAJO})`} />
+            <Legend color="bg-red-700" label={`4 trig (${conteo.t4})`} />
+            <Legend color="bg-red-500" label={`3 trig (${conteo.t3})`} />
+            <Legend color="bg-orange-500" label={`2 trig (${conteo.t2})`} />
+            <Legend color="bg-amber-300" label={`1 trig (${conteo.t1})`} />
+            <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>
         </CardContent>
@@ -205,13 +267,13 @@ export function PeriodosCriticosClient({
         </TabsContent>
 
         <TabsContent value="periodos">
-          <PeriodosTab dias={dias} />
+          <PeriodosTab dias={dias} planes={planes} />
         </TabsContent>
         <TabsContent value="simulador">
-          <SimuladorTab dias={dias} cfg={cfg} />
+          <SimuladorTab dias={dias} cfg={cfg} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="config">
-          <ConfiguracionTab cfg={cfg} />
+          <ConfiguracionTab cfg={cfg} umbrales={umbrales} planes={planes} />
         </TabsContent>
       </Tabs>
     </div>

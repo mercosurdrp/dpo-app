@@ -7,28 +7,73 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Copy } from "lucide-react"
-import type { CfgPC, DiaCalendario } from "./client"
+import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
 
-// Réplica client-side de la fórmula de v_pc_calendario_dia. Se mantienen los
-// mismos clamps (rechazo y ausentismo se acotan a [0,1]; score se acota a 2)
-// para que el preview coincida con lo que la vista calcularía si los datos
-// estuvieran realmente cargados.
+type SimResult = {
+  hl: number
+  pct_rechazo: number
+  otif_estimado: number
+  pct_ausentismo: number
+  clientes_dia: number
+  score: number
+  nivel: "BAJO" | "MEDIO" | "ALTO"
+  // Triggers
+  trigger_vol: boolean
+  trigger_cli: boolean
+  trigger_otif: boolean
+  trigger_aus: boolean
+  codigo: string
+  estatus: "CRITICO" | "NORMAL"
+}
+
+// Réplica client-side de la fórmula de v_pc_calendario_dia con triggers Mercosur.
+// Se mantienen los clamps (rechazo y ausentismo en [0,1]; score en [0,2]) para
+// que el preview coincida con la vista cuando se guarde el escenario.
 function recalcular(
-  base: { hl: number; pct_rechazo: number; pct_ausentismo: number },
-  delta: { vol: number; otif: number; aus: number },
+  base: {
+    hl: number
+    pct_rechazo: number
+    pct_ausentismo: number
+    clientes_dia: number
+  },
+  delta: { vol: number; otif: number; aus: number; cli: number },
   cfg: CfgPC,
-): { hl: number; pct_rechazo: number; pct_ausentismo: number; score: number; nivel: "BAJO" | "MEDIO" | "ALTO" } {
+  umbrales: UmbralesPC,
+): SimResult {
   const hl = Math.max(0, base.hl * (1 + delta.vol / 100))
   // delta.otif positivo = MÁS rechazo = peor. Va en puntos porcentuales.
   const pct_rechazo = clamp(base.pct_rechazo + delta.otif / 100, 0, 1)
+  const otif_estimado = 1 - pct_rechazo
   const pct_ausentismo = clamp(base.pct_ausentismo + delta.aus / 100, 0, 1)
+  const clientes_dia = Math.max(0, Math.round(base.clientes_dia * (1 + delta.cli / 100)))
 
+  // Score continuo (compatibilidad con la vista)
   const p90 = cfg.hl_p90_2025 && cfg.hl_p90_2025 > 0 ? cfg.hl_p90_2025 : 1
   const volNorm = hl / p90
   const score = Math.min(2, cfg.w_vol * volNorm + cfg.w_otif * pct_rechazo + cfg.w_aus * pct_ausentismo)
   const nivel: "BAJO" | "MEDIO" | "ALTO" =
     score >= cfg.umbral_alto ? "ALTO" : score >= cfg.umbral_medio ? "MEDIO" : "BAJO"
-  return { hl, pct_rechazo, pct_ausentismo, score, nivel }
+
+  // Triggers Mercosur (lo que define crítico)
+  const trigger_vol = hl >= umbrales.vol_pico
+  const trigger_cli = clientes_dia > umbrales.clientes
+  const trigger_otif = hl > 0 && otif_estimado < umbrales.otif_min
+  const trigger_aus = pct_ausentismo >= umbrales.ausentismo_max
+  const codigo =
+    (trigger_otif ? "A" : "") +
+    (trigger_vol ? "A" : "") +
+    (trigger_cli ? "A" : "") +
+    (trigger_aus ? "A" : "")
+  const triggerCount = codigo.length
+  const estatus: "CRITICO" | "NORMAL" =
+    triggerCount >= umbrales.min_triggers ? "CRITICO" : "NORMAL"
+
+  return {
+    hl, pct_rechazo, otif_estimado, pct_ausentismo, clientes_dia,
+    score, nivel,
+    trigger_vol, trigger_cli, trigger_otif, trigger_aus,
+    codigo, estatus,
+  }
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -44,21 +89,29 @@ const COLOR_NIVEL: Record<string, string> = {
   BAJO: "bg-emerald-500 text-white",
 }
 
-export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC }) {
+export function SimuladorTab({
+  dias,
+  cfg,
+  umbrales,
+}: {
+  dias: DiaCalendario[]
+  cfg: CfgPC
+  umbrales: UmbralesPC
+}) {
   // Solo se pueden elegir como base días con datos (hl > 0 o ausentismo > 0)
   const opciones = useMemo(
     () =>
       dias.filter((d) => d.hl > 0 || d.pct_ausentismo > 0 || d.es_feriado).map((d) => ({
         value: d.fecha,
-        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.nivel}`,
+        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.estatus}${d.codigo ? " " + d.codigo : ""}`,
       })),
     [dias],
   )
 
   const [fechaBase, setFechaBase] = useState<string>(
-    () => opciones.find((o) => o.label.includes("ALTO"))?.value ?? opciones[0]?.value ?? "",
+    () => opciones.find((o) => o.label.includes("CRITICO"))?.value ?? opciones[0]?.value ?? "",
   )
-  const [delta, setDelta] = useState({ vol: 0, otif: 0, aus: 0 })
+  const [delta, setDelta] = useState({ vol: 0, otif: 0, aus: 0, cli: 0 })
   const [nombre, setNombre] = useState("")
 
   const base = dias.find((d) => d.fecha === fechaBase)
@@ -66,12 +119,18 @@ export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC 
     () =>
       base
         ? recalcular(
-            { hl: base.hl, pct_rechazo: base.pct_rechazo, pct_ausentismo: base.pct_ausentismo },
+            {
+              hl: base.hl,
+              pct_rechazo: base.pct_rechazo,
+              pct_ausentismo: base.pct_ausentismo,
+              clientes_dia: base.clientes_dia,
+            },
             delta,
             cfg,
+            umbrales,
           )
         : null,
-    [base, delta, cfg],
+    [base, delta, cfg, umbrales],
   )
 
   // Guardar escenario
@@ -142,7 +201,7 @@ export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC 
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setDelta({ vol: 0, otif: 0, aus: 0 })}
+              onClick={() => setDelta({ vol: 0, otif: 0, aus: 0, cli: 0 })}
               title="Reset deltas"
             >
               <RotateCcw className="w-4 h-4 mr-1" /> Reset
@@ -157,9 +216,17 @@ export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC 
           hl={base.hl}
           pct_rechazo={base.pct_rechazo}
           pct_ausentismo={base.pct_ausentismo}
+          clientes_dia={base.clientes_dia}
           camiones={base.camiones}
           score={base.score}
-          nivel={base.nivel}
+          codigo={base.codigo}
+          estatus={base.estatus}
+          triggers={{
+            vol: base.trigger_vol,
+            cli: base.trigger_cli,
+            otif: base.trigger_otif,
+            aus: base.trigger_aus,
+          }}
         />
         {sim && (
           <EscenarioCard
@@ -168,9 +235,17 @@ export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC 
             hl={sim.hl}
             pct_rechazo={sim.pct_rechazo}
             pct_ausentismo={sim.pct_ausentismo}
+            clientes_dia={sim.clientes_dia}
             camiones={base.camiones}
             score={sim.score}
-            nivel={sim.nivel}
+            codigo={sim.codigo}
+            estatus={sim.estatus}
+            triggers={{
+              vol: sim.trigger_vol,
+              cli: sim.trigger_cli,
+              otif: sim.trigger_otif,
+              aus: sim.trigger_aus,
+            }}
           />
         )}
       </div>
@@ -210,6 +285,16 @@ export function SimuladorTab({ dias, cfg }: { dias: DiaCalendario[]; cfg: CfgPC 
             unit="pp"
             tono="aus"
             onChange={(v) => setDelta((d) => ({ ...d, aus: v }))}
+          />
+          <SliderRow
+            label="Clientes"
+            value={delta.cli}
+            min={-50}
+            max={100}
+            step={5}
+            unit="%"
+            tono="cli"
+            onChange={(v) => setDelta((d) => ({ ...d, cli: v }))}
           />
         </CardContent>
       </Card>
@@ -252,31 +337,47 @@ function EscenarioCard({
   hl,
   pct_rechazo,
   pct_ausentismo,
+  clientes_dia,
   camiones,
   score,
-  nivel,
+  codigo,
+  estatus,
+  triggers,
 }: {
   titulo: string
   destacado?: boolean
   hl: number
   pct_rechazo: number
   pct_ausentismo: number
+  clientes_dia: number
   camiones: number
   score: number
-  nivel: "BAJO" | "MEDIO" | "ALTO"
+  codigo: string
+  estatus: "CRITICO" | "NORMAL"
+  triggers: { vol: boolean; cli: boolean; otif: boolean; aus: boolean }
 }) {
+  const colorEstatus =
+    estatus === "CRITICO"
+      ? codigo.length >= 4 ? "bg-red-700 text-white" :
+        codigo.length === 3 ? "bg-red-500 text-white" :
+        "bg-orange-500 text-white"
+      : "bg-emerald-500 text-white"
   return (
     <Card className={destacado ? "border-2 border-slate-900" : ""}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center justify-between">
           {titulo}
-          <Badge className={`${COLOR_NIVEL[nivel]} font-semibold`}>{nivel}</Badge>
+          <Badge className={`${colorEstatus} font-semibold`}>
+            {codigo || "—"} · {estatus}
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 text-sm">
-        <KV k="HL" v={fmtHL(hl)} />
+        <KV k="HL" v={fmtHL(hl)} trigger={triggers.vol} />
+        <KV k="Clientes" v={String(clientes_dia)} trigger={triggers.cli} />
+        <KV k="OTIF est" v={fmtPct(1 - pct_rechazo)} trigger={triggers.otif} />
+        <KV k="% Ausentismo" v={fmtPct(pct_ausentismo)} trigger={triggers.aus} />
         <KV k="% Rechazo" v={fmtPct(pct_rechazo)} />
-        <KV k="% Ausentismo" v={fmtPct(pct_ausentismo)} />
         <KV k="Camiones" v={String(camiones)} />
         <KV k="Score" v={score.toFixed(3)} />
       </CardContent>
@@ -284,11 +385,18 @@ function EscenarioCard({
   )
 }
 
-function KV({ k, v }: { k: string; v: string }) {
+function KV({ k, v, trigger }: { k: string; v: string; trigger?: boolean }) {
   return (
-    <div className="flex justify-between border-b border-slate-100 last:border-0 py-1">
-      <span className="text-slate-500">{k}</span>
-      <span className="font-medium text-slate-900">{v}</span>
+    <div
+      className={`flex justify-between border-b border-slate-100 last:border-0 py-1 ${
+        trigger ? "bg-red-50 -mx-2 px-2 rounded" : ""
+      }`}
+    >
+      <span className="text-slate-500 flex items-center gap-1">
+        {trigger && <span className="text-red-600 font-bold">●</span>}
+        {k}
+      </span>
+      <span className={`font-medium ${trigger ? "text-red-700" : "text-slate-900"}`}>{v}</span>
     </div>
   )
 }
@@ -311,13 +419,14 @@ function SliderRow({
   max: number
   step: number
   unit: string
-  tono: "vol" | "otif" | "aus"
+  tono: "vol" | "otif" | "aus" | "cli"
   onChange: (v: number) => void
 }) {
   const colors: Record<typeof tono, string> = {
     vol: "accent-sky-600",
     otif: "accent-rose-600",
     aus: "accent-amber-600",
+    cli: "accent-violet-600",
   }
   return (
     <div>

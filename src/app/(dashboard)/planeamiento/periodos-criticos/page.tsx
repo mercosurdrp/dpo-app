@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { createClient } from "@/lib/supabase/server"
-import { PeriodosCriticosClient, type DiaCalendario, type CfgPC } from "./_components/client"
+import { PeriodosCriticosClient, type DiaCalendario, type CfgPC, type UmbralesPC } from "./_components/client"
 
 export const dynamic = "force-dynamic"
 
@@ -14,9 +14,16 @@ export default async function PeriodosCriticosPage() {
 
   const supabase = await createClient()
 
-  const [{ data: cfgRow, error: cfgErr }, { data: dias, error: diasErr }] = await Promise.all([
+  const [
+    { data: cfgRow, error: cfgErr },
+    { data: umbralesRow },
+    { data: dias, error: diasErr },
+    { data: planes },
+  ] = await Promise.all([
     supabase.from("pc_config").select("*").eq("id", 1).single(),
+    supabase.from("pc_umbrales").select("*").eq("id", 1).single(),
     supabase.from("v_pc_calendario_dia").select("*").order("fecha", { ascending: true }),
+    supabase.from("pc_planes_accion").select("codigo,descripcion,plan_texto"),
   ])
 
   if (cfgErr || !cfgRow) {
@@ -50,6 +57,18 @@ export default async function PeriodosCriticosPage() {
     hl_p90_2025: cfgRow.hl_p90_2025 != null ? Number(cfgRow.hl_p90_2025) : null,
   }
 
+  const umbrales: UmbralesPC = umbralesRow
+    ? {
+        vol_pico: Number(umbralesRow.vol_pico),
+        vol_alto: Number(umbralesRow.vol_alto),
+        vol_medio: Number(umbralesRow.vol_medio),
+        clientes: Number(umbralesRow.clientes),
+        otif_min: Number(umbralesRow.otif_min),
+        ausentismo_max: Number(umbralesRow.ausentismo_max),
+        min_triggers: Number(umbralesRow.min_triggers),
+      }
+    : { vol_pico: 900, vol_alto: 650, vol_medio: 450, clientes: 300, otif_min: 0.92, ausentismo_max: 0.075, min_triggers: 2 }
+
   return (
     <div className="space-y-4">
       <Link
@@ -60,7 +79,9 @@ export default async function PeriodosCriticosPage() {
       </Link>
       <PeriodosCriticosClient
         cfg={cfg}
+        umbrales={umbrales}
         dias={(dias ?? []) as DiaCalendario[]}
+        planes={(planes ?? []) as { codigo: string; descripcion: string; plan_texto: string }[]}
         errorDias={diasErr?.message ?? null}
       />
     </div>

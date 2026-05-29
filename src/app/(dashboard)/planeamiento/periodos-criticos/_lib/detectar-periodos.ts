@@ -16,13 +16,15 @@ export type PeriodoCritico = {
   fechaInicio: string
   fechaFin: string
   cantDias: number
-  cantDiasAlto: number
+  cantDiasCriticos: number   // días con estatus = CRITICO
+  codigoPredominante: string // el código más frecuente (ej. "AA")
   hlMax: number
   hlAcum: number
+  clientesMax: number
   scoreMax: number
   diaPico: string         // fecha del día con score más alto
   feriadoCercano: string | null
-  dias: DiaCalendario[]   // los días del bloque (incluye gaps no-ALTO)
+  dias: DiaCalendario[]   // los días del bloque (incluye gaps no-CRITICO)
 }
 
 // Permitimos hasta 2 días no-ALTO entre días ALTO antes de cortar el bloque.
@@ -137,7 +139,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
   let gap = 0
 
   for (const d of dias) {
-    const esAlto = d.nivel === "ALTO"
+    const esAlto = d.estatus === "CRITICO"
 
     if (esAlto) {
       // si hay gap acumulado pero estoy abriendo bloque, los días no-ALTO previos
@@ -180,6 +182,15 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
     const diaPico = bloque.reduce((max, d) =>
       Number(d.score) > Number(max.score) ? d : max,
     bloque[0])
+    // Código predominante: el código más frecuente entre los días CRITICO del bloque
+    const codigosCount: Record<string, number> = {}
+    for (const d of bloque) {
+      if (d.estatus === "CRITICO" && d.codigo) {
+        codigosCount[d.codigo] = (codigosCount[d.codigo] ?? 0) + 1
+      }
+    }
+    const codigoPredominante =
+      Object.entries(codigosCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? ""
     return {
       id: `${bloque[0].fecha}-${i + 1}`,
       nombre,
@@ -187,9 +198,11 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
       fechaInicio: bloque[0].fecha,
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
-      cantDiasAlto: bloque.filter((d) => d.nivel === "ALTO").length,
+      cantDiasCriticos: bloque.filter((d) => d.estatus === "CRITICO").length,
+      codigoPredominante,
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),
+      clientesMax: Math.max(...bloque.map((d) => Number(d.clientes_dia ?? 0))),
       scoreMax: Math.max(...bloque.map((d) => Number(d.score))),
       diaPico: diaPico.fecha,
       feriadoCercano: cercano ? `${cercano.nombre} (${cercano.fecha})` : null,
