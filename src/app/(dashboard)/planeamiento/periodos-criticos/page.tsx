@@ -59,10 +59,10 @@ export default async function PeriodosCriticosPage() {
     return (
       <div className="space-y-4">
         <Link
-          href="/"
+          href="/indicadores/5eb1b041-6a1b-4c71-9067-0daf4f5e381a"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-slate-900 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Volver
+          <ArrowLeft className="h-4 w-4" /> Volver a Planeamiento
         </Link>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <div className="flex items-center gap-2 text-amber-900 font-semibold">
@@ -101,10 +101,10 @@ export default async function PeriodosCriticosPage() {
   return (
     <div className="space-y-4">
       <Link
-        href="/"
+        href="/indicadores/5eb1b041-6a1b-4c71-9067-0daf4f5e381a"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-slate-900 transition-colors"
       >
-        <ArrowLeft className="h-4 w-4" /> Volver
+        <ArrowLeft className="h-4 w-4" /> Volver a Planeamiento
       </Link>
       <PeriodosCriticosClient
         cfg={cfg}
