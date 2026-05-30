@@ -12,6 +12,9 @@ import {
   Check,
   Plus,
   Pencil,
+  Trash2,
+  FolderCog,
+  Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -52,10 +55,14 @@ import {
   upsertMapeoFletero,
   createEmpleado,
   updateEmpleado,
+  createSector,
+  updateSector,
+  deleteSector,
 } from "@/actions/mapeo-empleados"
 import {
-  SECTORES_EMPLEADO,
+  SECTORES_CORE,
   type SectorEmpleado,
+  type SectorEmpleadoRow,
 } from "@/actions/mapeo-empleados.types"
 import type { EmpleadoCompleto } from "@/types/database"
 
@@ -74,6 +81,7 @@ interface Props {
   unmappedFleteros: string[]
   empleados: EmpleadoLite[]
   empleadosTodos: EmpleadoLite[]
+  sectores: SectorEmpleadoRow[]
 }
 
 type EmpleadoFormState = {
@@ -98,17 +106,29 @@ export function MapeoClient({
   unmappedFleteros,
   empleados,
   empleadosTodos,
+  sectores,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [savingChofer, setSavingChofer] = useState<string | null>(null)
   const [savingFletero, setSavingFletero] = useState<string | null>(null)
 
+  // Lista de nombres de sector para los dropdowns (fallback a los core)
+  const sectorNombres =
+    sectores.length > 0 ? sectores.map((s) => s.nombre) : [...SECTORES_CORE]
+
   // Dialog state for create/edit empleado
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<EmpleadoFormState>(EMPTY_FORM)
   const [savingEmpleado, setSavingEmpleado] = useState(false)
+
+  // Dialog state for sector management
+  const [sectoresDialogOpen, setSectoresDialogOpen] = useState(false)
+  const [nuevoSector, setNuevoSector] = useState("")
+  const [savingSector, setSavingSector] = useState(false)
+  const [editingSectorId, setEditingSectorId] = useState<string | null>(null)
+  const [editingSectorNombre, setEditingSectorNombre] = useState("")
 
   // Track selected empleado for each unmapped item
   const [choferSelections, setChoferSelections] = useState<
@@ -144,9 +164,7 @@ export function MapeoClient({
       legajo: String(emp.legajo),
       nombre: emp.nombre,
       numero_id: emp.numero_id ?? "",
-      sector: (SECTORES_EMPLEADO.includes(emp.sector as SectorEmpleado)
-        ? emp.sector
-        : "Distribución") as SectorEmpleado,
+      sector: (emp.sector || "Distribución") as SectorEmpleado,
       activo: emp.activo,
     })
     setDialogOpen(true)
@@ -227,6 +245,55 @@ export function MapeoClient({
     setSavingFletero(null)
   }
 
+  async function handleCreateSector() {
+    const nombre = nuevoSector.trim()
+    if (!nombre) {
+      toast.error("Escribí un nombre de sector")
+      return
+    }
+    setSavingSector(true)
+    const result = await createSector(nombre)
+    setSavingSector(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(`Sector "${nombre}" creado`)
+    setNuevoSector("")
+    startTransition(() => router.refresh())
+  }
+
+  async function handleUpdateSector(id: string) {
+    const nombre = editingSectorNombre.trim()
+    if (!nombre) {
+      toast.error("El nombre no puede quedar vacío")
+      return
+    }
+    setSavingSector(true)
+    const result = await updateSector(id, nombre)
+    setSavingSector(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Sector actualizado")
+    setEditingSectorId(null)
+    setEditingSectorNombre("")
+    startTransition(() => router.refresh())
+  }
+
+  async function handleDeleteSector(id: string, nombre: string) {
+    setSavingSector(true)
+    const result = await deleteSector(id)
+    setSavingSector(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(`Sector "${nombre}" eliminado`)
+    startTransition(() => router.refresh())
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -240,10 +307,20 @@ export function MapeoClient({
             empleados del sistema
           </p>
         </div>
-        <Button onClick={openCreateDialog} size="sm">
-          <Plus className="mr-1 h-4 w-4" />
-          Nuevo empleado
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setSectoresDialogOpen(true)}
+            size="sm"
+            variant="outline"
+          >
+            <FolderCog className="mr-1 h-4 w-4" />
+            Gestionar sectores
+          </Button>
+          <Button onClick={openCreateDialog} size="sm">
+            <Plus className="mr-1 h-4 w-4" />
+            Nuevo empleado
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -563,7 +640,7 @@ export function MapeoClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SECTORES_EMPLEADO.map((s) => (
+                  {sectorNombres.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -598,6 +675,149 @@ export function MapeoClient({
                 <Check className="mr-1 h-3.5 w-3.5" />
               )}
               {editingId ? "Guardar cambios" : "Crear empleado"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: gestión de sectores */}
+      <Dialog open={sectoresDialogOpen} onOpenChange={setSectoresDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Gestionar sectores</DialogTitle>
+            <DialogDescription>
+              Añadí, renombrá o eliminá sectores. Los sectores base no se
+              pueden modificar porque el sistema depende de ellos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {/* Crear nuevo sector */}
+            <div className="flex items-end gap-2">
+              <div className="grid flex-1 gap-1.5">
+                <Label htmlFor="nuevo-sector">Nuevo sector</Label>
+                <Input
+                  id="nuevo-sector"
+                  value={nuevoSector}
+                  onChange={(e) => setNuevoSector(e.target.value)}
+                  placeholder="Ej: Administración"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleCreateSector()
+                    }
+                  }}
+                />
+              </div>
+              <Button onClick={handleCreateSector} disabled={savingSector}>
+                {savingSector ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                )}
+                Añadir
+              </Button>
+            </div>
+
+            {/* Lista de sectores */}
+            <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-1">
+              {sectores.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  No hay sectores cargados todavía.
+                </p>
+              ) : (
+                sectores.map((s) => {
+                  const isEditing = editingSectorId === s.id
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                    >
+                      {isEditing ? (
+                        <>
+                          <Input
+                            className="h-8 flex-1"
+                            value={editingSectorNombre}
+                            onChange={(e) =>
+                              setEditingSectorNombre(e.target.value)
+                            }
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                handleUpdateSector(s.id)
+                              }
+                              if (e.key === "Escape") setEditingSectorId(null)
+                            }}
+                          />
+                          <Button
+                            size="icon-sm"
+                            onClick={() => handleUpdateSector(s.id)}
+                            disabled={savingSector}
+                            title="Guardar"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => setEditingSectorId(null)}
+                            title="Cancelar"
+                          >
+                            ✕
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-sm font-medium">
+                            {s.nombre}
+                          </span>
+                          {s.es_core ? (
+                            <Badge variant="outline" className="gap-1 text-xs">
+                              <Lock className="h-3 w-3" />
+                              base
+                            </Badge>
+                          ) : (
+                            <>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingSectorId(s.id)
+                                  setEditingSectorNombre(s.nombre)
+                                }}
+                                title="Renombrar"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  handleDeleteSector(s.id, s.nombre)
+                                }
+                                disabled={savingSector}
+                                title="Eliminar"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSectoresDialogOpen(false)}
+            >
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

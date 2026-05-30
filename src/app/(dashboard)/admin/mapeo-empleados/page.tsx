@@ -5,19 +5,21 @@ import {
   getUnmappedFleteros,
   getEmpleadosActivos,
   getEmpleadosTodos,
+  getSectores,
 } from "@/actions/mapeo-empleados"
 import { MapeoClient } from "./mapeo-client"
 
 export default async function MapeoEmpleadosPage() {
   await requireRole(["admin"])
 
-  const [mapeosRes, choferesRes, fleterosRes, activosRes, todosRes] =
+  const [mapeosRes, choferesRes, fleterosRes, activosRes, todosRes, sectoresRes] =
     await Promise.all([
       getMapeosCompleto(),
       getUnmappedChoferes(),
       getUnmappedFleteros(),
       getEmpleadosActivos(),
       getEmpleadosTodos(),
+      getSectores(),
     ])
 
   if ("error" in mapeosRes) {
@@ -36,6 +38,7 @@ export default async function MapeoEmpleadosPage() {
       unmappedFleteros={"error" in fleterosRes ? [] : fleterosRes.data}
       empleados={"error" in activosRes ? [] : activosRes.data}
       empleadosTodos={"error" in todosRes ? [] : todosRes.data}
+      sectores={"error" in sectoresRes ? [] : sectoresRes.data}
     />
   )
 }
