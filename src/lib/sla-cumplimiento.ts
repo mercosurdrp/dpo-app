@@ -6,21 +6,25 @@
 export const SLA_RUTEO_NOMBRE = "Tiempo de finalización del ruteo"
 export const SLA_RUTEO_TARGET = 95
 
-export interface CumplimientoDiaRuteo {
-  fecha: string // YYYY-MM-DD
-  diaSemana: string // "Lun".."Sáb"
-  aplica: boolean // false los domingos
-  limite: string | null // "09:00" / "07:30"
-  horaFin: string | null // "08:47" en hora ARG, null si no cerró
-  cumple: boolean | null // null si no aplica o sin hora_fin
+// Estado de un día para un SLA:
+//   "si" = cumple · "no" = no cumple · "na" = no aplica (ej. domingo) ·
+//   "sd" = sin dato (día futuro o ruteo no cerrado)
+export type EstadoCumplimiento = "si" | "no" | "na" | "sd"
+
+export interface CumplimientoSlaFila {
+  codigo: string
+  nombre: string
+  target: number
+  porcentaje: number | null // % de cumplimiento del mes
+  cumplidos: number
+  totalAplica: number // denominador (días medibles del mes)
+  /** Estado por día del mes; índice 0 = día 1. Largo = días del mes. */
+  dias: EstadoCumplimiento[]
 }
 
-export interface CumplimientoRuteoMes {
+export interface CumplimientoMes {
   year: number
   month: number
-  target: number
-  totalAplica: number // días con ruteo medibles (denominador)
-  cumplidos: number
-  porcentaje: number | null
-  dias: CumplimientoDiaRuteo[]
+  diasDelMes: number // 28..31
+  filas: CumplimientoSlaFila[]
 }

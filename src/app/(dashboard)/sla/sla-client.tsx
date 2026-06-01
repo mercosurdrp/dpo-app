@@ -20,7 +20,7 @@ import {
   type SlaConAutor,
   type UserRole,
 } from "@/types/database"
-import type { CumplimientoRuteoMes } from "@/lib/sla-cumplimiento"
+import type { CumplimientoMes } from "@/lib/sla-cumplimiento"
 import { SlaDetalleDialog } from "@/components/sla/sla-detalle-dialog"
 import { SlaCumplimientos } from "@/components/sla/sla-cumplimientos"
 
@@ -52,8 +52,8 @@ export function SlaClient({
 }: {
   slas: SlaConAutor[]
   currentRole: UserRole
-  /** Cumplimiento del SLA de ruteo del mes actual (null en Misiones o si falla). */
-  cumplimiento?: CumplimientoRuteoMes | null
+  /** Cumplimiento de SLA del mes actual (null en Misiones o si falla). */
+  cumplimiento?: CumplimientoMes | null
 }) {
   const [detalleId, setDetalleId] = useState<string | null>(null)
 

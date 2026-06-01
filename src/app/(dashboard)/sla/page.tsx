@@ -1,7 +1,7 @@
-import { getSlas, getCumplimientoRuteo } from "@/actions/sla"
+import { getSlas, getCumplimientoMes } from "@/actions/sla"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import type { CumplimientoRuteoMes } from "@/lib/sla-cumplimiento"
+import type { CumplimientoMes } from "@/lib/sla-cumplimiento"
 import { SlaClient } from "./sla-client"
 
 /** Mes actual en hora Argentina (UTC-3, sin DST). */
@@ -22,11 +22,11 @@ export default async function SlaPage() {
     return <div className="p-6 text-sm">No se pudo cargar tu perfil.</div>
   }
 
-  // Cumplimiento del SLA de ruteo (Pampeana-only: depende de ruteo_cierres).
-  let cumplimiento: CumplimientoRuteoMes | null = null
+  // Cumplimiento de SLA del mes (Pampeana-only: depende de ruteo_cierres).
+  let cumplimiento: CumplimientoMes | null = null
   if (!IS_MISIONES) {
     const { year, month } = mesActualARG()
-    const r = await getCumplimientoRuteo(year, month)
+    const r = await getCumplimientoMes(year, month)
     if (!("error" in r)) cumplimiento = r.data
   }
 

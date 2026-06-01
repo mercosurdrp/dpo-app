@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { SLA_RUTEO_TARGET, type CumplimientoRuteoMes, type CumplimientoDiaRuteo } from "@/lib/sla-cumplimiento"
+import {
+  SLA_RUTEO_NOMBRE,
+  SLA_RUTEO_TARGET,
+  type CumplimientoMes,
+  type CumplimientoSlaFila,
+  type EstadoCumplimiento,
+} from "@/lib/sla-cumplimiento"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 
 const DASHBOARD_PATH = "/sla"
@@ -232,8 +238,6 @@ export async function deleteSlaAdjunto(
 // Pampeana-only: ruteo_cierres no existe en la Supabase de Misiones.
 // ===========================================================================
 
-const DIA_LABEL = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
-
 /** Día de semana (0=Dom..6=Sáb) de un 'YYYY-MM-DD' sin corrimiento por TZ. */
 function dowFromISO(iso: string): number {
   const [y, m, d] = iso.split("-").map(Number)
@@ -255,87 +259,95 @@ function minutosARG(iso: string): number {
   return mins
 }
 
-function fmtHHMM(mins: number): string {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+/** Fila de cumplimiento del SLA de tiempo de ruteo (`plan_ruteo_tiempo`). */
+async function filaRuteo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ruteo_cierres")
+    .select("fecha, hora_fin")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+
+  // día (1..N) → hora_fin ISO (o null si el ruteo no cerró)
+  const finPorDia = new Map<number, string | null>()
+  for (const row of (data ?? []) as any[]) {
+    const dia = Number((row.fecha as string).slice(8, 10))
+    finPorDia.set(dia, (row.hora_fin as string | null) ?? null)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    const limMin = limiteMinutos(dowFromISO(iso))
+    if (limMin === null) {
+      dias.push("na") // domingo: no aplica
+      continue
+    }
+    const horaFin = finPorDia.get(d)
+    if (horaFin == null) {
+      dias.push("sd") // sin ruteo registrado / no cerrado / futuro
+      continue
+    }
+    const cumple = minutosARG(horaFin) <= limMin
+    totalAplica++
+    if (cumple) cumplidos++
+    dias.push(cumple ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return {
+    codigo: "plan_ruteo_tiempo",
+    nombre: SLA_RUTEO_NOMBRE,
+    target: SLA_RUTEO_TARGET,
+    porcentaje,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
 }
 
 /**
- * Cumplimiento del SLA de tiempo de ruteo para un mes (year, month=1..12).
- * Solo cuentan en el % los días con ruteo cerrado que aplican (L-Sáb);
- * los días en curso o sin cierre quedan como "sin dato" y no penalizan.
+ * Cumplimiento de los SLA medibles para un mes (year, month=1..12), como
+ * matriz: una fila por SLA, una columna por día. Por ahora la única fila es
+ * el SLA de tiempo de ruteo; está listo para sumar más SLA medibles.
+ * Días en curso/sin cierre = "sin dato" (no penalizan el %).
  */
-export async function getCumplimientoRuteo(
+export async function getCumplimientoMes(
   year: number,
   month: number,
-): Promise<Result<CumplimientoRuteoMes>> {
+): Promise<Result<CumplimientoMes>> {
   try {
     await requireAuth()
     if (IS_MISIONES) {
       return {
-        error: "El cumplimiento de ruteo solo está disponible en Pampeana.",
+        error: "El cumplimiento de SLA solo está disponible en Pampeana.",
       }
     }
     const supabase = await createClient()
 
-    const desde = `${year}-${String(month).padStart(2, "0")}-01`
-    const hastaExcl =
-      month === 12
-        ? `${year + 1}-01-01`
-        : `${year}-${String(month + 1).padStart(2, "0")}-01`
+    // Cantidad de días del mes (day 0 del mes siguiente = último del actual).
+    const diasDelMes = new Date(Date.UTC(year, month, 0)).getUTCDate()
 
-    const { data, error } = await supabase
-      .from("ruteo_cierres")
-      .select("fecha, estado, hora_fin")
-      .gte("fecha", desde)
-      .lt("fecha", hastaExcl)
-      .order("fecha", { ascending: true })
-    if (error) return { error: error.message }
+    const filas: CumplimientoSlaFila[] = [
+      await filaRuteo(supabase, year, month, diasDelMes),
+    ]
 
-    const dias: CumplimientoDiaRuteo[] = []
-    let totalAplica = 0
-    let cumplidos = 0
-
-    for (const row of (data ?? []) as any[]) {
-      const fecha = row.fecha as string
-      const dow = dowFromISO(fecha)
-      const limMin = limiteMinutos(dow)
-      const aplica = limMin !== null
-      const horaFinISO = row.hora_fin as string | null
-      const finMin = horaFinISO ? minutosARG(horaFinISO) : null
-
-      let cumple: boolean | null = null
-      if (aplica && finMin !== null) {
-        cumple = finMin <= (limMin as number)
-        totalAplica++
-        if (cumple) cumplidos++
-      }
-
-      dias.push({
-        fecha,
-        diaSemana: DIA_LABEL[dow],
-        aplica,
-        limite: limMin !== null ? fmtHHMM(limMin) : null,
-        horaFin: finMin !== null ? fmtHHMM(finMin) : null,
-        cumple,
-      })
-    }
-
-    const porcentaje =
-      totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
-
-    return {
-      data: {
-        year,
-        month,
-        target: SLA_RUTEO_TARGET,
-        totalAplica,
-        cumplidos,
-        porcentaje,
-        dias,
-      },
-    }
+    return { data: { year, month, diasDelMes, filas } }
   } catch (err) {
     return {
       error:

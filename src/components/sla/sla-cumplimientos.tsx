@@ -2,42 +2,33 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { CalendarClock, CheckCircle2, XCircle, Minus } from "lucide-react"
+import { CalendarClock } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { getCumplimientoMes } from "@/actions/sla"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { getCumplimientoRuteo } from "@/actions/sla"
-import {
-  SLA_RUTEO_NOMBRE,
-  type CumplimientoRuteoMes,
+  type CumplimientoMes,
+  type EstadoCumplimiento,
 } from "@/lib/sla-cumplimiento"
 
-function fechaCorta(iso: string): string {
-  const [, m, d] = iso.split("-")
-  return `${d}/${m}`
+// Iniciales del día de la semana (0=Dom..6=Sáb), estilo ES (L M X J V S D).
+const INICIAL_DOW = ["D", "L", "M", "X", "J", "V", "S"]
+
+function dowDe(year: number, month: number, dia: number): number {
+  return new Date(Date.UTC(year, month - 1, dia)).getUTCDay()
 }
 
-export function SlaCumplimientos({
-  inicial,
-}: {
-  inicial: CumplimientoRuteoMes
-}) {
-  const [data, setData] = useState<CumplimientoRuteoMes>(inicial)
+export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
+  const [data, setData] = useState<CumplimientoMes>(inicial)
   const [pending, start] = useTransition()
 
   const monthValue = `${data.year}-${String(data.month).padStart(2, "0")}`
+  const diasArr = Array.from({ length: data.diasDelMes }, (_, i) => i + 1)
 
   function cambiarMes(value: string) {
     const [y, m] = value.split("-").map(Number)
     if (!y || !m) return
     start(async () => {
-      const r = await getCumplimientoRuteo(y, m)
+      const r = await getCumplimientoMes(y, m)
       if ("error" in r) {
         toast.error(r.error)
         return
@@ -46,26 +37,17 @@ export function SlaCumplimientos({
     })
   }
 
-  const pct = data.porcentaje
-  const cumpleTarget = pct !== null && pct >= data.target
-  const pctColor =
-    pct === null
-      ? "text-slate-400"
-      : cumpleTarget
-        ? "text-emerald-600"
-        : "text-red-600"
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-slate-800">
             <CalendarClock className="size-5 text-pink-600" />
-            {SLA_RUTEO_NOMBRE}
+            Cumplimiento diario de SLA
           </h2>
           <p className="text-sm text-slate-500">
-            Cumplimiento diario: ruteo cerrado antes de las <b>09:00</b> (L-V) /{" "}
-            <b>07:30</b> (sáb). Fuente: módulo Ruteo.
+            Una fila por SLA. La primera columna es el % de cumplimiento del mes;
+            cada día indica si se cumplió.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -80,120 +62,120 @@ export function SlaCumplimientos({
         </div>
       </div>
 
-      {/* Métrica mensual */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">Cumplimiento del mes</div>
-          <div className={`text-3xl font-bold leading-tight ${pctColor}`}>
-            {pct === null ? "—" : `${pct}%`}
-          </div>
-          <div className="text-xs text-slate-400">
-            objetivo ≥ {data.target}%
-          </div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">Días cumplidos</div>
-          <div className="text-3xl font-bold leading-tight text-slate-900">
-            {data.cumplidos}
-            <span className="text-base font-normal text-slate-400">
-              {" "}
-              / {data.totalAplica}
-            </span>
-          </div>
-          <div className="text-xs text-slate-400">días con ruteo medibles</div>
-        </div>
-        <div className="flex items-center rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <span
-            className={`rounded-full px-3 py-1 text-sm font-semibold ${
-              pct === null
-                ? "bg-slate-100 text-slate-500"
-                : cumpleTarget
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-red-100 text-red-700"
-            }`}
-          >
-            {pct === null
-              ? "Sin datos"
-              : cumpleTarget
-                ? "Cumple objetivo"
-                : "Bajo objetivo"}
-          </span>
-        </div>
+      {/* Leyenda */}
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+        <Leyenda estado="si" texto="Cumple" />
+        <Leyenda estado="no" texto="No cumple" />
+        <Leyenda estado="sd" texto="Sin dato" />
+        <Leyenda estado="na" texto="No aplica" />
+        <span>· Objetivo ≥ 95%</span>
       </div>
 
-      {/* Tabla día a día */}
-      <div className="overflow-hidden rounded-lg border border-slate-200">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50">
-              <TableHead>Fecha</TableHead>
-              <TableHead>Día</TableHead>
-              <TableHead>Límite</TableHead>
-              <TableHead>Fin de ruteo</TableHead>
-              <TableHead className="text-right">Estado</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.dias.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-8 text-center text-sm text-slate-400"
-                >
-                  No hay ruteos registrados en este mes.
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.dias.map((d) => (
-                <TableRow key={d.fecha}>
-                  <TableCell className="tabular-nums">
-                    {fechaCorta(d.fecha)}
-                  </TableCell>
-                  <TableCell className="text-slate-600">{d.diaSemana}</TableCell>
-                  <TableCell className="tabular-nums text-slate-600">
-                    {d.limite ?? "—"}
-                  </TableCell>
-                  <TableCell className="tabular-nums text-slate-700">
-                    {d.horaFin ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <EstadoCelda dia={d} />
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      {/* Matriz SLA × días */}
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-slate-50">
+              <th className="sticky left-0 z-10 min-w-[14rem] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-700">
+                SLA
+              </th>
+              <th className="min-w-[5rem] border-r border-slate-200 px-2 py-2 text-center font-semibold text-slate-700">
+                % mes
+              </th>
+              {diasArr.map((d) => {
+                const dow = dowDe(data.year, data.month, d)
+                const finde = dow === 0 || dow === 6
+                return (
+                  <th
+                    key={d}
+                    className={`w-9 px-0 py-1 text-center font-medium ${
+                      finde ? "bg-slate-100 text-slate-400" : "text-slate-500"
+                    }`}
+                  >
+                    <div className="text-xs leading-tight">{d}</div>
+                    <div className="text-[10px] leading-tight text-slate-400">
+                      {INICIAL_DOW[dow]}
+                    </div>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {data.filas.map((fila) => {
+              const cumpleTarget =
+                fila.porcentaje !== null && fila.porcentaje >= fila.target
+              return (
+                <tr key={fila.codigo} className="border-t border-slate-200">
+                  <td className="sticky left-0 z-10 min-w-[14rem] border-r border-slate-200 bg-white px-3 py-2 font-medium text-slate-800">
+                    {fila.nombre}
+                  </td>
+                  <td className="border-r border-slate-200 px-2 py-2 text-center">
+                    <span
+                      className={`inline-block rounded px-2 py-0.5 text-sm font-bold tabular-nums ${
+                        fila.porcentaje === null
+                          ? "text-slate-400"
+                          : cumpleTarget
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {fila.porcentaje === null ? "—" : `${fila.porcentaje}%`}
+                    </span>
+                  </td>
+                  {fila.dias.map((estado, i) => (
+                    <td key={i} className="px-0 py-1 text-center">
+                      <CeldaDia estado={estado} />
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )
 }
 
-function EstadoCelda({
-  dia,
-}: {
-  dia: CumplimientoRuteoMes["dias"][number]
-}) {
-  if (!dia.aplica) {
-    return <span className="text-xs text-slate-400">No aplica</span>
-  }
-  if (dia.cumple === null) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-        <Minus className="size-3.5" /> Sin dato
-      </span>
-    )
-  }
-  if (dia.cumple) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-        <CheckCircle2 className="size-4" /> Cumple
-      </span>
-    )
-  }
+const ESTILO: Record<
+  EstadoCumplimiento,
+  { texto: string; className: string; titulo: string }
+> = {
+  si: { texto: "Sí", className: "bg-emerald-100 text-emerald-700", titulo: "Cumple" },
+  no: { texto: "No", className: "bg-red-100 text-red-700", titulo: "No cumple" },
+  sd: { texto: "–", className: "text-slate-300", titulo: "Sin dato" },
+  na: { texto: "·", className: "text-slate-300", titulo: "No aplica" },
+}
+
+function CeldaDia({ estado }: { estado: EstadoCumplimiento }) {
+  const e = ESTILO[estado]
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
-      <XCircle className="size-4" /> No cumple
+    <span
+      className={`inline-flex h-6 w-7 items-center justify-center rounded text-xs font-semibold ${e.className}`}
+      title={e.titulo}
+    >
+      {e.texto}
+    </span>
+  )
+}
+
+function Leyenda({
+  estado,
+  texto,
+}: {
+  estado: EstadoCumplimiento
+  texto: string
+}) {
+  const e = ESTILO[estado]
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={`inline-flex h-5 w-6 items-center justify-center rounded text-xs font-semibold ${e.className}`}
+      >
+        {e.texto}
+      </span>
+      {texto}
     </span>
   )
 }
