@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireRole } from "@/lib/session"
+import { esTardanzaDeposito } from "@/lib/asistencia-turnos"
 import type {
   RrhhInasistenciaRow,
   RrhhTotalHorasRow,
@@ -236,10 +237,19 @@ export async function getResumenMensual(
         if (entradas.length > 0) {
           diasTrabajados++
 
-          // Check tardanza estricta (cualquier entrada > 7:00 hora Argentina, UTC-3)
-          const { hh, mm } = horaArgentina(entradas[0].fecha_marca)
-          if (hh > horaEntradaEsperada || (hh === horaEntradaEsperada && mm > 0)) {
-            tardanzas++
+          // Depósito (operadores de almacén): el turno se infiere de la marca
+          // (7 o 9) por su rotación, y se normaliza el timezone inconsistente.
+          // El resto de los sectores mantiene el umbral fijo de las 7:00.
+          if (emp.sector === "Depósito") {
+            if (esTardanzaDeposito(entradas)) {
+              tardanzas++
+            }
+          } else {
+            // Tardanza estricta (cualquier entrada > 7:00 hora Argentina, UTC-3)
+            const { hh, mm } = horaArgentina(entradas[0].fecha_marca)
+            if (hh > horaEntradaEsperada || (hh === horaEntradaEsperada && mm > 0)) {
+              tardanzas++
+            }
           }
 
           // Calculate hours (la diff entre dos timestamps es independiente de la TZ)

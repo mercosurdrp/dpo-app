@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type { MarcaAsistencia } from "./asistencia"
+import { esTardanzaDeposito } from "@/lib/asistencia-turnos"
 
 // Cómo interpretar las marcas almacenadas:
 // - false (default): la marca está en UTC verdadero (ej: 10:03 UTC = 07:03 Argentina).
@@ -142,11 +143,19 @@ export async function getMiDashboard(): Promise<
       if (entradas.length > 0) {
         diasTrabajados++
 
-        const horaStr = extraerHora(entradas[0].fecha_marca)
-        const [hh, mm] = horaStr.split(":").map(Number)
-        // Tardanza estricta: cualquier entrada > 7:00 hora Argentina (UTC-3)
-        if (hh > 7 || (hh === 7 && mm > 0)) {
-          tardanzas++
+        // Depósito (operadores de almacén): turno inferido de la marca (7 o 9)
+        // con normalización del timezone. El resto mantiene el umbral de las 7:00.
+        if (empleado.sector === "Depósito") {
+          if (esTardanzaDeposito(entradas)) {
+            tardanzas++
+          }
+        } else {
+          const horaStr = extraerHora(entradas[0].fecha_marca)
+          const [hh, mm] = horaStr.split(":").map(Number)
+          // Tardanza estricta: cualquier entrada > 7:00 hora Argentina (UTC-3)
+          if (hh > 7 || (hh === 7 && mm > 0)) {
+            tardanzas++
+          }
         }
 
         if (salidas.length > 0) {
