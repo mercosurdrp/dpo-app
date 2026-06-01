@@ -2,7 +2,16 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Loader2, Play, Flag, Route, MapPin, CheckCircle2 } from "lucide-react"
+import {
+  Loader2,
+  Play,
+  Flag,
+  Route,
+  MapPin,
+  CheckCircle2,
+  Clock,
+  Pencil,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -10,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   iniciarRuteo,
   finalizarRuteo,
+  setFinPreventa,
   listarRuteoHistorial,
   type RuteoCierre,
 } from "@/actions/ruteo"
@@ -75,6 +85,18 @@ export function RuteoClient({
     })
   }
 
+  function handleFinPreventa(horaManual?: string) {
+    startTransition(async () => {
+      const res = await setFinPreventa(horaManual)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Fin de preventa registrado")
+      setDia(res.data)
+    })
+  }
+
   function handleFinalizar() {
     if (!dia) return
     startTransition(async () => {
@@ -118,10 +140,17 @@ export function RuteoClient({
         </div>
       )}
 
+      {/* ----- Fin de preventa ----- */}
+      <BloqueFinPreventa
+        dia={dia}
+        pending={pending}
+        onGuardar={handleFinPreventa}
+      />
+
       {/* ----- Estado del día ----- */}
-      {!dia ? (
-        // Sin iniciar
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      {!dia || dia.estado === "pendiente" ? (
+        // Sin iniciar (o solo con fin de preventa registrado)
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="mb-4 text-sm text-slate-500">
             Todavía no se inició el ruteo de hoy.
           </p>
@@ -243,6 +272,114 @@ export function RuteoClient({
           </ul>
         )}
       </div>
+    </div>
+  )
+}
+
+function BloqueFinPreventa({
+  dia,
+  pending,
+  onGuardar,
+}: {
+  dia: RuteoCierre | null
+  pending: boolean
+  onGuardar: (horaManual?: string) => void
+}) {
+  const registrada = dia?.hora_fin_preventa ?? null
+  const [editando, setEditando] = useState(false)
+  const [hora, setHora] = useState("")
+
+  function abrirEdicion() {
+    setHora(registrada ? horaHHmm(registrada) : "")
+    setEditando(true)
+  }
+
+  function guardar() {
+    onGuardar(hora || undefined)
+    setEditando(false)
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Clock className="mt-0.5 size-5 text-amber-600" />
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Fin de preventa
+            </p>
+            <p className="text-xs text-slate-500">
+              Horario en que Ventas entregó la preventa a Ruteo. Límite: L-V{" "}
+              <b>08:00</b> · sáb <b>07:00</b>.
+            </p>
+            {registrada && !editando && (
+              <p className="mt-1 text-sm text-slate-700">
+                Registrado a las{" "}
+                <span className="font-semibold tabular-nums">
+                  {horaHHmm(registrada)}
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {!editando &&
+          (registrada ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={abrirEdicion}
+              disabled={pending}
+            >
+              <Pencil className="mr-1 size-3.5" />
+              Editar
+            </Button>
+          ) : (
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <Button size="sm" onClick={() => onGuardar()} disabled={pending}>
+                {pending ? (
+                  <Loader2 className="mr-1 size-4 animate-spin" />
+                ) : (
+                  <Clock className="mr-1 size-4" />
+                )}
+                Registrar ahora
+              </Button>
+              <button
+                type="button"
+                onClick={abrirEdicion}
+                disabled={pending}
+                className="text-xs text-amber-700 underline hover:text-amber-800"
+              >
+                o ingresar hora
+              </button>
+            </div>
+          ))}
+      </div>
+
+      {editando && (
+        <div className="mt-3 flex items-end gap-2 border-t border-amber-100 pt-3">
+          <div>
+            <Label className="mb-1.5 text-xs">Horario (HH:MM)</Label>
+            <Input
+              type="time"
+              value={hora}
+              onChange={(e) => setHora(e.target.value)}
+              className="w-[8rem]"
+            />
+          </div>
+          <Button size="sm" onClick={guardar} disabled={pending || !hora}>
+            Guardar
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditando(false)}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

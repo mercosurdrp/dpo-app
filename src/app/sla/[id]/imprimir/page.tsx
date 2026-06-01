@@ -92,10 +92,39 @@ export default async function ImprimirAcuerdoPage({
         <p>{plantilla.vigencia}</p>
       </Seccion>
 
+      {/* Secciones adicionales (premisas / condiciones operativas) */}
+      {plantilla.secciones && plantilla.secciones.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-700">
+            7. Premisas y condiciones operativas
+          </h2>
+          <div className="space-y-4">
+            {plantilla.secciones.map((s) => (
+              <div key={s.titulo} className="break-inside-avoid text-sm leading-relaxed">
+                <h3 className="font-semibold text-slate-800">{s.titulo}</h3>
+                {s.parrafos?.map((p, i) => (
+                  <p key={i} className="mt-1 text-slate-700">
+                    {p}
+                  </p>
+                ))}
+                {s.bullets && s.bullets.length > 0 && (
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">
+                    {s.bullets.map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Firmas */}
       <section className="mt-12 break-inside-avoid">
         <h2 className="mb-8 text-sm font-bold uppercase tracking-wide text-slate-700">
-          7. Firmas
+          {plantilla.secciones && plantilla.secciones.length > 0 ? "8" : "7"}.
+          Firmas
         </h2>
         <div className="grid grid-cols-2 gap-x-12 gap-y-12">
           {(plantilla.firmantes.length > 0

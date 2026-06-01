@@ -7,6 +7,8 @@ import { IS_MISIONES } from "@/lib/empresa"
 import {
   SLA_RUTEO_NOMBRE,
   SLA_RUTEO_TARGET,
+  SLA_SYOP_NOMBRE,
+  SLA_SYOP_TARGET,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
@@ -244,11 +246,18 @@ function dowFromISO(iso: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
 }
 
-/** Minutos desde medianoche ARG del límite del día, o null si no aplica. */
+/** Límite del fin de RUTEO (min desde medianoche ARG), o null si no aplica. */
 function limiteMinutos(dow: number): number | null {
   if (dow === 0) return null // domingo: no se rutea
   if (dow === 6) return 7 * 60 + 30 // sábado 07:30
   return 9 * 60 // L-V 09:00
+}
+
+/** Límite de ENTREGA DE PREVENTA (min desde medianoche ARG), o null si no aplica. */
+function limitePreventa(dow: number): number | null {
+  if (dow === 0) return null // domingo: no hay preventa
+  if (dow === 6) return 7 * 60 // sábado 07:00
+  return 8 * 60 // L-V 08:00
 }
 
 /** Minutos desde medianoche en hora ARG (UTC-3) de un timestamp UTC. */
@@ -322,10 +331,75 @@ async function filaRuteo(
 }
 
 /**
+ * Fila de cumplimiento del SLA Ventas↔Operaciones (`plan_syop`), medido por el
+ * horario de entrega de preventa a Ruteo (`ruteo_cierres.hora_fin_preventa`):
+ * L-V antes de 08:00 · sábados antes de 07:00.
+ */
+async function filaSyop(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ruteo_cierres")
+    .select("fecha, hora_fin_preventa")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+
+  const finPorDia = new Map<number, string | null>()
+  for (const row of (data ?? []) as any[]) {
+    const dia = Number((row.fecha as string).slice(8, 10))
+    finPorDia.set(dia, (row.hora_fin_preventa as string | null) ?? null)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    const limMin = limitePreventa(dowFromISO(iso))
+    if (limMin === null) {
+      dias.push("na")
+      continue
+    }
+    const hora = finPorDia.get(d)
+    if (hora == null) {
+      dias.push("sd")
+      continue
+    }
+    const cumple = minutosARG(hora) <= limMin
+    totalAplica++
+    if (cumple) cumplidos++
+    dias.push(cumple ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return {
+    codigo: "plan_syop",
+    nombre: SLA_SYOP_NOMBRE,
+    target: SLA_SYOP_TARGET,
+    porcentaje,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
+}
+
+/**
  * Cumplimiento de los SLA medibles para un mes (year, month=1..12), como
- * matriz: una fila por SLA, una columna por día. Por ahora la única fila es
- * el SLA de tiempo de ruteo; está listo para sumar más SLA medibles.
- * Días en curso/sin cierre = "sin dato" (no penalizan el %).
+ * matriz: una fila por SLA, una columna por día. Hoy: tiempo de ruteo y
+ * entrega de preventa (Ventas↔Operaciones). Listo para sumar más SLA.
+ * Días en curso/sin registro = "sin dato" (no penalizan el %).
  */
 export async function getCumplimientoMes(
   year: number,
@@ -344,6 +418,7 @@ export async function getCumplimientoMes(
     const diasDelMes = new Date(Date.UTC(year, month, 0)).getUTCDate()
 
     const filas: CumplimientoSlaFila[] = [
+      await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
     ]
 

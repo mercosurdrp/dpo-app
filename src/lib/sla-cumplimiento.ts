@@ -6,6 +6,9 @@
 export const SLA_RUTEO_NOMBRE = "Tiempo de finalización del ruteo"
 export const SLA_RUTEO_TARGET = 95
 
+export const SLA_SYOP_NOMBRE = "Ventas ↔ Operaciones (entrega de preventa)"
+export const SLA_SYOP_TARGET = 95
+
 // Estado de un día para un SLA:
 //   "si" = cumple · "no" = no cumple · "na" = no aplica (ej. domingo) ·
 //   "sd" = sin dato (día futuro o ruteo no cerrado)
