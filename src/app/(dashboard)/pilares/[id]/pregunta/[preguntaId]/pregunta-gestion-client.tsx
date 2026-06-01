@@ -30,6 +30,7 @@ import {
   FolderOpen,
   GraduationCap,
   Calendar,
+  CalendarRange,
   User,
   Users,
   CheckCircle,
@@ -43,6 +44,7 @@ function pilarSlug(nombre: string): string {
     .replace(/[^a-z0-9]+/g, "")
 }
 import { Button } from "@/components/ui/button"
+import { IS_MISIONES } from "@/lib/empresa"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -1225,6 +1227,39 @@ export function PreguntaGestionClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Acceso directo al módulo de Períodos Críticos (solo punto 3.4, Misiones) */}
+      {IS_MISIONES && pregunta.numero === "3.4" && (
+        <Card size="sm" className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="rounded-xl p-3"
+                style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+              >
+                <CalendarRange className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-900">
+                  Análisis de Períodos Críticos
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Calendario por volumen + OTIF + ausentismo · revisión mensual · TOR · simulador
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0 text-white"
+              style={{ backgroundColor: pilar.color }}
+              render={<Link href="/planeamiento/periodos-criticos" />}
+            >
+              Abrir análisis
+              <ExternalLink className="ml-1.5 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Archivos DPO cargados (vista rápida) */}
       <Card size="sm">
