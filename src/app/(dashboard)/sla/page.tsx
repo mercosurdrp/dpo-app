@@ -1,6 +1,7 @@
-import { getSlas, getCumplimientoRuteo, type CumplimientoRuteoMes } from "@/actions/sla"
+import { getSlas, getCumplimientoRuteo } from "@/actions/sla"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import type { CumplimientoRuteoMes } from "@/lib/sla-cumplimiento"
 import { SlaClient } from "./sla-client"
 
 /** Mes actual en hora Argentina (UTC-3, sin DST). */

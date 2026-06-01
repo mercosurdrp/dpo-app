@@ -20,7 +20,7 @@ import {
   type SlaConAutor,
   type UserRole,
 } from "@/types/database"
-import type { CumplimientoRuteoMes } from "@/actions/sla"
+import type { CumplimientoRuteoMes } from "@/lib/sla-cumplimiento"
 import { SlaDetalleDialog } from "@/components/sla/sla-detalle-dialog"
 import { SlaCumplimientos } from "@/components/sla/sla-cumplimientos"
 

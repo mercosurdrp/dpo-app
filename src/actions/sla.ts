@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import { SLA_RUTEO_TARGET, type CumplimientoRuteoMes, type CumplimientoDiaRuteo } from "@/lib/sla-cumplimiento"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 
 const DASHBOARD_PATH = "/sla"
@@ -230,28 +231,6 @@ export async function deleteSlaAdjunto(
 // el límite de 09:00 ARG = 12:00 UTC. La conversión vive en este módulo.
 // Pampeana-only: ruteo_cierres no existe en la Supabase de Misiones.
 // ===========================================================================
-
-export const SLA_RUTEO_NOMBRE = "Tiempo de finalización del ruteo"
-export const SLA_RUTEO_TARGET = 95
-
-export interface CumplimientoDiaRuteo {
-  fecha: string // YYYY-MM-DD
-  diaSemana: string // "Lun".."Sáb"
-  aplica: boolean // false los domingos
-  limite: string | null // "09:00" / "07:30"
-  horaFin: string | null // "08:47" en hora ARG, null si no cerró
-  cumple: boolean | null // null si no aplica o sin hora_fin
-}
-
-export interface CumplimientoRuteoMes {
-  year: number
-  month: number
-  target: number
-  totalAplica: number // días con ruteo medibles (denominador)
-  cumplidos: number
-  porcentaje: number | null
-  dias: CumplimientoDiaRuteo[]
-}
 
 const DIA_LABEL = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 

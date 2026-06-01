@@ -12,11 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { getCumplimientoRuteo } from "@/actions/sla"
 import {
-  getCumplimientoRuteo,
   SLA_RUTEO_NOMBRE,
   type CumplimientoRuteoMes,
-} from "@/actions/sla"
+} from "@/lib/sla-cumplimiento"
 
 function fechaCorta(iso: string): string {
   const [, m, d] = iso.split("-")
