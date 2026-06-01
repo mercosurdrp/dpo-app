@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { FileSignature, Handshake, CircleAlert, CircleCheck, CircleDashed } from "lucide-react"
+import { FileSignature, FileText, Handshake, CircleAlert, CircleCheck, CircleDashed } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -159,13 +159,29 @@ export function SlaClient({
                             className="text-right"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setDetalleId(s.id)}
-                            >
-                              {canGestionar ? "Gestionar" : "Ver"}
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="Abrir el acuerdo en PDF para imprimir y firmar"
+                                onClick={() =>
+                                  window.open(
+                                    `/sla/${s.id}/imprimir`,
+                                    "_blank",
+                                  )
+                                }
+                              >
+                                <FileText className="size-4" />
+                                PDF
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setDetalleId(s.id)}
+                              >
+                                {canGestionar ? "Gestionar" : "Ver"}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
