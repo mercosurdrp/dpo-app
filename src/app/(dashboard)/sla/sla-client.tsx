@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { FileSignature, Handshake, CircleAlert, CircleCheck, CircleDashed } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -19,7 +20,9 @@ import {
   type SlaConAutor,
   type UserRole,
 } from "@/types/database"
+import type { CumplimientoRuteoMes } from "@/actions/sla"
 import { SlaDetalleDialog } from "@/components/sla/sla-detalle-dialog"
+import { SlaCumplimientos } from "@/components/sla/sla-cumplimientos"
 
 function fechaCorta(iso: string | null): string {
   if (!iso) return "—"
@@ -45,9 +48,12 @@ function estadoBadge(sla: SlaConAutor) {
 export function SlaClient({
   slas,
   currentRole,
+  cumplimiento,
 }: {
   slas: SlaConAutor[]
   currentRole: UserRole
+  /** Cumplimiento del SLA de ruteo del mes actual (null en Misiones o si falla). */
+  cumplimiento?: CumplimientoRuteoMes | null
 }) {
   const [detalleId, setDetalleId] = useState<string | null>(null)
 
@@ -69,19 +75,8 @@ export function SlaClient({
 
   const slaSeleccionado = slas.find((s) => s.id === detalleId) ?? null
 
-  return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
-          <Handshake className="size-6 text-pink-600" />
-          SLA — Acuerdos de Nivel de Servicio
-        </h1>
-        <p className="text-sm text-slate-500">
-          Los 15 SLA que exige el manual DPO. Subí acá el acuerdo firmado por
-          ambas partes para cada uno.
-        </p>
-      </div>
-
+  const acuerdos = (
+    <div className="space-y-6">
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <ResumenCard
@@ -182,6 +177,38 @@ export function SlaClient({
           )
         })}
       </div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-6 p-4 md:p-6">
+      <div className="flex flex-col gap-1">
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+          <Handshake className="size-6 text-pink-600" />
+          SLA — Acuerdos de Nivel de Servicio
+        </h1>
+        <p className="text-sm text-slate-500">
+          Los 15 SLA que exige el manual DPO. Subí acá el acuerdo firmado por
+          ambas partes para cada uno.
+        </p>
+      </div>
+
+      {cumplimiento ? (
+        <Tabs defaultValue="acuerdos">
+          <TabsList variant="line">
+            <TabsTrigger value="acuerdos">Acuerdos</TabsTrigger>
+            <TabsTrigger value="cumplimientos">Cumplimientos</TabsTrigger>
+          </TabsList>
+          <TabsContent value="acuerdos" className="pt-2">
+            {acuerdos}
+          </TabsContent>
+          <TabsContent value="cumplimientos" className="pt-2">
+            <SlaCumplimientos inicial={cumplimiento} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        acuerdos
+      )}
 
       <SlaDetalleDialog
         sla={slaSeleccionado}
