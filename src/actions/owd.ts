@@ -3,10 +3,22 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
+
+const OWD_FOTOS_BUCKET = "owd-evidencias"
+
+// Normaliza el nombre de archivo para usarlo como key de Storage
+function cleanFileName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 80)
+}
 import type {
   OwdItem,
   OwdObservacion,
   OwdRespuesta,
+  OwdRespuestaFoto,
   OwdResultado,
   OwdMensual,
   OwdItemStats,
@@ -500,64 +512,135 @@ export async function getEmpleadosActivos(): Promise<
 // OBSERVACIONES
 // =============================================
 
-interface CreateObservacionInput {
-  templateId: string
-  fecha: string
-  supervisor: string
-  empleadoObservado: string
-  rolEmpleado?: string
-  dominio?: string
-  respuestas: Array<{ item_id: string; resultado: OwdResultado; comentario?: string }>
-  accionCorrectiva?: string
-  observaciones?: string
+interface RespuestaInput {
+  item_id: string
+  resultado: OwdResultado
+  comentario?: string
 }
 
+// createObservacion recibe FormData para poder adjuntar fotos de evidencia
+// por ítem. Campos:
+//   templateId, fecha, supervisor, empleadoObservado, rolEmpleado, dominio,
+//   accionCorrectiva, observaciones  -> strings
+//   respuestas  -> JSON.stringify(RespuestaInput[])
+//   foto__<item_id>  -> 0..n File (una entrada por foto de ese ítem)
 export async function createObservacion(
-  input: CreateObservacionInput,
+  formData: FormData,
 ): Promise<{ data: OwdObservacion } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
-    const totalItems = input.respuestas.length
-    const totalOk = input.respuestas.filter((r) => r.resultado === "ok").length
-    const totalNook = input.respuestas.filter((r) => r.resultado === "nook").length
-    const totalNa = input.respuestas.filter((r) => r.resultado === "na").length
+    const str = (k: string) => String(formData.get(k) ?? "").trim()
+    const templateId = str("templateId")
+    if (!templateId) return { error: "Plantilla inválida" }
+
+    let respuestas: RespuestaInput[]
+    try {
+      respuestas = JSON.parse(String(formData.get("respuestas") ?? "[]"))
+    } catch {
+      return { error: "Respuestas con formato inválido" }
+    }
+    if (!Array.isArray(respuestas) || respuestas.length === 0) {
+      return { error: "No hay respuestas para guardar" }
+    }
+
+    const totalItems = respuestas.length
+    const totalOk = respuestas.filter((r) => r.resultado === "ok").length
+    const totalNook = respuestas.filter((r) => r.resultado === "nook").length
+    const totalNa = respuestas.filter((r) => r.resultado === "na").length
     const evaluables = totalOk + totalNook
     const pct = evaluables === 0 ? 0 : Math.round((totalOk / evaluables) * 10000) / 100
 
     const { data: obs, error: errObs } = await supabase
       .from("owd_observaciones")
       .insert({
-        template_id: input.templateId,
-        fecha: input.fecha,
-        supervisor: input.supervisor.trim(),
-        empleado_observado: input.empleadoObservado.trim(),
-        rol_empleado: input.rolEmpleado?.trim() || null,
-        dominio: input.dominio?.trim().toUpperCase() || null,
+        template_id: templateId,
+        fecha: str("fecha"),
+        supervisor: str("supervisor"),
+        empleado_observado: str("empleadoObservado"),
+        rol_empleado: str("rolEmpleado") || null,
+        dominio: str("dominio").toUpperCase() || null,
         total_items: totalItems,
         total_ok: totalOk,
         total_nook: totalNook,
         total_na: totalNa,
         pct_cumplimiento: pct,
-        accion_correctiva: input.accionCorrectiva?.trim() || null,
-        observaciones: input.observaciones?.trim() || null,
+        accion_correctiva: str("accionCorrectiva") || null,
+        observaciones: str("observaciones") || null,
         created_by: profile.id,
       })
       .select("*")
       .single()
     if (errObs) return { error: errObs.message }
 
-    const respuestasPayload = input.respuestas.map((r) => ({
+    const respuestasPayload = respuestas.map((r) => ({
       observacion_id: obs.id,
       item_id: r.item_id,
       resultado: r.resultado,
       comentario: r.comentario?.trim() || null,
     }))
-    const { error: errResp } = await supabase.from("owd_respuestas").insert(respuestasPayload)
+    const { data: respRows, error: errResp } = await supabase
+      .from("owd_respuestas")
+      .insert(respuestasPayload)
+      .select("id, item_id")
     if (errResp) {
       await supabase.from("owd_observaciones").delete().eq("id", obs.id)
       return { error: errResp.message }
+    }
+
+    // Subir fotos de evidencia por ítem (las que hayan venido en el FormData)
+    const fotosPayload: Array<{
+      respuesta_id: string
+      path: string
+      nombre: string
+      mime: string | null
+      bytes: number
+      orden: number
+    }> = []
+    for (const resp of respRows as { id: string; item_id: string }[]) {
+      const files = formData
+        .getAll(`foto__${resp.item_id}`)
+        .filter((f): f is File => f instanceof File && f.size > 0)
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const path = `${obs.id}/${resp.item_id}/${Date.now()}-${i}-${cleanFileName(file.name)}`
+        const arrayBuffer = await file.arrayBuffer()
+        const { error: upErr } = await supabase.storage
+          .from(OWD_FOTOS_BUCKET)
+          .upload(path, arrayBuffer, {
+            contentType: file.type || "application/octet-stream",
+            upsert: false,
+          })
+        if (upErr) {
+          // Limpiar observación + respuestas (CASCADE) y abortar
+          await supabase.from("owd_observaciones").delete().eq("id", obs.id)
+          return { error: `Subiendo foto: ${upErr.message}` }
+        }
+        fotosPayload.push({
+          respuesta_id: resp.id,
+          path,
+          nombre: file.name,
+          mime: file.type || null,
+          bytes: file.size,
+          orden: i,
+        })
+      }
+    }
+    if (fotosPayload.length > 0) {
+      const { error: errFotos } = await supabase
+        .from("owd_respuesta_fotos")
+        .insert(fotosPayload)
+      if (errFotos) {
+        await supabase.from("owd_observaciones").delete().eq("id", obs.id)
+        return { error: errFotos.message }
+      }
+    }
+
+    const input = {
+      templateId,
+      supervisor: str("supervisor"),
+      empleadoObservado: str("empleadoObservado"),
     }
 
     // Derivar pilar/punto de la pregunta asociada para el feed de actividad
@@ -640,7 +723,14 @@ export async function getObservaciones(
 export async function getObservacionById(
   id: string,
 ): Promise<
-  | { data: { observacion: OwdObservacion; respuestas: OwdRespuesta[]; items: OwdItem[] } }
+  | {
+      data: {
+        observacion: OwdObservacion
+        respuestas: OwdRespuesta[]
+        items: OwdItem[]
+        fotos: OwdRespuestaFoto[]
+      }
+    }
   | { error: string }
 > {
   try {
@@ -665,13 +755,49 @@ export async function getObservacionById(
     if (respRes.error) return { error: respRes.error.message }
     if (itemsRes.error) return { error: itemsRes.error.message }
 
+    const respuestas = (respRes.data || []) as OwdRespuesta[]
+
+    // Fotos de evidencia de todas las respuestas de esta observación
+    let fotos: OwdRespuestaFoto[] = []
+    if (respuestas.length > 0) {
+      const { data: fotosData, error: errFotos } = await supabase
+        .from("owd_respuesta_fotos")
+        .select("*")
+        .in(
+          "respuesta_id",
+          respuestas.map((r) => r.id),
+        )
+        .order("orden", { ascending: true })
+      if (errFotos) return { error: errFotos.message }
+      fotos = (fotosData || []) as OwdRespuestaFoto[]
+    }
+
     return {
       data: {
         observacion: observacion as OwdObservacion,
-        respuestas: (respRes.data || []) as OwdRespuesta[],
+        respuestas,
         items: (itemsRes.data || []) as OwdItem[],
+        fotos,
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// URL firmada para abrir/visualizar una foto de evidencia del OWD
+export async function getOwdFotoSignedUrl(
+  path: string,
+): Promise<{ data: { url: string } } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!path) return { error: "Ruta de archivo inválida" }
+    const { data, error } = await supabase.storage
+      .from(OWD_FOTOS_BUCKET)
+      .createSignedUrl(path, 60 * 10)
+    if (error || !data) return { error: error?.message ?? "No se pudo generar URL" }
+    return { data: { url: data.signedUrl } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -683,6 +809,24 @@ export async function deleteObservacion(
   try {
     await requireAuth()
     const supabase = await createClient()
+
+    // Borrar fotos de evidencia del Storage (las filas se van por CASCADE)
+    const { data: resp } = await supabase
+      .from("owd_respuestas")
+      .select("id")
+      .eq("observacion_id", id)
+    const respIds = (resp || []).map((r) => r.id)
+    if (respIds.length > 0) {
+      const { data: fotos } = await supabase
+        .from("owd_respuesta_fotos")
+        .select("path")
+        .in("respuesta_id", respIds)
+      const paths = (fotos || []).map((f) => f.path).filter(Boolean)
+      if (paths.length > 0) {
+        await supabase.storage.from(OWD_FOTOS_BUCKET).remove(paths)
+      }
+    }
+
     const { error } = await supabase.from("owd_observaciones").delete().eq("id", id)
     if (error) return { error: error.message }
     return { success: true }

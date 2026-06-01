@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { OwdItem, OwdResultado, CatalogoVehiculo } from "@/types/database"
-import { Loader2, CheckCircle2, XCircle, MinusCircle } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle, MinusCircle, ImagePlus, X } from "lucide-react"
 import { createObservacion } from "@/actions/owd"
 
 interface Props {
@@ -28,10 +28,81 @@ interface Props {
 }
 
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
+type FotoLocal = { file: File; url: string }
 
 export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+
+  // Fotos de evidencia por ítem (varias por ítem). El preview usa object URLs.
+  const [fotos, setFotos] = useState<Record<string, FotoLocal[]>>({})
+  const fotosRef = useRef(fotos)
+  // Ítem destino del pegado con Ctrl+V (último cuya zona de fotos se activó)
+  const [pasteTarget, setPasteTarget] = useState<string | null>(null)
+  const pasteTargetRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    fotosRef.current = fotos
+  }, [fotos])
+  useEffect(() => {
+    pasteTargetRef.current = pasteTarget
+  }, [pasteTarget])
+
+  const addFotos = useCallback((itemId: string, files: File[]) => {
+    const imgs = files.filter((f) => f.type.startsWith("image/"))
+    if (imgs.length === 0) {
+      toast.error("Solo se pueden adjuntar imágenes")
+      return
+    }
+    setFotos((prev) => ({
+      ...prev,
+      [itemId]: [
+        ...(prev[itemId] ?? []),
+        ...imgs.map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+      ],
+    }))
+  }, [])
+
+  const removeFoto = useCallback((itemId: string, idx: number) => {
+    setFotos((prev) => {
+      const arr = prev[itemId] ?? []
+      const target = arr[idx]
+      if (target) URL.revokeObjectURL(target.url)
+      return { ...prev, [itemId]: arr.filter((_, i) => i !== idx) }
+    })
+  }, [])
+
+  // Pegar captura con Ctrl+V → va al ítem cuya zona de fotos se activó por última vez
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = pasteTargetRef.current
+      if (!target || !e.clipboardData) return
+      const files: File[] = []
+      for (const it of Array.from(e.clipboardData.items)) {
+        if (!it.type.startsWith("image/")) continue
+        const blob = it.getAsFile()
+        if (!blob) continue
+        const ext = blob.type.split("/")[1] || "png"
+        files.push(new File([blob], `captura-${Date.now()}.${ext}`, { type: blob.type }))
+      }
+      if (files.length === 0) return
+      addFotos(target, files)
+      toast.success("Captura pegada como evidencia")
+      e.preventDefault()
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [addFotos])
+
+  // Revocar todos los object URLs al desmontar
+  useEffect(
+    () => () => {
+      for (const arr of Object.values(fotosRef.current)) {
+        for (const f of arr) URL.revokeObjectURL(f.url)
+      }
+    },
+    [],
+  )
 
   const today = new Date().toISOString().slice(0, 10)
   const [fecha, setFecha] = useState(today)
@@ -78,21 +149,29 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos
       return
     }
     setSaving(true)
-    const result = await createObservacion({
-      templateId,
-      fecha,
-      supervisor,
-      empleadoObservado: empleado,
-      rolEmpleado: rol,
-      dominio: dominio || undefined,
-      respuestas: items.map((i) => ({
-        item_id: i.id,
-        resultado: respuestas[i.id].resultado,
-        comentario: respuestas[i.id].comentario || undefined,
-      })),
-      accionCorrectiva: accionCorrectiva || undefined,
-      observaciones: obsGeneral || undefined,
-    })
+    const fd = new FormData()
+    fd.append("templateId", templateId)
+    fd.append("fecha", fecha)
+    fd.append("supervisor", supervisor)
+    fd.append("empleadoObservado", empleado)
+    fd.append("rolEmpleado", rol)
+    fd.append("dominio", dominio)
+    fd.append("accionCorrectiva", accionCorrectiva)
+    fd.append("observaciones", obsGeneral)
+    fd.append(
+      "respuestas",
+      JSON.stringify(
+        items.map((i) => ({
+          item_id: i.id,
+          resultado: respuestas[i.id].resultado,
+          comentario: respuestas[i.id].comentario || undefined,
+        })),
+      ),
+    )
+    for (const i of items) {
+      for (const f of fotos[i.id] ?? []) fd.append(`foto__${i.id}`, f.file)
+    }
+    const result = await createObservacion(fd)
     setSaving(false)
     if ("error" in result) {
       toast.error(result.error)
@@ -290,6 +369,60 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos
                       onChange={(e) => setComentario(item.id, e.target.value)}
                     />
                   )}
+
+                  {/* Fotos de evidencia (varias por ítem) */}
+                  <div
+                    className={`space-y-1.5 rounded-md p-2 transition-colors ${
+                      pasteTarget === item.id ? "bg-blue-50 ring-1 ring-blue-200" : ""
+                    }`}
+                    onClick={() => setPasteTarget(item.id)}
+                    onFocusCapture={() => setPasteTarget(item.id)}
+                  >
+                    <Label className="text-xs text-muted-foreground">
+                      Evidencia (fotos — podés pegar con Ctrl+V)
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(fotos[item.id] ?? []).map((f, idx) => (
+                        <div
+                          key={idx}
+                          className="group relative h-16 w-16 overflow-hidden rounded-md border bg-white"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={f.url}
+                            alt={`evidencia ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeFoto(item.id, idx)
+                            }}
+                            className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-80 transition-opacity hover:opacity-100"
+                            aria-label="Quitar foto"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600">
+                        <ImagePlus className="h-5 w-5" />
+                        <span className="mt-0.5 text-[10px]">Agregar</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            const fl = Array.from(e.target.files ?? [])
+                            if (fl.length) addFotos(item.id, fl)
+                            e.target.value = ""
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )
             })}

@@ -865,6 +865,18 @@ export interface OwdRespuesta {
   created_at: string
 }
 
+// Fotos de evidencia adjuntas a una respuesta de OWD (galería, 1 fila por foto)
+export interface OwdRespuestaFoto {
+  id: string
+  respuesta_id: string
+  path: string
+  nombre: string | null
+  mime: string | null
+  bytes: number | null
+  orden: number
+  created_at: string
+}
+
 export interface OwdMensual {
   mes: number
   year: number
