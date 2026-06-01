@@ -1,7 +1,7 @@
 "use client"
 
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -27,6 +27,8 @@ import {
   Eye,
   FileDown,
   Loader2,
+  Upload,
+  X,
   FolderOpen,
   GraduationCap,
   Calendar,
@@ -74,7 +76,10 @@ import {
   TENDENCIA_LABELS,
   ESTADO_CAPACITACION_COLORS,
   ESTADO_CAPACITACION_LABELS,
+  TIPO_EVIDENCIA_LABELS,
 } from "@/lib/constants"
+import { createClient } from "@/lib/supabase/client"
+import type { TipoEvidencia } from "@/types/database"
 import {
   createIndicador,
   updateIndicador,
@@ -82,6 +87,7 @@ import {
   createPlanAccion,
   updatePlanAccion,
   deletePlanAccion,
+  createEvidencia,
 } from "@/actions/gestion"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import {
@@ -794,10 +800,27 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
     null
   )
 
+  // --- Formulario "Agregar evidencia" (archivo subido o link) ---
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [titulo, setTitulo] = useState("")
+  const [descripcion, setDescripcion] = useState("")
+  const [tipo, setTipo] = useState<TipoEvidencia>("documento")
+  const [url, setUrl] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function load() {
+    setLoading(true)
+    const r = await listarArchivosDeRespuestas(preguntaId)
+    if ("data" in r) setArchivos(r.data)
+    else toast.error(r.error)
+    setLoading(false)
+  }
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      setLoading(true)
       const r = await listarArchivosDeRespuestas(preguntaId)
       if (cancelled) return
       if ("data" in r) setArchivos(r.data)
@@ -808,6 +831,90 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
       cancelled = true
     }
   }, [preguntaId])
+
+  function resetForm() {
+    setTitulo("")
+    setDescripcion("")
+    setTipo("documento")
+    setUrl("")
+    setFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  function onPickFile(f: File | null) {
+    setFile(f)
+    if (f && !titulo.trim()) setTitulo(f.name.replace(/\.[^.]+$/, ""))
+    if (f && f.type.startsWith("image/")) setTipo("foto")
+  }
+
+  // Pegar captura con Ctrl+V (regla global de uploads de imágenes)
+  function onPasteImagen(e: React.ClipboardEvent) {
+    const item = Array.from(e.clipboardData.items).find((i) =>
+      i.type.startsWith("image/")
+    )
+    if (!item) return
+    const f = item.getAsFile()
+    if (f) {
+      onPickFile(new File([f], `captura-${Date.now()}.png`, { type: f.type }))
+      toast.success("Imagen pegada")
+    }
+  }
+
+  async function handleSave() {
+    if (!titulo.trim()) {
+      toast.error("El título es obligatorio")
+      return
+    }
+    if (!file && !url.trim()) {
+      toast.error("Adjuntá un archivo o pegá un link")
+      return
+    }
+    setSaving(true)
+    try {
+      let filePath: string | undefined
+      if (file) {
+        const supabase = createClient()
+        const safe = file.name
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "")
+          .replace(/[^a-zA-Z0-9._-]+/g, "_")
+        const path = `${preguntaId}/${crypto.randomUUID()}-${safe}`
+        const { error: upErr } = await supabase.storage
+          .from("evidencias")
+          .upload(path, file, {
+            contentType: file.type || "application/octet-stream",
+            upsert: false,
+          })
+        if (upErr) {
+          toast.error(`Error al subir: ${upErr.message}`)
+          setSaving(false)
+          return
+        }
+        filePath = path
+      }
+      const res = await createEvidencia({
+        pregunta_id: preguntaId,
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim() || undefined,
+        url: url.trim() || undefined,
+        file_path: filePath,
+        tipo,
+      })
+      if ("error" in res) {
+        toast.error(res.error)
+        setSaving(false)
+        return
+      }
+      toast.success("Evidencia agregada")
+      setDialogOpen(false)
+      resetForm()
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error desconocido")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   function esImg(mime: string | null, nombre: string | null): boolean {
     if (mime?.startsWith("image/")) return true
@@ -823,10 +930,126 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
 
   return (
     <div className="space-y-3 pt-4">
-      <p className="text-xs text-muted-foreground">
-        Historial de archivos subidos en las respuestas de las tareas de este
-        punto.
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Archivos subidos en las respuestas de las tareas de este punto, más las
+          evidencias que cargues manualmente acá.
+        </p>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open)
+            if (!open) resetForm()
+          }}
+        >
+          <DialogTrigger
+            render={
+              <Button variant="outline" size="sm" className="shrink-0">
+                <Plus className="mr-1 h-3 w-3" />
+                Agregar evidencia
+              </Button>
+            }
+          />
+          <DialogContent className="sm:max-w-md" onPaste={onPasteImagen}>
+            <DialogHeader>
+              <DialogTitle>Nueva evidencia</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div>
+                <Label>Archivo</Label>
+                <div
+                  className="mt-1 flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-muted-foreground transition-colors hover:border-slate-400"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const f = e.dataTransfer.files?.[0]
+                    if (f) onPickFile(f)
+                  }}
+                >
+                  <Upload className="mb-2 h-5 w-5" />
+                  {file ? (
+                    <span className="font-medium text-slate-900">{file.name}</span>
+                  ) : (
+                    <span>
+                      Arrastrá, hacé click o pegá una captura (Ctrl+V)
+                    </span>
+                  )}
+                </div>
+                {file && (
+                  <button
+                    type="button"
+                    onClick={() => onPickFile(null)}
+                    className="mt-1 flex items-center gap-1 text-xs text-red-500 hover:underline"
+                  >
+                    <X className="h-3 w-3" /> Quitar archivo
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ev-titulo">Título *</Label>
+                <Input
+                  id="ev-titulo"
+                  value={titulo}
+                  onChange={(e) => setTitulo(e.target.value)}
+                  placeholder="Ej: Frente de estiba"
+                />
+              </div>
+              <div>
+                <Label htmlFor="ev-desc">Descripción</Label>
+                <Textarea
+                  id="ev-desc"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  placeholder="Descripción opcional…"
+                  className="min-h-12"
+                />
+              </div>
+              <div>
+                <Label>Tipo</Label>
+                <Select
+                  value={tipo}
+                  onValueChange={(v) => setTipo((v as TipoEvidencia) ?? "documento")}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(["documento", "foto", "link", "nota"] as const).map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {TIPO_EVIDENCIA_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="ev-url">O pegá un link (opcional)</Label>
+                <Input
+                  id="ev-url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose render={<Button variant="outline" />}>
+                Cancelar
+              </DialogClose>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Guardando…" : "Agregar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
       {loading ? (
         <div className="flex justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -836,7 +1059,8 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
           <FileCheck className="mb-2 h-8 w-8 opacity-40" />
           <p className="text-sm">Sin archivos todavía</p>
           <p className="text-xs">
-            Los archivos que adjuntes al responder tareas aparecen acá.
+            Usá &quot;Agregar evidencia&quot; o adjuntá archivos al responder
+            tareas y aparecen acá.
           </p>
         </div>
       ) : (
