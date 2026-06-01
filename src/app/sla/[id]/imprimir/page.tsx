@@ -32,21 +32,21 @@ export default async function ImprimirAcuerdoPage({
   }
 
   return (
-    <main className="mx-auto max-w-[210mm] bg-white p-[18mm] text-slate-900 print:p-0">
-      <style>{`@page { size: A4; margin: 16mm; }`}</style>
+    <main className="mx-auto max-w-[210mm] bg-white p-[12mm] text-slate-900 print:p-0">
+      <style>{`@page { size: A4; margin: 12mm; }`}</style>
 
       <ImprimirBoton />
 
       {/* Encabezado */}
-      <header className="border-b-2 border-slate-800 pb-3">
+      <header className="border-b-2 border-slate-800 pb-2">
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
           Acuerdo de Nivel de Servicio (SLA)
         </p>
-        <h1 className="mt-1 text-2xl font-bold leading-tight">{sla.nombre}</h1>
+        <h1 className="mt-1 text-xl font-bold leading-tight">{sla.nombre}</h1>
       </header>
 
       {/* Metadatos */}
-      <table className="mt-4 w-full border-collapse text-sm">
+      <table className="mt-3 w-full border-collapse text-sm">
         <tbody>
           <Fila label="Pilar" valor={SLA_PILAR_LABELS[sla.pilar]} />
           <Fila label="Requisito del manual" valor={sla.requisito_manual || "—"} />
@@ -94,11 +94,11 @@ export default async function ImprimirAcuerdoPage({
 
       {/* Secciones adicionales (premisas / condiciones operativas) */}
       {plantilla.secciones && plantilla.secciones.length > 0 && (
-        <section className="mt-6">
+        <section className="mt-4">
           <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-700">
             7. Premisas y condiciones operativas
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {plantilla.secciones.map((s) => (
               <div key={s.titulo} className="break-inside-avoid text-sm leading-relaxed">
                 <h3 className="font-semibold text-slate-800">{s.titulo}</h3>
@@ -120,13 +120,17 @@ export default async function ImprimirAcuerdoPage({
         </section>
       )}
 
-      {/* Firmas */}
-      <section className="mt-12 break-inside-avoid">
-        <h2 className="mb-8 text-sm font-bold uppercase tracking-wide text-slate-700">
+      {/* Firmas — break-inside-avoid + break-before-avoid para que no queden
+          colgadas (no se parten ni saltan solas dejando una hoja casi vacía). */}
+      <section
+        className="mt-8 break-inside-avoid"
+        style={{ breakBefore: "avoid", breakInside: "avoid" }}
+      >
+        <h2 className="mb-6 text-sm font-bold uppercase tracking-wide text-slate-700">
           {plantilla.secciones && plantilla.secciones.length > 0 ? "8" : "7"}.
           Firmas
         </h2>
-        <div className="grid grid-cols-2 gap-x-12 gap-y-12">
+        <div className="grid grid-cols-2 gap-x-12 gap-y-8">
           {(plantilla.firmantes.length > 0
             ? plantilla.firmantes
             : ["", ""]
@@ -156,8 +160,8 @@ function Seccion({
   children: React.ReactNode
 }) {
   return (
-    <section className="mt-5 break-inside-avoid text-sm leading-relaxed">
-      <h2 className="mb-1.5 text-sm font-bold uppercase tracking-wide text-slate-700">
+    <section className="mt-4 break-inside-avoid text-sm leading-relaxed">
+      <h2 className="mb-1 text-sm font-bold uppercase tracking-wide text-slate-700">
         {titulo}
       </h2>
       {children}
@@ -178,7 +182,7 @@ function Lista({ items }: { items: string[] }) {
 function Firma({ rol }: { rol: string }) {
   return (
     <div className="text-sm">
-      <div className="h-10 border-b border-slate-800" />
+      <div className="h-9 border-b border-slate-800" />
       <p className="mt-1 font-semibold">{rol || " "}</p>
       <p className="text-xs text-slate-500">Aclaración: _______________________</p>
       <p className="text-xs text-slate-500">Fecha: ____ / ____ / ______</p>
