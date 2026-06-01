@@ -24,6 +24,10 @@
     {
       "path": "/api/cloudfleet/cron-sync",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/adherencia-simulador/cron-sync",
+      "schedule": "30 6 * * *"
     }
   ]
 }
