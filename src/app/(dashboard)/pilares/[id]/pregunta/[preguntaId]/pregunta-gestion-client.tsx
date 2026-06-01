@@ -23,6 +23,7 @@ import {
   ChevronUp,
   FileText,
   ExternalLink,
+  Calculator,
   AlertCircle,
   Eye,
   FileDown,
@@ -35,6 +36,11 @@ import {
   Users,
   CheckCircle,
 } from "lucide-react"
+
+// Simulador de Dimensionamiento Operativo (app standalone, tenant Misiones).
+// Se enlaza desde el punto 2.3 "Recurso del dimensionamiento" sólo en Misiones.
+const SIMULADOR_URL =
+  process.env.NEXT_PUBLIC_SIMULADOR_URL ?? "https://dimensionamiento-misiones.vercel.app"
 
 function pilarSlug(nombre: string): string {
   return nombre
@@ -1227,6 +1233,41 @@ export function PreguntaGestionClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Acceso directo al Simulador de Dimensionamiento (solo punto 2.3, Misiones) */}
+      {IS_MISIONES && pregunta.numero === "2.3" && (
+        <Card size="sm" className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="rounded-xl p-3"
+                style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+              >
+                <Calculator className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-900">
+                  Simulador de Dimensionamiento
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Escenarios de dotación, plan vs. real, plan de acción
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0 text-white"
+              style={{ backgroundColor: pilar.color }}
+              render={
+                <a href={SIMULADOR_URL} target="_blank" rel="noopener noreferrer" />
+              }
+            >
+              Abrir simulador
+              <ExternalLink className="ml-1.5 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Acceso directo al módulo de Períodos Críticos (solo punto 3.4, Misiones) */}
       {IS_MISIONES && pregunta.numero === "3.4" && (
