@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,17 +15,18 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { CheckCircle2, XCircle, MinusCircle, Trash2, Loader2 } from "lucide-react"
-import type { OwdObservacion, OwdRespuesta, OwdItem } from "@/types/database"
-import { deleteObservacion } from "@/actions/owd"
+import type { OwdObservacion, OwdRespuesta, OwdItem, OwdRespuestaFoto } from "@/types/database"
+import { deleteObservacion, getOwdFotoSignedUrl } from "@/actions/owd"
 
 interface Props {
   templateId: string
   observacion: OwdObservacion
   respuestas: OwdRespuesta[]
   items: OwdItem[]
+  fotos: OwdRespuestaFoto[]
 }
 
-export function DetalleOwdClient({ templateId, observacion, respuestas, items }: Props) {
+export function DetalleOwdClient({ templateId, observacion, respuestas, items, fotos }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -33,6 +34,36 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items }:
 
   const respMap = useMemo(() => new Map(respuestas.map((r) => [r.item_id, r])), [respuestas])
   const itemsUsados = items.filter((i) => respMap.has(i.id))
+
+  // Fotos de evidencia agrupadas por respuesta_id
+  const fotosPorRespuesta = useMemo(() => {
+    const map = new Map<string, OwdRespuestaFoto[]>()
+    for (const f of fotos) {
+      if (!map.has(f.respuesta_id)) map.set(f.respuesta_id, [])
+      map.get(f.respuesta_id)!.push(f)
+    }
+    return map
+  }, [fotos])
+
+  // URLs firmadas para mostrar las miniaturas (bucket privado)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let cancelado = false
+    ;(async () => {
+      const entries = await Promise.all(
+        fotos.map(async (f) => {
+          const r = await getOwdFotoSignedUrl(f.path)
+          return [f.id, "data" in r ? r.data.url : ""] as const
+        }),
+      )
+      if (!cancelado) {
+        setSignedUrls(Object.fromEntries(entries.filter(([, url]) => url)))
+      }
+    })()
+    return () => {
+      cancelado = true
+    }
+  }, [fotos])
 
   const etapas = useMemo(() => {
     const map = new Map<string, OwdItem[]>()
@@ -133,6 +164,7 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items }:
                   ? "bg-red-100 text-red-700"
                   : "bg-slate-100 text-slate-600"
               const label = r.resultado === "ok" ? "OK" : r.resultado === "nook" ? "NO OK" : "N/A"
+              const fotosItem = fotosPorRespuesta.get(r.id) ?? []
               return (
                 <div key={item.id} className="rounded-md border bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -141,6 +173,35 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items }:
                   </div>
                   {r.comentario && (
                     <p className="mt-1 text-xs text-muted-foreground">{r.comentario}</p>
+                  )}
+                  {fotosItem.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {fotosItem.map((f) => {
+                        const url = signedUrls[f.id]
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => url && window.open(url, "_blank", "noopener,noreferrer")}
+                            className="h-16 w-16 overflow-hidden rounded-md border bg-white transition-opacity hover:opacity-90"
+                            title={f.nombre ?? "Evidencia"}
+                          >
+                            {url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={url}
+                                alt={f.nombre ?? "Evidencia"}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <span className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                                …
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               )

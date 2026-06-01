@@ -35,6 +35,7 @@ export default async function DetalleOwdPage({
         observacion={res.data.observacion}
         respuestas={res.data.respuestas}
         items={res.data.items}
+        fotos={res.data.fotos}
       />
     </div>
   )

@@ -865,6 +865,18 @@ export interface OwdRespuesta {
   created_at: string
 }
 
+// Fotos de evidencia adjuntas a una respuesta de OWD (galería, 1 fila por foto)
+export interface OwdRespuestaFoto {
+  id: string
+  respuesta_id: string
+  path: string
+  nombre: string | null
+  mime: string | null
+  bytes: number | null
+  orden: number
+  created_at: string
+}
+
 export interface OwdMensual {
   mes: number
   year: number
@@ -951,6 +963,98 @@ export interface TmlPlanResumen {
   pct_dentro_meta: number
   fuera_meta: boolean
   plan: TmlPlanAccion | null
+  items_total: number
+  items_completados: number
+}
+
+// ===== TI — Tiempo Interno (R1.3.x) =====
+// TI = (fichaje biométrico de salida) − (hora del checklist de retorno),
+// por chofer/día. Meta: ≤30 min y ≥65% en meta.
+export interface TiSemanal {
+  semana: number
+  year: number
+  promedio_minutos: number
+  total: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+export interface TiMensual {
+  mes: number
+  year: number
+  promedio_minutos: number
+  total: number
+  dentro_meta: number
+  pct_dentro_meta: number
+}
+
+// Un registro individual de TI (un retorno con su salida cruzada).
+export interface TiRegistro {
+  fecha: string
+  chofer: string
+  legajo: number | null
+  dominio: string
+  hora_retorno: string // ISO UTC del checklist de retorno
+  hora_salida: string | null // ISO UTC normalizado del biométrico
+  ti_minutos: number | null
+  motivo_sin_dato: "sin_match" | "sin_biometrico" | "negativo" | "outlier" | null
+}
+
+export interface TiKpis {
+  totalRetornos: number
+  conTi: number // retornos con TI calculable
+  sinBiometrico: number
+  excluidos: number // negativos + outliers
+  promedioMinutos: number
+  mediana: number
+  dentroMeta: number
+  pctDentroMeta: number
+  metaMinutos: number
+  pctMetaMinimo: number
+  semanal: TiSemanal[]
+  mensual: TiMensual[]
+  registros: TiRegistro[]
+}
+
+export type PlanTiEstado = "abierto" | "en_progreso" | "cerrado"
+export type PlanTiItemEstado = "pendiente" | "en_progreso" | "completado"
+
+export interface TiPlanAccion {
+  id: string
+  mes: number
+  year: number
+  promedio_ti_mes: number
+  pct_dentro_meta_mes: number
+  causa_raiz: string
+  estado: PlanTiEstado
+  fecha_cierre: string | null
+  resultado_cierre: string | null
+  evidencia_cierre_url: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TiPlanAccionItem {
+  id: string
+  plan_id: string
+  accion: string
+  responsable: string
+  fecha_compromiso: string
+  estado: PlanTiItemEstado
+  fecha_completado: string | null
+  observaciones: string | null
+  orden: number
+  created_at: string
+}
+
+export interface TiPlanResumen {
+  year: number
+  mes: number
+  promedio_ti: number
+  pct_dentro_meta: number
+  fuera_meta: boolean
+  plan: TiPlanAccion | null
   items_total: number
   items_completados: number
 }
@@ -2861,4 +2965,79 @@ export interface AusentismoLicenciasMedicasReporte {
   empleados_con_repitencia: number
   top_empleados: AusentismoRepitenciaEmpleado[]
   por_mes: AusentismoLicenciasMedicasMesBucket[]
+}
+
+// =============================================
+// SLA (Acuerdos de Nivel de Servicio) — exigidos por el manual DPO
+// =============================================
+export type SlaPilar =
+  | "planeamiento"
+  | "almacen"
+  | "entrega"
+  | "flota"
+  | "gestion"
+
+// Estado guardado en DB. "vencido" NO es un valor persistido: se deriva en
+// lectura cuando fecha_vencimiento < hoy (ver campo `vencido` de SlaConAutor).
+export type SlaEstado = "pendiente" | "firmado" | "no_aplica"
+
+export interface Sla {
+  id: string
+  codigo: string
+  nombre: string
+  pilar: SlaPilar
+  parte_cliente: string | null
+  parte_proveedor: string | null
+  requisito_manual: string | null
+  descripcion: string | null
+  estado: SlaEstado
+  fecha_firma: string | null
+  fecha_vencimiento: string | null
+  es_predefinido: boolean
+  orden: number
+  notas: string | null
+  creado_por: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaAdjunto {
+  id: string
+  sla_id: string
+  storage_path: string
+  nombre_original: string | null
+  mime_type: string
+  tamaño_bytes: number
+  subido_por: string | null
+  created_at: string
+  /** URL pública del archivo en Storage (la arma el server al leer). */
+  url: string
+}
+
+export interface SlaConAutor extends Sla {
+  adjuntos: SlaAdjunto[]
+  /** Derivado: fecha_vencimiento pasada y estado != no_aplica. */
+  vencido: boolean
+}
+
+export const SLA_PILAR_LABELS: Record<SlaPilar, string> = {
+  planeamiento: "Planeamiento",
+  almacen: "Almacén",
+  entrega: "Entrega",
+  flota: "Flota",
+  gestion: "Gestión",
+}
+
+export const SLA_PILAR_ORDEN: SlaPilar[] = [
+  "planeamiento",
+  "almacen",
+  "entrega",
+  "flota",
+  "gestion",
+]
+
+export const SLA_ESTADO_LABELS: Record<SlaEstado, string> = {
+  pendiente: "Pendiente",
+  firmado: "Firmado",
+  no_aplica: "No aplica",
 }
