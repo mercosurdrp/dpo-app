@@ -513,8 +513,8 @@ function ComparativoTab({
 
       <TooltipProvider delay={150}>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <ColumnaAnio anio={anioA} dias={diasA} />
-          <ColumnaAnio anio={anioB} dias={diasB} />
+          <ColumnaAnio anio={anioA} dias={diasA} bgWrap="bg-sky-50 border-sky-200" bgHeader="bg-sky-50" />
+          <ColumnaAnio anio={anioB} dias={diasB} bgWrap="bg-amber-50 border-amber-200" bgHeader="bg-amber-50" />
         </div>
       </TooltipProvider>
     </div>
@@ -531,10 +531,20 @@ function ResumenAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
   )
 }
 
-function ColumnaAnio({ anio, dias }: { anio: number; dias: DiaCalendario[] }) {
+function ColumnaAnio({
+  anio,
+  dias,
+  bgWrap,
+  bgHeader,
+}: {
+  anio: number
+  dias: DiaCalendario[]
+  bgWrap: string
+  bgHeader: string
+}) {
   return (
-    <div className="space-y-2">
-      <div className="text-sm font-semibold text-slate-900 sticky top-0 bg-white py-1 z-10">
+    <div className={`space-y-2 rounded-lg border p-2 ${bgWrap}`}>
+      <div className={`text-sm font-semibold text-slate-900 sticky top-0 py-1 z-10 ${bgHeader}`}>
         Año {anio}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
