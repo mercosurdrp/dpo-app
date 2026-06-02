@@ -82,7 +82,11 @@ export function PeriodosTab({
   // ausentismo, #clientes) para anticipar la operación del año en curso.
   const anioBase = anioAnticipar - 1
   const diasBase = useMemo(() => diasPorAnio[anioBase] ?? [], [diasPorAnio, anioBase])
-  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase), [diasBase])
+
+  // Cuántas variables (1-4) debe cruzar un día para integrar un período. Filtro
+  // en vivo que controla el usuario: define qué días del año base se traen.
+  const [minVars, setMinVars] = useState(2)
+  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase, minVars), [diasBase, minVars])
   const hayBase = diasBase.some((d) => Number(d.hl) > 0 || Number(d.pct_ausentismo) > 0)
 
   const planByCodigo = useMemo(() => {
@@ -263,21 +267,41 @@ export function PeriodosTab({
 
       {/* ===== SECCIÓN 2 · Sugeridos según el año anterior (propuesta del sistema) ===== */}
       <Card className="border-l-4 border-l-sky-600 bg-sky-50/40">
-        <CardContent className="p-4 flex flex-wrap items-center gap-3">
-          <CalendarClock className="w-5 h-5 text-sky-700 shrink-0" />
-          <div className="flex-1 min-w-[260px]">
-            <p className="text-sm font-semibold text-slate-900">
-              Sugeridos según {anioBase}: {periodos.length} período
-              {periodos.length === 1 ? "" : "s"} para anticipar {anioAnticipar}
-            </p>
-            <p className="text-xs text-slate-600">
-              Propuesta del sistema según el comportamiento de {anioBase} (volumen, OTIF, ausentismo
-              y #clientes). Marcá los que quieras como foco. El manual sugiere ~3 o más; no es una
-              cantidad a cumplir.
-            </p>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <CalendarClock className="w-5 h-5 text-sky-700 shrink-0" />
+            <div className="flex-1 min-w-[260px]">
+              <p className="text-sm font-semibold text-slate-900">
+                Sugeridos según {anioBase}: {periodos.length} período
+                {periodos.length === 1 ? "" : "s"} para anticipar {anioAnticipar}
+              </p>
+              <p className="text-xs text-slate-600">
+                Propuesta del sistema según el comportamiento de {anioBase} (volumen, OTIF,
+                ausentismo y #clientes). Marcá los que quieras como foco. El manual sugiere ~3 o
+                más; no es una cantidad a cumplir.
+              </p>
+            </div>
           </div>
-          <div className="text-xs text-slate-500">
-            Bloque = días CRÍTICOS de {anioBase}, máx 7 días, gaps hasta 2 días
+          {/* Selector del umbral: cuántas variables debe cruzar un día para
+              que el sistema lo arme como período. Ajusta en vivo lo que trae. */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-sky-200 pt-2">
+            <span className="text-xs font-semibold text-slate-700">Armar períodos con días de</span>
+            {([
+              [1, "≥1 · BAJO+"],
+              [2, "≥2 · MEDIO+"],
+              [3, "≥3 · ALTO+"],
+              [4, "4 · solo PICO"],
+            ] as const).map(([v, lbl]) => (
+              <Button
+                key={v}
+                size="sm"
+                variant={minVars === v ? "default" : "outline"}
+                onClick={() => setMinVars(v)}
+              >
+                {lbl}
+              </Button>
+            ))}
+            <span className="text-xs text-slate-500">variables en target · bloques de máx 7 días</span>
           </div>
         </CardContent>
       </Card>

@@ -129,10 +129,14 @@ function generarNombreYMotivo(
 }
 
 /**
- * Devuelve los períodos críticos detectados (bloques de 1–7 días con uno o más
- * días ALTO). Pensado para el tab "Períodos críticos".
+ * Devuelve los períodos críticos detectados (bloques de 1–7 días). Un día
+ * integra un período si tiene `minVars` o más variables en target (1=BAJO+,
+ * 2=MEDIO+, 3=ALTO+, 4=solo PICO). El usuario controla `minVars` desde el tab.
  */
-export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[] {
+export function detectarPeriodosCriticos(
+  dias: DiaCalendario[],
+  minVars: number = MIN_VARS_PERIODO,
+): PeriodoCritico[] {
   // Lista plana de feriados del rango — el tooltip ya viene marcado por día,
   // pero para "pre/post feriado" necesitamos saberlos en orden.
   const feriados = dias
@@ -144,7 +148,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
   let gap = 0
 
   for (const d of dias) {
-    const esAlto = (d.trigger_count ?? 0) >= MIN_VARS_PERIODO
+    const esAlto = (d.trigger_count ?? 0) >= minVars
 
     if (esAlto) {
       // si hay gap acumulado pero estoy abriendo bloque, los días no-ALTO previos
@@ -166,7 +170,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
         gap++
       } else {
         // cortar el bloque, descartar los gap finales para que arranque/cierre en ALTO
-        while (actual.length > 0 && (actual[actual.length - 1].trigger_count ?? 0) < MIN_VARS_PERIODO) {
+        while (actual.length > 0 && (actual[actual.length - 1].trigger_count ?? 0) < minVars) {
           actual.pop()
         }
         if (actual.length > 0) bloques.push(actual)
@@ -176,7 +180,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
     }
   }
   // Cerrar el último bloque si quedó abierto
-  while (actual.length > 0 && actual[actual.length - 1].nivel !== "ALTO") {
+  while (actual.length > 0 && (actual[actual.length - 1].trigger_count ?? 0) < minVars) {
     actual.pop()
   }
   if (actual.length > 0) bloques.push(actual)
@@ -190,7 +194,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
     // Código predominante: el código más frecuente entre los días CRITICO del bloque
     const codigosCount: Record<string, number> = {}
     for (const d of bloque) {
-      if ((d.trigger_count ?? 0) >= MIN_VARS_PERIODO && d.codigo) {
+      if ((d.trigger_count ?? 0) >= minVars && d.codigo) {
         codigosCount[d.codigo] = (codigosCount[d.codigo] ?? 0) + 1
       }
     }
@@ -203,7 +207,7 @@ export function detectarPeriodosCriticos(dias: DiaCalendario[]): PeriodoCritico[
       fechaInicio: bloque[0].fecha,
       fechaFin: bloque[bloque.length - 1].fecha,
       cantDias: bloque.length,
-      cantDiasCriticos: bloque.filter((d) => (d.trigger_count ?? 0) >= MIN_VARS_PERIODO).length,
+      cantDiasCriticos: bloque.filter((d) => (d.trigger_count ?? 0) >= minVars).length,
       codigoPredominante,
       hlMax: Math.max(...bloque.map((d) => Number(d.hl))),
       hlAcum: bloque.reduce((s, d) => s + Number(d.hl), 0),
