@@ -43,3 +43,17 @@ export interface CumplimientoMes {
   diasDelMes: number // 28..31
   filas: CumplimientoSlaFila[]
 }
+
+/** Detalle de un día/SLA para el modal al hacer clic en una celda. */
+export interface DetalleDiaSla {
+  codigo: string
+  nombre: string
+  fecha: string // YYYY-MM-DD
+  diaSemana: string // "Lunes".."Domingo"
+  estado: EstadoCumplimiento
+  metaLabel: string // ej. "Límite ≤ 09:00", "Ocupación ≥ 90%", "No ruteado ≤ 5%"
+  valorLabel: string // ej. "08:47", "92%", "3,2%"
+  /** Desglose adicional (por patente, horarios, bultos, etc.). */
+  filas: { label: string; valor: string }[]
+  nota?: string // mensaje cuando es "sin dato" o "no aplica"
+}

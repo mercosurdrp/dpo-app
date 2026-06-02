@@ -2,12 +2,20 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { CalendarClock } from "lucide-react"
+import { CalendarClock, Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { getCumplimientoMes } from "@/actions/sla"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { getCumplimientoMes, getDetalleDiaSla } from "@/actions/sla"
 import {
   type CumplimientoMes,
   type EstadoCumplimiento,
+  type DetalleDiaSla,
 } from "@/lib/sla-cumplimiento"
 
 // Iniciales del día de la semana (0=Dom..6=Sáb), estilo ES (L M X J V S D).
@@ -17,9 +25,19 @@ function dowDe(year: number, month: number, dia: number): number {
   return new Date(Date.UTC(year, month - 1, dia)).getUTCDay()
 }
 
+function fechaLarga(iso: string): string {
+  const [y, m, d] = iso.split("-")
+  return `${d}/${m}/${y}`
+}
+
 export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
   const [data, setData] = useState<CumplimientoMes>(inicial)
   const [pending, start] = useTransition()
+
+  // Detalle (modal al hacer clic en una celda).
+  const [open, setOpen] = useState(false)
+  const [detalle, setDetalle] = useState<DetalleDiaSla | null>(null)
+  const [pendingDet, startDet] = useTransition()
 
   const monthValue = `${data.year}-${String(data.month).padStart(2, "0")}`
   const diasArr = Array.from({ length: data.diasDelMes }, (_, i) => i + 1)
@@ -37,6 +55,21 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
     })
   }
 
+  function abrirDetalle(codigo: string, dia: number) {
+    const iso = `${data.year}-${String(data.month).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+    setDetalle(null)
+    setOpen(true)
+    startDet(async () => {
+      const r = await getDetalleDiaSla(codigo, iso)
+      if ("error" in r) {
+        toast.error(r.error)
+        setOpen(false)
+        return
+      }
+      setDetalle(r.data)
+    })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -47,7 +80,8 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
           </h2>
           <p className="text-sm text-slate-500">
             Una fila por SLA. La primera columna es el % de cumplimiento del mes;
-            cada día indica si se cumplió.
+            cada día indica si se cumplió. Tocá un día <b>Sí</b>/<b>No</b> para ver
+            el detalle.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -125,7 +159,14 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
                   </td>
                   {fila.dias.map((estado, i) => (
                     <td key={i} className="px-0 py-1 text-center">
-                      <CeldaDia estado={estado} />
+                      <CeldaDia
+                        estado={estado}
+                        onClick={
+                          estado === "si" || estado === "no"
+                            ? () => abrirDetalle(fila.codigo, i + 1)
+                            : undefined
+                        }
+                      />
                     </td>
                   ))}
                 </tr>
@@ -134,6 +175,89 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
           </tbody>
         </table>
       </div>
+
+      {/* Modal de detalle del día */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detalle?.nombre ?? "Detalle del día"}</DialogTitle>
+            <DialogDescription>
+              {detalle
+                ? `${detalle.diaSemana} ${fechaLarga(detalle.fecha)}`
+                : "Cargando…"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingDet || !detalle ? (
+            <div className="flex items-center justify-center py-10 text-slate-400">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : (
+            <DetalleBody d={detalle} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function DetalleBody({ d }: { d: DetalleDiaSla }) {
+  const cumple = d.estado === "si"
+  const noCumple = d.estado === "no"
+  return (
+    <div className="space-y-4">
+      {/* Estado + valor vs meta */}
+      <div
+        className={`flex items-center gap-3 rounded-lg border p-3 ${
+          cumple
+            ? "border-emerald-200 bg-emerald-50"
+            : noCumple
+              ? "border-red-200 bg-red-50"
+              : "border-slate-200 bg-slate-50"
+        }`}
+      >
+        {cumple ? (
+          <CheckCircle2 className="size-7 shrink-0 text-emerald-600" />
+        ) : noCumple ? (
+          <XCircle className="size-7 shrink-0 text-red-600" />
+        ) : null}
+        <div className="min-w-0">
+          <div
+            className={`text-lg font-bold leading-tight ${
+              cumple
+                ? "text-emerald-700"
+                : noCumple
+                  ? "text-red-700"
+                  : "text-slate-600"
+            }`}
+          >
+            {cumple ? "Cumple" : noCumple ? "No cumple" : "Sin dato"}
+          </div>
+          <div className="text-sm text-slate-600">
+            Medido: <b className="tabular-nums">{d.valorLabel}</b> · {d.metaLabel}
+          </div>
+        </div>
+      </div>
+
+      {d.nota && <p className="text-sm text-slate-500">{d.nota}</p>}
+
+      {/* Desglose */}
+      {d.filas.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <table className="w-full text-sm">
+            <tbody>
+              {d.filas.map((f, i) => (
+                <tr key={i} className="border-b border-slate-100 last:border-0">
+                  <td className="px-3 py-1.5 text-slate-600">{f.label}</td>
+                  <td className="px-3 py-1.5 text-right font-medium tabular-nums text-slate-900">
+                    {f.valor}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -148,13 +272,29 @@ const ESTILO: Record<
   na: { texto: "·", className: "text-slate-300", titulo: "No aplica" },
 }
 
-function CeldaDia({ estado }: { estado: EstadoCumplimiento }) {
+function CeldaDia({
+  estado,
+  onClick,
+}: {
+  estado: EstadoCumplimiento
+  onClick?: () => void
+}) {
   const e = ESTILO[estado]
+  const base = `inline-flex h-6 w-7 items-center justify-center rounded text-xs font-semibold ${e.className}`
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${e.titulo} — ver detalle`}
+        className={`${base} cursor-pointer transition hover:ring-2 hover:ring-pink-400 hover:ring-offset-1`}
+      >
+        {e.texto}
+      </button>
+    )
+  }
   return (
-    <span
-      className={`inline-flex h-6 w-7 items-center justify-center rounded text-xs font-semibold ${e.className}`}
-      title={e.titulo}
-    >
+    <span className={base} title={e.titulo}>
       {e.texto}
     </span>
   )

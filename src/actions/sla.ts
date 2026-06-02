@@ -18,6 +18,7 @@ import {
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
+  type DetalleDiaSla,
 } from "@/lib/sla-cumplimiento"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 
@@ -574,6 +575,210 @@ export async function getCumplimientoMes(
     return {
       error:
         err instanceof Error ? err.message : "Error calculando el cumplimiento",
+    }
+  }
+}
+
+// ===========================================================================
+// Detalle de un día/SLA — para el modal al hacer clic en una celda de la matriz
+// ===========================================================================
+
+const DIA_LABEL_LARGO = [
+  "Domingo",
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+]
+
+/** Minutos desde medianoche → "HH:MM". */
+function fmtMin(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
+/** % con una decimal y coma decimal (es-AR). */
+function fmtPct(n: number): string {
+  return `${n.toFixed(1).replace(".", ",")}%`
+}
+
+/**
+ * Detalle del cumplimiento de un SLA en una fecha puntual (YYYY-MM-DD), para el
+ * modal de la pestaña Cumplimientos. Pampeana-only.
+ */
+export async function getDetalleDiaSla(
+  codigo: string,
+  fecha: string,
+): Promise<Result<DetalleDiaSla>> {
+  try {
+    await requireAuth()
+    if (IS_MISIONES) {
+      return { error: "El cumplimiento de SLA solo está disponible en Pampeana." }
+    }
+    const supabase = await createClient()
+    const dow = dowFromISO(fecha)
+    const diaSemana = DIA_LABEL_LARGO[dow]
+
+    if (codigo === "plan_ruteo_tiempo" || codigo === "plan_syop") {
+      const esTiempo = codigo === "plan_ruteo_tiempo"
+      const campo = esTiempo ? "hora_fin" : "hora_fin_preventa"
+      const { data } = await supabase
+        .from("ruteo_cierres")
+        .select(`hora_inicio, hora_fin, hora_fin_preventa, estado`)
+        .eq("fecha", fecha)
+        .maybeSingle()
+
+      const limMin = esTiempo ? limiteMinutos(dow) : limitePreventa(dow)
+      const metaLabel = `Límite ≤ ${limMin === null ? "—" : fmtMin(limMin)}`
+      const horaISO = (data as any)?.[campo] as string | null
+
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      if (limMin === null) {
+        estado = "na"
+        nota = "Domingo: no aplica."
+      } else if (!horaISO) {
+        estado = "sd"
+        nota = esTiempo
+          ? "No hay ruteo cerrado registrado este día."
+          : "No se registró el fin de preventa este día."
+      } else {
+        estado = minutosARG(horaISO) <= limMin ? "si" : "no"
+      }
+
+      const filas: { label: string; valor: string }[] = []
+      if (esTiempo && (data as any)?.hora_inicio) {
+        filas.push({
+          label: "Inicio de ruteo",
+          valor: fmtMin(minutosARG((data as any).hora_inicio)),
+        })
+      }
+      if (horaISO) {
+        filas.push({
+          label: esTiempo ? "Fin de ruteo" : "Fin de preventa",
+          valor: fmtMin(minutosARG(horaISO)),
+        })
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre: esTiempo ? SLA_RUTEO_NOMBRE : SLA_SYOP_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel: horaISO ? fmtMin(minutosARG(horaISO)) : "—",
+          filas,
+          nota,
+        },
+      }
+    }
+
+    if (codigo === "plan_ruteo_capacidad") {
+      const { data } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("patente, ceq_total, ob_pct_target")
+        .eq("fecha", fecha)
+        .order("ceq_total", { ascending: false })
+
+      const rows = (data ?? []) as any[]
+      const metaLabel = `Ocupación ≥ ${CAPACIDAD_MIN_PCT}%`
+
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      let valorLabel = "—"
+      const filas: { label: string; valor: string }[] = []
+
+      if (dow === 0) {
+        estado = "na"
+        nota = "Domingo: no se reparte."
+      } else if (rows.length === 0) {
+        estado = "sd"
+        nota = "Sin ocupación de bodega registrada este día (depende del sync de Chess)."
+      } else {
+        const prom =
+          rows.reduce((a, r) => a + Number(r.ob_pct_target ?? 0), 0) / rows.length
+        estado = prom >= CAPACIDAD_MIN_PCT ? "si" : "no"
+        valorLabel = fmtPct(prom)
+        for (const r of rows) {
+          filas.push({
+            label: String(r.patente ?? "—"),
+            valor: `${Number(r.ceq_total ?? 0).toFixed(0)} CEq · ${fmtPct(Number(r.ob_pct_target ?? 0))}`,
+          })
+        }
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre: SLA_CAPACIDAD_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
+    if (codigo === "plan_ruteo_pushed") {
+      const { data } = await supabase
+        .from("ruteo_cierres")
+        .select("estado, bultos_no_ruteados, pergamino_bultos, ramallo_bultos")
+        .eq("fecha", fecha)
+        .maybeSingle()
+
+      const metaLabel = `No ruteado ≤ ${PUSHED_MAX_PCT}%`
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      let valorLabel = "—"
+      const filas: { label: string; valor: string }[] = []
+
+      if (dow === 0) {
+        estado = "na"
+        nota = "Domingo: no aplica."
+      } else if (!data || (data as any).estado !== "cerrado") {
+        estado = "sd"
+        nota = "No hay ruteo cerrado registrado este día."
+      } else {
+        const noRut = Number((data as any).bultos_no_ruteados ?? 0)
+        const ruteado =
+          Number((data as any).pergamino_bultos ?? 0) +
+          Number((data as any).ramallo_bultos ?? 0)
+        const total = noRut + ruteado
+        const pct = total > 0 ? (noRut / total) * 100 : 0
+        estado = pct <= PUSHED_MAX_PCT ? "si" : "no"
+        valorLabel = fmtPct(pct)
+        filas.push({ label: "Bultos no ruteados", valor: String(noRut) })
+        filas.push({ label: "Bultos ruteados", valor: String(ruteado) })
+        filas.push({ label: "Total del día", valor: String(total) })
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre: SLA_PUSHED_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
+    return { error: "SLA no reconocido." }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando el detalle",
     }
   }
 }

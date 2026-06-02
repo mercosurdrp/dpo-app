@@ -113,7 +113,7 @@ export function CargaCamionesClient({
               <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-2.5 font-medium">
                   <Clock className="mr-1 inline size-3.5" />
-                  Hora de carga
+                  Fecha y hora de carga
                 </th>
                 <th className="px-4 py-2.5 font-medium">N° Viaje</th>
                 <th className="px-4 py-2.5 font-medium">Patente</th>
@@ -126,7 +126,8 @@ export function CargaCamionesClient({
               {delDia.map((f) => (
                 <tr key={f.viaje} className="hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 font-semibold tabular-nums text-slate-900">
-                    {hhmm(f.hora)}
+                    <span>{fechaCorta(f.fecha)}</span>{" "}
+                    <span className="text-slate-500">{hhmm(f.hora)}</span>
                   </td>
                   <td className="px-4 py-2.5 tabular-nums text-slate-700">
                     {f.viaje}
