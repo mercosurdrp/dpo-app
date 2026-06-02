@@ -262,8 +262,8 @@ export function PeriodosCriticosClient({
     const c = { criticos: 0, t1: 0, t2: 0, t3: 0, t4: 0, normales: 0, sin_datos: 0 }
     for (const d of diasActivos) {
       if (d.hl === 0 && d.dow !== 0) { c.sin_datos++; continue }
-      if (d.estatus === "CRITICO") c.criticos++
       const n = d.trigger_count
+      if (n >= 2) c.criticos++   // crítico = MEDIO+ (2 o más variables en target)
       if (n === 0) c.normales++
       else if (n === 1) c.t1++
       else if (n === 2) c.t2++
