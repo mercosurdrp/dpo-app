@@ -4,13 +4,25 @@ import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CalendarRange, Star, AlertTriangle, CheckCircle2, Copy, Check } from "lucide-react"
+import { CalendarRange, Star, AlertTriangle, CalendarClock, Copy, Check } from "lucide-react"
 import type { DiaCalendario, PlanAccion } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtFecha = (f: string) =>
   new Date(f + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "short" })
+
+// Proyecta una fecha 'YYYY-MM-DD' del año base al año a anticipar (mismo mes/día).
+// 29-feb cae a 28-feb si el año destino no es bisiesto.
+function proyectarFecha(f: string, anioDestino: number): string {
+  const [, mm, dd] = f.split("-")
+  let d = dd
+  if (mm === "02" && dd === "29") {
+    const bis = (anioDestino % 4 === 0 && anioDestino % 100 !== 0) || anioDestino % 400 === 0
+    if (!bis) d = "28"
+  }
+  return `${anioDestino}-${mm}-${d}`
+}
 
 // Color por cantidad de triggers (idem al calendario)
 function colorPorCodigo(codigo: string): string {
@@ -22,49 +34,71 @@ function colorPorCodigo(codigo: string): string {
 }
 
 export function PeriodosTab({
-  dias,
+  diasPorAnio,
+  aniosDisponibles,
+  anioAnticipar,
   planes,
 }: {
-  dias: DiaCalendario[]
+  diasPorAnio: Record<number, DiaCalendario[]>
+  aniosDisponibles: number[]
+  anioAnticipar: number
   planes: PlanAccion[]
 }) {
-  const periodos = useMemo(() => detectarPeriodosCriticos(dias), [dias])
-  const cumpleR341 = periodos.length >= 3
+  // Concepto R3.4.1: los períodos críticos NO son una cuota a cumplir. Se
+  // IDENTIFICAN mirando el comportamiento del AÑO ANTERIOR (volumen, OTIF,
+  // ausentismo, #clientes) para anticipar la operación del año en curso.
+  const anioBase = anioAnticipar - 1
+  const diasBase = useMemo(() => diasPorAnio[anioBase] ?? [], [diasPorAnio, anioBase])
+  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase), [diasBase])
+  const hayBase = diasBase.some((d) => Number(d.hl) > 0 || Number(d.pct_ausentismo) > 0)
+
   const planByCodigo = useMemo(() => {
     const m: Record<string, PlanAccion> = {}
     for (const p of planes) m[p.codigo] = p
     return m
   }, [planes])
 
-  return (
-    <div className="space-y-4">
-      <Card
-        className={
-          cumpleR341
-            ? "border-l-4 border-l-emerald-600 bg-emerald-50/40"
-            : "border-l-4 border-l-amber-600 bg-amber-50/40"
-        }
-      >
-        <CardContent className="p-4 flex flex-wrap items-center gap-3">
-          {cumpleR341 ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0" />
-          )}
-          <div className="flex-1 min-w-[240px]">
+  if (!hayBase) {
+    return (
+      <Card className="border-l-4 border-l-amber-600 bg-amber-50/40">
+        <CardContent className="p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0" />
+          <div>
             <p className="text-sm font-semibold text-slate-900">
-              {periodos.length} período{periodos.length === 1 ? "" : "s"} crítico
-              {periodos.length === 1 ? "" : "s"} detectado{periodos.length === 1 ? "" : "s"}
+              Sin datos de {anioBase} para identificar períodos a anticipar {anioAnticipar}
             </p>
             <p className="text-xs text-slate-600">
-              R3.4.1 requiere mínimo 3 períodos.{" "}
-              {cumpleR341
-                ? "Requerimiento cumplido."
-                : "Faltan períodos — bajá los umbrales en Configuración."}
+              Los períodos críticos se identifican a partir del año anterior.{" "}
+              {aniosDisponibles.length > 0
+                ? `Años con historia cargada: ${aniosDisponibles.join(", ")}. Desde el selector del encabezado elegí un año cuyo año previo tenga datos.`
+                : "Cargá el histórico de ventas/ausentismo primero."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Encabezado conceptual: IDENTIFICAR para anticipar — no una cuota a cumplir */}
+      <Card className="border-l-4 border-l-sky-600 bg-sky-50/40">
+        <CardContent className="p-4 flex flex-wrap items-center gap-3">
+          <CalendarClock className="w-5 h-5 text-sky-700 shrink-0" />
+          <div className="flex-1 min-w-[260px]">
+            <p className="text-sm font-semibold text-slate-900">
+              {periodos.length} período{periodos.length === 1 ? "" : "s"} crítico
+              {periodos.length === 1 ? "" : "s"} identificado{periodos.length === 1 ? "" : "s"} en{" "}
+              {anioBase} para anticipar {anioAnticipar}
+            </p>
+            <p className="text-xs text-slate-600">
+              Detectados según el comportamiento de {anioBase} (volumen, OTIF, ausentismo y
+              #clientes) para preparar la operación con anticipación. El manual sugiere identificar
+              ~3 o más; no es una cantidad a cumplir.
             </p>
           </div>
           <div className="text-xs text-slate-500">
-            Bloque = días con estatus CRÍTICO, máx 7 días, gaps hasta 2 días no-crítico
+            Bloque = días CRÍTICOS de {anioBase}, máx 7 días, gaps hasta 2 días
           </div>
         </CardContent>
       </Card>
@@ -72,7 +106,8 @@ export function PeriodosTab({
       {periodos.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-slate-500">
-            Sin días críticos en el año vigente. Verificá los umbrales o que el ausentismo esté cargado.
+            No se identificaron períodos críticos en {anioBase} con los umbrales actuales. Ajustalos
+            en Configuración si querés un criterio más o menos sensible.
           </CardContent>
         </Card>
       ) : (
@@ -82,6 +117,8 @@ export function PeriodosTab({
               key={p.id}
               periodo={p}
               indice={idx + 1}
+              anioBase={anioBase}
+              anioAnticipar={anioAnticipar}
               plan={planByCodigo[p.codigoPredominante]}
             />
           ))}
@@ -94,19 +131,26 @@ export function PeriodosTab({
 function PeriodoCard({
   periodo: p,
   indice,
+  anioBase,
+  anioAnticipar,
   plan,
 }: {
   periodo: PeriodoCritico
   indice: number
+  anioBase: number
+  anioAnticipar: number
   plan: PlanAccion | undefined
 }) {
   const [copiado, setCopiado] = useState(false)
+  const iniProy = proyectarFecha(p.fechaInicio, anioAnticipar)
+  const finProy = proyectarFecha(p.fechaFin, anioAnticipar)
 
   async function copiarPlan() {
     if (!plan) return
     const texto =
-      `Período crítico ${indice}: ${p.nombre}\n` +
-      `${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)} · código ${p.codigoPredominante} · ${p.cantDiasCriticos} días críticos\n\n` +
+      `Período crítico ${indice} a anticipar en ${anioAnticipar}: ${p.nombre}\n` +
+      `Ventana estimada ${fmtFecha(iniProy)} → ${fmtFecha(finProy)} (observado en ${anioBase}: ${fmtFecha(p.fechaInicio)} → ${fmtFecha(p.fechaFin)})\n` +
+      `Código ${p.codigoPredominante} · ${p.cantDiasCriticos} días críticos\n\n` +
       `${plan.descripcion}\n\n${plan.plan_texto}`
     await navigator.clipboard.writeText(texto)
     setCopiado(true)
@@ -128,14 +172,20 @@ function PeriodoCard({
         <p className="text-xs text-slate-500">{p.motivo}</p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center gap-2 text-sm text-slate-700">
-          <CalendarRange className="w-4 h-4 text-slate-400" />
-          <span className="font-medium">{fmtFecha(p.fechaInicio)}</span>
-          <span className="text-slate-400">→</span>
-          <span className="font-medium">{fmtFecha(p.fechaFin)}</span>
-          <span className="text-xs text-slate-500">
-            ({p.cantDias}d · {p.cantDiasCriticos} críticos)
-          </span>
+        <div>
+          <div className="flex items-center gap-2 text-sm text-slate-700">
+            <CalendarRange className="w-4 h-4 text-slate-400" />
+            <span className="font-medium">{fmtFecha(iniProy)}</span>
+            <span className="text-slate-400">→</span>
+            <span className="font-medium">{fmtFecha(finProy)}</span>
+            <Badge variant="outline" className="text-[10px] font-normal">a anticipar {anioAnticipar}</Badge>
+            <span className="text-xs text-slate-500">
+              ({p.cantDias}d · {p.cantDiasCriticos} críticos)
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 pl-6">
+            Observado en {anioBase}: {fmtFecha(p.fechaInicio)} → {fmtFecha(p.fechaFin)}
+          </p>
         </div>
 
         <div className="grid grid-cols-4 gap-2 text-xs">
@@ -154,7 +204,7 @@ function PeriodoCard({
 
         <div>
           <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-500 mb-1">
-            Días del período
+            Días del período (observados en {anioBase})
           </p>
           <div className="flex flex-wrap gap-1">
             {p.dias.map((d) => (

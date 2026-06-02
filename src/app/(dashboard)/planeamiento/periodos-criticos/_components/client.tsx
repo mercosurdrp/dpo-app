@@ -333,7 +333,12 @@ export function PeriodosCriticosClient({
         </TabsContent>
 
         <TabsContent value="periodos">
-          <PeriodosTab dias={diasActivos} planes={planes} />
+          <PeriodosTab
+            diasPorAnio={diasPorAnio}
+            aniosDisponibles={aniosDisponibles}
+            anioAnticipar={anioActivo}
+            planes={planes}
+          />
         </TabsContent>
         <TabsContent value="comparativo">
           <ComparativoTab
