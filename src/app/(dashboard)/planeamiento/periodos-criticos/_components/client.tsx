@@ -7,12 +7,13 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck } from "lucide-react"
+import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2 } from "lucide-react"
 import { SimuladorTab } from "./simulador"
 import { ConfiguracionTab } from "./configuracion"
 import { PeriodosTab } from "./periodos-tab"
 import { DetalleSemanalTab } from "./detalle-semanal-tab"
 import { RevisionMensualTab } from "./revision-mensual-tab"
+import { SwotTab } from "./swot-tab"
 
 export type DiaCalendario = {
   anio: number
@@ -290,6 +291,7 @@ export function PeriodosCriticosClient({
           <TabsTrigger value="detalle"><Table className="w-4 h-4 mr-1.5" /> Detalle semanal</TabsTrigger>
           <TabsTrigger value="periodos"><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
           <TabsTrigger value="revision"><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
+          <TabsTrigger value="swot"><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
           <TabsTrigger value="comparativo"><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
           <TabsTrigger value="simulador"><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
           <TabsTrigger value="config"><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
@@ -319,6 +321,9 @@ export function PeriodosCriticosClient({
         </TabsContent>
         <TabsContent value="revision">
           <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
+        </TabsContent>
+        <TabsContent value="swot">
+          <SwotTab dias={diasActivos} anio={anioActivo} />
         </TabsContent>
         <TabsContent value="comparativo">
           <ComparativoTab
