@@ -78,6 +78,19 @@ const MESES = [
 // dow=0 Domingo. La grilla empieza el domingo, igual que el Excel original.
 const NOMBRES_DOW = ["D", "L", "M", "M", "J", "V", "S"]
 
+// Color por fase del ciclo de gestión del período crítico. El ícono va siempre
+// coloreado y la solapa activa toma un fondo tintado de su fase, para que se
+// distingan de un vistazo y se lean como pasos secuenciales del proceso.
+//   detectar → analizar → planificar → revisar (R3.4.2) → evaluar (R3.4.3)
+const FASE = {
+  detectar:   "[&_svg]:text-sky-600 data-active:bg-sky-100 data-active:text-sky-900",
+  analizar:   "[&_svg]:text-violet-600 data-active:bg-violet-100 data-active:text-violet-900",
+  planificar: "[&_svg]:text-amber-600 data-active:bg-amber-100 data-active:text-amber-900",
+  revisar:    "[&_svg]:text-emerald-600 data-active:bg-emerald-100 data-active:text-emerald-900",
+  evaluar:    "[&_svg]:text-rose-600 data-active:bg-rose-100 data-active:text-rose-900",
+  setup:      "[&_svg]:text-slate-500 data-active:bg-slate-200 data-active:text-slate-900",
+} as const
+
 const fmtHL = (n: number) =>
   n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) =>
@@ -285,16 +298,19 @@ export function PeriodosCriticosClient({
       <UmbralesInlineCard umbrales={umbrales} />
 
 
+      {/* Solapas ordenadas según el ciclo de gestión del período crítico
+          (R3.4.1 detectar → analizar → planificar → R3.4.2 revisar → R3.4.3 evaluar)
+          y agrupadas por color de fase para distinguirlas de un vistazo. */}
       <Tabs defaultValue="calendario">
-        <TabsList>
-          <TabsTrigger value="calendario"><CalendarRange className="w-4 h-4 mr-1.5" /> Calendario</TabsTrigger>
-          <TabsTrigger value="detalle"><Table className="w-4 h-4 mr-1.5" /> Detalle semanal</TabsTrigger>
-          <TabsTrigger value="periodos"><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
-          <TabsTrigger value="revision"><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
-          <TabsTrigger value="swot"><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
-          <TabsTrigger value="comparativo"><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
-          <TabsTrigger value="simulador"><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
-          <TabsTrigger value="config"><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="calendario" className={FASE.detectar}><CalendarRange className="w-4 h-4 mr-1.5" /> Calendario</TabsTrigger>
+          <TabsTrigger value="detalle" className={FASE.detectar}><Table className="w-4 h-4 mr-1.5" /> Detalle semanal</TabsTrigger>
+          <TabsTrigger value="periodos" className={FASE.analizar}><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
+          <TabsTrigger value="comparativo" className={FASE.analizar}><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
+          <TabsTrigger value="simulador" className={FASE.planificar}><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
+          <TabsTrigger value="revision" className={FASE.revisar}><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
+          <TabsTrigger value="swot" className={FASE.evaluar}><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
+          <TabsTrigger value="config" className={FASE.setup}><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
         </TabsList>
 
         <TabsContent value="calendario" className="space-y-3">
@@ -319,12 +335,6 @@ export function PeriodosCriticosClient({
         <TabsContent value="periodos">
           <PeriodosTab dias={diasActivos} planes={planes} />
         </TabsContent>
-        <TabsContent value="revision">
-          <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
-        </TabsContent>
-        <TabsContent value="swot">
-          <SwotTab dias={diasActivos} anio={anioActivo} />
-        </TabsContent>
         <TabsContent value="comparativo">
           <ComparativoTab
             aniosDisponibles={aniosDisponibles}
@@ -333,6 +343,12 @@ export function PeriodosCriticosClient({
         </TabsContent>
         <TabsContent value="simulador">
           <SimuladorTab dias={diasActivos} cfg={cfg} umbrales={umbrales} />
+        </TabsContent>
+        <TabsContent value="revision">
+          <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
+        </TabsContent>
+        <TabsContent value="swot">
+          <SwotTab dias={diasActivos} anio={anioActivo} />
         </TabsContent>
         <TabsContent value="config">
           <ConfiguracionTab cfg={cfg} umbrales={umbrales} planes={planes} />
