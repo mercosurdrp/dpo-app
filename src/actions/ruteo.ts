@@ -10,7 +10,7 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA = "El ruteo solo está disponible en Pampeana."
 
 const SELECT_COLS =
-  "id, fecha, estado, hora_inicio, hora_fin, hora_fin_preventa, pergamino_bultos, pergamino_clientes, ramallo_bultos, ramallo_clientes, notas, created_at"
+  "id, fecha, estado, hora_inicio, hora_fin, hora_fin_preventa, pergamino_bultos, pergamino_clientes, ramallo_bultos, ramallo_clientes, bultos_no_ruteados, notas, created_at"
 
 export interface RuteoCierre {
   id: string
@@ -23,6 +23,7 @@ export interface RuteoCierre {
   pergamino_clientes: number
   ramallo_bultos: number
   ramallo_clientes: number
+  bultos_no_ruteados: number
   notas: string | null
   created_at: string
 }
@@ -33,6 +34,7 @@ export interface FinRuteoInput {
   pergamino_clientes: number
   ramallo_bultos: number
   ramallo_clientes: number
+  bultos_no_ruteados: number
   notas?: string | null
 }
 
@@ -226,6 +228,7 @@ export async function finalizarRuteo(
         pergamino_clientes: toIntNoNeg(input.pergamino_clientes),
         ramallo_bultos: toIntNoNeg(input.ramallo_bultos),
         ramallo_clientes: toIntNoNeg(input.ramallo_clientes),
+        bultos_no_ruteados: toIntNoNeg(input.bultos_no_ruteados),
         notas: input.notas?.trim() || null,
       })
       .eq("id", input.id)

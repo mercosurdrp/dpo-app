@@ -9,6 +9,18 @@ export const SLA_RUTEO_TARGET = 95
 export const SLA_SYOP_NOMBRE = "Ventas ↔ Operaciones (entrega de preventa)"
 export const SLA_SYOP_TARGET = 95
 
+export const SLA_CAPACIDAD_NOMBRE = "Capacidad del camión (ocupación)"
+export const SLA_CAPACIDAD_TARGET = 95
+
+export const SLA_PUSHED_NOMBRE = "Volumen no ruteado (Pushed)"
+export const SLA_PUSHED_TARGET = 95
+
+// --- Umbrales DIARIOS configurables ------------------------------------------
+/** Un día cumple capacidad si el % de ocupación promedio (CEq/450) ≥ este valor. */
+export const CAPACIDAD_MIN_PCT = 90
+/** Un día cumple pushed si bultos no ruteados ÷ total ≤ este valor (en %). */
+export const PUSHED_MAX_PCT = 5
+
 // Estado de un día para un SLA:
 //   "si" = cumple · "no" = no cumple · "na" = no aplica (ej. domingo) ·
 //   "sd" = sin dato (día futuro o ruteo no cerrado)

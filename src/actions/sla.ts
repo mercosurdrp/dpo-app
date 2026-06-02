@@ -9,6 +9,12 @@ import {
   SLA_RUTEO_TARGET,
   SLA_SYOP_NOMBRE,
   SLA_SYOP_TARGET,
+  SLA_CAPACIDAD_NOMBRE,
+  SLA_CAPACIDAD_TARGET,
+  SLA_PUSHED_NOMBRE,
+  SLA_PUSHED_TARGET,
+  CAPACIDAD_MIN_PCT,
+  PUSHED_MAX_PCT,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
@@ -396,9 +402,148 @@ async function filaSyop(
 }
 
 /**
+ * Fila del SLA de capacidad del camión (`plan_ruteo_capacidad`), medido por el
+ * % de ocupación promedio del día desde ocupacion_bodega_diaria (CEq/450*100).
+ * Un día cumple si el promedio de las patentes ≥ CAPACIDAD_MIN_PCT.
+ */
+async function filaCapacidad(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ocupacion_bodega_diaria")
+    .select("fecha, ob_pct_target")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+
+  // día → acumulador para promediar ob_pct_target de las patentes del día
+  const acc = new Map<number, { suma: number; n: number }>()
+  for (const row of (data ?? []) as any[]) {
+    const dia = Number((row.fecha as string).slice(8, 10))
+    const pct = Number(row.ob_pct_target ?? 0)
+    const a = acc.get(dia) ?? { suma: 0, n: 0 }
+    a.suma += pct
+    a.n += 1
+    acc.set(dia, a)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    if (dowFromISO(iso) === 0) {
+      dias.push("na") // domingo: no se reparte
+      continue
+    }
+    const a = acc.get(d)
+    if (!a || a.n === 0) {
+      dias.push("sd")
+      continue
+    }
+    const cumple = a.suma / a.n >= CAPACIDAD_MIN_PCT
+    totalAplica++
+    if (cumple) cumplidos++
+    dias.push(cumple ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return {
+    codigo: "plan_ruteo_capacidad",
+    nombre: SLA_CAPACIDAD_NOMBRE,
+    target: SLA_CAPACIDAD_TARGET,
+    porcentaje,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
+}
+
+/**
+ * Fila del SLA de volumen no ruteado (`plan_ruteo_pushed`), medido por los
+ * bultos no ruteados que el ruteador carga al cerrar (ruteo_cierres). Un día
+ * cumple si no_ruteados ÷ (no_ruteados + ruteados) ≤ PUSHED_MAX_PCT.
+ */
+async function filaPushed(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ruteo_cierres")
+    .select("fecha, estado, bultos_no_ruteados, pergamino_bultos, ramallo_bultos")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+
+  // día → pct de no ruteado (solo días cerrados)
+  const pctPorDia = new Map<number, number>()
+  for (const row of (data ?? []) as any[]) {
+    if (row.estado !== "cerrado") continue
+    const dia = Number((row.fecha as string).slice(8, 10))
+    const noRut = Number(row.bultos_no_ruteados ?? 0)
+    const ruteado =
+      Number(row.pergamino_bultos ?? 0) + Number(row.ramallo_bultos ?? 0)
+    const total = noRut + ruteado
+    pctPorDia.set(dia, total > 0 ? (noRut / total) * 100 : 0)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    if (dowFromISO(iso) === 0) {
+      dias.push("na")
+      continue
+    }
+    const pct = pctPorDia.get(d)
+    if (pct == null) {
+      dias.push("sd")
+      continue
+    }
+    const cumple = pct <= PUSHED_MAX_PCT
+    totalAplica++
+    if (cumple) cumplidos++
+    dias.push(cumple ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return {
+    codigo: "plan_ruteo_pushed",
+    nombre: SLA_PUSHED_NOMBRE,
+    target: SLA_PUSHED_TARGET,
+    porcentaje,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
+}
+
+/**
  * Cumplimiento de los SLA medibles para un mes (year, month=1..12), como
- * matriz: una fila por SLA, una columna por día. Hoy: tiempo de ruteo y
- * entrega de preventa (Ventas↔Operaciones). Listo para sumar más SLA.
+ * matriz: una fila por SLA, una columna por día. Tiempo de ruteo, entrega de
+ * preventa (Ventas↔Operaciones), capacidad del camión y volumen no ruteado.
  * Días en curso/sin registro = "sin dato" (no penalizan el %).
  */
 export async function getCumplimientoMes(
@@ -420,6 +565,8 @@ export async function getCumplimientoMes(
     const filas: CumplimientoSlaFila[] = [
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
+      await filaCapacidad(supabase, year, month, diasDelMes),
+      await filaPushed(supabase, year, month, diasDelMes),
     ]
 
     return { data: { year, month, diasDelMes, filas } }

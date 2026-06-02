@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   Pencil,
+  PackageX,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -46,6 +47,7 @@ const FORM_INICIAL = {
   pergamino_clientes: "",
   ramallo_bultos: "",
   ramallo_clientes: "",
+  bultos_no_ruteados: "",
   notas: "",
 }
 
@@ -106,6 +108,7 @@ export function RuteoClient({
         pergamino_clientes: Number(form.pergamino_clientes || 0),
         ramallo_bultos: Number(form.ramallo_bultos || 0),
         ramallo_clientes: Number(form.ramallo_clientes || 0),
+        bultos_no_ruteados: Number(form.bultos_no_ruteados || 0),
         notas: form.notas,
       })
       if ("error" in res) {
@@ -206,6 +209,30 @@ export function RuteoClient({
                   onBultos={(v) => set("ramallo_bultos", v)}
                   onClientes={(v) => set("ramallo_clientes", v)}
                 />
+              </div>
+
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                  <PackageX className="size-4 text-rose-600" />
+                  Volumen no ruteado (Pushed)
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:max-w-xs">
+                  <div>
+                    <Label className="mb-1.5 text-xs">Bultos no ruteados</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={form.bultos_no_ruteados}
+                      onChange={(e) => set("bultos_no_ruteados", e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Bultos que quedaron sin entrar en ninguna ruta. Objetivo: ≤ 5%
+                  del total.
+                </p>
               </div>
 
               <div className="mt-4">
@@ -439,6 +466,9 @@ function ResumenCiudades({ dia }: { dia: RuteoCierre }) {
       <Stat label="Pergamino" value={`${dia.pergamino_bultos} blt · ${dia.pergamino_clientes} cli`} />
       <Stat label="Ramallo" value={`${dia.ramallo_bultos} blt · ${dia.ramallo_clientes} cli`} />
       <Stat label="Total" value={`${totalBultos} blt · ${totalClientes} cli`} highlight />
+      {dia.bultos_no_ruteados > 0 && (
+        <Stat label="No ruteado" value={`${dia.bultos_no_ruteados} blt`} />
+      )}
     </div>
   )
 }
@@ -485,6 +515,9 @@ function HistorialRow({ c }: { c: RuteoCierre }) {
         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
           <span>Pergamino: {c.pergamino_bultos} blt / {c.pergamino_clientes} cli</span>
           <span>Ramallo: {c.ramallo_bultos} blt / {c.ramallo_clientes} cli</span>
+          {c.bultos_no_ruteados > 0 && (
+            <span className="text-rose-600">No ruteado: {c.bultos_no_ruteados} blt</span>
+          )}
         </div>
         {c.notas && <p className="mt-1 text-xs italic text-slate-500">{c.notas}</p>}
       </div>

@@ -139,4 +139,60 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       },
     ],
   },
+
+  plan_ruteo_capacidad: {
+    objeto:
+      "Ruteo se compromete a planificar la carga de cada camión aprovechando su capacidad, de modo que la flota salga con un nivel de ocupación adecuado y se optimice el costo de distribución.",
+    nivelServicio: [
+      "Cada camión debe rutearse buscando aprovechar su capacidad de carga (referencia: 450 CEq por viaje).",
+      "Objetivo de ocupación promedio diaria: ≥ 90 % de la capacidad.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los días dentro del nivel de ocupación.",
+    ],
+    medicion: [
+      "La medición es automática a partir de la ocupación de bodega (CEq por patente y día) que se sincroniza desde Chess.",
+      "El % de ocupación del día es el promedio de CEq ÷ 450 de las patentes que salieron a reparto.",
+      "Un día cumple si el promedio de ocupación es ≥ 90 %.",
+      "El indicador mensual se calcula como: días cumplidos ÷ días con reparto registrado.",
+    ],
+    roles: [
+      {
+        label: "Carga de datos / medición",
+        valor: "Automática (ocupación de bodega desde Chess).",
+      },
+      { label: "Seguimiento del cumplimiento", valor: "Supervisor de Distribución." },
+    ],
+    gestionIncumplimiento:
+      "Ante días por debajo del nivel de ocupación se genera una tarea en el Action Log de las reuniones de Logística, con su responsable y plan de acción.",
+    vigencia:
+      "Vigente desde la fecha de firma. Revisión anual, o si cambia la composición/capacidad de la flota.",
+    firmantes: ["Supervisor de Distribución", "Supervisor de Entrega"],
+  },
+
+  plan_ruteo_pushed: {
+    objeto:
+      "Ruteo se compromete a minimizar el volumen no ruteado (Pushed Volume), es decir, los bultos que quedan sin entrar en ninguna ruta del día, y a aplicar el procedimiento acordado cuando este volumen exista.",
+    nivelServicio: [
+      "Objetivo diario de volumen no ruteado: ≤ 5 % del total del día.",
+      "Todo volumen no ruteado debe quedar registrado y reprogramado o gestionado con Ventas según el procedimiento.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los días dentro del umbral.",
+    ],
+    medicion: [
+      "El Ruteador registra, al cerrar el ruteo, la cantidad de bultos que quedaron sin rutear ese día.",
+      "El % no ruteado del día es bultos no ruteados ÷ (no ruteados + bultos ruteados).",
+      "Un día cumple si el % no ruteado es ≤ 5 %.",
+      "El indicador mensual se calcula como: días cumplidos ÷ días con ruteo cerrado.",
+    ],
+    roles: [
+      {
+        label: "Carga de datos",
+        valor: "Ruteador (registra los bultos no ruteados al cerrar el ruteo).",
+      },
+      { label: "Seguimiento del cumplimiento", valor: "Supervisor de Distribución." },
+    ],
+    gestionIncumplimiento:
+      "Ante días por encima del umbral se genera una tarea en el Action Log de las reuniones de Logística-Ventas, con el motivo del volumen no ruteado y el plan de acción.",
+    vigencia:
+      "Vigente desde la fecha de firma. Revisión anual, o si cambia el procedimiento de tratamiento del volumen no ruteado.",
+    firmantes: ["Supervisor de Distribución", "Jefe de Ventas"],
+  },
 }
