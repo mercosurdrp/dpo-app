@@ -1,13 +1,26 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { RotateCcw, Copy } from "lucide-react"
+import { RotateCcw, Copy, Trash2, FolderOpen, Bookmark } from "lucide-react"
 import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
+
+// Escenario tal como vuelve del GET /escenarios. Nota: pc_escenarios NO persiste
+// delta_clientes, así que al recargar un escenario el slider de Clientes vuelve a 0.
+type EscenarioGuardado = {
+  id: string
+  nombre: string
+  fecha_base: string
+  delta_volumen: number
+  delta_otif: number
+  delta_ausentismo: number
+  resultado_nivel: string | null
+  created_at: string
+}
 
 type SimResult = {
   hl: number
@@ -137,6 +150,27 @@ export function SimuladorTab({
   const [guardando, setGuardando] = useState(false)
   const [msgGuardar, setMsgGuardar] = useState<string | null>(null)
 
+  // Escenarios guardados (lista persistida en pc_escenarios)
+  const [escenarios, setEscenarios] = useState<EscenarioGuardado[]>([])
+  const [cargandoEsc, setCargandoEsc] = useState(true)
+
+  const cargarEscenarios = useCallback(async () => {
+    setCargandoEsc(true)
+    try {
+      const res = await fetch("/api/planeamiento/periodos-criticos/escenarios")
+      const j = await res.json()
+      if (res.ok) setEscenarios(j.escenarios ?? [])
+    } catch {
+      /* silencioso: la lista simplemente queda vacía */
+    } finally {
+      setCargandoEsc(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    cargarEscenarios()
+  }, [cargarEscenarios])
+
   async function guardar() {
     if (!base || !sim) return
     setGuardando(true)
@@ -161,10 +195,28 @@ export function SimuladorTab({
       }
       setMsgGuardar("Escenario guardado")
       setNombre("")
+      cargarEscenarios()
     } catch (e) {
       setMsgGuardar(e instanceof Error ? e.message : String(e))
     } finally {
       setGuardando(false)
+    }
+  }
+
+  // Recargar un escenario guardado → vuelca día base + deltas a los controles.
+  // delta_clientes no se persiste, así que ese slider vuelve a 0.
+  function aplicarEscenario(e: EscenarioGuardado) {
+    setFechaBase(e.fecha_base)
+    setDelta({ vol: e.delta_volumen, otif: e.delta_otif, aus: e.delta_ausentismo, cli: 0 })
+    setMsgGuardar(null)
+  }
+
+  async function borrarEscenario(id: string) {
+    setEscenarios((prev) => prev.filter((e) => e.id !== id)) // optimista
+    try {
+      await fetch(`/api/planeamiento/periodos-criticos/escenarios/${id}`, { method: "DELETE" })
+    } catch {
+      cargarEscenarios() // si falló, recuperar el estado real
     }
   }
 
@@ -327,9 +379,69 @@ export function SimuladorTab({
           )}
         </CardContent>
       </Card>
+
+      {/* Escenarios guardados: lista persistida. "Cargar" vuelca día base +
+          deltas a los controles de arriba; "Borrar" lo elimina. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Bookmark className="w-4 h-4 text-amber-600" />
+            Escenarios guardados
+            {escenarios.length > 0 && (
+              <Badge variant="secondary" className="font-normal">{escenarios.length}</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cargandoEsc ? (
+            <p className="text-sm text-slate-500">Cargando…</p>
+          ) : escenarios.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Todavía no guardaste escenarios. Ajustá los sliders y tocá «Guardar escenario».
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {escenarios.map((e) => (
+                <li key={e.id} className="flex items-center gap-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-900 truncate">{e.nombre}</span>
+                      {e.resultado_nivel && (
+                        <Badge className={`${COLOR_NIVEL[e.resultado_nivel] ?? "bg-slate-400 text-white"} text-[10px]`}>
+                          {e.resultado_nivel}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500 flex flex-wrap gap-x-2">
+                      <span>Base {e.fecha_base}</span>
+                      <span>· Vol {fmtDelta(e.delta_volumen)}%</span>
+                      <span>· OTIF {fmtDelta(e.delta_otif)}pp</span>
+                      <span>· Aus {fmtDelta(e.delta_ausentismo)}pp</span>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => aplicarEscenario(e)} title="Cargar en el simulador">
+                    <FolderOpen className="w-4 h-4 mr-1" /> Cargar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => borrarEscenario(e.id)}
+                    title="Borrar escenario"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
+
+const fmtDelta = (n: number) => (n > 0 ? "+" : "") + n
 
 function EscenarioCard({
   titulo,
