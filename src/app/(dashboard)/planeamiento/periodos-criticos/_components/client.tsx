@@ -14,6 +14,7 @@ import { PeriodosTab } from "./periodos-tab"
 import { DetalleSemanalTab } from "./detalle-semanal-tab"
 import { RevisionMensualTab } from "./revision-mensual-tab"
 import { SwotTab } from "./swot-tab"
+import { CrucePeriodos } from "./cruce-periodos"
 
 export type DiaCalendario = {
   anio: number
@@ -550,6 +551,9 @@ function ComparativoTab({
           <ResumenAnio anio={anioB} dias={diasB} />
         </CardContent>
       </Card>
+
+      {/* Cruce de períodos: qué pasó en B con los períodos críticos de A */}
+      <CrucePeriodos diasBase={diasA} diasComparar={diasB} anioBase={anioA} anioComparar={anioB} />
 
       <TooltipProvider delay={150}>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

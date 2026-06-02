@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   CalendarRange, Star, AlertTriangle, CalendarClock, Copy, Check,
-  Target, Plus, Pencil, Trash2,
+  Target, Plus, Pencil, Trash2, Sparkles,
 } from "lucide-react"
 import type { DiaCalendario, PlanAccion } from "./client"
 import { intensidadDia, INTENSIDAD_BG } from "./client"
@@ -58,6 +58,13 @@ function proyectarFecha(f: string, anioDestino: number): string {
 // Intensidad de un período = la de su día más fuerte (más variables en target).
 const intensidadPeriodo = (p: PeriodoCritico) =>
   intensidadDia(Math.max(0, ...p.dias.map((d) => d.trigger_count ?? 0)))
+
+// Prioridad del foco según la intensidad del período (los más intensos pesan más).
+function prioridadDeIntensidad(i: ReturnType<typeof intensidadDia>): PeriodoFoco["prioridad"] {
+  if (i === "PICO" || i === "ALTO") return "alta"
+  if (i === "MEDIO") return "media"
+  return "baja"
+}
 
 export function PeriodosTab({
   diasPorAnio,
@@ -111,20 +118,27 @@ export function PeriodosTab({
     }
   }
 
+  // Payload de foco a partir de un período sugerido (fechas proyectadas + prioridad por intensidad).
+  const focoDesdePeriodo = useCallback(
+    (p: PeriodoCritico) => ({
+      anio: anioAnticipar,
+      nombre: p.nombre,
+      fecha_inicio: proyectarFecha(p.fechaInicio, anioAnticipar),
+      fecha_fin: proyectarFecha(p.fechaFin, anioAnticipar),
+      foco: p.motivo,
+      prioridad: prioridadDeIntensidad(intensidadPeriodo(p)),
+      origen: `${p.nombre} (${anioBase})`,
+    }),
+    [anioAnticipar, anioBase],
+  )
+
   // "Marcar como foco" desde una sugerencia → crea el período ya precargado.
   async function marcarComoFoco(p: PeriodoCritico) {
     try {
       const res = await fetch(FOCO_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          anio: anioAnticipar,
-          nombre: p.nombre,
-          fecha_inicio: proyectarFecha(p.fechaInicio, anioAnticipar),
-          fecha_fin: proyectarFecha(p.fechaFin, anioAnticipar),
-          foco: p.motivo,
-          origen: `${p.nombre} (${anioBase})`,
-        }),
+        body: JSON.stringify(focoDesdePeriodo(p)),
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
@@ -132,6 +146,35 @@ export function PeriodosTab({
       cargarFocos()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo agregar")
+    }
+  }
+
+  // Auto-genera foco para TODAS las sugerencias que aún no estén cargadas
+  // (dedupe por `origen`). Prioridad según intensidad — los PICO/ALTO arriba.
+  const [generando, setGenerando] = useState(false)
+  async function generarFocoAuto() {
+    const yaCargados = new Set(focos.map((f) => f.origen).filter(Boolean))
+    const aCrear = periodos.filter((p) => !yaCargados.has(`${p.nombre} (${anioBase})`))
+    if (aCrear.length === 0) {
+      toast.info("Ya están todos los períodos sugeridos cargados como foco")
+      return
+    }
+    setGenerando(true)
+    try {
+      for (const p of aCrear) {
+        await fetch(FOCO_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(focoDesdePeriodo(p)),
+        })
+      }
+      toast.success(`${aCrear.length} período${aCrear.length === 1 ? "" : "s"} cargado${aCrear.length === 1 ? "" : "s"} como foco`)
+      cargarFocos()
+    } catch {
+      toast.error("No se pudieron generar todos")
+      cargarFocos()
+    } finally {
+      setGenerando(false)
     }
   }
 
@@ -169,21 +212,40 @@ export function PeriodosTab({
                 <Badge variant="secondary" className="font-normal">{focos.length}</Badge>
               )}
             </span>
-            <Button size="sm" variant="outline" onClick={() => setEditor("nuevo")}>
-              <Plus className="w-4 h-4 mr-1" /> Agregar
-            </Button>
+            <span className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={generarFocoAuto}
+                disabled={generando || periodos.length === 0}
+                title={`Crear foco automáticamente desde los ${periodos.length} sugeridos de ${anioBase}`}
+              >
+                <Sparkles className="w-4 h-4 mr-1" />
+                {generando ? "Generando…" : `Generar desde ${anioBase}`}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditor("nuevo")}>
+                <Plus className="w-4 h-4 mr-1" /> Agregar
+              </Button>
+            </span>
           </CardTitle>
           <p className="text-xs text-slate-500">
-            Los períodos que el equipo decide priorizar para anticipar la operación. Creá uno a mano
-            o usá «Marcar como foco» en una sugerencia de abajo.
+            Los períodos que el equipo decide priorizar para anticipar la operación. Generalos
+            automáticamente desde los sugeridos de {anioBase} (prioridad según intensidad: PICO/ALTO
+            → alta, MEDIO → media, BAJO → baja), creá uno a mano, o usá «Marcar como foco» en una
+            sugerencia puntual.
           </p>
         </CardHeader>
         <CardContent>
           {focos.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              Todavía no definiste períodos de foco para {anioAnticipar}. Agregá uno o marcá una
-              sugerencia.
-            </p>
+            <div className="space-y-2 text-sm text-slate-500">
+              <p>Todavía no definiste períodos de foco para {anioAnticipar}.</p>
+              {periodos.length > 0 && (
+                <Button size="sm" onClick={generarFocoAuto} disabled={generando}>
+                  <Sparkles className="w-4 h-4 mr-1" />
+                  Generar {periodos.length} foco{periodos.length === 1 ? "" : "s"} desde {anioBase}
+                </Button>
+              )}
+            </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {focos.map((f) => (
