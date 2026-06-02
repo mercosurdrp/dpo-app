@@ -9,8 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Copy, Trash2, FolderOpen, Bookmark } from "lucide-react"
 import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
 
-// Escenario tal como vuelve del GET /escenarios. Nota: pc_escenarios NO persiste
-// delta_clientes, así que al recargar un escenario el slider de Clientes vuelve a 0.
+// Escenario tal como vuelve del GET /escenarios. Las 4 variables se persisten.
 type EscenarioGuardado = {
   id: string
   nombre: string
@@ -18,6 +17,7 @@ type EscenarioGuardado = {
   delta_volumen: number
   delta_otif: number
   delta_ausentismo: number
+  delta_clientes: number
   resultado_nivel: string | null
   created_at: string
 }
@@ -185,6 +185,7 @@ export function SimuladorTab({
           delta_volumen: delta.vol,
           delta_otif: delta.otif,
           delta_ausentismo: delta.aus,
+          delta_clientes: delta.cli,
           resultado_score: Number(sim.score.toFixed(3)),
           resultado_nivel: sim.nivel,
         }),
@@ -203,11 +204,15 @@ export function SimuladorTab({
     }
   }
 
-  // Recargar un escenario guardado → vuelca día base + deltas a los controles.
-  // delta_clientes no se persiste, así que ese slider vuelve a 0.
+  // Recargar un escenario guardado → vuelca día base + las 4 deltas a los controles.
   function aplicarEscenario(e: EscenarioGuardado) {
     setFechaBase(e.fecha_base)
-    setDelta({ vol: e.delta_volumen, otif: e.delta_otif, aus: e.delta_ausentismo, cli: 0 })
+    setDelta({
+      vol: e.delta_volumen,
+      otif: e.delta_otif,
+      aus: e.delta_ausentismo,
+      cli: e.delta_clientes ?? 0,
+    })
     setMsgGuardar(null)
   }
 
@@ -417,6 +422,7 @@ export function SimuladorTab({
                       <span>· Vol {fmtDelta(e.delta_volumen)}%</span>
                       <span>· OTIF {fmtDelta(e.delta_otif)}pp</span>
                       <span>· Aus {fmtDelta(e.delta_ausentismo)}pp</span>
+                      <span>· Cli {fmtDelta(e.delta_clientes ?? 0)}%</span>
                     </div>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => aplicarEscenario(e)} title="Cargar en el simulador">

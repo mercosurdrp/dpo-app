@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
       delta_volumen: Number(body.delta_volumen ?? 0),
       delta_otif: Number(body.delta_otif ?? 0),
       delta_ausentismo: Number(body.delta_ausentismo ?? 0),
+      delta_clientes: Number(body.delta_clientes ?? 0),
       resultado_score: body.resultado_score != null ? Number(body.resultado_score) : null,
       resultado_nivel: body.resultado_nivel ? String(body.resultado_nivel) : null,
       created_by: profile.id,
