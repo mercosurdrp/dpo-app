@@ -96,18 +96,32 @@ const fmtHL = (n: number) =>
 const fmtPct = (n: number) =>
   (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 
-// Modelo Mercosur: el color del día sale del "codigo" (cantidad de triggers).
-// Cuanto más triggers activos, más intenso el rojo. Días sin triggers van
-// verde si tienen datos y gris si no.
+// Intensidad del día = cuántas de las 4 variables (Vol/Cli/OTIF/Aus) cruzaron
+// su target ese día. Es el idioma único del módulo: 4=PICO · 3=ALTO · 2=MEDIO ·
+// 1=BAJO · 0=NORMAL. Reemplaza al viejo código "PPPP".
+export type Intensidad = "PICO" | "ALTO" | "MEDIO" | "BAJO" | "NORMAL"
+
+export function intensidadDia(triggerCount: number): Intensidad {
+  if (triggerCount >= 4) return "PICO"
+  if (triggerCount === 3) return "ALTO"
+  if (triggerCount === 2) return "MEDIO"
+  if (triggerCount === 1) return "BAJO"
+  return "NORMAL"
+}
+
+// Color de fondo por intensidad (celdas del calendario / badges).
+export const INTENSIDAD_BG: Record<Intensidad, string> = {
+  PICO:   "bg-red-700 text-white font-bold",
+  ALTO:   "bg-red-500 text-white font-semibold",
+  MEDIO:  "bg-orange-500 text-white font-semibold",
+  BAJO:   "bg-amber-300 text-amber-950 font-medium",
+  NORMAL: "bg-emerald-500/80 text-white",
+}
+
 function estiloCelda(d: DiaCalendario): string {
   if (d.hl === 0 && d.dow !== 0) return "bg-slate-100 text-slate-400"  // sin datos
   if (d.dow === 0) return "bg-slate-100 text-slate-400"               // domingo
-  const n = d.trigger_count
-  if (n >= 4) return "bg-red-700 text-white font-bold"
-  if (n === 3) return "bg-red-500 text-white font-semibold"
-  if (n === 2) return "bg-orange-500 text-white font-semibold"
-  if (n === 1) return "bg-amber-300 text-amber-950 font-medium"
-  return "bg-emerald-500/80 text-white"                                // sin triggers, día normal
+  return INTENSIDAD_BG[intensidadDia(d.trigger_count)]
 }
 
 // Etiquetas humanas de los triggers (para tooltip).
@@ -179,9 +193,9 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <span className="font-semibold">
               {d.dia_semana} {fecha.toLocaleDateString("es-AR")}
             </span>
-            {d.estatus === "CRITICO" && (
-              <span className="rounded bg-red-700 text-white px-1.5 py-0.5 text-[10px] font-bold">
-                {d.codigo} · CRÍTICO
+            {d.trigger_count > 0 && (
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${INTENSIDAD_BG[intensidadDia(d.trigger_count)]}`}>
+                {intensidadDia(d.trigger_count)} · {d.trigger_count}/4
               </span>
             )}
           </div>
@@ -282,13 +296,13 @@ export function PeriodosCriticosClient({
             </select>
           </label>
           <span className="text-xs text-slate-600">
-            <b>{conteo.criticos}</b> días CRÍTICOS · 1 PICO = 1 variable que cruzó su umbral
+            <b>{conteo.criticos}</b> días críticos · intensidad = cuántas de las 4 variables cruzan su target
           </span>
           <div className="ml-auto flex items-center gap-3 text-xs">
-            <Legend color="bg-red-700" label={`4 PICOS (${conteo.t4})`} />
-            <Legend color="bg-red-500" label={`3 PICOS (${conteo.t3})`} />
-            <Legend color="bg-orange-500" label={`2 PICOS (${conteo.t2})`} />
-            <Legend color="bg-amber-300" label={`1 PICO (${conteo.t1})`} />
+            <Legend color="bg-red-700" label={`PICO · 4 (${conteo.t4})`} />
+            <Legend color="bg-red-500" label={`ALTO · 3 (${conteo.t3})`} />
+            <Legend color="bg-orange-500" label={`MEDIO · 2 (${conteo.t2})`} />
+            <Legend color="bg-amber-300" label={`BAJO · 1 (${conteo.t1})`} />
             <Legend color="bg-emerald-500/80" label={`Normal (${conteo.normales})`} />
             <Legend color="bg-slate-100 border border-slate-300" label={`s/datos (${conteo.sin_datos})`} />
           </div>
@@ -426,14 +440,14 @@ function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
     <Card>
       <CardContent className="p-3">
         <div className="flex flex-wrap items-end gap-2">
-          <div className="text-xs font-semibold text-slate-700 mr-1">Umbrales (1 PICO si cruzan):</div>
+          <div className="text-xs font-semibold text-slate-700 mr-1">Targets (1 variable cuenta si cruza):</div>
           <UInput label="Vol PICO ≥" value={vp} onChange={setVP} step={50} suffix="HL" />
           <UInput label="Vol ALTO ≥" value={va} onChange={setVA} step={50} suffix="HL" />
           <UInput label="Vol MEDIO ≥" value={vm} onChange={setVM} step={50} suffix="HL" />
           <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
           <UInput label="OTIF <" value={otif} onChange={setOtif} step={0.01} pct />
           <UInput label="Aus ≥" value={aus} onChange={setAus} step={0.005} pct />
-          <UInput label="CRÍTICO si #PICOS ≥" value={mt} onChange={setMt} step={1} min={1} max={4} integer />
+          <UInput label="Crítico si #variables ≥" value={mt} onChange={setMt} step={1} min={1} max={4} integer />
           <Button onClick={guardar} disabled={!dirty || saving} size="sm" className="ml-auto">
             {saving ? "Guardando…" : "Guardar"}
           </Button>

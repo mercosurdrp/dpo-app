@@ -16,6 +16,7 @@ import {
   Target, Plus, Pencil, Trash2,
 } from "lucide-react"
 import type { DiaCalendario, PlanAccion } from "./client"
+import { intensidadDia, INTENSIDAD_BG } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
 
 // Período de foco que define el equipo (tabla pc_periodos_foco)
@@ -54,14 +55,9 @@ function proyectarFecha(f: string, anioDestino: number): string {
   return `${anioDestino}-${mm}-${d}`
 }
 
-// Color por cantidad de triggers (idem al calendario)
-function colorPorCodigo(codigo: string): string {
-  if (codigo.length >= 4) return "bg-red-700 text-white"
-  if (codigo.length === 3) return "bg-red-500 text-white"
-  if (codigo.length === 2) return "bg-orange-500 text-white"
-  if (codigo.length === 1) return "bg-amber-300 text-amber-950"
-  return "bg-emerald-500 text-white"
-}
+// Intensidad de un período = la de su día más fuerte (más variables en target).
+const intensidadPeriodo = (p: PeriodoCritico) =>
+  intensidadDia(Math.max(0, ...p.dias.map((d) => d.trigger_count ?? 0)))
 
 export function PeriodosTab({
   diasPorAnio,
@@ -302,8 +298,8 @@ function PeriodoCard({
             {p.nombre}
           </span>
           <span className="flex items-center gap-1.5 shrink-0">
-            <Badge className={`${colorPorCodigo(p.codigoPredominante)} font-semibold`}>
-              {p.codigoPredominante || "—"}
+            <Badge className={`${INTENSIDAD_BG[intensidadPeriodo(p)]} font-semibold`}>
+              {intensidadPeriodo(p)}
             </Badge>
             <Button
               size="sm"
@@ -358,11 +354,11 @@ function PeriodoCard({
               <span
                 key={d.fecha}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
-                  d.estatus === "CRITICO"
-                    ? colorPorCodigo(d.codigo)
+                  d.trigger_count > 0
+                    ? INTENSIDAD_BG[intensidadDia(d.trigger_count)]
                     : "bg-slate-100 text-slate-500"
                 }`}
-                title={`${d.dia_semana} ${d.fecha} · HL ${fmtHL(d.hl)} · cli ${d.clientes_dia} · score ${Number(d.score).toFixed(3)}${d.codigo ? ` · ${d.codigo}` : ""}`}
+                title={`${d.dia_semana} ${d.fecha} · HL ${fmtHL(d.hl)} · cli ${d.clientes_dia} · ${intensidadDia(d.trigger_count)} (${d.trigger_count}/4)`}
               >
                 {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
                 {fmtFecha(d.fecha)}

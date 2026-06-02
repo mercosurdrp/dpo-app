@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Copy, Trash2, FolderOpen, Bookmark } from "lucide-react"
 import type { CfgPC, DiaCalendario, UmbralesPC } from "./client"
+import { intensidadDia, INTENSIDAD_BG } from "./client"
 
 // Escenario tal como vuelve del GET /escenarios. Las 4 variables se persisten.
 type EscenarioGuardado = {
@@ -116,7 +117,7 @@ export function SimuladorTab({
     () =>
       dias.filter((d) => d.hl > 0 || d.pct_ausentismo > 0 || d.es_feriado).map((d) => ({
         value: d.fecha,
-        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.estatus}${d.codigo ? " " + d.codigo : ""}`,
+        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.estatus}${d.trigger_count ? " · " + intensidadDia(d.trigger_count) : ""}`,
       })),
     [dias],
   )
@@ -474,19 +475,14 @@ function EscenarioCard({
   estatus: "CRITICO" | "NORMAL"
   triggers: { vol: boolean; cli: boolean; otif: boolean; aus: boolean }
 }) {
-  const colorEstatus =
-    estatus === "CRITICO"
-      ? codigo.length >= 4 ? "bg-red-700 text-white" :
-        codigo.length === 3 ? "bg-red-500 text-white" :
-        "bg-orange-500 text-white"
-      : "bg-emerald-500 text-white"
+  const intensidad = intensidadDia(codigo.length)
   return (
     <Card className={destacado ? "border-2 border-slate-900" : ""}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center justify-between">
           {titulo}
-          <Badge className={`${colorEstatus} font-semibold`}>
-            {codigo || "—"} · {estatus}
+          <Badge className={`${INTENSIDAD_BG[intensidad]} font-semibold`}>
+            {intensidad} · {estatus}
           </Badge>
         </CardTitle>
       </CardHeader>

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react"
 import type { DiaCalendario, UmbralesPC } from "./client"
+import { intensidadDia, INTENSIDAD_BG } from "./client"
 
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) => (n * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
@@ -122,7 +123,7 @@ export function DetalleSemanalTab({
     <div className="space-y-2">
       <p className="text-xs text-slate-600">
         4 variables día a día agrupadas por semana ISO. Celda <span className="text-red-700 font-semibold">roja</span> si gatilla su trigger,
-        <span className="text-emerald-700 font-semibold"> verde</span> si bajo umbral, gris si sin datos. Fila TIPO con el código (P/PP/PPP/PPPP).
+        <span className="text-emerald-700 font-semibold"> verde</span> si bajo target, gris si sin datos. Fila TIPO con la intensidad (BAJO·1 / MEDIO·2 / ALTO·3 / PICO·4).
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {meses.map((sems, i) => (
@@ -272,27 +273,16 @@ function FilaTipo({ sem }: { sem: Semana }) {
       {sem.dias.map((d, i) => {
         if (!d) return <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-slate-50 text-slate-300">—</td>
         const n = d.trigger_count
-        if (d.estatus === "CRITICO") {
-          const cls =
-            n >= 4 ? "bg-red-700 text-white" :
-            n === 3 ? "bg-red-500 text-white" :
-            "bg-orange-500 text-white"
+        if (n === 0) {
           return (
-            <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center font-bold ${cls}`}>
-              {d.codigo || "PP"}
-            </td>
-          )
-        }
-        if (n === 1) {
-          return (
-            <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-amber-200 text-amber-900 font-semibold">
-              {d.codigo}
+            <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-emerald-100 text-emerald-900">
+              —
             </td>
           )
         }
         return (
-          <td key={i} className="border border-slate-200 px-1 py-0.5 text-center bg-emerald-100 text-emerald-900">
-            —
+          <td key={i} className={`border border-slate-200 px-1 py-0.5 text-center font-bold text-[9px] ${INTENSIDAD_BG[intensidadDia(n)]}`}>
+            {intensidadDia(n)}
           </td>
         )
       })}
