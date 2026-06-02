@@ -145,17 +145,26 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
                     {fila.nombre}
                   </td>
                   <td className="border-r border-slate-200 px-2 py-2 text-center">
-                    <span
-                      className={`inline-block rounded px-2 py-0.5 text-sm font-bold tabular-nums ${
-                        fila.porcentaje === null
-                          ? "text-slate-400"
-                          : cumpleTarget
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {fila.porcentaje === null ? "—" : `${fila.porcentaje}%`}
-                    </span>
+                    {fila.mtdLabel != null ? (
+                      <span
+                        className="inline-block rounded bg-slate-100 px-2 py-0.5 text-sm font-bold tabular-nums text-slate-700"
+                        title="Acumulado del mes (informativo)"
+                      >
+                        {fila.mtdLabel}
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-block rounded px-2 py-0.5 text-sm font-bold tabular-nums ${
+                          fila.porcentaje === null
+                            ? "text-slate-400"
+                            : cumpleTarget
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {fila.porcentaje === null ? "—" : `${fila.porcentaje}%`}
+                      </span>
+                    )}
                   </td>
                   {fila.dias.map((estado, i) => (
                     <td key={i} className="px-0 py-1 text-center">

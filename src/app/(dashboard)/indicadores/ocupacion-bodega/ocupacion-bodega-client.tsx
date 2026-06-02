@@ -13,7 +13,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceL
 import { Loader2, Package, Target, TrendingUp, Truck } from "lucide-react"
 import { getOBKpis, getOBViajes, getOBPorPatente, getOBPorDia, type ViajeOB, type PatenteSummary, type DiaSummary, type MesSummary, type OBKpis } from "@/actions/ocupacion-bodega"
 
-const TARGET = 450
+const TARGET = 525
 const GREEN = "#10B981"
 const AMBER = "#F59E0B"
 const RED = "#EF4444"

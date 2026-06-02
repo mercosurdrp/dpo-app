@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 // La pregunta 1.2 EN RUTA tiene key estable '5_1_23_74' en master_seed.
 const PREGUNTA_KEY_1_2 = "5_1_23_74"
 const INDICADOR_NOMBRE = "Ocupación de Bodega (OB)"
-const TARGET_CEQ = 450
+const TARGET_CEQ = 525
 
 // ---------- helpers ----------
 

@@ -142,57 +142,61 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
 
   plan_ruteo_capacidad: {
     objeto:
-      "Ruteo se compromete a planificar la carga de cada camión aprovechando su capacidad, de modo que la flota salga con un nivel de ocupación adecuado y se optimice el costo de distribución.",
+      "Ruteo se compromete a asignar a cada camión una carga que alcance, como mínimo, la capacidad de carga pactada, de modo que Entrega opere con camiones aprovechados y se optimice el costo por viaje. El parámetro es un piso de carga: no existe un máximo.",
     nivelServicio: [
-      "Cada camión debe rutearse buscando aprovechar su capacidad de carga (referencia: 450 CEq por viaje).",
-      "Objetivo de ocupación promedio diaria: ≥ 90 % de la capacidad.",
-      "Objetivo de cumplimiento mensual: ≥ 95 % de los días dentro del nivel de ocupación.",
+      "Mínimo de carga por camión: 525 CEq (cajas equivalentes).",
+      "El cumplimiento se evalúa por el promedio de CEq de todos los camiones del día (mismo criterio que el indicador de Ocupación de Bodega).",
+      "Un día cumple si el promedio de CEq de los camiones del día alcanza el mínimo de 525 CEq.",
+      "No se fija un máximo de carga.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los días.",
     ],
     medicion: [
-      "La medición es automática a partir de la ocupación de bodega (CEq por patente y día) que se sincroniza desde Chess.",
-      "El % de ocupación del día es el promedio de CEq ÷ 450 de las patentes que salieron a reparto.",
-      "Un día cumple si el promedio de ocupación es ≥ 90 %.",
+      "La medición es automática a partir de la Ocupación de Bodega de la plataforma DPO (CEq por camión, calculado desde la facturación de Chess).",
+      "Se promedia el CEq de todos los camiones de cada día.",
+      "Un día cumple si ese promedio es mayor o igual al mínimo pactado (525 CEq).",
       "El indicador mensual se calcula como: días cumplidos ÷ días con reparto registrado.",
     ],
     roles: [
       {
         label: "Carga de datos / medición",
-        valor: "Automática (ocupación de bodega desde Chess).",
+        valor: "Ruteador (arma la carga de cada camión en el ruteo).",
       },
-      { label: "Seguimiento del cumplimiento", valor: "Supervisor de Distribución." },
+      { label: "Respuesta / seguimiento", valor: "Supervisor de Distribución." },
     ],
     gestionIncumplimiento:
-      "Ante días por debajo del nivel de ocupación se genera una tarea en el Action Log de las reuniones de Logística, con su responsable y plan de acción.",
+      "Ante un incumplimiento se registra una tarea en el Action Log de las reuniones (Logística / Logística-Ventas) de forma manual, con su responsable y plan de acción.",
     vigencia:
-      "Vigente desde la fecha de firma. Revisión anual, o si cambia la composición/capacidad de la flota.",
+      "Vigencia de 1 año desde la fecha de firma, salvo que se modifique el parámetro mínimo de carga del camión, en cuyo caso se revisa de inmediato.",
     firmantes: ["Supervisor de Distribución", "Supervisor de Entrega"],
   },
 
   plan_ruteo_pushed: {
     objeto:
-      "Ruteo se compromete a minimizar el volumen no ruteado (Pushed Volume), es decir, los bultos que quedan sin entrar en ninguna ruta del día, y a aplicar el procedimiento acordado cuando este volumen exista.",
+      "Acuerdo sobre el tratamiento del volumen no ruteado (Pushed Volume): los bultos que quedan sin entrar en ninguna ruta del día. El SLA no fija un límite de cantidad; compromete el procedimiento de gestión de ese volumen para que ningún pedido quede sin atender.",
     nivelServicio: [
-      "Objetivo diario de volumen no ruteado: ≤ 5 % del total del día.",
-      "Todo volumen no ruteado debe quedar registrado y reprogramado o gestionado con Ventas según el procedimiento.",
-      "Objetivo de cumplimiento mensual: ≥ 95 % de los días dentro del umbral.",
+      "Ante cualquier bulto que quede sin rutear, Ruteo avisa a Ventas (por WhatsApp) y reprograma la entrega con prioridad.",
+      "El volumen no ruteado no se mide por cantidad de bultos: el cumplimiento consiste en seguir el procedimiento de aviso y reprogramación.",
+      "Se lleva un acumulado mensual (MTD) de bultos no despachados a modo informativo y de seguimiento.",
     ],
     medicion: [
       "El Ruteador registra, al cerrar el ruteo, la cantidad de bultos que quedaron sin rutear ese día.",
-      "El % no ruteado del día es bultos no ruteados ÷ (no ruteados + bultos ruteados).",
-      "Un día cumple si el % no ruteado es ≤ 5 %.",
-      "El indicador mensual se calcula como: días cumplidos ÷ días con ruteo cerrado.",
+      "En la pestaña Cumplimientos, la columna del mes muestra el acumulado de bultos no despachados (informativo), no un porcentaje.",
+      "El cumplimiento diario es siempre afirmativo mientras se aplique el procedimiento (aviso a Ventas y reprogramación con prioridad).",
     ],
     roles: [
       {
-        label: "Carga de datos",
+        label: "Responsable de medir",
         valor: "Ruteador (registra los bultos no ruteados al cerrar el ruteo).",
       },
-      { label: "Seguimiento del cumplimiento", valor: "Supervisor de Distribución." },
+      {
+        label: "Responsable de actuar / seguimiento",
+        valor: "Supervisor de Distribución.",
+      },
     ],
     gestionIncumplimiento:
-      "Ante días por encima del umbral se genera una tarea en el Action Log de las reuniones de Logística-Ventas, con el motivo del volumen no ruteado y el plan de acción.",
+      "Las acciones se registran de forma manual en el Action Log de las reuniones (Logística / Logística-Ventas), con el motivo del volumen no ruteado y la reprogramación acordada.",
     vigencia:
-      "Vigente desde la fecha de firma. Revisión anual, o si cambia el procedimiento de tratamiento del volumen no ruteado.",
-    firmantes: ["Supervisor de Distribución", "Jefe de Ventas"],
+      "Vigencia de 1 año desde la fecha de firma, o si cambia el procedimiento de tratamiento del volumen no ruteado.",
+    firmantes: ["Jefe de Logística", "Jefe de Ventas"],
   },
 }

@@ -14,7 +14,6 @@ import {
   SLA_PUSHED_NOMBRE,
   SLA_PUSHED_TARGET,
   CAPACIDAD_MIN_PCT,
-  PUSHED_MAX_PCT,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
@@ -472,9 +471,12 @@ async function filaCapacidad(
 }
 
 /**
- * Fila del SLA de volumen no ruteado (`plan_ruteo_pushed`), medido por los
- * bultos no ruteados que el ruteador carga al cerrar (ruteo_cierres). Un día
- * cumple si no_ruteados ÷ (no_ruteados + ruteados) ≤ PUSHED_MAX_PCT.
+ * Fila del SLA de volumen no ruteado (`plan_ruteo_pushed`). Es un SLA de
+ * PROCEDIMIENTO, no de umbral: ante un bulto no ruteado se avisa a Ventas y se
+ * reprograma la entrega con prioridad. Por eso el cumplimiento diario es
+ * siempre "Sí" (mientras se siga el procedimiento) y la columna MTD muestra el
+ * ACUMULADO de bultos no despachados del mes (informativo), no un porcentaje.
+ * Fuente: ruteo_cierres.bultos_no_ruteados (carga el ruteador al cerrar).
  */
 async function filaPushed(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -490,20 +492,19 @@ async function filaPushed(
 
   const { data } = await supabase
     .from("ruteo_cierres")
-    .select("fecha, estado, bultos_no_ruteados, pergamino_bultos, ramallo_bultos")
+    .select("fecha, estado, bultos_no_ruteados")
     .gte("fecha", desde)
     .lt("fecha", hastaExcl)
 
-  // día → pct de no ruteado (solo días cerrados)
-  const pctPorDia = new Map<number, number>()
+  // día → bultos no ruteados (solo días cerrados)
+  const noRutPorDia = new Map<number, number>()
+  let bultosAcum = 0
   for (const row of (data ?? []) as any[]) {
     if (row.estado !== "cerrado") continue
     const dia = Number((row.fecha as string).slice(8, 10))
     const noRut = Number(row.bultos_no_ruteados ?? 0)
-    const ruteado =
-      Number(row.pergamino_bultos ?? 0) + Number(row.ramallo_bultos ?? 0)
-    const total = noRut + ruteado
-    pctPorDia.set(dia, total > 0 ? (noRut / total) * 100 : 0)
+    noRutPorDia.set(dia, noRut)
+    bultosAcum += noRut
   }
 
   const dias: EstadoCumplimiento[] = []
@@ -516,19 +517,17 @@ async function filaPushed(
       dias.push("na")
       continue
     }
-    const pct = pctPorDia.get(d)
-    if (pct == null) {
-      dias.push("sd")
+    if (!noRutPorDia.has(d)) {
+      dias.push("sd") // sin ruteo cerrado registrado / futuro
       continue
     }
-    const cumple = pct <= PUSHED_MAX_PCT
+    // SLA de procedimiento: el día cumple siempre (se avisa y reprograma).
     totalAplica++
-    if (cumple) cumplidos++
-    dias.push(cumple ? "si" : "no")
+    cumplidos++
+    dias.push("si")
   }
 
-  const porcentaje =
-    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+  const porcentaje = totalAplica > 0 ? 100 : null
 
   return {
     codigo: "plan_ruteo_pushed",
@@ -538,6 +537,8 @@ async function filaPushed(
     cumplidos,
     totalAplica,
     dias,
+    // La columna MTD muestra el acumulado de bultos no despachados, no el %.
+    mtdLabel: `${bultosAcum.toLocaleString("es-AR")} bultos`,
   }
 }
 
@@ -686,7 +687,8 @@ export async function getDetalleDiaSla(
         .order("ceq_total", { ascending: false })
 
       const rows = (data ?? []) as any[]
-      const metaLabel = `Ocupación ≥ ${CAPACIDAD_MIN_PCT}%`
+      // CAPACIDAD_MIN_PCT = 100 sobre base 525 ⇒ "promedio de CEq ≥ 525".
+      const metaLabel = `Promedio ≥ ${CAPACIDAD_MIN_PCT}% del mínimo de carga`
 
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
@@ -702,8 +704,10 @@ export async function getDetalleDiaSla(
       } else {
         const prom =
           rows.reduce((a, r) => a + Number(r.ob_pct_target ?? 0), 0) / rows.length
+        const promCeq =
+          rows.reduce((a, r) => a + Number(r.ceq_total ?? 0), 0) / rows.length
         estado = prom >= CAPACIDAD_MIN_PCT ? "si" : "no"
-        valorLabel = fmtPct(prom)
+        valorLabel = `${promCeq.toFixed(0)} CEq · ${fmtPct(prom)}`
         for (const r of rows) {
           filas.push({
             label: String(r.patente ?? "—"),
@@ -730,11 +734,11 @@ export async function getDetalleDiaSla(
     if (codigo === "plan_ruteo_pushed") {
       const { data } = await supabase
         .from("ruteo_cierres")
-        .select("estado, bultos_no_ruteados, pergamino_bultos, ramallo_bultos")
+        .select("estado, bultos_no_ruteados")
         .eq("fecha", fecha)
         .maybeSingle()
 
-      const metaLabel = `No ruteado ≤ ${PUSHED_MAX_PCT}%`
+      const metaLabel = "Avisar a Ventas y reprogramar con prioridad"
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
       let valorLabel = "—"
@@ -748,16 +752,14 @@ export async function getDetalleDiaSla(
         nota = "No hay ruteo cerrado registrado este día."
       } else {
         const noRut = Number((data as any).bultos_no_ruteados ?? 0)
-        const ruteado =
-          Number((data as any).pergamino_bultos ?? 0) +
-          Number((data as any).ramallo_bultos ?? 0)
-        const total = noRut + ruteado
-        const pct = total > 0 ? (noRut / total) * 100 : 0
-        estado = pct <= PUSHED_MAX_PCT ? "si" : "no"
-        valorLabel = fmtPct(pct)
+        // SLA de procedimiento: cumple siempre que se siga el procedimiento.
+        estado = "si"
+        valorLabel = `${noRut.toLocaleString("es-AR")} bultos sin rutear`
         filas.push({ label: "Bultos no ruteados", valor: String(noRut) })
-        filas.push({ label: "Bultos ruteados", valor: String(ruteado) })
-        filas.push({ label: "Total del día", valor: String(total) })
+        nota =
+          noRut > 0
+            ? "Procedimiento: se avisa a Ventas por WhatsApp y se reprograma la entrega con prioridad."
+            : "Sin bultos no ruteados este día."
       }
 
       return {
