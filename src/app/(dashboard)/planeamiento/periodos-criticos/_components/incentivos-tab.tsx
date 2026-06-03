@@ -22,6 +22,7 @@ type Programa = {
   archivo_url: string | null; archivo_nombre: string | null
   comunicado: boolean; comunicado_fecha: string | null
   comunicado_url: string | null; comunicado_nombre: string | null; comunicado_nota: string | null
+  comunicado_link: string | null
 }
 type Registro = {
   id: string; anio: number; mes: number; ambito: string
@@ -217,6 +218,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
   const [comunicado, setComunicado] = useState(prog.comunicado)
   const [comFecha, setComFecha] = useState(prog.comunicado_fecha ?? "")
   const [comNota, setComNota] = useState(prog.comunicado_nota ?? "")
+  const [comLink, setComLink] = useState(prog.comunicado_link ?? "")
   const [guardando, setGuardando] = useState(false)
   const pptRef = useRef<HTMLInputElement>(null)
   const comRef = useRef<HTMLInputElement>(null)
@@ -230,6 +232,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
       fd.set("comunicado", String(comunicado))
       fd.set("comunicado_fecha", comFecha)
       fd.set("comunicado_nota", comNota)
+      fd.set("comunicado_link", comLink)
       if (pptRef.current?.files?.[0]) fd.set("archivo_programa", pptRef.current.files[0])
       if (comRef.current?.files?.[0]) fd.set("archivo_comunicado", comRef.current.files[0])
       const res = await fetch(`${API}/programa`, { method: "PUT", body: fd })
@@ -289,9 +292,15 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
               <Input type="date" value={comFecha} onChange={(e) => setComFecha(e.target.value)} className="h-8 w-auto" />
             </label>
             <label className="text-xs flex items-center gap-1 cursor-pointer text-slate-600">
-              Evidencia <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" accept="image/*,.pdf,.ppt,.pptx" className="text-xs" />
+              Archivo <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" className="text-xs" />
             </label>
-            {prog.comunicado_url && <a href={prog.comunicado_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.comunicado_nombre || "ver evidencia"}</a>}
+            {prog.comunicado_url && <a href={prog.comunicado_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.comunicado_nombre || "ver archivo"}</a>}
+          </div>
+          <p className="text-[10px] text-slate-400 -mt-1">Se acepta cualquier formato: foto, PDF, Word/Excel, PPT, etc.</p>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs shrink-0">Link</Label>
+            <Input value={comLink} onChange={(e) => setComLink(e.target.value)} placeholder="https://… (mail, video de YouTube/Drive, etc.)" className="h-8 text-xs" />
+            {prog.comunicado_link && <a href={prog.comunicado_link} target="_blank" rel="noopener" className="text-xs text-violet-700 underline shrink-0">abrir</a>}
           </div>
           <Textarea value={comNota} onChange={(e) => setComNota(e.target.value)} rows={2} placeholder="Nota: cómo/cuándo se comunicó (reunión, grupo, cartelera…)" className="text-xs" />
         </div>

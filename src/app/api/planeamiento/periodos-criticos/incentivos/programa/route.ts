@@ -60,6 +60,7 @@ export async function PUT(req: NextRequest) {
     patch.comunicado_fecha = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null
   }
   if (fd.has("comunicado_nota")) patch.comunicado_nota = String(fd.get("comunicado_nota") ?? "") || null
+  if (fd.has("comunicado_link")) patch.comunicado_link = String(fd.get("comunicado_link") ?? "").trim() || null
 
   async function subir(file: File, sufijo: string) {
     const path = `${PREFIJO}/${sufijo}-${Date.now()}-${cleanFileName(file.name)}`
