@@ -11,6 +11,7 @@ import {
   CalendarRange,
   CalendarCheck,
   Boxes,
+  PackageCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -33,8 +34,12 @@ const items = [
   { label: "Mis tareas", href: "/mis-tareas", icon: ClipboardList },
 ]
 
-export function EmpleadoNav() {
+export function EmpleadoNav({ puedeRecepcion = false }: { puedeRecepcion?: boolean }) {
   const pathname = usePathname()
+  // Solo maquinistas/almacén habilitados ven la Recepción de acarreos.
+  const navItems = puedeRecepcion
+    ? [...items, { label: "Recepción", href: "/recepcion", icon: PackageCheck }]
+    : items
 
   async function handleLogout() {
     const supabase = createClient()
@@ -46,7 +51,7 @@ export function EmpleadoNav() {
     <nav className="sticky top-0 z-10 border-b bg-white">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 py-2 md:px-6">
         <div className="flex flex-1 items-center gap-1 overflow-x-auto">
-          {items.map((it) => {
+          {navItems.map((it) => {
             const active =
               pathname === it.href ||
               (it.href !== "/" && pathname.startsWith(it.href))

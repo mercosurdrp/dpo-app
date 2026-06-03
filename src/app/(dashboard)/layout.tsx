@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { EmpleadoGuard } from "@/components/layout/empleado-guard"
 import { EmpleadoNav } from "@/components/layout/empleado-nav"
+import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
 import type { Pilar } from "@/types/database"
 
 export default async function DashboardLayout({
@@ -15,13 +16,15 @@ export default async function DashboardLayout({
   await requireAuth()
   const profile = await getProfile()
   const role = profile?.role ?? "viewer"
+  const email = profile?.email ?? null
+  const puedeRecepcion = puedeOperarAcarreo(role, email)
 
   // Empleados: nav superior con tabs, sin sidebar
   if (role === "empleado") {
     return (
       <EmpleadoGuard>
         <div className="min-h-screen bg-slate-50">
-          <EmpleadoNav />
+          <EmpleadoNav puedeRecepcion={puedeRecepcion} />
           <main className="mx-auto max-w-4xl p-4 md:p-6">
             {children}
           </main>
@@ -44,8 +47,8 @@ export default async function DashboardLayout({
   return (
     <NuqsAdapter>
       <div className="flex min-h-screen">
-        <Sidebar role={role} pilares={pilarNav} />
-        <MobileNav role={role} pilares={pilarNav} />
+        <Sidebar role={role} email={email} pilares={pilarNav} />
+        <MobileNav role={role} email={email} pilares={pilarNav} />
         <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-14 md:p-6 md:pt-6">
           {children}
         </main>

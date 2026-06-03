@@ -8,16 +8,18 @@ import { Menu, X, LogOut, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { IS_MISIONES } from "@/lib/empresa"
+import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 import { navItems, adminItems, rrhhSections, type PilarNav } from "./sidebar"
 
 interface MobileNavProps {
   role: UserRole
+  email?: string | null
   pilares?: PilarNav[]
 }
 
-export function MobileNav({ role, pilares = [] }: MobileNavProps) {
+export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
@@ -87,12 +89,14 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
           {/* Main nav items */}
           <div className="space-y-1">
             {navItems
-              .filter(
-                (item) =>
+              .filter((item) => {
+                if (item.pampeanaOnly && IS_MISIONES) return false
+                if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
+                return (
                   !(item.hideForEmpleado && role === "empleado") &&
-                  !(item.pampeanaOnly && IS_MISIONES) &&
-                  (!item.roles || item.roles.includes(role)),
-              )
+                  (!item.roles || item.roles.includes(role))
+                )
+              })
               .map((item) => {
               const isActive =
                 item.href === "/"

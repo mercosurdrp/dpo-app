@@ -40,6 +40,7 @@ import {
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { IS_MISIONES } from "@/lib/empresa"
+import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
 
@@ -56,6 +57,11 @@ export interface NavItem {
    * adminOnly y hideForEmpleado.
    */
   roles?: UserRole[]
+  /**
+   * Visible solo para operadores de Recepción de acarreos (admin/supervisor +
+   * lista blanca de emails). Tiene prioridad sobre roles/hideForEmpleado.
+   */
+  operadorAcarreo?: boolean
 }
 
 export interface NavSection {
@@ -135,6 +141,13 @@ export const navItems: NavItem[] = [
     pampeanaOnly: true,
     roles: ["admin", "supervisor"],
     hideForEmpleado: true,
+  },
+  {
+    label: "Recepción",
+    href: "/recepcion",
+    icon: <Truck className="size-5" />,
+    pampeanaOnly: true,
+    operadorAcarreo: true,
   },
   {
     label: "Presupuesto",
@@ -311,10 +324,11 @@ export interface PilarNav {
 
 interface SidebarProps {
   role: UserRole
+  email?: string | null
   pilares?: PilarNav[]
 }
 
-export function Sidebar({ role, pilares = [] }: SidebarProps) {
+export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
 
@@ -354,12 +368,14 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
         {/* Main nav items */}
         <div className="space-y-1">
           {navItems
-            .filter(
-              (item) =>
+            .filter((item) => {
+              if (item.pampeanaOnly && IS_MISIONES) return false
+              if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
+              return (
                 !(item.hideForEmpleado && role === "empleado") &&
-                !(item.pampeanaOnly && IS_MISIONES) &&
-                (!item.roles || item.roles.includes(role)),
-            )
+                (!item.roles || item.roles.includes(role))
+              )
+            })
             .map((item) => {
             const isActive =
               item.href === "/"
