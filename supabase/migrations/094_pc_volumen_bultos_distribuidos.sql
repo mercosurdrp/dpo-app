@@ -1,12 +1,14 @@
 -- =============================================
--- 094 · Períodos Críticos — volumen = BULTOS DISTRIBUIDOS (Foxtrot)
+-- 094 · Períodos Críticos — 3 variables desde Foxtrot (lo realmente distribuido)
 -- =============================================
--- Cambia la fuente del volumen: en vez del HL facturado (Chess/GESCOM, que
--- incluye mostrador/mayorista/refuerzo), se usa lo realmente ENTREGADO por
--- distribución según Foxtrot (Iguazú + Eldorado juntos, solo entregas
--- SUCCESSFUL), en BULTOS. La columna pc_volumen_diario.bultos_distribuidos la
--- llena el sync de Foxtrot (scripts/sync_foxtrot_bultos). El campo `hl` de la
--- vista pasa a representar BULTOS (el front lo rotula "bultos").
+-- Cambia la fuente de VOLUMEN, CLIENTES y OTIF: en vez de lo facturado
+-- (Chess/GESCOM, que mete mostrador/mayorista/refuerzo) se usa lo realmente
+-- ENTREGADO por distribución según Foxtrot (Iguazú + Eldorado juntos):
+--   • bultos_distribuidos   → `hl` de la vista (rotulado "bultos" en el front)
+--   • clientes_distribuidos → `clientes_dia` (clientes con entrega OK)
+--   • otif_distribuido      → `otif_estimado` (OTIF real = clientes OK / con intento)
+-- Las llena el sync scripts/sync_foxtrot_bultos.py + el cron diario. El
+-- ausentismo sigue del Excel de RRHH (no está en Foxtrot).
 --
 -- Clasificación de volumen en bultos/día: PICO > 3200 · ALTO 3000-3200 ·
 -- MEDIO 2600-3000 · BAJO < 2600.
@@ -15,9 +17,12 @@
 
 BEGIN;
 
--- Columna (ya creada a mano el 2026-06-02; idempotente por las dudas)
+-- Columnas (creadas a mano; idempotentes por las dudas): volumen y clientes
+-- realmente distribuidos según Foxtrot.
 ALTER TABLE pc_volumen_diario
   ADD COLUMN IF NOT EXISTS bultos_distribuidos NUMERIC(12,2);
+ALTER TABLE pc_volumen_diario
+  ADD COLUMN IF NOT EXISTS clientes_distribuidos INT;
 
 -- Nuevos targets de volumen, ahora en bultos/día
 UPDATE pc_umbrales
@@ -41,7 +46,8 @@ crudo AS (SELECT f.anio, f.fecha, EXTRACT(dow FROM f.fecha)::int AS dow, EXTRACT
   COALESCE(h.bultos_distribuidos, 0)::numeric AS hl,
   COALESCE(h.hl_rechazo, r.hl_rech, 0)::numeric AS hl_rechazo,
   COALESCE(NULLIF(h.camiones, 0), v.camiones, 0)::int AS camiones,
-  COALESCE(NULLIF(h.clientes_dia, 0), 0)::int AS clientes_dia,
+  COALESCE(h.clientes_distribuidos, 0)::int AS clientes_dia,
+  h.otif_distribuido AS otif_dist,
   COALESCE(au.pct_ausentismo, 0)::numeric AS pct_ausentismo,
   fer.nombre AS nombre_feriado
   FROM fechas f
@@ -51,8 +57,8 @@ crudo AS (SELECT f.anio, f.fecha, EXTRACT(dow FROM f.fecha)::int AS dow, EXTRACT
   LEFT JOIN pc_ausentismo_mensual au ON au.anio = f.anio AND au.mes = EXTRACT(month FROM f.fecha)::int
   LEFT JOIN pc_feriados fer ON fer.fecha = f.fecha),
 calc AS (SELECT c.*,
-  CASE WHEN c.hl > 0 THEN LEAST(1.0, c.hl_rechazo / c.hl)::numeric ELSE 0 END AS pct_rechazo,
-  CASE WHEN c.hl > 0 THEN GREATEST(0.0, 1 - (c.hl_rechazo / c.hl))::numeric ELSE 1 END AS otif_estimado,
+  (1 - COALESCE(c.otif_dist, 1.0))::numeric AS pct_rechazo,
+  COALESCE(c.otif_dist, 1.0)::numeric AS otif_estimado,
   CASE WHEN c.hl >= (SELECT vol_pico FROM cfg) THEN 'PICO'
        WHEN c.hl >= (SELECT vol_alto FROM cfg) THEN 'ALTO'
        WHEN c.hl >= (SELECT vol_medio FROM cfg) THEN 'MEDIO' ELSE 'BAJO' END AS clasif_vol
@@ -60,7 +66,7 @@ calc AS (SELECT c.*,
 triggers AS (SELECT c.*,
   (c.clasif_vol = 'PICO') AS trigger_vol,
   (c.clientes_dia > (SELECT umbral_clientes FROM cfg)) AS trigger_cli,
-  (c.hl > 0 AND c.otif_estimado < (SELECT otif_min FROM cfg)) AS trigger_otif,
+  (c.otif_dist IS NOT NULL AND c.otif_dist < (SELECT otif_min FROM cfg)) AS trigger_otif,
   (c.pct_ausentismo >= (SELECT ausentismo_max FROM cfg)) AS trigger_aus
   FROM calc c),
 final AS (SELECT t.*,

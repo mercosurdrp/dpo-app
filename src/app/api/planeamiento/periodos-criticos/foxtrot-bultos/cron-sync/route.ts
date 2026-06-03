@@ -27,7 +27,7 @@ const MAX_BACKFILL_DIAS = 90
 type DeliveriesResp = {
   data?: { deliveries?: { quantity?: number; attempts?: { attempt_status?: string }[] }[] }
 }
-type WaypointsResp = { data?: { waypoints?: { waypoint_id?: string }[] } }
+type WaypointsResp = { data?: { waypoints?: { waypoint_id?: string; customer_id?: string }[] } }
 
 // Concurrencia acotada para no saturar Foxtrot (la API falla con cientos en
 // paralelo). Procesa en lotes.
@@ -39,28 +39,48 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R
   return out
 }
 
-async function bultosDelDia(fecha: string): Promise<number> {
-  let total = 0
+// Volumen (bultos), clientes con entrega OK y OTIF (clientes OK / con intento),
+// todo de la misma pasada por las paradas de Iguazú + Eldorado.
+async function resumenDelDia(
+  fecha: string,
+): Promise<{ bultos: number; clientes: number; otif: number | null }> {
+  let bultos = 0
+  const cliOk = new Set<string>()
+  const cliFail = new Set<string>()
   for (const dc of DCS) {
     const rutas = await getRoutesForDc(dc, [fecha])
     for (const r of rutas) {
       const wpRes = await fxFetch<WaypointsResp>(`/dcs/${dc}/routes/${r.id}/waypoints`)
       const wps = wpRes.data?.waypoints ?? []
-      const sums = await mapLimit(wps, 8, async (wp) => {
+      const resu = await mapLimit(wps, 8, async (wp) => {
         const dRes = await fxFetch<DeliveriesResp>(
           `/dcs/${dc}/routes/${r.id}/waypoints/${wp.waypoint_id}/deliveries`,
         )
         const dels = dRes.data?.deliveries ?? []
-        return dels.reduce(
-          (s, it) =>
-            s + (it.attempts?.some((a) => a.attempt_status === "SUCCESSFUL") ? it.quantity ?? 0 : 0),
-          0,
-        )
+        let b = 0
+        let ok = false
+        let fail = false
+        for (const it of dels) {
+          const sts = (it.attempts ?? []).map((a) => a.attempt_status)
+          if (sts.includes("SUCCESSFUL")) {
+            b += it.quantity ?? 0
+            ok = true
+          } else if (sts.includes("FAILED")) {
+            fail = true
+          }
+        }
+        return { b, cid: wp.customer_id, estado: ok ? "ok" : fail ? "fail" : null }
       })
-      total += sums.reduce((a, b) => a + b, 0)
+      for (const x of resu) {
+        bultos += x.b
+        if (x.estado === "ok" && x.cid) cliOk.add(x.cid)
+        else if (x.estado === "fail" && x.cid) cliFail.add(x.cid)
+      }
     }
   }
-  return total
+  for (const c of cliOk) cliFail.delete(c) // cliente con algún OK cuenta como OK
+  const denom = cliOk.size + cliFail.size
+  return { bultos, clientes: cliOk.size, otif: denom ? cliOk.size / denom : null }
 }
 
 function rango(desde: string, hasta: string): string[] {
@@ -95,15 +115,21 @@ async function handle(request: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const resultado: Record<string, number> = {}
+  const resultado: Record<string, { bultos: number; clientes: number; otif: number | null }> = {}
   for (const f of fechas) {
     if (new Date(f + "T00:00:00Z").getUTCDay() === 0) continue // domingo
-    const bultos = await bultosDelDia(f)
+    const { bultos, clientes, otif } = await resumenDelDia(f)
+    const row: Record<string, unknown> = {
+      fecha: f,
+      bultos_distribuidos: Math.round(bultos * 100) / 100,
+      clientes_distribuidos: clientes,
+    }
+    if (otif !== null) row.otif_distribuido = Math.round(otif * 10000) / 10000
     const { error } = await supabase
       .from("pc_volumen_diario")
-      .upsert({ fecha: f, bultos_distribuidos: Math.round(bultos * 100) / 100 }, { onConflict: "fecha" })
+      .upsert(row, { onConflict: "fecha" })
     if (error) return NextResponse.json({ error: error.message, hasta: f }, { status: 500 })
-    resultado[f] = bultos
+    resultado[f] = { bultos, clientes, otif }
   }
   return NextResponse.json({ ok: true, dias: resultado })
 }
