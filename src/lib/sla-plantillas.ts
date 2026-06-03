@@ -199,4 +199,37 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Vigencia de 1 año desde la fecha de firma, o si cambia el procedimiento de tratamiento del volumen no ruteado.",
     firmantes: ["Jefe de Logística", "Jefe de Ventas"],
   },
+
+  alm_recepcion: {
+    objeto:
+      "Acuerdo de nivel de servicio entre Almacén y el equipo de Acarreo / Abastecimiento para la recepción de la mercadería. Almacén se compromete a recibir y descargar los camiones de abastecimiento dentro de una ventana horaria y un tiempo de descarga pactados, de modo de asegurar la disponibilidad de stock sin demorar al transporte.",
+    nivelServicio: [
+      "Ventana de recepción: los camiones de Acarreo / Abastecimiento se reciben de 07:00 a 17:00 hs.",
+      "Tiempo de descarga: Almacén se compromete a descargar cada camión dentro de las 2 horas posteriores a su arribo.",
+      "Una recepción cumple si el camión arriba dentro de la ventana (07:00–17:00) y su descarga finaliza dentro de las 2 horas siguientes al arribo.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de las recepciones.",
+    ],
+    medicion: [
+      "La medición se realiza a partir del registro de arribo y de inicio/fin de descarga de cada camión de abastecimiento.",
+      "Una recepción cumple si: (a) el arribo ocurre entre las 07:00 y las 17:00 hs, y (b) el tiempo transcurrido entre el arribo y el fin de descarga es menor o igual a 2 horas.",
+      "El indicador mensual se calcula como: recepciones cumplidas ÷ recepciones registradas.",
+      "Pendiente: la herramienta para que el acarreo se anuncie al llegar y marque el inicio y la finalización de la descarga está en diseño. Hasta su puesta en marcha, el seguimiento del cumplimiento se realiza de forma manual.",
+    ],
+    roles: [
+      {
+        label: "Responsable de medir",
+        valor:
+          "Responsable de recepción de Almacén (registra el arribo y el fin de descarga de cada camión).",
+      },
+      {
+        label: "Responsable de actuar / seguimiento",
+        valor: "Supervisor de Almacén.",
+      },
+    ],
+    gestionIncumplimiento:
+      "Ante un incumplimiento se registra una tarea en el Action Log de las reuniones de forma manual, con su responsable y plan de acción.",
+    vigencia:
+      "Vigencia de 1 año desde la fecha de firma, salvo que se modifique la ventana horaria de recepción o el tiempo de descarga comprometido, en cuyo caso se revisa de inmediato.",
+    firmantes: ["Supervisor de Almacén", "Responsable de Acarreo / Abastecimiento"],
+  },
 }
