@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition, type ReactNode } from "react"
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
   Loader2,
@@ -64,6 +64,23 @@ const fechaCorta = (f: string) => {
 const nf = (v: number, dec = 0) =>
   v.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
+// Carga de un viaje (fin de carga en el WMS), para cruzar por patente + fecha.
+export interface CargaViaje {
+  fecha: string // YYYY-MM-DD
+  patente: string // normalizada (trim + mayúsculas)
+  hora: string // HH:mm:ss (fin de carga)
+}
+
+// Clave del índice de carga: fecha + patente normalizada.
+const cargaKey = (fecha: string, patente: string) =>
+  `${fecha}|${patente.trim().toUpperCase()}`
+
+// Lista de horas de carga 'HH:mm:ss' -> 'HH:mm / HH:mm' (únicas, ordenadas).
+const horasCargaFmt = (horas: string[]) =>
+  Array.from(new Set(horas.map((h) => h.slice(0, 5))))
+    .sort()
+    .join(" / ")
+
 const FORM_INICIAL = {
   pergamino_bultos: "",
   pergamino_clientes: "",
@@ -77,10 +94,12 @@ export function RuteoClient({
   diaInicial,
   historialInicial,
   errorInicial,
+  cargaInicial,
 }: {
   diaInicial: RuteoCierre | null
   historialInicial: RuteoCierre[]
   errorInicial: string | null
+  cargaInicial: CargaViaje[]
 }) {
   const [dia, setDia] = useState<RuteoCierre | null>(diaInicial)
   const [historial, setHistorial] = useState<RuteoCierre[]>(historialInicial)
@@ -92,6 +111,19 @@ export function RuteoClient({
   const [sel, setSel] = useState<RuteoCierre | null>(historialInicial[0] ?? null)
   const [ocup, setOcup] = useState<OBResumenDia | null>(null)
   const [loadingOcup, startOcup] = useTransition()
+
+  // Índice de horas de carga por (fecha + patente). Un viaje puede cargarse
+  // más de una vez en el día, por eso guardamos una lista de horas.
+  const cargaIndex = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const c of cargaInicial) {
+      const k = cargaKey(c.fecha, c.patente)
+      const arr = m.get(k)
+      if (arr) arr.push(c.hora)
+      else m.set(k, [c.hora])
+    }
+    return m
+  }, [cargaInicial])
 
   // Cargar camiones del día seleccionado.
   useEffect(() => {
@@ -282,6 +314,7 @@ export function RuteoClient({
           dia={sel}
           ocup={ocup}
           loading={loadingOcup}
+          cargaIndex={cargaIndex}
           onClose={() => setSel(null)}
         />
       )}
@@ -623,11 +656,13 @@ function PanelDetalleDia({
   dia,
   ocup,
   loading,
+  cargaIndex,
   onClose,
 }: {
   dia: RuteoCierre
   ocup: OBResumenDia | null
   loading: boolean
+  cargaIndex: Map<string, string[]>
   onClose: () => void
 }) {
   const totalBultos = dia.pergamino_bultos + dia.ramallo_bultos
@@ -733,10 +768,13 @@ function PanelDetalleDia({
                   <TableHead className="text-right">SKUs</TableHead>
                   <TableHead className="text-right">CEq</TableHead>
                   <TableHead className="text-center">Ocupación</TableHead>
+                  <TableHead className="text-center">Hora de carga</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {viajes.map((v) => (
+                {viajes.map((v) => {
+                  const horas = cargaIndex.get(cargaKey(dia.fecha, v.patente))
+                  return (
                   <TableRow key={v.patente}>
                     <TableCell className="font-medium text-slate-900">
                       {v.patente}
@@ -759,8 +797,18 @@ function PanelDetalleDia({
                     <TableCell className="text-center">
                       <OcupBadge pct={v.ob_pct} />
                     </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {horas && horas.length > 0 ? (
+                        <span className="font-medium text-slate-900">
+                          {horasCargaFmt(horas)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           </div>

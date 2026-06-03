@@ -175,14 +175,6 @@ export const navItems: NavItem[] = [
     hideForEmpleado: true,
   },
   {
-    label: "Carga de camiones",
-    href: "/carga-camiones",
-    icon: <Truck className="size-5" />,
-    pampeanaOnly: true,
-    roles: ["admin", "supervisor"],
-    hideForEmpleado: true,
-  },
-  {
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
