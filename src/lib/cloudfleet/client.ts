@@ -31,20 +31,34 @@ function apiKey(): string {
   return key
 }
 
+/** El día siguiente a `fechaISO` (YYYY-MM-DD). */
+function diaSiguiente(fechaISO: string): string {
+  const d = new Date(`${fechaISO}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 /**
  * Lista todos los checklists en [desde, hasta] (YYYY-MM-DD, filtro por
  * checklistDate). Pagina de a 50 (page=N) hasta agotar.
+ *
+ * 🚨 El parámetro `checklistDateTo` de Cloudfleet es EXCLUSIVO: el día indicado
+ * NO se incluye (igual que el `fechahasta` de GESCOM). Para que `hasta` sea
+ * inclusivo —en particular para traer el día de HOY, sin lo cual los checks no
+ * aparecían hasta el cron de la madrugada siguiente (~24h de retraso)— se pide
+ * el día siguiente como tope.
  */
 export async function fetchChecklists(
   desde: string,
   hasta: string,
 ): Promise<CloudfleetChecklist[]> {
   const key = apiKey()
+  const hastaExclusivo = diaSiguiente(hasta)
   const out: CloudfleetChecklist[] = []
   for (let page = 1; page <= 200; page++) {
     const url =
       `${BASE_URL}/checklist/?checklistDateFrom=${desde}` +
-      `&checklistDateTo=${hasta}&page=${page}`
+      `&checklistDateTo=${hastaExclusivo}&page=${page}`
     const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${key}`,
