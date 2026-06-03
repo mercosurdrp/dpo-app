@@ -13,5 +13,11 @@ export default async function RecepcionPage() {
   if (!puedeOperarAcarreo(profile.role, profile.email)) redirect("/")
 
   const r = await getPendientesAcarreo()
-  return <RecepcionClient inicial={"data" in r ? r.data : []} errorInicial={"error" in r ? r.error : null} />
+  return (
+    <RecepcionClient
+      inicial={"data" in r ? r.data : []}
+      errorInicial={"error" in r ? r.error : null}
+      esAdmin={profile.role === "admin"}
+    />
+  )
 }

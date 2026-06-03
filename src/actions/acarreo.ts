@@ -19,8 +19,9 @@ export interface RecepcionPendiente {
   origen: string | null
   remito: string | null
   pallets: number | null
-  estado: "anunciado" | "descargando"
+  estado: "anunciado" | "ingresado" | "descargando"
   hora_arribo: string
+  hora_ingreso_deposito: string | null
   hora_inicio_descarga: string | null
 }
 
@@ -36,8 +37,8 @@ export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[
 
     const { data, error } = await acarreo
       .from("recepcion_acarreos")
-      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_inicio_descarga")
-      .in("estado", ["anunciado", "descargando"])
+      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_ingreso_deposito, hora_inicio_descarga")
+      .in("estado", ["anunciado", "ingresado", "descargando"])
       .order("hora_arribo", { ascending: true })
 
     if (error) return { error: error.message }
@@ -73,4 +74,30 @@ export async function iniciarDescargaAcarreo(id: string) {
 
 export async function finalizarDescargaAcarreo(id: string) {
   return operarRecepcion(id, "finalizado")
+}
+
+// El ingreso a depósito y el borrado de un arribo: SOLO admin de dpo-app.
+export async function ingresarDepositoAcarreo(id: string): Promise<{ error?: string }> {
+  const profile = await requireAuth()
+  if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
+  if (profile.role !== "admin") return { error: "Solo un administrador puede dar el ingreso a depósito." }
+  const acarreo = createAcarreoClient()
+  if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
+  const { error } = await acarreo
+    .from("recepcion_acarreos")
+    .update({ estado: "ingresado", registrado_por: profile.email })
+    .eq("id", id)
+  if (error) return { error: error.message }
+  return {}
+}
+
+export async function borrarRecepcionAcarreo(id: string): Promise<{ error?: string }> {
+  const profile = await requireAuth()
+  if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
+  if (profile.role !== "admin") return { error: "Solo un administrador puede borrar un arribo." }
+  const acarreo = createAcarreoClient()
+  if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
+  const { error } = await acarreo.from("recepcion_acarreos").delete().eq("id", id)
+  if (error) return { error: error.message }
+  return {}
 }

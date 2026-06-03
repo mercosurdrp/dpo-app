@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2 } from "lucide-react"
+import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2 } from "lucide-react"
 import {
   getPendientesAcarreo,
+  ingresarDepositoAcarreo,
   iniciarDescargaAcarreo,
   finalizarDescargaAcarreo,
+  borrarRecepcionAcarreo,
   type RecepcionPendiente,
 } from "@/actions/acarreo"
 
@@ -40,9 +42,11 @@ function horaHHmm(iso: string | null): string {
 export function RecepcionClient({
   inicial,
   errorInicial,
+  esAdmin = false,
 }: {
   inicial: RecepcionPendiente[]
   errorInicial: string | null
+  esAdmin?: boolean
 }) {
   const [rows, setRows] = useState<RecepcionPendiente[]>(inicial)
   const [now, setNow] = useState(() => Date.now())
@@ -93,7 +97,8 @@ export function RecepcionClient({
             const estadiaMin = Math.round((now - new Date(r.hora_arribo).getTime()) / 60000)
             const color = semaforo(estadiaMin)
             const c = ESTILO[color]
-            const descargando = r.estado === "descargando"
+            const estadoLabel =
+              r.estado === "descargando" ? "Descargando" : r.estado === "ingresado" ? "En depósito" : "Anunciado"
             return (
               <div key={r.id} className={`rounded-xl border p-4 shadow-sm ${c.card}`}>
                 <div className="flex items-start justify-between">
@@ -102,7 +107,7 @@ export function RecepcionClient({
                     <span className="text-lg font-bold tracking-tight text-slate-900">{r.patente}</span>
                   </div>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c.chip}`}>
-                    {descargando ? "Descargando" : "Anunciado"}
+                    {estadoLabel}
                   </span>
                 </div>
 
@@ -116,14 +121,35 @@ export function RecepcionClient({
 
                 <div className="mt-3 space-y-1 text-sm text-slate-600">
                   <Linea icon={<Clock className="size-3.5" />} t={`Arribo ${horaHHmm(r.hora_arribo)}`} />
+                  {r.hora_ingreso_deposito && <Linea icon={<LogIn className="size-3.5" />} t={`Ingreso ${horaHHmm(r.hora_ingreso_deposito)}`} />}
                   {r.transportista && <Linea icon={<Truck className="size-3.5" />} t={r.transportista} />}
                   {r.origen && <Linea icon={<MapPin className="size-3.5" />} t={r.origen} />}
                   {r.remito && <Linea icon={<FileText className="size-3.5" />} t={`Remito ${r.remito}`} />}
                   {r.pallets != null && <Linea icon={<Package className="size-3.5" />} t={`${r.pallets} pallets`} />}
                 </div>
 
-                <div className="mt-4">
-                  {!descargando ? (
+                <div className="mt-4 flex gap-2">
+                  {r.estado === "anunciado" && esAdmin && (
+                    <button
+                      disabled={pending}
+                      onClick={() =>
+                        start(async () => {
+                          const res = await ingresarDepositoAcarreo(r.id)
+                          if (res.error) toast.error(res.error)
+                          await refrescar()
+                        })
+                      }
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-60"
+                    >
+                      <LogIn className="size-4" /> Ingreso a depósito
+                    </button>
+                  )}
+                  {r.estado === "anunciado" && !esAdmin && (
+                    <span className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs italic text-slate-500">
+                      Esperando ingreso a depósito (admin)
+                    </span>
+                  )}
+                  {r.estado === "ingresado" && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -133,11 +159,12 @@ export function RecepcionClient({
                           await refrescar()
                         })
                       }
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
                     >
                       <PlayCircle className="size-4" /> Iniciar descarga
                     </button>
-                  ) : (
+                  )}
+                  {r.estado === "descargando" && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -147,9 +174,26 @@ export function RecepcionClient({
                           await refrescar()
                         })
                       }
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
                     >
                       <CheckCircle2 className="size-4" /> Finalizar
+                    </button>
+                  )}
+                  {esAdmin && (
+                    <button
+                      disabled={pending}
+                      title="Borrar arribo"
+                      onClick={() =>
+                        start(async () => {
+                          if (!window.confirm(`¿Borrar el arribo de ${r.patente}?`)) return
+                          const res = await borrarRecepcionAcarreo(r.id)
+                          if (res.error) toast.error(res.error)
+                          await refrescar()
+                        })
+                      }
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      <Trash2 className="size-4" />
                     </button>
                   )}
                 </div>
