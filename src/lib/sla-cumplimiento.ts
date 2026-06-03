@@ -18,6 +18,14 @@ export const SLA_PUSHED_TARGET = 95
 export const SLA_RECEPCION_NOMBRE = "Recepción de abastecimiento (acarreos)"
 export const SLA_RECEPCION_TARGET = 95
 
+export const SLA_CARGA_NOMBRE = "SLA de carga (reducir retrasos)"
+export const SLA_CARGA_TARGET = 95
+// Hora límite ARG de carga: todos los camiones ruteados el día D deben quedar
+// cargados antes de las 07:00 del día de reparto (D+1). El blob de carga trae
+// fecha ('YYYY-MM-DD') y hora ('HH:mm:ss') ya en hora Argentina, así que el
+// corte se compara directo por string.
+export const CARGA_LIMITE_HORA = "07:00:00"
+
 // --- SLA #7 recepción: ventana de arribo + tiempo de descarga --------------
 // La recepción opera 07:00–17:00, pero el cumplimiento de descarga ≤ 2 h se
 // EXIGE solo a los arribos dentro de la ventana 08:00–16:00 (ARG). Los arribos

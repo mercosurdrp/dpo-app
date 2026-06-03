@@ -243,10 +243,10 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Objetivo de cumplimiento mensual: ≥ 95 % de los días.",
     ],
     medicion: [
-      "La medición se realiza a partir del módulo Ruteo de la plataforma DPO, tomando la hora en que cada camión queda cargado.",
-      "Un día cumple si todos los camiones ruteados ese día quedaron cargados antes de las 23:59 hs.",
+      "La medición es automática a partir del módulo Ruteo de la plataforma DPO, tomando la hora en que cada camión queda cargado (dato del WMS).",
+      "Un día cumple si todos los camiones ruteados ese día quedaron cargados antes de las 07:00 hs del día de reparto (es decir, ese mismo día o antes de las 07:00 hs del día siguiente).",
       "El indicador mensual se calcula como: días cumplidos ÷ días con ruteo registrado.",
-      "Pendiente: el registro de la hora de carga de cada camión en el módulo Ruteo está en desarrollo. Hasta su puesta en marcha, el seguimiento del cumplimiento se realiza de forma manual.",
+      "El detalle por camión (hora de carga de cada patente) puede consultarse en el módulo Ruteo y en la pestaña Cumplimientos al hacer clic en el día.",
     ],
     roles: [
       {

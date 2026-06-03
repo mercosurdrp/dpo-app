@@ -15,6 +15,9 @@ import {
   SLA_PUSHED_TARGET,
   SLA_RECEPCION_NOMBRE,
   SLA_RECEPCION_TARGET,
+  SLA_CARGA_NOMBRE,
+  SLA_CARGA_TARGET,
+  CARGA_LIMITE_HORA,
   CAPACIDAD_MIN_PCT,
   cumpleRecepcion,
   type CumplimientoMes,
@@ -660,11 +663,163 @@ async function filaRecepcion(
   return { ...base, porcentaje, cumplidos, totalAplica, dias }
 }
 
+// ===========================================================================
+// SLA de carga (alm_carga) — todos los camiones ruteados el día D quedan
+// cargados antes de las 07:00 ARG del día de reparto (D+1).
+// Camiones ruteados = patentes de ocupacion_bodega_diaria(D). Hora de carga =
+// blob 'carga-camiones' del WMS (mismo que muestra /ruteo y /carga-camiones).
+// ===========================================================================
+
+const CARGA_BLOB_URL =
+  "https://deposito-esteban.vercel.app/api/shared/load?module=carga-camiones"
+
+interface CargaFila {
+  fecha: string // YYYY-MM-DD (ARG)
+  hora: string // HH:mm:ss (ARG, fin de carga)
+  patente: string // normalizada (trim + mayúsculas)
+}
+
+/** Trae las filas de carga del blob. `null` si la fuente no está disponible. */
+async function fetchCargaFilas(): Promise<CargaFila[] | null> {
+  try {
+    const res = await fetch(CARGA_BLOB_URL, { cache: "no-store" })
+    if (!res.ok) return null
+    const json = (await res.json()) as { data?: { filas?: any[] } | null }
+    const filas = Array.isArray(json?.data?.filas) ? json.data!.filas! : []
+    return filas
+      .filter((f) => f?.patente && f.patente !== "0" && f?.fecha && f?.hora)
+      .map((f) => ({
+        fecha: String(f.fecha),
+        hora: String(f.hora),
+        patente: String(f.patente).trim().toUpperCase(),
+      }))
+  } catch {
+    return null
+  }
+}
+
+/** Índice patente → eventos de carga, para cruzar contra los camiones ruteados. */
+function buildCargaIdx(filas: CargaFila[]): Map<string, CargaFila[]> {
+  const m = new Map<string, CargaFila[]>()
+  for (const f of filas) {
+    const arr = m.get(f.patente)
+    if (arr) arr.push(f)
+    else m.set(f.patente, [f])
+  }
+  return m
+}
+
+/** 'YYYY-MM-DD' + 1 día (sin corrimiento por TZ). */
+function nextISO(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+}
+
+/**
+ * ¿Ya venció el plazo de carga del día `iso`? El corte es 07:00 ARG del día
+ * siguiente = 10:00 UTC de D+1. Antes de eso el día no es medible aún.
+ */
+function plazoCargaVencido(iso: string, nowMs: number): boolean {
+  const [y, m, d] = iso.split("-").map(Number)
+  return nowMs >= Date.UTC(y, m - 1, d + 1, 10, 0, 0)
+}
+
+/** ¿La patente quedó cargada a tiempo para el reparto del día siguiente a D? */
+function cargadaATiempo(
+  eventos: CargaFila[] | undefined,
+  isoD: string,
+  isoNext: string,
+): boolean {
+  if (!eventos) return false
+  return eventos.some(
+    (e) => e.fecha === isoD || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
+  )
+}
+
+/**
+ * Fila del SLA de carga (`alm_carga`). Un día cumple si TODAS las patentes
+ * ruteadas (ocupacion_bodega_diaria) quedaron cargadas a tiempo. Si el blob no
+ * está disponible, o el plazo aún no venció, el día queda "sin dato".
+ */
+async function filaCarga(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+  cargaIdx: Map<string, CargaFila[]> | null,
+): Promise<CumplimientoSlaFila> {
+  const base = {
+    codigo: "alm_carga",
+    nombre: SLA_CARGA_NOMBRE,
+    target: SLA_CARGA_TARGET,
+  }
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ocupacion_bodega_diaria")
+    .select("fecha, patente")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+    .gt("ceq_total", 0)
+
+  // día → patentes ruteadas ese día
+  const patentesPorDia = new Map<number, Set<string>>()
+  for (const row of (data ?? []) as any[]) {
+    if (!row.patente) continue
+    const dia = Number((row.fecha as string).slice(8, 10))
+    const set = patentesPorDia.get(dia) ?? new Set<string>()
+    set.add(String(row.patente).trim().toUpperCase())
+    patentesPorDia.set(dia, set)
+  }
+
+  const nowMs = Date.now()
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    if (dowFromISO(iso) === 0) {
+      dias.push("na") // domingo: no se rutea
+      continue
+    }
+    const routed = patentesPorDia.get(d)
+    if (!routed || routed.size === 0) {
+      dias.push("sd") // sin camiones ruteados registrados / futuro
+      continue
+    }
+    if (cargaIdx === null || !plazoCargaVencido(iso, nowMs)) {
+      dias.push("sd") // fuente no disponible o plazo (07:00 del día sgte.) aún no vencido
+      continue
+    }
+    const isoNext = nextISO(iso)
+    let todasOk = true
+    for (const p of routed) {
+      if (!cargadaATiempo(cargaIdx.get(p), iso, isoNext)) {
+        todasOk = false
+        break
+      }
+    }
+    totalAplica++
+    if (todasOk) cumplidos++
+    dias.push(todasOk ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return { ...base, porcentaje, cumplidos, totalAplica, dias }
+}
+
 /**
  * Cumplimiento de los SLA medibles para un mes (year, month=1..12), como
  * matriz: una fila por SLA, una columna por día. Tiempo de ruteo, entrega de
- * preventa (Ventas↔Operaciones), capacidad del camión, volumen no ruteado y
- * recepción de acarreos. Días en curso/sin registro = "sin dato".
+ * preventa (Ventas↔Operaciones), capacidad del camión, volumen no ruteado,
+ * carga de camiones y recepción de acarreos. Días en curso/sin registro = "sin dato".
  */
 export async function getCumplimientoMes(
   year: number,
@@ -682,11 +837,16 @@ export async function getCumplimientoMes(
     // Cantidad de días del mes (day 0 del mes siguiente = último del actual).
     const diasDelMes = new Date(Date.UTC(year, month, 0)).getUTCDate()
 
+    // Carga de camiones: se lee el blob una vez y se indexa por patente.
+    const cargaFilas = await fetchCargaFilas()
+    const cargaIdx = cargaFilas ? buildCargaIdx(cargaFilas) : null
+
     const filas: CumplimientoSlaFila[] = [
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
+      await filaCarga(supabase, year, month, diasDelMes, cargaIdx),
       await filaRecepcion(year, month, diasDelMes),
     ]
 
@@ -957,6 +1117,72 @@ export async function getDetalleDiaSla(
           filas,
           nota,
         },
+      }
+    }
+
+    if (codigo === "alm_carga") {
+      const metaLabel = "Cargados antes de las 07:00 del día de reparto"
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      let valorLabel = "—"
+      const filas: { label: string; valor: string }[] = []
+
+      if (dow === 0) {
+        estado = "na"
+        nota = "Domingo: no se rutea."
+        return {
+          data: { codigo, nombre: SLA_CARGA_NOMBRE, fecha, diaSemana, estado, metaLabel, valorLabel, filas, nota },
+        }
+      }
+
+      const { data } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("patente, ceq_total")
+        .eq("fecha", fecha)
+        .gt("ceq_total", 0)
+        .order("ceq_total", { ascending: false })
+      const rows = (data ?? []) as any[]
+
+      const cargaFilas = await fetchCargaFilas()
+
+      if (rows.length === 0) {
+        estado = "sd"
+        nota = "Sin camiones ruteados registrados este día (depende del sync de Chess)."
+      } else if (cargaFilas === null) {
+        estado = "sd"
+        nota = "No se pudo leer la carga de camiones del WMS."
+      } else if (!plazoCargaVencido(fecha, Date.now())) {
+        estado = "sd"
+        nota = "El plazo de carga (07:00 del día de reparto) todavía no venció."
+      } else {
+        const idx = buildCargaIdx(cargaFilas)
+        const isoNext = nextISO(fecha)
+        let aTiempo = 0
+        for (const r of rows) {
+          const p = String(r.patente ?? "").trim().toUpperCase()
+          const eventos = idx.get(p)
+          const okEvt = eventos?.find(
+            (e) => e.fecha === fecha || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
+          )
+          if (okEvt) {
+            aTiempo++
+            const prefijo = okEvt.fecha === isoNext ? "D+1 " : ""
+            filas.push({ label: String(r.patente ?? "—"), valor: `${prefijo}${okEvt.hora.slice(0, 5)} ✓` })
+          } else {
+            // ¿cargó tarde (D+1 ≥ 07:00) o directamente no figura?
+            const tarde = eventos?.find((e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA)
+            filas.push({
+              label: String(r.patente ?? "—"),
+              valor: tarde ? `${tarde.hora.slice(0, 5)} (tarde) ✗` : "sin carga ✗",
+            })
+          }
+        }
+        estado = aTiempo === rows.length ? "si" : "no"
+        valorLabel = `${aTiempo}/${rows.length} a tiempo`
+      }
+
+      return {
+        data: { codigo, nombre: SLA_CARGA_NOMBRE, fecha, diaSemana, estado, metaLabel, valorLabel, filas, nota },
       }
     }
 

@@ -23,6 +23,8 @@ import {
   Target,
   ChevronLeft,
   ChevronRight,
+  Search,
+  Menu,
   LogOut,
   CalendarRange,
   UserCog,
@@ -326,6 +328,28 @@ interface SidebarProps {
 export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  // Ocultar por completo la columna (estilo app de depósito).
+  const [hidden, setHidden] = useState(false)
+  // Búsqueda de pestañas (hay muchas).
+  const [query, setQuery] = useState("")
+  // Con el menú angosto no hay lugar para la búsqueda: no se filtra.
+  const q = collapsed ? "" : query.trim().toLowerCase()
+  const matchQ = (label: string) => !q || label.toLowerCase().includes(q)
+  const buscando = q.length > 0
+
+  // Columna oculta: solo queda un botón flotante para volver a mostrarla.
+  if (hidden) {
+    return (
+      <button
+        onClick={() => setHidden(false)}
+        aria-label="Mostrar menú"
+        title="Mostrar menú"
+        className="fixed left-3 top-3 z-50 hidden rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-md transition-colors hover:bg-slate-100 md:block"
+      >
+        <Menu className="size-5" />
+      </button>
+    )
+  }
 
   return (
     <aside
@@ -356,7 +380,33 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             </p>
           </div>
         )}
+        {!collapsed && (
+          <button
+            onClick={() => setHidden(true)}
+            aria-label="Ocultar menú"
+            title="Ocultar menú"
+            className="ml-auto rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+        )}
       </div>
+
+      {/* Buscador de pestañas */}
+      {!collapsed && (
+        <div className="border-b border-white/10 px-3 py-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar pestaña…"
+              className="w-full rounded-lg bg-white/5 py-2 pl-8 pr-2 text-sm text-white placeholder:text-slate-500 outline-none focus:bg-white/10 focus:ring-1 focus:ring-white/20"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
@@ -364,6 +414,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
         <div className="space-y-1">
           {navItems
             .filter((item) => {
+              if (!matchQ(item.label)) return false
               if (item.pampeanaOnly && IS_MISIONES) return false
               if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
               return (
@@ -400,7 +451,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
         </div>
 
         {/* Pilares section */}
-        {pilares.length > 0 && (
+        {pilares.some((p) => matchQ(p.nombre)) && (
           <div className="mt-5">
             {!collapsed && (
               <div className="px-3 pb-2">
@@ -410,7 +461,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
               </div>
             )}
             <div className="space-y-0.5">
-              {pilares.map((pilar) => {
+              {pilares.filter((p) => matchQ(p.nombre)).map((pilar) => {
                 const pilarPath = `/pilares/${pilar.id}`
                 const isActive = pathname.startsWith(pilarPath)
 
@@ -442,6 +493,11 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
         {/* RRHH sections (filtran por rol) */}
         {rrhhSections
           .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
+          .filter((sec) =>
+            sec.items.some(
+              (item) => !(item.pampeanaOnly && IS_MISIONES) && matchQ(item.label),
+            ),
+          )
           .map((sec) => (
             <div key={sec.title} className="mt-5">
               {!collapsed && (
@@ -453,7 +509,10 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
               )}
               <div className="space-y-1">
                 {sec.items
-                  .filter((item) => !(item.pampeanaOnly && IS_MISIONES))
+                  .filter(
+                    (item) =>
+                      !(item.pampeanaOnly && IS_MISIONES) && matchQ(item.label),
+                  )
                   .map((item) => {
                   const isActive = pathname.startsWith(item.href)
                   return (
@@ -477,7 +536,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
           ))}
 
         {/* Admin section */}
-        {role === "admin" && (
+        {role === "admin" && adminItems.some((item) => matchQ(item.label)) && (
           <div className="mt-5">
             {!collapsed && (
               <div className="px-3 pb-2">
@@ -488,7 +547,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
               </div>
             )}
             <div className="space-y-1">
-              {adminItems.map((item) => {
+              {adminItems.filter((item) => matchQ(item.label)).map((item) => {
                 const isActive = pathname.startsWith(item.href)
 
                 return (
@@ -510,6 +569,17 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             </div>
           </div>
         )}
+
+        {/* Sin resultados de búsqueda */}
+        {buscando &&
+          !navItems.some((i) => matchQ(i.label)) &&
+          !pilares.some((p) => matchQ(p.nombre)) &&
+          !rrhhSections.some((s) => s.items.some((i) => matchQ(i.label))) &&
+          !adminItems.some((i) => matchQ(i.label)) && (
+            <p className="px-3 py-6 text-center text-xs text-slate-500">
+              Sin resultados para “{query.trim()}”
+            </p>
+          )}
       </nav>
 
       {/* Notificaciones + Logout + Collapse */}
