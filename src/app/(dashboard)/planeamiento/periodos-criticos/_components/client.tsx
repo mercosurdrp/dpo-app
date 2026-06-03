@@ -204,7 +204,7 @@ function DiaCell({ d }: { d: DiaCalendario | null }) {
             <div className="text-yellow-700 font-medium">★ {d.nombre_feriado}</div>
           )}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 border-t border-slate-200">
-            <span>HL:</span><span className="text-right"><b>{fmtHL(d.hl)}</b> · {d.clasif_vol}</span>
+            <span>Bultos:</span><span className="text-right"><b>{fmtHL(d.hl)}</b> · {d.clasif_vol}</span>
             <span>Clientes:</span><span className="text-right"><b>{d.clientes_dia}</b></span>
             <span>OTIF est:</span><span className="text-right"><b>{fmtPct(d.otif_estimado)}</b></span>
             <span>Ausentismo:</span><span className="text-right"><b>{fmtPct(d.pct_ausentismo)}</b></span>
@@ -442,9 +442,9 @@ function UmbralesInlineCard({ umbrales }: { umbrales: UmbralesPC }) {
       <CardContent className="p-3">
         <div className="flex flex-wrap items-end gap-2">
           <div className="text-xs font-semibold text-slate-700 mr-1">Targets (1 variable cuenta si cruza):</div>
-          <UInput label="Vol PICO ≥" value={vp} onChange={setVP} step={50} suffix="HL" />
-          <UInput label="Vol ALTO ≥" value={va} onChange={setVA} step={50} suffix="HL" />
-          <UInput label="Vol MEDIO ≥" value={vm} onChange={setVM} step={50} suffix="HL" />
+          <UInput label="Vol PICO ≥" value={vp} onChange={setVP} step={100} suffix="bultos" />
+          <UInput label="Vol ALTO ≥" value={va} onChange={setVA} step={100} suffix="bultos" />
+          <UInput label="Vol MEDIO ≥" value={vm} onChange={setVM} step={100} suffix="bultos" />
           <UInput label="Clientes >" value={cli} onChange={setCli} step={10} integer />
           <UInput label="OTIF <" value={otif} onChange={setOtif} step={0.01} pct />
           <UInput label="Aus ≥" value={aus} onChange={setAus} step={0.005} pct />

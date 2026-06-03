@@ -209,7 +209,7 @@ function SemanaBloque({ sem, umbrales }: { sem: Semana; umbrales: UmbralesPC }) 
           </td>
         ))}
       </tr>
-      <FilaVariable label="VOL" sem={sem} render={(d) => fmtHL(Number(d.hl))} gatillo={(d) => d.trigger_vol} umbral={`PICO ≥ ${umbrales.vol_pico}`} />
+      <FilaVariable label="VOL (bultos)" sem={sem} render={(d) => fmtHL(Number(d.hl))} gatillo={(d) => d.trigger_vol} umbral={`PICO ≥ ${umbrales.vol_pico}`} />
       <FilaVariable label="OTIF" sem={sem} render={(d) => fmtPctC(Number(d.otif_estimado))} gatillo={(d) => d.trigger_otif} umbral={`< ${fmtPct(umbrales.otif_min)}`} />
       <FilaVariable label="AUS" sem={sem} render={(d) => fmtPctC(Number(d.pct_ausentismo))} gatillo={(d) => d.trigger_aus} umbral={`≥ ${fmtPct(umbrales.ausentismo_max)}`} />
       <FilaVariable label="#CL" sem={sem} render={(d) => String(d.clientes_dia)} gatillo={(d) => d.trigger_cli} umbral={`> ${umbrales.clientes}`} />

@@ -117,7 +117,7 @@ export function SimuladorTab({
     () =>
       dias.filter((d) => d.hl > 0 || d.pct_ausentismo > 0 || d.es_feriado).map((d) => ({
         value: d.fecha,
-        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} HL · ${d.estatus}${d.trigger_count ? " · " + intensidadDia(d.trigger_count) : ""}`,
+        label: `${d.fecha} · ${d.dia_semana} · ${fmtHL(d.hl)} bultos · ${d.estatus}${d.trigger_count ? " · " + intensidadDia(d.trigger_count) : ""}`,
       })),
     [dias],
   )
@@ -314,7 +314,7 @@ export function SimuladorTab({
         </CardHeader>
         <CardContent className="space-y-4">
           <SliderRow
-            label="Volumen (HL)"
+            label="Volumen (bultos)"
             value={delta.vol}
             min={-100}
             max={150}
@@ -487,7 +487,7 @@ function EscenarioCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 text-sm">
-        <KV k="HL" v={fmtHL(hl)} trigger={triggers.vol} />
+        <KV k="Bultos" v={fmtHL(hl)} trigger={triggers.vol} />
         <KV k="Clientes" v={String(clientes_dia)} trigger={triggers.cli} />
         <KV k="OTIF est" v={fmtPct(1 - pct_rechazo)} trigger={triggers.otif} />
         <KV k="% Ausentismo" v={fmtPct(pct_ausentismo)} trigger={triggers.aus} />
