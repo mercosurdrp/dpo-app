@@ -724,16 +724,28 @@ function plazoCargaVencido(iso: string, nowMs: number): boolean {
   return nowMs >= Date.UTC(y, m - 1, d + 1, 10, 0, 0)
 }
 
-/** ¿La patente quedó cargada a tiempo para el reparto del día siguiente a D? */
-function cargadaATiempo(
+// Clasificación de la carga de una patente para el día D (reparto = D+1):
+//   "ok"      → cargada el mismo día D, o el día D+1 antes de las 07:00.
+//   "tarde"   → cargada el día D+1 a las 07:00 o después (retraso confirmado).
+//   "sindato" → no hay registro de carga para D/D+1. OJO: NO implica que no se
+//               haya cargado; lo más común es que la patente del WMS (BANDVIA)
+//               todavía no se completó (llega con días de retraso).
+type ClasifCarga = "ok" | "tarde" | "sindato"
+
+function clasificarCarga(
   eventos: CargaFila[] | undefined,
   isoD: string,
   isoNext: string,
-): boolean {
-  if (!eventos) return false
-  return eventos.some(
+): ClasifCarga {
+  if (!eventos || eventos.length === 0) return "sindato"
+  const ok = eventos.some(
     (e) => e.fecha === isoD || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
   )
+  if (ok) return "ok"
+  const tarde = eventos.some(
+    (e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA,
+  )
+  return tarde ? "tarde" : "sindato"
 }
 
 /**
@@ -797,16 +809,25 @@ async function filaCarga(
       continue
     }
     const isoNext = nextISO(iso)
-    let todasOk = true
+    let tarde = 0
+    let sinDato = 0
     for (const p of routed) {
-      if (!cargadaATiempo(cargaIdx.get(p), iso, isoNext)) {
-        todasOk = false
-        break
-      }
+      const c = clasificarCarga(cargaIdx.get(p), iso, isoNext)
+      if (c === "tarde") tarde++
+      else if (c === "sindato") sinDato++
     }
-    totalAplica++
-    if (todasOk) cumplidos++
-    dias.push(todasOk ? "si" : "no")
+    // Retraso confirmado → no cumple. Si no hay tarde pero falta el dato de
+    // alguna patente (típico por el retraso de BANDVIA) → sin dato, NO "no
+    // cumple". Solo cuando todas las patentes están cargadas a tiempo → cumple.
+    let estado: EstadoCumplimiento
+    if (tarde > 0) estado = "no"
+    else if (sinDato > 0) estado = "sd"
+    else estado = "si"
+    if (estado !== "sd") {
+      totalAplica++
+      if (estado === "si") cumplidos++
+    }
+    dias.push(estado)
   }
 
   const porcentaje =
@@ -1158,27 +1179,36 @@ export async function getDetalleDiaSla(
         const idx = buildCargaIdx(cargaFilas)
         const isoNext = nextISO(fecha)
         let aTiempo = 0
+        let tarde = 0
+        let sinDato = 0
         for (const r of rows) {
           const p = String(r.patente ?? "").trim().toUpperCase()
           const eventos = idx.get(p)
-          const okEvt = eventos?.find(
-            (e) => e.fecha === fecha || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
-          )
-          if (okEvt) {
+          const c = clasificarCarga(eventos, fecha, isoNext)
+          if (c === "ok") {
             aTiempo++
+            const okEvt = eventos!.find(
+              (e) => e.fecha === fecha || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
+            )!
             const prefijo = okEvt.fecha === isoNext ? "D+1 " : ""
             filas.push({ label: String(r.patente ?? "—"), valor: `${prefijo}${okEvt.hora.slice(0, 5)} ✓` })
+          } else if (c === "tarde") {
+            tarde++
+            const lateEvt = eventos!.find((e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA)!
+            filas.push({ label: String(r.patente ?? "—"), valor: `${lateEvt.hora.slice(0, 5)} (tarde) ✗` })
           } else {
-            // ¿cargó tarde (D+1 ≥ 07:00) o directamente no figura?
-            const tarde = eventos?.find((e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA)
-            filas.push({
-              label: String(r.patente ?? "—"),
-              valor: tarde ? `${tarde.hora.slice(0, 5)} (tarde) ✗` : "sin carga ✗",
-            })
+            sinDato++
+            filas.push({ label: String(r.patente ?? "—"), valor: "sin dato aún" })
           }
         }
-        estado = aTiempo === rows.length ? "si" : "no"
-        valorLabel = `${aTiempo}/${rows.length} a tiempo`
+        // tarde confirmado → no cumple; sin dato pendiente (sin tardes) → sin dato.
+        estado = tarde > 0 ? "no" : sinDato > 0 ? "sd" : "si"
+        valorLabel =
+          `${aTiempo}/${rows.length} a tiempo` + (sinDato > 0 ? ` · ${sinDato} sin dato` : "")
+        if (estado === "sd" && sinDato > 0) {
+          nota =
+            "Faltan datos de carga de algunas patentes (la patente del WMS se completa unos días después de la carga). El día se reevaluará al actualizarse el dato; no implica incumplimiento."
+        }
       }
 
       return {
