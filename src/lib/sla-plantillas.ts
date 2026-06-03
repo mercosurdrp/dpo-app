@@ -167,7 +167,7 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Ante un incumplimiento se registra una tarea en el Action Log de las reuniones (Logística / Logística-Ventas) de forma manual, con su responsable y plan de acción.",
     vigencia:
       "Vigencia de 1 año desde la fecha de firma, salvo que se modifique el parámetro mínimo de carga del camión, en cuyo caso se revisa de inmediato.",
-    firmantes: ["Supervisor de Distribución", "Supervisor de Entrega"],
+    firmantes: ["Ruteador", "Supervisor de Distribución"],
   },
 
   plan_ruteo_pushed: {
