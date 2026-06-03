@@ -206,14 +206,14 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     nivelServicio: [
       "Ventana de recepción: los camiones de Acarreo / Abastecimiento se reciben de 07:00 a 17:00 hs.",
       "Tiempo de descarga: Almacén se compromete a descargar cada camión dentro de las 2 horas posteriores a su arribo.",
-      "Una recepción cumple si el camión arriba dentro de la ventana (07:00–17:00) y su descarga finaliza dentro de las 2 horas siguientes al arribo.",
-      "Objetivo de cumplimiento mensual: ≥ 95 % de las recepciones.",
+      "El cumplimiento del tiempo de descarga (≤ 2 hs) se exige para los camiones que arriban dentro de la ventana de 08:00 a 16:00 hs; los arribos fuera de esa franja (07:00–08:00 y 16:00–17:00) se reciben pero no se computan en el indicador.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de las recepciones medidas.",
     ],
     medicion: [
-      "La medición se realiza a partir del registro de arribo y de inicio/fin de descarga de cada camión de abastecimiento.",
-      "Una recepción cumple si: (a) el arribo ocurre entre las 07:00 y las 17:00 hs, y (b) el tiempo transcurrido entre el arribo y el fin de descarga es menor o igual a 2 horas.",
-      "El indicador mensual se calcula como: recepciones cumplidas ÷ recepciones registradas.",
-      "Pendiente: la herramienta para que el acarreo se anuncie al llegar y marque el inicio y la finalización de la descarga está en diseño. Hasta su puesta en marcha, el seguimiento del cumplimiento se realiza de forma manual.",
+      "El chofer del acarreo se autoanuncia al llegar (escaneando un QR) y queda registrada la hora de arribo; Almacén marca el inicio y la finalización de la descarga.",
+      "Una recepción cumple si: (a) el arribo ocurre entre las 08:00 y las 16:00 hs, y (b) el tiempo transcurrido entre el arribo y el fin de descarga es menor o igual a 2 horas.",
+      "Los arribos fuera de la franja 08:00–16:00, o las recepciones sin fin de descarga registrado, no se computan en el indicador.",
+      "El indicador mensual se calcula como: recepciones cumplidas ÷ recepciones medidas del mes.",
     ],
     roles: [
       {

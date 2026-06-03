@@ -13,12 +13,16 @@ import {
   SLA_CAPACIDAD_TARGET,
   SLA_PUSHED_NOMBRE,
   SLA_PUSHED_TARGET,
+  SLA_RECEPCION_NOMBRE,
+  SLA_RECEPCION_TARGET,
   CAPACIDAD_MIN_PCT,
+  cumpleRecepcion,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
   type DetalleDiaSla,
 } from "@/lib/sla-cumplimiento"
+import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 
 const DASHBOARD_PATH = "/sla"
@@ -543,10 +547,89 @@ async function filaPushed(
 }
 
 /**
+ * Fila del SLA #7 de recepción de acarreos (`alm_recepcion`). A diferencia de
+ * los otros SLA, mide POR RECEPCIÓN (no por día): cumplidos/totalAplica cuentan
+ * recepciones evaluables (arribo 08:00–16:00 y con fin de descarga). El array
+ * `dias` se deriva por día solo para colorear las celdas (todas cumplen → "si").
+ * Lee la tabla `recepcion_acarreos` desde la Supabase de acarreo-rdf (otro
+ * proyecto). Si la integración no está configurada o falla, degrada a "sin dato".
+ */
+async function filaRecepcion(
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const base = {
+    codigo: "alm_recepcion",
+    nombre: SLA_RECEPCION_NOMBRE,
+    target: SLA_RECEPCION_TARGET,
+  }
+  const diasVacio: EstadoCumplimiento[] = []
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    diasVacio.push(dowFromISO(iso) === 0 ? "na" : "sd")
+  }
+
+  const acarreo = createAcarreoClient()
+  if (!acarreo) {
+    return { ...base, porcentaje: null, cumplidos: 0, totalAplica: 0, dias: diasVacio }
+  }
+
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data, error } = await acarreo
+    .from("recepcion_acarreos")
+    .select("fecha, hora_arribo, hora_fin_descarga")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+
+  if (error || !data) {
+    return { ...base, porcentaje: null, cumplidos: 0, totalAplica: 0, dias: diasVacio }
+  }
+
+  const porDia = new Map<number, { cumple: number; total: number }>()
+  let cumplidos = 0
+  let totalAplica = 0
+  for (const r of data as any[]) {
+    const res = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga)
+    if (res === null) continue // fuera de ventana 08–16 o sin fin de descarga
+    const dia = Number((r.fecha as string).slice(8, 10))
+    totalAplica++
+    if (res) cumplidos++
+    const a = porDia.get(dia) ?? { cumple: 0, total: 0 }
+    a.total++
+    if (res) a.cumple++
+    porDia.set(dia, a)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    if (dowFromISO(iso) === 0) {
+      dias.push("na")
+      continue
+    }
+    const a = porDia.get(d)
+    if (!a || a.total === 0) {
+      dias.push("sd")
+      continue
+    }
+    dias.push(a.cumple === a.total ? "si" : "no")
+  }
+
+  const porcentaje = totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+  return { ...base, porcentaje, cumplidos, totalAplica, dias }
+}
+
+/**
  * Cumplimiento de los SLA medibles para un mes (year, month=1..12), como
  * matriz: una fila por SLA, una columna por día. Tiempo de ruteo, entrega de
- * preventa (Ventas↔Operaciones), capacidad del camión y volumen no ruteado.
- * Días en curso/sin registro = "sin dato" (no penalizan el %).
+ * preventa (Ventas↔Operaciones), capacidad del camión, volumen no ruteado y
+ * recepción de acarreos. Días en curso/sin registro = "sin dato".
  */
 export async function getCumplimientoMes(
   year: number,
@@ -569,6 +652,7 @@ export async function getCumplimientoMes(
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
+      await filaRecepcion(year, month, diasDelMes),
     ]
 
     return { data: { year, month, diasDelMes, filas } }
@@ -766,6 +850,70 @@ export async function getDetalleDiaSla(
         data: {
           codigo,
           nombre: SLA_PUSHED_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
+    if (codigo === "alm_recepcion") {
+      const metaLabel = "Arribo 08:00–16:00 y descarga ≤ 2 h"
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      let valorLabel = "—"
+      const filas: { label: string; valor: string }[] = []
+
+      const acarreo = createAcarreoClient()
+      if (dow === 0) {
+        estado = "na"
+        nota = "Domingo: no se recibe."
+      } else if (!acarreo) {
+        estado = "sd"
+        nota = "Integración con acarreo-rdf no configurada."
+      } else {
+        const { data } = await acarreo
+          .from("recepcion_acarreos")
+          .select("patente, transportista, origen, hora_arribo, hora_fin_descarga")
+          .eq("fecha", fecha)
+          .order("hora_arribo", { ascending: true })
+        const rows = (data ?? []) as any[]
+        const evaluables = rows
+          .map((r) => cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga))
+          .filter((v) => v !== null) as boolean[]
+
+        if (evaluables.length === 0) {
+          estado = "sd"
+          nota =
+            rows.length === 0
+              ? "Sin recepciones registradas este día."
+              : "Sin recepciones evaluables (arribos fuera de 08:00–16:00 o descarga sin finalizar)."
+        } else {
+          const cumplidas = evaluables.filter(Boolean).length
+          estado = cumplidas === evaluables.length ? "si" : "no"
+          valorLabel = `${cumplidas}/${evaluables.length} cumplen`
+        }
+
+        for (const r of rows) {
+          const ok = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga)
+          const arr = fmtMin(minutosARG(r.hora_arribo))
+          const fin = r.hora_fin_descarga ? fmtMin(minutosARG(r.hora_fin_descarga)) : "—"
+          const mark = ok === null ? "·" : ok ? "✓" : "✗"
+          filas.push({
+            label: `${r.patente ?? "—"}${r.origen ? ` · ${r.origen}` : ""}`,
+            valor: `${arr}→${fin} ${mark}`,
+          })
+        }
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre: SLA_RECEPCION_NOMBRE,
           fecha,
           diaSemana,
           estado,

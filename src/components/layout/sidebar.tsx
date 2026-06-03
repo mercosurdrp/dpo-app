@@ -35,6 +35,7 @@ import {
   Wrench,
   Route,
   Handshake,
+  PackageCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -126,6 +127,14 @@ export const navItems: NavItem[] = [
     icon: <Route className="size-5" />,
     pampeanaOnly: true,
     roles: ["admin", "supervisor"],
+  },
+  {
+    label: "Acarreo",
+    href: "/acarreo",
+    icon: <PackageCheck className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor"],
+    hideForEmpleado: true,
   },
   {
     label: "Presupuesto",
