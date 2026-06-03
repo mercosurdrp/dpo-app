@@ -19,9 +19,17 @@ export async function GET(req: NextRequest) {
   if (Number.isFinite(anio) && anio > 0) q = q.eq("anio", anio)
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Bucket privado → URLs firmadas (una sola llamada para todas las fotos)
+  const paths = (data ?? []).map((r) => r.foto_path).filter(Boolean) as string[]
+  const urlByPath: Record<string, string> = {}
+  if (paths.length) {
+    const { data: signed } = await supabase.storage.from("reuniones").createSignedUrls(paths, 60 * 60 * 24 * 7)
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlByPath[s.path] = s.signedUrl
+  }
   const registros = (data ?? []).map((r) => ({
     ...r,
-    foto_url: r.foto_path ? supabase.storage.from("reuniones").getPublicUrl(r.foto_path).data.publicUrl : null,
+    foto_url: r.foto_path ? urlByPath[r.foto_path] ?? null : null,
   }))
   return NextResponse.json({ registros })
 }

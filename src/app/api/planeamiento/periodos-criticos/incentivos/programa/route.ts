@@ -11,8 +11,12 @@ const PREFIJO = "incentivos-pc"
 const cleanFileName = (n: string) =>
   n.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)
 
-function pub(supabase: Awaited<ReturnType<typeof createClient>>, path: string | null) {
-  return path ? supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl : null
+// Bucket privado → URL firmada temporal (se regenera en cada GET, así no expira para el usuario).
+const SIGNED_TTL = 60 * 60 * 24 * 7 // 7 días
+async function signed(supabase: Awaited<ReturnType<typeof createClient>>, path: string | null) {
+  if (!path) return null
+  const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_TTL)
+  return data?.signedUrl ?? null
 }
 
 // GET → programa de incentivos (singleton) con URLs públicas resueltas
@@ -27,8 +31,8 @@ export async function GET() {
   return NextResponse.json({
     programa: {
       ...data,
-      archivo_url: pub(supabase, data.archivo_path),
-      comunicado_url: pub(supabase, data.comunicado_path),
+      archivo_url: await signed(supabase, data.archivo_path),
+      comunicado_url: await signed(supabase, data.comunicado_path),
     },
   })
 }
@@ -90,6 +94,6 @@ export async function PUT(req: NextRequest) {
     .from("pc_incentivos_programa").update(patch).eq("id", 1).select("*").single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({
-    programa: { ...data, archivo_url: pub(supabase, data.archivo_path), comunicado_url: pub(supabase, data.comunicado_path) },
+    programa: { ...data, archivo_url: await signed(supabase, data.archivo_path), comunicado_url: await signed(supabase, data.comunicado_path) },
   })
 }

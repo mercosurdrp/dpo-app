@@ -41,6 +41,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await supabase.storage.from(BUCKET).remove([path])
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  const foto_url = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
-  return NextResponse.json({ registro: { ...data, foto_url } })
+  const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60 * 24 * 7)
+  return NextResponse.json({ registro: { ...data, foto_url: signed?.signedUrl ?? null } })
 }
