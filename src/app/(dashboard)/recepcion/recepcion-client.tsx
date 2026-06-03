@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2 } from "lucide-react"
+import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2, Tv } from "lucide-react"
 import {
   getPendientesAcarreo,
   ingresarDepositoAcarreo,
@@ -72,14 +72,24 @@ export function RecepcionClient({
 
   return (
     <div className="space-y-5 p-2">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900">
-          <Truck className="size-6 text-pink-600" />
-          Recepción de acarreos
-        </h1>
-        <p className="text-sm text-slate-500">
-          Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–1:30 · 🔴 &gt;1:30.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900">
+            <Truck className="size-6 text-pink-600" />
+            Recepción de acarreos
+          </h1>
+          <p className="text-sm text-slate-500">
+            Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–1:30 · 🔴 &gt;1:30.
+          </p>
+        </div>
+        <a
+          href="https://acarreo-rdf.vercel.app/monitor"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          <Tv className="size-4" /> Modo monitor
+        </a>
       </div>
 
       {errorInicial ? (
