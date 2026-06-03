@@ -99,7 +99,9 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
               })
               .map((item) => {
               const isActive =
-                item.href === "/"
+                item.external
+                  ? false
+                  : item.href === "/"
                   ? pathname === "/"
                   : pathname.startsWith(item.href)
 
@@ -107,6 +109,8 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                 <Link
                   key={item.href}
                   href={item.href}
+                  target={item.external ? "_blank" : undefined}
+                  rel={item.external ? "noopener noreferrer" : undefined}
                   onClick={() => setOpen(false)}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",

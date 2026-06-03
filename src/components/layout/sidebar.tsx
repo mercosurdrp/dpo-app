@@ -62,6 +62,8 @@ export interface NavItem {
    * lista blanca de emails). Tiene prioridad sobre roles/hideForEmpleado.
    */
   operadorAcarreo?: boolean
+  /** Enlace externo (otra app): abre en pestaña nueva, nunca se marca activo. */
+  external?: boolean
 }
 
 export interface NavSection {
@@ -135,12 +137,13 @@ export const navItems: NavItem[] = [
     roles: ["admin", "supervisor"],
   },
   {
-    label: "Acarreo",
-    href: "/acarreo",
+    label: "Acarreo (detalle)",
+    href: "https://acarreo-rdf.vercel.app/completados",
     icon: <PackageCheck className="size-5" />,
     pampeanaOnly: true,
     roles: ["admin", "supervisor"],
     hideForEmpleado: true,
+    external: true,
   },
   {
     label: "Recepción",
@@ -378,7 +381,9 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             })
             .map((item) => {
             const isActive =
-              item.href === "/"
+              item.external
+                ? false
+                : item.href === "/"
                 ? pathname === "/"
                 : pathname.startsWith(item.href)
 
@@ -386,6 +391,8 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                target={item.external ? "_blank" : undefined}
+                rel={item.external ? "noopener noreferrer" : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive

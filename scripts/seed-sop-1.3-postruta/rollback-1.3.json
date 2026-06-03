@@ -1,0 +1,27 @@
+{
+  "creado": "2026-05-29T12:06:43.459Z",
+  "pregunta_id": "6e378300-daad-4fb6-ac0f-171a18b28777",
+  "owd_template_id": "c5b53e99-3ec3-4c3c-9e43-19ce23355599",
+  "owd_item_ids": [
+    "13b2a885-7981-42d7-82fc-8afbbd8a762e",
+    "8e621152-1220-4c89-a458-0155d8ad618b",
+    "4b156c06-436d-486c-9ec6-402d4bf0d9c4",
+    "aab9558a-0a3d-44c8-b73c-098916f98d2d",
+    "520a12f7-178a-4641-98a6-4eca553d05ba",
+    "29bfb31a-c82a-4a96-ad1d-21df7aebb4db",
+    "1e3be470-6671-4b85-b60b-3d4dd187cd96",
+    "097edb5b-8fa4-4c9e-99bc-ad3bba7f5e86",
+    "745d0208-43f3-4ab3-a5c5-6f1f58fa78b9",
+    "6ab26570-5b29-4c8a-a433-b4157d8c5389",
+    "1a6224d0-1a2b-4f28-bf76-f78e2563ace4",
+    "27795554-bfef-400b-828c-ea848eafd5d1",
+    "7dd4ad9e-2e17-4971-b97b-f7590320eeed",
+    "40e62885-6932-4d86-bea8-6f20d7e7aa22",
+    "c7d5a64b-8232-4c99-809e-43b3d16c2bd9",
+    "78b52cb9-d057-4f72-a1dd-a018adeacf7a",
+    "1303778c-f97c-41f3-ba1b-8a3527d1aa73"
+  ],
+  "capacitacion_id": "885bb362-e534-4b21-a5f7-e1a46e3212e9",
+  "material_path": "capacitaciones/885bb362-e534-4b21-a5f7-e1a46e3212e9/material.pptx",
+  "material_url": "https://tpafgmbhnucdiavvxbcg.supabase.co/storage/v1/object/public/evidencias/capacitaciones/885bb362-e534-4b21-a5f7-e1a46e3212e9/material.pptx"
+}
