@@ -232,4 +232,36 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Vigencia de 1 año desde la fecha de firma, salvo que se modifique la ventana horaria de recepción o el tiempo de descarga comprometido, en cuyo caso se revisa de inmediato.",
     firmantes: ["Supervisor de Almacén", "Responsable de Acarreo / Abastecimiento"],
   },
+
+  alm_carga: {
+    objeto:
+      "Acuerdo de nivel de servicio entre Entrega y Almacén para reducir retrasos en la salida de reparto. Almacén se compromete a dejar todos los camiones cargados antes del cierre del día en que se rutean, de modo que al día siguiente la entrega salga sin demoras con los camiones listos.",
+    nivelServicio: [
+      "Todos los camiones ruteados en el día deben quedar cargados antes de las 23:59 hs de ese mismo día.",
+      "Esto equivale a que los camiones estén cargados antes de las 07:00 hs del día de reparto (la carga se hace el día previo a la salida).",
+      "Un día cumple si la totalidad de los camiones ruteados ese día quedó cargada dentro de ese horario.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los días.",
+    ],
+    medicion: [
+      "La medición se realiza a partir del módulo Ruteo de la plataforma DPO, tomando la hora en que cada camión queda cargado.",
+      "Un día cumple si todos los camiones ruteados ese día quedaron cargados antes de las 23:59 hs.",
+      "El indicador mensual se calcula como: días cumplidos ÷ días con ruteo registrado.",
+      "Pendiente: el registro de la hora de carga de cada camión en el módulo Ruteo está en desarrollo. Hasta su puesta en marcha, el seguimiento del cumplimiento se realiza de forma manual.",
+    ],
+    roles: [
+      {
+        label: "Responsable de medir",
+        valor: "Personal operativo de Almacén (registra la carga de cada camión).",
+      },
+      {
+        label: "Responsable de actuar / seguimiento",
+        valor: "Supervisor de Almacén.",
+      },
+    ],
+    gestionIncumplimiento:
+      "Ante un día incumplido se registra una tarea en el Action Log de las reuniones de forma manual, con su responsable y plan de acción.",
+    vigencia:
+      "Vigencia de 1 año desde la fecha de firma. Revisión anual, o de forma inmediata si se modifica el proceso u horario de carga.",
+    firmantes: ["Supervisor de Almacén", "Supervisor de Distribución"],
+  },
 }
