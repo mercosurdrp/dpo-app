@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
+import { puedeOperarAcarreo, puedeDarIngreso } from "@/lib/acarreo-operadores"
 import { getPendientesAcarreo } from "@/actions/acarreo"
 import { RecepcionClient } from "./recepcion-client"
 
@@ -18,6 +18,7 @@ export default async function RecepcionPage() {
       inicial={"data" in r ? r.data : []}
       errorInicial={"error" in r ? r.error : null}
       esAdmin={profile.role === "admin"}
+      puedeIngreso={puedeDarIngreso(profile.role, profile.email)}
     />
   )
 }

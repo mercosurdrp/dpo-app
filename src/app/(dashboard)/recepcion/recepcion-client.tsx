@@ -43,10 +43,12 @@ export function RecepcionClient({
   inicial,
   errorInicial,
   esAdmin = false,
+  puedeIngreso = false,
 }: {
   inicial: RecepcionPendiente[]
   errorInicial: string | null
   esAdmin?: boolean
+  puedeIngreso?: boolean
 }) {
   const [rows, setRows] = useState<RecepcionPendiente[]>(inicial)
   const [now, setNow] = useState(() => Date.now())
@@ -139,7 +141,7 @@ export function RecepcionClient({
                 </div>
 
                 <div className="mt-4 flex gap-2">
-                  {r.estado === "anunciado" && esAdmin && (
+                  {r.estado === "anunciado" && puedeIngreso && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -154,9 +156,9 @@ export function RecepcionClient({
                       <LogIn className="size-4" /> Ingreso a depósito
                     </button>
                   )}
-                  {r.estado === "anunciado" && !esAdmin && (
+                  {r.estado === "anunciado" && !puedeIngreso && (
                     <span className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs italic text-slate-500">
-                      Esperando ingreso a depósito (admin)
+                      Esperando ingreso a depósito
                     </span>
                   )}
                   {r.estado === "ingresado" && (

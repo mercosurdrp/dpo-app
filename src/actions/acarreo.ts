@@ -3,7 +3,7 @@
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
-import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
+import { puedeOperarAcarreo, puedeDarIngreso } from "@/lib/acarreo-operadores"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -80,7 +80,9 @@ export async function finalizarDescargaAcarreo(id: string) {
 export async function ingresarDepositoAcarreo(id: string): Promise<{ error?: string }> {
   const profile = await requireAuth()
   if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
-  if (profile.role !== "admin") return { error: "Solo un administrador puede dar el ingreso a depósito." }
+  if (!puedeDarIngreso(profile.role, profile.email)) {
+    return { error: "No tenés permiso para dar el ingreso a depósito." }
+  }
   const acarreo = createAcarreoClient()
   if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
   const { error } = await acarreo

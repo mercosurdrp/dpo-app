@@ -17,3 +17,17 @@ export function puedeOperarAcarreo(
   if (role === "admin" || role === "supervisor") return true
   return !!email && ACARREO_OPERADORES.includes(email)
 }
+
+// Quiénes pueden dar el "Ingreso a depósito" (acción reservada): además de los
+// admin, esta lista acotada habilita a personas puntuales sin darles rol admin.
+export const INGRESO_OPERADORES = [
+  "135@dpo.local", // German Veidoski (habilitado para dar ingreso, sigue siendo auditor)
+]
+
+export function puedeDarIngreso(
+  role?: string | null,
+  email?: string | null,
+): boolean {
+  if (role === "admin") return true
+  return !!email && INGRESO_OPERADORES.includes(email)
+}
