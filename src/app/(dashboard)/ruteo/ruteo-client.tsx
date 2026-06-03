@@ -18,6 +18,21 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table"
+import {
   iniciarRuteo,
   finalizarRuteo,
   setFinPreventa,
@@ -64,6 +79,7 @@ export function RuteoClient({
   const [historial, setHistorial] = useState<RuteoCierre[]>(historialInicial)
   const [mostrarForm, setMostrarForm] = useState(false)
   const [form, setForm] = useState({ ...FORM_INICIAL })
+  const [detalle, setDetalle] = useState<RuteoCierre | null>(null)
   const [pending, startTransition] = useTransition()
 
   function set<K extends keyof typeof form>(k: K, v: string) {
@@ -287,18 +303,39 @@ export function RuteoClient({
         <h2 className="mb-2 text-sm font-semibold text-slate-900">
           Cierres anteriores
         </h2>
+        <p className="mb-2 text-xs text-slate-500">
+          Hacé clic en un día para ver el detalle completo.
+        </p>
         {historial.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm text-slate-500">
             Todavía no hay cierres registrados.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            {historial.map((c) => (
-              <HistorialRow key={c.id} c={c} />
-            ))}
-          </ul>
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-center">Fin prev.</TableHead>
+                  <TableHead className="text-center">Inicio</TableHead>
+                  <TableHead className="text-center">Fin</TableHead>
+                  <TableHead className="text-center">Pergamino</TableHead>
+                  <TableHead className="text-center">Ramallo</TableHead>
+                  <TableHead className="text-center">No ruteado</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historial.map((c) => (
+                  <HistorialRow key={c.id} c={c} onClick={() => setDetalle(c)} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
+
+      <DetalleRuteoDialog dia={detalle} onClose={() => setDetalle(null)} />
     </div>
   )
 }
@@ -500,32 +537,89 @@ function Stat({
   )
 }
 
-function HistorialRow({ c }: { c: RuteoCierre }) {
+function HistorialRow({ c, onClick }: { c: RuteoCierre; onClick: () => void }) {
   const totalBultos = c.pergamino_bultos + c.ramallo_bultos
   const totalClientes = c.pergamino_clientes + c.ramallo_clientes
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-      <div className="min-w-0">
-        <div className="font-medium tabular-nums text-slate-900">
-          {fechaCorta(c.fecha)}{" "}
-          <span className="font-normal text-slate-500">
-            ({horaHHmm(c.hora_inicio)}–{horaHHmm(c.hora_fin)})
-          </span>
-        </div>
-        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
-          <span>Pergamino: {c.pergamino_bultos} blt / {c.pergamino_clientes} cli</span>
-          <span>Ramallo: {c.ramallo_bultos} blt / {c.ramallo_clientes} cli</span>
-          {c.bultos_no_ruteados > 0 && (
-            <span className="text-rose-600">No ruteado: {c.bultos_no_ruteados} blt</span>
-          )}
-        </div>
-        {c.notas && <p className="mt-1 text-xs italic text-slate-500">{c.notas}</p>}
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="text-sm font-bold tabular-nums text-slate-900">{totalBultos}</p>
-        <p className="text-[10px] uppercase tracking-wide text-slate-400">bultos</p>
-        <p className="text-xs tabular-nums text-slate-500">{totalClientes} cli</p>
-      </div>
-    </li>
+    <TableRow
+      className="cursor-pointer hover:bg-slate-50"
+      onClick={onClick}
+    >
+      <TableCell className="font-medium tabular-nums text-slate-900">
+        {fechaCorta(c.fecha)}
+      </TableCell>
+      <TableCell className="text-center tabular-nums text-slate-600">
+        {horaHHmm(c.hora_fin_preventa)}
+      </TableCell>
+      <TableCell className="text-center tabular-nums text-slate-600">
+        {horaHHmm(c.hora_inicio)}
+      </TableCell>
+      <TableCell className="text-center tabular-nums text-slate-600">
+        {horaHHmm(c.hora_fin)}
+      </TableCell>
+      <TableCell className="text-center tabular-nums text-slate-600">
+        {c.pergamino_bultos} / {c.pergamino_clientes}
+      </TableCell>
+      <TableCell className="text-center tabular-nums text-slate-600">
+        {c.ramallo_bultos} / {c.ramallo_clientes}
+      </TableCell>
+      <TableCell className="text-center tabular-nums">
+        {c.bultos_no_ruteados > 0 ? (
+          <span className="text-rose-600">{c.bultos_no_ruteados}</span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <span className="font-bold tabular-nums text-slate-900">{totalBultos}</span>
+        <span className="ml-1 text-xs text-slate-500">blt</span>
+        <span className="ml-2 text-xs tabular-nums text-slate-500">
+          {totalClientes} cli
+        </span>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function DetalleRuteoDialog({
+  dia,
+  onClose,
+}: {
+  dia: RuteoCierre | null
+  onClose: () => void
+}) {
+  return (
+    <Dialog open={dia !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {dia ? `Ruteo del ${fechaCorta(dia.fecha)}` : "Detalle del ruteo"}
+          </DialogTitle>
+          <DialogDescription>
+            {dia
+              ? `${horaHHmm(dia.hora_inicio)} – ${horaHHmm(dia.hora_fin)}`
+              : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        {dia && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <Stat label="Fin preventa" value={horaHHmm(dia.hora_fin_preventa)} />
+              <Stat label="Inicio" value={horaHHmm(dia.hora_inicio)} />
+              <Stat label="Fin" value={horaHHmm(dia.hora_fin)} />
+            </div>
+
+            <ResumenCiudades dia={dia} />
+
+            {dia.notas && (
+              <p className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-xs italic text-slate-600">
+                {dia.notas}
+              </p>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
