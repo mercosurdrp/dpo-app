@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload } from "lucide-react"
+import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera } from "lucide-react"
 
 const API = "/api/planeamiento/periodos-criticos/incentivos"
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -26,7 +26,18 @@ type Programa = {
 type Registro = {
   id: string; anio: number; mes: number; ambito: string
   equipo: string | null; cumplio: boolean | null; posicion: string | null; premio: string | null; nota: string | null
+  foto_url?: string | null; foto_nombre?: string | null
 }
+
+// Orden del podio para la galería de premiación
+const ordenPos = (p: string | null) => {
+  const s = (p || "").toLowerCase()
+  if (s.includes("1")) return 1
+  if (s.includes("2")) return 2
+  if (s.includes("3")) return 3
+  return 9
+}
+const MEDALLA: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" }
 
 export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
   const [prog, setProg] = useState<Programa | null>(null)
@@ -51,11 +62,51 @@ export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
     try { await fetch(`${API}/registro/${id}`, { method: "DELETE" }) } catch { cargar() }
   }
 
+  async function subirFoto(id: string, file: File) {
+    const fd = new FormData()
+    fd.set("foto", file)
+    try {
+      const res = await fetch(`${API}/registro/${id}/foto`, { method: "POST", body: fd })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      toast.success("Foto subida")
+      cargar()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo subir la foto")
+    }
+  }
+
   if (!prog) return <Card><CardContent className="p-6 text-sm text-slate-500">Cargando…</CardContent></Card>
+
+  // Ganadores (registros con posición) agrupados por ámbito para la galería
+  const ganadores = registros.filter((r) => r.posicion)
+  const ambitosConGanadores = AMBITOS.filter((a) => ganadores.some((g) => g.ambito === a))
 
   return (
     <div className="space-y-4">
       <ProgramaCard prog={prog} onSaved={(p) => setProg(p)} />
+
+      {/* 🏆 Premiación — galería de ganadores con foto (estilo PPT) */}
+      <Card className="border-l-4 border-l-amber-500">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-500" /> Premiación {anio}</CardTitle>
+          <p className="text-xs text-slate-500">Los ganadores por ámbito (los que tengan posición cargada en «Participación»). Subí la foto de cada uno.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {ambitosConGanadores.length === 0 ? (
+            <p className="text-sm text-slate-500">Todavía no hay ganadores cargados. En «Participación y ganadores» agregá registros con posición (1°/2°/3°) y acá aparecen para ponerles la foto.</p>
+          ) : ambitosConGanadores.map((amb) => (
+            <div key={amb}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">{amb}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {ganadores.filter((g) => g.ambito === amb).sort((a, b) => ordenPos(a.posicion) - ordenPos(b.posicion)).map((g) => (
+                  <GanadorCard key={g.id} g={g} onFoto={(file) => subirFoto(g.id, file)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {/* Seguimiento mensual de participación */}
       <Card>
@@ -113,6 +164,49 @@ export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
           onSaved={() => { setEditor(null); cargar() }}
         />
       )}
+    </div>
+  )
+}
+
+function GanadorCard({ g, onFoto }: { g: Registro; onFoto: (file: File) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const pos = ordenPos(g.posicion)
+  return (
+    <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        className="relative block w-full aspect-[4/3] bg-slate-100 group"
+        title="Subir / cambiar foto"
+      >
+        {g.foto_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={g.foto_url} alt={g.equipo || "ganador"} className="w-full h-full object-cover" />
+        ) : (
+          <span className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+            <Camera className="w-7 h-7 mb-1" /><span className="text-[11px]">Subir foto</span>
+          </span>
+        )}
+        <span className="absolute top-1.5 left-1.5 text-2xl drop-shadow">{MEDALLA[pos] ?? "🏅"}</span>
+        <span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30 text-white text-xs">
+          <Camera className="w-4 h-4 mr-1" /> cambiar
+        </span>
+      </button>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFoto(f) }}
+      />
+      <div className="p-2 space-y-0.5">
+        <div className="flex items-center justify-between gap-1">
+          <span className="font-semibold text-sm text-slate-900 truncate">{g.equipo || "—"}</span>
+          {g.posicion && <Badge className="bg-amber-500 text-white text-[10px]">{g.posicion}</Badge>}
+        </div>
+        {g.premio && <p className="text-[11px] text-slate-600 leading-tight">{g.premio}</p>}
+        <p className="text-[10px] text-slate-400">{MESES[g.mes]}</p>
+      </div>
     </div>
   )
 }

@@ -19,7 +19,11 @@ export async function GET(req: NextRequest) {
   if (Number.isFinite(anio) && anio > 0) q = q.eq("anio", anio)
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ registros: data ?? [] })
+  const registros = (data ?? []).map((r) => ({
+    ...r,
+    foto_url: r.foto_path ? supabase.storage.from("reuniones").getPublicUrl(r.foto_path).data.publicUrl : null,
+  }))
+  return NextResponse.json({ registros })
 }
 
 // POST /registro → agrega un registro mensual
