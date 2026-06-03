@@ -7,13 +7,14 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2 } from "lucide-react"
+import { CalendarRange, FlaskConical, Settings, ListTree, ColumnsIcon, Table, ClipboardCheck, Grid2x2, Gift } from "lucide-react"
 import { SimuladorTab } from "./simulador"
 import { ConfiguracionTab } from "./configuracion"
 import { PeriodosTab } from "./periodos-tab"
 import { DetalleSemanalTab } from "./detalle-semanal-tab"
 import { RevisionMensualTab } from "./revision-mensual-tab"
 import { SwotTab } from "./swot-tab"
+import { IncentivosTab } from "./incentivos-tab"
 import { CrucePeriodos } from "./cruce-periodos"
 
 export type DiaCalendario = {
@@ -325,6 +326,7 @@ export function PeriodosCriticosClient({
           <TabsTrigger value="simulador" className={FASE.planificar}><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
           <TabsTrigger value="revision" className={FASE.revisar}><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
           <TabsTrigger value="swot" className={FASE.evaluar}><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
+          <TabsTrigger value="incentivos" className={FASE.evaluar}><Gift className="w-4 h-4 mr-1.5" /> Incentivos</TabsTrigger>
           <TabsTrigger value="config" className={FASE.setup}><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
         </TabsList>
 
@@ -369,6 +371,9 @@ export function PeriodosCriticosClient({
         </TabsContent>
         <TabsContent value="swot">
           <SwotTab dias={diasActivos} anio={anioActivo} />
+        </TabsContent>
+        <TabsContent value="incentivos">
+          <IncentivosTab anioActivo={anioActivo} />
         </TabsContent>
         <TabsContent value="config">
           <ConfiguracionTab cfg={cfg} umbrales={umbrales} planes={planes} />
