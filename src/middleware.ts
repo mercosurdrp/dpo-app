@@ -26,6 +26,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/foxtrot/cron-sync" ||
     pathname === "/api/cloudfleet/cron-sync" ||
     pathname === "/api/adherencia-simulador/cron-sync" ||
+    pathname === "/api/planeamiento/periodos-criticos/foxtrot-bultos/cron-sync" ||
     pathname === "/api/wa-bot/sync-clientes" ||
     pathname === "/api/wa-bot/webhook"
   ) {
