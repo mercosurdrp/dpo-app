@@ -237,6 +237,41 @@ export async function deleteSlaAdjunto(
   }
 }
 
+export async function deleteSla(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (!ROLES_GESTION.includes(profile.role as any)) {
+      return { error: "Solo admin o supervisor pueden borrar SLA." }
+    }
+    const supabase = await createClient()
+
+    // Borrar primero los archivos del storage de los acuerdos adjuntos.
+    const { data: adjuntos } = await supabase
+      .from("sla_adjuntos")
+      .select("storage_path")
+      .eq("sla_id", id)
+    const paths = (adjuntos ?? [])
+      .map((a) => a.storage_path as string)
+      .filter(Boolean)
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET).remove(paths)
+    }
+
+    // Borrar el SLA (sla_adjuntos cae por FK ON DELETE CASCADE).
+    const { error } = await supabase.from("slas").delete().eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error borrando el SLA",
+    }
+  }
+}
+
 // ===========================================================================
 // Cumplimiento del SLA "Tiempo de finalización del ruteo" (plan_ruteo_tiempo)
 // ---------------------------------------------------------------------------

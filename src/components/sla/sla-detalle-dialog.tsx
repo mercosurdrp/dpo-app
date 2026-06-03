@@ -33,6 +33,7 @@ import { abrirArchivo } from "@/lib/abrir-archivo"
 import { createClient } from "@/lib/supabase/client"
 import {
   addSlaAdjunto,
+  deleteSla,
   deleteSlaAdjunto,
   updateSla,
 } from "@/actions/sla"
@@ -74,6 +75,7 @@ export function SlaDetalleDialog({
   const [savingMeta, startSaveMeta] = useTransition()
   const [uploading, startUpload] = useTransition()
   const [deleting, startDelete] = useTransition()
+  const [borrandoSla, startBorrarSla] = useTransition()
 
   const [estado, setEstado] = useState<SlaEstado>("pendiente")
   const [fechaFirma, setFechaFirma] = useState("")
@@ -164,6 +166,27 @@ export function SlaDetalleDialog({
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error al subir")
       }
+    })
+  }
+
+  function handleBorrarSla() {
+    const slaId = sla!.id
+    const nombre = sla!.nombre
+    if (
+      !confirm(
+        `¿Borrar el SLA "${nombre}"? Se eliminan también sus acuerdos cargados. No se puede deshacer.`,
+      )
+    )
+      return
+    startBorrarSla(async () => {
+      const r = await deleteSla(slaId)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      toast.success("SLA borrado")
+      onOpenChange(false)
+      router.refresh()
     })
   }
 
@@ -361,6 +384,30 @@ export function SlaDetalleDialog({
                     Guardar cambios
                   </Button>
                 </div>
+              </div>
+
+              {/* Zona de riesgo: borrar el SLA del repositorio */}
+              <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3">
+                <div className="text-sm text-red-700">
+                  <div className="font-semibold">Borrar este SLA</div>
+                  <div className="text-xs text-red-600">
+                    Lo quita del repositorio junto con sus acuerdos. No se puede deshacer.
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleBorrarSla}
+                  disabled={borrandoSla}
+                  className="shrink-0"
+                >
+                  {borrandoSla ? (
+                    <Loader2 className="mr-1 size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1 size-4" />
+                  )}
+                  Borrar SLA
+                </Button>
               </div>
             </>
           )}
