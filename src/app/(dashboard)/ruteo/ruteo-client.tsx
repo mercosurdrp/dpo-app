@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
   Loader2,
@@ -12,18 +12,17 @@ import {
   Clock,
   Pencil,
   PackageX,
+  Truck,
+  X,
+  Package,
+  Users,
+  Gauge,
+  Target,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
 import {
   Table,
   TableHeader,
@@ -39,6 +38,10 @@ import {
   listarRuteoHistorial,
   type RuteoCierre,
 } from "@/actions/ruteo"
+import {
+  getOcupacionBodegaResumenDia,
+  type OBResumenDia,
+} from "@/actions/ocupacion-bodega-resumen-dia"
 
 // Hora HH:mm en zona Argentina a partir de un timestamptz ISO.
 const horaHHmm = (iso: string | null) =>
@@ -56,6 +59,10 @@ const fechaCorta = (f: string) => {
   const [y, m, d] = f.split("-")
   return `${d}/${m}/${y}`
 }
+
+// Número con separador de miles es-AR (sin decimales por defecto).
+const nf = (v: number, dec = 0) =>
+  v.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
 const FORM_INICIAL = {
   pergamino_bultos: "",
@@ -79,8 +86,24 @@ export function RuteoClient({
   const [historial, setHistorial] = useState<RuteoCierre[]>(historialInicial)
   const [mostrarForm, setMostrarForm] = useState(false)
   const [form, setForm] = useState({ ...FORM_INICIAL })
-  const [detalle, setDetalle] = useState<RuteoCierre | null>(null)
   const [pending, startTransition] = useTransition()
+
+  // Día seleccionado en la tabla + sus camiones (ocupación de bodega).
+  const [sel, setSel] = useState<RuteoCierre | null>(historialInicial[0] ?? null)
+  const [ocup, setOcup] = useState<OBResumenDia | null>(null)
+  const [loadingOcup, startOcup] = useTransition()
+
+  // Cargar camiones del día seleccionado.
+  useEffect(() => {
+    if (!sel) {
+      setOcup(null)
+      return
+    }
+    startOcup(async () => {
+      const res = await getOcupacionBodegaResumenDia(sel.fecha)
+      setOcup("data" in res ? res.data : null)
+    })
+  }, [sel])
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -140,171 +163,136 @@ export function RuteoClient({
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
-      <header className="mb-5 flex items-center gap-3">
+    <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      <header className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
           <Route className="size-5" />
         </span>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Ruteo</h1>
           <p className="text-sm text-slate-500">
-            Marcá el inicio y el fin del ruteo, y registrá bultos y clientes por ciudad.
+            Marcá el inicio y el fin del ruteo, y consultá los cierres anteriores
+            con el detalle de camiones por día.
           </p>
         </div>
       </header>
 
       {errorInicial && (
-        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
           {errorInicial}
         </div>
       )}
 
-      {/* ----- Fin de preventa ----- */}
-      <BloqueFinPreventa
-        dia={dia}
-        pending={pending}
-        onGuardar={handleFinPreventa}
-      />
+      {/* ===== Controles de ingreso (en fila) ===== */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BloqueFinPreventa
+          dia={dia}
+          pending={pending}
+          onGuardar={handleFinPreventa}
+        />
+        <BloqueEstado
+          dia={dia}
+          pending={pending}
+          mostrarForm={mostrarForm}
+          onIniciar={handleIniciar}
+          onAbrirForm={() => setMostrarForm(true)}
+        />
+      </div>
 
-      {/* ----- Estado del día ----- */}
-      {!dia || dia.estado === "pendiente" ? (
-        // Sin iniciar (o solo con fin de preventa registrado)
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="mb-4 text-sm text-slate-500">
-            Todavía no se inició el ruteo de hoy.
-          </p>
-          <Button size="lg" onClick={handleIniciar} disabled={pending}>
-            {pending ? (
-              <Loader2 className="mr-2 size-5 animate-spin" />
-            ) : (
-              <Play className="mr-2 size-5" />
-            )}
-            INICIO DE RUTEO
-          </Button>
-        </div>
-      ) : dia.estado === "en_curso" ? (
-        // En curso
+      {/* Formulario de cierre (ancho completo, al pedir FIN DE RUTEO) */}
+      {dia?.estado === "en_curso" && mostrarForm && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Ruteo en curso
-              </p>
-              <p className="mt-0.5 text-sm text-slate-700">
-                Iniciado a las{" "}
-                <span className="font-semibold tabular-nums">
-                  {horaHHmm(dia.hora_inicio)}
-                </span>
-              </p>
-            </div>
-            {!mostrarForm && (
-              <Button onClick={() => setMostrarForm(true)} disabled={pending}>
-                <Flag className="mr-2 size-4" />
-                FIN DE RUTEO
-              </Button>
-            )}
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">
+            Cierre del ruteo
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CiudadBloque
+              ciudad="Pergamino"
+              bultos={form.pergamino_bultos}
+              clientes={form.pergamino_clientes}
+              onBultos={(v) => set("pergamino_bultos", v)}
+              onClientes={(v) => set("pergamino_clientes", v)}
+            />
+            <CiudadBloque
+              ciudad="Ramallo"
+              bultos={form.ramallo_bultos}
+              clientes={form.ramallo_clientes}
+              onBultos={(v) => set("ramallo_bultos", v)}
+              onClientes={(v) => set("ramallo_clientes", v)}
+            />
           </div>
 
-          {mostrarForm && (
-            <div className="border-t border-slate-100 pt-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-900">
-                Cierre del ruteo
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <CiudadBloque
-                  ciudad="Pergamino"
-                  bultos={form.pergamino_bultos}
-                  clientes={form.pergamino_clientes}
-                  onBultos={(v) => set("pergamino_bultos", v)}
-                  onClientes={(v) => set("pergamino_clientes", v)}
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+              <PackageX className="size-4 text-rose-600" />
+              Volumen no ruteado (Pushed)
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:max-w-xs">
+              <div>
+                <Label className="mb-1.5 text-xs">Bultos no ruteados</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={form.bultos_no_ruteados}
+                  onChange={(e) => set("bultos_no_ruteados", e.target.value)}
+                  placeholder="0"
                 />
-                <CiudadBloque
-                  ciudad="Ramallo"
-                  bultos={form.ramallo_bultos}
-                  clientes={form.ramallo_clientes}
-                  onBultos={(v) => set("ramallo_bultos", v)}
-                  onClientes={(v) => set("ramallo_clientes", v)}
-                />
-              </div>
-
-              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
-                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-                  <PackageX className="size-4 text-rose-600" />
-                  Volumen no ruteado (Pushed)
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:max-w-xs">
-                  <div>
-                    <Label className="mb-1.5 text-xs">Bultos no ruteados</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      value={form.bultos_no_ruteados}
-                      onChange={(e) => set("bultos_no_ruteados", e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  Bultos que quedaron sin entrar en ninguna ruta. Objetivo: ≤ 5%
-                  del total.
-                </p>
-              </div>
-
-              <div className="mt-4">
-                <Label className="mb-1.5 text-xs">Notas (opcional)</Label>
-                <Textarea
-                  rows={1}
-                  value={form.notas}
-                  onChange={(e) => set("notas", e.target.value)}
-                  placeholder="Observaciones del ruteo"
-                />
-              </div>
-
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setMostrarForm(false)}
-                  disabled={pending}
-                >
-                  Cancelar
-                </Button>
-                <Button onClick={handleFinalizar} disabled={pending}>
-                  {pending ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="mr-2 size-4" />
-                  )}
-                  Cerrar ruteo
-                </Button>
               </div>
             </div>
-          )}
-        </div>
-      ) : (
-        // Cerrado
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-emerald-800">
-            <CheckCircle2 className="size-5" />
-            <p className="text-sm font-semibold">Ruteo de hoy cerrado</p>
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              Bultos que quedaron sin entrar en ninguna ruta. Objetivo: ≤ 5% del
+              total.
+            </p>
           </div>
-          <p className="mb-4 text-sm text-slate-600">
-            {horaHHmm(dia.hora_inicio)} – {horaHHmm(dia.hora_fin)}
-          </p>
-          <ResumenCiudades dia={dia} />
-          {dia.notas && (
-            <p className="mt-3 text-xs italic text-slate-500">{dia.notas}</p>
-          )}
+
+          <div className="mt-4">
+            <Label className="mb-1.5 text-xs">Notas (opcional)</Label>
+            <Textarea
+              rows={1}
+              value={form.notas}
+              onChange={(e) => set("notas", e.target.value)}
+              placeholder="Observaciones del ruteo"
+            />
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setMostrarForm(false)}
+              disabled={pending}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleFinalizar} disabled={pending}>
+              {pending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 size-4" />
+              )}
+              Cerrar ruteo
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* ----- Historial ----- */}
-      <div className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-slate-900">
+      {/* ===== Panel de detalle del día seleccionado ===== */}
+      {sel && (
+        <PanelDetalleDia
+          dia={sel}
+          ocup={ocup}
+          loading={loadingOcup}
+          onClose={() => setSel(null)}
+        />
+      )}
+
+      {/* ===== Tabla de cierres anteriores ===== */}
+      <div>
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">
           Cierres anteriores
         </h2>
         <p className="mb-2 text-xs text-slate-500">
-          Hacé clic en un día para ver el detalle completo.
+          Hacé clic en un día para ver arriba el detalle y los camiones.
         </p>
         {historial.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm text-slate-500">
@@ -327,15 +315,18 @@ export function RuteoClient({
               </TableHeader>
               <TableBody>
                 {historial.map((c) => (
-                  <HistorialRow key={c.id} c={c} onClick={() => setDetalle(c)} />
+                  <HistorialRow
+                    key={c.id}
+                    c={c}
+                    activa={sel?.id === c.id}
+                    onClick={() => setSel(c)}
+                  />
                 ))}
               </TableBody>
             </Table>
           </div>
         )}
       </div>
-
-      <DetalleRuteoDialog dia={detalle} onClose={() => setDetalle(null)} />
     </div>
   )
 }
@@ -448,6 +439,87 @@ function BloqueFinPreventa({
   )
 }
 
+// Tarjeta de estado del ruteo del día + acción principal (iniciar / cerrar).
+function BloqueEstado({
+  dia,
+  pending,
+  mostrarForm,
+  onIniciar,
+  onAbrirForm,
+}: {
+  dia: RuteoCierre | null
+  pending: boolean
+  mostrarForm: boolean
+  onIniciar: () => void
+  onAbrirForm: () => void
+}) {
+  // Sin iniciar (o solo con fin de preventa registrado).
+  if (!dia || dia.estado === "pendiente") {
+    return (
+      <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Estado de hoy
+          </p>
+          <p className="mt-0.5 text-sm text-slate-700">
+            Todavía no se inició el ruteo.
+          </p>
+        </div>
+        <Button size="lg" onClick={onIniciar} disabled={pending}>
+          {pending ? (
+            <Loader2 className="mr-2 size-5 animate-spin" />
+          ) : (
+            <Play className="mr-2 size-5" />
+          )}
+          INICIO DE RUTEO
+        </Button>
+      </div>
+    )
+  }
+
+  // En curso.
+  if (dia.estado === "en_curso") {
+    return (
+      <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm sm:flex-row sm:items-center">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-indigo-600">
+            Ruteo en curso
+          </p>
+          <p className="mt-0.5 text-sm text-slate-700">
+            Iniciado a las{" "}
+            <span className="font-semibold tabular-nums">
+              {horaHHmm(dia.hora_inicio)}
+            </span>
+          </p>
+        </div>
+        {!mostrarForm && (
+          <Button onClick={onAbrirForm} disabled={pending}>
+            <Flag className="mr-2 size-4" />
+            FIN DE RUTEO
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  // Cerrado.
+  const totalBultos = dia.pergamino_bultos + dia.ramallo_bultos
+  const totalClientes = dia.pergamino_clientes + dia.ramallo_clientes
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
+      <div className="flex items-center gap-2 text-emerald-800">
+        <CheckCircle2 className="size-5" />
+        <p className="text-sm font-semibold">Ruteo de hoy cerrado</p>
+      </div>
+      <p className="mt-1 text-sm text-slate-600">
+        {horaHHmm(dia.hora_inicio)} – {horaHHmm(dia.hora_fin)} ·{" "}
+        <span className="font-semibold tabular-nums">{totalBultos}</span> blt ·{" "}
+        <span className="font-semibold tabular-nums">{totalClientes}</span> cli
+      </p>
+    </div>
+  )
+}
+
 function CiudadBloque({
   ciudad,
   bultos,
@@ -495,54 +567,223 @@ function CiudadBloque({
   )
 }
 
-function ResumenCiudades({ dia }: { dia: RuteoCierre }) {
-  const totalBultos = dia.pergamino_bultos + dia.ramallo_bultos
-  const totalClientes = dia.pergamino_clientes + dia.ramallo_clientes
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <Stat label="Pergamino" value={`${dia.pergamino_bultos} blt · ${dia.pergamino_clientes} cli`} />
-      <Stat label="Ramallo" value={`${dia.ramallo_bultos} blt · ${dia.ramallo_clientes} cli`} />
-      <Stat label="Total" value={`${totalBultos} blt · ${totalClientes} cli`} highlight />
-      {dia.bultos_no_ruteados > 0 && (
-        <Stat label="No ruteado" value={`${dia.bultos_no_ruteados} blt`} />
-      )}
-    </div>
-  )
-}
-
-function Stat({
+// Mini-stat para el header del panel de detalle.
+function KpiDia({
+  icon,
   label,
   value,
-  highlight,
+  sub,
+  tone = "slate",
 }: {
+  icon: ReactNode
   label: string
   value: string
-  highlight?: boolean
+  sub?: string
+  tone?: "slate" | "indigo" | "rose" | "emerald"
 }) {
+  const toneCls = {
+    slate: "text-slate-700",
+    indigo: "text-indigo-700",
+    rose: "text-rose-700",
+    emerald: "text-emerald-700",
+  }[tone]
   return (
-    <div
-      className={`rounded-xl border p-3 ${
-        highlight
-          ? "border-indigo-200 bg-indigo-50/70"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+    <div className="bg-white p-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        <span className={toneCls}>{icon}</span>
         {label}
-      </p>
-      <p className="mt-0.5 text-base font-bold tabular-nums text-slate-900">
+      </div>
+      <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
         {value}
       </p>
+      {sub && <p className="text-[11px] text-slate-500">{sub}</p>}
     </div>
   )
 }
 
-function HistorialRow({ c, onClick }: { c: RuteoCierre; onClick: () => void }) {
+// Badge de % de ocupación de bodega contra el target (100% = 525 CEq).
+function OcupBadge({ pct }: { pct: number }) {
+  const cls =
+    pct >= 100
+      ? "bg-emerald-100 text-emerald-700"
+      : pct >= 80
+        ? "bg-amber-100 text-amber-700"
+        : "bg-rose-100 text-rose-700"
+  return (
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${cls}`}
+    >
+      {nf(pct, 0)}%
+    </span>
+  )
+}
+
+// Panel destacado con el detalle de un día + los camiones (ocupación de bodega).
+function PanelDetalleDia({
+  dia,
+  ocup,
+  loading,
+  onClose,
+}: {
+  dia: RuteoCierre
+  ocup: OBResumenDia | null
+  loading: boolean
+  onClose: () => void
+}) {
+  const totalBultos = dia.pergamino_bultos + dia.ramallo_bultos
+  const totalClientes = dia.pergamino_clientes + dia.ramallo_clientes
+  const viajes = ocup?.viajes ?? []
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-4 text-white">
+        <div>
+          <div className="flex items-center gap-2">
+            <Truck className="size-5" />
+            <h3 className="text-base font-bold">
+              Detalle del {fechaCorta(dia.fecha)}
+            </h3>
+          </div>
+          <p className="mt-0.5 text-sm text-indigo-100">
+            {horaHHmm(dia.hora_inicio)} – {horaHHmm(dia.hora_fin)} · Fin preventa{" "}
+            {horaHHmm(dia.hora_fin_preventa)}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1 text-indigo-100 transition hover:bg-white/15 hover:text-white"
+          aria-label="Cerrar detalle"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      {/* KPIs del día */}
+      <div className="grid grid-cols-2 gap-px bg-slate-100 sm:grid-cols-3 lg:grid-cols-6">
+        <KpiDia
+          icon={<Package className="size-3.5" />}
+          label="Bultos"
+          value={nf(totalBultos)}
+          sub={`Perg ${nf(dia.pergamino_bultos)} · Ram ${nf(dia.ramallo_bultos)}`}
+          tone="indigo"
+        />
+        <KpiDia
+          icon={<Users className="size-3.5" />}
+          label="Clientes"
+          value={nf(totalClientes)}
+          sub={`Perg ${nf(dia.pergamino_clientes)} · Ram ${nf(dia.ramallo_clientes)}`}
+        />
+        <KpiDia
+          icon={<PackageX className="size-3.5" />}
+          label="No ruteado"
+          value={`${nf(dia.bultos_no_ruteados)} blt`}
+          tone={dia.bultos_no_ruteados > 0 ? "rose" : "slate"}
+        />
+        <KpiDia
+          icon={<Truck className="size-3.5" />}
+          label="Camiones"
+          value={ocup ? nf(ocup.total_viajes) : "—"}
+        />
+        <KpiDia
+          icon={<Gauge className="size-3.5" />}
+          label="CEq prom."
+          value={ocup ? nf(ocup.ceq_promedio, 1) : "—"}
+          sub={ocup ? `target ${nf(525)}` : undefined}
+        />
+        <KpiDia
+          icon={<Target className="size-3.5" />}
+          label="En meta"
+          value={ocup ? `${nf(ocup.en_meta)}/${nf(ocup.total_viajes)}` : "—"}
+          tone="emerald"
+        />
+      </div>
+
+      {dia.notas && (
+        <p className="border-t border-slate-100 px-5 py-2 text-xs italic text-slate-500">
+          {dia.notas}
+        </p>
+      )}
+
+      {/* Tabla de camiones */}
+      <div className="border-t border-slate-100 p-5">
+        <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+          <Truck className="size-4 text-indigo-600" />
+          Camiones del día
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400">
+            <Loader2 className="size-5 animate-spin" />
+            Cargando camiones…
+          </div>
+        ) : viajes.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm text-slate-500">
+            No hay datos de camiones (ocupación de bodega) para este día.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Patente</TableHead>
+                  <TableHead className="text-right">Bultos</TableHead>
+                  <TableHead className="text-right">HL</TableHead>
+                  <TableHead className="text-right">Líneas</TableHead>
+                  <TableHead className="text-right">SKUs</TableHead>
+                  <TableHead className="text-right">CEq</TableHead>
+                  <TableHead className="text-center">Ocupación</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {viajes.map((v) => (
+                  <TableRow key={v.patente}>
+                    <TableCell className="font-medium text-slate-900">
+                      {v.patente}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-600">
+                      {nf(v.bultos_total)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-600">
+                      {nf(v.hl_total, 1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-600">
+                      {nf(v.lineas)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-600">
+                      {nf(v.skus_distintos)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-slate-900">
+                      {nf(v.ceq_total, 1)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <OcupBadge pct={v.ob_pct} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function HistorialRow({
+  c,
+  activa,
+  onClick,
+}: {
+  c: RuteoCierre
+  activa: boolean
+  onClick: () => void
+}) {
   const totalBultos = c.pergamino_bultos + c.ramallo_bultos
   const totalClientes = c.pergamino_clientes + c.ramallo_clientes
   return (
     <TableRow
-      className="cursor-pointer hover:bg-slate-50"
+      className={`cursor-pointer ${activa ? "bg-indigo-50 hover:bg-indigo-50" : "hover:bg-slate-50"}`}
       onClick={onClick}
     >
       <TableCell className="font-medium tabular-nums text-slate-900">
@@ -578,48 +819,5 @@ function HistorialRow({ c, onClick }: { c: RuteoCierre; onClick: () => void }) {
         </span>
       </TableCell>
     </TableRow>
-  )
-}
-
-function DetalleRuteoDialog({
-  dia,
-  onClose,
-}: {
-  dia: RuteoCierre | null
-  onClose: () => void
-}) {
-  return (
-    <Dialog open={dia !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {dia ? `Ruteo del ${fechaCorta(dia.fecha)}` : "Detalle del ruteo"}
-          </DialogTitle>
-          <DialogDescription>
-            {dia
-              ? `${horaHHmm(dia.hora_inicio)} – ${horaHHmm(dia.hora_fin)}`
-              : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        {dia && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <Stat label="Fin preventa" value={horaHHmm(dia.hora_fin_preventa)} />
-              <Stat label="Inicio" value={horaHHmm(dia.hora_inicio)} />
-              <Stat label="Fin" value={horaHHmm(dia.hora_fin)} />
-            </div>
-
-            <ResumenCiudades dia={dia} />
-
-            {dia.notas && (
-              <p className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-xs italic text-slate-600">
-                {dia.notas}
-              </p>
-            )}
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
   )
 }
