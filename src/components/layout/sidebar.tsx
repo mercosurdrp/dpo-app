@@ -138,7 +138,7 @@ export const navItems: NavItem[] = [
   },
   {
     label: "Acarreo (detalle)",
-    href: "https://acarreo-rdf.vercel.app/completados",
+    href: "https://acarreo-rdf.vercel.app/historico",
     icon: <PackageCheck className="size-5" />,
     pampeanaOnly: true,
     roles: ["admin", "supervisor"],
