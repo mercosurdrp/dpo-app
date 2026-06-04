@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Presentation } from "lucide-react"
+import { Presentation, Truck, Handshake, Sunrise, Warehouse } from "lucide-react"
 import {
   Tabs,
   TabsContent,
@@ -31,18 +31,30 @@ export function ReunionesClient() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v: string | null) => setTab(v ?? "logistica")}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
-          <TabsTrigger value="logistica" className="flex-none">
-            Logística
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 bg-transparent p-0">
+          <TabsTrigger
+            value="logistica"
+            className="flex-none gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium [&_svg]:text-sky-600 data-active:border-sky-300 data-active:bg-sky-100 data-active:text-sky-900 data-active:shadow-sm"
+          >
+            <Truck className="size-4" /> Logística Diaria
           </TabsTrigger>
-          <TabsTrigger value="logistica-ventas" className="flex-none">
-            Logística-Ventas
+          <TabsTrigger
+            value="logistica-ventas"
+            className="flex-none gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium [&_svg]:text-violet-600 data-active:border-violet-300 data-active:bg-violet-100 data-active:text-violet-900 data-active:shadow-sm"
+          >
+            <Handshake className="size-4" /> Logística-Ventas
           </TabsTrigger>
-          <TabsTrigger value="matinal-distribucion" className="flex-none">
-            Matinal Distribución
+          <TabsTrigger
+            value="matinal-distribucion"
+            className="flex-none gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium [&_svg]:text-amber-600 data-active:border-amber-300 data-active:bg-amber-100 data-active:text-amber-900 data-active:shadow-sm"
+          >
+            <Sunrise className="size-4" /> Matinal Distribución
           </TabsTrigger>
-          <TabsTrigger value="warehouse" className="flex-none">
-            Warehouse
+          <TabsTrigger
+            value="warehouse"
+            className="flex-none gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium [&_svg]:text-emerald-600 data-active:border-emerald-300 data-active:bg-emerald-100 data-active:text-emerald-900 data-active:shadow-sm"
+          >
+            <Warehouse className="size-4" /> Cambio de Turno Warehouse
           </TabsTrigger>
         </TabsList>
 
