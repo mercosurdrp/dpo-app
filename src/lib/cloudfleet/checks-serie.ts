@@ -34,12 +34,43 @@ const CC_POR_SUCURSAL: Record<Exclude<MisionesSucursal, "todo">, string> = {
   iguazu: "Iguazú",
 }
 
+// Camiones Misiones cuya LIBERACION a veces llega de Cloudfleet sin centro de
+// costo (null). Sin esto, el check no matchea ninguna sucursal y se descarta
+// (ej.: HJR136 salió aprobado pero el indicador contaba 8 en vez de 9).
+// Se les asigna su sucursal real para que igual cuenten. Código en MAYÚSCULAS.
+const CC_FALLBACK_POR_PATENTE: Record<string, string> = {
+  HJR136: "Iguazú",
+}
+
 export interface CloudfleetChecksSerie {
   checks_aprobados: Record<string, number | null>
   checks_rechazados: Record<string, number | null>
   ae_aprobados: Record<string, number | null>
   lib_count: Record<string, number | null>
   ret_count: Record<string, number | null>
+}
+
+/** Estado de un camión en el día: liberación + retorno (regla 1 + 1). */
+export interface ChecksCamionDia {
+  dominio: string
+  sucursal: string | null
+  liberacion: "aprobada" | "rechazada" | "ausente"
+  retorno: "presente" | "ausente"
+  /** true si falta la liberación o el retorno (no cumple la regla 1 + 1). */
+  incompleto: boolean
+}
+
+export interface CloudfleetChecksDetalleDia {
+  fecha: string
+  camiones: ChecksCamionDia[]
+  lib_aprobadas: number
+  lib_rechazadas: number
+  lib_total: number
+  ret_total: number
+  /** Dominios con retorno pero SIN liberación (salieron sin liberar). */
+  sin_liberacion: string[]
+  /** Dominios con liberación pero SIN retorno (sin cerrar el día). */
+  sin_retorno: string[]
 }
 
 function todayARG(): string {
@@ -104,15 +135,33 @@ export async function buildCloudfleetChecksSerie(
   const aeAprobPorFecha: Record<string, Set<string>> = {}
   for (const f of fechas) aeAprobPorFecha[f] = new Set<string>()
 
+  // Los indicadores cuentan CAMIONES DISTINTOS por día, no checklists: la regla
+  // operativa es 1 liberación + 1 retorno por camión. Un camión con varias
+  // liberaciones (ej. rehizo el check) cuenta una sola vez; cuenta como
+  // aprobado si AL MENOS UNA de sus liberaciones quedó aprobada, y como
+  // rechazado solo si tuvo liberación y NINGUNA aprobó. Así nunca está en
+  // aprobados y rechazados a la vez, y el denominador de Adherencia
+  // (2 × camiones) cuadra.
+  interface EstadoCamion {
+    libExiste: boolean
+    libAprobada: boolean
+    retExiste: boolean
+  }
+  const camionesPorFecha: Record<string, Map<string, EstadoCamion>> = {}
+  for (const f of fechas) camionesPorFecha[f] = new Map()
+
   for (const r of data as ChecklistRow[]) {
     const f = r.fecha
     if (!(f in serie.checks_aprobados)) continue
     const code = (r.vehicle_code ?? "").toUpperCase()
     const tipo = r.tipo ?? ""
     const aprobado = (r.status ?? "").toUpperCase() === "APROBADO"
+    // Centro de costo efectivo: usa el de Cloudfleet o, si vino vacío, el
+    // fallback fijo de la patente (ver CC_FALLBACK_POR_PATENTE).
+    const cc = r.cost_center ?? CC_FALLBACK_POR_PATENTE[code] ?? null
 
     if (tipo === "PREOPERACIONAL AE") {
-      if (AE_VEHICLES.has(code) && ccPermitido(r.cost_center) && aprobado) {
+      if (AE_VEHICLES.has(code) && ccPermitido(cc) && aprobado) {
         aeAprobPorFecha[f].add(code)
       }
       continue
@@ -120,21 +169,158 @@ export async function buildCloudfleetChecksSerie(
 
     // Camiones (excluir AE y patentes de otro negocio).
     if (PLACAS_EXCLUIDAS.has(code)) continue
-    if (!ccPermitido(r.cost_center)) continue
+    if (!ccPermitido(cc)) continue
 
+    const est =
+      camionesPorFecha[f].get(code) ??
+      { libExiste: false, libAprobada: false, retExiste: false }
     if (tipo === "LIBERACION") {
-      serie.lib_count[f] = (serie.lib_count[f] ?? 0) + 1
-      if (aprobado) {
-        serie.checks_aprobados[f] = (serie.checks_aprobados[f] ?? 0) + 1
-      } else {
-        serie.checks_rechazados[f] = (serie.checks_rechazados[f] ?? 0) + 1
-      }
+      est.libExiste = true
+      if (aprobado) est.libAprobada = true
     } else if (tipo === "RETORNO") {
-      serie.ret_count[f] = (serie.ret_count[f] ?? 0) + 1
+      est.retExiste = true
+    }
+    camionesPorFecha[f].set(code, est)
+  }
+
+  for (const f of fechas) {
+    let aprob = 0
+    let rech = 0
+    let lib = 0
+    let ret = 0
+    for (const est of camionesPorFecha[f].values()) {
+      if (est.libExiste) {
+        lib++
+        if (est.libAprobada) aprob++
+        else rech++
+      }
+      if (est.retExiste) ret++
+    }
+    serie.checks_aprobados[f] = aprob
+    serie.checks_rechazados[f] = rech
+    serie.lib_count[f] = lib
+    serie.ret_count[f] = ret
+    serie.ae_aprobados[f] = aeAprobPorFecha[f].size
+  }
+
+  return serie
+}
+
+/**
+ * Detalle por camión de un día: estado de liberación y retorno de cada camión,
+ * con los mismos filtros que la serie (patentes excluidas, fallback de CC,
+ * sucursal). Para el popup del tablero de reuniones — permite ver quién salió
+ * sin liberación o cerró sin retorno (regla: 1 liberación + 1 retorno por
+ * camión). Los PREOPERACIONAL AE no son camiones de reparto → se ignoran acá.
+ */
+export async function buildCloudfleetChecksDetalleDia(
+  supabase: SupabaseClient,
+  fecha: string,
+  sucursal: MisionesSucursal = "todo",
+): Promise<CloudfleetChecksDetalleDia> {
+  // Refresh best-effort si es hoy (las liberaciones se cargan a la mañana).
+  if (fecha === todayARG()) {
+    try {
+      await syncCloudfleetChecklists(createAdminClient(), fecha, fecha)
+    } catch {
+      // ignorado: usamos lo ya sincronizado.
     }
   }
 
-  for (const f of fechas) serie.ae_aprobados[f] = aeAprobPorFecha[f].size
+  const vacio: CloudfleetChecksDetalleDia = {
+    fecha,
+    camiones: [],
+    lib_aprobadas: 0,
+    lib_rechazadas: 0,
+    lib_total: 0,
+    ret_total: 0,
+    sin_liberacion: [],
+    sin_retorno: [],
+  }
 
-  return serie
+  const { data, error } = await supabase
+    .from("cloudfleet_checklists")
+    .select("fecha,tipo,vehicle_code,cost_center,status")
+    .eq("fecha", fecha)
+  if (error || !data) return vacio
+
+  const ccPermitido = (cc: string | null): boolean => {
+    if (sucursal === "todo") return cc === "Eldorado" || cc === "Iguazú"
+    return cc === CC_POR_SUCURSAL[sucursal]
+  }
+
+  interface Est {
+    sucursal: string | null
+    libExiste: boolean
+    libAprobada: boolean
+    retExiste: boolean
+  }
+  const map = new Map<string, Est>()
+  for (const r of data as ChecklistRow[]) {
+    const code = (r.vehicle_code ?? "").toUpperCase()
+    const tipo = r.tipo ?? ""
+    if (tipo !== "LIBERACION" && tipo !== "RETORNO") continue
+    if (PLACAS_EXCLUIDAS.has(code)) continue
+    const cc = r.cost_center ?? CC_FALLBACK_POR_PATENTE[code] ?? null
+    if (!ccPermitido(cc)) continue
+    const aprobado = (r.status ?? "").toUpperCase() === "APROBADO"
+    const est =
+      map.get(code) ??
+      { sucursal: cc, libExiste: false, libAprobada: false, retExiste: false }
+    if (cc && !est.sucursal) est.sucursal = cc
+    if (tipo === "LIBERACION") {
+      est.libExiste = true
+      if (aprobado) est.libAprobada = true
+    } else {
+      est.retExiste = true
+    }
+    map.set(code, est)
+  }
+
+  const camiones: ChecksCamionDia[] = []
+  const sinLiberacion: string[] = []
+  const sinRetorno: string[] = []
+  let libAprob = 0
+  let libRech = 0
+  let libTotal = 0
+  let retTotal = 0
+  for (const [code, est] of map) {
+    const liberacion: ChecksCamionDia["liberacion"] = est.libExiste
+      ? est.libAprobada
+        ? "aprobada"
+        : "rechazada"
+      : "ausente"
+    const retorno: ChecksCamionDia["retorno"] = est.retExiste
+      ? "presente"
+      : "ausente"
+    if (est.libExiste) {
+      libTotal++
+      if (est.libAprobada) libAprob++
+      else libRech++
+    }
+    if (est.retExiste) retTotal++
+    if (!est.libExiste && est.retExiste) sinLiberacion.push(code)
+    if (est.libExiste && !est.retExiste) sinRetorno.push(code)
+    camiones.push({
+      dominio: code,
+      sucursal: est.sucursal,
+      liberacion,
+      retorno,
+      incompleto: !est.libExiste || !est.retExiste,
+    })
+  }
+  camiones.sort((a, b) => a.dominio.localeCompare(b.dominio))
+  sinLiberacion.sort()
+  sinRetorno.sort()
+
+  return {
+    fecha,
+    camiones,
+    lib_aprobadas: libAprob,
+    lib_rechazadas: libRech,
+    lib_total: libTotal,
+    ret_total: retTotal,
+    sin_liberacion: sinLiberacion,
+    sin_retorno: sinRetorno,
+  }
 }

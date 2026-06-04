@@ -32,19 +32,32 @@ function apiKey(): string {
 }
 
 /**
- * Lista todos los checklists en [desde, hasta] (YYYY-MM-DD, filtro por
- * checklistDate). Pagina de a 50 (page=N) hasta agotar.
+ * 🚨 La API trata `checklistDateTo` como EXCLUSIVO: para incluir el día `hasta`
+ * hay que pedir el día siguiente. Sin esto, un sync de un solo día (hoy→hoy)
+ * devuelve vacío y los checks del día actual nunca se sincronizan.
+ * Devuelve `fecha` + 1 día (YYYY-MM-DD), en UTC para no correr el día por TZ.
+ */
+function diaSiguiente(fecha: string): string {
+  const t = new Date(`${fecha}T00:00:00Z`).getTime()
+  return new Date(t + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/**
+ * Lista todos los checklists en [desde, hasta] INCLUSIVO (YYYY-MM-DD, filtro por
+ * checklistDate). Pagina de a 50 (page=N) hasta agotar. La exclusividad de
+ * `checklistDateTo` en la API se compensa internamente (ver `diaSiguiente`).
  */
 export async function fetchChecklists(
   desde: string,
   hasta: string,
 ): Promise<CloudfleetChecklist[]> {
   const key = apiKey()
+  const hastaExclusivo = diaSiguiente(hasta)
   const out: CloudfleetChecklist[] = []
   for (let page = 1; page <= 200; page++) {
     const url =
       `${BASE_URL}/checklist/?checklistDateFrom=${desde}` +
-      `&checklistDateTo=${hasta}&page=${page}`
+      `&checklistDateTo=${hastaExclusivo}&page=${page}`
     const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${key}`,

@@ -49,6 +49,7 @@ import {
   marcarMiAsistencia,
   quitarAsistente,
   setIndicadorValor,
+  setIndicadorOverrideDiario,
 } from "@/actions/reuniones"
 import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
@@ -62,6 +63,7 @@ import { OcupacionBodegaDetalleDiaDialog } from "@/components/reuniones/ocupacio
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
+import { ChecksDetalleDiaDialog } from "@/components/reuniones/checks-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import type {
@@ -86,6 +88,8 @@ interface IndicadorMesCellData {
   valor: number | null
   observacion: string | null
   texto?: string | null
+  es_override?: boolean
+  auto_valor?: number | null
 }
 
 interface IndicadorMesItem {
@@ -101,6 +105,7 @@ interface IndicadorMesItem {
   auto?: boolean
   mostrar_cero?: boolean
   mejor_si?: "menor" | "mayor"
+  editable_historico?: boolean
 }
 
 interface IndicadoresMesData {
@@ -498,6 +503,124 @@ function ValorInput({
 }
 
 // =============================================
+// Celda editable por OVERRIDE diario (Productividad/Errores/Pérdidas).
+// Permite corregir el valor de cualquier día (incluido hacia atrás). Vacío
+// = usa el valor automático (que se muestra como placeholder). Con valor =
+// pisa el auto. Resaltada en ámbar cuando hay override cargado.
+// =============================================
+function OverrideValorInput({
+  indicadorKey,
+  fecha,
+  reunionId,
+  puedeEditar,
+  valor,
+  autoValor,
+  esOverride,
+  onChanged,
+}: {
+  indicadorKey: string
+  fecha: string
+  reunionId: string
+  puedeEditar: boolean
+  valor: number | null
+  autoValor: number | null
+  esOverride: boolean
+  onChanged: () => void
+}) {
+  const inicial = esOverride && valor != null ? String(valor) : ""
+  const [val, setVal] = useState<string>(inicial)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const lastRef = useRef<string>(inicial)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const next = esOverride && valor != null ? String(valor) : ""
+    setVal(next)
+    lastRef.current = next
+  }, [esOverride, valor])
+
+  const persist = useCallback(
+    (nuevo: string) => {
+      if (nuevo === lastRef.current) return
+      const trimmed = nuevo.trim()
+      const numero = trimmed === "" ? null : Number(trimmed.replace(",", "."))
+      if (numero !== null && !Number.isFinite(numero)) {
+        setError("Inválido")
+        return
+      }
+      setError(null)
+      setSaving(true)
+      void setIndicadorOverrideDiario(
+        reunionId,
+        indicadorKey,
+        fecha,
+        numero,
+      ).then((res) => {
+        setSaving(false)
+        if ("error" in res) {
+          setError(res.error)
+          return
+        }
+        lastRef.current = nuevo
+        onChanged()
+      })
+    },
+    [reunionId, indicadorKey, fecha, onChanged],
+  )
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.value
+    setVal(next)
+    if (!puedeEditar) return
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => persist(next), 600)
+  }
+
+  function handleBlur() {
+    if (!puedeEditar) return
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    persist(val)
+  }
+
+  const placeholder =
+    autoValor != null && Number.isFinite(autoValor)
+      ? formatearValor(autoValor)
+      : "—"
+
+  return (
+    <div className="flex flex-col items-center">
+      <Input
+        type="number"
+        step="any"
+        value={val}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        disabled={!puedeEditar}
+        className={cn(
+          "h-8 w-20 text-center text-sm",
+          esOverride && "border-amber-400 bg-amber-50 font-semibold text-amber-800",
+          saving && "border-blue-300",
+          error && "border-red-400",
+        )}
+        placeholder={placeholder}
+        title={
+          esOverride
+            ? `Valor corregido a mano (automático: ${placeholder})`
+            : "Cargá un valor para corregir este día; vacío usa el automático"
+        }
+      />
+      {error && (
+        <span className="mt-0.5 text-[9px] text-red-600">{error}</span>
+      )}
+    </div>
+  )
+}
+
+// =============================================
 // Actividad row
 // =============================================
 function ActividadListItem({
@@ -778,6 +901,43 @@ export function ReunionDetallePageClient({
     }
   }
 
+  // Sincronización manual de Cloudfleet (checklists de liberación/retorno/AE).
+  // Resincroniza TODO el mes del tablero y refresca los indicadores. Solo
+  // Misiones/logística. Independiente del sync de Foxtrot.
+  const [sincronizandoChecks, setSincronizandoChecks] = useState(false)
+  const [syncChecksMsg, setSyncChecksMsg] = useState<string | null>(null)
+  const sincronizarChecks = async () => {
+    if (sincronizandoChecks) return
+    setSincronizandoChecks(true)
+    setSyncChecksMsg(null)
+    try {
+      const fechas = indicadoresMes?.fechas ?? []
+      const qs =
+        fechas.length > 0
+          ? `?desde=${fechas[0]}&hasta=${fechas[fechas.length - 1]}`
+          : ""
+      const res = await fetch(`/api/cloudfleet/sync-manual${qs}`, {
+        method: "POST",
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSyncChecksMsg(`Error: ${json.error ?? res.statusText}`)
+        return
+      }
+      setSyncChecksMsg(`Checks sincronizados · ${json.total ?? 0} registros`)
+      // Refrescar el tablero con la sucursal actual.
+      const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
+      if ("data" in ind) setIndicadoresMes(ind.data)
+      router.refresh()
+    } catch (e) {
+      setSyncChecksMsg(
+        `Error: ${e instanceof Error ? e.message : "no se pudo sincronizar"}`,
+      )
+    } finally {
+      setSincronizandoChecks(false)
+    }
+  }
+
   const [openConfigInd, setOpenConfigInd] = useState(false)
   const [openActForm, setOpenActForm] = useState(false)
   const [actividadEditando, setActividadEditando] =
@@ -821,6 +981,13 @@ export function ReunionDetallePageClient({
   const [checklistDetalleFecha, setChecklistDetalleFecha] = useState<
     string | null
   >(null)
+
+  // Detalle del día al hacer click en una celda de los indicadores de checks de
+  // Cloudfleet (Checks Aprobados/Rechazados o Adherencia): estado de liberación
+  // + retorno por camión, marcando quién quedó incompleto.
+  const [checksDetalleFecha, setChecksDetalleFecha] = useState<string | null>(
+    null,
+  )
 
   // Detalle del día al hacer click en la celda del indicador Km recorridos:
   // km por camión (odómetro de retorno − odómetro de liberación).
@@ -1128,6 +1295,24 @@ export function ReunionDetallePageClient({
                 {sincronizando ? "Sincronizando…" : "Sincronizar (4 días)"}
               </Button>
             )}
+            {muestraToggleSucursal && puedeEditar && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={sincronizarChecks}
+                disabled={sincronizandoChecks}
+                title="Resincroniza los checklists de Cloudfleet de todo el mes"
+              >
+                <RefreshCw
+                  className={cn(
+                    "mr-2 size-4",
+                    sincronizandoChecks && "animate-spin",
+                  )}
+                />
+                {sincronizandoChecks ? "Sincronizando…" : "Sincronizar checks"}
+              </Button>
+            )}
             {puedeEditar && (
               <Button
                 type="button"
@@ -1172,16 +1357,30 @@ export function ReunionDetallePageClient({
                   Ausentismo se muestra siempre total
                 </span>
               )}
-              {syncMsg && (
-                <span
-                  className={cn(
-                    "ml-auto text-[11px]",
-                    syncMsg.startsWith("Error")
-                      ? "text-red-600"
-                      : "text-emerald-600",
+              {(syncMsg || syncChecksMsg) && (
+                <span className="ml-auto flex flex-col items-end gap-0.5 text-[11px]">
+                  {syncMsg && (
+                    <span
+                      className={cn(
+                        syncMsg.startsWith("Error")
+                          ? "text-red-600"
+                          : "text-emerald-600",
+                      )}
+                    >
+                      {syncMsg}
+                    </span>
                   )}
-                >
-                  {syncMsg}
+                  {syncChecksMsg && (
+                    <span
+                      className={cn(
+                        syncChecksMsg.startsWith("Error")
+                          ? "text-red-600"
+                          : "text-emerald-600",
+                      )}
+                    >
+                      {syncChecksMsg}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -1313,6 +1512,48 @@ export function ReunionDetallePageClient({
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
 
+                        // Filas editables HACIA ATRÁS (Productividad/Errores/
+                        // Pérdidas): cada día <= la fecha de la reunión es una
+                        // celda editable por override (pisa el auto). El futuro
+                        // se muestra como "—". Tiene prioridad sobre auto/manual.
+                        if (ind.editable_historico) {
+                          if (f > detalle.fecha) {
+                            return (
+                              <td
+                                key={f}
+                                className={cn(
+                                  "px-2 py-1 text-center align-middle text-sm text-slate-300",
+                                  esHoy && "bg-blue-50",
+                                  dom && "bg-slate-50",
+                                )}
+                              >
+                                —
+                              </td>
+                            )
+                          }
+                          return (
+                            <td
+                              key={f}
+                              className={cn(
+                                "px-1 py-1 align-middle",
+                                esHoy && "bg-blue-50",
+                                dom && "bg-slate-50",
+                              )}
+                            >
+                              <OverrideValorInput
+                                indicadorKey={ind.id}
+                                fecha={f}
+                                reunionId={detalle.id}
+                                puedeEditar={puedeEditarTablero}
+                                valor={cell?.valor ?? null}
+                                autoValor={cell?.auto_valor ?? null}
+                                esOverride={cell?.es_override ?? false}
+                                onChanged={refrescar}
+                              />
+                            </td>
+                          )
+                        }
+
                         // Filas AUTO (LTI/TRI desde reportes_seguridad, Rechazos %
                         // desde rechazos+ventas_diarias): se muestran como read-only,
                         // independientemente de si hubo reunión. Sólo hasta `f <= fecha`
@@ -1372,6 +1613,10 @@ export function ReunionDetallePageClient({
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
                           const esChecklist = ind.id === "auto_checklist"
+                          const esChecks =
+                            ind.id === "auto_checks_aprobados" ||
+                            ind.id === "auto_checks_rechazados" ||
+                            ind.id === "auto_adherencia_checks"
                           const esKm = ind.id === "auto_km_recorridos"
                           const esHorasCalle = ind.id === "auto_horas_calle"
                           const esAperturaPicking =
@@ -1385,6 +1630,7 @@ export function ReunionDetallePageClient({
                               esHlVendidos ||
                               esTml ||
                               esChecklist ||
+                              esChecks ||
                               esKm ||
                               esHorasCalle ||
                               esAperturaPicking ||
@@ -1397,6 +1643,7 @@ export function ReunionDetallePageClient({
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
                             else if (esChecklist) setChecklistDetalleFecha(f)
+                            else if (esChecks) setChecksDetalleFecha(f)
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
@@ -1748,6 +1995,15 @@ export function ReunionDetallePageClient({
           if (!o) setChecklistDetalleFecha(null)
         }}
         fecha={checklistDetalleFecha}
+      />
+
+      <ChecksDetalleDiaDialog
+        open={checksDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setChecksDetalleFecha(null)
+        }}
+        fecha={checksDetalleFecha}
+        sucursal={sucursalSel}
       />
 
       <KmRecorridosDetalleDiaDialog

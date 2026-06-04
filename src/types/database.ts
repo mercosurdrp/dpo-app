@@ -2685,6 +2685,10 @@ export interface ReunionIndicadoresMes {
         observacion: string | null
         /** Texto a mostrar en la celda en vez del número (ej. "8/8" del indicador Checklist). */
         texto?: string | null
+        /** Si true, el valor de esta celda es un override manual cargado a mano (pisa el auto). */
+        es_override?: boolean
+        /** Valor automático subyacente (del scraper/serie), para mostrar como placeholder cuando hay override editable. */
+        auto_valor?: number | null
       } | null
     >
     mtd: number | null
@@ -2692,6 +2696,8 @@ export interface ReunionIndicadoresMes {
     mtd_texto?: string | null
     /** Si true, la fila viene calculada por el sistema (no editable) — p.ej. LTI/TRI desde reportes_seguridad. */
     auto?: boolean
+    /** Si true, cada celda de día pasado/hoy es editable a mano vía override diario (Productividad/Errores/Pérdidas). */
+    editable_historico?: boolean
     /** Si true, una celda con valor 0 también se muestra (no se oculta como "—"). Útil para tasas/% donde 0% es info válida. */
     mostrar_cero?: boolean
     /** Para filas auto con meta: define la polaridad del cumplimiento. "menor" = mejor cuando valor ≤ meta (ej. Rechazos %); "mayor" = mejor cuando valor ≥ meta (ej. Bultos vendidos). */

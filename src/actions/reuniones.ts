@@ -2284,12 +2284,25 @@ export async function setIndicadorValor(
 // y PISA el valor automático. Borrar (valor null) vuelve al automático.
 // Ver migración 099 + aplicación en getIndicadoresMes.
 // =====================================================================
+// Ids AUTO habilitados para override (varían por tenant: en Misiones errores =
+// `auto_errores_deposito`). Se valida la key contra este set o, para manuales,
+// contra el nombre (OVERRIDE_NOMBRES).
 const OVERRIDE_AUTO_KEYS = new Set([
   "auto_productividad_picking",
   "auto_errores_picking",
+  "auto_errores_deposito",
+  "auto_ausentismo",
 ])
-/** Nombres (lowercase) de indicadores manuales habilitados para override diario. */
-const OVERRIDE_NOMBRES = new Set(["pérdidas", "perdidas"])
+// Nombres (lowercase) habilitados para override diario. Matchea tanto filas
+// AUTO como MANUALES (en Misiones productividad/pérdidas/ausentismo son carga
+// manual del usuario y errores es auto con otro id).
+const OVERRIDE_NOMBRES = new Set([
+  "productividad de picking",
+  "errores de picking",
+  "pérdidas",
+  "perdidas",
+  "ausentismo",
+])
 
 export async function setIndicadorOverrideDiario(
   reunionId: string,
