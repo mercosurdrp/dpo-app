@@ -61,12 +61,28 @@ export async function GET(request: NextRequest) {
 
   const rows = data ?? []
   if (rows.length === 0) {
-    return NextResponse.json({ ranking: [], periodo_label: "", area })
+    return NextResponse.json({ ranking: [], periodo_label: "", area, foto_url: null })
   }
 
   // Último período cargado
   const ultimo = rows[0].periodo_desde
   const delPeriodo = rows.filter((r) => r.periodo_desde === ultimo)
+
+  // Foto de ganadores del período (bucket público s5-ganadores).
+  let foto_url: string | null = null
+  try {
+    const { data: files } = await supabase.storage.from("s5-ganadores").list(ultimo)
+    const f = files?.find((x) => x.name === `${area}.jpg`)
+    if (f) {
+      const { data: pub } = supabase.storage
+        .from("s5-ganadores")
+        .getPublicUrl(`${ultimo}/${area}.jpg`)
+      const v = (f.updated_at || f.created_at || "").replace(/\D/g, "")
+      foto_url = v ? `${pub.publicUrl}?v=${v}` : pub.publicUrl
+    }
+  } catch {
+    foto_url = null
+  }
 
   // Ventana de meses (para la etiqueta) desde la config; default bimestral
   let ventana = 2
@@ -89,5 +105,6 @@ export async function GET(request: NextRequest) {
     ranking,
     periodo_label: etiquetaPeriodo(ultimo, ventana),
     area,
+    foto_url,
   })
 }

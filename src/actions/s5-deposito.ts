@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -31,6 +32,50 @@ const DEFAULT_CONFIG: S5AyudantesConfig = {
   tope_errores: 200,
   prod_target: 300,
   meses_ventana: 2,
+}
+
+// ── Foto de ganadores 5S ──
+// Una foto grupal por (período, área). Se guarda en un bucket público de
+// Supabase con ruta determinística {periodo}/{area}.jpg para que la lea tanto
+// esta página como la cartelera del Depósito (endpoint /api/tv/ranking-5s).
+const FOTOS_GANADORES_BUCKET = "s5-ganadores"
+
+function serviceClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+}
+
+// URLs públicas de las fotos de ganadores del período (con cache-buster).
+// Si el bucket aún no existe, devuelve nulls (sin migración previa).
+export async function fotosGanadoresDePeriodo(
+  periodoDesde: string,
+): Promise<{ deposito: string | null; distribucion: string | null }> {
+  const out: { deposito: string | null; distribucion: string | null } = {
+    deposito: null,
+    distribucion: null,
+  }
+  try {
+    const svc = serviceClient()
+    const { data, error } = await svc.storage
+      .from(FOTOS_GANADORES_BUCKET)
+      .list(periodoDesde)
+    if (error || !data) return out
+    for (const area of ["deposito", "distribucion"] as const) {
+      const f = data.find((x) => x.name === `${area}.jpg`)
+      if (!f) continue
+      const { data: pub } = svc.storage
+        .from(FOTOS_GANADORES_BUCKET)
+        .getPublicUrl(`${periodoDesde}/${area}.jpg`)
+      const v = (f.updated_at || f.created_at || "").replace(/\D/g, "")
+      out[area] = v ? `${pub.publicUrl}?v=${v}` : pub.publicUrl
+    }
+  } catch {
+    // bucket inexistente / storage no disponible: sin fotos
+  }
+  return out
 }
 
 // ── utils de fecha ──
@@ -415,6 +460,8 @@ export async function getRankingDeposito(
       (a, b) => a.posicion - b.posicion,
     )
 
+    const fotos_ganadores = await fotosGanadoresDePeriodo(desde)
+
     return {
       data: {
         periodo_desde: desde,
@@ -423,6 +470,7 @@ export async function getRankingDeposito(
         ranking: rows,
         premios_deposito: premios.filter((p) => p.area === "deposito"),
         premios_distribucion: premios.filter((p) => p.area === "distribucion"),
+        fotos_ganadores,
         config,
       },
     }
@@ -524,6 +572,63 @@ export async function deletePremio(input: {
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "No se pudo borrar el premio",
+    }
+  }
+}
+
+// ── Foto de ganadores: subir / borrar ──
+export async function uploadFotoGanadores(
+  formData: FormData,
+): Promise<{ ok: true; url: string } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const periodo = String(formData.get("periodo_desde") || "")
+    const area = String(formData.get("area") || "")
+    const file = formData.get("file")
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodo)) return { error: "Período inválido" }
+    if (area !== "deposito" && area !== "distribucion") return { error: "Área inválida" }
+    if (!(file instanceof File) || file.size === 0) return { error: "Archivo inválido" }
+
+    const svc = serviceClient()
+    // El bucket se crea on-demand (público) la primera vez; si ya existe, se ignora.
+    await svc.storage.createBucket(FOTOS_GANADORES_BUCKET, { public: true }).catch(() => {})
+
+    const path = `${periodo}/${area}.jpg`
+    const buf = await file.arrayBuffer()
+    const { error: upErr } = await svc.storage
+      .from(FOTOS_GANADORES_BUCKET)
+      .upload(path, buf, {
+        contentType: file.type || "image/jpeg",
+        upsert: true,
+      })
+    if (upErr) return { error: upErr.message }
+
+    const { data: pub } = svc.storage.from(FOTOS_GANADORES_BUCKET).getPublicUrl(path)
+    revalidatePath(PAGE_PATH)
+    return { ok: true, url: pub.publicUrl }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "No se pudo subir la foto",
+    }
+  }
+}
+
+export async function deleteFotoGanadores(input: {
+  periodo_desde: string
+  area: S5PremioArea
+}): Promise<{ ok: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "auditor"])
+    const svc = serviceClient()
+    const { error } = await svc.storage
+      .from(FOTOS_GANADORES_BUCKET)
+      .remove([`${input.periodo_desde}/${input.area}.jpg`])
+    if (error) return { error: error.message }
+    revalidatePath(PAGE_PATH)
+    return { ok: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "No se pudo borrar la foto",
     }
   }
 }

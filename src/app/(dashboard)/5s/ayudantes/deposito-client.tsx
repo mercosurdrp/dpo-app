@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useRef, useState, useTransition, type ChangeEvent } from "react"
 import { useRouter } from "next/navigation"
 import {
   ChevronLeft,
@@ -15,6 +15,8 @@ import {
   Sparkles,
   Settings2,
   Info,
+  ImagePlus,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -60,6 +62,8 @@ import {
   deletePremio,
   updateAyudantesConfig,
   confirmarSugeridosDeposito,
+  uploadFotoGanadores,
+  deleteFotoGanadores,
 } from "@/actions/s5-deposito"
 import type {
   S5RankingDepositoData,
@@ -97,6 +101,130 @@ const MEDAL = [
   { icon: Medal, color: "text-slate-400", bg: "border-slate-200 bg-slate-50", label: "2° puesto" },
   { icon: Award, color: "text-orange-500", bg: "border-orange-200 bg-orange-50/60", label: "3° puesto" },
 ]
+
+// Comprime la imagen en el navegador antes de mandarla al server action
+// (evita el límite de payload de las Server Actions).
+function comprimirImagen(file: File, maxLado = 1600, calidad = 0.82): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width > maxLado || height > maxLado) {
+        const r = Math.min(maxLado / width, maxLado / height)
+        width = Math.round(width * r)
+        height = Math.round(height * r)
+      }
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return reject(new Error("No se pudo procesar la imagen"))
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("No se pudo procesar la imagen"))),
+        "image/jpeg",
+        calidad,
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error("Archivo de imagen inválido"))
+    }
+    img.src = url
+  })
+}
+
+// Bloque para subir/ver/quitar la foto grupal de ganadores de un área.
+function FotoGanadores({
+  area,
+  periodoDesde,
+  url,
+  canEdit,
+  onChanged,
+}: {
+  area: S5PremioArea
+  periodoDesde: string
+  url: string | null
+  canEdit: boolean
+  onChanged: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function onPick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setBusy(true)
+    try {
+      const blob = await comprimirImagen(file)
+      const fd = new FormData()
+      fd.append("file", new File([blob], `${area}.jpg`, { type: "image/jpeg" }))
+      fd.append("periodo_desde", periodoDesde)
+      fd.append("area", area)
+      const res = await uploadFotoGanadores(fd)
+      if ("error" in res) toast.error(res.error)
+      else {
+        toast.success("Foto de ganadores actualizada")
+        onChanged()
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo subir la foto")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function quitar() {
+    setBusy(true)
+    try {
+      const res = await deleteFotoGanadores({ periodo_desde: periodoDesde, area })
+      if ("error" in res) toast.error(res.error)
+      else {
+        toast.success("Foto quitada")
+        onChanged()
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!canEdit && !url) return null
+
+  return (
+    <div className="mt-4 border-t pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          Foto de los ganadores (sale en la cartelera del Depósito)
+        </span>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}>
+              {busy ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <ImagePlus className="mr-1 size-3.5" />
+              )}
+              {url ? "Cambiar foto" : "Subir foto"}
+            </Button>
+            {url && (
+              <Button size="sm" variant="ghost" className="text-red-600" disabled={busy} onClick={quitar}>
+                <Trash2 className="mr-1 size-3.5" /> Quitar
+              </Button>
+            )}
+            <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onPick} />
+          </div>
+        )}
+      </div>
+      {url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="Ganadores" className="mt-2 max-h-56 rounded-lg border object-contain" />
+      )}
+    </div>
+  )
+}
 
 interface Props {
   data: S5RankingDepositoData
@@ -357,6 +485,13 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
               )
             })}
           </div>
+          <FotoGanadores
+            area="deposito"
+            periodoDesde={data.periodo_desde}
+            url={data.fotos_ganadores?.deposito ?? null}
+            canEdit={canEdit}
+            onChanged={refrescar}
+          />
         </CardContent>
       </Card>
 
@@ -397,6 +532,13 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
               )
             })}
           </div>
+          <FotoGanadores
+            area="distribucion"
+            periodoDesde={data.periodo_desde}
+            url={data.fotos_ganadores?.distribucion ?? null}
+            canEdit={canEdit}
+            onChanged={refrescar}
+          />
         </CardContent>
       </Card>
 

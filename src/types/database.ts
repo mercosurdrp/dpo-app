@@ -2010,6 +2010,7 @@ export interface S5RankingDepositoData {
   ranking: S5AyudanteDepositoRow[]
   premios_deposito: S5AyudantePremio[]
   premios_distribucion: S5AyudantePremio[]
+  fotos_ganadores: { deposito: string | null; distribucion: string | null }
   config: S5AyudantesConfig
 }
 
