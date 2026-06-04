@@ -5,8 +5,11 @@ import { IS_MISIONES } from "@/lib/empresa"
 export const dynamic = "force-dynamic"
 
 // Endpoint máquina-a-máquina (lo consume la cartelera del Depósito Esteban).
-// Devuelve el podio 5S de ayudantes (área Depósito) ya confirmado para el
-// último período cargado en /5s/ayudantes. Bearer propio + service role.
+// Devuelve el podio 5S de ayudantes ya confirmado para el último período
+// cargado en /5s/ayudantes. El área se elige por query (?area=deposito|
+// distribucion); por defecto "deposito" (retrocompatible). Bearer + service role.
+
+const AREAS_VALIDAS = ["deposito", "distribucion"] as const
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -34,6 +37,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }
 
+  const areaParam = request.nextUrl.searchParams.get("area") || "deposito"
+  const area = (AREAS_VALIDAS as readonly string[]).includes(areaParam)
+    ? areaParam
+    : "deposito"
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -43,7 +51,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("s5_ayudantes_premios")
     .select("periodo_desde, area, posicion, nombre, score")
-    .eq("area", "deposito")
+    .eq("area", area)
     .order("periodo_desde", { ascending: false })
     .order("posicion", { ascending: true })
 
@@ -53,7 +61,7 @@ export async function GET(request: NextRequest) {
 
   const rows = data ?? []
   if (rows.length === 0) {
-    return NextResponse.json({ ranking: [], periodo_label: "" })
+    return NextResponse.json({ ranking: [], periodo_label: "", area })
   }
 
   // Último período cargado
@@ -80,5 +88,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ranking,
     periodo_label: etiquetaPeriodo(ultimo, ventana),
+    area,
   })
 }
