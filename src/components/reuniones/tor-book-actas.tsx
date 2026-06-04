@@ -274,20 +274,22 @@ export function TorBookActas({
                 />
               </div>
 
-              {/* Listas */}
-              {SECCIONES.map((s) => (
-                <ListaSeccion
-                  key={s.key}
-                  titulo={s.titulo}
-                  conResponsable={!!s.conResponsable}
-                  items={itemsDe(s.key)}
-                  editando={editando}
-                  onTexto={(idx, v) => setTexto(s.key, idx, v)}
-                  onResponsable={(idx, v) => setResponsable(s.key, idx, v)}
-                  onQuitar={(idx) => quitar(s.key, idx)}
-                  onAgregar={() => agregar(s.key)}
-                />
-              ))}
+              {/* Listas — en 2 columnas, cada sección recuadrada */}
+              <div className="grid items-start gap-3 md:grid-cols-2">
+                {SECCIONES.map((s) => (
+                  <ListaSeccion
+                    key={s.key}
+                    titulo={s.titulo}
+                    conResponsable={!!s.conResponsable}
+                    items={itemsDe(s.key)}
+                    editando={editando}
+                    onTexto={(idx, v) => setTexto(s.key, idx, v)}
+                    onResponsable={(idx, v) => setResponsable(s.key, idx, v)}
+                    onQuitar={(idx) => quitar(s.key, idx)}
+                    onAgregar={() => agregar(s.key)}
+                  />
+                ))}
+              </div>
             </>
           )}
         </CardContent>
@@ -349,8 +351,10 @@ function ListaSeccion({
   onAgregar: () => void
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-semibold text-slate-600">{titulo}</Label>
+    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+      <p className="-mx-3 -mt-3 mb-1 rounded-t-lg border-b border-slate-200 bg-violet-50 px-3 py-1.5 text-sm font-bold text-violet-900">
+        {titulo}
+      </p>
       {items.length === 0 && !editando && (
         <p className="text-xs text-muted-foreground">—</p>
       )}
