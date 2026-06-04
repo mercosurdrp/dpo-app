@@ -54,6 +54,7 @@ import {
 import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
+import { EditarReunionDialog } from "@/components/reuniones/editar-reunion-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -68,6 +69,7 @@ import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorrid
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
+  Reunion,
   ReunionActividadConResponsable,
   ReunionAsistenteConProfile,
   ReunionDetalle,
@@ -847,6 +849,7 @@ export function ReunionDetallePageClient({
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+  const [editarOpen, setEditarOpen] = useState(false)
 
   // Indicadores como state — se refetchan al cambiar el filtro de sucursal
   // (sólo aplica en reuniones de logística en Misiones).
@@ -1183,18 +1186,38 @@ export function ReunionDetallePageClient({
           </h1>
         </div>
         {puedeEditar && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-red-600 hover:text-red-700"
-            onClick={handleEliminarReunion}
-          >
-            <Trash2 className="mr-2 size-4" />
-            Eliminar reunión
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditarOpen(true)}
+              title="Cambiar la fecha de esta reunión (ej. si el día cae feriado)"
+            >
+              <Calendar className="mr-2 size-4" />
+              Reprogramar fecha
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700"
+              onClick={handleEliminarReunion}
+            >
+              <Trash2 className="mr-2 size-4" />
+              Eliminar reunión
+            </Button>
+          </div>
         )}
       </div>
+      {puedeEditar && (
+        <EditarReunionDialog
+          open={editarOpen}
+          onOpenChange={setEditarOpen}
+          reunion={detalle as unknown as Reunion}
+          onSaved={() => router.refresh()}
+        />
+      )}
 
       {/* ASISTENCIA — sticky en pantallas grandes */}
       <Card className="lg:sticky lg:top-2 lg:z-10">
