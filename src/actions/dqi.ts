@@ -1,6 +1,9 @@
 "use server"
 
 import { requireAuth } from "@/lib/session"
+import { createClient } from "@/lib/supabase/server"
+import { createPlanAccion } from "@/actions/gestion"
+import type { PrioridadPlan } from "@/types/database"
 
 // ===== DQI — Delivered Quality Index (Calidad de entrega, DPO Entrega 1.4) =====
 // Roturas ocurridas EN LA ENTREGA/RUTA (categoría "ROTURA DISTRIBUCIÓN") ÷ HL
@@ -12,6 +15,12 @@ const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 // El endpoint liviano /api/dqi tarda ~5s (no recalcula NAC/horas/WNP como el
 // /api/indicadores pesado, que tarda ~22s). 30s de margen por cold starts.
 const FETCH_TIMEOUT_MS = 30000
+
+// Punto DPO Entrega 1.4 "Calidad de entrega de los productos".
+const PREGUNTA_14_ID = "8d76cc3d-1d4e-4274-ac46-281cf22bdfd2"
+const DQI_INDICADOR_NOMBRE = "DQI — Roturas en distribución"
+// Marcador que guardamos en notas para asociar un plan a un mes del DQI.
+const PERIODO_RE = /dqi_periodo=(\d{4})-(\d{2})/
 
 export interface DqiCard {
   mes: number | null
@@ -40,11 +49,28 @@ export interface DqiDetalle {
   top_skus: DqiTopSku[]
 }
 
+export interface DqiPlan {
+  id: string
+  descripcion: string
+  estado: string
+  prioridad: string
+  fecha_limite: string | null
+  responsable: string | null
+  /** Periodo "YYYY-MM" si el plan está asociado a un mes del DQI; null si es general. */
+  periodo: string | null
+  year: number | null
+  month: number | null
+}
+
 export interface DqiData {
   year: number
   month: number
   dqi: DqiCard
   detalle: DqiDetalle
+  /** Target en PPM tomado del indicador del punto 1.4 (meta). null si no está cargado. */
+  target: number | null
+  /** Planes de acción del punto 1.4 (todos los periodos). */
+  planes: DqiPlan[]
 }
 
 export async function getDqi(
@@ -70,6 +96,39 @@ export async function getDqi(
     if (!dqi) {
       return { error: "El tablero no devolvió el indicador DQI todavía." }
     }
+
+    // Target + planes del punto 1.4 (viven en dpo-app, no en el tablero).
+    const supabase = await createClient()
+    const [{ data: ind }, { data: planesRaw }] = await Promise.all([
+      supabase
+        .from("indicadores")
+        .select("meta")
+        .eq("pregunta_id", PREGUNTA_14_ID)
+        .eq("nombre", DQI_INDICADOR_NOMBRE)
+        .maybeSingle(),
+      supabase
+        .from("planes_accion")
+        .select("id, descripcion, estado, prioridad, notas, fecha_limite, responsable")
+        .eq("pregunta_id", PREGUNTA_14_ID)
+        .order("created_at", { ascending: false }),
+    ])
+
+    const target = ind?.meta && ind.meta > 0 ? Number(ind.meta) : null
+    const planes: DqiPlan[] = (planesRaw ?? []).map((p) => {
+      const m = (p.notas ?? "").match(PERIODO_RE)
+      return {
+        id: p.id as string,
+        descripcion: p.descripcion as string,
+        estado: p.estado as string,
+        prioridad: p.prioridad as string,
+        fecha_limite: (p.fecha_limite as string) ?? null,
+        responsable: (p.responsable as string) ?? null,
+        periodo: m ? `${m[1]}-${m[2]}` : null,
+        year: m ? Number(m[1]) : null,
+        month: m ? Number(m[2]) : null,
+      }
+    })
+
     return {
       data: {
         year: j.year,
@@ -83,6 +142,8 @@ export async function getDqi(
             pct_de_roturas: null,
             top_skus: [],
           },
+        target,
+        planes,
       },
     }
   } catch (e) {
@@ -93,4 +154,31 @@ export async function getDqi(
           : "Error consultando el tablero de pérdidas.",
     }
   }
+}
+
+/** Crea un plan de acción del punto 1.4 asociado a un mes concreto del DQI.
+ * El mes queda codificado en notas (dqi_periodo=YYYY-MM) para poder marcarlo
+ * sobre el gráfico de evolución. */
+export async function crearPlanDqi(input: {
+  year: number
+  month: number
+  descripcion: string
+  responsable: string
+  fecha_limite?: string
+  prioridad?: PrioridadPlan
+}): Promise<{ ok: true } | { error: string }> {
+  await requireAuth()
+  if (!input.descripcion.trim()) return { error: "La descripción es obligatoria." }
+  if (!input.responsable.trim()) return { error: "El responsable es obligatorio." }
+  const periodo = `${input.year}-${String(input.month).padStart(2, "0")}`
+  const res = await createPlanAccion({
+    pregunta_id: PREGUNTA_14_ID,
+    descripcion: input.descripcion.trim(),
+    responsable: input.responsable.trim(),
+    fecha_limite: input.fecha_limite || undefined,
+    prioridad: input.prioridad ?? "media",
+    notas: `dqi_periodo=${periodo}`,
+  })
+  if ("error" in res) return { error: res.error }
+  return { ok: true }
 }
