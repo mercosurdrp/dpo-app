@@ -284,6 +284,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </Card>
             </Link>
           )}
+          {!IS_MISIONES && (
+            <Link href="/indicadores/dqi">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-emerald-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200 transition-colors">
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      DQI · Calidad de entrega
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Roturas en ruta (PPM) + top SKUs — Pilar Entrega 1.4
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           <Link href="/indicadores/rechazos">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-red-300">
               <CardContent className="flex items-center gap-4 pt-6">
