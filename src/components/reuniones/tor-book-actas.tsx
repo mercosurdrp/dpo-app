@@ -312,8 +312,10 @@ function Campo({
   onChange: (v: string) => void
 }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-xs font-semibold text-slate-600">{label}</Label>
+    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+      <p className="-mx-3 -mt-3 mb-1 rounded-t-lg border-b border-slate-200 bg-violet-50 px-3 py-1.5 text-sm font-bold text-violet-900">
+        {label}
+      </p>
       {editando ? (
         multilinea ? (
           <Textarea
