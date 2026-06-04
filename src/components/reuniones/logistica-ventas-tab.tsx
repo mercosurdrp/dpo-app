@@ -8,7 +8,9 @@ import { TemarioReunion } from "./temario-reunion"
 
 export function LogisticaVentasTab() {
   return (
-    <>
+    <div className="space-y-4">
+      {/* TOR (Book de Actas) arriba, desplegable al click — R3.4.2 del manual DPO */}
+      {IS_MISIONES && <TorBookActas tipo="logistica-ventas" />}
       {/* Tablero de indicadores (se mantiene) */}
       <ReunionesTabContent
         tipo="logistica-ventas"
@@ -20,10 +22,8 @@ export function LogisticaVentasTab() {
           <TemarioReunion />
           {/* Períodos críticos: un tema más, traído acá (R3.4) */}
           <ProximosPeriodosCriticos />
-          {/* TOR (Book de Actas) — R3.4.2 del manual DPO */}
-          <TorBookActas tipo="logistica-ventas" />
         </>
       )}
-    </>
+    </div>
   )
 }
