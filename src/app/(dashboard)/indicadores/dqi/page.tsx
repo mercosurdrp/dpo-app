@@ -3,6 +3,10 @@ import { DqiClient } from "./dqi-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
+// El tablero consulta deposito-esteban (~5s); damos margen para que ni el
+// render inicial ni las server actions de refresco corten por timeout.
+export const maxDuration = 30
+
 export default async function DqiPage() {
   const now = new Date()
   const year = now.getFullYear()

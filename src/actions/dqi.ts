@@ -9,7 +9,9 @@ import { requireAuth } from "@/lib/session"
 // dentro de dpo-app, en /indicadores/dqi.
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
-const FETCH_TIMEOUT_MS = 15000
+// El endpoint liviano /api/dqi tarda ~5s (no recalcula NAC/horas/WNP como el
+// /api/indicadores pesado, que tarda ~22s). 30s de margen por cold starts.
+const FETCH_TIMEOUT_MS = 30000
 
 export interface DqiCard {
   mes: number | null
@@ -52,7 +54,7 @@ export async function getDqi(
   await requireAuth()
   try {
     const res = await fetch(
-      `${DEPOSITO_API_BASE}/api/indicadores?year=${year}&month=${month}`,
+      `${DEPOSITO_API_BASE}/api/dqi?year=${year}&month=${month}`,
       { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     )
     if (!res.ok) {
