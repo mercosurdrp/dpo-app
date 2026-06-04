@@ -6,17 +6,19 @@ export const dynamic = "force-dynamic"
 
 // Endpoint máquina-a-máquina (lo consume la cartelera del Depósito Esteban).
 // No usa sesión de cookie: valida un Bearer propio y lee con service role.
-// Devuelve los conteos de la pirámide de seguridad del MES en curso (igual que
-// la Etapa 1 de las reuniones) + días sin accidentes + etiqueta del período.
+// Devuelve los conteos de la pirámide de seguridad del AÑO en curso (igual que
+// la página "Reportes de Seguridad", que por defecto acumula todo el año) +
+// días sin accidentes + etiqueta del período.
 
-const MESES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-]
 const SIGLAS = ["fat", "lti", "mdi", "mti", "fai", "sio", "sho"] as const
 
-function ahoraARG(): Date {
-  return new Date(Date.now() - 3 * 60 * 60 * 1000)
+// Fecha de "hoy" en horario Argentina (YYYY-MM-DD), sin depender del TZ del server.
+function hoyARG(): { anio: number; mes: number; dia: number } {
+  const s = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  }) // p.ej. "2026-06-04"
+  const [y, m, d] = s.split("-").map(Number)
+  return { anio: y, mes: m, dia: d }
 }
 
 export async function GET(request: NextRequest) {
@@ -44,9 +46,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const now = ahoraARG()
-  const anio = now.getUTCFullYear()
-  const mes = now.getUTCMonth() + 1 // 1-12
+  const { anio, mes, dia } = hoyARG()
 
   const conteos: Record<string, number> = {
     fat: 0, lti: 0, mdi: 0, mti: 0, fai: 0, sio: 0, sho: 0,
@@ -60,12 +60,11 @@ export async function GET(request: NextRequest) {
     if (r.tipo === "accidente" && (ultimoAccidente === null || fecha > ultimoAccidente)) {
       ultimoAccidente = fecha
     }
-    // Conteos de la pirámide: solo mes en curso y clasificados
+    // Conteos de la pirámide: año en curso (acumulado) y clasificados
     const sigla = r.tipo_accidente as string | null
     if (!sigla || !(sigla in conteos)) continue
     const y = Number(fecha.slice(0, 4))
-    const m = Number(fecha.slice(5, 7))
-    if (y !== anio || m !== mes) continue
+    if (y !== anio) continue
     conteos[sigla] += 1
   }
 
@@ -73,13 +72,13 @@ export async function GET(request: NextRequest) {
   if (ultimoAccidente) {
     const [y, m, d] = ultimoAccidente.split("-").map(Number)
     const lastUTC = Date.UTC(y, m - 1, d)
-    const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    const todayUTC = Date.UTC(anio, mes - 1, dia)
     diasSinAccidente = Math.max(0, Math.floor((todayUTC - lastUTC) / 86_400_000))
   }
 
   return NextResponse.json({
     conteos,
-    periodo_label: `${MESES[mes - 1]} ${anio}`,
+    periodo_label: `Acumulado ${anio}`,
     dias_sin_accidente: diasSinAccidente,
     siglas: SIGLAS,
   })
