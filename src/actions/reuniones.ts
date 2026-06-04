@@ -811,13 +811,9 @@ export async function actualizarReunion(
       return { error: "No se encontró configuración para ese tipo de reunión" }
     }
     const cfg = config as ReunionTipoConfig
-
-    const dia = isoWeekdayFromDateStr(fecha)
-    if (!cfg.dias_semana.includes(dia)) {
-      return {
-        error: `La fecha ${fecha} no está habilitada para reuniones de tipo ${cfg.nombre} (días permitidos: ${nombresDias(cfg.dias_semana)})`,
-      }
-    }
+    // La edición de fecha es manual y deliberada: se permite mover la reunión a
+    // cualquier día (ej. si el día habilitado cae feriado, se reprograma). La
+    // restricción de `dias_semana` aplica solo a la creación automática (cron).
 
     const { data, error } = await supabase
       .from("reuniones")
