@@ -3801,20 +3801,18 @@ async function getIndicadoresMesCore(
           // RMD). No arrastra LTI/TRI/Ausentismo ni el resto del set completo
           // de la reunión de Logística.
           if (tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
+            // Logística-Ventas (semanal): no usa TML. Matinal sí lo muestra.
+            const filasAuto =
+              tipo === "logistica-ventas"
+                ? [bultosRow, tiempoPdvRow, rechazoRow, horasRutaRow]
+                : [bultosRow, tmlRow, tiempoPdvRow, rechazoRow, horasRutaRow]
             return {
               data: {
                 anio,
                 mes,
                 fechas,
                 reuniones_por_fecha: reunionesPorFecha,
-                indicadores: [
-                  bultosRow,
-                  tmlRow,
-                  tiempoPdvRow,
-                  rechazoRow,
-                  horasRutaRow,
-                  ...indicadores,
-                ],
+                indicadores: [...filasAuto, ...indicadores],
               },
             }
           }
