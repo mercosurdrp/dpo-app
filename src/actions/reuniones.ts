@@ -2278,6 +2278,117 @@ export async function setIndicadorValor(
 }
 
 // =====================================================================
+// Override manual DIARIO de indicadores (editar hacia atrás en el tiempo).
+// Para Productividad/Errores de picking (auto) y Pérdidas (manual) de la
+// reunión de logística. Se guarda por (indicador, fecha), global del tenant,
+// y PISA el valor automático. Borrar (valor null) vuelve al automático.
+// Ver migración 099 + aplicación en getIndicadoresMes.
+// =====================================================================
+const OVERRIDE_AUTO_KEYS = new Set([
+  "auto_productividad_picking",
+  "auto_errores_picking",
+])
+/** Nombres (lowercase) de indicadores manuales habilitados para override diario. */
+const OVERRIDE_NOMBRES = new Set(["pérdidas", "perdidas"])
+
+export async function setIndicadorOverrideDiario(
+  reunionId: string,
+  indicadorKey: string,
+  fecha: string,
+  valor: number | null,
+): Promise<Result<{ indicador_key: string; fecha: string; valor: number | null }>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!indicadorKey) return { error: "Indicador inválido" }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return { error: "Fecha inválida (formato esperado YYYY-MM-DD)" }
+    }
+    if (valor !== null && !Number.isFinite(valor)) {
+      return { error: "Valor inválido" }
+    }
+
+    // El indicador debe ser uno de los habilitados: clave auto fija, o un
+    // indicador manual existente cuyo nombre esté en la lista (ej. Pérdidas).
+    if (!OVERRIDE_AUTO_KEYS.has(indicadorKey)) {
+      const { data: cfg } = await supabase
+        .from("reuniones_indicadores_config")
+        .select("nombre")
+        .eq("id", indicadorKey)
+        .maybeSingle()
+      const nombre = (cfg as { nombre?: string } | null)?.nombre
+        ?.trim()
+        .toLowerCase()
+      if (!nombre || !OVERRIDE_NOMBRES.has(nombre)) {
+        return { error: "Indicador no editable hacia atrás" }
+      }
+    }
+
+    // Permiso: editor O asistente activo de la reunión (igual que setIndicadorValor).
+    if (!isEditorRole(profile.role)) {
+      const { data: asis } = await supabase
+        .from("reuniones_asistentes")
+        .select("id")
+        .eq("reunion_id", reunionId)
+        .eq("profile_id", profile.id)
+        .maybeSingle()
+      if (!asis) {
+        return {
+          error:
+            "Solo editores o asistentes de la reunión pueden corregir indicadores",
+        }
+      }
+    }
+
+    // valor null → borrar el override (vuelve al automático).
+    if (valor === null) {
+      const { error } = await supabase
+        .from("reunion_indicador_override_diario")
+        .delete()
+        .eq("indicador_key", indicadorKey)
+        .eq("fecha", fecha)
+      if (error) return { error: error.message }
+      revalidatePath(REVALIDATE_PATH)
+      return { data: { indicador_key: indicadorKey, fecha, valor: null } }
+    }
+
+    const { data, error } = await supabase
+      .from("reunion_indicador_override_diario")
+      .upsert(
+        {
+          indicador_key: indicadorKey,
+          fecha,
+          valor,
+          registrado_por: profile.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "indicador_key,fecha" },
+      )
+      .select("indicador_key, fecha, valor")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return {
+      data: data as {
+        indicador_key: string
+        fecha: string
+        valor: number | null
+      },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error guardando override de indicador",
+    }
+  }
+}
+
+// =====================================================================
 // Semáforo de seguridad del día (Etapa 1, al lado de la pirámide).
 // Solo Misiones — la tabla reuniones_seguridad_semaforo existe únicamente
 // en ese tenant (ver APLICAR_EN_MISIONES_REUNIONES_SEGURIDAD_SEMAFORO.sql).
@@ -2521,10 +2632,11 @@ export async function getIndicadoresMes(
     const supabase = await createClient()
     const { data: reu } = await supabase
       .from("reuniones")
-      .select("tipo")
+      .select("tipo, fecha")
       .eq("id", reunionId)
       .single()
     const tipo = (reu as { tipo?: string } | null)?.tipo
+    const reunionFecha = (reu as { fecha?: string } | null)?.fecha ?? null
     if (!tipo) return base
     const { data: cfg, error } = await supabase
       .from("reuniones_indicadores_config")
@@ -2556,7 +2668,92 @@ export async function getIndicadoresMes(
         mejor_si: ind.mejor_si ?? c.mejor_si ?? undefined,
       }
     })
-    return { data: { ...base.data, indicadores } }
+
+    // Override manual diario (editar hacia atrás): Productividad/Errores de
+    // picking (auto) y Pérdidas (manual). El override pisa el valor automático.
+    const fechas = base.data.fechas
+    const targetIds = new Set<string>()
+    // Solo Misiones: la tabla 099 vive únicamente en ese tenant.
+    if (IS_MISIONES) {
+      for (const ind of indicadores) {
+        if (
+          OVERRIDE_AUTO_KEYS.has(ind.id) ||
+          OVERRIDE_NOMBRES.has(ind.nombre.trim().toLowerCase())
+        ) {
+          targetIds.add(ind.id)
+        }
+      }
+    }
+
+    const overridesPorKey = new Map<string, Map<string, number>>()
+    if (targetIds.size > 0 && fechas.length > 0) {
+      // Defensivo: si la tabla 099 todavía no está aplicada, ignora el error.
+      const { data: ovRaw } = await supabase
+        .from("reunion_indicador_override_diario")
+        .select("indicador_key, fecha, valor")
+        .in("indicador_key", [...targetIds])
+        .gte("fecha", fechas[0])
+        .lte("fecha", fechas[fechas.length - 1])
+      for (const o of (ovRaw ?? []) as Array<{
+        indicador_key: string
+        fecha: string
+        valor: number | null
+      }>) {
+        if (o.valor === null) continue
+        if (!overridesPorKey.has(o.indicador_key)) {
+          overridesPorKey.set(o.indicador_key, new Map())
+        }
+        overridesPorKey.get(o.indicador_key)!.set(o.fecha, Number(o.valor))
+      }
+    }
+
+    const indicadoresFinal = indicadores.map((ind) => {
+      if (!targetIds.has(ind.id)) return ind
+      const ov = overridesPorKey.get(ind.id)
+      const valores: (typeof ind)["valores"] = {}
+      for (const f of fechas) {
+        const prev = ind.valores[f] ?? null
+        const autoValor = prev?.valor ?? null
+        const ovVal = ov?.get(f)
+        if (ovVal !== undefined) {
+          valores[f] = {
+            reunion_id: "override",
+            valor: ovVal,
+            observacion: null,
+            es_override: true,
+            auto_valor: autoValor,
+          }
+        } else {
+          valores[f] = {
+            reunion_id: prev?.reunion_id ?? "auto",
+            valor: autoValor,
+            observacion: prev?.observacion ?? null,
+            texto: prev?.texto ?? null,
+            es_override: false,
+            auto_valor: autoValor,
+          }
+        }
+      }
+      // Recomputar MTD con los valores corregidos (cutoff <= fecha reunión).
+      let mtd = ind.mtd
+      if (ov && ov.size > 0) {
+        const nums: number[] = []
+        for (const f of fechas) {
+          if (reunionFecha && f > reunionFecha) continue
+          const v = valores[f]?.valor
+          if (v != null && Number.isFinite(v)) nums.push(v)
+        }
+        mtd =
+          nums.length === 0
+            ? null
+            : ind.agregacion === "suma"
+              ? nums.reduce((a, b) => a + b, 0)
+              : nums.reduce((a, b) => a + b, 0) / nums.length
+      }
+      return { ...ind, valores, mtd, editable_historico: true }
+    })
+
+    return { data: { ...base.data, indicadores: indicadoresFinal } }
   } catch {
     return base
   }
@@ -2653,7 +2850,7 @@ async function getIndicadoresMesCore(
       NOMBRES_AUTO.add("productividad de picking")
     } else if (
       tipo === "logistica" ||
-      (IS_MISIONES && tipo === "matinal-distribucion")
+      (IS_MISIONES && (tipo === "matinal-distribucion" || tipo === "logistica-ventas"))
     ) {
       // En Misiones la matinal de distribución reusa el set basado en Foxtrot
       // de logística (acotado más abajo), así que comparte el mismo dedupe.
@@ -2692,7 +2889,7 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("faltantes")
       }
     }
-    if (tipo === "logistica" || tipo === "matinal-distribucion") {
+    if (tipo === "logistica" || tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
       NOMBRES_AUTO.add("fte")
     }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
@@ -3187,7 +3384,7 @@ async function getIndicadoresMesCore(
     //     liberación (checklist_vehiculos.tipo='liberacion') = un camión
     //     liberado para salir a la calle. El indicador Checklist muestra
     //     aprobados/total como texto "X/Y" (ej. 8/8, 7/8).
-    if (tipo === "logistica" || tipo === "matinal-distribucion") {
+    if (tipo === "logistica" || tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
       const { data: chkRaw, error: errChk } = await supabase
         .from("checklist_vehiculos")
         .select("fecha, dominio, tipo, resultado, odometro, hora")
@@ -3498,7 +3695,7 @@ async function getIndicadoresMesCore(
     if (
       tipo === "warehouse" ||
       tipo === "logistica" ||
-      (IS_MISIONES && tipo === "matinal-distribucion")
+      (IS_MISIONES && (tipo === "matinal-distribucion" || tipo === "logistica-ventas"))
     ) {
       // Misiones: la fuente warehouse (deposito-esteban) es de Pampeana y no
       // aplica acá. Para 'logistica' usamos un set de KPIs basado en Foxtrot
@@ -3510,7 +3707,7 @@ async function getIndicadoresMesCore(
         // En Misiones descartamos los AUTO de Pampeana (LTI/TRI/Rechazos %/
         // Bultos-HL vendidos/TML liberación/Camiones/Checklist/Km/Horas/FTE)
         // ya acumulados en `indicadoresAuto`: armamos una lista limpia.
-        if (tipo === "logistica" || tipo === "matinal-distribucion") {
+        if (tipo === "logistica" || tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
           const ms = await buildMisionesLogisticaSerie(
             supabase,
             fechas,
@@ -3594,7 +3791,7 @@ async function getIndicadoresMesCore(
           // ruta (auto Foxtrot) + los indicadores manuales configurados (ej.
           // RMD). No arrastra LTI/TRI/Ausentismo ni el resto del set completo
           // de la reunión de Logística.
-          if (tipo === "matinal-distribucion") {
+          if (tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
             return {
               data: {
                 anio,
