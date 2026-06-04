@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -31,8 +32,25 @@ import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 const DASHBOARD_PATH = "/sla"
 const BUCKET = "sla"
 const ROLES_GESTION = ["admin", "supervisor"] as const
+const MAX_FILE_BYTES = 15 * 1024 * 1024
 
 type Result<T> = { data: T } | { error: string }
+
+/** Cliente con service role para operar Storage sin depender de RLS de storage.objects. */
+function getServiceClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
+
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 120)
+}
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10)
@@ -206,6 +224,84 @@ export async function addSlaAdjunto(
 }
 
 /**
+ * Sube el acuerdo firmado (PDF/imagen) y lo registra en un solo paso.
+ * El upload y los writes van con service role para NO depender de las
+ * policies de storage.objects ni de las RLS de escritura (que en este tenant
+ * se corrieron a mano); el control de acceso lo hace el chequeo de rol acá.
+ * Solo admin/supervisor.
+ */
+export async function uploadSlaAdjunto(
+  slaId: string,
+  formData: FormData,
+): Promise<Result<{ id: string }>> {
+  try {
+    const profile = await requireAuth()
+    if (!ROLES_GESTION.includes(profile.role as any)) {
+      return { error: "Solo admin o supervisor pueden cargar acuerdos." }
+    }
+    const file = formData.get("file")
+    if (!(file instanceof File) || file.size === 0) {
+      return { error: "No se recibió ningún archivo." }
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return { error: "El archivo supera el máximo de 15 MB." }
+    }
+
+    const service = getServiceClient()
+    const safeName = sanitizeFileName(file.name || "acuerdo")
+    const path = `${slaId}/${crypto.randomUUID()}-${safeName}`
+    const mime = file.type || "application/octet-stream"
+    const arrayBuffer = await file.arrayBuffer()
+
+    const { error: upErr } = await service.storage
+      .from(BUCKET)
+      .upload(path, arrayBuffer, { contentType: mime, upsert: false })
+    if (upErr) return { error: upErr.message }
+
+    const { data: inserted, error } = await service
+      .from("sla_adjuntos")
+      .insert({
+        sla_id: slaId,
+        storage_path: path,
+        nombre_original: file.name,
+        mime_type: mime,
+        "tamaño_bytes": file.size,
+        subido_por: profile.id,
+      })
+      .select("id")
+      .single()
+
+    if (error || !inserted) {
+      await service.storage.from(BUCKET).remove([path])
+      return { error: error?.message ?? "No se pudo registrar el acuerdo" }
+    }
+
+    // Auto-estado: si estaba pendiente, marcar firmado + fecha de firma.
+    const { data: sla } = await service
+      .from("slas")
+      .select("estado, fecha_firma")
+      .eq("id", slaId)
+      .single()
+    if (sla && (sla as any).estado === "pendiente") {
+      await service
+        .from("slas")
+        .update({
+          estado: "firmado",
+          fecha_firma: (sla as any).fecha_firma ?? hoyISO(),
+        })
+        .eq("id", slaId)
+    }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { data: { id: inserted.id as string } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando el acuerdo",
+    }
+  }
+}
+
+/**
  * Borra un acuerdo (archivo + registro). Solo admin/supervisor.
  */
 export async function deleteSlaAdjunto(
@@ -216,19 +312,19 @@ export async function deleteSlaAdjunto(
     if (!ROLES_GESTION.includes(profile.role as any)) {
       return { error: "Solo admin o supervisor pueden borrar acuerdos." }
     }
-    const supabase = await createClient()
+    const service = getServiceClient()
 
-    const { data: adj } = await supabase
+    const { data: adj } = await service
       .from("sla_adjuntos")
       .select("storage_path")
       .eq("id", id)
       .single()
 
-    const { error } = await supabase.from("sla_adjuntos").delete().eq("id", id)
+    const { error } = await service.from("sla_adjuntos").delete().eq("id", id)
     if (error) return { error: error.message }
 
     if (adj?.storage_path) {
-      await supabase.storage.from(BUCKET).remove([adj.storage_path as string])
+      await service.storage.from(BUCKET).remove([adj.storage_path as string])
     }
 
     revalidatePath(DASHBOARD_PATH)
@@ -248,10 +344,10 @@ export async function deleteSla(
     if (!ROLES_GESTION.includes(profile.role as any)) {
       return { error: "Solo admin o supervisor pueden borrar SLA." }
     }
-    const supabase = await createClient()
+    const service = getServiceClient()
 
     // Borrar primero los archivos del storage de los acuerdos adjuntos.
-    const { data: adjuntos } = await supabase
+    const { data: adjuntos } = await service
       .from("sla_adjuntos")
       .select("storage_path")
       .eq("sla_id", id)
@@ -259,11 +355,11 @@ export async function deleteSla(
       .map((a) => a.storage_path as string)
       .filter(Boolean)
     if (paths.length > 0) {
-      await supabase.storage.from(BUCKET).remove(paths)
+      await service.storage.from(BUCKET).remove(paths)
     }
 
     // Borrar el SLA (sla_adjuntos cae por FK ON DELETE CASCADE).
-    const { error } = await supabase.from("slas").delete().eq("id", id)
+    const { error } = await service.from("slas").delete().eq("id", id)
     if (error) return { error: error.message }
 
     revalidatePath(DASHBOARD_PATH)
@@ -664,49 +760,29 @@ async function filaRecepcion(
 }
 
 // ===========================================================================
-// SLA de carga (alm_carga) — todos los camiones ruteados el día D quedan
-// cargados antes de las 07:00 ARG del día de reparto (D+1).
-// Camiones ruteados = patentes de ocupacion_bodega_diaria(D). Hora de carga =
-// blob 'carga-camiones' del WMS (mismo que muestra /ruteo y /carga-camiones).
+// SLA de carga (alm_carga) — cada viaje ruteado queda cargado antes de las
+// 07:00 ARG del día de REPARTO (día de salida del camión). Se cruza por
+// NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, su día de reparto
+// y la hora de carga real (ViajesFhDespacho/HrDespacho), ambos al día. La
+// patente (BANDVIA) llega con ~5 días de lag y por eso ya NO se usa para medir.
+// Un viaje ruteado y nunca cargado pasado el plazo = incumplimiento.
+// Fuente: blob 'carga-camiones' del WMS (mismo que muestra /carga-camiones).
 // ===========================================================================
 
 const CARGA_BLOB_URL =
   "https://deposito-esteban.vercel.app/api/shared/load?module=carga-camiones"
 
-interface CargaFila {
-  fecha: string // YYYY-MM-DD (ARG)
-  hora: string // HH:mm:ss (ARG, fin de carga)
-  patente: string // normalizada (trim + mayúsculas)
+interface CargaViaje {
+  viaje: number // ViajesCodigo (clave de cruce)
+  reparto: string // YYYY-MM-DD (ARG) — día de salida; plazo = 07:00 de este día
+  fecha: string | null // YYYY-MM-DD (ARG) carga real, null si ruteado sin cargar
+  hora: string | null // HH:mm:ss (ARG, fin de carga), null si ruteado sin cargar
+  patente: string // informativo; puede venir vacío (ya NO se cruza por acá)
 }
 
-/** Trae las filas de carga del blob. `null` si la fuente no está disponible. */
-async function fetchCargaFilas(): Promise<CargaFila[] | null> {
-  try {
-    const res = await fetch(CARGA_BLOB_URL, { cache: "no-store" })
-    if (!res.ok) return null
-    const json = (await res.json()) as { data?: { filas?: any[] } | null }
-    const filas = Array.isArray(json?.data?.filas) ? json.data!.filas! : []
-    return filas
-      .filter((f) => f?.patente && f.patente !== "0" && f?.fecha && f?.hora)
-      .map((f) => ({
-        fecha: String(f.fecha),
-        hora: String(f.hora),
-        patente: String(f.patente).trim().toUpperCase(),
-      }))
-  } catch {
-    return null
-  }
-}
-
-/** Índice patente → eventos de carga, para cruzar contra los camiones ruteados. */
-function buildCargaIdx(filas: CargaFila[]): Map<string, CargaFila[]> {
-  const m = new Map<string, CargaFila[]>()
-  for (const f of filas) {
-    const arr = m.get(f.patente)
-    if (arr) arr.push(f)
-    else m.set(f.patente, [f])
-  }
-  return m
+interface CargaSnapshot {
+  viajes: CargaViaje[]
+  generadoEn: string | null // timestamp del snapshot del WMS (ISO)
 }
 
 /** 'YYYY-MM-DD' + 1 día (sin corrimiento por TZ). */
@@ -716,113 +792,165 @@ function nextISO(iso: string): string {
 }
 
 /**
- * ¿Ya venció el plazo de carga del día `iso`? El corte es 07:00 ARG del día
- * siguiente = 10:00 UTC de D+1. Antes de eso el día no es medible aún.
+ * Día de reparto derivado de una carga cuando el WMS no manda `reparto`
+ * (compatibilidad con el blob viejo). Regla de las 12:00: una carga ≥12:00 es
+ * "la tarde anterior" → reparto = fecha+1; una carga <12:00 es la madrugada del
+ * propio día de reparto → reparto = fecha.
  */
-function plazoCargaVencido(iso: string, nowMs: number): boolean {
-  const [y, m, d] = iso.split("-").map(Number)
-  return nowMs >= Date.UTC(y, m - 1, d + 1, 10, 0, 0)
+function repartoDesdeCarga(fecha: string, hora: string): string {
+  return hora >= "12:00:00" ? nextISO(fecha) : fecha
 }
 
-// Clasificación de la carga de una patente para el día D (reparto = D+1):
-//   "ok"      → cargada el mismo día D, o el día D+1 antes de las 07:00.
-//   "tarde"   → cargada el día D+1 a las 07:00 o después (retraso confirmado).
-//   "sindato" → no hay registro de carga para D/D+1. OJO: NO implica que no se
-//               haya cargado; lo más común es que la patente del WMS (BANDVIA)
-//               todavía no se completó (llega con días de retraso).
-type ClasifCarga = "ok" | "tarde" | "sindato"
-
-function clasificarCarga(
-  eventos: CargaFila[] | undefined,
-  isoD: string,
-  isoNext: string,
-): ClasifCarga {
-  if (!eventos || eventos.length === 0) return "sindato"
-  const ok = eventos.some(
-    (e) => e.fecha === isoD || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
-  )
-  if (ok) return "ok"
-  const tarde = eventos.some(
-    (e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA,
-  )
-  return tarde ? "tarde" : "sindato"
+/** Plazo (ms UTC) de un reparto = 07:00 ARG = 10:00 UTC de ese día. */
+function plazoRepartoMs(repartoISO: string): number {
+  const [y, m, d] = repartoISO.split("-").map(Number)
+  return Date.UTC(y, m - 1, d, 10, 0, 0)
 }
 
 /**
- * Fila del SLA de carga (`alm_carga`). Un día cumple si TODAS las patentes
- * ruteadas (ocupacion_bodega_diaria) quedaron cargadas a tiempo. Si el blob no
- * está disponible, o el plazo aún no venció, el día queda "sin dato".
+ * Lee el blob del WMS y devuelve un viaje por nº (deduplicado). `null` si la
+ * fuente no está disponible. Acepta tanto el blob nuevo (con `reparto` y viajes
+ * ruteados sin cargar) como el viejo (solo cargados; reparto se deriva).
+ */
+async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
+  try {
+    const res = await fetch(CARGA_BLOB_URL, { cache: "no-store" })
+    if (!res.ok) return null
+    const json = (await res.json()) as {
+      data?: { filas?: any[]; generado_en?: string | null } | null
+    }
+    const filas = Array.isArray(json?.data?.filas) ? json.data!.filas! : []
+    // Un viaje puede aparecer en varias filas (ruteo + eventos de despacho).
+    // Nos quedamos con la versión cargada y, si hay varias, con la carga más
+    // tardía (= fin de carga). Una fila cargada siempre gana a una sin cargar.
+    const byViaje = new Map<number, CargaViaje>()
+    for (const f of filas) {
+      const viaje = Number(f?.viaje)
+      if (!Number.isFinite(viaje) || viaje <= 0) continue
+      const fecha = f?.fecha ? String(f.fecha) : null
+      const hora = f?.hora ? String(f.hora) : null
+      const cargado = !!(fecha && hora)
+      let reparto = f?.reparto ? String(f.reparto) : null
+      if (!reparto && cargado) reparto = repartoDesdeCarga(fecha!, hora!)
+      if (!reparto) continue // sin reparto ni carga: no se puede ubicar
+      const cand: CargaViaje = {
+        viaje,
+        reparto,
+        fecha: cargado ? fecha : null,
+        hora: cargado ? hora : null,
+        patente: f?.patente ? String(f.patente).trim().toUpperCase() : "",
+      }
+      const prev = byViaje.get(viaje)
+      if (!prev) {
+        byViaje.set(viaje, cand)
+        continue
+      }
+      const prevKey = prev.fecha && prev.hora ? `${prev.fecha}T${prev.hora}` : ""
+      const candKey = cand.fecha && cand.hora ? `${cand.fecha}T${cand.hora}` : ""
+      if (candKey > prevKey) byViaje.set(viaje, cand)
+    }
+    return {
+      viajes: [...byViaje.values()],
+      generadoEn: json?.data?.generado_en ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+// Clasificación de un viaje respecto del plazo de su día de reparto:
+//   "ok"        → cargado antes de las 07:00 del día de reparto.
+//   "tarde"     → cargado a las 07:00 del día de reparto o después.
+//   "nocargado" → ruteado y nunca cargado, con el plazo ya vencido (incumple).
+//   "pendiente" → todavía sin carga pero el snapshot es previo al plazo; se
+//                 reevaluará al actualizarse el WMS (NO implica incumplimiento).
+type ClasifViaje = "ok" | "tarde" | "nocargado" | "pendiente"
+
+function clasificarViaje(
+  v: CargaViaje,
+  nowMs: number,
+  snapMs: number | null,
+): ClasifViaje {
+  if (v.fecha && v.hora) {
+    return `${v.fecha}T${v.hora}` < `${v.reparto}T${CARGA_LIMITE_HORA}`
+      ? "ok"
+      : "tarde"
+  }
+  // Ruteado sin cargar: solo es incumplimiento si el plazo venció Y el snapshot
+  // del WMS es posterior al plazo (si no, podría faltar registrar la carga).
+  const plazoMs = plazoRepartoMs(v.reparto)
+  const vencido = nowMs >= plazoMs && (snapMs === null || snapMs >= plazoMs)
+  return vencido ? "nocargado" : "pendiente"
+}
+
+/** Etiqueta corta de la carga de un viaje para el detalle (DD/MM si fue otro día). */
+function cargaLabel(v: CargaViaje): string {
+  if (!v.fecha || !v.hora) return "—"
+  const prefijo =
+    v.fecha !== v.reparto ? `${v.fecha.slice(8, 10)}/${v.fecha.slice(5, 7)} ` : ""
+  return `${prefijo}${v.hora.slice(0, 5)}`
+}
+
+/**
+ * Fila del SLA de carga (`alm_carga`). Cada viaje se imputa a su DÍA DE REPARTO.
+ * Un día cumple si TODOS los viajes que salen ese día quedaron cargados antes
+ * de las 07:00. Si la fuente no está, el plazo no venció, o falta info por
+ * snapshot stale → el día queda "sin dato".
  */
 async function filaCarga(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
   month: number,
   diasDelMes: number,
-  cargaIdx: Map<string, CargaFila[]> | null,
+  carga: CargaSnapshot | null,
 ): Promise<CumplimientoSlaFila> {
   const base = {
     codigo: "alm_carga",
     nombre: SLA_CARGA_NOMBRE,
     target: SLA_CARGA_TARGET,
   }
-  const desde = `${year}-${String(month).padStart(2, "0")}-01`
-  const hastaExcl =
-    month === 12
-      ? `${year + 1}-01-01`
-      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+  const mm = String(month).padStart(2, "0")
 
-  const { data } = await supabase
-    .from("ocupacion_bodega_diaria")
-    .select("fecha, patente")
-    .gte("fecha", desde)
-    .lt("fecha", hastaExcl)
-    .gt("ceq_total", 0)
-
-  // día → patentes ruteadas ese día
-  const patentesPorDia = new Map<number, Set<string>>()
-  for (const row of (data ?? []) as any[]) {
-    if (!row.patente) continue
-    const dia = Number((row.fecha as string).slice(8, 10))
-    const set = patentesPorDia.get(dia) ?? new Set<string>()
-    set.add(String(row.patente).trim().toUpperCase())
-    patentesPorDia.set(dia, set)
+  // Agrupar viajes por día de reparto dentro del mes.
+  const porDia = new Map<number, CargaViaje[]>()
+  for (const v of carga?.viajes ?? []) {
+    if (v.reparto.slice(0, 7) !== `${year}-${mm}`) continue
+    const dia = Number(v.reparto.slice(8, 10))
+    const arr = porDia.get(dia)
+    if (arr) arr.push(v)
+    else porDia.set(dia, [v])
   }
 
   const nowMs = Date.now()
+  const snapMs = carga?.generadoEn ? Date.parse(carga.generadoEn) : null
   const dias: EstadoCumplimiento[] = []
   let totalAplica = 0
   let cumplidos = 0
 
   for (let d = 1; d <= diasDelMes; d++) {
-    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    const iso = `${year}-${mm}-${String(d).padStart(2, "0")}`
     if (dowFromISO(iso) === 0) {
-      dias.push("na") // domingo: no se rutea
+      dias.push("na") // domingo: no hay reparto
       continue
     }
-    const routed = patentesPorDia.get(d)
-    if (!routed || routed.size === 0) {
-      dias.push("sd") // sin camiones ruteados registrados / futuro
+    const viajesD = porDia.get(d)
+    if (carga === null || !viajesD || viajesD.length === 0) {
+      dias.push("sd") // fuente no disponible / sin viajes ruteados / futuro
       continue
     }
-    if (cargaIdx === null || !plazoCargaVencido(iso, nowMs)) {
-      dias.push("sd") // fuente no disponible o plazo (07:00 del día sgte.) aún no vencido
+    if (nowMs < plazoRepartoMs(iso)) {
+      dias.push("sd") // el plazo (07:00 del día de reparto) aún no venció
       continue
     }
-    const isoNext = nextISO(iso)
-    let tarde = 0
-    let sinDato = 0
-    for (const p of routed) {
-      const c = clasificarCarga(cargaIdx.get(p), iso, isoNext)
-      if (c === "tarde") tarde++
-      else if (c === "sindato") sinDato++
+    let fail = 0
+    let pend = 0
+    for (const v of viajesD) {
+      const c = clasificarViaje(v, nowMs, snapMs)
+      if (c === "tarde" || c === "nocargado") fail++
+      else if (c === "pendiente") pend++
     }
-    // Retraso confirmado → no cumple. Si no hay tarde pero falta el dato de
-    // alguna patente (típico por el retraso de BANDVIA) → sin dato, NO "no
-    // cumple". Solo cuando todas las patentes están cargadas a tiempo → cumple.
-    let estado: EstadoCumplimiento
-    if (tarde > 0) estado = "no"
-    else if (sinDato > 0) estado = "sd"
-    else estado = "si"
+    // Retraso o viaje sin cargar (plazo vencido) → no cumple. Si solo falta info
+    // por snapshot previo al plazo → sin dato. Todos a tiempo → cumple.
+    const estado: EstadoCumplimiento = fail > 0 ? "no" : pend > 0 ? "sd" : "si"
     if (estado !== "sd") {
       totalAplica++
       if (estado === "si") cumplidos++
@@ -858,16 +986,15 @@ export async function getCumplimientoMes(
     // Cantidad de días del mes (day 0 del mes siguiente = último del actual).
     const diasDelMes = new Date(Date.UTC(year, month, 0)).getUTCDate()
 
-    // Carga de camiones: se lee el blob una vez y se indexa por patente.
-    const cargaFilas = await fetchCargaFilas()
-    const cargaIdx = cargaFilas ? buildCargaIdx(cargaFilas) : null
+    // Carga de camiones: snapshot del WMS, un viaje por nº (cruce por viaje).
+    const cargaSnapshot = await fetchCargaSnapshot()
 
     const filas: CumplimientoSlaFila[] = [
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
-      await filaCarga(supabase, year, month, diasDelMes, cargaIdx),
+      await filaCarga(year, month, diasDelMes, cargaSnapshot),
       await filaRecepcion(year, month, diasDelMes),
     ]
 
@@ -1150,64 +1277,56 @@ export async function getDetalleDiaSla(
 
       if (dow === 0) {
         estado = "na"
-        nota = "Domingo: no se rutea."
+        nota = "Domingo: no hay reparto."
         return {
           data: { codigo, nombre: SLA_CARGA_NOMBRE, fecha, diaSemana, estado, metaLabel, valorLabel, filas, nota },
         }
       }
 
-      const { data } = await supabase
-        .from("ocupacion_bodega_diaria")
-        .select("patente, ceq_total")
-        .eq("fecha", fecha)
-        .gt("ceq_total", 0)
-        .order("ceq_total", { ascending: false })
-      const rows = (data ?? []) as any[]
+      const carga = await fetchCargaSnapshot()
+      // `fecha` es el día de reparto: tomamos los viajes que salen ese día.
+      const viajesD = (carga?.viajes ?? [])
+        .filter((v) => v.reparto === fecha)
+        .sort((a, b) => a.viaje - b.viaje)
 
-      const cargaFilas = await fetchCargaFilas()
-
-      if (rows.length === 0) {
-        estado = "sd"
-        nota = "Sin camiones ruteados registrados este día (depende del sync de Chess)."
-      } else if (cargaFilas === null) {
+      if (carga === null) {
         estado = "sd"
         nota = "No se pudo leer la carga de camiones del WMS."
-      } else if (!plazoCargaVencido(fecha, Date.now())) {
+      } else if (viajesD.length === 0) {
+        estado = "sd"
+        nota = "Sin viajes ruteados para este día de reparto."
+      } else if (Date.now() < plazoRepartoMs(fecha)) {
         estado = "sd"
         nota = "El plazo de carga (07:00 del día de reparto) todavía no venció."
       } else {
-        const idx = buildCargaIdx(cargaFilas)
-        const isoNext = nextISO(fecha)
+        const nowMs = Date.now()
+        const snapMs = carga.generadoEn ? Date.parse(carga.generadoEn) : null
         let aTiempo = 0
-        let tarde = 0
-        let sinDato = 0
-        for (const r of rows) {
-          const p = String(r.patente ?? "").trim().toUpperCase()
-          const eventos = idx.get(p)
-          const c = clasificarCarga(eventos, fecha, isoNext)
+        let fail = 0
+        let pend = 0
+        for (const v of viajesD) {
+          const label = `Viaje ${v.viaje}` + (v.patente ? ` · ${v.patente}` : "")
+          const c = clasificarViaje(v, nowMs, snapMs)
           if (c === "ok") {
             aTiempo++
-            const okEvt = eventos!.find(
-              (e) => e.fecha === fecha || (e.fecha === isoNext && e.hora < CARGA_LIMITE_HORA),
-            )!
-            const prefijo = okEvt.fecha === isoNext ? "D+1 " : ""
-            filas.push({ label: String(r.patente ?? "—"), valor: `${prefijo}${okEvt.hora.slice(0, 5)} ✓` })
+            filas.push({ label, valor: `${cargaLabel(v)} ✓` })
           } else if (c === "tarde") {
-            tarde++
-            const lateEvt = eventos!.find((e) => e.fecha === isoNext && e.hora >= CARGA_LIMITE_HORA)!
-            filas.push({ label: String(r.patente ?? "—"), valor: `${lateEvt.hora.slice(0, 5)} (tarde) ✗` })
+            fail++
+            filas.push({ label, valor: `${cargaLabel(v)} (tarde) ✗` })
+          } else if (c === "nocargado") {
+            fail++
+            filas.push({ label, valor: "ruteado, sin cargar ✗" })
           } else {
-            sinDato++
-            filas.push({ label: String(r.patente ?? "—"), valor: "sin dato aún" })
+            pend++
+            filas.push({ label, valor: "sin dato aún" })
           }
         }
-        // tarde confirmado → no cumple; sin dato pendiente (sin tardes) → sin dato.
-        estado = tarde > 0 ? "no" : sinDato > 0 ? "sd" : "si"
+        estado = fail > 0 ? "no" : pend > 0 ? "sd" : "si"
         valorLabel =
-          `${aTiempo}/${rows.length} a tiempo` + (sinDato > 0 ? ` · ${sinDato} sin dato` : "")
-        if (estado === "sd" && sinDato > 0) {
+          `${aTiempo}/${viajesD.length} a tiempo` + (pend > 0 ? ` · ${pend} sin dato` : "")
+        if (estado === "sd" && pend > 0) {
           nota =
-            "Faltan datos de carga de algunas patentes (la patente del WMS se completa unos días después de la carga). El día se reevaluará al actualizarse el dato; no implica incumplimiento."
+            "El snapshot del WMS es previo al plazo de las 07:00; el día se reevaluará al actualizarse. No implica incumplimiento."
         }
       }
 

@@ -1,10 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { FileSignature, FileText, Handshake, CircleAlert, CircleCheck, CircleDashed } from "lucide-react"
+import { useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { FileSignature, FileText, Handshake, CircleAlert, CircleCheck, CircleDashed, Loader2, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -13,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { deleteSla } from "@/actions/sla"
 import {
   SLA_ESTADO_LABELS,
   SLA_PILAR_LABELS,
@@ -56,8 +66,26 @@ export function SlaClient({
   cumplimiento?: CumplimientoMes | null
 }) {
   const [detalleId, setDetalleId] = useState<string | null>(null)
+  const [slaABorrar, setSlaABorrar] = useState<SlaConAutor | null>(null)
+  const [borrando, startBorrar] = useTransition()
+  const router = useRouter()
 
   const canGestionar = currentRole === "admin" || currentRole === "supervisor"
+
+  function confirmarBorrado() {
+    if (!slaABorrar) return
+    const { id } = slaABorrar
+    startBorrar(async () => {
+      const r = await deleteSla(id)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      toast.success("SLA borrado")
+      setSlaABorrar(null)
+      router.refresh()
+    })
+  }
 
   const resumen = useMemo(() => {
     let firmados = 0
@@ -181,6 +209,17 @@ export function SlaClient({
                               >
                                 {canGestionar ? "Gestionar" : "Ver"}
                               </Button>
+                              {canGestionar && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  title="Borrar este SLA"
+                                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  onClick={() => setSlaABorrar(s)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -232,6 +271,49 @@ export function SlaClient({
         open={detalleId !== null}
         onOpenChange={(o) => !o && setDetalleId(null)}
       />
+
+      <Dialog
+        open={slaABorrar !== null}
+        onOpenChange={(o) => !o && !borrando && setSlaABorrar(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Trash2 className="size-5" />
+              Borrar este SLA
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            ¿Seguro que querés borrar{" "}
+            <span className="font-semibold text-slate-900">
+              {slaABorrar?.nombre}
+            </span>
+            ? Se eliminan también sus acuerdos cargados. Esta acción no se puede
+            deshacer.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSlaABorrar(null)}
+              disabled={borrando}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarBorrado}
+              disabled={borrando}
+            >
+              {borrando ? (
+                <Loader2 className="mr-1 size-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 size-4" />
+              )}
+              Borrar SLA
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

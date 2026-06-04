@@ -31,11 +31,12 @@ export function CargaCamionesClient({
   generadoEn: string | null
   error: string | null
 }) {
-  // Fechas con datos, más reciente primero.
+  // Fechas con CARGA registrada, más reciente primero. (El blob puede traer
+  // viajes ruteados sin cargar, con fecha vacía: se ignoran en esta vista.)
   const fechas = useMemo(
     () =>
-      Array.from(new Set(filas.map((f) => f.fecha))).sort((a, b) =>
-        a < b ? 1 : -1,
+      Array.from(new Set(filas.map((f) => f.fecha).filter(Boolean))).sort(
+        (a, b) => (a < b ? 1 : -1),
       ),
     [filas],
   )

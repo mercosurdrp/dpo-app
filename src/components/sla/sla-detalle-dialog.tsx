@@ -30,12 +30,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { abrirArchivo } from "@/lib/abrir-archivo"
-import { createClient } from "@/lib/supabase/client"
 import {
-  addSlaAdjunto,
-  deleteSla,
   deleteSlaAdjunto,
   updateSla,
+  uploadSlaAdjunto,
 } from "@/actions/sla"
 import {
   SLA_ESTADO_LABELS,
@@ -43,15 +41,6 @@ import {
   type SlaConAutor,
   type SlaEstado,
 } from "@/types/database"
-
-const BUCKET = "sla"
-
-function sanitizeFileName(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(0, 120)
-}
 
 function formatBytes(b: number | null): string {
   if (!b || b <= 0) return ""
@@ -75,7 +64,6 @@ export function SlaDetalleDialog({
   const [savingMeta, startSaveMeta] = useTransition()
   const [uploading, startUpload] = useTransition()
   const [deleting, startDelete] = useTransition()
-  const [borrandoSla, startBorrarSla] = useTransition()
 
   const [estado, setEstado] = useState<SlaEstado>("pendiente")
   const [fechaFirma, setFechaFirma] = useState("")
@@ -140,52 +128,15 @@ export function SlaDetalleDialog({
     const slaId = sla!.id
     const file = archivo
     startUpload(async () => {
-      try {
-        const supabase = createClient()
-        const safeName = sanitizeFileName(file.name || "acuerdo")
-        const path = `${slaId}/${crypto.randomUUID()}-${safeName}`
-        const mime = file.type || "application/octet-stream"
-        const { error } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { contentType: mime, upsert: false })
-        if (error) throw new Error(error.message)
-
-        const r = await addSlaAdjunto(slaId, {
-          storage_path: path,
-          nombre_original: file.name,
-          mime_type: mime,
-          tamano_bytes: file.size,
-        })
-        if ("error" in r) {
-          await supabase.storage.from(BUCKET).remove([path])
-          throw new Error(r.error)
-        }
-        toast.success("Acuerdo cargado")
-        setArchivo(null)
-        router.refresh()
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error al subir")
-      }
-    })
-  }
-
-  function handleBorrarSla() {
-    const slaId = sla!.id
-    const nombre = sla!.nombre
-    if (
-      !confirm(
-        `¿Borrar el SLA "${nombre}"? Se eliminan también sus acuerdos cargados. No se puede deshacer.`,
-      )
-    )
-      return
-    startBorrarSla(async () => {
-      const r = await deleteSla(slaId)
+      const formData = new FormData()
+      formData.append("file", file)
+      const r = await uploadSlaAdjunto(slaId, formData)
       if ("error" in r) {
         toast.error(r.error)
         return
       }
-      toast.success("SLA borrado")
-      onOpenChange(false)
+      toast.success("Acuerdo cargado")
+      setArchivo(null)
       router.refresh()
     })
   }
@@ -386,29 +337,6 @@ export function SlaDetalleDialog({
                 </div>
               </div>
 
-              {/* Zona de riesgo: borrar el SLA del repositorio */}
-              <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3">
-                <div className="text-sm text-red-700">
-                  <div className="font-semibold">Borrar este SLA</div>
-                  <div className="text-xs text-red-600">
-                    Lo quita del repositorio junto con sus acuerdos. No se puede deshacer.
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleBorrarSla}
-                  disabled={borrandoSla}
-                  className="shrink-0"
-                >
-                  {borrandoSla ? (
-                    <Loader2 className="mr-1 size-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="mr-1 size-4" />
-                  )}
-                  Borrar SLA
-                </Button>
-              </div>
             </>
           )}
         </div>
