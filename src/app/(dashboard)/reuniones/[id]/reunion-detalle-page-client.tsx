@@ -16,6 +16,8 @@ import {
   Calendar,
   CheckCircle2,
   Eye,
+  ChevronLeft,
+  ChevronRight,
   FileDown,
   Hand,
   ListTodo,
@@ -55,7 +57,6 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { EditarReunionDialog } from "@/components/reuniones/editar-reunion-dialog"
-import { ResumenSemanalLogisticaVentas } from "@/components/reuniones/resumen-semanal-logistica-ventas"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -1057,6 +1058,79 @@ export function ReunionDetallePageClient({
     return sem ? sem.fechas : indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
   }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
 
+  // ── Logística-Ventas: columnas agrupadas por semana con "Total semanal" ──────
+  // El tablero diario sigue igual, pero las fechas se agrupan por semana ISO y
+  // tras cada semana se intercala una columna "Total semanal" (con ▼). Por
+  // defecto las semanas están COLAPSADAS (solo se ven los totales); al desplegar
+  // una, aparecen sus días. Solo aplica a logística-ventas; el resto de tipos
+  // mantiene una columna por día.
+  const esLogVentas = IS_MISIONES && detalle.tipo === "logistica-ventas"
+  const [semanasExpandidas, setSemanasExpandidas] = useState<Set<string>>(
+    new Set(),
+  )
+  const toggleSemana = (key: string) =>
+    setSemanasExpandidas((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  type ColTablero =
+    | { kind: "dia"; f: string }
+    | {
+        kind: "total"
+        semana: { key: string; label: string; fechas: string[] }
+      }
+  const columnasTablero = useMemo<ColTablero[]>(() => {
+    if (!esLogVentas) return fechasFiltradas.map((f) => ({ kind: "dia", f }))
+    const map = new Map<string, string[]>()
+    for (const f of fechasFiltradas) {
+      const d = new Date(f + "T12:00:00")
+      const dow = d.getDay() || 7
+      const lunes = new Date(d)
+      lunes.setDate(d.getDate() - (dow - 1))
+      const lunesIso = [
+        lunes.getFullYear(),
+        String(lunes.getMonth() + 1).padStart(2, "0"),
+        String(lunes.getDate()).padStart(2, "0"),
+      ].join("-")
+      const arr = map.get(lunesIso) ?? []
+      arr.push(f)
+      map.set(lunesIso, arr)
+    }
+    const semanas = Array.from(map.entries()).sort(([a], [b]) =>
+      a < b ? -1 : 1,
+    )
+    const cols: ColTablero[] = []
+    semanas.forEach(([lunesIso, fechas], idx) => {
+      const key = `sem_${lunesIso}`
+      if (semanasExpandidas.has(key)) {
+        for (const f of fechas) cols.push({ kind: "dia", f })
+      }
+      cols.push({
+        kind: "total",
+        semana: { key, label: `Sem ${idx + 1}`, fechas },
+      })
+    })
+    return cols
+  }, [esLogVentas, fechasFiltradas, semanasExpandidas])
+
+  // Agregado semanal de un indicador según su agregación (suma/promedio).
+  const totalSemanal = (
+    ind: IndicadorMesItem,
+    fechas: string[],
+  ): number | null => {
+    const nums: number[] = []
+    for (const f of fechas) {
+      const v = ind.valores[f]?.valor
+      if (v != null && Number.isFinite(v)) nums.push(v)
+    }
+    if (nums.length === 0) return null
+    const suma = nums.reduce((a, b) => a + b, 0)
+    return ind.agregacion === "promedio" ? suma / nums.length : suma
+  }
+
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
   const actividades: ReunionActividadConResponsable[] = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1286,14 +1360,6 @@ export function ReunionDetallePageClient({
         currentRole={currentRole}
       />
 
-      {/* Resumen semanal Foxtrot (semana anterior) — solo Logística-Ventas */}
-      {IS_MISIONES && detalle.tipo === "logistica-ventas" && (
-        <ResumenSemanalLogisticaVentas
-          reunionId={detalle.id}
-          sucursal={sucursalSel}
-        />
-      )}
-
       {/* ETAPA 2: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -1497,7 +1563,35 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
-                    {fechasFiltradas.map((f) => {
+                    {columnasTablero.map((col) => {
+                      if (col.kind === "total") {
+                        const abierta = semanasExpandidas.has(col.semana.key)
+                        return (
+                          <th
+                            key={`th-total-${col.semana.key}`}
+                            className="border-x border-violet-200 bg-violet-50 px-2 py-1 text-center text-xs font-semibold text-violet-900"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleSemana(col.semana.key)}
+                              className="flex w-full items-center justify-center gap-1 rounded hover:bg-violet-100 focus:outline-none"
+                              title={
+                                abierta
+                                  ? "Ocultar los días de la semana"
+                                  : "Ver los días de la semana"
+                              }
+                            >
+                              {abierta ? (
+                                <ChevronLeft className="size-3.5" />
+                              ) : (
+                                <ChevronRight className="size-3.5" />
+                              )}
+                              <span>{col.semana.label}</span>
+                            </button>
+                          </th>
+                        )
+                      }
+                      const f = col.f
                       const esHoy = f === detalle.fecha
                       const dom = esFinDeSemana(f)
                       return (
@@ -1537,7 +1631,24 @@ export function ReunionDetallePageClient({
                             ? "—"
                             : formatearValor(ind.mtd)}
                       </td>
-                      {fechasFiltradas.map((f) => {
+                      {columnasTablero.map((col) => {
+                        if (col.kind === "total") {
+                          const tot = totalSemanal(ind, col.semana.fechas)
+                          const esPct = ind.unidad === "%"
+                          return (
+                            <td
+                              key={`td-total-${col.semana.key}`}
+                              className="border-x border-violet-200 bg-violet-50 px-2 py-1 text-center align-middle text-sm font-bold tabular-nums text-violet-900"
+                            >
+                              {tot == null
+                                ? "—"
+                                : esPct
+                                  ? `${formatearValor(tot)}%`
+                                  : formatearValor(tot)}
+                            </td>
+                          )
+                        }
+                        const f = col.f
                         const cell = ind.valores[f] ?? null
                         const esHoy = f === detalle.fecha
                         const dom = esFinDeSemana(f)
