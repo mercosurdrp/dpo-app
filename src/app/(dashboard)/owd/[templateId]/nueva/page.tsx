@@ -37,7 +37,16 @@ export default async function NuevaOwdPage({
     )
   }
 
-  const empleados = "data" in empleadosRes ? empleadosRes.data : []
+  // Si la plantilla define empleados_permitidos, el dropdown se acota a esos
+  // nombres (y no usa el universo global). Caso contrario, OWD genérico.
+  const permitidos = tplRes.data.template.empleados_permitidos
+  const empleados =
+    permitidos && permitidos.length > 0
+      ? permitidos.map((nombre) => ({ nombre, sector: null }))
+      : "data" in empleadosRes
+        ? empleadosRes.data
+        : []
+  const supervisorDefault = tplRes.data.template.supervisor_default ?? ""
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
 
   return (
@@ -53,6 +62,7 @@ export default async function NuevaOwdPage({
         titulo={tplRes.data.template.nombre}
         items={itemsRes.data}
         empleados={empleados}
+        supervisorDefault={supervisorDefault}
         vehiculos={vehiculos}
       />
     </div>

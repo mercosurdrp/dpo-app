@@ -24,13 +24,14 @@ interface Props {
   titulo: string
   items: OwdItem[]
   empleados: { nombre: string; sector: string | null }[]
+  supervisorDefault?: string
   vehiculos: CatalogoVehiculo[]
 }
 
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
 type FotoLocal = { file: File; url: string }
 
-export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos }: Props) {
+export function NuevaOwdClient({ templateId, titulo, items, empleados, supervisorDefault, vehiculos }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -106,7 +107,7 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, vehiculos
 
   const today = new Date().toISOString().slice(0, 10)
   const [fecha, setFecha] = useState(today)
-  const [supervisor, setSupervisor] = useState("")
+  const [supervisor, setSupervisor] = useState(supervisorDefault ?? "")
   const [empleado, setEmpleado] = useState("")
   const [rol, setRol] = useState<string>("Chofer")
   const [dominio, setDominio] = useState<string>("")

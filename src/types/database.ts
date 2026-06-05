@@ -903,6 +903,8 @@ export interface OwdTemplate {
   meta_mensual: number
   meta_cumplimiento_pct: number
   activo: boolean
+  empleados_permitidos: string[] | null
+  supervisor_default: string | null
   created_by: string | null
   created_at: string
   updated_at: string
