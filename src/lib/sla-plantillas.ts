@@ -100,9 +100,9 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
         titulo: "Capacidad de flota",
         bullets: [
           "Capacidad total: 11 camiones — 8 para Ramallo (SN + Ramallo + Arrecifes), 2 para Pergamino y 1 para Colón.",
-          "Lunes a viernes: Ramallo (San Nicolás + Ramallo) 3150 Ceq (6 × 525), Pergamino 1050 (2 × 525), Arrecifes martes y jueves 525 Ceq, Colón todos los días 525 Ceq. Máximo 45 clientes por camión.",
-          "Sábados y feriados: capacidad de carga al 60% y 25 clientes por ruta; Colón y Arrecifes pasan a Ramallo. Ramallo 2835 UP / 225 clientes, Pergamino 630 UP / 50 clientes.",
-          "Las recargas son de un máximo de 525 Ceq por ruta (cualquier localidad).",
+          "Lunes a viernes: Ramallo (San Nicolás + Ramallo) 8400 Ceq (6 × 1400), Pergamino 2800 (2 × 1400), Arrecifes martes y jueves 1400 Ceq, Colón todos los días 1400 Ceq. Máximo 45 clientes por camión.",
+          "Sábados y feriados: capacidad de carga al 60% y 25 clientes por ruta; Colón y Arrecifes pasan a Ramallo. Ramallo 7560 Ceq (9 × 1400 × 0,6) / 225 clientes, Pergamino 1680 Ceq (2 × 1400 × 0,6) / 50 clientes.",
+          "Las recargas son de un máximo de 1400 Ceq por ruta (cualquier localidad).",
         ],
       },
       {
