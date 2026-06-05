@@ -2953,7 +2953,13 @@ async function getIndicadoresMesCore(
       return { error: "Fecha de reunión inválida" }
     }
 
-    const fechas = diasDelMes(anio, mes)
+    // Logística-Ventas (Misiones): el tablero muestra las últimas 5 semanas ISO
+    // completas (para ver cada semana entera + la anterior a la reunión), no el
+    // mes corriente. El resto de tipos usa el mes de la reunión.
+    const fechas =
+      IS_MISIONES && tipo === "logistica-ventas"
+        ? ultimasSemanasISO(fecha, 5)
+        : diasDelMes(anio, mes)
     const fechaDesde = fechas[0]
     const fechaHasta = fechas[fechas.length - 1]
 
@@ -4417,6 +4423,26 @@ function diasDelMes(anio: number, mes: number): string[] {
   const mm = String(mes).padStart(2, "0")
   for (let d = 1; d <= lastDay; d++) {
     fechas.push(`${anio}-${mm}-${String(d).padStart(2, "0")}`)
+  }
+  return fechas
+}
+
+// Para Logística-Ventas (semanal): días de las últimas `nSemanas` semanas ISO
+// (lunes a domingo) que terminan en la semana de `fechaRef`. Cruza meses sin
+// problema, de modo que cada semana se ve COMPLETA (incluida la anterior a la
+// reunión) en vez de recortarse al mes/“hasta hoy”.
+function ultimasSemanasISO(fechaRef: string, nSemanas: number): string[] {
+  const [y, m, d] = fechaRef.split("-").map((s) => parseInt(s, 10))
+  const ref = Date.UTC(y, m - 1, d)
+  const dow = new Date(ref).getUTCDay() || 7 // 1..7 (lun..dom)
+  const domingo = ref + (7 - dow) * 86400000
+  const inicio = domingo - (nSemanas * 7 - 1) * 86400000
+  const fechas: string[] = []
+  for (let t = inicio; t <= domingo; t += 86400000) {
+    const dt = new Date(t)
+    fechas.push(
+      `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`,
+    )
   }
   return fechas
 }

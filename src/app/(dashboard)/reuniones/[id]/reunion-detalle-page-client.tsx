@@ -1049,6 +1049,10 @@ export function ReunionDetallePageClient({
 
   const fechasFiltradas = useMemo(() => {
     if (!indicadoresMes) return [] as string[]
+    // Logística-Ventas: el backend ya manda las últimas semanas completas; se
+    // muestran todas (no se recorta a "hasta hoy"), así cada semana queda entera.
+    if (IS_MISIONES && detalle.tipo === "logistica-ventas")
+      return indicadoresMes.fechas
     if (vistaTablero === "mes_completo") return indicadoresMes.fechas
     if (vistaTablero === "hasta_hoy") {
       return indicadoresMes.fechas.filter((f) => f <= detalle.fecha)
@@ -1121,6 +1125,35 @@ export function ReunionDetallePageClient({
     ind: IndicadorMesItem,
     fechas: string[],
   ): number | null => {
+    // Rechazo: ponderado por bultos = Σ(bultos×%) / Σ(bultos), que equivale a
+    // rechazados ÷ entregas totales de la semana (no un promedio simple).
+    const esRechazo =
+      ind.id === "auto_rechazo" ||
+      ind.nombre.trim().toLowerCase() === "rechazo"
+    if (esRechazo && indicadoresMes) {
+      const bultosInd = indicadoresMes.indicadores.find(
+        (i) => i.id === "auto_bultos_totales",
+      )
+      if (bultosInd) {
+        let num = 0
+        let den = 0
+        for (const f of fechas) {
+          const pct = ind.valores[f]?.valor
+          const bul = bultosInd.valores[f]?.valor
+          if (
+            pct != null &&
+            Number.isFinite(pct) &&
+            bul != null &&
+            Number.isFinite(bul) &&
+            bul > 0
+          ) {
+            num += (pct / 100) * bul
+            den += bul
+          }
+        }
+        return den > 0 ? (num / den) * 100 : null
+      }
+    }
     const nums: number[] = []
     for (const f of fechas) {
       const v = ind.valores[f]?.valor
