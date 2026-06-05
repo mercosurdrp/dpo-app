@@ -2613,6 +2613,160 @@ export async function getResumenSemanal(
 }
 
 /**
+ * Resumen semanal de Logística-Ventas: agregados Foxtrot de la SEMANA ANTERIOR
+ * a la reunión (los 7 días previos: fecha-7..fecha-1), con el detalle por día
+ * para el desplegable. Bultos = suma; Tiempo por PDV y Horas en ruta = promedio;
+ * Rechazo = ponderado por bultos Σ(bultos×%)/Σ(bultos) (= rechazados/entregas
+ * totales de la semana). Sin TML. No incluye manuales (RMD/NPS/…): esos se
+ * cargan en la reunión y los maneja el set de config aparte.
+ */
+export async function getResumenSemanalLogisticaVentas(
+  reunionId: string,
+  opts?: { sucursal?: MisionesSucursal },
+): Promise<
+  Result<{
+    semana: { desde: string; hasta: string }
+    fechas: string[]
+    indicadores: Array<{
+      key: string
+      nombre: string
+      unidad: string
+      resumen: number | null
+      meta: number | null
+      mejor_si: "mayor" | "menor" | null
+      dias: Record<string, number | null>
+    }>
+  }>
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    const sucursal: MisionesSucursal = opts?.sucursal ?? "todo"
+
+    const { data: reunion, error: errReunion } = await supabase
+      .from("reuniones")
+      .select("fecha")
+      .eq("id", reunionId)
+      .single()
+    if (errReunion || !reunion) {
+      return { error: errReunion?.message ?? "No se encontró la reunión" }
+    }
+    const fechaReunion = (reunion as { fecha: string }).fecha
+
+    // Semana anterior: 7 días [fecha-7 .. fecha-1] (UTC, cruza meses sin problema).
+    const [y, m, d] = fechaReunion.split("-").map((s) => parseInt(s, 10))
+    const baseTs = Date.UTC(y, m - 1, d)
+    const fechas: string[] = []
+    for (let i = 7; i >= 1; i--) {
+      const dt = new Date(baseTs - i * 86400000)
+      const yy = dt.getUTCFullYear()
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0")
+      const dd = String(dt.getUTCDate()).padStart(2, "0")
+      fechas.push(`${yy}-${mm}-${dd}`)
+    }
+
+    const ms = await buildMisionesLogisticaSerie(
+      supabase,
+      fechas,
+      fechaReunion,
+      sucursal,
+    )
+
+    const suma = (rec: Record<string, number | null>): number | null => {
+      let acc = 0
+      let hay = false
+      for (const f of fechas) {
+        const v = rec[f]
+        if (v != null && Number.isFinite(v)) {
+          acc += v
+          hay = true
+        }
+      }
+      return hay ? acc : null
+    }
+    const promedio = (rec: Record<string, number | null>): number | null => {
+      const nums: number[] = []
+      for (const f of fechas) {
+        const v = rec[f]
+        if (v != null && Number.isFinite(v)) nums.push(v)
+      }
+      return nums.length
+        ? nums.reduce((a, b) => a + b, 0) / nums.length
+        : null
+    }
+    // Rechazo de la semana ponderado por bultos = rechazados / entregas totales.
+    const rechazoSemana = (): number | null => {
+      let num = 0
+      let den = 0
+      for (const f of fechas) {
+        const pct = ms.pct_rechazo[f]
+        const bul = ms.bultos_salida_reparto[f]
+        if (
+          pct != null &&
+          Number.isFinite(pct) &&
+          bul != null &&
+          Number.isFinite(bul) &&
+          bul > 0
+        ) {
+          num += (pct / 100) * bul
+          den += bul
+        }
+      }
+      return den > 0 ? (num / den) * 100 : null
+    }
+
+    const indicadores = [
+      {
+        key: "auto_bultos_totales",
+        nombre: "Bultos totales",
+        unidad: "bultos",
+        resumen: suma(ms.bultos_salida_reparto),
+        meta: null,
+        mejor_si: "mayor" as const,
+        dias: ms.bultos_salida_reparto,
+      },
+      {
+        key: "auto_tiempo_pdv",
+        nombre: "Tiempo por PDV",
+        unidad: "min",
+        resumen: promedio(ms.tiempo_pdv),
+        meta: null,
+        mejor_si: "menor" as const,
+        dias: ms.tiempo_pdv,
+      },
+      {
+        key: "auto_rechazo",
+        nombre: "Rechazo",
+        unidad: "%",
+        resumen: rechazoSemana(),
+        meta: 2,
+        mejor_si: "menor" as const,
+        dias: ms.pct_rechazo,
+      },
+      {
+        key: "auto_horas_en_ruta",
+        nombre: "Horas en ruta",
+        unidad: "min",
+        resumen: promedio(ms.tiempo_ruta_promedio),
+        meta: null,
+        mejor_si: "menor" as const,
+        dias: ms.tiempo_ruta_promedio,
+      },
+    ]
+
+    return { data: { semana: { desde: fechas[0], hasta: fechas[6] }, fechas, indicadores } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error cargando el resumen semanal de logística-ventas",
+    }
+  }
+}
+
+/**
  * Devuelve la matriz indicadores x mes que contiene la fecha de la reunión
  * dada. Para cada indicador se calcula también el MTD según su agregación
  * (suma o promedio).

@@ -55,6 +55,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { EditarReunionDialog } from "@/components/reuniones/editar-reunion-dialog"
+import { ResumenSemanalLogisticaVentas } from "@/components/reuniones/resumen-semanal-logistica-ventas"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -1284,6 +1285,14 @@ export function ReunionDetallePageClient({
         currentProfileId={currentProfileId}
         currentRole={currentRole}
       />
+
+      {/* Resumen semanal Foxtrot (semana anterior) — solo Logística-Ventas */}
+      {IS_MISIONES && detalle.tipo === "logistica-ventas" && (
+        <ResumenSemanalLogisticaVentas
+          reunionId={detalle.id}
+          sucursal={sucursalSel}
+        />
+      )}
 
       {/* ETAPA 2: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">
