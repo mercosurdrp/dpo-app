@@ -323,6 +323,7 @@ export function PeriodosCriticosClient({
           <TabsTrigger value="detalle" className={FASE.detectar}><Table className="w-4 h-4 mr-1.5" /> Detalle semanal</TabsTrigger>
           <TabsTrigger value="periodos" className={FASE.analizar}><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
           <TabsTrigger value="comparativo" className={FASE.analizar}><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
+          <TabsTrigger value="comparativo-inverso" className={FASE.analizar}><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo inverso</TabsTrigger>
           <TabsTrigger value="simulador" className={FASE.planificar}><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
           <TabsTrigger value="revision" className={FASE.revisar}><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
           <TabsTrigger value="swot" className={FASE.evaluar}><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
@@ -359,6 +360,12 @@ export function PeriodosCriticosClient({
         </TabsContent>
         <TabsContent value="comparativo">
           <ComparativoTab
+            aniosDisponibles={aniosDisponibles}
+            diasPorAnio={diasPorAnio}
+          />
+        </TabsContent>
+        <TabsContent value="comparativo-inverso">
+          <ComparativoInversoTab
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
           />
@@ -566,6 +573,84 @@ function ComparativoTab({
           <ColumnaAnio anio={anioB} dias={diasB} bgWrap="bg-amber-50 border-amber-200" bgHeader="bg-amber-50" />
         </div>
       </TooltipProvider>
+    </div>
+  )
+}
+
+// Comparativo inverso: períodos que fueron críticos en el año en curso
+// (transcurrido) y que NO lo fueron en las mismas fechas del año anterior.
+function ComparativoInversoTab({
+  aniosDisponibles,
+  diasPorAnio,
+}: {
+  aniosDisponibles: number[]
+  diasPorAnio: Record<number, DiaCalendario[]>
+}) {
+  const ultimo =
+    aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
+  const anterior = aniosDisponibles[aniosDisponibles.length - 2] ?? ultimo - 1
+  // Base = año en curso (último); Comparar = anterior.
+  const [anioBase, setAnioBase] = useState<number>(ultimo)
+  const [anioComp, setAnioComp] = useState<number>(anterior)
+
+  const hoyIso = useMemo(() => {
+    const d = new Date()
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    ].join("-")
+  }, [])
+  // El año base se toma "transcurrido": si es el año actual, sólo hasta hoy.
+  const diasBase = useMemo(() => {
+    const arr = diasPorAnio[anioBase] ?? []
+    return anioBase === new Date().getFullYear()
+      ? arr.filter((d) => d.fecha <= hoyIso)
+      : arr
+  }, [diasPorAnio, anioBase, hoyIso])
+  const diasComp = diasPorAnio[anioComp] ?? []
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Año (transcurrido):</span>
+            <select
+              value={anioBase}
+              onChange={(e) => setAnioBase(Number(e.target.value))}
+              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
+            >
+              {aniosDisponibles.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </label>
+          <span className="text-slate-400">vs</span>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Comparar con:</span>
+            <select
+              value={anioComp}
+              onChange={(e) => setAnioComp(Number(e.target.value))}
+              className="h-8 rounded-md border border-slate-200 px-2 text-sm font-semibold"
+            >
+              {aniosDisponibles.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </label>
+          <ResumenAnio anio={anioBase} dias={diasBase} />
+          <ResumenAnio anio={anioComp} dias={diasComp} />
+        </CardContent>
+      </Card>
+
+      <CrucePeriodos
+        diasBase={diasBase}
+        diasComparar={diasComp}
+        anioBase={anioBase}
+        anioComparar={anioComp}
+        soloNuevos
+      />
     </div>
   )
 }

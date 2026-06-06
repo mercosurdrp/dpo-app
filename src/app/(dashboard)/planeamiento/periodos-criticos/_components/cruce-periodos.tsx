@@ -38,13 +38,19 @@ export function CrucePeriodos({
   diasComparar,
   anioBase,
   anioComparar,
+  soloNuevos = false,
 }: {
   diasBase: DiaCalendario[]
   diasComparar: DiaCalendario[]
   anioBase: number
   anioComparar: number
+  /**
+   * Si es true, muestra SOLO los períodos que fueron críticos en `anioBase` y
+   * cuyos días equivalentes en `anioComparar` NO fueron críticos (criticidad
+   * nueva). Si es false (default), muestra todos los críticos de `anioBase`.
+   */
+  soloNuevos?: boolean
 }) {
-  const periodos = useMemo(() => detectarPeriodosCriticos(diasBase), [diasBase])
   // Índice del año a comparar por "mm-dd" para encontrar el día equivalente.
   const mapB = useMemo(() => {
     const m = new Map<string, DiaCalendario>()
@@ -52,11 +58,25 @@ export function CrucePeriodos({
     return m
   }, [diasComparar])
 
+  const periodos = useMemo(() => {
+    const todos = detectarPeriodosCriticos(diasBase)
+    if (!soloNuevos) return todos
+    return todos.filter((p) => {
+      const diasEq = p.dias
+        .map((d) => mapB.get(d.fecha.slice(5)))
+        .filter((d): d is DiaCalendario => Boolean(d))
+      // "Nuevo" = ningún día equivalente del año a comparar fue crítico.
+      return !diasEq.some((d) => d.estatus === "CRITICO")
+    })
+  }, [diasBase, mapB, soloNuevos])
+
   if (periodos.length === 0) {
     return (
       <Card>
         <CardContent className="p-6 text-sm text-slate-500 text-center">
-          No hay períodos críticos en {anioBase} para cruzar con {anioComparar}.
+          {soloNuevos
+            ? `No hay períodos que hayan sido críticos en ${anioBase} y no en ${anioComparar}.`
+            : `No hay períodos críticos en ${anioBase} para cruzar con ${anioComparar}.`}
         </CardContent>
       </Card>
     )
@@ -66,13 +86,14 @@ export function CrucePeriodos({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-1.5">
-          Cruce de períodos · {anioBase}
+          {soloNuevos ? "Críticos nuevos" : "Cruce de períodos"} · {anioBase}
           <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
           {anioComparar}
         </CardTitle>
         <p className="text-xs text-slate-500">
-          Para cada período crítico de {anioBase}, qué pasó en las mismas fechas de {anioComparar}:
-          si se repitió, con las mismas variables o con otras, y si mejoró o empeoró.
+          {soloNuevos
+            ? `Períodos que fueron críticos en ${anioBase} pero NO en las mismas fechas de ${anioComparar} (criticidad nueva de ${anioBase}).`
+            : `Para cada período crítico de ${anioBase}, qué pasó en las mismas fechas de ${anioComparar}: si se repitió, con las mismas variables o con otras, y si mejoró o empeoró.`}
         </p>
       </CardHeader>
       <CardContent className="space-y-2">
