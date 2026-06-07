@@ -39,6 +39,12 @@ const ordenPos = (p: string | null) => {
   return 9
 }
 const MEDALLA: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" }
+// Colores por puesto: 1° dorado, 2° plata, 3° bronce.
+const COLOR_PUESTO: Record<number, string> = {
+  1: "bg-yellow-400 text-yellow-900 ring-1 ring-yellow-500",
+  2: "bg-slate-300 text-slate-800 ring-1 ring-slate-400",
+  3: "bg-orange-400 text-orange-950 ring-1 ring-orange-500",
+}
 
 export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
   const [prog, setProg] = useState<Programa | null>(null)
@@ -188,7 +194,7 @@ function GanadorCard({ g, onFoto }: { g: Registro; onFoto: (file: File) => void 
             <Camera className="w-7 h-7 mb-1" /><span className="text-[11px]">Subir foto</span>
           </span>
         )}
-        <span className="absolute top-1.5 left-1.5 text-2xl drop-shadow">{MEDALLA[pos] ?? "🏅"}</span>
+        <span className="absolute top-1 left-1 text-5xl drop-shadow-lg">{MEDALLA[pos] ?? "🏅"}</span>
         <span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30 text-white text-xs">
           <Camera className="w-4 h-4 mr-1" /> cambiar
         </span>
@@ -200,11 +206,19 @@ function GanadorCard({ g, onFoto }: { g: Registro; onFoto: (file: File) => void 
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onFoto(f) }}
       />
-      <div className="p-2 space-y-0.5">
-        <div className="flex items-center justify-between gap-1">
-          <span className="font-semibold text-sm text-slate-900 truncate">{g.equipo || "—"}</span>
-          {g.posicion && <Badge className="bg-amber-500 text-white text-[10px]">{g.posicion}</Badge>}
-        </div>
+      <div className="p-2 space-y-1">
+        {pos >= 1 && pos <= 3 ? (
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-base font-extrabold ${COLOR_PUESTO[pos]}`}
+          >
+            {pos}° puesto
+          </span>
+        ) : g.posicion ? (
+          <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-base font-extrabold text-slate-700">
+            {g.posicion}
+          </span>
+        ) : null}
+        <div className="font-semibold text-sm text-slate-900 truncate">{g.equipo || "—"}</div>
         {g.premio && <p className="text-[11px] text-slate-600 leading-tight">{g.premio}</p>}
         <p className="text-[10px] text-slate-400">{MESES[g.mes]}</p>
       </div>
