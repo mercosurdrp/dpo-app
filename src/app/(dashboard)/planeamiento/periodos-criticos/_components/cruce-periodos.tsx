@@ -104,6 +104,7 @@ export function CrucePeriodos({
             mapB={mapB}
             anioBase={anioBase}
             anioComparar={anioComparar}
+            inverso={soloNuevos}
           />
         ))}
       </CardContent>
@@ -127,11 +128,16 @@ function CruceCard({
   mapB,
   anioBase,
   anioComparar,
+  inverso = false,
 }: {
   periodo: PeriodoCritico
   mapB: Map<string, DiaCalendario>
   anioBase: number
   anioComparar: number
+  /** Modo inverso (críticos nuevos): el año base es el crítico y el comparar el
+   * no-crítico → el veredicto es siempre "Empeoró" y el % mide cuánto MÁS volumen
+   * tuvo el año base respecto al comparar. */
+  inverso?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -152,9 +158,29 @@ function CruceCard({
   const seSumaron = [...varsB].filter((v) => !varsA.has(v))
   const seFueron = [...varsA].filter((v) => !varsB.has(v))
 
-  // Veredicto por intensidad (menos variables = mejoró).
+  // Volumen del período (suma de HL de sus días) en cada año, para el % de cambio.
+  const volA = p.dias.reduce((s, d) => s + (Number(d.hl) || 0), 0)
+  const volB = diasB.reduce((s, d) => s + (Number(d.hl) || 0), 0)
+  // En modo inverso: cuánto MÁS volumen tuvo el año base (crítico) vs el comparar
+  // (no crítico). En modo normal: cuánto cambió el comparar respecto al base.
+  const pctVol = inverso
+    ? volB > 0
+      ? ((volA - volB) / volB) * 100
+      : null
+    : volA > 0
+      ? ((volB - volA) / volA) * 100
+      : null
+  const pctTxt =
+    pctVol != null && hayDatosB
+      ? `${pctVol > 0 ? "+" : ""}${Math.round(pctVol)}%`
+      : null
+
+  // Veredicto. En inverso siempre "Empeoró" (de no-crítico a crítico). En normal,
+  // por intensidad de variables (menos variables = mejoró).
   const veredicto = !hayDatosB
     ? { txt: "Aún sin datos", cls: "bg-slate-100 text-slate-500", Icon: Clock }
+    : inverso
+    ? { txt: "Empeoró", cls: "bg-red-100 text-red-800", Icon: TrendingUp }
     : maxB < maxA
     ? { txt: "Mejoró", cls: "bg-emerald-100 text-emerald-800", Icon: TrendingDown }
     : maxB > maxA
@@ -189,6 +215,7 @@ function CruceCard({
         <Badge className={`${veredicto.cls} ml-auto gap-1`}>
           <veredicto.Icon className="w-3 h-3" />
           {veredicto.txt}
+          {pctTxt && <span className="font-bold">{pctTxt}</span>}
         </Badge>
         <Button
           size="sm"
