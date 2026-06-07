@@ -37,6 +37,15 @@ async function subirArchivoDirecto(
 }
 
 const API = "/api/planeamiento/periodos-criticos/incentivos"
+
+// Asegura que un link externo tenga esquema (si no, el navegador lo toma como
+// ruta interna y no abre). Deja intactos http(s):// y mailto:.
+function urlExterna(link: string): string {
+  const l = (link ?? "").trim()
+  if (!l) return l
+  if (/^(https?:\/\/|mailto:)/i.test(l)) return l
+  return `https://${l}`
+}
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const AMBITOS = ["Choferes", "Ayudantes", "Warehouse"] as const
 
@@ -363,7 +372,7 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
           <div className="flex items-center gap-2">
             <Label className="text-xs shrink-0">Link</Label>
             <Input value={comLink} onChange={(e) => setComLink(e.target.value)} placeholder="https://… (mail, video de YouTube/Drive, etc.)" className="h-8 text-xs" />
-            {prog.comunicado_link && <a href={prog.comunicado_link} target="_blank" rel="noopener" className="text-xs text-violet-700 underline shrink-0">abrir</a>}
+            {prog.comunicado_link && <a href={urlExterna(prog.comunicado_link)} target="_blank" rel="noopener" className="text-xs text-violet-700 underline shrink-0">abrir</a>}
           </div>
           <Textarea value={comNota} onChange={(e) => setComNota(e.target.value)} rows={2} placeholder="Nota: cómo/cuándo se comunicó (reunión, grupo, cartelera…)" className="text-xs" />
         </div>
