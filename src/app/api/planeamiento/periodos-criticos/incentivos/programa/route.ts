@@ -37,6 +37,30 @@ export async function GET() {
   })
 }
 
+// POST → genera una URL firmada para subir un archivo DIRECTO a Storage desde el
+// navegador (bypass del límite de 4.5MB de las funciones serverless). Body JSON:
+// { slot: "programa" | "comunicado", nombre }. Devuelve { bucket, path, token }.
+export async function POST(req: NextRequest) {
+  if (!IS_MISIONES) return NextResponse.json({ error: "No disponible en este tenant" }, { status: 404 })
+  const profile = await getProfile()
+  if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  if (!["admin", "admin_rrhh", "supervisor"].includes(profile.role)) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  }
+  const body = await req.json().catch(() => ({}))
+  const slot = body?.slot
+  if (slot !== "programa" && slot !== "comunicado") {
+    return NextResponse.json({ error: "slot inválido" }, { status: 400 })
+  }
+  const supabase = await createClient()
+  const path = `${PREFIJO}/${slot}-${Date.now()}-${cleanFileName(String(body?.nombre || "archivo"))}`
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path)
+  if (error || !data) {
+    return NextResponse.json({ error: error?.message ?? "No se pudo preparar la subida" }, { status: 500 })
+  }
+  return NextResponse.json({ bucket: BUCKET, path, token: data.token })
+}
+
 // PUT (FormData) → edita el programa, sube PPT y/o evidencia de comunicación.
 // Campos: descripcion, periodo, comunicado(bool), comunicado_fecha, comunicado_nota,
 //         archivo_programa (File), archivo_comunicado (File). Solo admin/supervisor.
@@ -73,6 +97,18 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
+    // Subida directa (bypass 4.5MB): el navegador ya subió a Storage y manda el path.
+    const pathProg = fd.get("archivo_path")
+    if (typeof pathProg === "string" && pathProg) {
+      patch.archivo_path = pathProg
+      patch.archivo_nombre = String(fd.get("archivo_nombre") ?? "") || null
+    }
+    const pathCom = fd.get("comunicado_path")
+    if (typeof pathCom === "string" && pathCom) {
+      patch.comunicado_path = pathCom
+      patch.comunicado_nombre = String(fd.get("comunicado_nombre") ?? "") || null
+    }
+    // Retrocompat: archivos chicos (<4.5MB) enviados como File en el FormData.
     const fProg = fd.get("archivo_programa")
     if (fProg instanceof File && fProg.size > 0) {
       patch.archivo_path = await subir(fProg, "programa")

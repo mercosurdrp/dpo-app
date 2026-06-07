@@ -12,6 +12,29 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Gift, FileText, Megaphone, Plus, Pencil, Trash2, CheckCircle2, Upload, Trophy, Camera } from "lucide-react"
+import { createClient as createSupabaseBrowser } from "@/lib/supabase/client"
+
+// Sube un archivo DIRECTO a Storage desde el navegador (bypass del límite de
+// 4.5MB de las funciones serverless). Pide una URL firmada al endpoint y sube
+// con ella; devuelve el path guardado.
+async function subirArchivoDirecto(
+  file: File,
+  slot: "programa" | "comunicado",
+): Promise<string> {
+  const up = await fetch(`${API}/programa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slot, nombre: file.name }),
+  })
+  const uj = await up.json()
+  if (!up.ok) throw new Error(uj.error || "No se pudo preparar la subida")
+  const supabase = createSupabaseBrowser()
+  const { error } = await supabase.storage
+    .from(uj.bucket)
+    .uploadToSignedUrl(uj.path, uj.token, file)
+  if (error) throw new Error(`Subiendo ${slot}: ${error.message}`)
+  return uj.path as string
+}
 
 const API = "/api/planeamiento/periodos-criticos/incentivos"
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -249,8 +272,20 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
       fd.set("comunicado_fecha", comFecha)
       fd.set("comunicado_nota", comNota)
       fd.set("comunicado_link", comLink)
-      if (pptRef.current?.files?.[0]) fd.set("archivo_programa", pptRef.current.files[0])
-      if (comRef.current?.files?.[0]) fd.set("archivo_comunicado", comRef.current.files[0])
+      // Los archivos se suben DIRECTO a Storage (evita el tope de 4.5MB); al PUT
+      // solo le mandamos el path resultante.
+      const pptFile = pptRef.current?.files?.[0]
+      if (pptFile) {
+        const path = await subirArchivoDirecto(pptFile, "programa")
+        fd.set("archivo_path", path)
+        fd.set("archivo_nombre", pptFile.name)
+      }
+      const comFile = comRef.current?.files?.[0]
+      if (comFile) {
+        const path = await subirArchivoDirecto(comFile, "comunicado")
+        fd.set("comunicado_path", path)
+        fd.set("comunicado_nombre", comFile.name)
+      }
       const res = await fetch(`${API}/programa`, { method: "PUT", body: fd })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
