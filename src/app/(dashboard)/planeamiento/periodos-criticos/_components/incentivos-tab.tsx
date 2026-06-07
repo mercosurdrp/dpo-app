@@ -182,7 +182,7 @@ function GanadorCard({ g, onFoto }: { g: Registro; onFoto: (file: File) => void 
       >
         {g.foto_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={g.foto_url} alt={g.equipo || "ganador"} className="w-full h-full object-cover" />
+          <img src={g.foto_url} alt={g.equipo || "ganador"} className="w-full h-full object-contain" />
         ) : (
           <span className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
             <Camera className="w-7 h-7 mb-1" /><span className="text-[11px]">Subir foto</span>
