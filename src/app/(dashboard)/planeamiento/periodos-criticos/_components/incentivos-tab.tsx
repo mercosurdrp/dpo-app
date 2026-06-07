@@ -372,7 +372,15 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
           <div className="flex items-center gap-2">
             <Label className="text-xs shrink-0">Link</Label>
             <Input value={comLink} onChange={(e) => setComLink(e.target.value)} placeholder="https://… (mail, video de YouTube/Drive, etc.)" className="h-8 text-xs" />
-            {prog.comunicado_link && <a href={urlExterna(prog.comunicado_link)} target="_blank" rel="noopener" className="text-xs text-violet-700 underline shrink-0">abrir</a>}
+            {prog.comunicado_link && (
+              /^file:/i.test(prog.comunicado_link.trim()) ? (
+                <span className="text-[11px] text-amber-700 shrink-0">
+                  ⚠ es un archivo de tu PC, no un link web — subilo en «Archivo»
+                </span>
+              ) : (
+                <a href={urlExterna(prog.comunicado_link)} target="_blank" rel="noopener" className="text-xs text-violet-700 underline shrink-0">abrir</a>
+              )
+            )}
           </div>
           <Textarea value={comNota} onChange={(e) => setComNota(e.target.value)} rows={2} placeholder="Nota: cómo/cuándo se comunicó (reunión, grupo, cartelera…)" className="text-xs" />
         </div>
