@@ -236,6 +236,8 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
   const [guardando, setGuardando] = useState(false)
   const pptRef = useRef<HTMLInputElement>(null)
   const comRef = useRef<HTMLInputElement>(null)
+  const [pptSel, setPptSel] = useState<string | null>(null)
+  const [comSel, setComSel] = useState<string | null>(null)
 
   async function guardar() {
     setGuardando(true)
@@ -253,6 +255,8 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
       onSaved(j.programa)
+      setPptSel(null)
+      setComSel(null)
       toast.success("Programa guardado")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo guardar")
@@ -287,8 +291,13 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
             ? <a href={prog.archivo_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.archivo_nombre || "ver PPT"}</a>
             : <span className="text-xs text-slate-400">sin archivo</span>}
           <label className="text-xs flex items-center gap-1 cursor-pointer text-slate-600">
-            <Upload className="w-3.5 h-3.5" /> <input ref={pptRef} type="file" accept=".ppt,.pptx,.pdf" className="text-xs" />
+            <Upload className="w-3.5 h-3.5" /> <input ref={pptRef} type="file" accept=".ppt,.pptx,.pdf" className="text-xs" onChange={(e) => setPptSel(e.target.files?.[0]?.name ?? null)} />
           </label>
+          {pptSel && (
+            <span className="w-full text-[11px] font-medium text-amber-700">
+              ⚠ «{pptSel}» elegido — apretá <b>Guardar</b> para subirlo.
+            </span>
+          )}
         </div>
 
         {/* Comunicación al equipo */}
@@ -306,9 +315,14 @@ function ProgramaCard({ prog, onSaved }: { prog: Programa; onSaved: (p: Programa
               <Input type="date" value={comFecha} onChange={(e) => setComFecha(e.target.value)} className="h-8 w-auto" />
             </label>
             <label className="text-xs flex items-center gap-1 cursor-pointer text-slate-600">
-              Archivo <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" className="text-xs" />
+              Archivo <Upload className="w-3.5 h-3.5" /> <input ref={comRef} type="file" className="text-xs" onChange={(e) => setComSel(e.target.files?.[0]?.name ?? null)} />
             </label>
             {prog.comunicado_url && <a href={prog.comunicado_url} target="_blank" rel="noopener" className="text-xs text-violet-700 underline">{prog.comunicado_nombre || "ver archivo"}</a>}
+            {comSel && (
+              <span className="w-full text-[11px] font-medium text-amber-700">
+                ⚠ «{comSel}» elegido — apretá <b>Guardar</b> para subirlo.
+              </span>
+            )}
           </div>
           <p className="text-[10px] text-slate-400 -mt-1">Se acepta cualquier formato: foto, PDF, Word/Excel, PPT, etc.</p>
           <div className="flex items-center gap-2">
