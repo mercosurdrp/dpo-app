@@ -175,16 +175,18 @@ function CruceCard({
       ? `${pctVol > 0 ? "+" : ""}${Math.round(pctVol)}%`
       : null
 
-  // Veredicto. En inverso siempre "Empeoró" (de no-crítico a crítico). En normal,
-  // por intensidad de variables (menos variables = mejoró).
+  // Veredicto por CANTIDAD DE VARIABLES gatilladas (3 estados: mejoró/empeoró/
+  // igual), siempre mirando el año más nuevo respecto al más viejo:
+  //  - normal: base=viejo, comparar=nuevo → nuevo (maxB) vs viejo (maxA)
+  //  - inverso: base=nuevo (crítico), comparar=viejo → nuevo (maxA) vs viejo (maxB)
+  const nuevoVars = inverso ? maxA : maxB
+  const viejoVars = inverso ? maxB : maxA
   const veredicto = !hayDatosB
     ? { txt: "Aún sin datos", cls: "bg-slate-100 text-slate-500", Icon: Clock }
-    : inverso
+    : nuevoVars > viejoVars
     ? { txt: "Empeoró", cls: "bg-red-100 text-red-800", Icon: TrendingUp }
-    : maxB < maxA
+    : nuevoVars < viejoVars
     ? { txt: "Mejoró", cls: "bg-emerald-100 text-emerald-800", Icon: TrendingDown }
-    : maxB > maxA
-    ? { txt: "Empeoró", cls: "bg-red-100 text-red-800", Icon: TrendingUp }
     : { txt: "Igual", cls: "bg-slate-100 text-slate-600", Icon: Minus }
 
   return (
