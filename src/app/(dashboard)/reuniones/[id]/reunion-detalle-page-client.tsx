@@ -58,6 +58,7 @@ import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
+import { SeccionSla } from "@/components/reuniones/seccion-sla"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -934,6 +935,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "sobrestock"),
     [actividadesAll],
   )
+  const actividadesSla = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "sla"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1150,6 +1155,18 @@ export function ReunionDetallePageClient({
         <SeccionSobrestock
           reunionId={detalle.id}
           actividades={actividadesSobrestock}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección Cumplimiento de SLA (cumplimiento día a día por rango) */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionSla
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          actividades={actividadesSla}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}

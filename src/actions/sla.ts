@@ -25,6 +25,8 @@ import {
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
   type DetalleDiaSla,
+  type CumplimientoRango,
+  type CumplimientoRangoFila,
 } from "@/lib/sla-cumplimiento"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
@@ -1412,6 +1414,84 @@ export async function getDetalleDiaSla(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando el detalle",
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getCumplimientoRango — cumplimiento día a día de todos los SLAs medibles
+// en un rango [desde, hasta]. Reúne el/los meses (vía getCumplimientoMes) y
+// recorta los días al rango. Usado por la Reunión Ventas-Logística.
+// ---------------------------------------------------------------------------
+export async function getCumplimientoRango(
+  desde: string,
+  hasta: string,
+): Promise<Result<CumplimientoRango>> {
+  try {
+    await requireAuth()
+    if (IS_MISIONES) {
+      return { error: "El cumplimiento de SLA solo está disponible en Pampeana." }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+      return { error: "Fechas inválidas (esperado YYYY-MM-DD)" }
+    }
+    const d0 = desde <= hasta ? desde : hasta
+    const d1 = desde <= hasta ? hasta : desde
+
+    // Acumulador por SLA (preserva orden de aparición).
+    const acc = new Map<
+      string,
+      { codigo: string; nombre: string; target: number; dias: { fecha: string; estado: EstadoCumplimiento }[] }
+    >()
+
+    // Recorrer meses desde d0 hasta d1.
+    let y = Number(d0.slice(0, 4))
+    let m = Number(d0.slice(5, 7))
+    const yEnd = Number(d1.slice(0, 4))
+    const mEnd = Number(d1.slice(5, 7))
+    let guard = 0
+    while ((y < yEnd || (y === yEnd && m <= mEnd)) && guard++ < 36) {
+      const res = await getCumplimientoMes(y, m)
+      if ("data" in res) {
+        const cm = res.data
+        for (const fila of cm.filas) {
+          const f =
+            acc.get(fila.codigo) ??
+            { codigo: fila.codigo, nombre: fila.nombre, target: fila.target, dias: [] }
+          for (let d = 0; d < cm.diasDelMes; d++) {
+            const fecha = `${y}-${String(m).padStart(2, "0")}-${String(d + 1).padStart(2, "0")}`
+            if (fecha >= d0 && fecha <= d1) {
+              f.dias.push({ fecha, estado: fila.dias[d] ?? "sd" })
+            }
+          }
+          acc.set(fila.codigo, f)
+        }
+      }
+      m++
+      if (m > 12) {
+        m = 1
+        y++
+      }
+    }
+
+    const filas: CumplimientoRangoFila[] = [...acc.values()].map((f) => {
+      const cumplidos = f.dias.filter((x) => x.estado === "si").length
+      const totalAplica = f.dias.filter((x) => x.estado === "si" || x.estado === "no").length
+      return {
+        codigo: f.codigo,
+        nombre: f.nombre,
+        target: f.target,
+        cumplidos,
+        totalAplica,
+        porcentaje: totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null,
+        dias: f.dias,
+      }
+    })
+
+    return { data: { desde: d0, hasta: d1, filas } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error calculando el cumplimiento por rango",
     }
   }
 }

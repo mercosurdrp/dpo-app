@@ -104,3 +104,20 @@ export interface DetalleDiaSla {
   filas: { label: string; valor: string }[]
   nota?: string // mensaje cuando es "sin dato" o "no aplica"
 }
+
+// ── Cumplimiento por rango de fechas (para la Reunión Ventas-Logística) ──
+export interface CumplimientoRangoFila {
+  codigo: string
+  nombre: string
+  target: number
+  porcentaje: number | null // % en el rango (cumplidos / días que aplican)
+  cumplidos: number
+  totalAplica: number
+  dias: { fecha: string; estado: EstadoCumplimiento }[]
+}
+
+export interface CumplimientoRango {
+  desde: string
+  hasta: string
+  filas: CumplimientoRangoFila[]
+}
