@@ -59,6 +59,7 @@ import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import { SeccionSla } from "@/components/reuniones/seccion-sla"
+import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -939,6 +940,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "sla"),
     [actividadesAll],
   )
+  const actividadesAccCom = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1167,6 +1172,17 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesSla}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección Acciones comerciales (slides que pasa Ventas) */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionAccionesComerciales
+          reunionId={detalle.id}
+          actividades={actividadesAccCom}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
