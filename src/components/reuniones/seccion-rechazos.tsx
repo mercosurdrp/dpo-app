@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { PackageX, Loader2, Maximize2 } from "lucide-react"
+import { PackageX, Loader2, Maximize2, ChevronRight } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -10,6 +10,12 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -24,6 +30,10 @@ import {
   getRechazosResumenDia,
   type RechazosResumenDia,
 } from "@/actions/rechazos-resumen-dia"
+import {
+  getRechazosClientesPorMotivo,
+  type RechazoClienteMotivo,
+} from "@/actions/rechazos-clientes-motivo"
 import { RechazosDetalleDiaDialog } from "./rechazos-detalle-dia-dialog"
 import { ActionLogSeccion } from "./action-log-seccion"
 import type { ReunionActividadConResponsable } from "@/types/database"
@@ -69,6 +79,25 @@ export function SeccionRechazos({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+
+  // Drill-down de clientes por motivo
+  const [motivoSel, setMotivoSel] = useState<{ id: number; ds: string } | null>(null)
+  const [clientes, setClientes] = useState<RechazoClienteMotivo[] | null>(null)
+  const [cargandoClientes, setCargandoClientes] = useState(false)
+
+  function abrirClientesMotivo(idRechazo: number, ds: string) {
+    setMotivoSel({ id: idRechazo, ds })
+    setClientes(null)
+    setCargandoClientes(true)
+    void getRechazosClientesPorMotivo(desde, hasta, idRechazo).then((res) => {
+      setCargandoClientes(false)
+      if ("error" in res) {
+        setClientes([])
+        return
+      }
+      setClientes(res.data)
+    })
+  }
 
   useEffect(() => {
     let cancel = false
@@ -244,12 +273,20 @@ export function SeccionRechazos({
                       </TableRow>
                     )}
                     {data.top_motivos.map((m, i) => (
-                      <TableRow key={m.id_rechazo}>
+                      <TableRow
+                        key={m.id_rechazo}
+                        className="cursor-pointer hover:bg-amber-50/60"
+                        onClick={() => abrirClientesMotivo(m.id_rechazo, m.ds_rechazo)}
+                        title="Ver clientes que rechazaron por este motivo"
+                      >
                         <TableCell className="text-muted-foreground">
                           {i + 1}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {m.ds_rechazo}
+                          <span className="inline-flex items-center gap-1">
+                            <ChevronRight className="size-3.5 text-amber-500" />
+                            {m.ds_rechazo}
+                          </span>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">
@@ -305,6 +342,73 @@ export function SeccionRechazos({
         onOpenChange={setDialogOpen}
         fecha={desde}
       />
+
+      {/* Drill-down: clientes que rechazaron por el motivo clickeado */}
+      <Dialog
+        open={motivoSel !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setMotivoSel(null)
+            setClientes(null)
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Clientes que rechazaron — {motivoSel?.ds}
+            </DialogTitle>
+          </DialogHeader>
+          {cargandoClientes ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Cargando clientes…
+            </div>
+          ) : (
+            <div className="rounded-md border border-slate-200">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="w-20 text-right">Cód.</TableHead>
+                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">Eventos</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(!clientes || clientes.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                        Sin clientes para este motivo en el período.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {(clientes ?? []).map((c, i) => (
+                    <TableRow key={`${c.id_cliente ?? "x"}-${i}`}>
+                      <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                      <TableCell className="font-medium">{c.nombre_cliente}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {c.id_cliente ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {formatInt(c.bultos)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatHl(c.hl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatInt(c.eventos)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
