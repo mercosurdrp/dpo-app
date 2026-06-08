@@ -255,6 +255,7 @@ function mapRow(row: any, ctx: Contexto, autorNombre: string | null): Herramient
     tipo: row.tipo as HerramientaGestionTipo,
     titulo: row.titulo ?? "",
     contenido: row.contenido as HerramientaGestionContenido,
+    contramedida_completada: row.contramedida_completada ?? false,
     pdf_path: row.pdf_path ?? null,
     autor_id: row.autor_id ?? null,
     created_at: row.created_at,
@@ -349,6 +350,7 @@ async function insertarHerramienta(
       tipo: row.tipo as HerramientaGestionTipo,
       titulo: row.titulo ?? "",
       contenido: row.contenido as HerramientaGestionContenido,
+      contramedida_completada: row.contramedida_completada ?? false,
       pdf_path: pdfPath ?? row.pdf_path ?? null,
       autor_id: row.autor_id ?? null,
       created_at: row.created_at,
@@ -497,6 +499,7 @@ export async function crearHerramientaReporte(
   tipo: HerramientaGestionTipo,
   titulo: string,
   contenido: HerramientaGestionContenido,
+  contramedidaCompletada = false,
 ): Promise<Result<HerramientaGestion>> {
   try {
     const profile = await requireAuth()
@@ -518,18 +521,22 @@ export async function crearHerramientaReporte(
         tipo,
         titulo: titulo.trim() || null,
         contenido,
+        contramedida_completada: contramedidaCompletada,
         autor_id: profile.id,
       },
       getNombre(profile),
     )
 
-    // La contramedida vuelca al plan de acción del reporte.
+    // La contramedida vuelca al plan de acción del reporte SOLO si se marcó
+    // como completada. Si no, el plan no se toca (no borra uno existente).
     if (!("error" in res)) {
-      await sincronizarPlanReporte(
-        reporteId,
-        extraerContramedida(tipo, contenido),
-        profile.id,
-      )
+      if (contramedidaCompletada) {
+        await sincronizarPlanReporte(
+          reporteId,
+          extraerContramedida(tipo, contenido),
+          profile.id,
+        )
+      }
       revalidatePath("/reportes-seguridad")
     }
 
@@ -547,6 +554,7 @@ export async function actualizarHerramientaGestion(
   id: string,
   titulo: string,
   contenido: HerramientaGestionContenido,
+  contramedidaCompletada?: boolean,
 ): Promise<Result<HerramientaGestion>> {
   try {
     const profile = await requireAuth()
@@ -584,9 +592,19 @@ export async function actualizarHerramientaGestion(
           )
     if (!permiso.ok) return { error: permiso.error }
 
+    const updatePayload: Record<string, unknown> = {
+      titulo: titulo.trim() || null,
+      contenido,
+      updated_at: new Date().toISOString(),
+    }
+    // Solo se persiste la marca para herramientas de reporte (donde aplica).
+    if (contramedidaCompletada !== undefined && tgt.reporte_seguridad_id) {
+      updatePayload.contramedida_completada = contramedidaCompletada
+    }
+
     const { data, error } = await supabase
       .from("plan_herramientas_gestion")
-      .update({ titulo: titulo.trim() || null, contenido, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq("id", id)
       .select("*")
       .single()
@@ -600,13 +618,17 @@ export async function actualizarHerramientaGestion(
     const conCtx = mapRow(row, ctx, getNombre(profile))
     const pdfPath = await generarYGuardarPdf(supabase, conCtx)
 
-    // Si la herramienta es de un reporte, re-volcar la contramedida al plan.
+    // Si la herramienta es de un reporte, re-volcar la contramedida al plan
+    // SOLO si quedó marcada como completada. Al desmarcar no se borra el plan
+    // ya cargado (se deja como está).
     if (tgt.reporte_seguridad_id) {
-      await sincronizarPlanReporte(
-        tgt.reporte_seguridad_id,
-        extraerContramedida(row.tipo as HerramientaGestionTipo, row.contenido),
-        profile.id,
-      )
+      if (row.contramedida_completada === true) {
+        await sincronizarPlanReporte(
+          tgt.reporte_seguridad_id,
+          extraerContramedida(row.tipo as HerramientaGestionTipo, row.contenido),
+          profile.id,
+        )
+      }
       revalidatePath("/reportes-seguridad")
     }
 
@@ -623,6 +645,7 @@ export async function actualizarHerramientaGestion(
         tipo: row.tipo as HerramientaGestionTipo,
         titulo: row.titulo ?? "",
         contenido: row.contenido as HerramientaGestionContenido,
+        contramedida_completada: row.contramedida_completada ?? false,
         pdf_path: pdfPath ?? row.pdf_path ?? null,
         autor_id: row.autor_id ?? null,
         created_at: row.created_at,

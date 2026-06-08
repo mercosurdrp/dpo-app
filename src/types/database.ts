@@ -2842,6 +2842,9 @@ export interface HerramientaGestion {
   tipo: HerramientaGestionTipo
   titulo: string
   contenido: HerramientaGestionContenido
+  // Solo aplica cuando target = reporte de seguridad: si true, la contramedida
+  // se vuelca al plan de acción del reporte.
+  contramedida_completada: boolean
   pdf_path: string | null
   autor_id: string | null
   created_at: string

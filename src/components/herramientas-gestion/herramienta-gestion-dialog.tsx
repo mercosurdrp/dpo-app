@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import type {
   HerramientaGestionTipo,
   HerramientaGestionContenido,
@@ -106,7 +107,14 @@ export function HerramientaGestionDialog({
   const [contenido, setContenido] = useState<HerramientaGestionContenido>(
     herramienta?.contenido ?? (null as unknown as HerramientaGestionContenido),
   )
+  const [contramedidaCompletada, setContramedidaCompletada] = useState<boolean>(
+    herramienta?.contramedida_completada ?? false,
+  )
   const [submitting, startSubmit] = useTransition()
+
+  // La marca de "contramedida completada" solo aplica cuando el destino es un
+  // reporte de seguridad (es ahí donde la contramedida vuelca al plan de acción).
+  const esReporte = !!reporteId || !!herramienta?.reporte_seguridad_id
 
   // Sincronizar estado cuando cambia la herramienta o se reabre
   useEffect(() => {
@@ -117,6 +125,7 @@ export function HerramientaGestionDialog({
         herramienta?.contenido ??
           (null as unknown as HerramientaGestionContenido),
       )
+      setContramedidaCompletada(herramienta?.contramedida_completada ?? false)
     }
   }, [open, herramienta, tituloSugerido])
 
@@ -135,6 +144,7 @@ export function HerramientaGestionDialog({
       setTipo(null)
       setTitulo("")
       setContenido(null as unknown as HerramientaGestionContenido)
+      setContramedidaCompletada(false)
     }
     onOpenChange(o)
   }
@@ -153,6 +163,7 @@ export function HerramientaGestionDialog({
           herramienta.id,
           titulo.trim(),
           contenido,
+          esReporte ? contramedidaCompletada : undefined,
         )
       } else if (reunionActividadId) {
         res = await crearHerramientaActividad(
@@ -167,6 +178,7 @@ export function HerramientaGestionDialog({
           tipo,
           titulo.trim(),
           contenido,
+          contramedidaCompletada,
         )
       } else if (planId) {
         res = await crearHerramientaGestion(planId, tipo, titulo.trim(), contenido)
@@ -190,6 +202,7 @@ export function HerramientaGestionDialog({
       setTipo(null)
       setTitulo("")
       setContenido(null as unknown as HerramientaGestionContenido)
+      setContramedidaCompletada(false)
     })
   }
 
@@ -302,6 +315,29 @@ export function HerramientaGestionDialog({
                 value={contenido as ReturnType<typeof pdcaVacio>}
                 onChange={setContenido}
               />
+            )}
+
+            {esReporte && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <Checkbox
+                    checked={contramedidaCompletada}
+                    onCheckedChange={(v) => setContramedidaCompletada(v === true)}
+                    disabled={submitting}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium text-slate-800">
+                      Contramedida completada
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      Al marcarla, la contramedida se carga en el plan de acción
+                      del reporte (&ldquo;¿Cómo se aborda?&rdquo;). Si la dejás sin
+                      marcar, el plan no se modifica.
+                    </span>
+                  </span>
+                </label>
+              </div>
             )}
           </div>
         )}

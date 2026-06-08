@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ClipboardList, Loader2, Wrench } from "lucide-react"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { ClipboardList, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,27 +21,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
-import { HerramientaGestionView } from "@/components/herramientas-gestion/herramienta-gestion-view"
-import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
 import {
   getReportePlanesTablero,
   type PlanTableroFila,
   type PlanTableroEstado,
-  type PlanTableroFuente,
 } from "@/actions/reportes-planes-tablero"
-import { getHerramientaGestion } from "@/actions/herramientas-gestion"
+import { deleteReportePlan } from "@/actions/reportes-seguridad"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
   type ReporteSeguridadTipo,
-  type HerramientaGestionConContexto,
   type UserRole,
 } from "@/types/database"
 
@@ -78,33 +68,11 @@ const ESTADO_CLASSES: Record<PlanTableroEstado, string> = {
   terminado: "bg-emerald-100 text-emerald-700",
 }
 
-const FUENTE_LABELS: Record<PlanTableroFuente, string> = {
-  plan_simple: "Plan simple",
-  herramienta_5porques: "5 Porqués",
-  herramienta_ishikawa: "Ishikawa",
-  herramienta_pdca: "PDCA",
-}
-
-const FUENTE_CLASSES: Record<PlanTableroFuente, string> = {
-  plan_simple: "bg-slate-100 text-slate-700",
-  herramienta_5porques: "bg-blue-100 text-blue-700",
-  herramienta_ishikawa: "bg-purple-100 text-purple-700",
-  herramienta_pdca: "bg-rose-100 text-rose-700",
-}
-
 const ESTADOS: (PlanTableroEstado | "all")[] = [
   "all",
   "pendiente",
   "en_curso",
   "terminado",
-]
-
-const FUENTES: (PlanTableroFuente | "all")[] = [
-  "all",
-  "plan_simple",
-  "herramienta_5porques",
-  "herramienta_ishikawa",
-  "herramienta_pdca",
 ]
 
 interface Props {
@@ -118,13 +86,28 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
   const [reloadKey, setReloadKey] = useState(0)
 
   const [filtroEstado, setFiltroEstado] = useState<PlanTableroEstado | "all">("all")
-  const [filtroFuente, setFiltroFuente] = useState<PlanTableroFuente | "all">("all")
   const [filtroResponsable, setFiltroResponsable] = useState<string>("all")
 
   const [detalleReporteId, setDetalleReporteId] = useState<string | null>(null)
-  const [herramientaAbierta, setHerramientaAbierta] =
-    useState<HerramientaGestionConContexto | null>(null)
-  const [cargandoHerramienta, setCargandoHerramienta] = useState<string | null>(null)
+  const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  const [, startDelete] = useTransition()
+
+  const isAdmin = currentRole === "admin"
+
+  function handleBorrarPlan(reporteId: string) {
+    if (!confirm("¿Eliminar el plan de acción? El reporte no se borra.")) return
+    setBorrandoId(reporteId)
+    startDelete(async () => {
+      const res = await deleteReportePlan(reporteId)
+      setBorrandoId(null)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Plan de acción eliminado")
+      setReloadKey((k) => k + 1)
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -160,13 +143,12 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
   const filtradas = useMemo(() => {
     return (filas ?? []).filter((f) => {
       if (filtroEstado !== "all" && f.estado !== filtroEstado) return false
-      if (filtroFuente !== "all" && f.fuente !== filtroFuente) return false
       if (filtroResponsable !== "all" && f.responsable_id !== filtroResponsable) {
         return false
       }
       return true
     })
-  }, [filas, filtroEstado, filtroFuente, filtroResponsable])
+  }, [filas, filtroEstado, filtroResponsable])
 
   // KPIs rápidos
   const kpis = useMemo(() => {
@@ -177,20 +159,6 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
     }
     return base
   }, [filas])
-
-  async function abrirHerramienta(id: string) {
-    setCargandoHerramienta(id)
-    try {
-      const res = await getHerramientaGestion(id)
-      if ("error" in res) {
-        toast.error(res.error)
-        return
-      }
-      setHerramientaAbierta(res.data)
-    } finally {
-      setCargandoHerramienta(null)
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -232,7 +200,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
       </div>
 
       {/* Filtros */}
-      <div className="grid grid-cols-1 gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2">
         <div>
           <Label className="text-xs">Estado</Label>
           <Select
@@ -248,26 +216,6 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
               {ESTADOS.map((e) => (
                 <SelectItem key={e} value={e}>
                   {e === "all" ? "Todos" : ESTADO_LABELS[e]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">Origen</Label>
-          <Select
-            value={filtroFuente}
-            onValueChange={(v) =>
-              setFiltroFuente((v ?? "all") as PlanTableroFuente | "all")
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FUENTES.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f === "all" ? "Todos" : FUENTE_LABELS[f]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -300,7 +248,6 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <TableHead className="w-32">Origen</TableHead>
                 <TableHead className="w-60">Reporte</TableHead>
                 <TableHead>Plan de acción</TableHead>
                 <TableHead className="w-40">Responsable</TableHead>
@@ -314,7 +261,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     <Loader2 className="mx-auto mb-2 size-5 animate-spin" />
@@ -324,7 +271,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
               ) : filtradas.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     <ClipboardList className="mx-auto mb-2 size-6 text-muted-foreground/50" />
@@ -340,20 +287,8 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                   const reporteLabel = reporteTipo
                     ? REPORTE_SEGURIDAD_TIPO_LABELS[reporteTipo]
                     : "—"
-                  const esHerramienta = f.fuente !== "plan_simple"
                   return (
-                    <TableRow key={`${f.fuente}-${f.id}`} className="align-top">
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={FUENTE_CLASSES[f.fuente]}
-                        >
-                          {esHerramienta && (
-                            <Wrench className="mr-1 inline size-3" />
-                          )}
-                          {FUENTE_LABELS[f.fuente]}
-                        </Badge>
-                      </TableCell>
+                    <TableRow key={f.id} className="align-top">
                       <TableCell>
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -399,21 +334,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {esHerramienta ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => abrirHerramienta(f.id)}
-                            disabled={cargandoHerramienta === f.id}
-                          >
-                            {cargandoHerramienta === f.id ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              "Ver"
-                            )}
-                          </Button>
-                        ) : (
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
                             variant="outline"
                             size="sm"
@@ -422,7 +343,23 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                           >
                             Ver
                           </Button>
-                        )}
+                          {isAdmin && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() => handleBorrarPlan(f.reporte_id)}
+                              disabled={borrandoId === f.reporte_id}
+                              title="Eliminar el plan de acción (no borra el reporte)"
+                            >
+                              {borrandoId === f.reporte_id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="size-3.5" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -433,7 +370,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
         </div>
       </div>
 
-      {/* Dialog detalle reporte (plan simple → mismo dialog que la lista de reportes) */}
+      {/* Dialog detalle reporte (mismo dialog que la lista de reportes) */}
       {detalleReporteId && (
         <ReporteDetalleDialog
           key={detalleReporteId}
@@ -450,25 +387,6 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
           currentRole={currentRole}
         />
       )}
-
-      {/* Dialog herramienta (5 porqués / ishikawa / pdca) */}
-      <Dialog
-        open={herramientaAbierta !== null}
-        onOpenChange={(o) => !o && setHerramientaAbierta(null)}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {herramientaAbierta
-                ? HERRAMIENTA_GESTION_LABELS[herramientaAbierta.tipo]
-                : "Herramienta de gestión"}
-            </DialogTitle>
-          </DialogHeader>
-          {herramientaAbierta && (
-            <HerramientaGestionView herramienta={herramientaAbierta} />
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
