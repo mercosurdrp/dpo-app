@@ -106,6 +106,21 @@ export async function getBimestreDefault(): Promise<string> {
   return addMonths(enCurso, -2) // retrocede un bimestre completo → último cerrado
 }
 
+/**
+ * Ancla un `periodo_desde` (YYYY-MM-01) al PRIMER mes del bloque de `ventana`
+ * meses en la grilla del año (Ene, Ene+ventana, …). Así dos meses del mismo
+ * bimestre (p.ej. Marzo y Abril con ventana 2) comparten siempre `periodo_desde`
+ * y los premios no se duplican en períodos "corridos". Se aplica al leer y al
+ * guardar para blindar contra cargas con un mes de inicio desalineado.
+ */
+function anclarPeriodo(periodoDesde: string, ventana: number): string {
+  const [y, m] = periodoDesde.split("-").map((n) => parseInt(n, 10))
+  if (!y || !m) return periodoDesde
+  const v = Math.max(1, Math.min(6, Math.round(ventana)))
+  const primerMes = m - ((m - 1) % v) // 1, 1+v, 1+2v, …
+  return `${y}-${String(primerMes).padStart(2, "0")}-01`
+}
+
 // ── CSV / nombres ──
 function parseCsvRow(line: string): string[] {
   const cells: string[] = []
@@ -258,8 +273,11 @@ export async function getRankingDeposito(
     const supabase = await createClient()
     const config = await readConfig(supabase)
 
-    const desde = periodoDesde ?? (await getBimestreDefault())
     const ventana = Math.max(1, Math.min(6, config.meses_ventana))
+    const desde = anclarPeriodo(
+      periodoDesde ?? (await getBimestreDefault()),
+      ventana,
+    )
     const meses: string[] = []
     for (let i = 0; i < ventana; i++) meses.push(addMonths(desde, i))
     const hasta = meses[meses.length - 1]
@@ -529,9 +547,11 @@ export async function savePremio(input: {
     const profile = await requireRole(["admin", "auditor"])
     if (!input.nombre.trim()) return { error: "El nombre es obligatorio" }
     const supabase = await createClient()
+    const config = await readConfig(supabase)
+    const periodoDesde = anclarPeriodo(input.periodo_desde, config.meses_ventana)
     const { error } = await supabase.from("s5_ayudantes_premios").upsert(
       {
-        periodo_desde: input.periodo_desde,
+        periodo_desde: periodoDesde,
         area: input.area,
         posicion: input.posicion,
         empleado_id: input.empleado_id,
@@ -560,10 +580,12 @@ export async function deletePremio(input: {
   try {
     await requireRole(["admin", "auditor"])
     const supabase = await createClient()
+    const config = await readConfig(supabase)
+    const periodoDesde = anclarPeriodo(input.periodo_desde, config.meses_ventana)
     const { error } = await supabase
       .from("s5_ayudantes_premios")
       .delete()
-      .eq("periodo_desde", input.periodo_desde)
+      .eq("periodo_desde", periodoDesde)
       .eq("area", input.area)
       .eq("posicion", input.posicion)
     if (error) return { error: error.message }
