@@ -56,6 +56,7 @@ import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-i
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
+import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -924,6 +925,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "rechazos"),
     [actividadesAll],
   )
+  const actividadesFrescura = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "frescura"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1117,6 +1122,18 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesRechazos}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección Frescura – Vencimiento (snapshot + comparación + action log) */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionFrescura
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          actividades={actividadesFrescura}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
