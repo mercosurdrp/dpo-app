@@ -57,6 +57,8 @@ interface Props {
   sectoresAlmacen?: S5SectorAlmacen[]
   vehiculos?: VehiculoOpt[]
   rubrosMantenimiento?: RubroOpt[]
+  /** Sección a la que queda atado el compromiso (ej. 'rechazos'). Solo al crear. */
+  seccion?: string | null
   onSaved: () => void
 }
 
@@ -106,6 +108,7 @@ export function ActividadFormDialog({
   sectoresAlmacen,
   vehiculos,
   rubrosMantenimiento,
+  seccion,
   onSaved,
 }: Props) {
   const editing = !!actividad
@@ -161,6 +164,8 @@ export function ActividadFormDialog({
 
     if (!editing) {
       formData.set("reunion_id", reunionId)
+      // Etiqueta la actividad con la sección (solo al crear).
+      if (seccion) formData.set("seccion", seccion)
     }
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")

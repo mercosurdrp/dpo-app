@@ -2623,6 +2623,9 @@ export interface ReunionActividad {
   s5_sector_numero: number | null
   s5_vehiculo_id: string | null
   mantenimiento_rubro: string | null
+  // Sección/indicador de la reunión al que pertenece (ej. 'rechazos'). NULL =
+  // action log general (temas fuera de las secciones).
+  seccion: string | null
 }
 
 export interface ReunionActividadConResponsable extends ReunionActividad {

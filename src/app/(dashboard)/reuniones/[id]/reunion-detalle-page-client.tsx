@@ -55,6 +55,7 @@ import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialo
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
+import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -887,7 +888,7 @@ export function ReunionDetallePageClient({
   }, [indicadoresMes, vistaTablero, detalle.fecha, semanasDelMes])
 
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
-  const actividades: ReunionActividadConResponsable[] = useMemo(() => {
+  const actividadesAll: ReunionActividadConResponsable[] = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = detalle as any
     if (Array.isArray(d.actividades)) return d.actividades
@@ -912,6 +913,17 @@ export function ReunionDetallePageClient({
     }
     return []
   }, [detalle])
+
+  // Action Log general (Etapa 3) = actividades sin sección. Las de cada sección
+  // (ej. Rechazos) se muestran dentro de su propia sección.
+  const actividades = useMemo(
+    () => actividadesAll.filter((a) => !a.seccion),
+    [actividadesAll],
+  )
+  const actividadesRechazos = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "rechazos"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1094,6 +1106,20 @@ export function ReunionDetallePageClient({
         currentProfileId={currentProfileId}
         currentRole={currentRole}
       />
+
+      {/* Reunión Ventas-Logística: secciones de análisis por indicador.
+          Plantilla inicial: Rechazos (datos reales del día, filtrable) + su
+          propio Action Log acotado a la sección. */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionRechazos
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          actividades={actividadesRechazos}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
 
       {/* ETAPA 2: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">

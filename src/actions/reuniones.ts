@@ -581,6 +581,7 @@ export async function getReunionDetalle(
           s5_sector_numero: r.s5_sector_numero ?? null,
           s5_vehiculo_id: r.s5_vehiculo_id ?? null,
           mantenimiento_rubro: r.mantenimiento_rubro ?? null,
+          seccion: r.seccion ?? null,
           responsable_nombre: r.responsable?.nombre ?? null,
           reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
           reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
@@ -1134,6 +1135,7 @@ export async function crearActividad(
       String(formData.get("fecha_compromiso") ?? "").trim() || null
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
+    const seccion = String(formData.get("seccion") ?? "").trim() || null
 
     if (!reunion_id) return { error: "La reunión es obligatoria" }
     if (!descripcion) return { error: "La descripción es obligatoria" }
@@ -1150,6 +1152,7 @@ export async function crearActividad(
         responsable_id,
         fecha_compromiso,
         observaciones,
+        seccion,
         estado: "no_comenzada",
         created_by: profile.id,
         destino: destinoParsed.destino,
