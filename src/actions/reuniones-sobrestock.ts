@@ -245,7 +245,8 @@ export async function actualizarDesdeSobrestockApp(
 
     const url = `${base}/api/frescura/sobrestock?dias_cobertura=${UMBRAL_COBERTURA}&dias_vpd=${DIAS_VPD}`
     const ctrl = new AbortController()
-    const timeout = setTimeout(() => ctrl.abort(), 25_000)
+    // La 1ª carga pagina el maestro de artículos de Chess (lento); luego cachea.
+    const timeout = setTimeout(() => ctrl.abort(), 55_000)
     let json: unknown
     try {
       const res = await fetch(url, {
