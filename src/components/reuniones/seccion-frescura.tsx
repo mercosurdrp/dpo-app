@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils"
 import {
   getFrescuraData,
   guardarFrescuraManual,
-  setFrescuraAccion,
   actualizarDesdeFrescuraApp,
   type FrescuraData,
   type FrescuraItem,
@@ -125,7 +124,6 @@ export function SeccionFrescura({
   const [pendiente, startPend] = useTransition()
   const [mostrarImport, setMostrarImport] = useState(false)
   const [pegado, setPegado] = useState("")
-  const [accion, setAccion] = useState("")
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -138,7 +136,6 @@ export function SeccionFrescura({
         setData(null)
       } else {
         setData(res.data)
-        setAccion(res.data.snapshot?.accion_tomada ?? "")
         if (res.data.snapshot?.desde) setDesde(res.data.snapshot.desde)
         if (res.data.snapshot?.hasta) setHasta(res.data.snapshot.hasta)
       }
@@ -180,17 +177,6 @@ export function SeccionFrescura({
       setPegado("")
       setMostrarImport(false)
       setReload((k) => k + 1)
-    })
-  }
-
-  function guardarAccion() {
-    startPend(async () => {
-      const res = await setFrescuraAccion(reunionId, accion)
-      if ("error" in res) {
-        toast.error(res.error)
-        return
-      }
-      toast.success("Acción guardada")
     })
   }
 
@@ -358,27 +344,7 @@ export function SeccionFrescura({
               </Table>
             </div>
 
-            {/* Acción tomada */}
-            {puedeEditar && (
-              <div>
-                <label className="text-xs font-medium text-slate-600">
-                  Acción tomada
-                </label>
-                <Textarea
-                  value={accion}
-                  onChange={(e) => setAccion(e.target.value)}
-                  rows={2}
-                  className="mt-1 text-sm"
-                  placeholder="Qué se decidió para reducir el vencimiento…"
-                />
-                <div className="mt-1 flex justify-end">
-                  <Button size="sm" variant="outline" onClick={guardarAccion} disabled={pendiente}>
-                    <Save className="mr-1 size-3.5" />
-                    Guardar acción
-                  </Button>
-                </div>
-              </div>
-            )}
+            {/* La acción tomada se registra directamente en el Action Log. */}
 
             {/* Action Log de la sección */}
             <ActionLogSeccion
