@@ -762,8 +762,9 @@ async function filaRecepcion(
 // ===========================================================================
 // SLA de carga (alm_carga) — cada viaje ruteado queda cargado antes de las
 // 07:00 ARG del día de REPARTO (día de salida del camión). Se cruza por
-// NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, su día de reparto
-// y la hora de carga real (ViajesFhDespacho/HrDespacho), ambos al día. La
+// NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, la hora de carga
+// real (ViajesFhDespacho/HrDespacho); el día de reparto se deriva de esa hora
+// (regla de las 12:00), no del `reparto` del WMS, que rotula mal la tarde. La
 // patente (BANDVIA) llega con ~5 días de lag y por eso ya NO se usa para medir.
 // Un viaje ruteado y nunca cargado pasado el plazo = incumplimiento.
 // Fuente: blob 'carga-camiones' del WMS (mismo que muestra /carga-camiones).
@@ -792,10 +793,11 @@ function nextISO(iso: string): string {
 }
 
 /**
- * Día de reparto derivado de una carga cuando el WMS no manda `reparto`
- * (compatibilidad con el blob viejo). Regla de las 12:00: una carga ≥12:00 es
- * "la tarde anterior" → reparto = fecha+1; una carga <12:00 es la madrugada del
- * propio día de reparto → reparto = fecha.
+ * Día de reparto derivado de la hora real de carga. Regla de las 12:00: una
+ * carga ≥12:00 es "la tarde anterior" → reparto = fecha+1; una carga <12:00 es
+ * la madrugada del propio día de reparto → reparto = fecha. Se aplica siempre
+ * que haya carga: el `reparto` que manda el WMS no es confiable (rotula la
+ * carga de la tarde con el mismo día, no con el día de salida del camión).
  */
 function repartoDesdeCarga(fecha: string, hora: string): string {
   return hora >= "12:00:00" ? nextISO(fecha) : fecha
@@ -830,8 +832,16 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
       const fecha = f?.fecha ? String(f.fecha) : null
       const hora = f?.hora ? String(f.hora) : null
       const cargado = !!(fecha && hora)
-      let reparto = f?.reparto ? String(f.reparto) : null
-      if (!reparto && cargado) reparto = repartoDesdeCarga(fecha!, hora!)
+      // El WMS rotula `reparto` con el MISMO día de la carga, aunque el camión se
+      // cargue a la tarde para salir al día siguiente: eso hacía que toda carga
+      // de la tarde figurara "tarde" contra las 07:00 del propio día. Cuando hay
+      // carga real, derivamos el reparto de la hora (regla de las 12:00) e
+      // ignoramos el del WMS. Solo los viajes ruteados sin cargar caen al del WMS.
+      const reparto = cargado
+        ? repartoDesdeCarga(fecha!, hora!)
+        : f?.reparto
+          ? String(f.reparto)
+          : null
       if (!reparto) continue // sin reparto ni carga: no se puede ubicar
       const cand: CargaViaje = {
         viaje,
@@ -883,12 +893,11 @@ function clasificarViaje(
   return vencido ? "nocargado" : "pendiente"
 }
 
-/** Etiqueta corta de la carga de un viaje para el detalle (DD/MM si fue otro día). */
+/** Etiqueta de la carga de un viaje para el detalle: siempre DD/MM HH:mm. */
 function cargaLabel(v: CargaViaje): string {
   if (!v.fecha || !v.hora) return "—"
-  const prefijo =
-    v.fecha !== v.reparto ? `${v.fecha.slice(8, 10)}/${v.fecha.slice(5, 7)} ` : ""
-  return `${prefijo}${v.hora.slice(0, 5)}`
+  const dm = `${v.fecha.slice(8, 10)}/${v.fecha.slice(5, 7)}`
+  return `${dm} ${v.hora.slice(0, 5)}`
 }
 
 /**
