@@ -76,7 +76,7 @@ async function cargarSnapshot(
     .from("reunion_sobrestock_items")
     .select("nro_articulo, descripcion, bultos, dias_cobertura, vpd, valorizado")
     .eq("snapshot_id", s.id)
-    .order("dias_cobertura", { ascending: false })
+    .order("valorizado", { ascending: false })
   return {
     id: s.id,
     reunion_id: s.reunion_id,
