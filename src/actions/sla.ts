@@ -873,45 +873,100 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
   }
 }
 
-// Clasificación de un viaje respecto del plazo de su día de reparto:
-//   "ok"        → cargado antes de las 07:00 del día de reparto.
-//   "tarde"     → cargado a las 07:00 del día de reparto o después.
-//   "nocargado" → ruteado y nunca cargado, con el plazo ya vencido (incumple).
-//   "pendiente" → todavía sin carga pero el snapshot es previo al plazo; se
-//                 reevaluará al actualizarse el WMS (NO implica incumplimiento).
-type ClasifViaje = "ok" | "tarde" | "nocargado" | "pendiente"
 
-function clasificarViaje(
-  v: CargaViaje,
-  nowMs: number,
-  snapMs: number | null,
-): ClasifViaje {
-  if (v.fecha && v.hora) {
-    return `${v.fecha}T${v.hora}` < `${v.reparto}T${CARGA_LIMITE_HORA}`
-      ? "ok"
-      : "tarde"
-  }
-  // Ruteado sin cargar: solo es incumplimiento si el plazo venció Y el snapshot
-  // del WMS es posterior al plazo (si no, podría faltar registrar la carga).
-  const plazoMs = plazoRepartoMs(v.reparto)
-  const vencido = nowMs >= plazoMs && (snapMs === null || snapMs >= plazoMs)
-  return vencido ? "nocargado" : "pendiente"
-}
-
-/** Etiqueta de la carga de un viaje para el detalle: siempre DD/MM HH:mm. */
-function cargaLabel(v: CargaViaje): string {
-  if (!v.fecha || !v.hora) return "—"
-  const dm = `${v.fecha.slice(8, 10)}/${v.fecha.slice(5, 7)}`
-  return `${dm} ${v.hora.slice(0, 5)}`
+/** Primer día del mes siguiente en ISO (para rangos [desde, hastaExcl)). */
+function primerDiaMesSiguiente(year: number, month: number): string {
+  const y = month === 12 ? year + 1 : year
+  const m = month === 12 ? 1 : month + 1
+  return `${y}-${String(m).padStart(2, "0")}-01`
 }
 
 /**
- * Fila del SLA de carga (`alm_carga`). Cada viaje se imputa a su DÍA DE REPARTO.
- * Un día cumple si TODOS los viajes que salen ese día quedaron cargados antes
- * de las 07:00. Si la fuente no está, el plazo no venció, o falta info por
- * snapshot stale → el día queda "sin dato".
+ * Una carga está "a tiempo" si ocurrió antes de las 07:00 o a partir de las
+ * 11:00. La franja 07:00–11:00 es tarde: el camión se cargó de mañana para salir
+ * ese mismo día y pasó el plazo de las 07:00. A partir de las 11:00 se considera
+ * carga de la tarde anterior (sale al día siguiente) → a tiempo.
+ */
+function cargaATiempo(hora: string): boolean {
+  return hora < CARGA_LIMITE_HORA || hora >= CARGA_CORTE_TARDE
+}
+
+/** Esperados por día del mes: nº de patentes ruteadas (ocupación de bodega). */
+async function esperadosPorDiaMes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+): Promise<Map<number, number>> {
+  const mm = String(month).padStart(2, "0")
+  const { data } = await supabase
+    .from("ocupacion_bodega_diaria")
+    .select("fecha")
+    .gte("fecha", `${year}-${mm}-01`)
+    .lt("fecha", primerDiaMesSiguiente(year, month))
+    .gt("ceq_total", 0)
+  const out = new Map<number, number>()
+  for (const r of (data ?? []) as Array<{ fecha: string }>) {
+    const dia = Number(String(r.fecha).slice(8, 10))
+    out.set(dia, (out.get(dia) ?? 0) + 1)
+  }
+  return out
+}
+
+/** Horas de carga del blob por día (fecha real de carga), sin placeholders. */
+function cargasPorDiaMes(
+  carga: CargaSnapshot | null,
+  year: number,
+  month: number,
+): Map<number, string[]> {
+  const mm = String(month).padStart(2, "0")
+  const out = new Map<number, string[]>()
+  for (const v of carga?.viajes ?? []) {
+    if (!v.fecha || !v.hora || v.patente === "0") continue
+    if (v.fecha.slice(0, 7) !== `${year}-${mm}`) continue
+    const dia = Number(v.fecha.slice(8, 10))
+    const arr = out.get(dia) ?? []
+    arr.push(v.hora)
+    out.set(dia, arr)
+  }
+  return out
+}
+
+/**
+ * Estado de un día (modelo mixto): se esperan `esperados` camiones (ruteo) y se
+ * registraron las `horas` de carga del blob. No cumple si alguna carga fue tarde
+ * o si faltan camiones por cargar con el plazo ya vencido; sin dato si el faltante
+ * podría deberse a un snapshot del WMS previo al plazo.
+ */
+function evaluarDiaCarga(
+  esperados: number,
+  horas: string[],
+  snapMs: number | null,
+  plazoMs: number,
+): EstadoCumplimiento {
+  const tarde = horas.filter((h) => !cargaATiempo(h)).length
+  if (tarde > 0) return "no"
+  const faltan = Math.max(0, esperados - horas.length)
+  if (faltan > 0) {
+    // Las horas del blob no tienen lag (sí la patente). Un faltante con snapshot
+    // posterior al plazo = camión ruteado sin carga conciliada → no cumple.
+    if (snapMs !== null && snapMs < plazoMs) return "sd"
+    return "no"
+  }
+  return "si"
+}
+
+/**
+ * Fila del SLA de carga (`alm_carga`), modelo MIXTO:
+ *   • "Esperados" = camiones ruteados ese día (ocupación de bodega, por patente),
+ *     el mismo universo que muestra /ruteo.
+ *   • Las horas de carga vienen del blob del WMS, al día (por nº de viaje, sin
+ *     depender de la patente que el WMS asigna con ~5 días de lag).
+ * Un día cumple si todos los esperados quedaron cargados y a tiempo. El plazo del
+ * día es las 07:00 del día siguiente (la salida típica). Día en curso o sin
+ * fuente → sin dato.
  */
 async function filaCarga(
+  supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
   month: number,
   diasDelMes: number,
@@ -923,16 +978,8 @@ async function filaCarga(
     target: SLA_CARGA_TARGET,
   }
   const mm = String(month).padStart(2, "0")
-
-  // Agrupar viajes por día de reparto dentro del mes.
-  const porDia = new Map<number, CargaViaje[]>()
-  for (const v of carga?.viajes ?? []) {
-    if (v.reparto.slice(0, 7) !== `${year}-${mm}`) continue
-    const dia = Number(v.reparto.slice(8, 10))
-    const arr = porDia.get(dia)
-    if (arr) arr.push(v)
-    else porDia.set(dia, [v])
-  }
+  const esperados = await esperadosPorDiaMes(supabase, year, month)
+  const cargas = cargasPorDiaMes(carga, year, month)
 
   const nowMs = Date.now()
   const snapMs = carga?.generadoEn ? Date.parse(carga.generadoEn) : null
@@ -946,25 +993,18 @@ async function filaCarga(
       dias.push("na") // domingo: no hay reparto
       continue
     }
-    const viajesD = porDia.get(d)
-    if (carga === null || !viajesD || viajesD.length === 0) {
-      dias.push("sd") // fuente no disponible / sin viajes ruteados / futuro
+    const esp = esperados.get(d) ?? 0
+    const horas = cargas.get(d) ?? []
+    if (carga === null || (esp === 0 && horas.length === 0)) {
+      dias.push("sd") // sin fuente / sin ruteo / futuro
       continue
     }
-    if (nowMs < plazoRepartoMs(iso)) {
-      dias.push("sd") // el plazo (07:00 del día de reparto) aún no venció
+    const plazoMs = plazoRepartoMs(nextISO(iso)) // 07:00 del día siguiente
+    if (nowMs < plazoMs) {
+      dias.push("sd") // día en curso, los camiones aún pueden cargar
       continue
     }
-    let fail = 0
-    let pend = 0
-    for (const v of viajesD) {
-      const c = clasificarViaje(v, nowMs, snapMs)
-      if (c === "tarde" || c === "nocargado") fail++
-      else if (c === "pendiente") pend++
-    }
-    // Retraso o viaje sin cargar (plazo vencido) → no cumple. Si solo falta info
-    // por snapshot previo al plazo → sin dato. Todos a tiempo → cumple.
-    const estado: EstadoCumplimiento = fail > 0 ? "no" : pend > 0 ? "sd" : "si"
+    const estado = evaluarDiaCarga(esp, horas, snapMs, plazoMs)
     if (estado !== "sd") {
       totalAplica++
       if (estado === "si") cumplidos++
@@ -1008,7 +1048,7 @@ export async function getCumplimientoMes(
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
-      await filaCarga(year, month, diasDelMes, cargaSnapshot),
+      await filaCarga(supabase, year, month, diasDelMes, cargaSnapshot),
       await filaRecepcion(year, month, diasDelMes),
     ]
 
@@ -1283,7 +1323,7 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "alm_carga") {
-      const metaLabel = "Cargados antes de las 07:00 del día de reparto"
+      const metaLabel = "Camiones ruteados cargados a tiempo (antes de 07:00 o desde 11:00)"
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
       let valorLabel = "—"
@@ -1297,50 +1337,69 @@ export async function getDetalleDiaSla(
         }
       }
 
+      // Esperados = camiones ruteados (ocupación de bodega de este día).
+      const { data: obRows } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("patente")
+        .eq("fecha", fecha)
+        .gt("ceq_total", 0)
+      const patentesEsperadas = ((obRows ?? []) as Array<{ patente: string }>)
+        .map((r) => String(r.patente))
+        .sort()
+      const esperados = patentesEsperadas.length
+
+      // Cargas del blob de este día (fecha de carga real), sin placeholders.
       const carga = await fetchCargaSnapshot()
-      // `fecha` es el día de reparto: tomamos los viajes que salen ese día.
-      const viajesD = (carga?.viajes ?? [])
-        .filter((v) => v.reparto === fecha)
+      const cargasD = (carga?.viajes ?? [])
+        .filter((v) => v.fecha === fecha && v.hora && v.patente !== "0")
         .sort((a, b) => a.viaje - b.viaje)
+      const plazoMs = plazoRepartoMs(nextISO(fecha)) // 07:00 del día siguiente
 
       if (carga === null) {
         estado = "sd"
         nota = "No se pudo leer la carga de camiones del WMS."
-      } else if (viajesD.length === 0) {
+      } else if (esperados === 0 && cargasD.length === 0) {
         estado = "sd"
-        nota = "Sin viajes ruteados para este día de reparto."
-      } else if (Date.now() < plazoRepartoMs(fecha)) {
+        nota = "Sin camiones ruteados para este día."
+      } else if (Date.now() < plazoMs) {
         estado = "sd"
-        nota = "El plazo de carga (07:00 del día de reparto) todavía no venció."
+        nota = "El plazo (07:00 del día siguiente) todavía no venció; los camiones aún pueden cargar."
       } else {
-        const nowMs = Date.now()
         const snapMs = carga.generadoEn ? Date.parse(carga.generadoEn) : null
+        const horas = cargasD.map((v) => v.hora as string)
+        estado = evaluarDiaCarga(esperados, horas, snapMs, plazoMs)
+
         let aTiempo = 0
-        let fail = 0
-        let pend = 0
-        for (const v of viajesD) {
+        let tarde = 0
+        for (const v of cargasD) {
+          const hhmm = (v.hora as string).slice(0, 5)
           const label = `Viaje ${v.viaje}` + (v.patente ? ` · ${v.patente}` : "")
-          const c = clasificarViaje(v, nowMs, snapMs)
-          if (c === "ok") {
+          if (cargaATiempo(v.hora as string)) {
             aTiempo++
-            filas.push({ label, valor: `${cargaLabel(v)} ✓` })
-          } else if (c === "tarde") {
-            fail++
-            filas.push({ label, valor: `${cargaLabel(v)} (tarde) ✗` })
-          } else if (c === "nocargado") {
-            fail++
-            filas.push({ label, valor: "ruteado, sin cargar ✗" })
+            filas.push({ label, valor: `${hhmm} ✓` })
           } else {
-            pend++
-            filas.push({ label, valor: "sin dato aún" })
+            tarde++
+            filas.push({ label, valor: `${hhmm} (tarde) ✗` })
           }
         }
-        estado = fail > 0 ? "no" : pend > 0 ? "sd" : "si"
-        valorLabel =
-          `${aTiempo}/${viajesD.length} a tiempo` + (pend > 0 ? ` · ${pend} sin dato` : "")
-        if (estado === "sd" && pend > 0) {
+        const faltan = Math.max(0, esperados - cargasD.length)
+        if (faltan > 0) {
+          filas.push({
+            label: "Sin carga conciliada",
+            valor: `${faltan} camión(es) ruteado(s) ✗`,
+          })
+        }
+
+        if (estado === "si") valorLabel = `${esperados}/${esperados} a tiempo`
+        else if (tarde > 0) valorLabel = `${tarde} carga(s) tarde`
+        else if (estado === "no") valorLabel = `faltan ${faltan} de ${esperados}`
+        else valorLabel = `${cargasD.length}/${esperados} (incompleto)`
+
+        if (estado === "sd") {
           nota =
-            "El snapshot del WMS es previo al plazo de las 07:00; el día se reevaluará al actualizarse. No implica incumplimiento."
+            "El snapshot del WMS es previo al plazo; pueden faltar cargas por registrar. Se reevaluará al actualizarse."
+        } else if (faltan > 0 && tarde === 0) {
+          nota = `${faltan} camión(es) ruteado(s) sin carga conciliada en el WMS.`
         }
       }
 
