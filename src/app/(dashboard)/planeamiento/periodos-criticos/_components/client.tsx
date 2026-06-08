@@ -93,6 +93,11 @@ const FASE = {
   setup:      "[&_svg]:text-slate-500 data-active:bg-slate-200 data-active:text-slate-900",
 } as const
 
+// Tab vertical y angosto: ícono arriba, texto debajo (se apila en 2 líneas),
+// flex-1 para repartir el ancho → las 10 solapas entran en una sola fila.
+const TAB =
+  "flex-1 min-w-0 flex-col gap-1 h-auto px-1 py-2 text-[11px] leading-tight text-center whitespace-normal"
+
 const fmtHL = (n: number) =>
   n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const fmtPct = (n: number) =>
@@ -318,17 +323,17 @@ export function PeriodosCriticosClient({
           (R3.4.1 detectar → analizar → planificar → R3.4.2 revisar → R3.4.3 evaluar)
           y agrupadas por color de fase para distinguirlas de un vistazo. */}
       <Tabs defaultValue="calendario">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="calendario" className={FASE.detectar}><CalendarRange className="w-4 h-4 mr-1.5" /> Calendario</TabsTrigger>
-          <TabsTrigger value="detalle" className={FASE.detectar}><Table className="w-4 h-4 mr-1.5" /> Detalle semanal</TabsTrigger>
-          <TabsTrigger value="periodos" className={FASE.analizar}><ListTree className="w-4 h-4 mr-1.5" /> Períodos críticos</TabsTrigger>
-          <TabsTrigger value="comparativo" className={FASE.analizar}><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo</TabsTrigger>
-          <TabsTrigger value="comparativo-inverso" className={FASE.analizar}><ColumnsIcon className="w-4 h-4 mr-1.5" /> Comparativo inverso</TabsTrigger>
-          <TabsTrigger value="simulador" className={FASE.planificar}><FlaskConical className="w-4 h-4 mr-1.5" /> Simulador</TabsTrigger>
-          <TabsTrigger value="revision" className={FASE.revisar}><ClipboardCheck className="w-4 h-4 mr-1.5" /> Revisión mensual</TabsTrigger>
-          <TabsTrigger value="swot" className={FASE.evaluar}><Grid2x2 className="w-4 h-4 mr-1.5" /> Análisis FODA</TabsTrigger>
-          <TabsTrigger value="incentivos" className={FASE.evaluar}><Gift className="w-4 h-4 mr-1.5" /> Incentivos</TabsTrigger>
-          <TabsTrigger value="config" className={FASE.setup}><Settings className="w-4 h-4 mr-1.5" /> Configuración</TabsTrigger>
+        <TabsList className="flex w-full flex-nowrap items-stretch gap-1 h-auto">
+          <TabsTrigger value="calendario" className={`${TAB} ${FASE.detectar}`}><CalendarRange className="w-4 h-4" /><span>Calendario</span></TabsTrigger>
+          <TabsTrigger value="detalle" className={`${TAB} ${FASE.detectar}`}><Table className="w-4 h-4" /><span>Detalle semanal</span></TabsTrigger>
+          <TabsTrigger value="periodos" className={`${TAB} ${FASE.analizar}`}><ListTree className="w-4 h-4" /><span>Períodos críticos</span></TabsTrigger>
+          <TabsTrigger value="comparativo" className={`${TAB} ${FASE.analizar}`}><ColumnsIcon className="w-4 h-4" /><span>Comparativo</span></TabsTrigger>
+          <TabsTrigger value="comparativo-inverso" className={`${TAB} ${FASE.analizar}`}><ColumnsIcon className="w-4 h-4" /><span>Comparativo inverso</span></TabsTrigger>
+          <TabsTrigger value="simulador" className={`${TAB} ${FASE.planificar}`}><FlaskConical className="w-4 h-4" /><span>Simulador</span></TabsTrigger>
+          <TabsTrigger value="revision" className={`${TAB} ${FASE.revisar}`}><ClipboardCheck className="w-4 h-4" /><span>Revisión mensual</span></TabsTrigger>
+          <TabsTrigger value="swot" className={`${TAB} ${FASE.evaluar}`}><Grid2x2 className="w-4 h-4" /><span>Análisis FODA</span></TabsTrigger>
+          <TabsTrigger value="incentivos" className={`${TAB} ${FASE.evaluar}`}><Gift className="w-4 h-4" /><span>Incentivos</span></TabsTrigger>
+          <TabsTrigger value="config" className={`${TAB} ${FASE.setup}`}><Settings className="w-4 h-4" /><span>Configuración</span></TabsTrigger>
         </TabsList>
 
         <TabsContent value="calendario" className="space-y-3">
