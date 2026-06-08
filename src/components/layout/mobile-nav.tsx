@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 import { IS_MISIONES } from "@/lib/empresa"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
-import { navItems, adminItems, rrhhSections, type PilarNav } from "./sidebar"
+import { navItems, adminItems, portalSections, rrhhSections, type PilarNav } from "./sidebar"
 
 interface MobileNavProps {
   role: UserRole
@@ -155,8 +155,8 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
             </div>
           )}
 
-          {/* RRHH sections (filtran por rol) */}
-          {rrhhSections
+          {/* Portal del Empleado + secciones RRHH (filtran por rol) */}
+          {[...portalSections, ...rrhhSections]
             .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
             .map((sec) => (
               <div key={sec.title} className="mt-5">
@@ -166,7 +166,14 @@ export function MobileNav({ role, pilares = [] }: MobileNavProps) {
                   </p>
                 </div>
                 <div className="space-y-1">
-                  {sec.items.map((item) => {
+                  {sec.items
+                    .filter(
+                      (item) =>
+                        !(item.pampeanaOnly && IS_MISIONES) &&
+                        !(item.misionesOnly && !IS_MISIONES) &&
+                        (!item.roles || item.roles.includes(role)),
+                    )
+                    .map((item) => {
                     const isActive = pathname.startsWith(item.href)
                     return (
                       <Link
