@@ -95,26 +95,39 @@ const SIN_ARTICULO = "(Sin descripción)"
 export async function getRechazosResumenDia(
   supa: SupaClient,
   fecha: string,
+  /** Si se pasa, agrega por el rango [fecha, hasta] inclusive en vez de un día. */
+  hasta?: string,
 ): Promise<RechazosResumenDia> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
     throw new Error("Fecha inválida (esperado YYYY-MM-DD)")
   }
+  if (hasta && !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+    throw new Error("Fecha 'hasta' inválida (esperado YYYY-MM-DD)")
+  }
+  // Normaliza el rango: desde <= hasta.
+  const esRango = !!hasta
+  const desde = hasta && hasta < fecha ? hasta : fecha
+  const hastaFecha = hasta && hasta < fecha ? fecha : (hasta ?? fecha)
+
+  let rechazosQ = supa
+    .from("rechazos")
+    .select(
+      "ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto",
+    )
+  // Imputado al día de la venta (ver migración 065), no al de carga.
+  rechazosQ = esRango
+    ? rechazosQ.gte("fecha_venta", desde).lte("fecha_venta", hastaFecha)
+    : rechazosQ.eq("fecha_venta", fecha)
+
+  let ventasQ = supa.from("ventas_diarias").select("total_bultos,total_hl")
+  ventasQ = esRango
+    ? ventasQ.gte("fecha", desde).lte("fecha", hastaFecha)
+    : ventasQ.eq("fecha", fecha)
 
   const [rechazosRaw, ventasRaw, catalogoRaw, mapeoRaw] = await Promise.all([
-    supa
-      .from("rechazos")
-      .select(
-        "ds_fletero_carga,id_rechazo,ds_rechazo,id_cliente,nombre_cliente,id_articulo,ds_articulo,hl_rechazados,bultos_rechazados,monto_neto,monto_bruto",
-      )
-      // Imputado al día de la venta (ver migración 065), no al de carga.
-      .eq("fecha_venta", fecha),
-    supa
-      .from("ventas_diarias")
-      .select("total_bultos,total_hl")
-      .eq("fecha", fecha),
-    supa
-      .from("catalogo_rechazos")
-      .select("id_rechazo,ds_rechazo,categoria"),
+    rechazosQ,
+    ventasQ,
+    supa.from("catalogo_rechazos").select("id_rechazo,ds_rechazo,categoria"),
     supa
       .from("mapeo_patente_chofer")
       .select("patente, catalogo_choferes(nombre)"),

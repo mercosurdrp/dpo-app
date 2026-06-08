@@ -1100,12 +1100,14 @@ export function ReunionDetallePageClient({
         </CardContent>
       </Card>
 
-      {/* ETAPA 1: SEGURIDAD */}
-      <EtapaSeguridad
-        fechaReunion={detalle.fecha}
-        currentProfileId={currentProfileId}
-        currentRole={currentRole}
-      />
+      {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones) */}
+      {detalle.tipo !== "logistica-ventas" && (
+        <EtapaSeguridad
+          fechaReunion={detalle.fecha}
+          currentProfileId={currentProfileId}
+          currentRole={currentRole}
+        />
+      )}
 
       {/* Reunión Ventas-Logística: secciones de análisis por indicador.
           Plantilla inicial: Rechazos (datos reales del día, filtrable) + su
@@ -1121,7 +1123,8 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ETAPA 2: TABLERO DE CONTROL */}
+      {/* ETAPA 2: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por secciones) */}
+      {detalle.tipo !== "logistica-ventas" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
@@ -1524,13 +1527,17 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* ETAPA 3: ACTION LOG */}
       <Card className="border-emerald-200 bg-emerald-50/30">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
             <ListTodo className="size-5 text-emerald-600" />
-            Etapa 3 — Action Log ({actividades.length})
+            {detalle.tipo === "logistica-ventas"
+              ? "Action Log general"
+              : "Etapa 3 — Action Log"}{" "}
+            ({actividades.length})
           </CardTitle>
           {puedeEditar && (
             <Button

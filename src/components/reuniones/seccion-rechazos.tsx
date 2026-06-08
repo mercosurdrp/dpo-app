@@ -63,7 +63,8 @@ export function SeccionRechazos({
   puedeEditar: boolean
   onActividadesChanged: () => void
 }) {
-  const [fecha, setFecha] = useState(fechaReunion)
+  const [desde, setDesde] = useState(fechaReunion)
+  const [hasta, setHasta] = useState(fechaReunion)
   const [data, setData] = useState<RechazosResumenDia | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,24 +74,40 @@ export function SeccionRechazos({
     let cancel = false
     setLoading(true)
     setError(null)
-    void getRechazosResumenDia(fecha).then((res) => {
-      if (cancel) return
-      if ("error" in res) {
-        setError(res.error)
-        setData(null)
-      } else {
-        setData(res.data)
-      }
-      setLoading(false)
-    })
+    // Cuando desde === hasta es un solo día; si difieren, rango inclusivo.
+    void getRechazosResumenDia(desde, desde === hasta ? undefined : hasta).then(
+      (res) => {
+        if (cancel) return
+        if ("error" in res) {
+          setError(res.error)
+          setData(null)
+        } else {
+          setData(res.data)
+        }
+        setLoading(false)
+      },
+    )
     return () => {
       cancel = true
     }
-  }, [fecha])
+  }, [desde, hasta])
 
   const tasa = data?.kpis.tasa ?? null
   const cumple = tasa != null && tasa <= META_TASA
-  const esOtraFecha = fecha !== fechaReunion
+  const esRango = desde !== hasta
+  const esOtroPeriodo = desde !== fechaReunion || hasta !== fechaReunion
+
+  // Handlers que mantienen desde <= hasta.
+  function onDesde(v: string) {
+    const nv = v || fechaReunion
+    setDesde(nv)
+    if (nv > hasta) setHasta(nv)
+  }
+  function onHasta(v: string) {
+    const nv = v || fechaReunion
+    setHasta(nv)
+    if (nv < desde) setDesde(nv)
+  }
 
   return (
     <Card className="border-amber-200 bg-amber-50/30">
@@ -98,22 +115,40 @@ export function SeccionRechazos({
         <CardTitle className="flex items-center gap-2 text-lg font-bold text-amber-900">
           <PackageX className="size-5 text-amber-600" />
           Rechazos
-          {esOtraFecha && (
+          {esRango ? (
             <Badge variant="outline" className="text-[10px] font-normal">
-              fecha anterior
+              rango
             </Badge>
+          ) : (
+            esOtroPeriodo && (
+              <Badge variant="outline" className="text-[10px] font-normal">
+                fecha anterior
+              </Badge>
+            )
           )}
         </CardTitle>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="rechazos-fecha">
-            Día
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-muted-foreground" htmlFor="rechazos-desde">
+            Desde
           </label>
           <input
-            id="rechazos-fecha"
+            id="rechazos-desde"
             type="date"
-            value={fecha}
+            value={desde}
             max={fechaReunion}
-            onChange={(e) => setFecha(e.target.value || fechaReunion)}
+            onChange={(e) => onDesde(e.target.value)}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          <label className="text-xs text-muted-foreground" htmlFor="rechazos-hasta">
+            Hasta
+          </label>
+          <input
+            id="rechazos-hasta"
+            type="date"
+            value={hasta}
+            min={desde}
+            max={fechaReunion}
+            onChange={(e) => onHasta(e.target.value)}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
         </div>
@@ -149,7 +184,7 @@ export function SeccionRechazos({
                 }
                 sub={
                   tasa == null
-                    ? "sin ventas del día"
+                    ? "sin ventas en el período"
                     : `${cumple ? "cumple" : "supera"} meta ${META_TASA}%` +
                       (data.kpis.tasa_bultos == null
                         ? ""
@@ -171,7 +206,7 @@ export function SeccionRechazos({
               <KpiCard
                 label="HL entregados"
                 value={formatHl(data.kpis.ventas_total_hl)}
-                sub="total del día"
+                sub={esRango ? "total del período" : "total del día"}
               />
             </div>
 
@@ -204,7 +239,7 @@ export function SeccionRechazos({
                           colSpan={6}
                           className="text-center text-muted-foreground"
                         >
-                          Sin rechazos para este día
+                          Sin rechazos para este período
                         </TableCell>
                       </TableRow>
                     )}
@@ -237,16 +272,18 @@ export function SeccionRechazos({
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDialogOpen(true)}
-              >
-                <Maximize2 className="mr-1.5 size-4" />
-                Ver detalle completo
-              </Button>
-            </div>
+            {!esRango && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  <Maximize2 className="mr-1.5 size-4" />
+                  Ver detalle completo
+                </Button>
+              </div>
+            )}
           </>
         )}
 
@@ -266,7 +303,7 @@ export function SeccionRechazos({
       <RechazosDetalleDiaDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        fecha={fecha}
+        fecha={desde}
       />
     </Card>
   )

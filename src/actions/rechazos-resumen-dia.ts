@@ -11,11 +11,13 @@ export type { RechazosResumenDia } from "@/lib/rechazos/resumen-dia"
 
 export async function getRechazosResumenDia(
   fecha: string,
+  /** Si se pasa, agrega por el rango [fecha, hasta] inclusive. */
+  hasta?: string,
 ): Promise<{ data: RechazosResumenDia } | { error: string }> {
   try {
     await requireAuth()
     const supa = await createClient()
-    const data = await runResumen(supa, fecha)
+    const data = await runResumen(supa, fecha, hasta)
     return { data }
   } catch (err) {
     return {
