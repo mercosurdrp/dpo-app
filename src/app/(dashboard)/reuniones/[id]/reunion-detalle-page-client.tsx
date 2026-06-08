@@ -57,6 +57,7 @@ import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
+import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -929,6 +930,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "frescura"),
     [actividadesAll],
   )
+  const actividadesSobrestock = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "sobrestock"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1134,6 +1139,17 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesFrescura}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección Sobrestock (snapshot + comparación + action log) */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionSobrestock
+          reunionId={detalle.id}
+          actividades={actividadesSobrestock}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
