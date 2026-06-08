@@ -11,6 +11,8 @@ import {
   CalendarRange,
   CalendarCheck,
   Boxes,
+  Megaphone,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -22,6 +24,8 @@ const items = [
     ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: CalendarCheck }]
     : []),
   { label: "Inicio", href: "/mis-capacitaciones", icon: GraduationCap },
+  { label: "Comunicaciones", href: "/portal/comunicaciones", icon: Megaphone },
+  { label: "Servicios", href: "/portal/servicios", icon: Wrench },
   { label: "Reportar", href: "/reportar-seguridad", icon: ShieldAlert },
   // Clasificar envases: solo Pampeana (Depósito Esteban).
   ...(IS_MISIONES

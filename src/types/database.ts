@@ -3047,3 +3047,287 @@ export const SLA_ESTADO_LABELS: Record<SlaEstado, string> = {
   firmado: "Firmado",
   no_aplica: "No aplica",
 }
+
+// =====================================================
+// Portal del Empleado · Buzón de Comunicaciones
+// =====================================================
+export type ComunicacionCategoria =
+  | "rrhh"
+  | "seguridad_higiene"
+  | "operaciones"
+  | "logistica"
+  | "sistemas"
+  | "capacitaciones"
+  | "direccion_general"
+
+export type ComunicacionPrioridad = "baja" | "media" | "alta"
+
+export type ComunicacionEstado = "abierta" | "en_revision" | "gestionada" | "cerrada"
+
+export interface Comunicacion {
+  id: string
+  numero: number
+  titulo: string
+  cuerpo: string
+  categoria: ComunicacionCategoria
+  prioridad: ComunicacionPrioridad
+  estado: ComunicacionEstado
+  asignado_a: string | null
+  creado_por: string
+  gestionado_at: string | null
+  cerrado_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ComunicacionAdjunto {
+  id: string
+  comunicacion_id: string
+  storage_path: string
+  nombre_original: string
+  mime_type: string
+  tamaño_bytes: number
+  created_at: string
+}
+
+export interface ComunicacionAdjuntoConUrl extends ComunicacionAdjunto {
+  url: string
+}
+
+/** Item de listado: autor, responsable asignado y nº de adjuntos. */
+export interface ComunicacionConAutor extends Comunicacion {
+  autor_nombre: string
+  asignado_nombre: string | null
+  adjuntos_count: number
+}
+
+export interface ComunicacionComentario {
+  id: string
+  comunicacion_id: string
+  texto: string
+  interno: boolean
+  autor: string
+  created_at: string
+}
+
+export interface ComunicacionComentarioConAutor extends ComunicacionComentario {
+  autor_nombre: string
+}
+
+export interface ComunicacionHistorial {
+  id: string
+  comunicacion_id: string
+  estado_anterior: ComunicacionEstado | null
+  estado_nuevo: ComunicacionEstado
+  changed_by: string | null
+  changed_at: string
+}
+
+export interface ComunicacionDetalle extends ComunicacionConAutor {
+  adjuntos: ComunicacionAdjuntoConUrl[]
+  comentarios: ComunicacionComentarioConAutor[]
+  historial: ComunicacionHistorial[]
+}
+
+export const COMUNICACION_CATEGORIA_LABELS: Record<ComunicacionCategoria, string> = {
+  rrhh: "RRHH",
+  seguridad_higiene: "Seguridad e Higiene",
+  operaciones: "Operaciones",
+  logistica: "Logística",
+  sistemas: "Sistemas",
+  capacitaciones: "Capacitaciones",
+  direccion_general: "Dirección General",
+}
+
+export const COMUNICACION_CATEGORIA_COLORS: Record<ComunicacionCategoria, string> = {
+  rrhh: "#8B5CF6",
+  seguridad_higiene: "#EF4444",
+  operaciones: "#3B82F6",
+  logistica: "#F59E0B",
+  sistemas: "#6366F1",
+  capacitaciones: "#14B8A6",
+  direccion_general: "#0EA5E9",
+}
+
+export const COMUNICACION_CATEGORIA_ORDEN: ComunicacionCategoria[] = [
+  "rrhh",
+  "seguridad_higiene",
+  "operaciones",
+  "logistica",
+  "sistemas",
+  "capacitaciones",
+  "direccion_general",
+]
+
+export const COMUNICACION_PRIORIDAD_LABELS: Record<ComunicacionPrioridad, string> = {
+  baja: "Baja",
+  media: "Media",
+  alta: "Alta",
+}
+
+export const COMUNICACION_PRIORIDAD_COLORS: Record<ComunicacionPrioridad, string> = {
+  baja: "#64748B",
+  media: "#F59E0B",
+  alta: "#EF4444",
+}
+
+export const COMUNICACION_ESTADO_LABELS: Record<ComunicacionEstado, string> = {
+  abierta: "Abierta",
+  en_revision: "En revisión",
+  gestionada: "Gestionada",
+  cerrada: "Cerrada",
+}
+
+export const COMUNICACION_ESTADO_COLORS: Record<ComunicacionEstado, string> = {
+  abierta: "#EF4444",
+  en_revision: "#F59E0B",
+  gestionada: "#10B981",
+  cerrada: "#6B7280",
+}
+
+export const COMUNICACION_ESTADO_ORDEN: ComunicacionEstado[] = [
+  "abierta",
+  "en_revision",
+  "gestionada",
+  "cerrada",
+]
+
+// =====================================================
+// Portal del Empleado · Servicios Generales (mesa de ayuda)
+// =====================================================
+export type SgCategoria =
+  | "edilicio"
+  | "electricidad"
+  | "iluminacion"
+  | "aire_acondicionado"
+  | "sanitarios"
+  | "mobiliario"
+  | "equipamiento"
+  | "limpieza"
+  | "seguridad_fisica"
+  | "otros"
+
+export type SgEstado =
+  | "abierto"
+  | "en_revision"
+  | "asignado"
+  | "en_proceso"
+  | "resuelto"
+  | "cerrado"
+
+export interface SgTicket {
+  id: string
+  numero: number
+  categoria: SgCategoria
+  titulo: string
+  descripcion: string
+  sector: string | null
+  estado: SgEstado
+  asignado_a: string | null
+  creado_por: string
+  resuelto_at: string | null
+  cerrado_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SgTicketConAutor extends SgTicket {
+  autor_nombre: string
+  asignado_nombre: string | null
+}
+
+export interface SgTicketAdjunto {
+  id: string
+  ticket_id: string
+  storage_path: string
+  nombre_original: string
+  mime_type: string
+  tamaño_bytes: number
+  es_evidencia: boolean
+  created_at: string
+}
+
+export interface SgTicketAdjuntoConUrl extends SgTicketAdjunto {
+  url: string
+}
+
+export interface SgTicketComentario {
+  id: string
+  ticket_id: string
+  texto: string
+  interno: boolean
+  autor: string
+  created_at: string
+}
+
+export interface SgTicketComentarioConAutor extends SgTicketComentario {
+  autor_nombre: string
+}
+
+export interface SgTicketHistorial {
+  id: string
+  ticket_id: string
+  estado_anterior: SgEstado | null
+  estado_nuevo: SgEstado
+  changed_by: string | null
+  changed_at: string
+}
+
+export interface SgTicketDetalle extends SgTicketConAutor {
+  adjuntos: SgTicketAdjuntoConUrl[]
+  comentarios: SgTicketComentarioConAutor[]
+  historial: SgTicketHistorial[]
+}
+
+export const SG_CATEGORIA_LABELS: Record<SgCategoria, string> = {
+  edilicio: "Problemas edilicios",
+  electricidad: "Electricidad",
+  iluminacion: "Iluminación",
+  aire_acondicionado: "Aire acondicionado",
+  sanitarios: "Sanitarios",
+  mobiliario: "Mobiliario",
+  equipamiento: "Equipamiento",
+  limpieza: "Limpieza",
+  seguridad_fisica: "Seguridad física",
+  otros: "Otros",
+}
+
+export const SG_CATEGORIA_ORDEN: SgCategoria[] = [
+  "edilicio",
+  "electricidad",
+  "iluminacion",
+  "aire_acondicionado",
+  "sanitarios",
+  "mobiliario",
+  "equipamiento",
+  "limpieza",
+  "seguridad_fisica",
+  "otros",
+]
+
+export const SG_ESTADO_LABELS: Record<SgEstado, string> = {
+  abierto: "Abierto",
+  en_revision: "En revisión",
+  asignado: "Asignado",
+  en_proceso: "En proceso",
+  resuelto: "Resuelto",
+  cerrado: "Cerrado",
+}
+
+export const SG_ESTADO_COLORS: Record<SgEstado, string> = {
+  abierto: "#EF4444",
+  en_revision: "#F59E0B",
+  asignado: "#3B82F6",
+  en_proceso: "#6366F1",
+  resuelto: "#10B981",
+  cerrado: "#6B7280",
+}
+
+export const SG_ESTADO_ORDEN: SgEstado[] = [
+  "abierto",
+  "en_revision",
+  "asignado",
+  "en_proceso",
+  "resuelto",
+  "cerrado",
+]

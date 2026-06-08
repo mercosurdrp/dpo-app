@@ -35,6 +35,7 @@ import {
   Wrench,
   Route,
   Handshake,
+  Megaphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -225,6 +226,33 @@ export const adminItems: NavItem[] = [
   },
 ]
 
+// ===== Portal del Empleado (Buzón de Comunicaciones + Servicios Generales) =====
+// Visible para todos los roles que usan el sidebar. El "Dashboard" sólo lo ve
+// admin; el empleado accede al portal desde su nav horizontal (empleado-nav).
+export const portalSections: NavSection[] = [
+  {
+    title: "Portal del Empleado",
+    items: [
+      {
+        label: "Dashboard",
+        href: "/portal",
+        icon: <LayoutDashboard className="size-5" />,
+        roles: ["admin"],
+      },
+      {
+        label: "Comunicaciones",
+        href: "/portal/comunicaciones",
+        icon: <Megaphone className="size-5" />,
+      },
+      {
+        label: "Servicios Generales",
+        href: "/portal/servicios",
+        icon: <Wrench className="size-5" />,
+      },
+    ],
+  },
+]
+
 // ===== Secciones RRHH (visibles según rol) =====
 export const rrhhSections: NavSection[] = [
   {
@@ -410,8 +438,8 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
           </div>
         )}
 
-        {/* RRHH sections (filtran por rol) */}
-        {rrhhSections
+        {/* Portal del Empleado + secciones RRHH (filtran por rol) */}
+        {[...portalSections, ...rrhhSections]
           .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
           .map((sec) => (
             <div key={sec.title} className="mt-5">
@@ -427,7 +455,8 @@ export function Sidebar({ role, pilares = [] }: SidebarProps) {
                   .filter(
                     (item) =>
                       !(item.pampeanaOnly && IS_MISIONES) &&
-                      !(item.misionesOnly && !IS_MISIONES),
+                      !(item.misionesOnly && !IS_MISIONES) &&
+                      (!item.roles || item.roles.includes(role)),
                   )
                   .map((item) => {
                   const isActive = pathname.startsWith(item.href)

@@ -135,3 +135,7 @@ export const CATEGORIA_CONFIG: Record<string, { label: string; color: string }> 
   mantener: { label: "Gestion para Mantener", color: "#F59E0B" },
   mejorar: { label: "Gestion para Mejorar", color: "#10B981" },
 }
+
+// Portal del Empleado · Servicios Generales:
+// días sin resolver tras los cuales un ticket activo se considera "vencido".
+export const SG_DIAS_VENCIMIENTO = 7
