@@ -764,7 +764,7 @@ async function filaRecepcion(
 // 07:00 ARG del día de REPARTO (día de salida del camión). Se cruza por
 // NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, la hora de carga
 // real (ViajesFhDespacho/HrDespacho); el día de reparto se deriva de esa hora
-// (regla de las 12:00), no del `reparto` del WMS, que rotula mal la tarde. La
+// (regla de corte de las 11:00), no del `reparto` del WMS, que rotula mal la tarde. La
 // patente (BANDVIA) llega con ~5 días de lag y por eso ya NO se usa para medir.
 // Un viaje ruteado y nunca cargado pasado el plazo = incumplimiento.
 // Fuente: blob 'carga-camiones' del WMS (mismo que muestra /carga-camiones).
@@ -792,15 +792,20 @@ function nextISO(iso: string): string {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
 }
 
+// Hora de corte que separa "carga para salir mañana" de "carga de la madrugada
+// del propio día". Una carga a esta hora o más tarde se considera de la tarde
+// anterior → su reparto es el día siguiente.
+const CARGA_CORTE_TARDE = "11:00:00"
+
 /**
- * Día de reparto derivado de la hora real de carga. Regla de las 12:00: una
- * carga ≥12:00 es "la tarde anterior" → reparto = fecha+1; una carga <12:00 es
- * la madrugada del propio día de reparto → reparto = fecha. Se aplica siempre
- * que haya carga: el `reparto` que manda el WMS no es confiable (rotula la
- * carga de la tarde con el mismo día, no con el día de salida del camión).
+ * Día de reparto derivado de la hora real de carga. Regla de corte: una carga
+ * ≥11:00 es "la tarde anterior" → reparto = fecha+1; una carga <11:00 es la
+ * madrugada del propio día de reparto → reparto = fecha. Se aplica siempre que
+ * haya carga: el `reparto` que manda el WMS no es confiable (rotula la carga de
+ * la tarde con el mismo día, no con el día de salida del camión).
  */
 function repartoDesdeCarga(fecha: string, hora: string): string {
-  return hora >= "12:00:00" ? nextISO(fecha) : fecha
+  return hora >= CARGA_CORTE_TARDE ? nextISO(fecha) : fecha
 }
 
 /** Plazo (ms UTC) de un reparto = 07:00 ARG = 10:00 UTC de ese día. */
@@ -835,7 +840,7 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
       // El WMS rotula `reparto` con el MISMO día de la carga, aunque el camión se
       // cargue a la tarde para salir al día siguiente: eso hacía que toda carga
       // de la tarde figurara "tarde" contra las 07:00 del propio día. Cuando hay
-      // carga real, derivamos el reparto de la hora (regla de las 12:00) e
+      // carga real, derivamos el reparto de la hora (regla de corte de las 11:00) e
       // ignoramos el del WMS. Solo los viajes ruteados sin cargar caen al del WMS.
       const reparto = cargado
         ? repartoDesdeCarga(fecha!, hora!)
