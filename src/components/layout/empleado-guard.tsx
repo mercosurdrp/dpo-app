@@ -14,6 +14,7 @@ const ALLOWED_PATHS = [
   "/mi-orden-del-dia",
   "/rrhh/mis-solicitudes",
   "/recepcion",
+  "/portal",
 ]
 
 function isAllowed(pathname: string) {

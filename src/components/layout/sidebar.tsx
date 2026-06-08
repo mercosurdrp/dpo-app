@@ -38,6 +38,7 @@ import {
   Route,
   Handshake,
   PackageCheck,
+  Megaphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -247,6 +248,33 @@ export const adminItems: NavItem[] = [
     href: "/admin/mapeo-empleados",
     icon: <Link2 className="size-5" />,
     adminOnly: true,
+  },
+]
+
+// ===== Portal del Empleado (Buzón de Comunicaciones + Servicios Generales) =====
+// Visible para todos los roles que usan el sidebar. El "Dashboard" sólo lo ve
+// admin; el empleado accede al portal desde su nav horizontal (empleado-nav).
+export const portalSections: NavSection[] = [
+  {
+    title: "Portal del Empleado",
+    items: [
+      {
+        label: "Dashboard",
+        href: "/portal",
+        icon: <LayoutDashboard className="size-5" />,
+        roles: ["admin"],
+      },
+      {
+        label: "Comunicaciones",
+        href: "/portal/comunicaciones",
+        icon: <Megaphone className="size-5" />,
+      },
+      {
+        label: "Servicios Generales",
+        href: "/portal/servicios",
+        icon: <Wrench className="size-5" />,
+      },
+    ],
   },
 ]
 
@@ -490,8 +518,8 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
           </div>
         )}
 
-        {/* RRHH sections (filtran por rol) */}
-        {rrhhSections
+        {/* Portal del Empleado + secciones RRHH (filtran por rol) */}
+        {[...portalSections, ...rrhhSections]
           .filter((sec) => !sec.visibleFor || sec.visibleFor.includes(role))
           .filter((sec) =>
             sec.items.some(
@@ -511,7 +539,9 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
                 {sec.items
                   .filter(
                     (item) =>
-                      !(item.pampeanaOnly && IS_MISIONES) && matchQ(item.label),
+                      !(item.pampeanaOnly && IS_MISIONES) &&
+                      (!item.roles || item.roles.includes(role)) &&
+                      matchQ(item.label),
                   )
                   .map((item) => {
                   const isActive = pathname.startsWith(item.href)
