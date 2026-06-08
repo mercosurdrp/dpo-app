@@ -1,4 +1,10 @@
 # Excluidos del deploy a Vercel (CLI y GitHub)
+# Env locales: NUNCA subirlos. El build debe usar SOLO las env del dashboard de
+# Vercel; un .env.local subido las pisa (incidente: DB de prod apuntada al lugar
+# equivocado). El .env.local de este tree puede apuntar a la otra región.
+.env
+.env.*
+!.env.example
 src/app/(dashboard)/5s/mis-acciones/
 /scripts/maintenance/
 credenciales-empleados.pdf
