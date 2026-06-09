@@ -23,6 +23,7 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Star,
   Trash2,
   UserPlus,
   X,
@@ -60,6 +61,7 @@ import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import { SeccionSla } from "@/components/reuniones/seccion-sla"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
+import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -944,6 +946,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
     [actividadesAll],
   )
+  const actividadesRmdNps = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "rmd_nps"),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1183,6 +1189,22 @@ export function ReunionDetallePageClient({
         <SeccionAccionesComerciales
           reunionId={detalle.id}
           actividades={actividadesAccCom}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección RMD (Rate my Delivery) y NPS — subir fotos para analizar + action log */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionGaleriaFotos
+          reunionId={detalle.id}
+          seccion="rmd_nps"
+          titulo="RMD y NPS"
+          icono={Star}
+          tema="violet"
+          emptyHint="Sin fotos cargadas. Subí las capturas de Rate my Delivery (RMD) y NPS para analizarlas acá."
+          actividades={actividadesRmdNps}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
