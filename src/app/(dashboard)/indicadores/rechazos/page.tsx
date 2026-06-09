@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getRechazosComparado } from "@/actions/rechazos"
+import { listarPlanesRechazos } from "@/actions/rechazos-planes"
 import { parseRechazosSearchParams } from "@/lib/rechazos/search-params"
 import { DashboardClient } from "./_components/dashboard-client"
 
@@ -13,7 +14,11 @@ export default async function RechazosPage({
 }) {
   const sp = await searchParams
   const request = parseRechazosSearchParams(sp)
-  const result = await getRechazosComparado(request)
+  const [result, planesRes] = await Promise.all([
+    getRechazosComparado(request),
+    listarPlanesRechazos(),
+  ])
+  const planesIniciales = "data" in planesRes ? planesRes.data : []
 
   if (!result.ok) {
     return (
@@ -40,7 +45,7 @@ export default async function RechazosPage({
       >
         <ArrowLeft className="h-4 w-4" /> Volver a Indicadores
       </Link>
-      <DashboardClient data={result.data} />
+      <DashboardClient data={result.data} planesIniciales={planesIniciales} />
     </div>
   )
 }

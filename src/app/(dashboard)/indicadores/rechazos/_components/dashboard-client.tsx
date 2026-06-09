@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react"
 import type { RechazosComparado, TopVariacionDim } from "@/lib/types/rechazos"
+import type { RechazoPlan } from "@/actions/rechazos-planes"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Header } from "./header"
 import { Filtros } from "./filtros"
@@ -16,8 +17,15 @@ import { RankingProductos } from "./ranking-productos"
 import { TopVariacionesBloque } from "./top-variaciones"
 import { DrillDownSheet, type DrillTo } from "./drill-down-sheet"
 import { EmptyState } from "./empty-state"
+import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
-export function DashboardClient({ data }: { data: RechazosComparado }) {
+export function DashboardClient({
+  data,
+  planesIniciales,
+}: {
+  data: RechazosComparado
+  planesIniciales: RechazoPlan[]
+}) {
   const [drillTo, setDrillTo] = useState<DrillTo | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
@@ -78,6 +86,18 @@ export function DashboardClient({ data }: { data: RechazosComparado }) {
             </div>
           </>
         )}
+
+        <PlanesAccionBloque
+          planesIniciales={planesIniciales}
+          motivos={data.filter_options.motivos.map((m) => ({
+            id_rechazo: m.id_rechazo,
+            ds_rechazo: m.ds_rechazo,
+          }))}
+          clientes={data.agg.por_cliente.map((c) => ({
+            id_cliente: c.id_cliente,
+            nombre_cliente: c.nombre_cliente,
+          }))}
+        />
       </div>
 
       <DrillDownSheet
