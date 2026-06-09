@@ -207,9 +207,14 @@ export async function syncRechazosForDate(
     )
   }
 
-  // Filtros del sync: idRechazo>0, !anulado, patente válida.
+  // Filtros del sync: idRechazo>0, !anulado, patente válida, documento DVVTA.
+  // Se excluye PRDVO (orden de devolución administrativa: mal facturado,
+  // trámites internos, error de distribución). No es un rechazo de reparto del
+  // cliente en ruta y distorsiona el indicador (montos enormes, HL ~0 por
+  // cabeceras de combo). El indicador mide solo devoluciones de venta (DVVTA).
   const rechazos = ventas.filter(
     (v) => v.idRechazo > 0 && v.anulado !== "SI" && isPatenteValida(v.dsFleteroCarga)
+      && v.idDocumento !== "PRDVO"
   )
   result.total_rechazos_intentados = rechazos.length
 
@@ -221,8 +226,8 @@ export async function syncRechazosForDate(
     else result.chofer.sin_resolver++
 
     // fecha_venta: imputa el rechazo al día de la venta original.
-    // DVVTA → fechaComprobanteRela (la FCVTA relacionada). PRDVO y demás
-    // (sin doc relacionado) → la propia fecha (no tienen desfasaje).
+    // DVVTA → fechaComprobanteRela (la FCVTA relacionada). Sin doc relacionado
+    // válido → la propia fecha (no tienen desfasaje).
     const rela = r.fechaComprobanteRela
     const fechaVenta =
       rela && /^\d{4}-\d{2}-\d{2}/.test(rela) && !rela.startsWith("9999") && !rela.startsWith("0001")
