@@ -14,6 +14,7 @@ import {
   PackageCheck,
   Megaphone,
   Wrench,
+  PackageX,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -32,6 +33,8 @@ const items = [
   ...(IS_MISIONES
     ? []
     : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: Boxes }]),
+  // Rechazos: ranking amigable de devoluciones (solo Pampeana — fuente de datos).
+  ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: PackageX }]),
   { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: CalendarRange },
   { label: "Vehículos", href: "/vehiculos/checklist", icon: Truck },
   // "Mis tareas" al final del menú (preferencia del usuario).

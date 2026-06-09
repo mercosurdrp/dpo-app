@@ -15,6 +15,7 @@ const ALLOWED_PATHS = [
   "/rrhh/mis-solicitudes",
   "/recepcion",
   "/portal",
+  "/rechazos",
 ]
 
 function isAllowed(pathname: string) {
