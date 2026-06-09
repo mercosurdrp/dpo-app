@@ -4,26 +4,38 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 
 /**
- * Vista AMIGABLE de rechazos para el empleado (ranking general por día y por
- * patente/chofer). Sin montos $ — solo cantidad de rechazos y bultos.
- * Fuente: tabla `rechazos` (Pampeana). Los PRDVO ya no entran (sync filtrado).
+ * Vista AMIGABLE de rechazos para el empleado, orientada a OBJETIVO + premio.
+ *
+ * Objetivo: la tasa de rechazo no debe superar META_RECHAZO_PCT (1,7%).
+ * Tasa = HL rechazados / HL entregados × 100 (mismo criterio que el dashboard
+ * ejecutivo: numerador = `rechazos.hl_rechazados` por fecha_venta; denominador
+ * = `ventas_diarias.total_hl` por fecha). El ranking premia al que MENOS
+ * rechaza (menor tasa primero). Sin montos $.
  */
+
+export const META_RECHAZO_PCT = 1.7
 
 export type PeriodoKey = "mes" | "mes_pasado" | "semana"
 
 export interface RankingPatente {
   patente: string
-  display: string // nombre del chofer si hay mapeo, si no la patente
+  display: string
   eventos: number
   bultos: number
   hl: number
+  hl_entregado: number
+  tasa: number // 0–100
+  denominador_confiable: boolean
+  excede: boolean // tasa > META
 }
 
 export interface PorDia {
-  fecha: string // YYYY-MM-DD
+  fecha: string
   eventos: number
   bultos: number
   hl: number
+  hl_entregado: number
+  tasa: number
 }
 
 export interface PorMotivo {
@@ -37,10 +49,18 @@ export interface RechazosEmpleadoData {
   desde: string
   hasta: string
   label: string
+  meta: number
   total_eventos: number
   total_bultos: number
   total_hl: number
-  por_patente: RankingPatente[]
+  total_hl_entregado: number
+  tasa_global: number
+  cumple_meta: boolean
+  camiones_exceden: number
+  /** Camiones con denominador confiable, ordenados por tasa ASC (mejor primero). */
+  ranking: RankingPatente[]
+  /** Camiones con rechazos pero sin dato de entrega suficiente (no rankeables). */
+  sin_dato: RankingPatente[]
   por_dia: PorDia[]
   por_motivo: PorMotivo[]
 }
@@ -63,24 +83,20 @@ function ventana(periodo: PeriodoKey): { desde: string; hasta: string; label: st
   const pad = (n: number) => String(n).padStart(2, "0")
 
   if (periodo === "semana") {
-    // Últimos 7 días (incluye hoy)
     const d = new Date(`${hoy}T00:00:00Z`)
     d.setUTCDate(d.getUTCDate() - 6)
-    const desde = d.toISOString().slice(0, 10)
-    return { desde, hasta: hoy, label: "Últimos 7 días" }
+    return { desde: d.toISOString().slice(0, 10), hasta: hoy, label: "Últimos 7 días" }
   }
 
   if (periodo === "mes_pasado") {
     const mesAnt = m === 1 ? 12 : m - 1
     const anioAnt = m === 1 ? y - 1 : y
     const desde = `${anioAnt}-${pad(mesAnt)}-01`
-    // Último día del mes anterior = día 0 del mes actual
     const ultimo = new Date(Date.UTC(y, m - 1, 0)).getUTCDate()
     const hasta = `${anioAnt}-${pad(mesAnt)}-${pad(ultimo)}`
     return { desde, hasta, label: nombreMes(mesAnt, anioAnt) }
   }
 
-  // Mes en curso
   const desde = `${y}-${pad(m)}-01`
   return { desde, hasta: hoy, label: `${nombreMes(m, y)} (en curso)` }
 }
@@ -93,13 +109,19 @@ function nombreMes(mes: number, anio: number): string {
   return `${nombres[mes - 1]} ${anio}`
 }
 
-interface RawRow {
+const norm = (s: string | null | undefined) => (s ?? "—").toUpperCase().trim()
+
+interface RawRechazo {
   fecha_venta: string
   ds_fletero_carga: string | null
   bultos_rechazados: number | null
   hl_rechazados: number | null
   ds_rechazo: string | null
-  id_rechazo: number
+}
+interface RawVenta {
+  fecha: string
+  ds_fletero_carga: string | null
+  total_hl: number | null
 }
 
 export async function getRechazosRankingEmpleado(
@@ -108,101 +130,143 @@ export async function getRechazosRankingEmpleado(
   try {
     await requireAuth()
     const supabase = await createClient()
-
     const { desde, hasta, label } = ventana(periodo)
 
-    // Traemos las filas del período + el mapeo patente→chofer en paralelo.
-    const [rowsRes, mapeoRes] = await Promise.all([
+    const [rechRes, ventasRes, mapeoRes] = await Promise.all([
       supabase
         .from("rechazos")
-        .select(
-          "fecha_venta, ds_fletero_carga, bultos_rechazados, hl_rechazados, ds_rechazo, id_rechazo",
-        )
+        .select("fecha_venta, ds_fletero_carga, bultos_rechazados, hl_rechazados, ds_rechazo")
         .gte("fecha_venta", desde)
         .lte("fecha_venta", hasta),
       supabase
-        .from("mapeo_patente_chofer")
-        .select("patente, catalogo_choferes(nombre)"),
+        .from("ventas_diarias")
+        .select("fecha, ds_fletero_carga, total_hl")
+        .gte("fecha", desde)
+        .lte("fecha", hasta),
+      supabase.from("mapeo_patente_chofer").select("patente, catalogo_choferes(nombre)"),
     ])
 
-    if (rowsRes.error) return { error: rowsRes.error.message }
-    const rows = (rowsRes.data ?? []) as unknown as RawRow[]
+    if (rechRes.error) return { error: rechRes.error.message }
+    if (ventasRes.error) return { error: ventasRes.error.message }
 
-    // Mapa patente → nombre chofer
+    const rechazos = (rechRes.data ?? []) as unknown as RawRechazo[]
+    const ventas = (ventasRes.data ?? []) as unknown as RawVenta[]
+
+    // mapeo patente → chofer
     type MapeoRow = { patente: string; catalogo_choferes: { nombre: string | null } | null }
     const choferPorPatente = new Map<string, string>()
     for (const m of (mapeoRes.data ?? []) as unknown as MapeoRow[]) {
       const nombre = m.catalogo_choferes?.nombre
-      if (m.patente && nombre) choferPorPatente.set(m.patente.toUpperCase().trim(), nombre)
+      if (m.patente && nombre) choferPorPatente.set(norm(m.patente), nombre)
     }
 
-    // Agregaciones
-    const patenteAgg = new Map<string, RankingPatente>()
-    const diaAgg = new Map<string, PorDia>()
+    // Entregado (denominador) por patente y por día — HL
+    const hlEntregadoPatente = new Map<string, number>()
+    const hlEntregadoDia = new Map<string, number>()
+    let totalHlEntregado = 0
+    for (const v of ventas) {
+      const h = Math.abs(Number(v.total_hl) || 0)
+      totalHlEntregado += h
+      const pat = norm(v.ds_fletero_carga)
+      hlEntregadoPatente.set(pat, (hlEntregadoPatente.get(pat) ?? 0) + h)
+      hlEntregadoDia.set(v.fecha, (hlEntregadoDia.get(v.fecha) ?? 0) + h)
+    }
+
+    // Rechazado (numerador)
+    interface PatAcc { patente: string; eventos: number; bultos: number; hl: number }
+    const patAgg = new Map<string, PatAcc>()
+    const diaAgg = new Map<string, { eventos: number; bultos: number; hl: number }>()
     const motivoAgg = new Map<string, PorMotivo>()
     let total_eventos = 0
     let total_bultos = 0
     let total_hl = 0
 
-    for (const r of rows) {
+    for (const r of rechazos) {
       const bultos = Math.abs(Number(r.bultos_rechazados) || 0)
       const hl = Math.abs(Number(r.hl_rechazados) || 0)
       total_eventos += 1
       total_bultos += bultos
       total_hl += hl
 
-      // por patente
-      const pat = (r.ds_fletero_carga ?? "—").toUpperCase().trim()
-      const pa = patenteAgg.get(pat) ?? {
-        patente: pat,
-        display: choferPorPatente.get(pat) ?? pat,
-        eventos: 0,
-        bultos: 0,
-        hl: 0,
-      }
-      pa.eventos += 1
-      pa.bultos += bultos
-      pa.hl += hl
-      patenteAgg.set(pat, pa)
+      const pat = norm(r.ds_fletero_carga)
+      const pa = patAgg.get(pat) ?? { patente: pat, eventos: 0, bultos: 0, hl: 0 }
+      pa.eventos += 1; pa.bultos += bultos; pa.hl += hl
+      patAgg.set(pat, pa)
 
-      // por día
-      const dia = r.fecha_venta
-      const da = diaAgg.get(dia) ?? { fecha: dia, eventos: 0, bultos: 0, hl: 0 }
-      da.eventos += 1
-      da.bultos += bultos
-      da.hl += hl
-      diaAgg.set(dia, da)
+      const da = diaAgg.get(r.fecha_venta) ?? { eventos: 0, bultos: 0, hl: 0 }
+      da.eventos += 1; da.bultos += bultos; da.hl += hl
+      diaAgg.set(r.fecha_venta, da)
 
-      // por motivo
       const motivo = r.ds_rechazo ?? "Sin motivo"
       const ma = motivoAgg.get(motivo) ?? { ds_rechazo: motivo, eventos: 0, bultos: 0 }
-      ma.eventos += 1
-      ma.bultos += bultos
+      ma.eventos += 1; ma.bultos += bultos
       motivoAgg.set(motivo, ma)
     }
 
-    const por_patente = Array.from(patenteAgg.values()).sort(
-      (a, b) => b.bultos - a.bultos || b.eventos - a.eventos,
-    )
-    const por_dia = Array.from(diaAgg.values()).sort((a, b) =>
-      a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0,
-    )
-    const por_motivo = Array.from(motivoAgg.values()).sort(
-      (a, b) => b.eventos - a.eventos,
-    )
-
     const round1 = (n: number) => Math.round(n * 10) / 10
+    const round2 = (n: number) => Math.round(n * 100) / 100
+
+    // Armar filas por patente con tasa
+    const filas: RankingPatente[] = Array.from(patAgg.values()).map((p) => {
+      const hlEnt = hlEntregadoPatente.get(p.patente) ?? 0
+      const confiable = hlEnt > 0 && p.hl <= hlEnt
+      const tasa = hlEnt > 0 ? (p.hl / hlEnt) * 100 : 0
+      return {
+        patente: p.patente,
+        display: choferPorPatente.get(p.patente) ?? p.patente,
+        eventos: p.eventos,
+        bultos: round1(p.bultos),
+        hl: round1(p.hl),
+        hl_entregado: round1(hlEnt),
+        tasa: round2(tasa),
+        denominador_confiable: confiable,
+        excede: confiable && tasa > META_RECHAZO_PCT,
+      }
+    })
+
+    // Ranking: solo confiables, MENOR tasa primero (premio al que menos rechaza)
+    const ranking = filas
+      .filter((f) => f.denominador_confiable)
+      .sort((a, b) => a.tasa - b.tasa || a.bultos - b.bultos)
+    const sin_dato = filas
+      .filter((f) => !f.denominador_confiable)
+      .sort((a, b) => b.bultos - a.bultos)
+
+    const por_dia: PorDia[] = Array.from(diaAgg.entries())
+      .map(([fecha, d]) => {
+        const hlEnt = hlEntregadoDia.get(fecha) ?? 0
+        return {
+          fecha,
+          eventos: d.eventos,
+          bultos: round1(d.bultos),
+          hl: round1(d.hl),
+          hl_entregado: round1(hlEnt),
+          tasa: hlEnt > 0 ? round2((d.hl / hlEnt) * 100) : 0,
+        }
+      })
+      .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0))
+
+    const por_motivo = Array.from(motivoAgg.values()).sort((a, b) => b.eventos - a.eventos)
+
+    const tasa_global = totalHlEntregado > 0 ? round2((total_hl / totalHlEntregado) * 100) : 0
+
     return {
       data: {
         periodo,
         desde,
         hasta,
         label,
+        meta: META_RECHAZO_PCT,
         total_eventos,
         total_bultos: round1(total_bultos),
         total_hl: round1(total_hl),
-        por_patente: por_patente.map((p) => ({ ...p, bultos: round1(p.bultos), hl: round1(p.hl) })),
-        por_dia: por_dia.map((d) => ({ ...d, bultos: round1(d.bultos), hl: round1(d.hl) })),
+        total_hl_entregado: round1(totalHlEntregado),
+        tasa_global,
+        cumple_meta: tasa_global <= META_RECHAZO_PCT,
+        camiones_exceden: ranking.filter((r) => r.excede).length,
+        ranking,
+        sin_dato,
+        por_dia,
         por_motivo,
       },
     }
