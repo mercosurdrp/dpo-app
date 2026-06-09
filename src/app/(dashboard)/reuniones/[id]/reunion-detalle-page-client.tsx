@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Eye,
   FileDown,
+  Gauge,
   Hand,
   ListTodo,
   Pencil,
@@ -946,8 +947,12 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
     [actividadesAll],
   )
-  const actividadesRmdNps = useMemo(
-    () => actividadesAll.filter((a) => a.seccion === "rmd_nps"),
+  const actividadesRmd = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "rmd"),
+    [actividadesAll],
+  )
+  const actividadesNps = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "nps"),
     [actividadesAll],
   )
 
@@ -1195,16 +1200,32 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* Sección RMD (Rate my Delivery) y NPS — subir fotos para analizar + action log */}
+      {/* Sección RMD (Rate my Delivery) — subir fotos para analizar + action log */}
       {detalle.tipo === "logistica-ventas" && (
         <SeccionGaleriaFotos
           reunionId={detalle.id}
-          seccion="rmd_nps"
-          titulo="RMD y NPS"
+          seccion="rmd"
+          titulo="RMD (Rate my Delivery)"
           icono={Star}
           tema="violet"
-          emptyHint="Sin fotos cargadas. Subí las capturas de Rate my Delivery (RMD) y NPS para analizarlas acá."
-          actividades={actividadesRmdNps}
+          emptyHint="Sin fotos cargadas. Subí las capturas de Rate my Delivery (RMD) para analizarlas acá."
+          actividades={actividadesRmd}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección NPS — subir fotos para analizar + action log */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionGaleriaFotos
+          reunionId={detalle.id}
+          seccion="nps"
+          titulo="NPS"
+          icono={Gauge}
+          tema="sky"
+          emptyHint="Sin fotos cargadas. Subí las capturas de NPS para analizarlas acá."
+          actividades={actividadesNps}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
