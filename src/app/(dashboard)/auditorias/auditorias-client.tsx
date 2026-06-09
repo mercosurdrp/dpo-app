@@ -139,7 +139,7 @@ export function AuditoriasClient({
                     className="text-sm font-semibold"
                     style={{ color: getScoreColor(overallScore) }}
                   >
-                    {overallScore}%
+                    {overallScore.toFixed(1)}%
                   </span>
                 </TableCell>
                 <TableCell className="text-right">

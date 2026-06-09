@@ -34,11 +34,27 @@ import {
 import { getScoreColor, calcOverallScore } from "@/lib/scoring"
 import type { Auditoria, EstadoAuditoria } from "@/types/database"
 
+type DimensionAuditoria = "WH" | "DEL"
+
+const DIMENSION_LABELS: Record<DimensionAuditoria, string> = {
+  WH: "Almacén",
+  DEL: "Entrega",
+}
+
+interface PilarDimensionProgress {
+  dimension: DimensionAuditoria
+  total: number
+  answered: number
+  score: number
+}
+
 interface PilarProgressItem {
   pilarId: string
   pilarNombre: string
   color: string
   icono: string
+  dimensiones: DimensionAuditoria[]
+  porDimension: PilarDimensionProgress[]
   total: number
   answered: number
   score: number
@@ -231,17 +247,38 @@ export function AuditDetailClient({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {/* Cierre del pilar = consolidado (promedio WH/Entrega por punto), como el Excel */}
                     <div className="flex items-baseline justify-between">
                       <span
                         className="text-2xl font-bold"
                         style={{ color: getScoreColor(pilar.score) }}
                       >
-                        {Math.round(pilar.score)}%
+                        {pilar.score.toFixed(1)}%
                       </span>
                       <Badge variant="outline">
                         {pilar.answered}/{pilar.total}
                       </Badge>
                     </div>
+                    {pilar.dimensiones.length > 1 && (
+                      <div className="flex flex-wrap gap-2">
+                        {pilar.porDimension.map((d) => (
+                          <span
+                            key={d.dimension}
+                            className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-0.5 text-xs"
+                          >
+                            <span className="text-muted-foreground">
+                              {DIMENSION_LABELS[d.dimension]}
+                            </span>
+                            <span
+                              className="font-semibold"
+                              style={{ color: getScoreColor(d.score) }}
+                            >
+                              {Math.round(d.score)}%
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Progreso</span>

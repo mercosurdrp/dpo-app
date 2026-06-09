@@ -1,8 +1,54 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { calcPillarScore, calcOverallScore } from "@/lib/scoring"
+import { calcOverallScore } from "@/lib/scoring"
+import { dimensionesDePilar, type DimensionAuditoria } from "@/lib/constants"
 import type { Pilar, Pregunta, Respuesta, Auditoria } from "@/types/database"
+
+type CeldaScore = { puntaje: number | null; no_aplica: boolean }
+
+// Cierre consolidado tipo Excel: por cada punto, promedio de las dimensiones que
+// aplican (puntaje no nulo y no N/A), ponderado por peso. Devuelve 0-100.
+function consolidadoPilar(
+  preguntas: Pick<Pregunta, "id" | "peso">[],
+  dims: DimensionAuditoria[],
+  respByKey: Map<string, CeldaScore>
+): number {
+  let num = 0
+  let den = 0
+  for (const p of preguntas) {
+    const vals: number[] = []
+    for (const d of dims) {
+      const r = respByKey.get(`${p.id}::${d}`)
+      if (r && r.puntaje !== null && !r.no_aplica) vals.push(r.puntaje)
+    }
+    if (vals.length === 0) continue
+    const q = vals.reduce((a, b) => a + b, 0) / vals.length
+    const peso = Number(p.peso)
+    num += q * peso
+    den += 5 * peso
+  }
+  return den > 0 ? (num / den) * 100 : 0
+}
+
+// Cantidad de PUNTOS respondidos (con puntaje en alguna dimensión, o N/A).
+function respondidasPilar(
+  preguntas: Pick<Pregunta, "id">[],
+  dims: DimensionAuditoria[],
+  respByKey: Map<string, CeldaScore>
+): number {
+  let n = 0
+  for (const p of preguntas) {
+    for (const d of dims) {
+      const r = respByKey.get(`${p.id}::${d}`)
+      if (r && (r.puntaje !== null || r.no_aplica)) {
+        n++
+        break
+      }
+    }
+  }
+  return n
+}
 
 interface PillarScoreResult {
   pilarId: string
@@ -123,9 +169,13 @@ export async function getDashboardData(
       preguntasByBloque.set(p.bloque_id, list)
     }
 
-    const respuestaByPregunta = new Map<string, Respuesta>()
+    // Respuestas por (pregunta_id, dimension) para el consolidado WH/Entrega.
+    const respByKey = new Map<string, CeldaScore>()
     for (const r of respuestasArr) {
-      respuestaByPregunta.set(r.pregunta_id, r)
+      respByKey.set(`${r.pregunta_id}::${r.dimension}`, {
+        puntaje: r.puntaje,
+        no_aplica: r.no_aplica,
+      })
     }
 
     // Calculate pillar scores
@@ -139,18 +189,15 @@ export async function getDashboardData(
         pilarPreguntas.push(...(preguntasByBloque.get(bid) ?? []))
       }
 
-      const pilarRespuestas = pilarPreguntas
-        .map((p) => respuestaByPregunta.get(p.id))
-        .filter((r): r is Respuesta => r !== undefined && r.puntaje !== null)
+      const dims = dimensionesDePilar(pilar.nombre)
+      const score = consolidadoPilar(pilarPreguntas, dims, respByKey)
 
-      const score = calcPillarScore(pilarRespuestas, pilarPreguntas)
-
-      // Mandatory score: only mandatory questions
-      const mandatoryPreguntas = pilarPreguntas.filter((p) => p.mandatorio)
-      const mandatoryRespuestas = mandatoryPreguntas
-        .map((p) => respuestaByPregunta.get(p.id))
-        .filter((r): r is Respuesta => r !== undefined && r.puntaje !== null)
-      const mandatoryScore = calcPillarScore(mandatoryRespuestas, mandatoryPreguntas)
+      // Mandatory score: solo preguntas obligatorias
+      const mandatoryScore = consolidadoPilar(
+        pilarPreguntas.filter((p) => p.mandatorio),
+        dims,
+        respByKey
+      )
 
       pillarScores.push({
         pilarId: pilar.id,
@@ -158,7 +205,7 @@ export async function getDashboardData(
         color: pilar.color,
         icono: pilar.icono,
         score: Math.round(score * 100) / 100,
-        answered: pilarRespuestas.length,
+        answered: respondidasPilar(pilarPreguntas, dims, respByKey),
         total: pilarPreguntas.length,
         mandatoryScore: Math.round(mandatoryScore * 100) / 100,
       })
@@ -179,10 +226,20 @@ export async function getDashboardData(
     for (const aud of (allAuditorias ?? []) as Auditoria[]) {
       const { data: audResp } = await supabase
         .from("respuestas")
-        .select("pregunta_id, puntaje")
+        .select("pregunta_id, puntaje, dimension, no_aplica")
         .eq("auditoria_id", aud.id)
 
-      const audRespArr = (audResp ?? []) as Pick<Respuesta, "pregunta_id" | "puntaje">[]
+      const audRespArr = (audResp ?? []) as Pick<
+        Respuesta,
+        "pregunta_id" | "puntaje" | "dimension" | "no_aplica"
+      >[]
+      const audByKey = new Map<string, CeldaScore>()
+      for (const r of audRespArr) {
+        audByKey.set(`${r.pregunta_id}::${r.dimension}`, {
+          puntaje: r.puntaje,
+          no_aplica: r.no_aplica,
+        })
+      }
       const audPillarScores: number[] = []
 
       for (const pilar of pilaresArr) {
@@ -191,10 +248,9 @@ export async function getDashboardData(
         for (const bid of bloqueIds) {
           pilarPreguntas.push(...(preguntasByBloque.get(bid) ?? []))
         }
-        const pilarResp = audRespArr.filter(
-          (r) => pilarPreguntas.some((p) => p.id === r.pregunta_id) && r.puntaje !== null
+        audPillarScores.push(
+          consolidadoPilar(pilarPreguntas, dimensionesDePilar(pilar.nombre), audByKey)
         )
-        audPillarScores.push(calcPillarScore(pilarResp, pilarPreguntas))
       }
 
       auditoriasHistory.push({
@@ -210,8 +266,8 @@ export async function getDashboardData(
       pillarScores,
       overallScore,
       pendingActions: pendingActions ?? 0,
-      totalPreguntas: preguntasArr.length,
-      totalRespondidas: respuestasArr.filter((r) => r.puntaje !== null).length,
+      totalPreguntas: pillarScores.reduce((s, p) => s + p.total, 0),
+      totalRespondidas: pillarScores.reduce((s, p) => s + p.answered, 0),
       auditoriasHistory,
     }
   } catch (err) {

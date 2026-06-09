@@ -67,7 +67,11 @@ export interface Respuesta {
   id: string
   auditoria_id: string
   pregunta_id: string
+  // WH = Almacén, DEL = Entrega. Los pilares transversales se puntúan en ambas.
+  dimension: "WH" | "DEL"
   puntaje: 0 | 1 | 3 | 5 | null
+  // true = No aplica: el punto no corresponde a esa dimensión; se excluye del score.
+  no_aplica: boolean
   comentario: string | null
   evidencia_urls: string[]
   auditor_id: string

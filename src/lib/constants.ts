@@ -20,6 +20,22 @@ export const PILLAR_ICONS: Record<string, string> = {
   "Mantenimiento": "wrench",
 }
 
+// Auditoría DPO · dimensiones de puntuación por pilar.
+// Los pilares son transversales a las dos operaciones: WH = Almacén, DEL = Entrega.
+// Excepciones con nota única: Almacén (solo WH) y Entrega (solo DEL).
+export type DimensionAuditoria = "WH" | "DEL"
+
+export const DIMENSION_AUDITORIA_LABELS: Record<DimensionAuditoria, string> = {
+  WH: "Almacén",
+  DEL: "Entrega",
+}
+
+export function dimensionesDePilar(pilarNombre: string): DimensionAuditoria[] {
+  if (pilarNombre === "Almacén") return ["WH"]
+  if (pilarNombre === "Entrega") return ["DEL"]
+  return ["WH", "DEL"]
+}
+
 // Score levels for DPO audit questions
 export const SCORE_LEVELS = [
   { value: 0, label: "Nivel 0", description: "No cumple", color: "#EF4444" },

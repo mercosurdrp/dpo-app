@@ -27,7 +27,7 @@ export default async function AuditoriasPage() {
       const scores = pilars.filter((p) => p.answered > 0).map((p) => p.score)
       const overallScore =
         scores.length > 0
-          ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length)
+          ? Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 10) / 10
           : 0
       return { auditoria, totalAnswered, totalQuestions, overallScore }
     })

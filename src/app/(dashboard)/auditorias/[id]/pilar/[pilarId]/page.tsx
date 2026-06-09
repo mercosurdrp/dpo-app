@@ -53,6 +53,7 @@ export default async function PilarScoringPage({
       auditoriaId={auditoriaId}
       pilar={pilar as Pilar}
       allPilares={(allPilares ?? []) as Pick<Pilar, "id" | "nombre" | "orden">[]}
+      dimensiones={result.data.dimensiones}
       bloques={result.data.bloques}
     />
   )
