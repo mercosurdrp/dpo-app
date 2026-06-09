@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { EmpleadoGuard } from "@/components/layout/empleado-guard"
-import { EmpleadoNav } from "@/components/layout/empleado-nav"
+import { EmpleadoSidebar, EmpleadoMobileNav } from "@/components/layout/empleado-sidebar"
 import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
 import type { Pilar } from "@/types/database"
 
@@ -19,13 +19,15 @@ export default async function DashboardLayout({
   const email = profile?.email ?? null
   const puedeRecepcion = puedeOperarAcarreo(role, email)
 
-  // Empleados: nav superior con tabs, sin sidebar
+  // Empleados: mismo menú lateral que el resto (columna izquierda), con sus
+  // ítems curados. Reemplaza la vieja nav superior de tabs.
   if (role === "empleado") {
     return (
       <EmpleadoGuard>
-        <div className="min-h-screen bg-slate-50">
-          <EmpleadoNav puedeRecepcion={puedeRecepcion} />
-          <main className="mx-auto max-w-4xl p-4 md:p-6">
+        <div className="flex min-h-screen">
+          <EmpleadoSidebar puedeRecepcion={puedeRecepcion} />
+          <EmpleadoMobileNav puedeRecepcion={puedeRecepcion} />
+          <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-16 md:p-6 md:pt-6">
             {children}
           </main>
         </div>
