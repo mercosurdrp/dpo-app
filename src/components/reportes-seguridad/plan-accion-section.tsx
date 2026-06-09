@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   CheckCircle2,
+  ClipboardCheck,
   ClipboardList,
+  FileText,
   Paperclip,
   Pencil,
   RotateCcw,
   Trash2,
+  Upload,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -19,8 +22,11 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { createClient } from "@/lib/supabase/client"
 import {
+  addReportePlanEvidencias,
   deleteReportePlan,
+  deleteReportePlanEvidencia,
   marcarReportePlanCompletado,
+  setReportePlanComentarioCierre,
   upsertReportePlan,
 } from "@/actions/reportes-seguridad"
 import type { ReporteSeguridadPlanConFoto } from "@/types/database"
@@ -361,6 +367,13 @@ export function PlanAccionSection({
           </a>
         )}
 
+        <EvidenciaCierreSection
+          reporteId={reporteId}
+          plan={plan}
+          isAdmin={isAdmin}
+          onChanged={onChanged}
+        />
+
         {isAdmin && (
           <div className="flex flex-wrap justify-end gap-2 pt-1">
             <Button
@@ -406,4 +419,241 @@ export function PlanAccionSection({
   }
 
   return null
+}
+
+function isImage(mime: string): boolean {
+  return mime.startsWith("image/")
+}
+
+function EvidenciaCierreSection({
+  reporteId,
+  plan,
+  isAdmin,
+  onChanged,
+}: {
+  reporteId: string
+  plan: ReporteSeguridadPlanConFoto
+  isAdmin: boolean
+  onChanged: () => void
+}) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [uploading, setUploading] = useState(false)
+  const evidenciaInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [comentario, setComentario] = useState<string>(
+    plan.comentario_cierre ?? ""
+  )
+  const comentarioDirty = comentario.trim() !== (plan.comentario_cierre ?? "")
+
+  const evidencias = plan.evidencias ?? []
+  const tieneEvidencia = evidencias.length > 0 || !!plan.comentario_cierre
+
+  function handleSaveComentario() {
+    startTransition(async () => {
+      const res = await setReportePlanComentarioCierre(reporteId, comentario)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Comentario guardado")
+      onChanged()
+      router.refresh()
+    })
+  }
+
+  async function handleFiles(files: FileList) {
+    const list = Array.from(files)
+    if (list.length === 0) return
+    const tooBig = list.find((f) => f.size > MAX_FILE_BYTES)
+    if (tooBig) {
+      toast.error(`"${tooBig.name}" supera 25MB`)
+      return
+    }
+    setUploading(true)
+    try {
+      const supabase = createClient()
+      const uploaded: {
+        nombre_original: string
+        storage_path: string
+        mime_type: string
+        tamano_bytes: number
+      }[] = []
+      for (const f of list) {
+        const safe = sanitizeFileName(f.name || "archivo")
+        const path = `${reporteId}/plan/evidencias/${crypto.randomUUID()}-${safe}`
+        const mime = f.type || "application/octet-stream"
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, f, { contentType: mime, upsert: false })
+        if (error) throw new Error(error.message)
+        uploaded.push({
+          nombre_original: f.name || "archivo",
+          storage_path: path,
+          mime_type: mime,
+          tamano_bytes: f.size,
+        })
+      }
+      const res = await addReportePlanEvidencias(reporteId, uploaded)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(
+        list.length === 1 ? "Evidencia agregada" : "Evidencias agregadas"
+      )
+      onChanged()
+      router.refresh()
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Error subiendo la evidencia"
+      )
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleDeleteEvidencia(id: string) {
+    if (!confirm("¿Eliminar este archivo de evidencia?")) return
+    startTransition(async () => {
+      const res = await deleteReportePlanEvidencia(id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Evidencia eliminada")
+      onChanged()
+      router.refresh()
+    })
+  }
+
+  const busy = isPending || uploading
+
+  return (
+    <div className="space-y-3 rounded-md border border-dashed bg-white p-3">
+      <div className="flex items-center gap-2">
+        <ClipboardCheck className="size-4 text-slate-600" />
+        <h4 className="text-sm font-semibold text-slate-800">
+          Evidencia de lo realizado
+        </h4>
+      </div>
+
+      {!isAdmin && !tieneEvidencia && (
+        <p className="text-xs text-muted-foreground">
+          Sin evidencia cargada.
+        </p>
+      )}
+
+      {/* Comentario */}
+      {isAdmin ? (
+        <div className="space-y-2">
+          <Label className="text-xs">Comentario (qué se hizo)</Label>
+          <Textarea
+            value={comentario}
+            onChange={(e) => setComentario(e.target.value)}
+            rows={2}
+            placeholder="Ej: Se dictó la capacitación al personal del CD el 09/06."
+            disabled={busy}
+          />
+          {comentarioDirty && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveComentario}
+                disabled={busy}
+              >
+                Guardar comentario
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        plan.comentario_cierre && (
+          <p className="whitespace-pre-wrap rounded-md bg-muted/30 p-2 text-sm">
+            {plan.comentario_cierre}
+          </p>
+        )
+      )}
+
+      {/* Archivos de evidencia */}
+      {evidencias.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {evidencias.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center gap-2 rounded-md border bg-muted/20 p-2"
+            >
+              {isImage(e.mime_type) ? (
+                <a
+                  href={e.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={e.url}
+                    alt={e.nombre_original ?? "Evidencia"}
+                    className="h-12 w-12 rounded object-cover"
+                  />
+                </a>
+              ) : (
+                <FileText className="size-5 shrink-0 text-slate-500" />
+              )}
+              <a
+                href={e.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate text-xs text-blue-600 underline"
+                title={e.nombre_original ?? "archivo"}
+              >
+                {e.nombre_original ?? "Ver archivo"}
+              </a>
+              {isAdmin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-destructive"
+                  onClick={() => handleDeleteEvidencia(e.id)}
+                  disabled={busy}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => evidenciaInputRef.current?.click()}
+            disabled={busy}
+          >
+            <Upload className="mr-2 size-4" />
+            {uploading ? "Subiendo..." : "Agregar archivos"}
+          </Button>
+          <input
+            ref={evidenciaInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files)
+              if (evidenciaInputRef.current) evidenciaInputRef.current.value = ""
+            }}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fotos y/o el archivo utilizado (PPT, PDF, etc.). Máx 25MB c/u.
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }

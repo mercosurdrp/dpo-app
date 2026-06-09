@@ -9,6 +9,7 @@ import type {
   ReporteSeguridadDetalle,
   ReporteSeguridadPlan,
   ReporteSeguridadPlanConFoto,
+  ReporteSeguridadPlanEvidencia,
   ReporteSeguridadTipo,
   ReporteSeguridadLocalidad,
   ReporteSeguridadArea,
@@ -61,6 +62,13 @@ interface PlanInput {
   descripcion: string
   foto_path?: string | null
   fecha_planificada?: string | null // YYYY-MM-DD
+}
+
+interface UploadedEvidencia {
+  nombre_original: string
+  storage_path: string
+  mime_type: string
+  tamano_bytes: number
 }
 
 function isAccidenteOIncidente(tipo: ReporteSeguridadTipo): boolean {
@@ -190,7 +198,22 @@ export async function getReporte(
       const foto_url = p.foto_path
         ? supabase.storage.from(BUCKET).getPublicUrl(p.foto_path).data.publicUrl
         : null
-      plan = { ...p, foto_url }
+
+      const { data: evs } = await supabase
+        .from("reporte_seguridad_plan_evidencias")
+        .select("*")
+        .eq("plan_id", p.id)
+        .order("created_at", { ascending: true })
+
+      const evidencias = ((evs ?? []) as ReporteSeguridadPlanEvidencia[]).map(
+        (e) => ({
+          ...e,
+          url: supabase.storage.from(BUCKET).getPublicUrl(e.storage_path).data
+            .publicUrl,
+        })
+      )
+
+      plan = { ...p, foto_url, evidencias }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -346,11 +369,21 @@ export async function deleteReporte(
 
     const { data: planRow } = await supabase
       .from("reporte_seguridad_planes")
-      .select("foto_path")
+      .select("id, foto_path")
       .eq("reporte_id", id)
       .maybeSingle()
 
     if (planRow?.foto_path) paths.push(planRow.foto_path)
+
+    if (planRow?.id) {
+      const { data: evs } = await supabase
+        .from("reporte_seguridad_plan_evidencias")
+        .select("storage_path")
+        .eq("plan_id", planRow.id)
+      for (const e of (evs ?? []) as { storage_path: string }[]) {
+        paths.push(e.storage_path)
+      }
+    }
 
     if (paths.length > 0) {
       await supabase.storage.from(BUCKET).remove(paths)
@@ -482,12 +515,23 @@ export async function deleteReportePlan(
 
     const { data: plan } = await supabase
       .from("reporte_seguridad_planes")
-      .select("foto_path")
+      .select("id, foto_path")
       .eq("reporte_id", reporteId)
       .maybeSingle()
 
-    if (plan?.foto_path) {
-      await supabase.storage.from(BUCKET).remove([plan.foto_path])
+    const paths: string[] = []
+    if (plan?.foto_path) paths.push(plan.foto_path)
+    if (plan?.id) {
+      const { data: evs } = await supabase
+        .from("reporte_seguridad_plan_evidencias")
+        .select("storage_path")
+        .eq("plan_id", plan.id)
+      for (const e of (evs ?? []) as { storage_path: string }[]) {
+        paths.push(e.storage_path)
+      }
+    }
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET).remove(paths)
     }
 
     const { error } = await supabase
@@ -502,6 +546,133 @@ export async function deleteReportePlan(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error borrando plan",
+    }
+  }
+}
+
+// ===================================================
+// Evidencia de cierre del plan (comentario + archivos)
+// ===================================================
+
+async function getPlanId(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  reporteId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("reporte_seguridad_planes")
+    .select("id")
+    .eq("reporte_id", reporteId)
+    .maybeSingle()
+  return (data?.id as string) ?? null
+}
+
+export async function setReportePlanComentarioCierre(
+  reporteId: string,
+  comentario: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return { error: "Sólo un admin puede gestionar la evidencia." }
+    }
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from("reporte_seguridad_planes")
+      .update({ comentario_cierre: comentario.trim() || null })
+      .eq("reporte_id", reporteId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando comentario",
+    }
+  }
+}
+
+export async function addReportePlanEvidencias(
+  reporteId: string,
+  evidencias: UploadedEvidencia[]
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return { error: "Sólo un admin puede gestionar la evidencia." }
+    }
+    if (evidencias.length === 0) return { success: true }
+    const supabase = await createClient()
+
+    const planId = await getPlanId(supabase, reporteId)
+    if (!planId) {
+      return { error: "Primero creá el plan de acción." }
+    }
+
+    const rows = evidencias.map((e) => ({
+      plan_id: planId,
+      nombre_original: e.nombre_original,
+      storage_path: e.storage_path,
+      mime_type: e.mime_type,
+      "tamaño_bytes": e.tamano_bytes,
+      creado_por: profile.id,
+    }))
+
+    const { error } = await supabase
+      .from("reporte_seguridad_plan_evidencias")
+      .insert(rows)
+
+    if (error) {
+      // Cleanup: borrar los archivos recién subidos
+      await supabase.storage
+        .from(BUCKET)
+        .remove(evidencias.map((e) => e.storage_path))
+      return { error: `Error registrando evidencia: ${error.message}` }
+    }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando evidencia",
+    }
+  }
+}
+
+export async function deleteReportePlanEvidencia(
+  evidenciaId: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return { error: "Sólo un admin puede gestionar la evidencia." }
+    }
+    const supabase = await createClient()
+
+    const { data: ev } = await supabase
+      .from("reporte_seguridad_plan_evidencias")
+      .select("storage_path")
+      .eq("id", evidenciaId)
+      .maybeSingle()
+
+    const { error } = await supabase
+      .from("reporte_seguridad_plan_evidencias")
+      .delete()
+      .eq("id", evidenciaId)
+
+    if (error) return { error: error.message }
+
+    if (ev?.storage_path) {
+      await supabase.storage.from(BUCKET).remove([ev.storage_path])
+    }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error borrando evidencia",
     }
   }
 }

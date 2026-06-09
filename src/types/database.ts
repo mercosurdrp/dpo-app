@@ -1751,6 +1751,7 @@ export interface ReporteSeguridadPlan {
   reporte_id: string
   descripcion: string
   foto_path: string | null
+  comentario_cierre: string | null
   fecha_planificada: string | null
   fecha_completado: string | null
   creado_por: string
@@ -1758,8 +1759,20 @@ export interface ReporteSeguridadPlan {
   updated_at: string
 }
 
+export interface ReporteSeguridadPlanEvidencia {
+  id: string
+  plan_id: string
+  nombre_original: string | null
+  storage_path: string
+  mime_type: string
+  tamaño_bytes: number
+  creado_por: string
+  created_at: string
+}
+
 export interface ReporteSeguridadPlanConFoto extends ReporteSeguridadPlan {
   foto_url: string | null
+  evidencias: (ReporteSeguridadPlanEvidencia & { url: string })[]
 }
 
 export interface ReporteSeguridadDetalle extends ReporteSeguridadConAutor {
