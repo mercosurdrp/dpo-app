@@ -13,7 +13,9 @@ import { requireAuth } from "@/lib/session"
  * rechaza (menor tasa primero). Sin montos $.
  */
 
-export const META_RECHAZO_PCT = 1.7
+// OJO: este archivo es "use server" → solo se pueden EXPORTAR funciones async.
+// La meta queda como constante interna; la UI la consume vía `data.meta`.
+const META_RECHAZO_PCT = 1.7
 
 export type PeriodoKey = "mes" | "mes_pasado" | "semana"
 
