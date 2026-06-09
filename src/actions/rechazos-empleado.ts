@@ -2,6 +2,14 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  META_RECHAZO_PCT,
+  type PeriodoKey,
+  type RankingPatente,
+  type PorDia,
+  type PorMotivo,
+  type RechazosEmpleadoData,
+} from "./rechazos-empleado-tipos"
 
 /**
  * Vista AMIGABLE de rechazos para el empleado, orientada a OBJETIVO + premio.
@@ -12,60 +20,6 @@ import { requireAuth } from "@/lib/session"
  * = `ventas_diarias.total_hl` por fecha). El ranking premia al que MENOS
  * rechaza (menor tasa primero). Sin montos $.
  */
-
-// OJO: este archivo es "use server" → solo se pueden EXPORTAR funciones async.
-// La meta queda como constante interna; la UI la consume vía `data.meta`.
-const META_RECHAZO_PCT = 1.7
-
-export type PeriodoKey = "mes" | "mes_pasado" | "semana"
-
-export interface RankingPatente {
-  patente: string
-  display: string
-  eventos: number
-  bultos: number
-  hl: number
-  hl_entregado: number
-  tasa: number // 0–100
-  denominador_confiable: boolean
-  excede: boolean // tasa > META
-}
-
-export interface PorDia {
-  fecha: string
-  eventos: number
-  bultos: number
-  hl: number
-  hl_entregado: number
-  tasa: number
-}
-
-export interface PorMotivo {
-  ds_rechazo: string
-  eventos: number
-  bultos: number
-}
-
-export interface RechazosEmpleadoData {
-  periodo: PeriodoKey
-  desde: string
-  hasta: string
-  label: string
-  meta: number
-  total_eventos: number
-  total_bultos: number
-  total_hl: number
-  total_hl_entregado: number
-  tasa_global: number
-  cumple_meta: boolean
-  camiones_exceden: number
-  /** Camiones con denominador confiable, ordenados por tasa ASC (mejor primero). */
-  ranking: RankingPatente[]
-  /** Camiones con rechazos pero sin dato de entrega suficiente (no rankeables). */
-  sin_dato: RankingPatente[]
-  por_dia: PorDia[]
-  por_motivo: PorMotivo[]
-}
 
 type Result<T> = { data: T } | { error: string }
 

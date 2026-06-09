@@ -17,7 +17,7 @@ import type {
   PeriodoKey,
   RankingPatente,
   RechazosEmpleadoData,
-} from "@/actions/rechazos-empleado"
+} from "@/actions/rechazos-empleado-tipos"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 

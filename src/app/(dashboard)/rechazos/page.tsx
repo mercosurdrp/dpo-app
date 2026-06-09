@@ -1,7 +1,5 @@
-import {
-  getRechazosRankingEmpleado,
-  type PeriodoKey,
-} from "@/actions/rechazos-empleado"
+import { getRechazosRankingEmpleado } from "@/actions/rechazos-empleado"
+import type { PeriodoKey } from "@/actions/rechazos-empleado-tipos"
 import { RechazosEmpleadoClient } from "./_components/rechazos-empleado-client"
 
 export const dynamic = "force-dynamic"
