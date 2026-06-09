@@ -69,6 +69,49 @@ export async function getAccionesComerciales(
   }
 }
 
+// Sube una imagen al bucket y registra la fila. Lanza Error en caso de fallo
+// (lo capturan los wrappers públicos). `index` desambigua el path cuando se
+// suben varias fotos en el mismo milisegundo.
+async function uploadOne(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string,
+  reunion_id: string,
+  descripcion: string | null,
+  file: File,
+  index = 0,
+): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`"${file.name}" no es una imagen`)
+  }
+  const path = `acciones-comerciales/${reunion_id}/${Date.now()}-${index}-${cleanName(file.name)}`
+  const arrayBuffer = await file.arrayBuffer()
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, arrayBuffer, {
+      contentType: file.type || "image/jpeg",
+      upsert: false,
+    })
+  if (upErr) throw new Error(`Subiendo "${file.name}": ${upErr.message}`)
+
+  const { data, error } = await supabase
+    .from("reunion_acciones_comerciales")
+    .insert({
+      reunion_id,
+      foto_path: path,
+      foto_nombre: file.name,
+      descripcion,
+      creado_por: profileId,
+    })
+    .select("id")
+    .single()
+
+  if (error || !data) {
+    await supabase.storage.from(BUCKET).remove([path])
+    throw new Error(error?.message ?? `No se pudo guardar "${file.name}"`)
+  }
+  return (data as { id: string }).id
+}
+
 export async function subirAccionComercial(
   formData: FormData,
 ): Promise<Result<{ id: string }>> {
@@ -84,40 +127,53 @@ export async function subirAccionComercial(
     if (!file || !(file instanceof File) || file.size === 0) {
       return { error: "Subí una imagen" }
     }
-    if (!file.type.startsWith("image/")) {
-      return { error: "El archivo debe ser una imagen" }
-    }
 
-    const path = `acciones-comerciales/${reunion_id}/${Date.now()}-${cleanName(file.name)}`
-    const arrayBuffer = await file.arrayBuffer()
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, arrayBuffer, {
-        contentType: file.type || "image/jpeg",
-        upsert: false,
-      })
-    if (upErr) return { error: `Subiendo imagen: ${upErr.message}` }
-
-    const { data, error } = await supabase
-      .from("reunion_acciones_comerciales")
-      .insert({
-        reunion_id,
-        foto_path: path,
-        foto_nombre: file.name,
-        descripcion,
-        creado_por: profile.id,
-      })
-      .select("id")
-      .single()
-
-    if (error || !data) {
-      await supabase.storage.from(BUCKET).remove([path])
-      return { error: error?.message ?? "No se pudo guardar la acción comercial" }
-    }
-    return { data: { id: (data as { id: string }).id } }
+    const id = await uploadOne(supabase, profile.id, reunion_id, descripcion, file)
+    return { data: { id } }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error subiendo la imagen",
+    }
+  }
+}
+
+// Sube varias fotos en una sola llamada (key "fotos"). La descripción, si se
+// pasa, se aplica a todas. Devuelve cuántas se subieron y los errores parciales.
+export async function subirAccionesComerciales(
+  formData: FormData,
+): Promise<Result<{ subidas: number; errores: string[] }>> {
+  try {
+    const profile = await requireEditorReuniones()
+    const supabase = await createClient()
+
+    const reunion_id = String(formData.get("reunion_id") ?? "").trim()
+    const descripcion = String(formData.get("descripcion") ?? "").trim() || null
+    const files = formData
+      .getAll("fotos")
+      .filter((f): f is File => f instanceof File && f.size > 0)
+
+    if (!reunion_id) return { error: "La reunión es obligatoria" }
+    if (files.length === 0) return { error: "Subí al menos una imagen" }
+
+    let subidas = 0
+    const errores: string[] = []
+    // Secuencial: el bucket free puede limitar concurrencia y mantiene el orden.
+    for (let i = 0; i < files.length; i++) {
+      try {
+        await uploadOne(supabase, profile.id, reunion_id, descripcion, files[i], i)
+        subidas++
+      } catch (e) {
+        errores.push(e instanceof Error ? e.message : `Falló "${files[i].name}"`)
+      }
+    }
+
+    if (subidas === 0) {
+      return { error: errores[0] ?? "No se pudo subir ninguna imagen" }
+    }
+    return { data: { subidas, errores } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error subiendo las imágenes",
     }
   }
 }
