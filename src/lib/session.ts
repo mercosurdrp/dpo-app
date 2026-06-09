@@ -1,11 +1,21 @@
+import { cache } from "react"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import type { Profile, UserRole } from "@/types/database"
 
 /**
- * Get the current user's profile. Returns null if not authenticated.
+ * Get the current user's profile. Returns null SÓLO si no hay usuario
+ * autenticado. Si el usuario está autenticado pero la lectura del perfil
+ * falla de forma transitoria (hiccup de PostgREST / pool saturado), reintenta
+ * una vez y, si persiste, lanza un error en lugar de devolver null. Devolver
+ * null en ese caso haría que `requireAuth` redirija a /login y deslogueara a
+ * un usuario que SÍ tiene sesión válida.
+ *
+ * Envuelto en `cache()` para deduplicar el `getUser()` + lectura de perfil a
+ * UNA sola vez por request (layout + page + server actions comparten el
+ * resultado), evitando llamadas concurrentes de auth en el mismo render.
  */
-export async function getProfile(): Promise<Profile | null> {
+export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
   const supabase = await createClient()
 
   const {
@@ -14,14 +24,28 @@ export async function getProfile(): Promise<Profile | null> {
 
   if (!user) return null
 
-  const { data: profile } = await supabase
+  let { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .single()
+    .maybeSingle()
+
+  if (error) {
+    // Reintento ante un fallo transitorio de lectura.
+    ;({ data: profile, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle())
+  }
+
+  if (error) {
+    // Usuario autenticado pero no se pudo leer el perfil: NO desloguear.
+    throw new Error(`No se pudo leer el perfil del usuario: ${error.message}`)
+  }
 
   return profile as Profile | null
-}
+})
 
 /**
  * Require authentication. Redirects to /login if not authenticated.
