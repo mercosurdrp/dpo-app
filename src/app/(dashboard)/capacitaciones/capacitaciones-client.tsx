@@ -16,6 +16,7 @@ import {
   EyeOff,
   ClipboardCheck,
   FileDown,
+  CheckCircle2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -174,6 +175,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           presentes: 0,
           rendidos: 0,
           pendientes: 0,
+          aprobados: 0,
         }
         setCapacitaciones((prev) => [nueva, ...prev])
         setForm({
@@ -537,6 +539,19 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                   <div className="flex items-center gap-2">
                     <Clock className="size-3.5" />
                     <span>{cap.duracion_horas}h</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="size-3.5" />
+                    {cap.total_asistentes > 0 ? (
+                      <span>
+                        <span className="font-semibold text-slate-700">
+                          {Math.round((cap.aprobados / cap.total_asistentes) * 100)}%
+                        </span>{" "}
+                        aprobados ({cap.aprobados}/{cap.total_asistentes})
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Sin inscriptos</span>
+                    )}
                   </div>
                   {cap.lugar && (
                     <div className="flex items-center gap-2">

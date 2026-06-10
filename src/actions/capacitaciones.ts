@@ -53,7 +53,7 @@ export async function getCapacitaciones(): Promise<
 
     const resumen = new Map<
       string,
-      { total: number; presentes: number; rendidos: number; pendientes: number }
+      { total: number; presentes: number; rendidos: number; pendientes: number; aprobados: number }
     >()
     for (const a of asistencias) {
       const r = resumen.get(a.capacitacion_id) ?? {
@@ -61,22 +61,25 @@ export async function getCapacitaciones(): Promise<
         presentes: 0,
         rendidos: 0,
         pendientes: 0,
+        aprobados: 0,
       }
       r.total++
       if (a.presente) r.presentes++
       if (a.resultado === "pendiente") r.pendientes++
       else r.rendidos++
+      if (a.resultado === "aprobado") r.aprobados++
       resumen.set(a.capacitacion_id, r)
     }
 
     const enriched: CapacitacionConResumen[] = caps.map((c) => {
-      const r = resumen.get(c.id) ?? { total: 0, presentes: 0, rendidos: 0, pendientes: 0 }
+      const r = resumen.get(c.id) ?? { total: 0, presentes: 0, rendidos: 0, pendientes: 0, aprobados: 0 }
       return {
         ...c,
         total_asistentes: r.total,
         presentes: r.presentes,
         rendidos: r.rendidos,
         pendientes: r.pendientes,
+        aprobados: r.aprobados,
       }
     })
 
