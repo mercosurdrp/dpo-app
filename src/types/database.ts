@@ -636,6 +636,7 @@ export interface CapacitacionConResumen extends Capacitacion {
   presentes: number
   rendidos: number
   pendientes: number
+  aprobados: number
 }
 
 export interface CapacitacionPregunta {
