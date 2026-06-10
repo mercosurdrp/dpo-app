@@ -41,6 +41,7 @@ export interface GescomSyncResult {
   modo: "recientes" | "full"
   ventas_consideradas: number
   excluidas_otra_empresa: number
+  excluidas_venta_directa: number
   rechazos_upserted: number
   rechazos_excluidos_admin: number
   ventas_diarias_upserted: number
@@ -91,6 +92,16 @@ async function loadNombresClientes(supabase: SupabaseClient): Promise<Map<number
     if (Number.isFinite(id) && r.nombre_cliente) out.set(id, r.nombre_cliente)
   }
   return out
+}
+
+/** Códigos de chofer GESCOM marcados como venta directa (no reparto) → se obvian del indicador. */
+async function loadVentasDirectas(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("mapeo_chofer_gescom")
+    .select("codigo")
+    .eq("venta_directa", true)
+  if (error) { console.warn(`[gescom-sync] mapeo_chofer_gescom no disponible: ${error.message}`); return new Set() }
+  return new Set(((data ?? []) as Array<{ codigo: string }>).map((r) => r.codigo.trim()))
 }
 
 interface CatalogoMotivo {
@@ -150,7 +161,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   const modo = deps.modo ?? "recientes"
   const result: GescomSyncResult = {
     desde, hasta, modo,
-    ventas_consideradas: 0, excluidas_otra_empresa: 0,
+    ventas_consideradas: 0, excluidas_otra_empresa: 0, excluidas_venta_directa: 0,
     rechazos_upserted: 0, rechazos_excluidos_admin: 0,
     ventas_diarias_upserted: 0, dev_re_revertidos: 0, errors: [],
   }
@@ -172,11 +183,17 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   result.excluidas_otra_empresa = totalCrudo - ventas.length
   result.ventas_consideradas = ventas.length
 
-  const [factores, nombres, catalogo] = await Promise.all([
+  const [factores, nombres, catalogo, ventasDirectas] = await Promise.all([
     loadArticulosFactores(supabase),
     loadNombresClientes(supabase),
     loadCatalogoMotivos(supabase),
+    loadVentasDirectas(supabase),
   ])
+
+  // Ventas directas (no reparto): se obvian por completo — ni denominador ni rechazos.
+  const antesDirectas = ventas.length
+  ventas = ventas.filter((v) => !ventasDirectas.has((v.codigoChofer ?? "").trim()))
+  result.excluidas_venta_directa = antesDirectas - ventas.length
 
   // Motivo GESCOM (posiblemente truncado a 20 chars) → entrada del catálogo Chess.
   const mapMotivo = (motivo: string | null): { id: number; ds: string } | "excluir" => {
