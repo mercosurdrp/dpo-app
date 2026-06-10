@@ -154,9 +154,9 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
         </p>
       </CardHeader>
       <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <NumField label="Vol PICO (bultos)" value={vol_pico} onChange={setVP} step={100} min={0} max={20000} />
-        <NumField label="Vol ALTO (bultos)" value={vol_alto} onChange={setVA} step={100} min={0} max={20000} />
-        <NumField label="Vol MEDIO (bultos)" value={vol_medio} onChange={setVM} step={100} min={0} max={20000} />
+        <NumField label="Vol PICO (HL)" value={vol_pico} onChange={setVP} step={100} min={0} max={20000} />
+        <NumField label="Vol ALTO (HL)" value={vol_alto} onChange={setVA} step={100} min={0} max={20000} />
+        <NumField label="Vol MEDIO (HL)" value={vol_medio} onChange={setVM} step={100} min={0} max={20000} />
         <NumField label="Clientes" value={clientes} onChange={setCli} step={10} min={0} max={2000} integer />
         <NumField label="OTIF min" value={otif_min} onChange={setOtif} step={0.01} min={0} max={1} suffix="(0–1)" />
         <NumField label="Ausentismo max" value={aus_max} onChange={setAus} step={0.005} min={0} max={1} suffix="(0–1)" />

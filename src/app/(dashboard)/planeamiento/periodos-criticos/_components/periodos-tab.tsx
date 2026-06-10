@@ -418,8 +418,8 @@ function PeriodoCard({
         </div>
 
         <div className="grid grid-cols-4 gap-2 text-xs">
-          <Stat k="Bultos pico" v={fmtHL(p.hlMax)} />
-          <Stat k="Bultos acum" v={fmtHL(p.hlAcum)} />
+          <Stat k="HL pico" v={fmtHL(p.hlMax)} />
+          <Stat k="HL acum" v={fmtHL(p.hlAcum)} />
           <Stat k="Cli máx" v={String(p.clientesMax)} />
           <Stat k="Score max" v={p.scoreMax.toFixed(3)} />
         </div>
@@ -444,7 +444,7 @@ function PeriodoCard({
                     ? INTENSIDAD_BG[intensidadDia(d.trigger_count)]
                     : "bg-slate-100 text-slate-500"
                 }`}
-                title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} bultos · cli ${d.clientes_dia} · ${intensidadDia(d.trigger_count)} (${d.trigger_count}/4)`}
+                title={`${d.dia_semana} ${d.fecha} · ${fmtHL(d.hl)} HL · cli ${d.clientes_dia} · ${intensidadDia(d.trigger_count)} (${d.trigger_count}/4)`}
               >
                 {d.fecha === p.diaPico && <Star className="w-3 h-3" />}
                 {fmtFecha(d.fecha)}
