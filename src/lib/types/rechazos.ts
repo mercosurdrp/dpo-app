@@ -20,6 +20,8 @@
  * Filtros de la consulta. Todos son multi-select; ausencia/array vacío = sin filtro.
  * Se aplican en SQL `WHERE` (no en TS post-fetch).
  */
+export type RechazoOrigen = "chess" | "gestion"
+
 export interface RechazosFilters {
   ds_fletero_carga?: string[]   // patentes ej ["AF028YB","AE908DG"]
   id_cliente?: number[]
@@ -28,6 +30,7 @@ export interface RechazosFilters {
   categoria?: RechazoCategoria[] // desde catalogo_rechazos
   ds_canal_mkt?: string[]
   ds_supervisor?: string[]
+  origen?: RechazoOrigen[]      // chess | gestion (sin filtro = ambos sumados)
 }
 
 export interface RechazosComparadoRequest {

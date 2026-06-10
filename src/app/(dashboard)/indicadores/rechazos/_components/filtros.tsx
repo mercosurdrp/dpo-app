@@ -32,6 +32,7 @@ const parsers = {
   fleteros:     parseAsArrayOf(parseAsString),
   canales:      parseAsArrayOf(parseAsString),
   supervisores: parseAsArrayOf(parseAsString),
+  origenes:     parseAsArrayOf(parseAsStringLiteral(["chess", "gestion"] as const)),
 }
 
 // nuqs hace shallow:false → URL change → server re-render con nueva data.
@@ -56,16 +57,18 @@ export function Filtros({
   const fleteros = q.fleteros ?? []
   const canales = q.canales ?? []
   const supervisores = q.supervisores ?? []
+  const origenes = q.origenes ?? []
+  const origenSel = origenes.length === 1 ? origenes[0] : "ambos"
 
   const hasFilters =
     motivos.length > 0 || fleteros.length > 0 ||
-    canales.length > 0 || supervisores.length > 0 ||
+    canales.length > 0 || supervisores.length > 0 || origenes.length > 0 ||
     q.desde != null || q.hasta != null || q.mode != null
 
   const reset = () =>
     setQ({
       desde: null, hasta: null, mode: null,
-      motivos: null, fleteros: null, canales: null, supervisores: null,
+      motivos: null, fleteros: null, canales: null, supervisores: null, origenes: null,
     })
 
   return (
@@ -151,7 +154,25 @@ export function Filtros({
           selected={supervisores}
           onChange={(next) => setQ({ supervisores: next.length ? next : null })}
         />
-        <div className="col-span-2 flex items-end justify-end md:col-span-2 lg:col-span-3">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-medium text-muted-foreground">Origen</Label>
+          <Select
+            value={origenSel}
+            onValueChange={(v) =>
+              setQ({ origenes: v === "ambos" ? null : [v as "chess" | "gestion"] })
+            }
+          >
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue placeholder="Ambos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ambos">Ambos (Chess + Gestión)</SelectItem>
+              <SelectItem value="chess">Chess</SelectItem>
+              <SelectItem value="gestion">Gestión</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="col-span-2 flex items-end justify-end md:col-span-2 lg:col-span-2">
           {hasFilters && (
             <Button
               variant="ghost"

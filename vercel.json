@@ -14,6 +14,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/gescom/rechazos-sync",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/orden-salida/cron-sync",
       "schedule": "0 23 * * *"
     },

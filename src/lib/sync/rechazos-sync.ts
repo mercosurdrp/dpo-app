@@ -235,6 +235,7 @@ export async function syncRechazosForDate(
         : fecha
 
     const row = {
+      origen: "chess",
       fecha,
       fecha_venta: fechaVenta,
       serie: r.serie,
@@ -273,7 +274,7 @@ export async function syncRechazosForDate(
 
     const { error } = await supabase
       .from("rechazos")
-      .upsert(row, { onConflict: "serie,nrodoc,id_articulo" })
+      .upsert(row, { onConflict: "origen,serie,nrodoc,id_articulo" })
 
     if (error) {
       if (error.code === "23505") result.rechazos_repetidos++
@@ -302,13 +303,14 @@ export async function syncRechazosForDate(
   }
   for (const [fletero, a] of agg) {
     const { error } = await supabase.from("ventas_diarias").upsert({
+      origen: "chess",
       fecha,
       ds_fletero_carga: fletero,
       total_bultos: Math.round(a.bultos * 100) / 100,
       total_unidades: Math.round(a.unidades * 10000) / 10000,
       total_hl: Math.round(a.hl * 10000) / 10000,
       viajes: a.planillas.size,
-    }, { onConflict: "fecha,ds_fletero_carga" })
+    }, { onConflict: "fecha,ds_fletero_carga,origen" })
     if (error) {
       console.error(`[sync] error upsert ventas_diarias day=${fecha}: ${error.message}`)
       result.errors.push({ day: fecha, kind: "ventas_diarias", message: error.message })

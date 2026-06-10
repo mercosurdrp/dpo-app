@@ -11,6 +11,7 @@ import type {
   ComparisonMode,
   RechazosComparadoRequest,
   RechazoCategoria,
+  RechazoOrigen,
   RechazosFilters,
 } from "@/lib/types/rechazos"
 
@@ -18,6 +19,7 @@ const TZ = "America/Argentina/Buenos_Aires"
 const DATE_RX = /^\d{4}-\d{2}-\d{2}$/
 const VALID_MODES: ReadonlySet<ComparisonMode> = new Set(["mes_en_curso", "mes_cerrado", "rango_custom"])
 const VALID_CATEGORIAS: ReadonlySet<RechazoCategoria> = new Set(["Logística", "Ventas", "Cliente", "Interno", "Externo", "POR_CLASIFICAR"])
+const VALID_ORIGENES: ReadonlySet<RechazoOrigen> = new Set(["chess", "gestion"])
 
 type Raw = Record<string, string | string[] | undefined>
 
@@ -64,6 +66,7 @@ function pickFilters(raw: Raw): RechazosFilters | undefined {
   const ds_canal_mkt = parseCsvStrings(raw.canales)
   const ds_supervisor = parseCsvStrings(raw.supervisores)
   const categoria = parseCsvCategorias(raw.categorias)
+  const origen = parseCsvOrigenes(raw.origenes)
   const f: RechazosFilters = {
     ...(ds_fletero_carga && { ds_fletero_carga }),
     ...(id_rechazo && { id_rechazo }),
@@ -72,8 +75,16 @@ function pickFilters(raw: Raw): RechazosFilters | undefined {
     ...(ds_canal_mkt && { ds_canal_mkt }),
     ...(ds_supervisor && { ds_supervisor }),
     ...(categoria && { categoria }),
+    ...(origen && { origen }),
   }
   return Object.keys(f).length > 0 ? f : undefined
+}
+
+function parseCsvOrigenes(v: string | string[] | undefined): RechazoOrigen[] | undefined {
+  const arr = parseCsvStrings(v)
+  if (!arr) return undefined
+  const out = arr.filter((s): s is RechazoOrigen => VALID_ORIGENES.has(s as RechazoOrigen))
+  return out.length ? out : undefined
 }
 
 function first(v: string | string[] | undefined): string | undefined {

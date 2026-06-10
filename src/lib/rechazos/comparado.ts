@@ -322,6 +322,7 @@ async function loadPeriodData(
   if (filters.id_articulo?.length)       q = q.in("id_articulo", filters.id_articulo)
   if (filters.ds_canal_mkt?.length)      q = q.in("ds_canal_mkt", filters.ds_canal_mkt)
   if (filters.ds_supervisor?.length)     q = q.in("ds_supervisor", filters.ds_supervisor)
+  if (filters.origen?.length)            q = q.in("origen", filters.origen)
 
   const { data: rechazos, error: e1 } = await q
   if (e1) throw new Error(`rechazos query: ${e1.message}`)
@@ -332,6 +333,7 @@ async function loadPeriodData(
   if (filters.ds_fletero_carga?.length) {
     ventaQuery = ventaQuery.in("ds_fletero_carga", filters.ds_fletero_carga)
   }
+  if (filters.origen?.length) ventaQuery = ventaQuery.in("origen", filters.origen)
   const { data: ventas, error: e2 } = await ventaQuery
   if (e2) throw new Error(`ventas_diarias query: ${e2.message}`)
 
