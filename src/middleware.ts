@@ -19,6 +19,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/asistencia") ||
     pathname === "/api/rechazos/sync" ||
+    pathname === "/api/gescom/rechazos-sync" ||
     pathname === "/api/reuniones/cron-crear-diarias" ||
     pathname === "/api/requisitos-legales/cron-alertas" ||
     pathname === "/api/orden-salida/cron-sync" ||
