@@ -58,6 +58,7 @@ import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-i
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
+import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
 import { SeccionSla } from "@/components/reuniones/seccion-sla"
@@ -927,6 +928,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => !a.seccion),
     [actividadesAll],
   )
+  const actividadesAvanceVenta = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "avance_venta"),
+    [actividadesAll],
+  )
   const actividadesRechazos = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "rechazos"),
     [actividadesAll],
@@ -1143,6 +1148,19 @@ export function ReunionDetallePageClient({
       {/* Reunión Ventas-Logística: secciones de análisis por indicador.
           Plantilla inicial: Rechazos (datos reales del día, filtrable) + su
           propio Action Log acotado a la sección. */}
+      {/* Sección Avance de Venta — acumulado empresa (HL) vs objetivo del mes,
+          tendencia y % avance. Trae los datos del dashboard Mercosur y los congela. */}
+      {detalle.tipo === "logistica-ventas" && (
+        <SeccionAvanceVenta
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          actividades={actividadesAvanceVenta}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
       {detalle.tipo === "logistica-ventas" && (
         <SeccionRechazos
           fechaReunion={detalle.fecha}
