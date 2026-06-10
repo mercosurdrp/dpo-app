@@ -164,7 +164,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
         serie: 0,
         nrodoc: v.id,                  // id global único del comprobante GESCOM
         id_articulo: idArt,
-        ds_articulo: factores.get(idArt)?.desCorta ?? null,
+        ds_articulo: factores.get(idArt)?.desCorta ?? `Art ${idArt}`,  // NOT NULL: fallback si el SKU no está en el maestro Chess
         id_fletero_carga: null,
         ds_fletero_carga: GESCOM_FLETERO,
         id_rechazo: GESCOM_ID_RECHAZO,
