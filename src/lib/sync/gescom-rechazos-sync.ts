@@ -35,6 +35,15 @@ export const GESCOM_DS_RECHAZO = "Sin motivo"
 // Motivos administrativos excluidos del indicador (espejan la exclusión PRDVO de Chess).
 const MOTIVOS_EXCLUIDOS = ["MAL FACTURADO", "DEV X TRAMITES"]
 
+/**
+ * Clientes INTERNOS de Gestión (serie 9900xx, ej "20099000", "200990013"): transferencias /
+ * mayoreo interno en camionadas, no venta real a cliente. Se excluyen sin importar el chofer
+ * (detectado 2026-06-10: el chofer de reparto 20010 facturó 11.880 unidades a 200990013).
+ */
+function esClienteInterno(codigoCliente: string | null): boolean {
+  return String(codigoCliente ?? "").startsWith("20099")
+}
+
 export interface GescomSyncResult {
   desde: string
   hasta: string
@@ -190,9 +199,12 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     loadVentasDirectas(supabase),
   ])
 
-  // Ventas directas (no reparto): se obvian por completo — ni denominador ni rechazos.
+  // Ventas directas (no reparto) y clientes internos 9900xx: se obvian por completo —
+  // ni denominador ni rechazos.
   const antesDirectas = ventas.length
-  ventas = ventas.filter((v) => !ventasDirectas.has((v.codigoChofer ?? "").trim()))
+  ventas = ventas.filter(
+    (v) => !ventasDirectas.has((v.codigoChofer ?? "").trim()) && !esClienteInterno(v.codigoCliente),
+  )
   result.excluidas_venta_directa = antesDirectas - ventas.length
 
   // Motivo GESCOM (posiblemente truncado a 20 chars) → entrada del catálogo Chess.
