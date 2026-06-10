@@ -125,6 +125,15 @@ function diaDe(v: GescomVenta): string {
   return (v.fechaEntrega ?? "").slice(0, 10)
 }
 
+/**
+ * Etiqueta de fletero para Gestión: "GESTION-<codigoChofer>" (clave ESTABLE; el nombre
+ * del chofer se resuelve en lectura desde mapeo_chofer_gescom, sin re-sync).
+ */
+function fleteroDe(v: GescomVenta): string {
+  const c = (v.codigoChofer ?? "").trim()
+  return c ? `${GESCOM_FLETERO}-${c}` : GESCOM_FLETERO
+}
+
 const esFinalizada = (v: GescomVenta) => v.estado === "Finalizada"
 
 export interface GescomSyncDeps {
@@ -215,7 +224,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
         id_articulo: idArt,
         ds_articulo: factores.get(idArt)?.desCorta ?? `Art ${idArt}`,  // NOT NULL: fallback si el SKU no está en el maestro Chess
         id_fletero_carga: null,
-        ds_fletero_carga: GESCOM_FLETERO,
+        ds_fletero_carga: fleteroDe(v),
         id_rechazo: motivo.id,
         ds_rechazo: motivo.ds,
         bultos_rechazados: Math.round(bultos * 100) / 100,
@@ -233,17 +242,18 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     }
   }
 
-  // ---- denominador: ventas VEN agrupadas por día (ds_fletero_carga = 'GESTION') ----
+  // ---- denominador: ventas VEN agrupadas por día y chofer (ds_fletero_carga = 'GESTION-<cod>') ----
   type Agg = { bultos: number; hl: number; comprobantes: number }
-  const porDia = new Map<string, Agg>()
-  // Detalle por SKU/día (drill-down de "Bultos vendidos" en reuniones, mig 108)
+  const porDiaFletero = new Map<string, Agg>()          // key "fecha|fletero"
+  // Detalle por SKU/día (drill-down de "Bultos vendidos" en reuniones, mig 110)
   type AggSku = { bultos: number; hl: number }
   const porDiaSku = new Map<string, Map<number, AggSku>>()
   for (const v of ventas) {
     if (v.codigoTipoVenta !== "VEN" || v.esCredito || !esFinalizada(v)) continue
     const fecha = diaDe(v)
     if (!fecha) continue
-    const a = porDia.get(fecha) ?? { bultos: 0, hl: 0, comprobantes: 0 }
+    const key = `${fecha}|${fleteroDe(v)}`
+    const a = porDiaFletero.get(key) ?? { bultos: 0, hl: 0, comprobantes: 0 }
     const skus = porDiaSku.get(fecha) ?? new Map<number, AggSku>()
     for (const item of v.items ?? []) {
       const { bultos, hl } = bultosYHlDeItem(item, factores)
@@ -258,14 +268,15 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
       }
     }
     a.comprobantes++
-    porDia.set(fecha, a)
+    porDiaFletero.set(key, a)
     porDiaSku.set(fecha, skus)
   }
-  for (const [fecha, a] of porDia) {
+  for (const [key, a] of porDiaFletero) {
+    const [fecha, fletero] = key.split("|")
     const { error } = await supabase.from("ventas_diarias").upsert({
       origen: "gestion",
       fecha,
-      ds_fletero_carga: GESCOM_FLETERO,
+      ds_fletero_carga: fletero,
       total_bultos: Math.round(a.bultos * 100) / 100,
       total_unidades: 0,
       total_hl: Math.round(a.hl * 10000) / 10000,

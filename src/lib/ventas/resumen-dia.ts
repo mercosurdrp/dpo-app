@@ -58,7 +58,7 @@ export async function getVentasResumenDia(
   const ultimoDia = new Date(Date.UTC(prevAnio, prevMes, 0)).getUTCDate()
   const prevHasta = `${prevAnio}-${String(prevMes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
 
-  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw] = await Promise.all([
+  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw, mapeoGescomRaw] = await Promise.all([
     supa
       .from("ventas_diarias")
       .select("ds_fletero_carga, total_bultos, total_hl, origen")
@@ -75,6 +75,10 @@ export async function getVentasResumenDia(
       .from("ventas_diarias_sku")
       .select("origen, id_articulo, ds_articulo, bultos, hl")
       .eq("fecha", fecha),
+    supa
+      .from("mapeo_chofer_gescom")
+      .select("codigo, nombre")
+      .eq("activo", true),
   ])
 
   if (ventasRaw.error) {
@@ -89,6 +93,13 @@ export async function getVentasResumenDia(
   const choferIdx = new Map<string, string | null>()
   for (const mp of mapeo) {
     choferIdx.set(mp.patente, mp.catalogo_choferes?.nombre ?? null)
+  }
+
+  // Choferes de Gestión: la "patente" es GESTION-<codigo>; el nombre sale de mapeo_chofer_gescom.
+  if (!mapeoGescomRaw.error && mapeoGescomRaw.data) {
+    for (const mg of mapeoGescomRaw.data as Array<{ codigo: string; nombre: string }>) {
+      choferIdx.set(`GESTION-${mg.codigo}`, `${mg.nombre} (Gestión)`)
+    }
   }
 
   const ventas = (ventasRaw.data ?? []) as Array<{
