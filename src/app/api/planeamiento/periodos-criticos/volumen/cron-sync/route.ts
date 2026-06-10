@@ -55,7 +55,7 @@ gescom AS (
     AND g.fecha BETWEEN $1 AND $2
 ),
 u AS (SELECT d, id_cliente, hl FROM chess UNION ALL SELECT d, id_cliente, hl FROM gescom)
-SELECT d AS fecha,
+SELECT to_char(d, 'YYYY-MM-DD') AS fecha,
        ROUND(SUM(hl)::numeric, 2) AS hl,
        COUNT(DISTINCT id_cliente) AS clientes
 FROM u GROUP BY d ORDER BY d
