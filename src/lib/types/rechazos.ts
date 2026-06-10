@@ -251,6 +251,10 @@ export type TopVariacionMetric = "monto" | "tasa" | "bultos"
  */
 export type TopVariacionDim = "motivo" | "chofer" | "canal" | "cliente" | "producto"
 
+/** Dimensiones por las que se puede hacer drill-down al detalle de rechazos.
+ *  Incluye "fecha" (clic en una columna del gráfico de evolución por día). */
+export type DrillDim = TopVariacionDim | "fecha"
+
 export interface TopVariacion {
   dim: TopVariacionDim
   /**
@@ -462,8 +466,8 @@ export interface RechazosDetalleRequest {
   desde: string
   hasta: string
   filters?: RechazosFilters
-  /** Dimensión adicional para drill-down: "motivo BEES", "chofer RODRIGUEZ", etc. */
-  drill?: { tipo: TopVariacionDim; value: string | number }
+  /** Dimensión adicional para drill-down: "motivo BEES", "chofer RODRIGUEZ", "fecha 2026-05-12", etc. */
+  drill?: { tipo: DrillDim; value: string | number }
   offset?: number
   limit?: number       // default 100, max 1000
 }

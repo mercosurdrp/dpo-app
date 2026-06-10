@@ -137,6 +137,7 @@ function applyFilters(q: any, request: RechazosDetalleRequest, filters: NonNulla
       case "canal":    q = q.eq("ds_canal_mkt", String(value));      break
       case "cliente":  q = q.eq("id_cliente", Number(value));        break
       case "producto": q = q.eq("id_articulo", Number(value));       break
+      case "fecha":    q = q.eq("fecha_venta", String(value));       break
     }
   }
   return q

@@ -29,9 +29,25 @@ interface Point {
   tasa: number
 }
 
-export function EvolucionTemporal({ series }: { series: RechazosComparado["series"] }) {
+export function EvolucionTemporal({
+  series,
+  onDrillDia,
+}: {
+  series: RechazosComparado["series"]
+  /** Clic en una columna (día con rechazos) → abre el detalle de ese día. */
+  onDrillDia?: (fecha: string) => void
+}) {
   const hasSemanaMultiple = series.por_semana.length >= 2
   const [view, setView] = useState<View>(hasSemanaMultiple ? "dia" : "dia")
+  const drillEnabled = view === "dia" && !!onDrillDia
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartClick = (state: any) => {
+    if (!drillEnabled) return
+    const p = state?.activePayload?.[0]?.payload as Point | undefined
+    if (!p || p.eventos <= 0) return
+    onDrillDia!(p.key)
+  }
 
   const points: Point[] = view === "dia"
     ? series.por_dia.map(p => ({
@@ -61,6 +77,9 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
             <h2 className="text-sm font-semibold text-slate-900">Evolución temporal</h2>
             <p className="text-xs text-muted-foreground">
               HL rechazados + tasa% por {view === "dia" ? "día" : "semana"}
+              {drillEnabled && (
+                <span className="ml-1 text-slate-400">· tocá una columna para ver clientes y bultos</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-1 rounded-md border border-slate-200 p-0.5">
@@ -90,7 +109,12 @@ export function EvolucionTemporal({ series }: { series: RechazosComparado["serie
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+            <ComposedChart
+              data={points}
+              margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+              onClick={drillEnabled ? handleChartClick : undefined}
+              className={drillEnabled ? "cursor-pointer" : undefined}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#94a3b8" />
               <YAxis

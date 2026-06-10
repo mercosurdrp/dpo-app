@@ -16,12 +16,12 @@ import type {
   RechazosDetalleResponse,
   RechazosDetalleRow,
   RechazosFilters,
-  TopVariacionDim,
+  DrillDim,
 } from "@/lib/types/rechazos"
 import { formatBultos, formatFecha, formatHl, formatMonto } from "@/lib/format/rechazos"
 
 export interface DrillTo {
-  tipo: TopVariacionDim
+  tipo: DrillDim
   id: string | number
   /** Etiqueta lista para mostrar en el título del Sheet ("ERROR DE DISTRIBUCIÓN", "AF469UR", etc). */
   label?: string
@@ -182,6 +182,7 @@ function buildTitle(drill: DrillTo): string {
     case "canal":    return `Detalle del canal: ${labelOrId}`
     case "cliente":  return `Detalle del cliente: ${labelOrId}`
     case "producto": return `Detalle del producto: ${labelOrId}`
+    case "fecha":    return `Detalle del día: ${labelOrId}`
     default:         return `Detalle: ${labelOrId}`
   }
 }

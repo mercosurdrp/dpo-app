@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import type { RechazosComparado, TopVariacionDim } from "@/lib/types/rechazos"
+import type { RechazosComparado, TopVariacionDim, DrillDim } from "@/lib/types/rechazos"
 import type { RechazoPlan } from "@/actions/rechazos-planes"
+import { formatFecha } from "@/lib/format/rechazos"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Header } from "./header"
 import { Filtros } from "./filtros"
@@ -46,8 +47,9 @@ export function DashboardClient({
     }
   }, [data])
 
-  const openDrill = useCallback((d: { tipo: TopVariacionDim; id: string | number; label?: string }) => {
-    setDrillTo({ tipo: d.tipo, id: d.id, label: d.label ?? resolveLabel(d.tipo, d.id) })
+  const openDrill = useCallback((d: { tipo: DrillDim; id: string | number; label?: string }) => {
+    const label = d.label ?? (d.tipo !== "fecha" ? resolveLabel(d.tipo, d.id) : undefined)
+    setDrillTo({ tipo: d.tipo, id: d.id, label })
     setSheetOpen(true)
   }, [resolveLabel])
 
@@ -70,7 +72,10 @@ export function DashboardClient({
             <AlertasBloque alerts={data.alerts} onDrillTo={openDrill} />
             <KpiCards data={data} />
             <TopVariacionesBloque top_variaciones={data.top_variaciones} onDrillTo={openDrill} />
-            <EvolucionTemporal series={data.series} />
+            <EvolucionTemporal
+              series={data.series}
+              onDrillDia={(fecha) => openDrill({ tipo: "fecha", id: fecha, label: formatFecha(fecha) })}
+            />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <ParetoMotivos por_motivo={data.agg.por_motivo} onDrillTo={openDrill} />
               <DistribucionCanal por_canal={data.agg.por_canal} onDrillTo={openDrill} />
