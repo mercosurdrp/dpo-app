@@ -8,11 +8,17 @@
  *   - backfill    → `fetchVentasPorRango` (recorre todo el histórico)
  *
  * Mapeo a las tablas `rechazos` / `ventas_diarias`:
+ *   - SOLO empresa 98 (= Gestión Pampeana, clientes 200xxx). La API mezcla también la
+ *     empresa 99 (clientes 100xxx, vendedor 100100, OTRA operación) y las 1/2 (marginales):
+ *     se EXCLUYEN todas (definición de negocio 2026-06-10).
  *   - Numerador (rechazos)  = comprobantes `DEV-RE` (devolución por rechazo). Una fila por item.
  *   - Denominador (ventas)  = comprobantes `VEN`, agrupados por día bajo ds_fletero_carga='GESTION'.
  *   - HL = cantidad × unidadFactor / unidades_bulto × valor_unidad_medida (maestro chess_articulos).
  *   - id_cliente = codigoCliente sin prefijo "200" (normalizarCodigoCliente).
- *   - motivo = 9000 / "Devolución Gestión" (GESCOM no trae motivo desagregado).
+ *   - motivo = el real de GESCOM mapeado por texto al `catalogo_rechazos` de Chess (GESCOM
+ *     trunca a 20 chars → match por prefijo sin acentos). Sin match o null → 9000 "Sin motivo".
+ *   - Motivos ADMINISTRATIVOS excluidos (espeja la exclusión PRDVO de Chess):
+ *     MAL FACTURADO y DEV X TRAMITES INTERNOS — son correcciones, no rechazo de reparto.
  *   - Una nota de débito `DEB` que referencia un `DEV-RE` lo REVIERTE → ese DEV-RE se excluye.
  *   - AJU-MAS/AJU-MEN (ajustes de stock) y DEV-CA (canje) se ignoran.
  */
@@ -23,20 +29,28 @@ import {
 } from "@/lib/gescom/client"
 
 export const GESCOM_FLETERO = "GESTION"
-export const GESCOM_ID_RECHAZO = 9000
-// GESCOM no trae motivo desagregado en sus DEV-RE → "Sin motivo" (también sirve para
-// identificar de un vistazo que el rechazo proviene del sistema Gestión).
+export const GESCOM_EMPRESA = "98"          // Gestión Pampeana; 99/1/2 = otras operaciones
+export const GESCOM_ID_RECHAZO = 9000       // fallback "Sin motivo" cuando GESCOM no trae motivo
 export const GESCOM_DS_RECHAZO = "Sin motivo"
+// Motivos administrativos excluidos del indicador (espejan la exclusión PRDVO de Chess).
+const MOTIVOS_EXCLUIDOS = ["MAL FACTURADO", "DEV X TRAMITES"]
 
 export interface GescomSyncResult {
   desde: string
   hasta: string
   modo: "recientes" | "full"
   ventas_consideradas: number
+  excluidas_otra_empresa: number
   rechazos_upserted: number
+  rechazos_excluidos_admin: number
   ventas_diarias_upserted: number
   dev_re_revertidos: number
   errors: Array<{ kind: "rechazo" | "ventas_diarias" | "fatal"; message: string }>
+}
+
+/** Sin acentos, mayúsculas, sin espacios extremos — para matchear motivos GESCOM↔catálogo. */
+function normTexto(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim()
 }
 
 interface ArticuloFactor {
@@ -79,6 +93,23 @@ async function loadNombresClientes(supabase: SupabaseClient): Promise<Map<number
   return out
 }
 
+interface CatalogoMotivo {
+  id_rechazo: number
+  ds_rechazo: string
+  dsNorm: string
+}
+
+/** Catálogo de motivos Chess para mapear el motivo textual de GESCOM. */
+async function loadCatalogoMotivos(supabase: SupabaseClient): Promise<CatalogoMotivo[]> {
+  const { data, error } = await supabase
+    .from("catalogo_rechazos")
+    .select("id_rechazo, ds_rechazo")
+  if (error) { console.warn(`[gescom-sync] catalogo_rechazos no disponible: ${error.message}`); return [] }
+  return ((data ?? []) as Array<{ id_rechazo: number; ds_rechazo: string }>)
+    .filter((c) => c.id_rechazo !== GESCOM_ID_RECHAZO)
+    .map((c) => ({ ...c, dsNorm: normTexto(c.ds_rechazo) }))
+}
+
 /** bultos = cantidad × unidadFactor / unidades_bulto ; HL = bultos × valor_unidad_medida. */
 function bultosYHlDeItem(item: GescomItem, factores: Map<number, ArticuloFactor>): { bultos: number; hl: number } {
   const idArt = Number(item.codigoItem)
@@ -110,8 +141,9 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   const modo = deps.modo ?? "recientes"
   const result: GescomSyncResult = {
     desde, hasta, modo,
-    ventas_consideradas: 0, rechazos_upserted: 0, ventas_diarias_upserted: 0,
-    dev_re_revertidos: 0, errors: [],
+    ventas_consideradas: 0, excluidas_otra_empresa: 0,
+    rechazos_upserted: 0, rechazos_excluidos_admin: 0,
+    ventas_diarias_upserted: 0, dev_re_revertidos: 0, errors: [],
   }
 
   let ventas: GescomVenta[]
@@ -124,12 +156,27 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     result.errors.push({ kind: "fatal", message: e instanceof Error ? e.message : String(e) })
     return result
   }
+
+  // Solo Gestión Pampeana: la API mezcla otras empresas (99 = otra operación, 1/2 marginales).
+  const totalCrudo = ventas.length
+  ventas = ventas.filter((v) => String(v.codigoEmpresa) === GESCOM_EMPRESA)
+  result.excluidas_otra_empresa = totalCrudo - ventas.length
   result.ventas_consideradas = ventas.length
 
-  const [factores, nombres] = await Promise.all([
+  const [factores, nombres, catalogo] = await Promise.all([
     loadArticulosFactores(supabase),
     loadNombresClientes(supabase),
+    loadCatalogoMotivos(supabase),
   ])
+
+  // Motivo GESCOM (posiblemente truncado a 20 chars) → entrada del catálogo Chess.
+  const mapMotivo = (motivo: string | null): { id: number; ds: string } | "excluir" => {
+    if (!motivo) return { id: GESCOM_ID_RECHAZO, ds: GESCOM_DS_RECHAZO }
+    const m = normTexto(motivo)
+    if (MOTIVOS_EXCLUIDOS.some((x) => m.startsWith(x))) return "excluir"
+    const hit = catalogo.find((c) => c.dsNorm === m || c.dsNorm.startsWith(m))
+    return hit ? { id: hit.id_rechazo, ds: hit.ds_rechazo } : { id: GESCOM_ID_RECHAZO, ds: GESCOM_DS_RECHAZO }
+  }
 
   // DEV-RE revertidos por una nota de débito que los referencia.
   const revertidos = new Set<number>()
@@ -150,6 +197,8 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   for (const v of devRe) {
     const fecha = diaDe(v)
     if (!fecha) continue
+    const motivo = mapMotivo(v.motivo)
+    if (motivo === "excluir") { result.rechazos_excluidos_admin++; continue }
     const idCliente = normalizarCodigoCliente(v.codigoCliente)
     const nombreCliente = idCliente != null ? (nombres.get(idCliente) ?? null) : null
 
@@ -167,8 +216,8 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
         ds_articulo: factores.get(idArt)?.desCorta ?? `Art ${idArt}`,  // NOT NULL: fallback si el SKU no está en el maestro Chess
         id_fletero_carga: null,
         ds_fletero_carga: GESCOM_FLETERO,
-        id_rechazo: GESCOM_ID_RECHAZO,
-        ds_rechazo: GESCOM_DS_RECHAZO,
+        id_rechazo: motivo.id,
+        ds_rechazo: motivo.ds,
         bultos_rechazados: Math.round(bultos * 100) / 100,
         hl_rechazados: Math.round(hl * 10000) / 10000,
         id_cliente: idCliente,
