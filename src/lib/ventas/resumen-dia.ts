@@ -12,6 +12,21 @@ export interface VentasPatenteRow {
   hl: number
 }
 
+export interface VentasSkuRow {
+  id_articulo: number
+  ds_articulo: string
+  bultos: number
+  hl: number
+}
+
+export interface VentasOrigenRow {
+  origen: "chess" | "gestion"
+  bultos: number
+  hl: number
+  /** SKUs del origen ordenados por bultos desc (de ventas_diarias_sku, mig 108). */
+  skus: VentasSkuRow[]
+}
+
 export interface VentasResumenDia {
   fecha: string
   total_bultos: number
@@ -23,6 +38,8 @@ export interface VentasResumenDia {
   promedio_hl_mes_anterior: number | null
   /** Patentes ordenadas por bultos desc por default. */
   por_patente: VentasPatenteRow[]
+  /** Desglose Chess vs Gestión con detalle por SKU. */
+  por_origen: VentasOrigenRow[]
 }
 
 export async function getVentasResumenDia(
@@ -41,10 +58,10 @@ export async function getVentasResumenDia(
   const ultimoDia = new Date(Date.UTC(prevAnio, prevMes, 0)).getUTCDate()
   const prevHasta = `${prevAnio}-${String(prevMes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
 
-  const [ventasRaw, ventasMesAntRaw, mapeoRaw] = await Promise.all([
+  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw] = await Promise.all([
     supa
       .from("ventas_diarias")
-      .select("ds_fletero_carga, total_bultos, total_hl")
+      .select("ds_fletero_carga, total_bultos, total_hl, origen")
       .eq("fecha", fecha),
     supa
       .from("ventas_diarias")
@@ -54,6 +71,10 @@ export async function getVentasResumenDia(
     supa
       .from("mapeo_patente_chofer")
       .select("patente, catalogo_choferes(nombre)"),
+    supa
+      .from("ventas_diarias_sku")
+      .select("origen, id_articulo, ds_articulo, bultos, hl")
+      .eq("fecha", fecha),
   ])
 
   if (ventasRaw.error) {
@@ -74,11 +95,13 @@ export async function getVentasResumenDia(
     ds_fletero_carga: string
     total_bultos: number | null
     total_hl: number | null
+    origen: string | null
   }>
 
   let totalBultos = 0
   let totalHl = 0
   const porPatenteAgg = new Map<string, { bultos: number; hl: number }>()
+  const porOrigenAgg = new Map<string, { bultos: number; hl: number }>()
   for (const v of ventas) {
     const b = Number(v.total_bultos ?? 0)
     const h = Number(v.total_hl ?? 0)
@@ -92,7 +115,39 @@ export async function getVentasResumenDia(
       cur.hl += hs
       porPatenteAgg.set(v.ds_fletero_carga, cur)
     }
+    const origen = v.origen === "gestion" ? "gestion" : "chess"
+    const co = porOrigenAgg.get(origen) ?? { bultos: 0, hl: 0 }
+    co.bultos += bs
+    co.hl += hs
+    porOrigenAgg.set(origen, co)
   }
+
+  // SKUs por origen (tabla nueva mig 108; si falla la query, desglose vacío)
+  const skusPorOrigen = new Map<string, VentasSkuRow[]>()
+  if (!skusRaw.error && skusRaw.data) {
+    for (const s of skusRaw.data as Array<{
+      origen: string; id_articulo: number; ds_articulo: string
+      bultos: number | null; hl: number | null
+    }>) {
+      const origen = s.origen === "gestion" ? "gestion" : "chess"
+      const arr = skusPorOrigen.get(origen) ?? []
+      arr.push({
+        id_articulo: s.id_articulo,
+        ds_articulo: s.ds_articulo,
+        bultos: Number(s.bultos ?? 0),
+        hl: Number(s.hl ?? 0),
+      })
+      skusPorOrigen.set(origen, arr)
+    }
+  }
+  const por_origen: VentasOrigenRow[] = (["chess", "gestion"] as const)
+    .filter((o) => porOrigenAgg.has(o) || (skusPorOrigen.get(o)?.length ?? 0) > 0)
+    .map((o) => ({
+      origen: o,
+      bultos: porOrigenAgg.get(o)?.bultos ?? 0,
+      hl: Math.round((porOrigenAgg.get(o)?.hl ?? 0) * 100) / 100,
+      skus: (skusPorOrigen.get(o) ?? []).sort((a, b) => b.bultos - a.bultos),
+    }))
 
   // Promedios diarios mes anterior
   let promedioBultos: number | null = null
@@ -143,5 +198,6 @@ export async function getVentasResumenDia(
     promedio_bultos_mes_anterior: promedioBultos,
     promedio_hl_mes_anterior: promedioHl,
     por_patente,
+    por_origen,
   }
 }

@@ -293,6 +293,9 @@ export async function syncRechazosForDate(
   )
   type Agg = { bultos: number; unidades: number; hl: number; planillas: Set<string> }
   const agg = new Map<string, Agg>()
+  // Detalle por SKU del día (drill-down de "Bultos vendidos" en reuniones, mig 108)
+  type AggSku = { ds: string; bultos: number; hl: number }
+  const aggSku = new Map<number, AggSku>()
   for (const v of ventasFCVTA) {
     const a = agg.get(v.dsFleteroCarga) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>() }
     a.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
@@ -300,6 +303,11 @@ export async function syncRechazosForDate(
     a.hl += Math.abs(Number(v.unimedtotal) || 0)
     if (v.planillaCarga) a.planillas.add(v.planillaCarga)
     agg.set(v.dsFleteroCarga, a)
+
+    const s = aggSku.get(v.idArticulo) ?? { ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0 }
+    s.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+    s.hl += Math.abs(Number(v.unimedtotal) || 0)
+    aggSku.set(v.idArticulo, s)
   }
   for (const [fletero, a] of agg) {
     const { error } = await supabase.from("ventas_diarias").upsert({
@@ -316,6 +324,26 @@ export async function syncRechazosForDate(
       result.errors.push({ day: fecha, kind: "ventas_diarias", message: error.message })
     } else {
       result.ventas_diarias_upserted++
+    }
+  }
+
+  // ---- upsert ventas_diarias_sku (detalle por artículo, batch) ----
+  if (aggSku.size > 0) {
+    const skuRows = [...aggSku.entries()].map(([idArt, s]) => ({
+      fecha,
+      origen: "chess",
+      id_articulo: idArt,
+      ds_articulo: s.ds,
+      bultos: Math.round(s.bultos * 100) / 100,
+      hl: Math.round(s.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_sku")
+      .upsert(skuRows, { onConflict: "fecha,origen,id_articulo" })
+    if (error) {
+      // Tabla nueva (mig 108): si aún no existe en este tenant, no es fatal.
+      console.warn(`[sync] ventas_diarias_sku day=${fecha}: ${error.message}`)
     }
   }
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -89,11 +89,13 @@ export function VentasDetalleDiaDialog({
   const [data, setData] = useState<VentasResumenDia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [origenAbierto, setOrigenAbierto] = useState<"chess" | "gestion" | null>(null)
 
   useEffect(() => {
     if (!open || !fecha) {
       setData(null)
       setError(null)
+      setOrigenAbierto(null)
       return
     }
     let cancelado = false
@@ -212,6 +214,96 @@ export function VentasDetalleDiaDialog({
                   </>
                 )}
               </div>
+            )}
+
+            {data.por_origen.length > 0 && (
+              <Section
+                title="Por origen (Chess / Gestión)"
+                subtitle="Tocá un origen para ver el detalle por SKU"
+              >
+                <div className="divide-y divide-slate-100">
+                  {data.por_origen.map((o) => {
+                    const valor = metrica === "hl" ? o.hl : o.bultos
+                    const pct = total > 0 ? (valor / total) * 100 : 0
+                    const abierto = origenAbierto === o.origen
+                    const label = o.origen === "gestion" ? "Gestión" : "Chess"
+                    return (
+                      <div key={o.origen}>
+                        <button
+                          type="button"
+                          onClick={() => setOrigenAbierto(abierto ? null : o.origen)}
+                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
+                        >
+                          {abierto ? (
+                            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <span
+                            className={cn(
+                              "rounded px-2 py-0.5 text-xs font-semibold",
+                              o.origen === "gestion"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-sky-100 text-sky-800",
+                            )}
+                          >
+                            {label}
+                          </span>
+                          <span className="ml-auto font-semibold tabular-nums">
+                            {cfg.formatValor(valor)} {cfg.unidad}
+                          </span>
+                          <span className="w-16 text-right text-xs tabular-nums text-muted-foreground">
+                            {pct.toFixed(1)}%
+                          </span>
+                        </button>
+                        {abierto && (
+                          <div className="border-t border-slate-100 bg-slate-50/60 px-3 pb-3 pt-1">
+                            {o.skus.length === 0 ? (
+                              <p className="py-3 text-center text-xs text-muted-foreground">
+                                Sin detalle por SKU para este día (se genera con el sync diario).
+                              </p>
+                            ) : (
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-10">#</TableHead>
+                                    <TableHead>Artículo</TableHead>
+                                    <TableHead className="w-28 text-right">{cfg.unidad}</TableHead>
+                                    <TableHead className="w-20 text-right">% origen</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {o.skus.map((s, i) => {
+                                    const sv = metrica === "hl" ? s.hl : s.bultos
+                                    const sPct = valor > 0 ? (sv / valor) * 100 : 0
+                                    return (
+                                      <TableRow key={s.id_articulo}>
+                                        <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                                        <TableCell>
+                                          {s.ds_articulo}
+                                          <span className="ml-1 text-xs text-muted-foreground">
+                                            #{s.id_articulo}
+                                          </span>
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium tabular-nums">
+                                          {cfg.formatValor(sv)}
+                                        </TableCell>
+                                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                                          {sPct.toFixed(1)}%
+                                        </TableCell>
+                                      </TableRow>
+                                    )
+                                  })}
+                                </TableBody>
+                              </Table>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </Section>
             )}
 
             <Section

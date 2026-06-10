@@ -236,18 +236,30 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   // ---- denominador: ventas VEN agrupadas por día (ds_fletero_carga = 'GESTION') ----
   type Agg = { bultos: number; hl: number; comprobantes: number }
   const porDia = new Map<string, Agg>()
+  // Detalle por SKU/día (drill-down de "Bultos vendidos" en reuniones, mig 108)
+  type AggSku = { bultos: number; hl: number }
+  const porDiaSku = new Map<string, Map<number, AggSku>>()
   for (const v of ventas) {
     if (v.codigoTipoVenta !== "VEN" || v.esCredito || !esFinalizada(v)) continue
     const fecha = diaDe(v)
     if (!fecha) continue
     const a = porDia.get(fecha) ?? { bultos: 0, hl: 0, comprobantes: 0 }
+    const skus = porDiaSku.get(fecha) ?? new Map<number, AggSku>()
     for (const item of v.items ?? []) {
       const { bultos, hl } = bultosYHlDeItem(item, factores)
       a.bultos += bultos
       a.hl += hl
+      const idArt = Number(item.codigoItem)
+      if (Number.isFinite(idArt)) {
+        const s = skus.get(idArt) ?? { bultos: 0, hl: 0 }
+        s.bultos += bultos
+        s.hl += hl
+        skus.set(idArt, s)
+      }
     }
     a.comprobantes++
     porDia.set(fecha, a)
+    porDiaSku.set(fecha, skus)
   }
   for (const [fecha, a] of porDia) {
     const { error } = await supabase.from("ventas_diarias").upsert({
@@ -261,6 +273,24 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     }, { onConflict: "fecha,ds_fletero_carga,origen" })
     if (error) result.errors.push({ kind: "ventas_diarias", message: error.message })
     else result.ventas_diarias_upserted++
+  }
+
+  // ---- ventas_diarias_sku: detalle por artículo/día (batch por fecha) ----
+  for (const [fecha, skus] of porDiaSku) {
+    if (skus.size === 0) continue
+    const skuRows = [...skus.entries()].map(([idArt, s]) => ({
+      fecha,
+      origen: "gestion",
+      id_articulo: idArt,
+      ds_articulo: factores.get(idArt)?.desCorta ?? `Art ${idArt}`,
+      bultos: Math.round(s.bultos * 100) / 100,
+      hl: Math.round(s.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_sku")
+      .upsert(skuRows, { onConflict: "fecha,origen,id_articulo" })
+    if (error) console.warn(`[gescom-sync] ventas_diarias_sku ${fecha}: ${error.message}`)
   }
 
   return result
