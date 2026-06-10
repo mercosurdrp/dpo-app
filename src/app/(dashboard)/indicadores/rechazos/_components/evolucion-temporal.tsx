@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ComponentProps } from "react"
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -18,6 +18,9 @@ import type { RechazosComparado } from "@/lib/types/rechazos"
 import { formatBultos, formatFecha, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
 
 type View = "dia" | "semana"
+
+/** Firma exacta del onClick del chart en la versión de recharts instalada. */
+type ChartClickHandler = NonNullable<ComponentProps<typeof ComposedChart>["onClick"]>
 
 interface Point {
   key: string
@@ -41,14 +44,6 @@ export function EvolucionTemporal({
   const [view, setView] = useState<View>(hasSemanaMultiple ? "dia" : "dia")
   const drillEnabled = view === "dia" && !!onDrillDia
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleChartClick = (state: any) => {
-    if (!drillEnabled) return
-    const p = state?.activePayload?.[0]?.payload as Point | undefined
-    if (!p || p.eventos <= 0) return
-    onDrillDia!(p.key)
-  }
-
   const points: Point[] = view === "dia"
     ? series.por_dia.map(p => ({
         key: p.fecha,
@@ -68,6 +63,16 @@ export function EvolucionTemporal({
         eventos: p.eventos,
         tasa: round2(p.tasa),
       }))
+
+  // recharts 3.x: el onClick del chart entrega activeTooltipIndex/activeIndex
+  // (NO activePayload, que era de la 2.x) → se indexa el array local.
+  const handleChartClick: ChartClickHandler = (state) => {
+    if (!drillEnabled || !state) return
+    const idx = Number(state.activeTooltipIndex ?? state.activeIndex)
+    const p = Number.isInteger(idx) && idx >= 0 ? points[idx] : undefined
+    if (!p || p.eventos <= 0) return
+    onDrillDia!(p.key)
+  }
 
   return (
     <Card className="border-slate-200">
