@@ -36,9 +36,14 @@ function getPool(): Pool {
 }
 
 // HL y clientes por día (venta real Chess + GESCOM) en [desde, hasta].
+// HL = venta real (todos los comprobantes válidos). Clientes = solo "visitados":
+// venta real Factura + Factura Presupuesto + Gestión, sin NC ni Devolución
+// Presupuesto (en Chess, ds_documento ILIKE '%FACTURA%' captura factura y
+// factura-presupuesto y excluye NC/devolución). Compara con la capacidad de flota.
 const SQL = `
 WITH chess AS (
-  SELECT c.fecha::date AS d, c.id_cliente, c.unimed_total AS hl
+  SELECT c.fecha::date AS d, c.id_cliente, c.unimed_total AS hl,
+         (c.ds_documento ILIKE '%FACTURA%') AS es_cli
   FROM comprobantes c
   LEFT JOIN articulos a ON c.id_articulo = a.id_articulo
   WHERE c.region = 'pampeana' AND c.anulado = 'NO'
@@ -47,17 +52,18 @@ WITH chess AS (
     AND c.fecha BETWEEN $1 AND $2
 ),
 gescom AS (
-  SELECT g.fecha::date AS d, g.id_cliente, g.cantidad * COALESCE(a.valor_unidad_medida,0) AS hl
+  SELECT g.fecha::date AS d, g.id_cliente, g.cantidad * COALESCE(a.valor_unidad_medida,0) AS hl,
+         true AS es_cli
   FROM comprobantes_gescom g
   LEFT JOIN articulos a ON g.id_articulo = a.id_articulo
   WHERE g.codigo_sede = 2 AND COALESCE(g.estado,'') = 'Finalizada'
     AND COALESCE(a.segmento,'') NOT ILIKE 'env%'
     AND g.fecha BETWEEN $1 AND $2
 ),
-u AS (SELECT d, id_cliente, hl FROM chess UNION ALL SELECT d, id_cliente, hl FROM gescom)
+u AS (SELECT d, id_cliente, hl, es_cli FROM chess UNION ALL SELECT d, id_cliente, hl, es_cli FROM gescom)
 SELECT to_char(d, 'YYYY-MM-DD') AS fecha,
        ROUND(SUM(hl)::numeric, 2) AS hl,
-       COUNT(DISTINCT id_cliente) AS clientes
+       COUNT(DISTINCT id_cliente) FILTER (WHERE es_cli) AS clientes
 FROM u GROUP BY d ORDER BY d
 `
 
