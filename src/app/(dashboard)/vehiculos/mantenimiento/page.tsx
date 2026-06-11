@@ -1,12 +1,17 @@
+import { redirect } from "next/navigation"
 import {
   getCostosMantenimiento,
   getEstadoPlanFlota,
   getMantenimientos,
 } from "@/actions/mantenimiento-vehiculos"
+import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
 
 export default async function MantenimientoPage() {
+  // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
+  if (IS_MISIONES) redirect("/")
+
   const [estadoRes, mantenimientosRes, costosRes, profile] = await Promise.all([
     getEstadoPlanFlota(),
     getMantenimientos({ limit: 200 }),

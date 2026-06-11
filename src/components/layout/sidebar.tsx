@@ -183,6 +183,7 @@ export const navItems: NavItem[] = [
     label: "Mantenimiento",
     href: "/vehiculos/mantenimiento",
     icon: <Wrench className="size-5" />,
+    pampeanaOnly: true,
   },
   {
     label: "Orden de salida",
