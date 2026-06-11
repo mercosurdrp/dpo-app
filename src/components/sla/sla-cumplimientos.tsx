@@ -2,7 +2,13 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { CalendarClock, Loader2, CheckCircle2, XCircle } from "lucide-react"
+import {
+  CalendarClock,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  MessageSquare,
+} from "lucide-react"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -202,7 +208,7 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
               <Loader2 className="size-6 animate-spin" />
             </div>
           ) : (
-            <DetalleBody d={detalle} />
+            <SlaDetalleDiaBody d={detalle} />
           )}
         </DialogContent>
       </Dialog>
@@ -210,7 +216,8 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
   )
 }
 
-function DetalleBody({ d }: { d: DetalleDiaSla }) {
+// Exportado: también lo usa la Etapa 4 — Cumplimiento de SLA de las reuniones.
+export function SlaDetalleDiaBody({ d }: { d: DetalleDiaSla }) {
   const cumple = d.estado === "si"
   const noCumple = d.estado === "no"
   return (
@@ -249,6 +256,19 @@ function DetalleBody({ d }: { d: DetalleDiaSla }) {
       </div>
 
       {d.nota && <p className="text-sm text-slate-500">{d.nota}</p>}
+
+      {/* Justificativo/comentario cargado en /ruteo */}
+      {d.comentario && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <MessageSquare className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Justificativo
+            </p>
+            <p className="text-sm italic text-slate-700">{d.comentario}</p>
+          </div>
+        </div>
+      )}
 
       {/* Desglose */}
       {d.filas.length > 0 && (

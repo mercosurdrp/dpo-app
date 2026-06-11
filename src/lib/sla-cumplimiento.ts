@@ -103,6 +103,8 @@ export interface DetalleDiaSla {
   /** Desglose adicional (por patente, horarios, bultos, etc.). */
   filas: { label: string; valor: string }[]
   nota?: string // mensaje cuando es "sin dato" o "no aplica"
+  /** Comentario/justificativo cargado en /ruteo (fin de preventa o cierre). */
+  comentario?: string | null
 }
 
 // ── Cumplimiento por rango de fechas (para la Reunión Ventas-Logística) ──

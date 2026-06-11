@@ -1252,7 +1252,9 @@ export async function getDetalleDiaSla(
       const campo = esTiempo ? "hora_fin" : "hora_fin_preventa"
       const { data } = await supabase
         .from("ruteo_cierres")
-        .select(`hora_inicio, hora_fin, hora_fin_preventa, estado`)
+        .select(
+          `hora_inicio, hora_fin, hora_fin_preventa, estado, notas, comentario_preventa`,
+        )
         .eq("fecha", fecha)
         .maybeSingle()
 
@@ -1288,6 +1290,12 @@ export async function getDetalleDiaSla(
         })
       }
 
+      // Justificativo cargado en /ruteo: notas para el cierre del ruteo,
+      // comentario_preventa para el fin de preventa.
+      const comentario = esTiempo
+        ? ((data as any)?.notas as string | null)
+        : ((data as any)?.comentario_preventa as string | null)
+
       return {
         data: {
           codigo,
@@ -1299,6 +1307,7 @@ export async function getDetalleDiaSla(
           valorLabel: horaISO ? fmtMin(minutosARG(horaISO)) : "—",
           filas,
           nota,
+          comentario: comentario ?? null,
         },
       }
     }
