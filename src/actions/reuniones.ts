@@ -2878,12 +2878,12 @@ async function getIndicadoresMesCore(
       buildAutoRow("auto_tri", "TRI", triPorFecha),
     ]
 
-    // 7b. Indicador AUTO "Rechazos %" — todos los tipos de reunión.
+    // 7b. Indicador AUTO "Rechazos %" — todos los tipos salvo warehouse.
     //     Tasa diaria = hl_rechazados_dia / total_hl_ventas_dia * 100.
     //     Se imputa por `fecha_venta` (día de la venta real, no el de carga de
     //     la devolución) y se mide en HL. Mismo criterio que /indicadores/rechazos
     //     (lib/rechazos/comparado.ts) y el detalle del día (lib/rechazos/resumen-dia.ts).
-    {
+    if (tipo !== "warehouse") {
       const hlPorFecha: Record<string, number> = {}
       const ventasHlPorFecha: Record<string, number> = {}
 
@@ -2961,11 +2961,11 @@ async function getIndicadoresMesCore(
       }
     }
 
-    // 7c. Indicadores AUTO "Bultos vendidos" + "HL vendidos" — todos los tipos.
-    //     Suma diaria de total_bultos / total_hl. Meta de cada uno = promedio
-    //     diario del mes anterior. mejor_si=mayor (verde si supera meta).
-    //     Se hace una sola lectura por rango con ambas columnas.
-    {
+    // 7c. Indicadores AUTO "Bultos vendidos" + "HL vendidos" — todos los tipos
+    //     salvo warehouse. Suma diaria de total_bultos / total_hl. Meta de cada
+    //     uno = promedio diario del mes anterior. mejor_si=mayor (verde si
+    //     supera meta). Se hace una sola lectura por rango con ambas columnas.
+    if (tipo !== "warehouse") {
       const { data: ventRaw, error: errVent } = await supabase
         .from("ventas_diarias")
         .select("fecha, total_bultos, total_hl")
@@ -3103,11 +3103,11 @@ async function getIndicadoresMesCore(
       }
     }
 
-    // 7d. Indicador AUTO "TML" (Tiempo Medio de Liberación) — todos los tipos.
-    //     Promedio diario de tml_minutos en registros_vehiculos (tipo=egreso,
-    //     tml_minutos NOT NULL). Meta 25 min. mejor_si=menor.
+    // 7d. Indicador AUTO "TML" (Tiempo Medio de Liberación) — todos los tipos
+    //     salvo warehouse. Promedio diario de tml_minutos en registros_vehiculos
+    //     (tipo=egreso, tml_minutos NOT NULL). Meta 25 min. mejor_si=menor.
     //     MTD = promedio ponderado por # de egresos (Σ minutos / Σ egresos).
-    {
+    if (tipo !== "warehouse") {
       const { data: tmlRaw, error: errTml } = await supabase
         .from("registros_vehiculos")
         .select("fecha, tml_minutos")
@@ -3166,12 +3166,12 @@ async function getIndicadoresMesCore(
       }
     }
 
-    // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos.
+    // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos salvo warehouse.
     //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
     //   Valor diario = AVG(ceq_total/450 × 100) de los viajes del día — % del target.
     //   MTD = (Σ ceq / (450 × Σ viajes)) × 100 (% promedio ponderado por viaje).
     //   Unidad: % · Meta: 100 · mejor_si=mayor.
-    {
+    if (tipo !== "warehouse") {
       const { data: obRaw, error: errOB } = await supabase
         .from("ocupacion_bodega_diaria")
         .select("fecha, ceq_total")
