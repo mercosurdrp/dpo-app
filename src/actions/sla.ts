@@ -1402,7 +1402,7 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "alm_recepcion") {
-      const metaLabel = "Arribo 08:00–16:00 y descarga ≤ 2 h"
+      const metaLabel = "Arribo 08:00–16:00 y descarga ≤ 3 h"
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
       let valorLabel = "—"

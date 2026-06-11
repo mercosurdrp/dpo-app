@@ -27,12 +27,12 @@ export const SLA_CARGA_TARGET = 95
 export const CARGA_LIMITE_HORA = "07:00:00"
 
 // --- SLA #7 recepción: ventana de arribo + tiempo de descarga --------------
-// La recepción opera 07:00–17:00, pero el cumplimiento de descarga ≤ 2 h se
+// La recepción opera 07:00–17:00, pero el cumplimiento de descarga ≤ 3 h se
 // EXIGE solo a los arribos dentro de la ventana 08:00–16:00 (ARG). Los arribos
 // fuera de esa franja no se computan en el SLA (cumpleRecepcion → null).
 export const RECEPCION_VENTANA_INICIO_MIN = 8 * 60 // 08:00
 export const RECEPCION_VENTANA_FIN_MIN = 16 * 60 // 16:00
-export const RECEPCION_MAX_DESCARGA_MIN = 120 // ≤ 2 h
+export const RECEPCION_MAX_DESCARGA_MIN = 180 // ≤ 3 h
 
 /** Minutos desde medianoche en hora Argentina (UTC-3 fijo, sin DST). */
 function minutosArgentina(iso: string): number {
@@ -42,8 +42,8 @@ function minutosArgentina(iso: string): number {
 
 /**
  * Cumplimiento de una recepción para el SLA #7. Devuelve:
- *   true  → arribo en ventana 08:00–16:00 y descarga ≤ 2 h
- *   false → arribo en ventana pero descarga > 2 h
+ *   true  → arribo en ventana 08:00–16:00 y descarga ≤ 3 h
+ *   false → arribo en ventana pero descarga > 3 h
  *   null  → no evaluable (sin fin de descarga o arribo fuera de 08:00–16:00)
  */
 export function cumpleRecepcion(arriboIso: string, finIso: string | null): boolean | null {

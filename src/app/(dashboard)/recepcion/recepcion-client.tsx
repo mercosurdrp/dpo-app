@@ -14,7 +14,7 @@ import {
 
 type Color = "verde" | "amarillo" | "rojo"
 function semaforo(min: number): Color {
-  if (min > 90) return "rojo"
+  if (min > 120) return "rojo"
   if (min >= 60) return "amarillo"
   return "verde"
 }
@@ -81,7 +81,7 @@ export function RecepcionClient({
             Recepción de acarreos
           </h1>
           <p className="text-sm text-slate-500">
-            Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–1:30 · 🔴 &gt;1:30.
+            Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–2h · 🔴 &gt;2h.
           </p>
         </div>
         <a
