@@ -394,8 +394,8 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Total" value={stats.total} color="#6366F1" />
-        <StatCard label="Programadas" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
+        <StatCard label="Programadas" value={stats.total} color="#6366F1" />
+        <StatCard label="Pendientes" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
         <StatCard label="En Curso" value={stats.enCurso} color={ESTADO_CAPACITACION_COLORS.en_curso} />
         <StatCard label="Completadas" value={stats.completadas} color={ESTADO_CAPACITACION_COLORS.completada} />
         <button
