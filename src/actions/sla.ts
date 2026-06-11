@@ -876,6 +876,143 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
 }
 
 
+// ===========================================================================
+// SLA de carga PRE-COCINADO — blob 'sla-carga' publicado por el pusher local
+// del depósito (PowerShell, compu del WMS). El pusher ya cruza: esperados de
+// ChessERP (sin MOSTRADOR RAMALLO) + cargas reales del WMS (hora del escaneo
+// Ev17) + histórico, y evalúa cada día de reparto. dpo-app solo lee y muestra.
+// Si el blob no existe o no cubre el mes pedido, se cae al modelo MIXTO de
+// arriba (esperados por ruteo + horas del blob carga-camiones).
+// Contrato del blob (POST /api/shared/save, module="sla-carga"):
+//   { generado_en: ISO, dias: { "YYYY-MM-DD" (día de REPARTO): {
+//       estado: "si"|"no"|"sd"|"na", esperados, a_tiempo, tarde, faltan,
+//       viajes: [{ viaje, patente, hora "HH:mm:ss", a_tiempo: bool }],
+//       faltantes: ["PATENTE", ...], nota?: string } } }
+// Días aún no vencidos deben venir "sd" o directamente ausentes.
+// ===========================================================================
+
+const SLA_CARGA_PRECOCIDO_URL =
+  "https://deposito-esteban.vercel.app/api/shared/load?module=sla-carga"
+
+interface SlaCargaViajePre {
+  viaje: number | null
+  patente: string
+  hora: string | null // HH:mm:ss fin de carga real (escaneo Ev17)
+  aTiempo: boolean
+}
+
+interface SlaCargaDiaPre {
+  estado: EstadoCumplimiento
+  esperados: number
+  aTiempo: number
+  tarde: number
+  faltan: number
+  viajes: SlaCargaViajePre[]
+  faltantes: string[] // patentes ruteadas sin carga conciliada
+  nota: string | null
+}
+
+interface SlaCargaPrecocido {
+  dias: Map<string, SlaCargaDiaPre> // clave: YYYY-MM-DD (día de reparto)
+  generadoEn: string | null
+}
+
+const ESTADOS_PRECOCIDOS = new Set<string>(["si", "no", "sd", "na"])
+
+/** Lee el blob pre-cocinado del pusher. `null` si no existe o viene vacío. */
+async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
+  try {
+    const res = await fetch(SLA_CARGA_PRECOCIDO_URL, { cache: "no-store" })
+    if (!res.ok) return null
+    const json = (await res.json()) as {
+      data?: { dias?: Record<string, any>; generado_en?: string | null } | null
+    }
+    const diasRaw = json?.data?.dias
+    if (!diasRaw || typeof diasRaw !== "object") return null
+    const dias = new Map<string, SlaCargaDiaPre>()
+    for (const [fecha, d] of Object.entries(diasRaw)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !d || typeof d !== "object") continue
+      const estado = ESTADOS_PRECOCIDOS.has(String(d.estado))
+        ? (String(d.estado) as EstadoCumplimiento)
+        : "sd"
+      const viajes: SlaCargaViajePre[] = Array.isArray(d.viajes)
+        ? d.viajes.map((v: any) => ({
+            viaje: Number.isFinite(Number(v?.viaje)) && Number(v?.viaje) > 0 ? Number(v.viaje) : null,
+            patente: v?.patente ? String(v.patente).trim().toUpperCase() : "",
+            hora: v?.hora ? String(v.hora) : null,
+            aTiempo: !!v?.a_tiempo,
+          }))
+        : []
+      const faltantes: string[] = Array.isArray(d.faltantes)
+        ? d.faltantes.map((p: any) => String(p).trim().toUpperCase()).filter(Boolean)
+        : []
+      dias.set(fecha, {
+        estado,
+        esperados: Number(d.esperados) || 0,
+        aTiempo: Number(d.a_tiempo) || 0,
+        tarde: Number(d.tarde) || 0,
+        faltan: Number(d.faltan) || 0,
+        viajes,
+        faltantes,
+        nota: d.nota ? String(d.nota) : null,
+      })
+    }
+    if (dias.size === 0) return null
+    return { dias, generadoEn: json?.data?.generado_en ?? null }
+  } catch {
+    return null
+  }
+}
+
+/** ¿El blob pre-cocinado trae al menos un día del mes pedido? */
+function precocidoCubreMes(
+  pre: SlaCargaPrecocido | null,
+  year: number,
+  month: number,
+): boolean {
+  if (!pre) return false
+  const pref = `${year}-${String(month).padStart(2, "0")}`
+  for (const fecha of pre.dias.keys()) if (fecha.startsWith(pref)) return true
+  return false
+}
+
+/**
+ * Fila del SLA de carga desde el blob pre-cocinado: el estado de cada día ya
+ * viene evaluado por el pusher; acá solo se arma la matriz y el %. Días que el
+ * blob no trae = sin dato (domingo = na).
+ */
+function filaCargaPrecocida(
+  pre: SlaCargaPrecocido,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): CumplimientoSlaFila {
+  const mm = String(month).padStart(2, "0")
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${mm}-${String(d).padStart(2, "0")}`
+    const dia = pre.dias.get(iso)
+    const estado: EstadoCumplimiento =
+      dia?.estado ?? (dowFromISO(iso) === 0 ? "na" : "sd")
+    if (estado === "si" || estado === "no") {
+      totalAplica++
+      if (estado === "si") cumplidos++
+    }
+    dias.push(estado)
+  }
+  return {
+    codigo: "alm_carga",
+    nombre: SLA_CARGA_NOMBRE,
+    target: SLA_CARGA_TARGET,
+    porcentaje: totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
+}
+
 /** Primer día del mes siguiente en ISO (para rangos [desde, hastaExcl)). */
 function primerDiaMesSiguiente(year: number, month: number): string {
   const y = month === 12 ? year + 1 : year
@@ -1042,15 +1179,19 @@ export async function getCumplimientoMes(
     // Cantidad de días del mes (day 0 del mes siguiente = último del actual).
     const diasDelMes = new Date(Date.UTC(year, month, 0)).getUTCDate()
 
-    // Carga de camiones: snapshot del WMS, un viaje por nº (cruce por viaje).
-    const cargaSnapshot = await fetchCargaSnapshot()
+    // Carga de camiones: primero el blob PRE-COCINADO del pusher (sla-carga);
+    // si no cubre el mes, modelo mixto con el snapshot crudo del WMS.
+    const cargaPre = await fetchSlaCargaPrecocido()
+    const filaCargaResuelta = precocidoCubreMes(cargaPre, year, month)
+      ? filaCargaPrecocida(cargaPre!, year, month, diasDelMes)
+      : await filaCarga(supabase, year, month, diasDelMes, await fetchCargaSnapshot())
 
     const filas: CumplimientoSlaFila[] = [
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
-      await filaCarga(supabase, year, month, diasDelMes, cargaSnapshot),
+      filaCargaResuelta,
       await filaRecepcion(year, month, diasDelMes),
     ]
 
@@ -1325,6 +1466,57 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "alm_carga") {
+      // Primero el blob pre-cocinado del pusher: trae el día ya evaluado con
+      // sus viajes (hora real Ev17) y faltantes. Fallback: modelo mixto.
+      const pre = await fetchSlaCargaPrecocido()
+      const diaPre = pre?.dias.get(fecha)
+      if (diaPre) {
+        const filas: { label: string; valor: string }[] = []
+        for (const v of diaPre.viajes) {
+          const label =
+            (v.viaje ? `Viaje ${v.viaje}` : "Viaje s/nº") +
+            (v.patente ? ` · ${v.patente}` : "")
+          const hhmm = v.hora ? v.hora.slice(0, 5) : "—"
+          filas.push({
+            label,
+            valor: v.aTiempo ? `${hhmm} ✓` : `${hhmm} (tarde) ✗`,
+          })
+        }
+        if (diaPre.faltantes.length > 0) {
+          for (const p of diaPre.faltantes) {
+            filas.push({ label: p, valor: "sin carga conciliada ✗" })
+          }
+        } else if (diaPre.faltan > 0) {
+          filas.push({
+            label: "Sin carga conciliada",
+            valor: `${diaPre.faltan} camión(es) ruteado(s) ✗`,
+          })
+        }
+        let valorLabel = "—"
+        if (diaPre.estado === "si") valorLabel = `${diaPre.esperados}/${diaPre.esperados} a tiempo`
+        else if (diaPre.tarde > 0) valorLabel = `${diaPre.tarde} carga(s) tarde`
+        else if (diaPre.estado === "no" && diaPre.faltan > 0)
+          valorLabel = `faltan ${diaPre.faltan} de ${diaPre.esperados}`
+        let nota = diaPre.nota ?? undefined
+        if (!nota && diaPre.estado === "na") nota = "Domingo: no hay reparto."
+        if (!nota && diaPre.faltan > 0 && diaPre.tarde === 0)
+          nota = `${diaPre.faltan} camión(es) ruteado(s) sin carga conciliada en el WMS.`
+        return {
+          data: {
+            codigo,
+            nombre: SLA_CARGA_NOMBRE,
+            fecha,
+            diaSemana,
+            estado: diaPre.estado,
+            metaLabel:
+              "Camiones ruteados (ChessERP) cargados antes de las 07:00 del día de reparto",
+            valorLabel,
+            filas,
+            nota,
+          },
+        }
+      }
+
       const metaLabel = "Camiones ruteados cargados a tiempo (antes de 07:00 o desde 11:00)"
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
