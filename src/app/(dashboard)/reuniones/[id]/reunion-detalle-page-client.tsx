@@ -59,6 +59,7 @@ import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-i
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
+import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
@@ -1420,6 +1421,8 @@ export function ReunionDetallePageClient({
               )}
             </>
           )}
+          {/* Tareas asignadas a operarios (Registro de tareas / Mis tareas) — solo Warehouse */}
+          {detalle.tipo === "warehouse" && <TareasOperariosBloque />}
         </CardContent>
       </Card>
 
