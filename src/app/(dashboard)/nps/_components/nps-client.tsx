@@ -42,6 +42,15 @@ const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
   timeZone: "America/Argentina/Buenos_Aires",
 })
 
+const FMT_DIA_HORA = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Argentina/Buenos_Aires",
+})
+
 function npsColor(nps: number): string {
   if (nps >= 75) return "text-emerald-600"
   if (nps >= 50) return "text-amber-600"
@@ -110,6 +119,13 @@ export function NpsClient({ data, planesIniciales }: Props) {
           Punto 4.1 de Planeamiento (DPO) · Encuestas NPS de BEES (Power BI
           Quilmes) cruzadas con el promotor de preventa de Chess. Año{" "}
           {resumen.anio}.
+          {resumen.actualizado_en && (
+            <span className="ml-1 text-slate-400">
+              Datos actualizados el{" "}
+              {FMT_DIA_HORA.format(new Date(resumen.actualizado_en))} hs
+              (sincronización automática cada 15 días).
+            </span>
+          )}
         </p>
       </div>
 

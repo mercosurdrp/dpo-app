@@ -15,6 +15,8 @@ export interface NpsResumen {
   rmd: number | null
   rmd_respuestas: number
   ultima_encuesta: string | null
+  /** Última corrida OK del sync con el Power BI (nps_sync_log). */
+  actualizado_en: string | null
 }
 
 export interface NpsMes {
@@ -91,7 +93,7 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
     await requireAuth()
     const supabase = await createClient()
 
-    const [encRes, metRes, rechRes] = await Promise.all([
+    const [encRes, metRes, rechRes, syncRes] = await Promise.all([
       supabase
         .from("nps_encuestas")
         .select(
@@ -110,6 +112,12 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
         .from("v_nps_otif_mensual")
         .select("mes, otif_interno")
         .eq("anio", ANIO),
+      supabase
+        .from("nps_sync_log")
+        .select("ejecutado_en")
+        .eq("ok", true)
+        .order("ejecutado_en", { ascending: false })
+        .limit(1),
     ])
 
     if (encRes.error) return { error: encRes.error.message }
@@ -161,6 +169,9 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       ultima_encuesta: encuestas.length
         ? encuestas[encuestas.length - 1].fecha_enc
         : null,
+      actualizado_en:
+        ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
+          ?.ejecutado_en ?? null,
     }
 
     // ---- por mes ----
