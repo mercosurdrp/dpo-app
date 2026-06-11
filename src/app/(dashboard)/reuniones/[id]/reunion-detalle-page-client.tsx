@@ -62,7 +62,10 @@ import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
 import { SeccionSobrestock } from "@/components/reuniones/seccion-sobrestock"
-import { SeccionSla } from "@/components/reuniones/seccion-sla"
+import {
+  SeccionSla,
+  SLA_CODIGOS_REUNION_OPERATIVA,
+} from "@/components/reuniones/seccion-sla"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -950,7 +953,7 @@ export function ReunionDetallePageClient({
     return []
   }, [detalle])
 
-  // Action Log general (Etapa 3) = actividades sin sección. Las de cada sección
+  // Action Log general (Etapa 2) = actividades sin sección. Las de cada sección
   // (ej. Rechazos) se muestran dentro de su propia sección.
   const actividades = useMemo(
     () => actividadesAll.filter((a) => !a.seccion),
@@ -1228,6 +1231,7 @@ export function ReunionDetallePageClient({
         <SeccionSla
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
+          reunionTipo="logistica-ventas"
           actividades={actividadesSla}
           responsables={responsables}
           puedeEditar={puedeEditar}
@@ -1278,13 +1282,154 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ETAPA 2: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por secciones) */}
+      {/* ETAPA 2: ACTION LOG (en Ventas-Logística es el Action Log general) */}
+      <Card className="border-emerald-200 bg-emerald-50/30">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
+            <ListTodo className="size-5 text-emerald-600" />
+            {detalle.tipo === "logistica-ventas"
+              ? "Action Log general"
+              : "Etapa 2 — Action Log"}{" "}
+            ({actividades.length})
+          </CardTitle>
+          {puedeEditar && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setActividadEditando(null)
+                setOpenActForm(true)
+              }}
+            >
+              <Plus className="mr-2 size-4" />
+              Nueva actividad
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="px-0">
+          {actividades.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sin actividades registradas.
+              </p>
+              {puedeEditar && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    setActividadEditando(null)
+                    setOpenActForm(true)
+                  }}
+                >
+                  <Plus className="mr-2 size-4" />
+                  Crear primera
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
+                <span className="mr-1 font-medium text-slate-600">Estado:</span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("todas")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "todas"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Todas ({actividades.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("no_comenzada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "no_comenzada"
+                      ? "border-slate-500 bg-slate-100 font-semibold text-slate-800"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  No comenzadas ({conteosActividades.no_comenzada})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("en_curso")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "en_curso"
+                      ? "border-amber-500 bg-amber-50 font-semibold text-amber-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  En curso ({conteosActividades.en_curso})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("cerrada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "cerrada"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Cerradas ({conteosActividades.cerrada})
+                </button>
+              </div>
+              {actividadesFiltradas.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Ninguna actividad coincide con este filtro.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setFiltroEstado("todas")}
+                  >
+                    Ver todas
+                  </Button>
+                </div>
+              ) : (
+                <ul className="border-y bg-white">
+                  {actividadesFiltradas.map((act) => (
+                    <ActividadListItem
+                      key={act.id}
+                      actividad={act}
+                      reunionId={detalle.id}
+                      puedeEditar={puedeEditar}
+                      currentProfileId={currentProfileId}
+                      onEdit={() => {
+                        setActividadEditando(act)
+                        setOpenActForm(true)
+                      }}
+                      onAbrirDetalle={(estadoInicial) =>
+                        setActividadDetalle({ actividad: act, estadoInicial })
+                      }
+                      onChanged={refrescar}
+                      onAbrirArchivo={abrirArchivo}
+                    />
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por secciones) */}
       {detalle.tipo !== "logistica-ventas" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
             <BarChart3 className="size-5 text-blue-600" />
-            Etapa 2 — Tablero de control
+            Etapa 3 — Tablero de control
             {indicadoresMes && (
               <span className="text-sm font-normal capitalize text-muted-foreground">
                 · {nombreMes(indicadoresMes.mes)} {indicadoresMes.anio}
@@ -1707,146 +1852,21 @@ export function ReunionDetallePageClient({
       </Card>
       )}
 
-      {/* ETAPA 3: ACTION LOG */}
-      <Card className="border-emerald-200 bg-emerald-50/30">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
-            <ListTodo className="size-5 text-emerald-600" />
-            {detalle.tipo === "logistica-ventas"
-              ? "Action Log general"
-              : "Etapa 3 — Action Log"}{" "}
-            ({actividades.length})
-          </CardTitle>
-          {puedeEditar && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setActividadEditando(null)
-                setOpenActForm(true)
-              }}
-            >
-              <Plus className="mr-2 size-4" />
-              Nueva actividad
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="px-0">
-          {actividades.length === 0 ? (
-            <div className="px-4 py-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                Sin actividades registradas.
-              </p>
-              {puedeEditar && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setActividadEditando(null)
-                    setOpenActForm(true)
-                  }}
-                >
-                  <Plus className="mr-2 size-4" />
-                  Crear primera
-                </Button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
-                <span className="mr-1 font-medium text-slate-600">Estado:</span>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("todas")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "todas"
-                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  Todas ({actividades.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("no_comenzada")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "no_comenzada"
-                      ? "border-slate-500 bg-slate-100 font-semibold text-slate-800"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  No comenzadas ({conteosActividades.no_comenzada})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("en_curso")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "en_curso"
-                      ? "border-amber-500 bg-amber-50 font-semibold text-amber-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  En curso ({conteosActividades.en_curso})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("cerrada")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "cerrada"
-                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  Cerradas ({conteosActividades.cerrada})
-                </button>
-              </div>
-              {actividadesFiltradas.length === 0 ? (
-                <div className="px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Ninguna actividad coincide con este filtro.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => setFiltroEstado("todas")}
-                  >
-                    Ver todas
-                  </Button>
-                </div>
-              ) : (
-                <ul className="border-y bg-white">
-                  {actividadesFiltradas.map((act) => (
-                    <ActividadListItem
-                      key={act.id}
-                      actividad={act}
-                      reunionId={detalle.id}
-                      puedeEditar={puedeEditar}
-                      currentProfileId={currentProfileId}
-                      onEdit={() => {
-                        setActividadEditando(act)
-                        setOpenActForm(true)
-                      }}
-                      onAbrirDetalle={(estadoInicial) =>
-                        setActividadDetalle({ actividad: act, estadoInicial })
-                      }
-                      onChanged={refrescar}
-                      onAbrirArchivo={abrirArchivo}
-                    />
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {/* ETAPA 4: CUMPLIMIENTO DE SLA — los 5 SLA operativos acordados.
+          No aplica a Ventas-Logística (ya tiene su propia sección de SLA). */}
+      {detalle.tipo !== "logistica-ventas" && (
+        <SeccionSla
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          reunionTipo={detalle.tipo}
+          titulo="Etapa 4 — Cumplimiento de SLA"
+          codigos={SLA_CODIGOS_REUNION_OPERATIVA}
+          actividades={actividadesSla}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
 
       {/* Subdialogs */}
       <ActividadFormDialog

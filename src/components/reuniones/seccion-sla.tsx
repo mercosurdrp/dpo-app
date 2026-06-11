@@ -8,12 +8,26 @@ import { cn } from "@/lib/utils"
 import { getSlas, getCumplimientoRango } from "@/actions/sla"
 import type {
   CumplimientoRango,
+  CumplimientoRangoFila,
   EstadoCumplimiento,
 } from "@/lib/sla-cumplimiento"
 import { ActionLogSeccion } from "./action-log-seccion"
-import type { ReunionActividadConResponsable } from "@/types/database"
+import type {
+  ReunionActividadConResponsable,
+  TipoReunion,
+} from "@/types/database"
 
 export const SECCION_SLA = "sla"
+
+// SLA que se revisan en las reuniones operativas (logística, matinal,
+// warehouse): los 5 acordados — quedan afuera capacidad del camión y demás.
+export const SLA_CODIGOS_REUNION_OPERATIVA = [
+  "plan_syop",
+  "plan_ruteo_tiempo",
+  "alm_carga",
+  "alm_recepcion",
+  "plan_ruteo_pushed",
+]
 
 interface ResponsableOpt {
   id: string
@@ -59,6 +73,9 @@ const SLA_ESTADO_BADGE: Record<string, string> = {
 export function SeccionSla({
   fechaReunion,
   reunionId,
+  reunionTipo,
+  titulo = "Cumplimiento de SLA",
+  codigos,
   actividades,
   responsables,
   puedeEditar,
@@ -66,6 +83,10 @@ export function SeccionSla({
 }: {
   fechaReunion: string
   reunionId: string
+  reunionTipo: TipoReunion
+  titulo?: string
+  /** Si está presente, solo se muestran los SLA con estos códigos (y en este orden). */
+  codigos?: string[]
   actividades: ReunionActividadConResponsable[]
   responsables: ResponsableOpt[]
   puedeEditar: boolean
@@ -121,12 +142,22 @@ export function SeccionSla({
     }
   }, [desde, hasta])
 
+  // Con filtro de códigos se muestran solo esos SLA, en el orden pedido.
+  const filasVisibles: CumplimientoRangoFila[] = codigos
+    ? codigos
+        .map((c) => (cumpl?.filas ?? []).find((f) => f.codigo === c))
+        .filter((f): f is CumplimientoRangoFila => f != null)
+    : (cumpl?.filas ?? [])
+  const slasVisibles = codigos
+    ? slas.filter((s) => codigos.includes(s.codigo))
+    : slas
+
   return (
     <Card className="border-violet-200 bg-violet-50/30">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
         <CardTitle className="flex items-center gap-2 text-lg font-bold text-violet-900">
           <Gauge className="size-5 text-violet-600" />
-          Cumplimiento de SLA
+          {titulo}
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-muted-foreground">Desde</label>
@@ -163,12 +194,12 @@ export function SeccionSla({
           <>
             {/* Cumplimiento día a día por SLA medible */}
             <div className="space-y-3">
-              {(cumpl?.filas ?? []).length === 0 && (
+              {filasVisibles.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   Sin SLAs medibles en el período.
                 </p>
               )}
-              {(cumpl?.filas ?? []).map((f) => {
+              {filasVisibles.map((f) => {
                 const cumple = f.porcentaje != null && f.porcentaje >= f.target
                 return (
                   <div
@@ -235,10 +266,10 @@ export function SeccionSla({
             {/* SLAs cargados (acuerdos) */}
             <div>
               <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                SLAs cargados ({slas.length})
+                SLAs cargados ({slasVisibles.length})
               </h3>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {slas.map((s) => (
+                {slasVisibles.map((s) => (
                   <div
                     key={s.id}
                     className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5"
@@ -263,7 +294,7 @@ export function SeccionSla({
             {/* Action Log de la sección */}
             <ActionLogSeccion
               reunionId={reunionId}
-              reunionTipo="logistica-ventas"
+              reunionTipo={reunionTipo}
               seccion={SECCION_SLA}
               titulo="SLA"
               actividades={actividades}
