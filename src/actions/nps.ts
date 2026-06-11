@@ -65,12 +65,24 @@ export interface NpsClienteDP {
   promotor: string | null
 }
 
+export interface NpsRecuperado {
+  cod_cliente: number
+  nombre_cliente: string
+  promotor: string | null
+  antes_score: number
+  antes_fecha: string
+  ahora_score: number
+  ahora_fecha: string
+}
+
 export interface NpsDashboardData {
   resumen: NpsResumen
   por_mes: NpsMes[]
   drivers_dp: NpsDriver[]
   por_promotor: NpsPromotorVenta[]
   clientes_dp: NpsClienteDP[]
+  /** Clientes que fueron detractores/pasivos y su última encuesta es promotor. */
+  recuperados: NpsRecuperado[]
 }
 
 interface EncuestaRow {
@@ -265,9 +277,43 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       })
       .sort((a, b) => a.nps - b.nps || b.detractores - a.detractores)
 
-    // ---- clientes detractores/pasivos (última encuesta por cliente) ----
+    // ---- clientes por última encuesta global: D+P activos vs recuperados ----
+    const todasPorCliente = new Map<number, EncuestaRow[]>()
+    for (const e of encuestas) {
+      const arr = todasPorCliente.get(e.cod_cliente) ?? []
+      arr.push(e)
+      todasPorCliente.set(e.cod_cliente, arr)
+    }
+
+    // Recuperados: la última encuesta es Promoter pero antes fue D/P.
+    const recuperados: NpsRecuperado[] = []
+    for (const [cod, arr] of todasPorCliente) {
+      const ultima = arr[arr.length - 1] // ordenadas asc
+      if (ultima.categoria !== "Promoter") continue
+      const previaDP = [...arr]
+        .reverse()
+        .find((e) => e.categoria !== "Promoter")
+      if (!previaDP) continue
+      recuperados.push({
+        cod_cliente: cod,
+        nombre_cliente: ultima.nombre_cliente ?? `Cliente ${cod}`,
+        promotor: ultima.promotor,
+        antes_score: previaDP.score,
+        antes_fecha: previaDP.fecha_enc,
+        ahora_score: ultima.score,
+        ahora_fecha: ultima.fecha_enc,
+      })
+    }
+    recuperados.sort((a, b) => (a.ahora_fecha < b.ahora_fecha ? 1 : -1))
+
+    // D+P activos: clientes cuya ÚLTIMA encuesta global sigue siendo D/P
+    // (los recuperados salen de esta tabla y pasan a la vitrina).
     const porCliente = new Map<number, EncuestaRow[]>()
     for (const e of dpEnc) {
+      if (
+        todasPorCliente.get(e.cod_cliente)?.at(-1)?.categoria === "Promoter"
+      )
+        continue
       const arr = porCliente.get(e.cod_cliente) ?? []
       arr.push(e)
       porCliente.set(e.cod_cliente, arr)
@@ -306,7 +352,14 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       )
 
     return {
-      data: { resumen, por_mes, drivers_dp, por_promotor, clientes_dp },
+      data: {
+        resumen,
+        por_mes,
+        drivers_dp,
+        por_promotor,
+        clientes_dp,
+        recuperados,
+      },
     }
   } catch (err) {
     return {

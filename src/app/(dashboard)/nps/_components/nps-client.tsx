@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts"
-import { CheckCircle2, HeartHandshake, Info } from "lucide-react"
+import { CheckCircle2, HeartHandshake, Info, Trophy } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
@@ -69,7 +69,17 @@ interface Props {
 }
 
 export function NpsClient({ data, planesIniciales }: Props) {
-  const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp } = data
+  const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
+    data
+
+  // Efectividad de los planes: de los que ya tuvieron re-encuesta, cuántos
+  // terminaron con el cliente como promotor.
+  const planesReencuestados = planesIniciales.filter(
+    (p) => p.recuperacion && p.recuperacion !== "sin_reencuesta",
+  )
+  const planesRecuperados = planesReencuestados.filter(
+    (p) => p.recuperacion === "recuperado",
+  )
 
   // Foco prellenado al crear un plan desde la tabla de detractores.
   const [focoPlan, setFocoPlan] = useState<{
@@ -445,6 +455,67 @@ export function NpsClient({ data, planesIniciales }: Props) {
 
       {/* Clientes detractores y pasivos — explorador con modal de detalle */}
       <ClientesExplorador clientes={clientes_dp} onCrearPlan={planParaCliente} />
+
+      {/* Clientes recuperados (evidencia R4.1.4: NPS mejorando) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
+            <span className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-emerald-600" />
+              Clientes recuperados — de detractor/pasivo a promotor
+            </span>
+            {planesReencuestados.length > 0 && (
+              <Badge
+                variant="outline"
+                className="bg-emerald-100 text-emerald-800 border-emerald-200"
+              >
+                Efectividad de planes: {planesRecuperados.length} de{" "}
+                {planesReencuestados.length} re-encuestados
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="border-t pt-4">
+          {recuperados.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Todavía ningún cliente revirtió su puntuación. Cuando un
+              detractor o pasivo vuelva a ser encuestado por BEES y puntúe
+              9-10, aparece acá automáticamente (y sale de la tabla de
+              detractores).
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {recuperados.map((r) => (
+                <li
+                  key={r.cod_cliente}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-emerald-100 bg-emerald-50/40 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+                    {r.nombre_cliente}
+                    <span className="ml-1 text-xs font-normal text-slate-400">
+                      #{r.cod_cliente}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-600">
+                    score{" "}
+                    <span className="font-semibold text-red-600">
+                      {r.antes_score}
+                    </span>{" "}
+                    ({FMT_DIA.format(new Date(r.antes_fecha))}) →{" "}
+                    <span className="font-semibold text-emerald-600">
+                      {r.ahora_score}
+                    </span>{" "}
+                    ({FMT_DIA.format(new Date(r.ahora_fecha))})
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {r.promotor ?? "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Planes de acción (R4.1.2) */}
       <PlanesAccionBloque
