@@ -10,7 +10,7 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA = "El ruteo solo está disponible en Pampeana."
 
 const SELECT_COLS =
-  "id, fecha, estado, hora_inicio, hora_fin, hora_fin_preventa, pergamino_bultos, pergamino_clientes, ramallo_bultos, ramallo_clientes, bultos_no_ruteados, notas, created_at"
+  "id, fecha, estado, hora_inicio, hora_fin, hora_fin_preventa, comentario_preventa, pergamino_bultos, pergamino_clientes, ramallo_bultos, ramallo_clientes, bultos_no_ruteados, notas, created_at"
 
 export interface RuteoCierre {
   id: string
@@ -19,6 +19,7 @@ export interface RuteoCierre {
   hora_inicio: string | null
   hora_fin: string | null
   hora_fin_preventa: string | null
+  comentario_preventa: string | null
   pergamino_bultos: number
   pergamino_clientes: number
   ramallo_bultos: number
@@ -200,6 +201,38 @@ export async function setFinPreventa(
       }
       return { error: error.message }
     }
+    revalidatePath("/ruteo")
+    return { data: data as RuteoCierre }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+/**
+ * Comentario/justificativo del día: "preventa" escribe comentario_preventa
+ * (por qué la preventa llegó después de las 08:00/07:00) y "ruteo" escribe
+ * notas (por qué el ruteo cerró después de las 09:00/07:30). Se puede cargar
+ * o corregir en cualquier momento del día, haya o no incumplimiento.
+ */
+export async function setComentarioRuteo(
+  campo: "preventa" | "ruteo",
+  texto: string,
+): Promise<Result<RuteoCierre>> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+
+    const supabase = await createClient()
+    const col = campo === "preventa" ? "comentario_preventa" : "notas"
+    const { data, error } = await supabase
+      .from("ruteo_cierres")
+      .update({ [col]: texto.trim() || null })
+      .eq("fecha", hoyARG())
+      .select(SELECT_COLS)
+      .maybeSingle()
+
+    if (error) return { error: error.message }
+    if (!data) return { error: "Todavía no hay registro del día para comentar." }
     revalidatePath("/ruteo")
     return { data: data as RuteoCierre }
   } catch (err) {

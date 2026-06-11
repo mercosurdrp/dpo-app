@@ -18,6 +18,8 @@ import {
   Users,
   Gauge,
   Target,
+  AlertTriangle,
+  MessageSquare,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -35,6 +37,7 @@ import {
   iniciarRuteo,
   finalizarRuteo,
   setFinPreventa,
+  setComentarioRuteo,
   listarRuteoHistorial,
   type RuteoCierre,
 } from "@/actions/ruteo"
@@ -80,6 +83,43 @@ const horasCargaFmt = (horas: string[]) =>
   Array.from(new Set(horas.map((h) => h.slice(0, 5))))
     .sort()
     .join(" / ")
+
+// ===== Límites SLA (misma lógica que src/actions/sla.ts) ====================
+
+// Día de semana (0=Dom..6=Sáb) de un 'YYYY-MM-DD' sin corrimiento por TZ.
+const dowFromISO = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+}
+
+// Minutos desde medianoche ARG (UTC-3 fijo) de un timestamptz ISO.
+const minutosARG = (iso: string) => {
+  const d = new Date(iso)
+  let mins = d.getUTCHours() * 60 + d.getUTCMinutes() - 180
+  if (mins < 0) mins += 1440
+  return mins
+}
+
+// Límite (min desde medianoche ARG) según tipo de hito, o null si no aplica.
+const limiteSla = (fecha: string, tipo: "preventa" | "ruteo"): number | null => {
+  const dow = dowFromISO(fecha)
+  if (dow === 0) return null // domingo: no aplica
+  if (tipo === "preventa") return dow === 6 ? 7 * 60 : 8 * 60 // sáb 07:00 · L-V 08:00
+  return dow === 6 ? 7 * 60 + 30 : 9 * 60 // sáb 07:30 · L-V 09:00
+}
+
+// true si la hora registrada superó el límite SLA del día (null si no aplica
+// o no hay hora registrada).
+const fueraDeSla = (
+  hora: string | null,
+  fecha: string,
+  tipo: "preventa" | "ruteo",
+): boolean | null => {
+  if (!hora) return null
+  const lim = limiteSla(fecha, tipo)
+  if (lim === null) return null
+  return minutosARG(hora) > lim
+}
 
 const FORM_INICIAL = {
   pergamino_bultos: "",
@@ -170,6 +210,21 @@ export function RuteoClient({
     })
   }
 
+  function handleComentario(campo: "preventa" | "ruteo", texto: string) {
+    startTransition(async () => {
+      const res = await setComentarioRuteo(campo, texto)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Comentario guardado")
+      setDia(res.data)
+      // Si el día comentado está en el historial / panel, reflejarlo también.
+      setHistorial((h) => h.map((c) => (c.id === res.data.id ? res.data : c)))
+      setSel((s) => (s?.id === res.data.id ? res.data : s))
+    })
+  }
+
   function handleFinalizar() {
     if (!dia) return
     startTransition(async () => {
@@ -221,6 +276,7 @@ export function RuteoClient({
           dia={dia}
           pending={pending}
           onGuardar={handleFinPreventa}
+          onComentario={(t) => handleComentario("preventa", t)}
         />
         <BloqueEstado
           dia={dia}
@@ -228,6 +284,7 @@ export function RuteoClient({
           mostrarForm={mostrarForm}
           onIniciar={handleIniciar}
           onAbrirForm={() => setMostrarForm(true)}
+          onComentario={(t) => handleComentario("ruteo", t)}
         />
       </div>
 
@@ -286,6 +343,10 @@ export function RuteoClient({
               onChange={(e) => set("notas", e.target.value)}
               placeholder="Observaciones del ruteo"
             />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Si el cierre queda después del límite SLA (L-V 09:00 · sáb 07:30),
+              dejá acá el justificativo.
+            </p>
           </div>
 
           <div className="mt-4 flex justify-end gap-2">
@@ -364,16 +425,136 @@ export function RuteoClient({
   )
 }
 
+// Badge dentro/fuera del horario SLA (no se muestra si el día no aplica).
+function SlaBadge({ fuera }: { fuera: boolean | null }) {
+  if (fuera === null) return null
+  return fuera ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+      <AlertTriangle className="size-3" />
+      Fuera de horario
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+      <CheckCircle2 className="size-3" />
+      En horario
+    </span>
+  )
+}
+
+// Comentario/justificativo de una tarjeta (fin de preventa o fin de ruteo).
+// Siempre se puede cargar; si la hora quedó fuera del SLA y no hay comentario,
+// se pide explícitamente el justificativo.
+function ComentarioJustificativo({
+  valor,
+  fuera,
+  pending,
+  onGuardar,
+}: {
+  valor: string | null
+  fuera: boolean | null
+  pending: boolean
+  onGuardar: (texto: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [texto, setTexto] = useState("")
+
+  function abrir() {
+    setTexto(valor ?? "")
+    setEditando(true)
+  }
+
+  function guardar() {
+    onGuardar(texto)
+    setEditando(false)
+  }
+
+  if (editando) {
+    return (
+      <div className="mt-3 border-t border-slate-200/60 pt-3">
+        <Label className="mb-1.5 text-xs">
+          {fuera ? "Justificativo (se pasó del horario)" : "Comentario"}
+        </Label>
+        <Textarea
+          rows={2}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="Motivo / observaciones del día"
+          autoFocus
+        />
+        <div className="mt-2 flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditando(false)}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={guardar} disabled={pending}>
+            {pending && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+            Guardar
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-200/60 pt-2.5">
+      {valor ? (
+        <div className="flex items-start justify-between gap-2">
+          <p className="flex items-start gap-1.5 text-sm text-slate-700">
+            <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
+            <span className="italic">{valor}</span>
+          </p>
+          <button
+            type="button"
+            onClick={abrir}
+            disabled={pending}
+            className="shrink-0 text-xs text-slate-500 underline hover:text-slate-700"
+          >
+            Editar
+          </button>
+        </div>
+      ) : fuera ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-rose-50 px-2.5 py-1.5">
+          <p className="flex items-center gap-1.5 text-xs text-rose-700">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            Se pasó del horario: dejá un justificativo.
+          </p>
+          <Button size="sm" variant="outline" onClick={abrir} disabled={pending}>
+            <MessageSquare className="mr-1 size-3.5" />
+            Comentar
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={abrir}
+          disabled={pending}
+          className="inline-flex items-center gap-1 text-xs text-slate-500 underline hover:text-slate-700"
+        >
+          <MessageSquare className="size-3.5" />
+          Agregar comentario
+        </button>
+      )}
+    </div>
+  )
+}
+
 function BloqueFinPreventa({
   dia,
   pending,
   onGuardar,
+  onComentario,
 }: {
   dia: RuteoCierre | null
   pending: boolean
   onGuardar: (horaManual?: string) => void
+  onComentario: (texto: string) => void
 }) {
   const registrada = dia?.hora_fin_preventa ?? null
+  const fuera = dia ? fueraDeSla(registrada, dia.fecha, "preventa") : null
   const [editando, setEditando] = useState(false)
   const [hora, setHora] = useState("")
 
@@ -401,11 +582,14 @@ function BloqueFinPreventa({
               <b>08:00</b> · sáb <b>07:00</b>.
             </p>
             {registrada && !editando && (
-              <p className="mt-1 text-sm text-slate-700">
-                Registrado a las{" "}
-                <span className="font-semibold tabular-nums">
-                  {horaHHmm(registrada)}
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                <span>
+                  Registrado a las{" "}
+                  <span className="font-semibold tabular-nums">
+                    {horaHHmm(registrada)}
+                  </span>
                 </span>
+                <SlaBadge fuera={fuera} />
               </p>
             )}
           </div>
@@ -468,6 +652,15 @@ function BloqueFinPreventa({
           </Button>
         </div>
       )}
+
+      {registrada && !editando && (
+        <ComentarioJustificativo
+          valor={dia?.comentario_preventa ?? null}
+          fuera={fuera}
+          pending={pending}
+          onGuardar={onComentario}
+        />
+      )}
     </div>
   )
 }
@@ -479,12 +672,14 @@ function BloqueEstado({
   mostrarForm,
   onIniciar,
   onAbrirForm,
+  onComentario,
 }: {
   dia: RuteoCierre | null
   pending: boolean
   mostrarForm: boolean
   onIniciar: () => void
   onAbrirForm: () => void
+  onComentario: (texto: string) => void
 }) {
   // Sin iniciar (o solo con fin de preventa registrado).
   if (!dia || dia.estado === "pendiente") {
@@ -524,6 +719,9 @@ function BloqueEstado({
               {horaHHmm(dia.hora_inicio)}
             </span>
           </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Límite de cierre: L-V <b>09:00</b> · sáb <b>07:30</b>.
+          </p>
         </div>
         {!mostrarForm && (
           <Button onClick={onAbrirForm} disabled={pending}>
@@ -538,17 +736,33 @@ function BloqueEstado({
   // Cerrado.
   const totalBultos = dia.pergamino_bultos + dia.ramallo_bultos
   const totalClientes = dia.pergamino_clientes + dia.ramallo_clientes
+  const fuera = fueraDeSla(dia.hora_fin, dia.fecha, "ruteo")
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-      <div className="flex items-center gap-2 text-emerald-800">
+    <div
+      className={`rounded-2xl border p-5 shadow-sm ${
+        fuera
+          ? "border-rose-200 bg-rose-50/40"
+          : "border-emerald-200 bg-emerald-50/50"
+      }`}
+    >
+      <div
+        className={`flex flex-wrap items-center gap-2 ${fuera ? "text-rose-800" : "text-emerald-800"}`}
+      >
         <CheckCircle2 className="size-5" />
         <p className="text-sm font-semibold">Ruteo de hoy cerrado</p>
+        <SlaBadge fuera={fuera} />
       </div>
       <p className="mt-1 text-sm text-slate-600">
         {horaHHmm(dia.hora_inicio)} – {horaHHmm(dia.hora_fin)} ·{" "}
         <span className="font-semibold tabular-nums">{totalBultos}</span> blt ·{" "}
         <span className="font-semibold tabular-nums">{totalClientes}</span> cli
       </p>
+      <ComentarioJustificativo
+        valor={dia.notas}
+        fuera={fuera}
+        pending={pending}
+        onGuardar={onComentario}
+      />
     </div>
   )
 }
@@ -681,8 +895,26 @@ function PanelDetalleDia({
             </h3>
           </div>
           <p className="mt-0.5 text-sm text-indigo-100">
-            {horaHHmm(dia.hora_inicio)} – {horaHHmm(dia.hora_fin)} · Fin preventa{" "}
-            {horaHHmm(dia.hora_fin_preventa)}
+            {horaHHmm(dia.hora_inicio)} –{" "}
+            <span
+              className={
+                fueraDeSla(dia.hora_fin, dia.fecha, "ruteo")
+                  ? "font-semibold text-amber-300"
+                  : undefined
+              }
+            >
+              {horaHHmm(dia.hora_fin)}
+            </span>{" "}
+            · Fin preventa{" "}
+            <span
+              className={
+                fueraDeSla(dia.hora_fin_preventa, dia.fecha, "preventa")
+                  ? "font-semibold text-amber-300"
+                  : undefined
+              }
+            >
+              {horaHHmm(dia.hora_fin_preventa)}
+            </span>
           </p>
         </div>
         <button
@@ -735,10 +967,25 @@ function PanelDetalleDia({
         />
       </div>
 
-      {dia.notas && (
-        <p className="border-t border-slate-100 px-5 py-2 text-xs italic text-slate-500">
-          {dia.notas}
-        </p>
+      {(dia.notas || dia.comentario_preventa) && (
+        <div className="space-y-1 border-t border-slate-100 px-5 py-2">
+          {dia.comentario_preventa && (
+            <p className="text-xs italic text-slate-500">
+              <span className="font-semibold not-italic text-slate-600">
+                Preventa:
+              </span>{" "}
+              {dia.comentario_preventa}
+            </p>
+          )}
+          {dia.notas && (
+            <p className="text-xs italic text-slate-500">
+              <span className="font-semibold not-italic text-slate-600">
+                Ruteo:
+              </span>{" "}
+              {dia.notas}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Tabla de camiones */}
@@ -837,13 +1084,27 @@ function HistorialRow({
       <TableCell className="font-medium tabular-nums text-slate-900">
         {fechaCorta(c.fecha)}
       </TableCell>
-      <TableCell className="text-center tabular-nums text-slate-600">
+      <TableCell
+        className={`text-center tabular-nums ${
+          fueraDeSla(c.hora_fin_preventa, c.fecha, "preventa")
+            ? "font-semibold text-rose-600"
+            : "text-slate-600"
+        }`}
+        title={c.comentario_preventa ?? undefined}
+      >
         {horaHHmm(c.hora_fin_preventa)}
       </TableCell>
       <TableCell className="text-center tabular-nums text-slate-600">
         {horaHHmm(c.hora_inicio)}
       </TableCell>
-      <TableCell className="text-center tabular-nums text-slate-600">
+      <TableCell
+        className={`text-center tabular-nums ${
+          fueraDeSla(c.hora_fin, c.fecha, "ruteo")
+            ? "font-semibold text-rose-600"
+            : "text-slate-600"
+        }`}
+        title={c.notas ?? undefined}
+      >
         {horaHHmm(c.hora_fin)}
       </TableCell>
       <TableCell className="text-center tabular-nums text-slate-600">
