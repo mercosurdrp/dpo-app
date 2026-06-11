@@ -12,18 +12,12 @@ import {
   Tooltip,
   Legend,
 } from "recharts"
-import {
-  AlertTriangle,
-  CheckCircle2,
-  HeartHandshake,
-  Info,
-  MessageSquareQuote,
-  Target,
-} from "lucide-react"
+import { CheckCircle2, HeartHandshake, Info } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
 import type { NpsPlan } from "@/actions/nps-planes"
+import { ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -433,91 +427,8 @@ export function NpsClient({ data, planesIniciales }: Props) {
         </Card>
       </div>
 
-      {/* Clientes detractores y pasivos */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            Clientes detractores y pasivos — a trabajar con su promotor
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase text-slate-500">
-                  <th className="py-2 pr-2">Cliente</th>
-                  <th className="px-2 py-2">Localidad</th>
-                  <th className="px-2 py-2 text-center">Score</th>
-                  <th className="px-2 py-2">Drivers</th>
-                  <th className="px-2 py-2">Comentario</th>
-                  <th className="px-2 py-2">Promotor</th>
-                  <th className="px-2 py-2 text-right">Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientes_dp.map((c) => (
-                  <tr
-                    key={c.cod_cliente}
-                    className="border-b border-slate-100 align-top last:border-0"
-                  >
-                    <td className="py-2 pr-2">
-                      <p className="font-medium text-slate-800">
-                        {c.nombre_cliente}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        #{c.cod_cliente} ·{" "}
-                        {FMT_DIA.format(new Date(c.fecha_enc))}
-                      </p>
-                    </td>
-                    <td className="px-2 py-2 text-slate-600">
-                      {c.localidad ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      <Badge
-                        variant="outline"
-                        className={
-                          c.categoria === "Detractor"
-                            ? "bg-red-100 text-red-800 border-red-200"
-                            : "bg-amber-100 text-amber-800 border-amber-200"
-                        }
-                      >
-                        {c.score}
-                      </Badge>
-                    </td>
-                    <td className="max-w-48 px-2 py-2 text-xs text-slate-600">
-                      {c.drivers.join(" · ") || "—"}
-                    </td>
-                    <td className="max-w-64 px-2 py-2 text-xs text-slate-600">
-                      {c.comentario ? (
-                        <span className="flex items-start gap-1">
-                          <MessageSquareQuote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          {c.comentario}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-slate-700">
-                      {c.promotor ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => planParaCliente(c)}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                      >
-                        <Target className="h-3.5 w-3.5" />
-                        Plan
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Clientes detractores y pasivos — explorador con modal de detalle */}
+      <ClientesExplorador clientes={clientes_dp} onCrearPlan={planParaCliente} />
 
       {/* Planes de acción (R4.1.2) */}
       <PlanesAccionBloque

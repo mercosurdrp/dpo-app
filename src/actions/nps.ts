@@ -57,6 +57,8 @@ export interface NpsClienteDP {
   fecha_enc: string
   n_encuestas: number
   drivers: string[]
+  /** Pares [driver primario, subdriver] que puntuó (todas sus encuestas D+P). */
+  drivers_detalle: Array<[string, string | null]>
   comentario: string | null
   promotor: string | null
 }
@@ -263,8 +265,14 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       .map(([cod, arr]) => {
         const u = arr[arr.length - 1] // encuestas vienen ordenadas asc
         const drivers = new Set<string>()
-        for (const par of u.drivers ?? []) {
-          if (par?.[0]) drivers.add(par[0])
+        const detalle = new Map<string, [string, string | null]>()
+        for (const e of arr) {
+          for (const par of e.drivers ?? []) {
+            if (par?.[0]) {
+              drivers.add(par[0])
+              detalle.set(JSON.stringify(par), [par[0], par[1] ?? null])
+            }
+          }
         }
         return {
           cod_cliente: cod,
@@ -275,6 +283,7 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
           fecha_enc: u.fecha_enc,
           n_encuestas: arr.length,
           drivers: [...drivers],
+          drivers_detalle: [...detalle.values()],
           comentario: u.comentario,
           promotor: u.promotor,
         }
