@@ -19,6 +19,12 @@ const PRIORIDADES_VALIDAS: PrioridadNpsPlan[] = ["alta", "media", "baja"]
 
 type Result<T> = { data: T } | { error: string }
 
+export type RecuperacionPlan =
+  | "recuperado" // re-encuestado y pasó a promotor (9-10)
+  | "mejorando" // re-encuestado, subió el score pero no llegó a promotor
+  | "critico" // re-encuestado y sigue igual o peor
+  | "sin_reencuesta" // todavía no lo volvieron a encuestar
+
 export interface NpsPlan {
   id: string
   titulo: string
@@ -37,6 +43,17 @@ export interface NpsPlan {
   created_at: string
   updated_at: string
   avances_count: number
+  // --- seguimiento de recuperación (solo planes con cliente foco) ---
+  baseline_score: number | null
+  baseline_categoria: string | null
+  baseline_fecha: string | null
+  recuperacion: RecuperacionPlan | null
+  re_score: number | null
+  re_categoria: string | null
+  re_fecha: string | null
+  /** RMD del cliente desde que existe el plan (señal temprana). */
+  rmd_post_n: number
+  rmd_post_avg: number | null
 }
 
 export interface NpsPlanAvance {
@@ -95,9 +112,96 @@ export async function listarPlanesNps(): Promise<Result<NpsPlan[]>> {
       }
     }
 
+    // Seguimiento de recuperación: encuestas y RMD posteriores al plan,
+    // para todos los clientes foco en dos consultas.
+    const clienteIds = [
+      ...new Set(
+        rows
+          .map((r) => r.foco_cliente_id as number | null)
+          .filter((x): x is number => x != null),
+      ),
+    ]
+    const encPorCliente = new Map<
+      number,
+      Array<{ fecha_enc: string; score: number; categoria: string }>
+    >()
+    const rmdPorCliente = new Map<
+      number,
+      Array<{ fecha_puntuacion: string; puntuacion: number }>
+    >()
+    if (clienteIds.length) {
+      const [encRes, rmdRes] = await Promise.all([
+        supabase
+          .from("nps_encuestas")
+          .select("cod_cliente, fecha_enc, score, categoria")
+          .in("cod_cliente", clienteIds)
+          .order("fecha_enc", { ascending: true }),
+        supabase
+          .from("nps_rmd_cliente")
+          .select("cod_cliente, fecha_puntuacion, puntuacion")
+          .in("cod_cliente", clienteIds)
+          .order("fecha_puntuacion", { ascending: true }),
+      ])
+      for (const e of (encRes.data ?? []) as Array<{
+        cod_cliente: number
+        fecha_enc: string
+        score: number
+        categoria: string
+      }>) {
+        const arr = encPorCliente.get(e.cod_cliente) ?? []
+        arr.push(e)
+        encPorCliente.set(e.cod_cliente, arr)
+      }
+      for (const r of (rmdRes.data ?? []) as Array<{
+        cod_cliente: number
+        fecha_puntuacion: string
+        puntuacion: number
+      }>) {
+        const arr = rmdPorCliente.get(r.cod_cliente) ?? []
+        arr.push(r)
+        rmdPorCliente.set(r.cod_cliente, arr)
+      }
+    }
+
     const planes: NpsPlan[] = rows.map((row) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = row as any
+
+      // Recuperación del cliente foco.
+      let recuperacion: RecuperacionPlan | null = null
+      let re_score: number | null = null
+      let re_categoria: string | null = null
+      let re_fecha: string | null = null
+      let rmd_post_n = 0
+      let rmd_post_avg: number | null = null
+      if (r.foco_cliente_id != null) {
+        const encs = encPorCliente.get(r.foco_cliente_id) ?? []
+        const posteriores = encs.filter((e) => e.fecha_enc > r.created_at)
+        if (posteriores.length === 0) {
+          recuperacion = "sin_reencuesta"
+        } else {
+          const u = posteriores[posteriores.length - 1]
+          re_score = u.score
+          re_categoria = u.categoria
+          re_fecha = u.fecha_enc
+          const base = (r.baseline_score as number | null) ?? null
+          if (u.score >= 9) recuperacion = "recuperado"
+          else if (base != null && u.score > base) recuperacion = "mejorando"
+          else recuperacion = "critico"
+        }
+        const fechaPlan = String(r.created_at).slice(0, 10)
+        const rmds = (rmdPorCliente.get(r.foco_cliente_id) ?? []).filter(
+          (x) => x.fecha_puntuacion >= fechaPlan,
+        )
+        rmd_post_n = rmds.length
+        if (rmds.length) {
+          rmd_post_avg =
+            Math.round(
+              (rmds.reduce((s, x) => s + x.puntuacion, 0) / rmds.length) * 100,
+            ) / 100
+        }
+      }
+
       return {
         id: r.id,
         titulo: r.titulo,
@@ -116,6 +220,15 @@ export async function listarPlanesNps(): Promise<Result<NpsPlan[]>> {
         created_at: r.created_at,
         updated_at: r.updated_at,
         avances_count: countMap.get(r.id) ?? 0,
+        baseline_score: r.baseline_score ?? null,
+        baseline_categoria: r.baseline_categoria ?? null,
+        baseline_fecha: r.baseline_fecha ?? null,
+        recuperacion,
+        re_score,
+        re_categoria,
+        re_fecha,
+        rmd_post_n,
+        rmd_post_avg,
       }
     })
 
@@ -162,6 +275,32 @@ export async function crearPlanNps(
     const fechaObjetivo =
       String(formData.get("fecha_objetivo") ?? "").trim() || null
 
+    // Baseline: la última encuesta del cliente foco al momento de crear el
+    // plan, para después medir la recuperación contra la re-encuesta.
+    let baseline: {
+      baseline_score?: number
+      baseline_categoria?: string
+      baseline_fecha?: string
+    } = {}
+    if (focoClienteId != null) {
+      const { data: enc } = await supabase
+        .from("nps_encuestas")
+        .select("score, categoria, fecha_enc")
+        .eq("cod_cliente", focoClienteId)
+        .order("fecha_enc", { ascending: false })
+        .limit(1)
+      const e = (enc ?? [])[0] as
+        | { score: number; categoria: string; fecha_enc: string }
+        | undefined
+      if (e) {
+        baseline = {
+          baseline_score: e.score,
+          baseline_categoria: e.categoria,
+          baseline_fecha: e.fecha_enc,
+        }
+      }
+    }
+
     const { data, error } = await supabase
       .from("nps_planes")
       .insert({
@@ -176,6 +315,7 @@ export async function crearPlanNps(
         responsable_id: responsableId,
         fecha_objetivo: fechaObjetivo,
         created_by: profile.id,
+        ...baseline,
       })
       .select("id")
       .single()

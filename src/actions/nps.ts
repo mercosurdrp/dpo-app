@@ -15,6 +15,8 @@ export interface NpsResumen {
   rmd: number | null
   rmd_respuestas: number
   ultima_encuesta: string | null
+  /** Última corrida OK del sync con el Power BI (nps_sync_log). */
+  actualizado_en: string | null
 }
 
 export interface NpsMes {
@@ -28,9 +30,15 @@ export interface NpsMes {
   otif_interno: number | null // 1 - bultos_rechazados/bultos_entregados (def. 109)
 }
 
+export interface NpsSubdriver {
+  subdriver: string
+  encuestas_dp: number
+}
+
 export interface NpsDriver {
   driver: string
   encuestas_dp: number // encuestas Detractor+Pasivo que lo marcaron como primario
+  subdrivers: NpsSubdriver[] // motivos específicos dentro del driver
 }
 
 export interface NpsPromotorVenta {
@@ -51,8 +59,20 @@ export interface NpsClienteDP {
   fecha_enc: string
   n_encuestas: number
   drivers: string[]
+  /** Pares [driver primario, subdriver] que puntuó (todas sus encuestas D+P). */
+  drivers_detalle: Array<[string, string | null]>
   comentario: string | null
   promotor: string | null
+}
+
+export interface NpsRecuperado {
+  cod_cliente: number
+  nombre_cliente: string
+  promotor: string | null
+  antes_score: number
+  antes_fecha: string
+  ahora_score: number
+  ahora_fecha: string
 }
 
 export interface NpsDashboardData {
@@ -61,6 +81,8 @@ export interface NpsDashboardData {
   drivers_dp: NpsDriver[]
   por_promotor: NpsPromotorVenta[]
   clientes_dp: NpsClienteDP[]
+  /** Clientes que fueron detractores/pasivos y su última encuesta es promotor. */
+  recuperados: NpsRecuperado[]
 }
 
 interface EncuestaRow {
@@ -83,7 +105,7 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
     await requireAuth()
     const supabase = await createClient()
 
-    const [encRes, metRes, rechRes] = await Promise.all([
+    const [encRes, metRes, rechRes, syncRes] = await Promise.all([
       supabase
         .from("nps_encuestas")
         .select(
@@ -102,6 +124,12 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
         .from("v_nps_otif_mensual")
         .select("mes, otif_interno")
         .eq("anio", ANIO),
+      supabase
+        .from("nps_sync_log")
+        .select("ejecutado_en")
+        .eq("ok", true)
+        .order("ejecutado_en", { ascending: false })
+        .limit(1),
     ])
 
     if (encRes.error) return { error: encRes.error.message }
@@ -153,6 +181,9 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       ultima_encuesta: encuestas.length
         ? encuestas[encuestas.length - 1].fecha_enc
         : null,
+      actualizado_en:
+        ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
+          ?.ejecutado_en ?? null,
     }
 
     // ---- por mes ----
@@ -183,21 +214,38 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       })
     }
 
-    // ---- drivers (encuestas Detractor+Pasivo, primarios distintos por encuesta) ----
+    // ---- drivers (encuestas Detractor+Pasivo, primarios y subdrivers distintos por encuesta) ----
     const dpEnc = encuestas.filter((e) => e.categoria !== "Promoter")
     const driverCount = new Map<string, number>()
+    const subCount = new Map<string, Map<string, number>>()
     for (const e of dpEnc) {
       const prims = new Set<string>()
+      const pares = new Set<string>()
       for (const par of e.drivers ?? []) {
-        if (par?.[0]) prims.add(par[0])
+        if (par?.[0]) {
+          prims.add(par[0])
+          if (par[1]) pares.add(JSON.stringify([par[0], par[1]]))
+        }
       }
       if (prims.size === 0 && e.driver_primario) prims.add(e.driver_primario)
       for (const d of prims) {
         driverCount.set(d, (driverCount.get(d) ?? 0) + 1)
       }
+      for (const key of pares) {
+        const [p, s] = JSON.parse(key) as [string, string]
+        const m = subCount.get(p) ?? new Map<string, number>()
+        m.set(s, (m.get(s) ?? 0) + 1)
+        subCount.set(p, m)
+      }
     }
     const drivers_dp: NpsDriver[] = [...driverCount.entries()]
-      .map(([driver, n]) => ({ driver, encuestas_dp: n }))
+      .map(([driver, n]) => ({
+        driver,
+        encuestas_dp: n,
+        subdrivers: [...(subCount.get(driver) ?? new Map()).entries()]
+          .map(([subdriver, sn]) => ({ subdriver, encuestas_dp: sn as number }))
+          .sort((a, b) => b.encuestas_dp - a.encuestas_dp),
+      }))
       .sort((a, b) => b.encuestas_dp - a.encuestas_dp)
 
     // ---- NPS por promotor (vendedor de preventa vigente en Chess) ----
@@ -229,9 +277,43 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       })
       .sort((a, b) => a.nps - b.nps || b.detractores - a.detractores)
 
-    // ---- clientes detractores/pasivos (última encuesta por cliente) ----
+    // ---- clientes por última encuesta global: D+P activos vs recuperados ----
+    const todasPorCliente = new Map<number, EncuestaRow[]>()
+    for (const e of encuestas) {
+      const arr = todasPorCliente.get(e.cod_cliente) ?? []
+      arr.push(e)
+      todasPorCliente.set(e.cod_cliente, arr)
+    }
+
+    // Recuperados: la última encuesta es Promoter pero antes fue D/P.
+    const recuperados: NpsRecuperado[] = []
+    for (const [cod, arr] of todasPorCliente) {
+      const ultima = arr[arr.length - 1] // ordenadas asc
+      if (ultima.categoria !== "Promoter") continue
+      const previaDP = [...arr]
+        .reverse()
+        .find((e) => e.categoria !== "Promoter")
+      if (!previaDP) continue
+      recuperados.push({
+        cod_cliente: cod,
+        nombre_cliente: ultima.nombre_cliente ?? `Cliente ${cod}`,
+        promotor: ultima.promotor,
+        antes_score: previaDP.score,
+        antes_fecha: previaDP.fecha_enc,
+        ahora_score: ultima.score,
+        ahora_fecha: ultima.fecha_enc,
+      })
+    }
+    recuperados.sort((a, b) => (a.ahora_fecha < b.ahora_fecha ? 1 : -1))
+
+    // D+P activos: clientes cuya ÚLTIMA encuesta global sigue siendo D/P
+    // (los recuperados salen de esta tabla y pasan a la vitrina).
     const porCliente = new Map<number, EncuestaRow[]>()
     for (const e of dpEnc) {
+      if (
+        todasPorCliente.get(e.cod_cliente)?.at(-1)?.categoria === "Promoter"
+      )
+        continue
       const arr = porCliente.get(e.cod_cliente) ?? []
       arr.push(e)
       porCliente.set(e.cod_cliente, arr)
@@ -240,8 +322,14 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       .map(([cod, arr]) => {
         const u = arr[arr.length - 1] // encuestas vienen ordenadas asc
         const drivers = new Set<string>()
-        for (const par of u.drivers ?? []) {
-          if (par?.[0]) drivers.add(par[0])
+        const detalle = new Map<string, [string, string | null]>()
+        for (const e of arr) {
+          for (const par of e.drivers ?? []) {
+            if (par?.[0]) {
+              drivers.add(par[0])
+              detalle.set(JSON.stringify(par), [par[0], par[1] ?? null])
+            }
+          }
         }
         return {
           cod_cliente: cod,
@@ -252,6 +340,7 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
           fecha_enc: u.fecha_enc,
           n_encuestas: arr.length,
           drivers: [...drivers],
+          drivers_detalle: [...detalle.values()],
           comentario: u.comentario,
           promotor: u.promotor,
         }
@@ -263,7 +352,14 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       )
 
     return {
-      data: { resumen, por_mes, drivers_dp, por_promotor, clientes_dp },
+      data: {
+        resumen,
+        por_mes,
+        drivers_dp,
+        por_promotor,
+        clientes_dp,
+        recuperados,
+      },
     }
   } catch (err) {
     return {

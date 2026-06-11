@@ -325,6 +325,81 @@ export function PlanDetalleDialog({
           </div>
         </div>
 
+        {/* Recuperación del cliente foco (fase 1 + señal RMD fase 2) */}
+        {plan.foco_cliente_id != null && (
+          <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/60 p-3 text-sm">
+            <p className="font-semibold text-slate-800">
+              Recuperación del cliente
+            </p>
+            <p className="text-slate-600">
+              Punto de partida:{" "}
+              <span className="font-medium">
+                score {plan.baseline_score ?? "—"}
+                {plan.baseline_categoria
+                  ? ` (${plan.baseline_categoria === "Detractor" ? "Detractor" : plan.baseline_categoria === "Passive" ? "Pasivo" : "Promotor"})`
+                  : ""}
+              </span>
+              {plan.baseline_fecha &&
+                ` el ${fechaDia(plan.baseline_fecha.slice(0, 10))}`}
+            </p>
+            <p className="text-slate-600">
+              {plan.re_score != null ? (
+                <>
+                  Re-encuesta:{" "}
+                  <span
+                    className={`font-medium ${
+                      plan.re_score >= 9
+                        ? "text-emerald-700"
+                        : plan.baseline_score != null &&
+                            plan.re_score > plan.baseline_score
+                          ? "text-amber-700"
+                          : "text-red-700"
+                    }`}
+                  >
+                    score {plan.baseline_score ?? "?"} → {plan.re_score}
+                  </span>{" "}
+                  el {plan.re_fecha && fechaDia(plan.re_fecha.slice(0, 10))}
+                  {plan.re_score >= 9 &&
+                    " — 🟢 el cliente pasó a promotor: evaluar completar el plan."}
+                </>
+              ) : (
+                <>
+                  ⏳ BEES todavía no volvió a encuestar al cliente (la
+                  encuesta NPS es trimestral y la dispara BEES).
+                </>
+              )}
+            </p>
+            <p className="text-slate-600">
+              {plan.rmd_post_n > 0 ? (
+                <>
+                  Señal temprana — RMD desde el plan:{" "}
+                  <span
+                    className={`font-medium ${
+                      (plan.rmd_post_avg ?? 0) >= 4.5
+                        ? "text-emerald-700"
+                        : (plan.rmd_post_avg ?? 0) >= 4
+                          ? "text-amber-700"
+                          : "text-red-700"
+                    }`}
+                  >
+                    {plan.rmd_post_avg?.toFixed(2)} / 5
+                  </span>{" "}
+                  ({plan.rmd_post_n}{" "}
+                  {plan.rmd_post_n === 1
+                    ? "entrega puntuada"
+                    : "entregas puntuadas"}
+                  )
+                </>
+              ) : (
+                <>
+                  Señal temprana — RMD: el cliente todavía no puntuó entregas
+                  desde que existe el plan.
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={onEditar}>
             <Pencil className="mr-1 h-4 w-4" />

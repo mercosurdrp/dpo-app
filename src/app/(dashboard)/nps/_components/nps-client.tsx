@@ -12,18 +12,12 @@ import {
   Tooltip,
   Legend,
 } from "recharts"
-import {
-  AlertTriangle,
-  CheckCircle2,
-  HeartHandshake,
-  Info,
-  MessageSquareQuote,
-  Target,
-} from "lucide-react"
+import { CheckCircle2, HeartHandshake, Info, Trophy } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
 import type { NpsPlan } from "@/actions/nps-planes"
+import { ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -48,6 +42,15 @@ const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
   timeZone: "America/Argentina/Buenos_Aires",
 })
 
+const FMT_DIA_HORA = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Argentina/Buenos_Aires",
+})
+
 function npsColor(nps: number): string {
   if (nps >= 75) return "text-emerald-600"
   if (nps >= 50) return "text-amber-600"
@@ -66,7 +69,17 @@ interface Props {
 }
 
 export function NpsClient({ data, planesIniciales }: Props) {
-  const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp } = data
+  const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
+    data
+
+  // Efectividad de los planes: de los que ya tuvieron re-encuesta, cuántos
+  // terminaron con el cliente como promotor.
+  const planesReencuestados = planesIniciales.filter(
+    (p) => p.recuperacion && p.recuperacion !== "sin_reencuesta",
+  )
+  const planesRecuperados = planesReencuestados.filter(
+    (p) => p.recuperacion === "recuperado",
+  )
 
   // Foco prellenado al crear un plan desde la tabla de detractores.
   const [focoPlan, setFocoPlan] = useState<{
@@ -116,6 +129,13 @@ export function NpsClient({ data, planesIniciales }: Props) {
           Punto 4.1 de Planeamiento (DPO) · Encuestas NPS de BEES (Power BI
           Quilmes) cruzadas con el promotor de preventa de Chess. Año{" "}
           {resumen.anio}.
+          {resumen.actualizado_en && (
+            <span className="ml-1 text-slate-400">
+              Datos actualizados el{" "}
+              {FMT_DIA_HORA.format(new Date(resumen.actualizado_en))} hs
+              (sincronización automática cada 15 días).
+            </span>
+          )}
         </p>
       </div>
 
@@ -328,29 +348,47 @@ export function NpsClient({ data, planesIniciales }: Props) {
               </p>
             ) : (
               drivers_dp.map((d) => (
-                <div key={d.driver} className="flex items-center gap-2">
-                  <div className="w-56 truncate text-sm text-slate-700">
-                    {d.driver}
-                  </div>
-                  <div className="h-5 flex-1 rounded bg-slate-100">
-                    <div
-                      className="flex h-5 items-center rounded bg-red-400/80 px-1.5 text-[11px] font-medium text-white"
-                      style={{
-                        width: `${Math.max(
-                          (d.encuestas_dp / maxDriver) * 100,
-                          8,
-                        )}%`,
-                      }}
-                    >
-                      {d.encuestas_dp}
+                <div key={d.driver} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-56 truncate text-sm font-medium text-slate-700">
+                      {d.driver}
+                    </div>
+                    <div className="h-5 flex-1 rounded bg-slate-100">
+                      <div
+                        className="flex h-5 items-center rounded bg-red-400/80 px-1.5 text-[11px] font-medium text-white"
+                        style={{
+                          width: `${Math.max(
+                            (d.encuestas_dp / maxDriver) * 100,
+                            8,
+                          )}%`,
+                        }}
+                      >
+                        {d.encuestas_dp}
+                      </div>
                     </div>
                   </div>
+                  {d.subdrivers.length > 0 && (
+                    <ul className="ml-3 space-y-0.5 border-l border-slate-200 pl-3">
+                      {d.subdrivers.map((s) => (
+                        <li
+                          key={s.subdriver}
+                          className="flex items-baseline justify-between gap-2 text-xs text-slate-500"
+                        >
+                          <span className="min-w-0 flex-1">{s.subdriver}</span>
+                          <span className="shrink-0 font-medium text-slate-600">
+                            {s.encuestas_dp}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               ))
             )}
             <p className="pt-2 text-xs text-slate-500">
               Cantidad de encuestas de detractores/pasivos que marcaron cada
-              driver primario.
+              driver primario; debajo, los subdrivers (motivos específicos)
+              señalados dentro de cada uno.
             </p>
           </CardContent>
         </Card>
@@ -415,89 +453,67 @@ export function NpsClient({ data, planesIniciales }: Props) {
         </Card>
       </div>
 
-      {/* Clientes detractores y pasivos */}
+      {/* Clientes detractores y pasivos — explorador con modal de detalle */}
+      <ClientesExplorador clientes={clientes_dp} onCrearPlan={planParaCliente} />
+
+      {/* Clientes recuperados (evidencia R4.1.4: NPS mejorando) */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            Clientes detractores y pasivos — a trabajar con su promotor
+          <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
+            <span className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-emerald-600" />
+              Clientes recuperados — de detractor/pasivo a promotor
+            </span>
+            {planesReencuestados.length > 0 && (
+              <Badge
+                variant="outline"
+                className="bg-emerald-100 text-emerald-800 border-emerald-200"
+              >
+                Efectividad de planes: {planesRecuperados.length} de{" "}
+                {planesReencuestados.length} re-encuestados
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase text-slate-500">
-                  <th className="py-2 pr-2">Cliente</th>
-                  <th className="px-2 py-2">Localidad</th>
-                  <th className="px-2 py-2 text-center">Score</th>
-                  <th className="px-2 py-2">Drivers</th>
-                  <th className="px-2 py-2">Comentario</th>
-                  <th className="px-2 py-2">Promotor</th>
-                  <th className="px-2 py-2 text-right">Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientes_dp.map((c) => (
-                  <tr
-                    key={c.cod_cliente}
-                    className="border-b border-slate-100 align-top last:border-0"
-                  >
-                    <td className="py-2 pr-2">
-                      <p className="font-medium text-slate-800">
-                        {c.nombre_cliente}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        #{c.cod_cliente} ·{" "}
-                        {FMT_DIA.format(new Date(c.fecha_enc))}
-                      </p>
-                    </td>
-                    <td className="px-2 py-2 text-slate-600">
-                      {c.localidad ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      <Badge
-                        variant="outline"
-                        className={
-                          c.categoria === "Detractor"
-                            ? "bg-red-100 text-red-800 border-red-200"
-                            : "bg-amber-100 text-amber-800 border-amber-200"
-                        }
-                      >
-                        {c.score}
-                      </Badge>
-                    </td>
-                    <td className="max-w-48 px-2 py-2 text-xs text-slate-600">
-                      {c.drivers.join(" · ") || "—"}
-                    </td>
-                    <td className="max-w-64 px-2 py-2 text-xs text-slate-600">
-                      {c.comentario ? (
-                        <span className="flex items-start gap-1">
-                          <MessageSquareQuote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          {c.comentario}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-slate-700">
-                      {c.promotor ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => planParaCliente(c)}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                      >
-                        <Target className="h-3.5 w-3.5" />
-                        Plan
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <CardContent className="border-t pt-4">
+          {recuperados.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Todavía ningún cliente revirtió su puntuación. Cuando un
+              detractor o pasivo vuelva a ser encuestado por BEES y puntúe
+              9-10, aparece acá automáticamente (y sale de la tabla de
+              detractores).
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {recuperados.map((r) => (
+                <li
+                  key={r.cod_cliente}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-emerald-100 bg-emerald-50/40 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
+                    {r.nombre_cliente}
+                    <span className="ml-1 text-xs font-normal text-slate-400">
+                      #{r.cod_cliente}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-600">
+                    score{" "}
+                    <span className="font-semibold text-red-600">
+                      {r.antes_score}
+                    </span>{" "}
+                    ({FMT_DIA.format(new Date(r.antes_fecha))}) →{" "}
+                    <span className="font-semibold text-emerald-600">
+                      {r.ahora_score}
+                    </span>{" "}
+                    ({FMT_DIA.format(new Date(r.ahora_fecha))})
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {r.promotor ?? "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 

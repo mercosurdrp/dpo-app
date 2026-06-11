@@ -24,6 +24,7 @@ import {
   listarPlanesNps,
   type EstadoNpsPlan,
   type NpsPlan,
+  type RecuperacionPlan,
 } from "@/actions/nps-planes"
 import { PlanFormDialog, type FocoInicial } from "./plan-form-dialog"
 import { PlanDetalleDialog } from "./plan-detalle-dialog"
@@ -50,6 +51,28 @@ const PRIORIDAD_BADGE: Record<string, string> = {
   alta: "bg-red-100 text-red-800 border-red-200",
   media: "bg-amber-100 text-amber-800 border-amber-200",
   baja: "bg-slate-100 text-slate-700 border-slate-200",
+}
+
+const RECUPERACION_BADGE: Record<
+  RecuperacionPlan,
+  { label: string; cls: string }
+> = {
+  recuperado: {
+    label: "🟢 Recuperado",
+    cls: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  mejorando: {
+    label: "🟡 Mejorando",
+    cls: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  critico: {
+    label: "🔴 Sigue crítico",
+    cls: "bg-red-100 text-red-800 border-red-200",
+  },
+  sin_reencuesta: {
+    label: "⏳ Sin re-encuesta",
+    cls: "bg-slate-100 text-slate-600 border-slate-200",
+  },
 }
 
 const TODOS = "__todos__"
@@ -197,6 +220,21 @@ export function PlanesAccionBloque({
                       {p.titulo}
                     </span>
                     <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      {p.recuperacion && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${RECUPERACION_BADGE[p.recuperacion].cls}`}
+                          title={
+                            p.re_score != null
+                              ? `Re-encuesta: score ${p.baseline_score ?? "?"} → ${p.re_score}`
+                              : "El cliente todavía no fue re-encuestado por BEES"
+                          }
+                        >
+                          {RECUPERACION_BADGE[p.recuperacion].label}
+                          {p.re_score != null &&
+                            ` ${p.baseline_score ?? "?"}→${p.re_score}`}
+                        </Badge>
+                      )}
                       <Badge
                         variant="outline"
                         className={`text-[10px] ${ESTADO_BADGE[p.estado]}`}
