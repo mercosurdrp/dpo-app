@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   FileDown,
   CheckCircle2,
+  ChevronDown,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -156,14 +157,11 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
 
   // Avance de completadas por pilar (excluye canceladas del total)
   const avancePorPilar = useMemo(() => {
-    const grupos = new Map<string, { total: number; completadas: number }>()
+    const grupos = new Map<string, (typeof withDerived)[number][]>()
     for (const c of withDerived) {
       if (c.estadoReal === "cancelada") continue
       const key = normalizePilar(c.pilar)
-      const g = grupos.get(key) ?? { total: 0, completadas: 0 }
-      g.total++
-      if (c.estadoReal === "completada") g.completadas++
-      grupos.set(key, g)
+      grupos.set(key, [...(grupos.get(key) ?? []), c])
     }
     const orden = [
       ...PILAR_OPTIONS.filter((o) => o.value !== "all").map((o) => o.value),
@@ -172,10 +170,19 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     return orden
       .filter((p) => grupos.has(p))
       .map((p) => {
-        const g = grupos.get(p)!
-        return { pilar: p, ...g, pct: Math.round((g.completadas / g.total) * 100) }
+        const items = grupos.get(p)!.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
+        const completadas = items.filter((c) => c.estadoReal === "completada").length
+        return {
+          pilar: p,
+          items,
+          total: items.length,
+          completadas,
+          pct: Math.round((completadas / items.length) * 100),
+        }
       })
   }, [withDerived])
+
+  const [expandedPilar, setExpandedPilar] = useState<string | null>(null)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
 
@@ -423,32 +430,68 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           <CardContent className="space-y-3">
             {avancePorPilar.map((p) => {
               const color = PILAR_COLORS[p.pilar] ?? "#94A3B8"
-              const activo = filterPilar === p.pilar
+              const expandido = expandedPilar === p.pilar
               return (
-                <button
-                  key={p.pilar}
-                  type="button"
-                  onClick={() => setFilterPilar(activo ? "all" : p.pilar)}
-                  className={`block w-full rounded-md p-1 text-left outline-none transition-colors hover:bg-slate-50 ${activo ? "bg-slate-50 ring-1 ring-slate-200" : ""}`}
-                  title={activo ? "Quitar filtro" : "Filtrar el listado por este pilar"}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-2 font-medium" style={{ color }}>
-                      <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
-                      {p.pilar}
-                    </span>
-                    <span className="text-slate-500">
-                      <span className="font-semibold text-slate-900">{p.pct}%</span>{" "}
-                      · {p.completadas}/{p.total} completadas
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div key={p.pilar}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedPilar(expandido ? null : p.pilar)}
+                    className={`block w-full rounded-md p-1 text-left outline-none transition-colors hover:bg-slate-50 ${expandido ? "bg-slate-50" : ""}`}
+                    title={expandido ? "Ocultar capacitaciones" : "Ver capacitaciones del pilar"}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-2 font-medium" style={{ color }}>
+                        <ChevronDown
+                          className={`size-4 text-slate-400 transition-transform ${expandido ? "" : "-rotate-90"}`}
+                        />
+                        <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+                        {p.pilar}
+                      </span>
+                      <span className="text-slate-500">
+                        <span className="font-semibold text-slate-900">{p.pct}%</span>{" "}
+                        · {p.completadas}/{p.total} completadas
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${p.pct}%`, backgroundColor: color }}
+                      />
+                    </div>
+                  </button>
+                  {expandido && (
                     <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${p.pct}%`, backgroundColor: color }}
-                    />
-                  </div>
-                </button>
+                      className="ml-2 mt-2 space-y-0.5 border-l-2 pl-3"
+                      style={{ borderColor: color }}
+                    >
+                      {p.items.map((c) => (
+                        <Link
+                          key={c.id}
+                          href={`/capacitaciones/${c.id}`}
+                          className="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-slate-50"
+                        >
+                          <span className="truncate font-medium text-slate-700">
+                            {c.titulo}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <span className="text-slate-400">
+                              {new Date(c.fecha + "T12:00:00").toLocaleDateString("es-AR")}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              style={{
+                                backgroundColor: ESTADO_CAPACITACION_COLORS[c.estadoReal] + "20",
+                                color: ESTADO_CAPACITACION_COLORS[c.estadoReal],
+                              }}
+                            >
+                              {ESTADO_CAPACITACION_LABELS[c.estadoReal]}
+                            </Badge>
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </CardContent>
