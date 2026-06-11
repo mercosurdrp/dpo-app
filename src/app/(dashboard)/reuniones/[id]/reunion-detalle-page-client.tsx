@@ -1853,8 +1853,9 @@ export function ReunionDetallePageClient({
       )}
 
       {/* ETAPA 4: CUMPLIMIENTO DE SLA — los 5 SLA operativos acordados.
-          No aplica a Ventas-Logística (ya tiene su propia sección de SLA). */}
-      {detalle.tipo !== "logistica-ventas" && (
+          Solo en la reunión de Logística (Ventas-Logística ya tiene su propia
+          sección de SLA sin filtrar; Warehouse y Matinal no la llevan). */}
+      {detalle.tipo === "logistica" && (
         <SeccionSla
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
