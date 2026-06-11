@@ -1127,7 +1127,13 @@ export interface VehiculoDetalle {
 }
 
 export type AlertaSeveridad = "info" | "warning" | "danger"
-export type AlertaTipo = "sin_movimiento" | "retroceso_odometro" | "rendimiento_bajo" | "sin_liberacion"
+export type AlertaTipo =
+  | "sin_movimiento"
+  | "retroceso_odometro"
+  | "rendimiento_bajo"
+  | "sin_liberacion"
+  | "mantenimiento_vencido"
+  | "mantenimiento_proximo"
 
 export interface AlertaVehiculo {
   id: string
@@ -1138,6 +1144,127 @@ export interface AlertaVehiculo {
   descripcion: string
   valor?: string | number
   fecha?: string
+}
+
+// ===== Plan de mantenimiento de flota =====
+
+export type MantenimientoCategoria =
+  | "motor"
+  | "frenos"
+  | "neumaticos"
+  | "electrico"
+  | "hidraulico"
+  | "general"
+  | "documentacion"
+
+export const MANTENIMIENTO_CATEGORIA_LABELS: Record<MantenimientoCategoria, string> = {
+  motor: "Motor",
+  frenos: "Frenos",
+  neumaticos: "Neumáticos",
+  electrico: "Eléctrico",
+  hidraulico: "Hidráulico",
+  general: "General",
+  documentacion: "Documentación",
+}
+
+export interface MantenimientoPlanTarea {
+  id: string
+  codigo: string
+  nombre: string
+  categoria: MantenimientoCategoria
+  tipo_vehiculo: VehiculoTipo
+  frecuencia_km: number | null
+  frecuencia_meses: number | null
+  frecuencia_horas: number | null
+  activo: boolean
+  orden: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface MantenimientoPlanOverride {
+  id: string
+  dominio: string
+  tarea_id: string
+  frecuencia_km: number | null
+  frecuencia_meses: number | null
+  frecuencia_horas: number | null
+  activo: boolean
+  created_by: string | null
+  created_at: string
+}
+
+export type MantenimientoTipo = "preventivo" | "correctivo"
+export type MantenimientoEstado = "programado" | "en_taller" | "completado" | "cancelado"
+
+export const MANTENIMIENTO_ESTADO_LABELS: Record<MantenimientoEstado, string> = {
+  programado: "Programado",
+  en_taller: "En taller",
+  completado: "Completado",
+  cancelado: "Cancelado",
+}
+
+export interface MantenimientoRealizadoTarea {
+  id: string
+  mantenimiento_id: string
+  tarea_id: string | null
+  descripcion: string | null
+  costo: number | null
+  created_at: string
+}
+
+export interface MantenimientoRealizado {
+  id: string
+  dominio: string
+  fecha: string
+  odometro: number | null
+  horometro: number | null
+  tipo: MantenimientoTipo
+  estado: MantenimientoEstado
+  taller: string | null
+  costo: number | null
+  numero_factura: string | null
+  observaciones: string | null
+  evidencia_urls: string[] | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  tareas?: MantenimientoRealizadoTarea[]
+}
+
+export type EstadoTareaMantenimiento = "ok" | "proximo" | "vencido" | "sin_datos"
+
+export interface EstadoPlanCelda {
+  tareaId: string
+  estado: EstadoTareaMantenimiento
+  /** Último mantenimiento completado que incluyó la tarea. */
+  ultimaFecha: string | null
+  ultimoOdometro: number | null
+  ultimoHorometro: number | null
+  /** Próximos vencimientos según frecuencia efectiva (override ?? plantilla). */
+  proximoKm: number | null
+  proximaFecha: string | null
+  proximasHoras: number | null
+  /** % de la frecuencia ya consumido (0-100+, el peor de los ejes con datos). */
+  pctConsumido: number | null
+  /** true cuando el estado se calculó solo por tiempo (sin lecturas km/horas). */
+  soloPorTiempo: boolean
+}
+
+export interface EstadoPlanVehiculo {
+  vehiculo: CatalogoVehiculo
+  /** Km actual reconstruido de las 3 fuentes de odómetro (null si no hay lecturas). */
+  kmActual: number | null
+  /** Último horómetro registrado en mantenimientos (autoelevadores). */
+  horasActuales: number | null
+  celdas: EstadoPlanCelda[]
+}
+
+export interface CostosMantenimiento {
+  costoMes: number
+  costoYTD: number
+  porMes: { mes: string; preventivo: number; correctivo: number }[]
 }
 
 // ===== Matriz SKAP / Certificaciones SOP (R1.1.3) =====

@@ -172,6 +172,11 @@ export const navItems: NavItem[] = [
     icon: <Truck className="size-5" />,
   },
   {
+    label: "Mantenimiento",
+    href: "/vehiculos/mantenimiento",
+    icon: <Wrench className="size-5" />,
+  },
+  {
     label: "Orden de salida",
     href: "/orden-salida",
     icon: <CalendarCheck className="size-5" />,

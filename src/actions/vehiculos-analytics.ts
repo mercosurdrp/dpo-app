@@ -2,6 +2,21 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  type Lectura,
+  addDays,
+  daysBetween,
+  fetchLecturas,
+  normalizeHora,
+  startOfMonth,
+  startOfYear,
+  toFecha,
+  today,
+} from "@/lib/vehiculos/lecturas"
+import {
+  loadEstadoPlan,
+  resumenAlertasMantenimiento,
+} from "@/lib/vehiculos/plan-mantenimiento"
 import type {
   AlertaVehiculo,
   AlertaSeveridad,
@@ -11,163 +26,6 @@ import type {
   VehiculoKmDia,
   VehiculoTimelineEvento,
 } from "@/types/database"
-
-type Fuente = "registros" | "checklist" | "combustible"
-
-interface Lectura {
-  dominio: string
-  fecha: string
-  hora: string
-  odometro: number
-  fuente: Fuente
-  tipo?: string | null
-  chofer?: string | null
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function addDays(fecha: string, days: number): string {
-  const d = new Date(fecha + "T12:00:00")
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-function startOfMonth(fecha: string): string {
-  return fecha.slice(0, 7) + "-01"
-}
-
-function startOfYear(fecha: string): string {
-  return fecha.slice(0, 4) + "-01-01"
-}
-
-function daysBetween(a: string, b: string): number {
-  const da = new Date(a + "T12:00:00").getTime()
-  const db = new Date(b + "T12:00:00").getTime()
-  return Math.round((db - da) / 86400000)
-}
-
-function normalizeHora(hora: string | null | undefined): string {
-  if (!hora) return "00:00:00"
-  // checklist hora is TIMESTAMPTZ; registros hora is TIME HH:MM:SS
-  if (hora.includes("T") || hora.includes(" ")) {
-    const d = new Date(hora)
-    if (!isNaN(d.getTime())) {
-      return d.toISOString().slice(11, 19)
-    }
-  }
-  return hora.length >= 8 ? hora.slice(0, 8) : (hora + ":00").slice(0, 8)
-}
-
-function toFecha(fecha: string | null | undefined, hora: string | null | undefined): string {
-  if (fecha) return fecha
-  if (hora && (hora.includes("T") || hora.includes(" "))) {
-    const d = new Date(hora)
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
-  }
-  return today()
-}
-
-async function fetchLecturas(filters?: {
-  dominio?: string
-  fechaDesde?: string
-  fechaHasta?: string
-}): Promise<Lectura[]> {
-  const supabase = await createClient()
-
-  let qReg = supabase
-    .from("registros_vehiculos")
-    .select("dominio, fecha, hora, odometro, tipo, chofer")
-    .not("odometro", "is", null)
-  let qChk = supabase
-    .from("checklist_vehiculos")
-    .select("dominio, fecha, hora, odometro, tipo, chofer")
-    .not("odometro", "is", null)
-  let qCom = supabase
-    .from("registro_combustible")
-    .select("dominio, fecha, odometro, chofer")
-    .not("odometro", "is", null)
-
-  if (filters?.dominio) {
-    qReg = qReg.eq("dominio", filters.dominio)
-    qChk = qChk.eq("dominio", filters.dominio)
-    qCom = qCom.eq("dominio", filters.dominio)
-  }
-  if (filters?.fechaDesde) {
-    qReg = qReg.gte("fecha", filters.fechaDesde)
-    qChk = qChk.gte("fecha", filters.fechaDesde)
-    qCom = qCom.gte("fecha", filters.fechaDesde)
-  }
-  if (filters?.fechaHasta) {
-    qReg = qReg.lte("fecha", filters.fechaHasta)
-    qChk = qChk.lte("fecha", filters.fechaHasta)
-    qCom = qCom.lte("fecha", filters.fechaHasta)
-  }
-
-  const [reg, chk, com] = await Promise.all([qReg, qChk, qCom])
-
-  const lecturas: Lectura[] = []
-
-  for (const r of (reg.data || []) as Array<{
-    dominio: string
-    fecha: string
-    hora: string
-    odometro: number | null
-    tipo: string | null
-    chofer: string | null
-  }>) {
-    if (r.odometro == null) continue
-    lecturas.push({
-      dominio: r.dominio,
-      fecha: r.fecha,
-      hora: normalizeHora(r.hora),
-      odometro: Number(r.odometro),
-      fuente: "registros",
-      tipo: r.tipo,
-      chofer: r.chofer,
-    })
-  }
-
-  for (const r of (chk.data || []) as Array<{
-    dominio: string
-    fecha: string
-    hora: string
-    odometro: number | null
-    tipo: string | null
-    chofer: string | null
-  }>) {
-    if (r.odometro == null) continue
-    lecturas.push({
-      dominio: r.dominio,
-      fecha: toFecha(r.fecha, r.hora),
-      hora: normalizeHora(r.hora),
-      odometro: Number(r.odometro),
-      fuente: "checklist",
-      tipo: r.tipo,
-      chofer: r.chofer,
-    })
-  }
-
-  for (const r of (com.data || []) as Array<{
-    dominio: string
-    fecha: string
-    odometro: number | null
-    chofer: string | null
-  }>) {
-    if (r.odometro == null) continue
-    lecturas.push({
-      dominio: r.dominio,
-      fecha: r.fecha,
-      hora: "12:00:00",
-      odometro: Number(r.odometro),
-      fuente: "combustible",
-      chofer: r.chofer,
-    })
-  }
-
-  return lecturas
-}
 
 export async function getKmPorVehiculo(filters?: {
   dominio?: string
@@ -653,6 +511,15 @@ export async function getAlertasVehiculos(): Promise<
           })
         }
       }
+    }
+
+    // Mantenimiento vencido / próximo según el plan preventivo. Si el plan no
+    // se puede calcular no bloquea el resto de las alertas.
+    try {
+      const { estados, tareasById } = await loadEstadoPlan()
+      alertas.push(...resumenAlertasMantenimiento(estados, tareasById))
+    } catch {
+      // sin alertas de mantenimiento
     }
 
     const sevOrder: Record<AlertaSeveridad, number> = { danger: 3, warning: 2, info: 1 }
