@@ -81,6 +81,15 @@ const PILAR_COLORS: Record<string, string> = {
   Planeamiento: "#EC4899",
 }
 
+const SIN_PILAR = "Sin pilar"
+
+// "Almacén" y "Almacen" conviven en la DB; se agrupan sin tildes
+function normalizePilar(pilar: string | null): string {
+  return pilar
+    ? pilar.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    : SIN_PILAR
+}
+
 export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -114,7 +123,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       list = list.filter((c) => c.estadoReal === filterEstado)
     }
     if (filterPilar !== "all") {
-      list = list.filter((c) => c.pilar === filterPilar)
+      list = list.filter((c) => normalizePilar(c.pilar) === filterPilar)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -144,6 +153,29 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
         .sort((a, b) => (b.fecha > a.fecha ? 1 : -1)),
     [withDerived]
   )
+
+  // Avance de completadas por pilar (excluye canceladas del total)
+  const avancePorPilar = useMemo(() => {
+    const grupos = new Map<string, { total: number; completadas: number }>()
+    for (const c of withDerived) {
+      if (c.estadoReal === "cancelada") continue
+      const key = normalizePilar(c.pilar)
+      const g = grupos.get(key) ?? { total: 0, completadas: 0 }
+      g.total++
+      if (c.estadoReal === "completada") g.completadas++
+      grupos.set(key, g)
+    }
+    const orden = [
+      ...PILAR_OPTIONS.filter((o) => o.value !== "all").map((o) => o.value),
+      SIN_PILAR,
+    ]
+    return orden
+      .filter((p) => grupos.has(p))
+      .map((p) => {
+        const g = grupos.get(p)!
+        return { pilar: p, ...g, pct: Math.round((g.completadas / g.total) * 100) }
+      })
+  }, [withDerived])
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
 
@@ -381,6 +413,47 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           </Card>
         </button>
       </div>
+
+      {/* Avance de completadas por pilar */}
+      {avancePorPilar.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Avance por Pilar</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {avancePorPilar.map((p) => {
+              const color = PILAR_COLORS[p.pilar] ?? "#94A3B8"
+              const activo = filterPilar === p.pilar
+              return (
+                <button
+                  key={p.pilar}
+                  type="button"
+                  onClick={() => setFilterPilar(activo ? "all" : p.pilar)}
+                  className={`block w-full rounded-md p-1 text-left outline-none transition-colors hover:bg-slate-50 ${activo ? "bg-slate-50 ring-1 ring-slate-200" : ""}`}
+                  title={activo ? "Quitar filtro" : "Filtrar el listado por este pilar"}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-2 font-medium" style={{ color }}>
+                      <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+                      {p.pilar}
+                    </span>
+                    <span className="text-slate-500">
+                      <span className="font-semibold text-slate-900">{p.pct}%</span>{" "}
+                      · {p.completadas}/{p.total} completadas
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${p.pct}%`, backgroundColor: color }}
+                    />
+                  </div>
+                </button>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dialog: lista de capacitaciones realizadas */}
       <Dialog open={realizadasOpen} onOpenChange={setRealizadasOpen}>
