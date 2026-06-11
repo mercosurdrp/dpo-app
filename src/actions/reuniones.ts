@@ -13,6 +13,7 @@ import {
 import {
   buildAperturaPickingDelDia,
   buildWarehouseSerieDiaria,
+  refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
   type AperturaPickingDelDia,
   type OperadorApertura,
@@ -2562,6 +2563,41 @@ export async function getIndicadoresMes(
     return { data: { ...base.data, indicadores } }
   } catch {
     return base
+  }
+}
+
+// Botón "Actualizar datos" de la reunión de logística (Pampeana): fuerza el
+// recálculo de la serie diaria en deposito-esteban — para cuando roturas,
+// faltantes o errores de picking se cargaron después de que el cache quedó
+// armado — y devuelve los indicadores recalculados. Tarda ~45s; el maxDuration
+// de la página (60s) cubre la acción.
+export async function refreshIndicadoresLogistica(
+  reunionId: string,
+): Promise<Result<ReunionIndicadoresMes>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data: reu, error } = await supabase
+      .from("reuniones")
+      .select("tipo, fecha")
+      .eq("id", reunionId)
+      .single()
+    if (error || !reu) return { error: "Reunión no encontrada" }
+    const { tipo, fecha } = reu as { tipo: string; fecha: string }
+    if (tipo !== "logistica" || IS_MISIONES)
+      return { error: "Sólo aplica a reuniones de logística de Pampeana" }
+    const [year, month] = fecha.split("-").map((s) => parseInt(s, 10))
+    const ok = await refreshSerieDiariaDeposito(year, month)
+    if (!ok)
+      return {
+        error:
+          "El depósito no respondió al recálculo (tarda ~1 min); probá de nuevo",
+      }
+    return getIndicadoresMes(reunionId)
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "No se pudieron actualizar los datos",
+    }
   }
 }
 

@@ -50,6 +50,7 @@ import {
   getSignedUrl,
   marcarMiAsistencia,
   quitarAsistente,
+  refreshIndicadoresLogistica,
   setIndicadorValor,
 } from "@/actions/reuniones"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -787,6 +788,33 @@ export function ReunionDetallePageClient({
     }
   }
 
+  // Actualización manual de la serie diaria del depósito — solo Pampeana/
+  // logística. Fuerza el recálculo en deposito-esteban (roturas, faltantes y
+  // errores de picking cargados después de que el cache quedó armado).
+  const muestraActualizarDatos = !IS_MISIONES && detalle.tipo === "logistica"
+  const [actualizandoDatos, setActualizandoDatos] = useState(false)
+  const [actualizarMsg, setActualizarMsg] = useState<string | null>(null)
+  const actualizarDatosDeposito = async () => {
+    if (actualizandoDatos) return
+    setActualizandoDatos(true)
+    setActualizarMsg(null)
+    try {
+      const res = await refreshIndicadoresLogistica(detalle.id)
+      if ("data" in res) {
+        setIndicadoresMes(res.data)
+        router.refresh()
+      } else {
+        setActualizarMsg(`Error: ${res.error}`)
+      }
+    } catch (e) {
+      setActualizarMsg(
+        `Error: ${e instanceof Error ? e.message : "no se pudo actualizar"}`,
+      )
+    } finally {
+      setActualizandoDatos(false)
+    }
+  }
+
   const [openConfigInd, setOpenConfigInd] = useState(false)
   const [openActForm, setOpenActForm] = useState(false)
   const [actividadEditando, setActividadEditando] =
@@ -1269,6 +1297,29 @@ export function ReunionDetallePageClient({
             )}
           </CardTitle>
           <div className="flex items-center gap-2">
+            {muestraActualizarDatos && puedeEditar && (
+              <>
+                {actualizarMsg && (
+                  <span className="text-xs text-red-600">{actualizarMsg}</span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={actualizarDatosDeposito}
+                  disabled={actualizandoDatos}
+                  title="Recalcula roturas, faltantes y errores de picking desde el depósito (~1 min)"
+                >
+                  <RefreshCw
+                    className={cn(
+                      "mr-2 size-4",
+                      actualizandoDatos && "animate-spin",
+                    )}
+                  />
+                  {actualizandoDatos ? "Actualizando…" : "Actualizar datos"}
+                </Button>
+              </>
+            )}
             {muestraToggleSucursal && puedeEditar && (
               <Button
                 type="button"

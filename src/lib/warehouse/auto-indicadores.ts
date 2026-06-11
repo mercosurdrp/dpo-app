@@ -768,6 +768,35 @@ async function fetchSerieExtra(
   }
 }
 
+/**
+ * Fuerza el recálculo de la serie diaria en deposito-esteban (`?refresh=1`,
+ * ~45s: re-parsea los Excels y los Google Sheets de errores de picking). El
+ * cache en blob de deposito-esteban sólo se invalida cuando cambian los
+ * movimientos acumulados, así que una carga nueva en el Sheet de errores (o
+ * un cache envenenado) queda vieja hasta el cron — este refresh la destraba.
+ * Deja el resultado en el cache in-memory bajo la URL sin `refresh` para que
+ * un buildWarehouseSerieDiaria posterior de esta misma invocación lo lea
+ * fresco; el blob queda actualizado para el resto de las instancias.
+ */
+export async function refreshSerieDiariaDeposito(
+  year: number,
+  month: number,
+): Promise<boolean> {
+  const url = `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`
+  try {
+    const res = await fetch(`${url}&refresh=1`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(50_000),
+    })
+    if (!res.ok) return false
+    const data = (await res.json()) as DepositoIndicadoresSerieDiaria
+    writeCache(url, data)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function buildAperturaLegacy(
   fecha: string,
   overridesHlHh: Map<OperadorApertura, number | null>,
