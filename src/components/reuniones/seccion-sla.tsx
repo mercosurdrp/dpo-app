@@ -1,14 +1,23 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { Gauge, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { getSlas, getCumplimientoRango } from "@/actions/sla"
+import { getSlas, getCumplimientoRango, getDetalleDiaSla } from "@/actions/sla"
+import { SlaDetalleDiaBody } from "@/components/sla/sla-cumplimientos"
 import type {
   CumplimientoRango,
   CumplimientoRangoFila,
+  DetalleDiaSla,
   EstadoCumplimiento,
 } from "@/lib/sla-cumplimiento"
 import { ActionLogSeccion } from "./action-log-seccion"
@@ -49,6 +58,10 @@ function primerDiaMes(iso: string): string {
 function formatFecha(iso: string): string {
   const [, m, d] = iso.split("-")
   return `${d}/${m}`
+}
+function fechaLarga(iso: string): string {
+  const [y, m, d] = iso.split("-")
+  return `${d}/${m}/${y}`
 }
 
 const ESTADO_CELL: Record<EstadoCumplimiento, string> = {
@@ -98,6 +111,25 @@ export function SeccionSla({
   const [slas, setSlas] = useState<SlaLite[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Modal de detalle del día (mismo cuerpo que el tablero /sla).
+  const [detalleOpen, setDetalleOpen] = useState(false)
+  const [detalleDia, setDetalleDia] = useState<DetalleDiaSla | null>(null)
+  const [pendingDet, startDet] = useTransition()
+
+  function abrirDetalleDia(codigo: string, fecha: string) {
+    setDetalleDia(null)
+    setDetalleOpen(true)
+    startDet(async () => {
+      const r = await getDetalleDiaSla(codigo, fecha)
+      if ("error" in r) {
+        setDetalleOpen(false)
+        alert(`Error cargando el detalle: ${r.error}`)
+        return
+      }
+      setDetalleDia(r.data)
+    })
+  }
 
   function onDesde(v: string) {
     const nv = v || primerDiaMes(fechaReunion)
@@ -228,18 +260,31 @@ export function SeccionSla({
                         </Badge>
                       </div>
                     </div>
-                    {/* Tira día a día */}
+                    {/* Tira día a día (Sí/No abren el detalle del día) */}
                     <div className="flex flex-wrap gap-1">
-                      {f.dias.map((d) => (
-                        <span
-                          key={d.fecha}
-                          title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]}`}
-                          className={cn(
-                            "h-5 w-5 rounded-sm",
-                            ESTADO_CELL[d.estado],
-                          )}
-                        />
-                      ))}
+                      {f.dias.map((d) =>
+                        d.estado === "si" || d.estado === "no" ? (
+                          <button
+                            key={d.fecha}
+                            type="button"
+                            onClick={() => abrirDetalleDia(f.codigo, d.fecha)}
+                            title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]} — ver detalle`}
+                            className={cn(
+                              "h-5 w-5 cursor-pointer rounded-sm transition hover:ring-2 hover:ring-violet-400 hover:ring-offset-1",
+                              ESTADO_CELL[d.estado],
+                            )}
+                          />
+                        ) : (
+                          <span
+                            key={d.fecha}
+                            title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]}`}
+                            className={cn(
+                              "h-5 w-5 rounded-sm",
+                              ESTADO_CELL[d.estado],
+                            )}
+                          />
+                        ),
+                      )}
                     </div>
                   </div>
                 )
@@ -305,6 +350,27 @@ export function SeccionSla({
           </>
         )}
       </CardContent>
+
+      {/* Modal de detalle del día (qué pasó: horarios, motivo, desglose) */}
+      <Dialog open={detalleOpen} onOpenChange={setDetalleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detalleDia?.nombre ?? "Detalle del día"}</DialogTitle>
+            <DialogDescription>
+              {detalleDia
+                ? `${detalleDia.diaSemana} ${fechaLarga(detalleDia.fecha)}`
+                : "Cargando…"}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingDet || !detalleDia ? (
+            <div className="flex items-center justify-center py-10 text-slate-400">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : (
+            <SlaDetalleDiaBody d={detalleDia} />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
