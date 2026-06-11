@@ -28,9 +28,15 @@ export interface NpsMes {
   otif_interno: number | null // 1 - bultos_rechazados/bultos_entregados (def. 109)
 }
 
+export interface NpsSubdriver {
+  subdriver: string
+  encuestas_dp: number
+}
+
 export interface NpsDriver {
   driver: string
   encuestas_dp: number // encuestas Detractor+Pasivo que lo marcaron como primario
+  subdrivers: NpsSubdriver[] // motivos específicos dentro del driver
 }
 
 export interface NpsPromotorVenta {
@@ -183,21 +189,38 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       })
     }
 
-    // ---- drivers (encuestas Detractor+Pasivo, primarios distintos por encuesta) ----
+    // ---- drivers (encuestas Detractor+Pasivo, primarios y subdrivers distintos por encuesta) ----
     const dpEnc = encuestas.filter((e) => e.categoria !== "Promoter")
     const driverCount = new Map<string, number>()
+    const subCount = new Map<string, Map<string, number>>()
     for (const e of dpEnc) {
       const prims = new Set<string>()
+      const pares = new Set<string>()
       for (const par of e.drivers ?? []) {
-        if (par?.[0]) prims.add(par[0])
+        if (par?.[0]) {
+          prims.add(par[0])
+          if (par[1]) pares.add(JSON.stringify([par[0], par[1]]))
+        }
       }
       if (prims.size === 0 && e.driver_primario) prims.add(e.driver_primario)
       for (const d of prims) {
         driverCount.set(d, (driverCount.get(d) ?? 0) + 1)
       }
+      for (const key of pares) {
+        const [p, s] = JSON.parse(key) as [string, string]
+        const m = subCount.get(p) ?? new Map<string, number>()
+        m.set(s, (m.get(s) ?? 0) + 1)
+        subCount.set(p, m)
+      }
     }
     const drivers_dp: NpsDriver[] = [...driverCount.entries()]
-      .map(([driver, n]) => ({ driver, encuestas_dp: n }))
+      .map(([driver, n]) => ({
+        driver,
+        encuestas_dp: n,
+        subdrivers: [...(subCount.get(driver) ?? new Map()).entries()]
+          .map(([subdriver, sn]) => ({ subdriver, encuestas_dp: sn as number }))
+          .sort((a, b) => b.encuestas_dp - a.encuestas_dp),
+      }))
       .sort((a, b) => b.encuestas_dp - a.encuestas_dp)
 
     // ---- NPS por promotor (vendedor de preventa vigente en Chess) ----

@@ -328,29 +328,47 @@ export function NpsClient({ data, planesIniciales }: Props) {
               </p>
             ) : (
               drivers_dp.map((d) => (
-                <div key={d.driver} className="flex items-center gap-2">
-                  <div className="w-56 truncate text-sm text-slate-700">
-                    {d.driver}
-                  </div>
-                  <div className="h-5 flex-1 rounded bg-slate-100">
-                    <div
-                      className="flex h-5 items-center rounded bg-red-400/80 px-1.5 text-[11px] font-medium text-white"
-                      style={{
-                        width: `${Math.max(
-                          (d.encuestas_dp / maxDriver) * 100,
-                          8,
-                        )}%`,
-                      }}
-                    >
-                      {d.encuestas_dp}
+                <div key={d.driver} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-56 truncate text-sm font-medium text-slate-700">
+                      {d.driver}
+                    </div>
+                    <div className="h-5 flex-1 rounded bg-slate-100">
+                      <div
+                        className="flex h-5 items-center rounded bg-red-400/80 px-1.5 text-[11px] font-medium text-white"
+                        style={{
+                          width: `${Math.max(
+                            (d.encuestas_dp / maxDriver) * 100,
+                            8,
+                          )}%`,
+                        }}
+                      >
+                        {d.encuestas_dp}
+                      </div>
                     </div>
                   </div>
+                  {d.subdrivers.length > 0 && (
+                    <ul className="ml-3 space-y-0.5 border-l border-slate-200 pl-3">
+                      {d.subdrivers.map((s) => (
+                        <li
+                          key={s.subdriver}
+                          className="flex items-baseline justify-between gap-2 text-xs text-slate-500"
+                        >
+                          <span className="min-w-0 flex-1">{s.subdriver}</span>
+                          <span className="shrink-0 font-medium text-slate-600">
+                            {s.encuestas_dp}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               ))
             )}
             <p className="pt-2 text-xs text-slate-500">
               Cantidad de encuestas de detractores/pasivos que marcaron cada
-              driver primario.
+              driver primario; debajo, los subdrivers (motivos específicos)
+              señalados dentro de cada uno.
             </p>
           </CardContent>
         </Card>
