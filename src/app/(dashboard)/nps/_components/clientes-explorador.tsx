@@ -138,13 +138,29 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
     })
   }
 
+  function encabezadoColumnas() {
+    return (
+      <div className="grid grid-cols-12 items-center gap-2 px-2 pb-1 text-xs font-medium uppercase text-slate-500">
+        <span className="col-span-4">Cliente</span>
+        <span className="col-span-1 text-center">Score</span>
+        <span className="col-span-3">Drivers</span>
+        <span className="col-span-3">Promotor</span>
+        <span className="col-span-1 text-right">Acción</span>
+      </div>
+    )
+  }
+
   function filaCliente(c: NpsClienteDP) {
     return (
-      <button
+      <div
         key={`${c.cod_cliente}`}
-        type="button"
+        role="button"
+        tabIndex={0}
         onClick={() => setClienteModal(c)}
-        className="grid w-full grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setClienteModal(c)
+        }}
+        className="grid w-full cursor-pointer grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
         <span className="col-span-4 min-w-0">
           <span className="block truncate font-medium text-slate-800">
@@ -159,13 +175,27 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             {c.score}
           </Badge>
         </span>
-        <span className="col-span-4 min-w-0 truncate text-xs text-slate-600">
+        <span className="col-span-3 min-w-0 truncate text-xs text-slate-600">
           {c.drivers.join(" · ") || "—"}
         </span>
         <span className="col-span-3 min-w-0 truncate text-xs text-slate-700">
           {c.promotor ?? "—"}
         </span>
-      </button>
+        <span className="col-span-1 text-right">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCrearPlan(c)
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+            title="Crear plan de acción para este cliente"
+          >
+            <Target className="h-3.5 w-3.5" />
+            Plan
+          </button>
+        </span>
+      </div>
     )
   }
 
@@ -276,9 +306,13 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             Ningún cliente coincide con los filtros.
           </p>
         ) : grupos === null ? (
-          <div className="space-y-1">{filtrados.map((c) => filaCliente(c))}</div>
+          <div className="space-y-1">
+            {encabezadoColumnas()}
+            {filtrados.map((c) => filaCliente(c))}
+          </div>
         ) : (
           <div className="space-y-2">
+            {encabezadoColumnas()}
             {grupos.map(([nombre, items]) => {
               const det = items.filter(
                 (x) => x.categoria === "Detractor",
