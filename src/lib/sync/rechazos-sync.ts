@@ -236,7 +236,9 @@ export async function syncRechazosForDate(
 
     const row = {
       origen: "chess",
-      fecha,
+      // fecha = día del REPARTO (criterio del indicador desde 2026-06-12; antes era
+      // el día de registro del DVVTA). fecha_venta se mantiene por compatibilidad.
+      fecha: fechaVenta,
       fecha_venta: fechaVenta,
       serie: r.serie,
       nrodoc: r.nrodoc,
