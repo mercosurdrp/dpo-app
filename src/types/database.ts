@@ -2822,6 +2822,8 @@ export interface ReunionIndicadoresMes {
     nombre: string
     unidad: string | null
     meta: number | null
+    /** Valor de referencia "gatillo" (umbral rojo) inyectado desde la config. Se muestra como columna al lado de Target. */
+    gatillo?: number | null
     orden: number
     agregacion: AgregacionIndicador
     valores: Record<

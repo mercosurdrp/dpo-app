@@ -1618,7 +1618,10 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[220px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Target
                     </th>
-                    <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[280px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-rose-600">
+                      Gatillo
+                    </th>
+                    <th className="sticky left-[340px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
                     {fechasFiltradas.map((f) => {
@@ -1654,7 +1657,10 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[220px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums">
                         {ind.meta == null ? "—" : formatearValor(ind.meta)}
                       </td>
-                      <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td className="sticky left-[280px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums text-rose-600">
+                        {ind.gatillo == null ? "—" : formatearValor(ind.gatillo)}
+                      </td>
+                      <td className="sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
                         {ind.mtd_texto != null
                           ? ind.mtd_texto
                           : ind.mtd == null
