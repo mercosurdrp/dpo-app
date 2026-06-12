@@ -90,12 +90,16 @@ export function VentasDetalleDiaDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [origenAbierto, setOrigenAbierto] = useState<"chess" | "gestion" | null>(null)
+  const [filtroCliente, setFiltroCliente] = useState("")
+  const [verTodosClientes, setVerTodosClientes] = useState(false)
 
   useEffect(() => {
     if (!open || !fecha) {
       setData(null)
       setError(null)
       setOrigenAbierto(null)
+      setFiltroCliente("")
+      setVerTodosClientes(false)
       return
     }
     let cancelado = false
@@ -359,6 +363,117 @@ export function VentasDetalleDiaDialog({
                 </div>
               </Section>
             )}
+
+            {data.por_cliente.length > 0 && (() => {
+              const filtro = filtroCliente.trim().toLowerCase()
+              const filtrados = filtro
+                ? data.por_cliente.filter(
+                    (c) =>
+                      (c.nombre_cliente ?? "").toLowerCase().includes(filtro) ||
+                      String(c.id_cliente).includes(filtro),
+                  )
+                : data.por_cliente
+              const visibles = verTodosClientes ? filtrados : filtrados.slice(0, 30)
+              return (
+                <Section
+                  title="Por cliente"
+                  subtitle={`${data.por_cliente.length} clientes con entrega · camión asignado y origen`}
+                >
+                  <div className="space-y-2 p-3">
+                    <input
+                      type="text"
+                      value={filtroCliente}
+                      onChange={(e) => setFiltroCliente(e.target.value)}
+                      placeholder="Buscar cliente por nombre o número…"
+                      className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+                    />
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10">#</TableHead>
+                          <TableHead>Cliente</TableHead>
+                          <TableHead className="w-40">Camión</TableHead>
+                          <TableHead className="w-24">Origen</TableHead>
+                          <TableHead className="w-24 text-right">{cfg.unidad}</TableHead>
+                          <TableHead className="w-20 text-right">% del día</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibles.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                              Sin clientes que coincidan con la búsqueda
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {visibles.map((c, i) => {
+                          const cv = metrica === "hl" ? c.hl : c.bultos
+                          const cPct = total > 0 ? (cv / total) * 100 : 0
+                          const camiones = [
+                            ...new Set(
+                              c.origenes.map(
+                                (o) => o.patente ?? o.ds_fletero_carga.replace(/^GESTION-/, "Rep. "),
+                              ),
+                            ),
+                          ]
+                          const origenes = [...new Set(c.origenes.map((o) => o.origen))]
+                          return (
+                            <TableRow key={c.id_cliente}>
+                              <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                              <TableCell>
+                                {c.nombre_cliente ?? (
+                                  <span className="italic text-muted-foreground">(sin nombre)</span>
+                                )}
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  #{c.id_cliente}
+                                </span>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {camiones.join(", ")}
+                              </TableCell>
+                              <TableCell>
+                                <span className="flex flex-wrap gap-1">
+                                  {origenes.map((o) => (
+                                    <span
+                                      key={o}
+                                      className={cn(
+                                        "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                                        o === "gestion"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-sky-100 text-sky-800",
+                                      )}
+                                    >
+                                      {o === "gestion" ? "Gestión" : "Chess"}
+                                    </span>
+                                  ))}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {cfg.formatValor(cv)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums text-muted-foreground">
+                                {cPct.toFixed(1)}%
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                    {!verTodosClientes && filtrados.length > 30 && (
+                      <div className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setVerTodosClientes(true)}
+                        >
+                          Ver los {filtrados.length} clientes
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Section>
+              )
+            })()}
 
             <Section
               title={`${cfg.label === "HL vendidos" ? "HL" : "Bultos"} por patente`}

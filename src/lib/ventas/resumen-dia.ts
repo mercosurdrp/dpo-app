@@ -30,6 +30,24 @@ export interface VentasOrigenRow {
   skus: VentasSkuRow[]
 }
 
+export interface VentasClienteOrigenRow {
+  origen: "chess" | "gestion"
+  ds_fletero_carga: string
+  patente: string | null
+  bultos: number
+  hl: number
+}
+
+export interface VentasClienteRow {
+  id_cliente: number
+  nombre_cliente: string | null
+  bultos: number
+  hl: number
+  comprobantes: number
+  /** Detalle por origen/camión del cliente ese día (mig 119). */
+  origenes: VentasClienteOrigenRow[]
+}
+
 export interface VentasResumenDia {
   fecha: string
   total_bultos: number
@@ -43,6 +61,8 @@ export interface VentasResumenDia {
   por_patente: VentasPatenteRow[]
   /** Desglose Chess vs Gestión con detalle por SKU. */
   por_origen: VentasOrigenRow[]
+  /** Clientes del día ordenados por bultos desc (de ventas_diarias_cliente, mig 119). */
+  por_cliente: VentasClienteRow[]
 }
 
 export async function getVentasResumenDia(
@@ -61,7 +81,7 @@ export async function getVentasResumenDia(
   const ultimoDia = new Date(Date.UTC(prevAnio, prevMes, 0)).getUTCDate()
   const prevHasta = `${prevAnio}-${String(prevMes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
 
-  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw, mapeoGescomRaw] = await Promise.all([
+  const [ventasRaw, ventasMesAntRaw, mapeoRaw, skusRaw, mapeoGescomRaw, clientesRaw] = await Promise.all([
     supa
       .from("ventas_diarias")
       .select("ds_fletero_carga, total_bultos, total_hl, origen")
@@ -82,6 +102,10 @@ export async function getVentasResumenDia(
       .from("mapeo_chofer_gescom")
       .select("codigo, nombre")
       .eq("activo", true),
+    supa
+      .from("ventas_diarias_cliente")
+      .select("origen, ds_fletero_carga, patente, id_cliente, nombre_cliente, comprobantes, bultos, hl")
+      .eq("fecha", fecha),
   ])
 
   if (ventasRaw.error) {
@@ -219,6 +243,40 @@ export async function getVentasResumenDia(
     }))
     .sort((a, b) => b.bultos - a.bultos)
 
+  // Clientes del día (tabla mig 119; si falla la query, sección vacía)
+  const porClienteAgg = new Map<number, VentasClienteRow>()
+  if (!clientesRaw.error && clientesRaw.data) {
+    for (const c of clientesRaw.data as Array<{
+      origen: string; ds_fletero_carga: string; patente: string | null
+      id_cliente: number; nombre_cliente: string | null
+      comprobantes: number | null; bultos: number | null; hl: number | null
+    }>) {
+      const cur = porClienteAgg.get(c.id_cliente) ?? {
+        id_cliente: c.id_cliente,
+        nombre_cliente: c.nombre_cliente,
+        bultos: 0,
+        hl: 0,
+        comprobantes: 0,
+        origenes: [],
+      }
+      const b = Number(c.bultos ?? 0)
+      const h = Number(c.hl ?? 0)
+      cur.bultos += b
+      cur.hl += h
+      cur.comprobantes += Number(c.comprobantes ?? 0)
+      if (!cur.nombre_cliente && c.nombre_cliente) cur.nombre_cliente = c.nombre_cliente
+      cur.origenes.push({
+        origen: c.origen === "gestion" ? "gestion" : "chess",
+        ds_fletero_carga: c.ds_fletero_carga,
+        patente: c.patente,
+        bultos: b,
+        hl: h,
+      })
+      porClienteAgg.set(c.id_cliente, cur)
+    }
+  }
+  const por_cliente = [...porClienteAgg.values()].sort((a, b) => b.bultos - a.bultos)
+
   return {
     fecha,
     total_bultos: totalBultos,
@@ -228,5 +286,6 @@ export async function getVentasResumenDia(
     promedio_hl_mes_anterior: promedioHl,
     por_patente,
     por_origen,
+    por_cliente,
   }
 }
