@@ -113,6 +113,84 @@ async function loadVentasDirectas(supabase: SupabaseClient): Promise<Set<string>
   return new Set(((data ?? []) as Array<{ codigo: string }>).map((r) => r.codigo.trim()))
 }
 
+// --------------------- patente del chofer de Gestión (mig 119) ---------------------
+
+interface ChoferGescom { nombre: string; patenteDefault: string | null }
+
+/** mapeo_chofer_gescom completo: codigo → nombre + patente_default. */
+async function loadChoferesGescom(supabase: SupabaseClient): Promise<Map<string, ChoferGescom>> {
+  const out = new Map<string, ChoferGescom>()
+  const { data, error } = await supabase
+    .from("mapeo_chofer_gescom")
+    .select("codigo, nombre, patente_default")
+    .eq("activo", true)
+  if (error) { console.warn(`[gescom-sync] mapeo_chofer_gescom no disponible: ${error.message}`); return out }
+  for (const r of (data ?? []) as Array<{ codigo: string; nombre: string; patente_default: string | null }>) {
+    out.set(r.codigo.trim(), { nombre: r.nombre, patenteDefault: r.patente_default?.trim().toUpperCase() ?? null })
+  }
+  return out
+}
+
+/**
+ * Checklists de vehículos de las fechas dadas → "<fecha>|<nombre chofer normalizado>" → dominio.
+ * Es la fuente primaria para derivar la patente del chofer de Gestión ese día
+ * (GESCOM no expone patente por ningún endpoint; auditado 2026-06-12).
+ */
+async function loadChecklistDominios(
+  supabase: SupabaseClient,
+  fechas: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (fechas.length === 0) return out
+  const { data, error } = await supabase
+    .from("checklist_vehiculos")
+    .select("fecha, dominio, chofer")
+    .in("fecha", fechas)
+  if (error) { console.warn(`[gescom-sync] checklist_vehiculos no disponible: ${error.message}`); return out }
+  for (const r of (data ?? []) as Array<{ fecha: string; dominio: string | null; chofer: string | null }>) {
+    if (!r.dominio || !r.chofer) continue
+    out.set(`${r.fecha}|${normTexto(r.chofer)}`, r.dominio.trim().toUpperCase())
+  }
+  return out
+}
+
+/** Mismo largo y a lo sumo 1 carácter distinto (typos de carga tipo AF908DF vs AE908DF). */
+function casiIguales(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let dif = 0
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) dif++
+  return dif <= 1
+}
+
+/**
+ * Patente del chofer GESCOM para una fecha: checklist del día (match por nombre,
+ * tolera sufijos tipo "FRIAS ANGEL ERMINDO") → fallback patente_default.
+ * Si el dominio del checklist difiere en 1 carácter del default, gana el default
+ * (forma canónica Chess; los checklists tienen typos persistentes).
+ */
+function patenteDeChofer(
+  codigo: string,
+  fecha: string,
+  choferes: Map<string, ChoferGescom>,
+  checklists: Map<string, string>,
+): string | null {
+  const ch = choferes.get(codigo)
+  if (!ch) return null
+  const nombreNorm = normTexto(ch.nombre)
+  let delDia: string | null = checklists.get(`${fecha}|${nombreNorm}`) ?? null
+  if (!delDia) {
+    for (const [key, dominio] of checklists) {
+      const [f, nombre] = key.split("|")
+      if (f === fecha && (nombre.startsWith(nombreNorm) || nombreNorm.startsWith(nombre))) {
+        delDia = dominio
+        break
+      }
+    }
+  }
+  if (delDia && ch.patenteDefault && casiIguales(delDia, ch.patenteDefault)) return ch.patenteDefault
+  return delDia ?? ch.patenteDefault
+}
+
 interface CatalogoMotivo {
   id_rechazo: number
   ds_rechazo: string
@@ -277,6 +355,12 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   // Detalle por SKU/día (drill-down de "Bultos vendidos" en reuniones, mig 110)
   type AggSku = { bultos: number; hl: number }
   const porDiaSku = new Map<string, Map<number, AggSku>>()
+  // Detalle cliente × chofer/día (mig 119) — key "fecha|fletero|idCliente"
+  type AggCliente = {
+    fecha: string; fletero: string; codigoChofer: string; idCliente: number
+    bultos: number; hl: number; neto: number; comprobantes: number
+  }
+  const porDiaCliente = new Map<string, AggCliente>()
   for (const v of ventas) {
     if (v.codigoTipoVenta !== "VEN" || v.esCredito || !esFinalizada(v)) continue
     const fecha = diaDe(v)
@@ -284,10 +368,23 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     const key = `${fecha}|${fleteroDe(v)}`
     const a = porDiaFletero.get(key) ?? { bultos: 0, hl: 0, comprobantes: 0 }
     const skus = porDiaSku.get(fecha) ?? new Map<number, AggSku>()
+    const idCliente = normalizarCodigoCliente(v.codigoCliente)
+    const ck = idCliente != null ? `${key}|${idCliente}` : null
+    const c = ck
+      ? porDiaCliente.get(ck) ?? {
+          fecha, fletero: fleteroDe(v), codigoChofer: (v.codigoChofer ?? "").trim(),
+          idCliente: idCliente as number, bultos: 0, hl: 0, neto: 0, comprobantes: 0,
+        }
+      : null
     for (const item of v.items ?? []) {
       const { bultos, hl } = bultosYHlDeItem(item, factores)
       a.bultos += bultos
       a.hl += hl
+      if (c) {
+        c.bultos += bultos
+        c.hl += hl
+        c.neto += Math.abs(Number(item.importeNeto) || 0)
+      }
       const idArt = Number(item.codigoItem)
       if (Number.isFinite(idArt)) {
         const s = skus.get(idArt) ?? { bultos: 0, hl: 0 }
@@ -299,6 +396,10 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     a.comprobantes++
     porDiaFletero.set(key, a)
     porDiaSku.set(fecha, skus)
+    if (ck && c) {
+      c.comprobantes++
+      porDiaCliente.set(ck, c)
+    }
   }
   for (const [key, a] of porDiaFletero) {
     const [fecha, fletero] = key.split("|")
@@ -331,6 +432,32 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
       .from("ventas_diarias_sku")
       .upsert(skuRows, { onConflict: "fecha,origen,id_articulo" })
     if (error) console.warn(`[gescom-sync] ventas_diarias_sku ${fecha}: ${error.message}`)
+  }
+
+  // ---- ventas_diarias_cliente: cliente × chofer/día con patente derivada (mig 119) ----
+  if (porDiaCliente.size > 0) {
+    const fechas = [...new Set([...porDiaCliente.values()].map((c) => c.fecha))]
+    const [choferes, checklists] = await Promise.all([
+      loadChoferesGescom(supabase),
+      loadChecklistDominios(supabase, fechas),
+    ])
+    const clienteRows = [...porDiaCliente.values()].map((c) => ({
+      fecha: c.fecha,
+      origen: "gestion",
+      ds_fletero_carga: c.fletero,
+      patente: patenteDeChofer(c.codigoChofer, c.fecha, choferes, checklists),
+      id_cliente: c.idCliente,
+      nombre_cliente: nombres.get(c.idCliente) ?? null,
+      comprobantes: c.comprobantes,
+      bultos: Math.round(c.bultos * 100) / 100,
+      hl: Math.round(c.hl * 10000) / 10000,
+      monto_neto: Math.round(c.neto * 100) / 100,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_cliente")
+      .upsert(clienteRows, { onConflict: "fecha,origen,ds_fletero_carga,id_cliente" })
+    if (error) console.warn(`[gescom-sync] ventas_diarias_cliente: ${error.message}`)
   }
 
   return result

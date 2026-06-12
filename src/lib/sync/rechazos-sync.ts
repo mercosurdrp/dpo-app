@@ -296,6 +296,12 @@ export async function syncRechazosForDate(
   // Detalle por SKU del día (drill-down de "Bultos vendidos" en reuniones, mig 108)
   type AggSku = { ds: string; bultos: number; hl: number }
   const aggSku = new Map<number, AggSku>()
+  // Detalle cliente × camión del día (mig 119) — misma pasada, clave "<fletero>|<idCliente>"
+  type AggCliente = {
+    fletero: string; idCliente: number; nombre: string | null
+    bultos: number; hl: number; neto: number; comprobantes: Set<string>
+  }
+  const aggCliente = new Map<string, AggCliente>()
   for (const v of ventasFCVTA) {
     const a = agg.get(v.dsFleteroCarga) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>() }
     a.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
@@ -308,6 +314,20 @@ export async function syncRechazosForDate(
     s.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
     s.hl += Math.abs(Number(v.unimedtotal) || 0)
     aggSku.set(v.idArticulo, s)
+
+    if (v.idCliente != null) {
+      const ck = `${v.dsFleteroCarga}|${v.idCliente}`
+      const c = aggCliente.get(ck) ?? {
+        fletero: v.dsFleteroCarga, idCliente: v.idCliente,
+        nombre: v.nombreCliente ?? null,
+        bultos: 0, hl: 0, neto: 0, comprobantes: new Set<string>(),
+      }
+      c.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+      c.hl += Math.abs(Number(v.unimedtotal) || 0)
+      c.neto += Math.abs(Number(v.subtotalNeto) || 0)
+      c.comprobantes.add(`${v.serie}-${v.nrodoc}`)
+      aggCliente.set(ck, c)
+    }
   }
   for (const [fletero, a] of agg) {
     const { error } = await supabase.from("ventas_diarias").upsert({
@@ -344,6 +364,30 @@ export async function syncRechazosForDate(
     if (error) {
       // Tabla nueva (mig 108): si aún no existe en este tenant, no es fatal.
       console.warn(`[sync] ventas_diarias_sku day=${fecha}: ${error.message}`)
+    }
+  }
+
+  // ---- upsert ventas_diarias_cliente (cliente × camión, batch, mig 119) ----
+  if (aggCliente.size > 0) {
+    const clienteRows = [...aggCliente.values()].map((c) => ({
+      fecha,
+      origen: "chess",
+      ds_fletero_carga: c.fletero,
+      patente: c.fletero, // en Chess el fletero ES la patente (ya validada arriba)
+      id_cliente: c.idCliente,
+      nombre_cliente: c.nombre,
+      comprobantes: c.comprobantes.size,
+      bultos: Math.round(c.bultos * 100) / 100,
+      hl: Math.round(c.hl * 10000) / 10000,
+      monto_neto: Math.round(c.neto * 100) / 100,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_cliente")
+      .upsert(clienteRows, { onConflict: "fecha,origen,ds_fletero_carga,id_cliente" })
+    if (error) {
+      // Tabla nueva (mig 119): si aún no existe en este tenant, no es fatal.
+      console.warn(`[sync] ventas_diarias_cliente day=${fecha}: ${error.message}`)
     }
   }
 
