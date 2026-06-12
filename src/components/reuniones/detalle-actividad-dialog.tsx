@@ -36,6 +36,7 @@ import {
 } from "@/actions/reuniones"
 import type {
   EstadoReunionActividad,
+  ReunionActividad,
   ReunionActividadConResponsable,
   ReunionActividadEvidenciaConAutor,
 } from "@/types/database"
@@ -48,7 +49,8 @@ interface Props {
   puedeResponder: boolean
   /** Estado preseleccionado al abrir (ej. al elegir "Cerrada" en la fila). */
   estadoInicial?: EstadoReunionActividad
-  onSaved: () => void
+  /** Recibe la actividad actualizada (estado nuevo) para reflejarla sin re-fetch. */
+  onSaved: (act: ReunionActividad) => void
 }
 
 const ESTADO_LABEL: Record<EstadoReunionActividad, string> = {
@@ -177,8 +179,8 @@ export function DetalleActividadDialog({
         setError(result.error)
         return
       }
-      // Avisamos a la página para que refresque la lista de actividades.
-      onSaved()
+      // Avisamos a la página con la actividad actualizada (cambio instantáneo).
+      onSaved(result.data)
       // Si se cerró la actividad, cerramos el popup.
       if (nuevoEstado === "cerrada") {
         onOpenChange(false)

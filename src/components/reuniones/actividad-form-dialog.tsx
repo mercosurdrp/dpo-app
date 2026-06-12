@@ -25,6 +25,7 @@ import {
   crearActividad,
 } from "@/actions/reuniones"
 import type {
+  ReunionActividad,
   ReunionActividadConResponsable,
   S5SectorAlmacen,
   TareaDestino,
@@ -57,7 +58,8 @@ interface Props {
   sectoresAlmacen?: S5SectorAlmacen[]
   vehiculos?: VehiculoOpt[]
   rubrosMantenimiento?: RubroOpt[]
-  onSaved: () => void
+  /** Recibe la actividad creada/actualizada para reflejarla sin re-fetch. */
+  onSaved: (act: ReunionActividad) => void
 }
 
 // Sector fallback si la tabla s5_sectores_almacen viene vacía.
@@ -203,7 +205,7 @@ export function ActividadFormDialog({
         setError(result.error)
         return
       }
-      onSaved()
+      onSaved(result.data)
       onOpenChange(false)
     })
   }

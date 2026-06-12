@@ -73,6 +73,7 @@ import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-d
 import type {
   EstadoReunionActividad,
   Reunion,
+  ReunionActividad,
   ReunionActividadConResponsable,
   ReunionAsistenteConProfile,
   ReunionDetalle,
@@ -629,7 +630,8 @@ function ActividadListItem({
   currentProfileId,
   onEdit,
   onAbrirDetalle,
-  onChanged,
+  onActualizada,
+  onEliminada,
   onAbrirArchivo,
 }: {
   actividad: ReunionActividadConResponsable
@@ -638,7 +640,8 @@ function ActividadListItem({
   currentProfileId: string | null
   onEdit: () => void
   onAbrirDetalle: (estadoInicial?: EstadoReunionActividad) => void
-  onChanged: () => void
+  onActualizada: (act: ReunionActividad) => void
+  onEliminada: (id: string) => void
   onAbrirArchivo: (url: string | null) => void
 }) {
   const [pending, startTransition] = useTransition()
@@ -662,7 +665,7 @@ function ActividadListItem({
         alert(`Error: ${result.error}`)
         return
       }
-      onChanged()
+      onEliminada(actividad.id)
     })
   }
 
@@ -684,7 +687,7 @@ function ActividadListItem({
         alert(`Error: ${result.error}`)
         return
       }
-      onChanged()
+      onActualizada(result.data)
     })
   }
 
@@ -1160,7 +1163,7 @@ export function ReunionDetallePageClient({
   }
 
   // Fuente de actividades (defensiva: actividades nuevo, compromisos legacy)
-  const actividades: ReunionActividadConResponsable[] = useMemo(() => {
+  const actividadesFuente: ReunionActividadConResponsable[] = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = detalle as any
     if (Array.isArray(d.actividades)) return d.actividades
@@ -1185,6 +1188,43 @@ export function ReunionDetallePageClient({
     }
     return []
   }, [detalle])
+
+  // Copia local del Action Log para reflejar altas/cambios/bajas AL INSTANTE
+  // (mismo patrón que asistentes: el refresh completo del server tarda ~8s).
+  const [actividades, setActividades] = useState(actividadesFuente)
+  useEffect(() => {
+    setActividades(actividadesFuente)
+  }, [actividadesFuente])
+
+  function aplicarActividadLocal(act: ReunionActividad) {
+    const previa = actividades.find((a) => a.id === act.id)
+    const merged: ReunionActividadConResponsable = {
+      ...(previa ?? {
+        reunion_origen_id: detalle.id,
+        reunion_origen_fecha: detalle.fecha,
+      }),
+      ...act,
+      responsable_nombre: act.responsable_id
+        ? (responsables.find((r) => r.id === act.responsable_id)?.nombre ??
+          null)
+        : null,
+    } as ReunionActividadConResponsable
+    setActividades((prev) =>
+      previa ? prev.map((a) => (a.id === act.id ? merged : a)) : [...prev, merged],
+    )
+    // Si el popup de detalle está abierto sobre esta actividad, sincronizarlo.
+    setActividadDetalle((prev) =>
+      prev && prev.actividad.id === act.id
+        ? { ...prev, actividad: merged }
+        : prev,
+    )
+    refrescar()
+  }
+
+  function eliminarActividadLocal(id: string) {
+    setActividades((prev) => prev.filter((a) => a.id !== id))
+    refrescar()
+  }
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -2089,7 +2129,8 @@ export function ReunionDetallePageClient({
                       onAbrirDetalle={(estadoInicial) =>
                         setActividadDetalle({ actividad: act, estadoInicial })
                       }
-                      onChanged={refrescar}
+                      onActualizada={aplicarActividadLocal}
+                      onEliminada={eliminarActividadLocal}
                       onAbrirArchivo={abrirArchivo}
                     />
                   ))}
@@ -2114,7 +2155,7 @@ export function ReunionDetallePageClient({
         sectoresAlmacen={sectoresAlmacen}
         vehiculos={vehiculos}
         rubrosMantenimiento={rubrosMantenimiento}
-        onSaved={refrescar}
+        onSaved={aplicarActividadLocal}
       />
       <ConfigurarIndicadoresDialog
         open={openConfigInd}
@@ -2140,7 +2181,7 @@ export function ReunionDetallePageClient({
                 actividadDetalle.actividad.responsable_id ===
                   currentProfileId))
           }
-          onSaved={refrescar}
+          onSaved={aplicarActividadLocal}
         />
       )}
 
