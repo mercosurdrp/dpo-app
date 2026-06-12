@@ -60,9 +60,16 @@ async function operarRecepcion(
   const acarreo = createAcarreoClient()
   if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
   // Los triggers de la tabla sellan hora_inicio_descarga / hora_fin_descarga.
+  // Al FINALIZAR no se pisa registrado_por: queda sellado con quien INICIÓ la
+  // descarga, que es el dato que usa deposito-esteban para atribuir la
+  // productividad (pal/h) del camión al maquinista.
+  const cambios =
+    estado === "finalizado"
+      ? { estado }
+      : { estado, registrado_por: profile.email }
   const { error } = await acarreo
     .from("recepcion_acarreos")
-    .update({ estado, registrado_por: profile.email })
+    .update(cambios)
     .eq("id", id)
   if (error) return { error: error.message }
   return {}
