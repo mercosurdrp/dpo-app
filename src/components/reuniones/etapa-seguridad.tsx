@@ -114,9 +114,9 @@ function SemaforoDelDia({
   const editable = puedeEditar && esHoy && !guardando
   const estadoVisible = esHoy ? estado : null
   return (
-    <div className="flex shrink-0 flex-col items-center gap-2 self-center rounded-lg border border-slate-200 bg-white p-3">
+    <div className="flex shrink-0 flex-col items-center gap-1.5 rounded-lg border border-slate-200 bg-white/95 p-2.5 shadow-sm">
       <p className="text-xs font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-2.5 rounded-md bg-slate-800 px-2.5 py-3">
+      <div className="flex flex-col items-center gap-2 rounded-md bg-slate-800 px-2 py-2.5">
         {SEMAFORO_LUCES.map((luz) => {
           const activo = estadoVisible === luz.estado
           return (
@@ -129,7 +129,7 @@ function SemaforoDelDia({
               aria-label={luz.label}
               aria-pressed={activo}
               className={cn(
-                "size-7 rounded-full transition",
+                "size-6 rounded-full transition",
                 activo
                   ? `${luz.on} shadow ring-2 ring-white`
                   : "bg-slate-600/50",
@@ -389,19 +389,19 @@ export function EtapaSeguridad({
               Cargando datos…
             </div>
           ) : (
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-              <div className="min-w-0 flex-1">
-                <PiramideSeguridad conteos={piramideConteos} />
-              </div>
+            <div className="relative">
+              <PiramideSeguridad conteos={piramideConteos} />
               {muestraSemaforo && (
-                <SemaforoDelDia
-                  estado={semaforo}
-                  fecha={fechaReunion}
-                  esHoy={esHoy}
-                  puedeEditar={puedeEditar}
-                  guardando={guardandoSemaforo}
-                  onElegir={elegirSemaforo}
-                />
+                <div className="mt-3 flex justify-center xl:absolute xl:right-5 xl:top-1/2 xl:mt-0 xl:-translate-y-1/2">
+                  <SemaforoDelDia
+                    estado={semaforo}
+                    fecha={fechaReunion}
+                    esHoy={esHoy}
+                    puedeEditar={puedeEditar}
+                    guardando={guardandoSemaforo}
+                    onElegir={elegirSemaforo}
+                  />
+                </div>
               )}
             </div>
           )}

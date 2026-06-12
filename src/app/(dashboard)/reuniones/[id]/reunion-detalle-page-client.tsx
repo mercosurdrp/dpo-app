@@ -59,6 +59,7 @@ import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-i
 import { EditarReunionDialog } from "@/components/reuniones/editar-reunion-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
+import { TorCountdown } from "@/components/reuniones/tor-countdown"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -1329,13 +1330,14 @@ export function ReunionDetallePageClient({
 
       {/* ASISTENCIA — sticky en pantallas grandes */}
       <Card className="lg:sticky lg:top-2 lg:z-10">
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             Asistencia
             <Badge className="border-slate-200 bg-slate-100 text-base font-semibold text-slate-800 hover:bg-slate-100">
               {totalPresentes} / {totalAsistentes} presentes
             </Badge>
           </CardTitle>
+          <TorCountdown reunionId={detalle.id} />
         </CardHeader>
         <CardContent className="space-y-3">
           {miAsistente && yaMarque && (
