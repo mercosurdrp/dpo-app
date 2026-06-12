@@ -1901,6 +1901,7 @@ export function ReunionDetallePageClient({
         tipo={detalle.tipo}
         tipoLabel={tipoLabel}
         onSaved={refrescar}
+        reunionId={detalle.id}
       />
 
       {actividadDetalle && (

@@ -22,12 +22,23 @@ import {
   actualizarIndicadorConfig,
   crearIndicadorConfig,
   eliminarIndicadorConfig,
+  getIndicadoresMes,
   listIndicadoresConfig,
+  setGatilloIndicador,
 } from "@/actions/reuniones"
 import type { ReunionIndicadorConfig, TipoReunion } from "@/types/database"
 
 type Polaridad = "mayor" | "menor" | "sin"
 type Agregacion = "suma" | "promedio"
+
+// Fila mínima para el editor rápido de gatillo (auto + manuales).
+interface GatilloFila {
+  nombre: string
+  unidad: string | null
+  gatillo: number | null
+  mejor_si: "mayor" | "menor" | null
+  auto: boolean
+}
 
 interface Props {
   open: boolean
@@ -35,6 +46,9 @@ interface Props {
   tipo: TipoReunion
   tipoLabel: string
   onSaved: () => void
+  /** Si se pasa, habilita el editor rápido de gatillo para TODOS los
+   *  indicadores de esa reunión (incluidos los automáticos). */
+  reunionId?: string
 }
 
 const POLARIDAD_LABEL: Record<"mayor" | "menor", string> = {
@@ -93,12 +107,17 @@ export function ConfigurarIndicadoresDialog({
   tipo,
   tipoLabel,
   onSaved,
+  reunionId,
 }: Props) {
   const [items, setItems] = useState<ReunionIndicadorConfig[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+
+  // Editor rápido de gatillo (todos los indicadores de la reunión, auto incl.)
+  const [gatilloFilas, setGatilloFilas] = useState<GatilloFila[]>([])
+  const [loadingGatillos, setLoadingGatillos] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -109,12 +128,31 @@ export function ConfigurarIndicadoresDialog({
     setLoading(false)
   }, [tipo])
 
+  const cargarGatillos = useCallback(async () => {
+    if (!reunionId) return
+    setLoadingGatillos(true)
+    const res = await getIndicadoresMes(reunionId)
+    if ("data" in res) {
+      setGatilloFilas(
+        res.data.indicadores.map((ind) => ({
+          nombre: ind.nombre,
+          unidad: ind.unidad ?? null,
+          gatillo: ind.gatillo ?? null,
+          mejor_si: ind.mejor_si ?? null,
+          auto: ind.auto ?? false,
+        })),
+      )
+    }
+    setLoadingGatillos(false)
+  }, [reunionId])
+
   useEffect(() => {
     if (open) {
       cargar()
+      cargarGatillos()
       setEditingId(null)
     }
-  }, [open, cargar])
+  }, [open, cargar, cargarGatillos])
 
   function handleEliminar(id: string, nombre: string) {
     if (!confirm(`¿Eliminar el indicador "${nombre}"?`)) return
@@ -145,6 +183,52 @@ export function ConfigurarIndicadoresDialog({
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
+        )}
+
+        {reunionId && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-3">
+            <p className="mb-2 text-sm font-semibold text-rose-800">
+              Gatillo por indicador
+            </p>
+            <p className="-mt-1 mb-2 text-[11px] text-muted-foreground">
+              Umbral rojo de referencia. Funciona también para los indicadores{" "}
+              <b>automáticos</b> (WQI, Precisión, Errores, etc.), cuyo valor lo
+              calcula el sistema pero el gatillo lo cargás vos acá.
+            </p>
+            {loadingGatillos ? (
+              <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+                <Loader2 className="mr-2 size-3.5 animate-spin" />
+                Cargando indicadores…
+              </div>
+            ) : gatilloFilas.length === 0 ? (
+              <p className="py-2 text-center text-xs text-muted-foreground">
+                Sin indicadores en esta reunión.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {gatilloFilas.map((f) => (
+                  <GatilloFilaRow
+                    key={f.nombre}
+                    fila={f}
+                    onSave={(valor, onErr) =>
+                      startTransition(async () => {
+                        const r = await setGatilloIndicador(
+                          tipo,
+                          f.nombre,
+                          valor,
+                          { unidad: f.unidad, mejor_si: f.mejor_si },
+                        )
+                        if ("error" in r) return onErr(r.error)
+                        cargarGatillos()
+                        onSaved()
+                      })
+                    }
+                    pending={pending}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {loading ? (
@@ -458,5 +542,86 @@ function IndicadorForm({
         </Button>
       </div>
     </form>
+  )
+}
+
+// --- Fila del editor rápido de gatillo (un indicador, auto o manual) ---
+function GatilloFilaRow({
+  fila,
+  onSave,
+  pending,
+}: {
+  fila: GatilloFila
+  onSave: (valor: number | null, onError: (msg: string) => void) => void
+  pending: boolean
+}) {
+  const [val, setVal] = useState(fila.gatillo == null ? "" : String(fila.gatillo))
+  const [err, setErr] = useState<string | null>(null)
+
+  // Re-sincronizar si la fila se recarga con un valor nuevo.
+  useEffect(() => {
+    setVal(fila.gatillo == null ? "" : String(fila.gatillo))
+  }, [fila.gatillo])
+
+  const sucio = val.trim() !== (fila.gatillo == null ? "" : String(fila.gatillo))
+  const u = fila.unidad ? ` ${fila.unidad}` : ""
+
+  function guardar() {
+    setErr(null)
+    const t = val.trim()
+    if (t === "") return onSave(null, setErr)
+    const n = Number(t)
+    if (!Number.isFinite(n)) {
+      setErr("Valor inválido")
+      return
+    }
+    onSave(n, setErr)
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-white px-2.5 py-1.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-xs font-medium text-slate-800">
+            {fila.nombre}
+          </span>
+          {fila.auto && (
+            <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-slate-500">
+              auto
+            </span>
+          )}
+          {fila.unidad && (
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {fila.unidad}
+            </span>
+          )}
+        </div>
+        {err && <p className="text-[10px] text-red-700">{err}</p>}
+      </div>
+      <Input
+        type="number"
+        step="any"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        placeholder="—"
+        className="h-7 w-24 text-right text-xs"
+        title={`Gatillo${u}`}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant={sucio ? "default" : "outline"}
+        className="h-7 px-2"
+        disabled={pending || !sucio}
+        onClick={guardar}
+        title="Guardar gatillo"
+      >
+        {pending ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Check className="size-3.5" />
+        )}
+      </Button>
+    </div>
   )
 }

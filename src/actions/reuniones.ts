@@ -2033,6 +2033,78 @@ export async function crearIndicadorConfig(
   }
 }
 
+/**
+ * Setea (o limpia) el `gatillo` de un indicador por NOMBRE dentro de un tipo de
+ * reunión. Sirve tanto para indicadores manuales (actualiza su fila de config)
+ * como para los AUTOMÁTICOS (WQI, Precisión, Errores, etc.): para estos crea una
+ * fila de config "solo gatillo" con el mismo nombre — el wrapper getIndicadoresMes
+ * la matchea por nombre e inyecta el gatillo en la fila auto, y el dedup final la
+ * oculta de la sección manual para no duplicar. Idempotente.
+ */
+export async function setGatilloIndicador(
+  tipo: string,
+  nombre: string,
+  gatillo: number | null,
+  opts?: { unidad?: string | null; mejor_si?: "mayor" | "menor" | null },
+): Promise<Result<{ ok: true }>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    const tipoT = tipo.trim()
+    const nombreT = nombre.trim()
+    if (!tipoT || !nombreT) return { error: "Tipo y nombre son obligatorios" }
+    if (gatillo !== null && !Number.isFinite(gatillo)) {
+      return { error: "Gatillo inválido" }
+    }
+
+    // ¿Ya hay una fila de config con ese nombre (case-insensitive) para el tipo?
+    const { data: existentes, error: eSel } = await supabase
+      .from("reuniones_indicadores_config")
+      .select("id, nombre")
+      .eq("tipo", tipoT)
+    if (eSel) return { error: eSel.message }
+
+    const match = (existentes ?? []).find(
+      (c: { id: string; nombre: string }) =>
+        c.nombre.trim().toLowerCase() === nombreT.toLowerCase(),
+    )
+
+    if (match) {
+      const { error } = await supabase
+        .from("reuniones_indicadores_config")
+        .update({ gatillo })
+        .eq("id", match.id)
+      if (error) return { error: error.message }
+    } else {
+      // Fila "solo gatillo" para un indicador automático. orden alto: el dedup
+      // final la oculta de la tabla, pero por las dudas queda al final.
+      const { error } = await supabase
+        .from("reuniones_indicadores_config")
+        .insert({
+          tipo: tipoT as TipoReunion,
+          nombre: nombreT,
+          unidad: opts?.unidad ?? null,
+          meta: null,
+          gatillo,
+          mejor_si: opts?.mejor_si ?? null,
+          orden: 999,
+          activo: true,
+          agregacion: "promedio",
+        })
+      if (error) return { error: error.message }
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error guardando el gatillo",
+    }
+  }
+}
+
 export async function actualizarIndicadorConfig(
   id: string,
   formData: FormData,
@@ -4068,13 +4140,24 @@ async function getIndicadoresMesCore(
       }
     }
 
+    // Dedup final: una fila de config cuyo nombre coincide con un indicador
+    // AUTO no debe mostrarse como fila manual duplicada. Esas filas existen
+    // sólo para guardar el `gatillo` (umbral rojo) del indicador automático
+    // — el wrapper getIndicadoresMes lo inyecta por nombre en la fila auto.
+    const autoNombres = new Set(
+      indicadoresAuto.map((a) => a.nombre.trim().toLowerCase()),
+    )
+    const indicadoresManual = indicadores.filter(
+      (m) => !autoNombres.has(m.nombre.trim().toLowerCase()),
+    )
+
     return {
       data: {
         anio,
         mes,
         fechas,
         reuniones_por_fecha: reunionesPorFecha,
-        indicadores: [...indicadoresAuto, ...indicadores],
+        indicadores: [...indicadoresAuto, ...indicadoresManual],
       },
     }
   } catch (err) {
