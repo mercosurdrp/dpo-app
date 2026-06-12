@@ -23,6 +23,9 @@ export interface VentasOrigenRow {
   origen: "chess" | "gestion"
   bultos: number
   hl: number
+  /** Camiones del origen ordenados por bultos desc. Chess = patente real;
+   *  Gestión = reparto GESTION-<codigoChofer> (GESCOM no informa patente). */
+  patentes: VentasPatenteRow[]
   /** SKUs del origen ordenados por bultos desc (de ventas_diarias_sku, mig 108). */
   skus: VentasSkuRow[]
 }
@@ -113,6 +116,7 @@ export async function getVentasResumenDia(
   let totalHl = 0
   const porPatenteAgg = new Map<string, { bultos: number; hl: number }>()
   const porOrigenAgg = new Map<string, { bultos: number; hl: number }>()
+  const porOrigenPatenteAgg = new Map<string, Map<string, { bultos: number; hl: number }>>()
   for (const v of ventas) {
     const b = Number(v.total_bultos ?? 0)
     const h = Number(v.total_hl ?? 0)
@@ -120,13 +124,19 @@ export async function getVentasResumenDia(
     const hs = Number.isFinite(h) ? h : 0
     totalBultos += bs
     totalHl += hs
+    const origen = v.origen === "gestion" ? "gestion" : "chess"
     if (v.ds_fletero_carga) {
       const cur = porPatenteAgg.get(v.ds_fletero_carga) ?? { bultos: 0, hl: 0 }
       cur.bultos += bs
       cur.hl += hs
       porPatenteAgg.set(v.ds_fletero_carga, cur)
+      const porPat = porOrigenPatenteAgg.get(origen) ?? new Map()
+      const curO = porPat.get(v.ds_fletero_carga) ?? { bultos: 0, hl: 0 }
+      curO.bultos += bs
+      curO.hl += hs
+      porPat.set(v.ds_fletero_carga, curO)
+      porOrigenPatenteAgg.set(origen, porPat)
     }
-    const origen = v.origen === "gestion" ? "gestion" : "chess"
     const co = porOrigenAgg.get(origen) ?? { bultos: 0, hl: 0 }
     co.bultos += bs
     co.hl += hs
@@ -157,6 +167,14 @@ export async function getVentasResumenDia(
       origen: o,
       bultos: porOrigenAgg.get(o)?.bultos ?? 0,
       hl: Math.round((porOrigenAgg.get(o)?.hl ?? 0) * 100) / 100,
+      patentes: [...(porOrigenPatenteAgg.get(o) ?? new Map()).entries()]
+        .map(([patente, agg]: [string, { bultos: number; hl: number }]) => ({
+          patente,
+          chofer_nombre: choferIdx.get(patente) ?? null,
+          bultos: agg.bultos,
+          hl: agg.hl,
+        }))
+        .sort((a, b) => b.bultos - a.bultos),
       skus: (skusPorOrigen.get(o) ?? []).sort((a, b) => b.bultos - a.bultos),
     }))
 

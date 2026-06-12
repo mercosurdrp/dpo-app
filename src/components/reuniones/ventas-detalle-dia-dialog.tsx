@@ -219,7 +219,7 @@ export function VentasDetalleDiaDialog({
             {data.por_origen.length > 0 && (
               <Section
                 title="Por origen (Chess / Gestión)"
-                subtitle="Tocá un origen para ver el detalle por SKU"
+                subtitle="Tocá un origen para ver el detalle por camión y por SKU"
               >
                 <div className="divide-y divide-slate-100">
                   {data.por_origen.map((o) => {
@@ -257,7 +257,61 @@ export function VentasDetalleDiaDialog({
                           </span>
                         </button>
                         {abierto && (
-                          <div className="border-t border-slate-100 bg-slate-50/60 px-3 pb-3 pt-1">
+                          <div className="space-y-3 border-t border-slate-100 bg-slate-50/60 px-3 pb-3 pt-1">
+                            <div>
+                              <h4 className="mb-1 mt-2 text-xs font-semibold text-slate-700">
+                                Por camión ({o.patentes.length})
+                              </h4>
+                              {o.patentes.length === 0 ? (
+                                <p className="py-2 text-center text-xs text-muted-foreground">
+                                  Sin detalle por camión para este día.
+                                </p>
+                              ) : (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-10">#</TableHead>
+                                      <TableHead className="w-32">
+                                        {o.origen === "gestion" ? "Reparto" : "Patente"}
+                                      </TableHead>
+                                      <TableHead>Chofer</TableHead>
+                                      <TableHead className="w-28 text-right">{cfg.unidad}</TableHead>
+                                      <TableHead className="w-20 text-right">% origen</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {o.patentes.map((p, i) => {
+                                      const pv = metrica === "hl" ? p.hl : p.bultos
+                                      const pPct = valor > 0 ? (pv / valor) * 100 : 0
+                                      return (
+                                        <TableRow key={p.patente}>
+                                          <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                                          <TableCell className="font-mono text-xs">
+                                            {p.patente.replace(/^GESTION-/, "Rep. ")}
+                                          </TableCell>
+                                          <TableCell>
+                                            {p.chofer_nombre?.replace(/ \(Gestión\)$/, "") ?? (
+                                              <span className="italic text-muted-foreground">
+                                                (sin asignar)
+                                              </span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium tabular-nums">
+                                            {cfg.formatValor(pv)}
+                                          </TableCell>
+                                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                                            {pPct.toFixed(1)}%
+                                          </TableCell>
+                                        </TableRow>
+                                      )
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              )}
+                            </div>
+                            <h4 className="mb-1 text-xs font-semibold text-slate-700">
+                              Por SKU ({o.skus.length})
+                            </h4>
                             {o.skus.length === 0 ? (
                               <p className="py-3 text-center text-xs text-muted-foreground">
                                 Sin detalle por SKU para este día (se genera con el sync diario).
