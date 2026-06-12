@@ -1283,8 +1283,8 @@ export function ReunionDetallePageClient({
         </Link>
       </div>
 
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-slate-50 p-4">
+      {/* Header — fijo al scrollear, con el contador TOR al medio */}
+      <div className="sticky top-14 z-30 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-slate-50 p-4 shadow-sm md:top-0">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
             {tipoLabel}
@@ -1294,6 +1294,7 @@ export function ReunionDetallePageClient({
             {formatFechaLarga(detalle.fecha)}
           </h1>
         </div>
+        <TorCountdown reunionId={detalle.id} />
         {puedeEditar && (
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1328,16 +1329,15 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ASISTENCIA — sticky en pantallas grandes */}
-      <Card className="lg:sticky lg:top-2 lg:z-10">
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
+      {/* ASISTENCIA */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             Asistencia
             <Badge className="border-slate-200 bg-slate-100 text-base font-semibold text-slate-800 hover:bg-slate-100">
               {totalPresentes} / {totalAsistentes} presentes
             </Badge>
           </CardTitle>
-          <TorCountdown reunionId={detalle.id} />
         </CardHeader>
         <CardContent className="space-y-3">
           {miAsistente && yaMarque && (

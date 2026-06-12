@@ -114,9 +114,9 @@ function SemaforoDelDia({
   const editable = puedeEditar && esHoy && !guardando
   const estadoVisible = esHoy ? estado : null
   return (
-    <div className="flex shrink-0 flex-col items-center gap-1.5 rounded-lg border border-slate-200 bg-white/95 p-2.5 shadow-sm">
-      <p className="text-xs font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-2 rounded-md bg-slate-800 px-2 py-2.5">
+    <div className="flex shrink-0 flex-col items-center gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-sm">
+      <p className="text-sm font-semibold text-slate-700">Estado del día</p>
+      <div className="flex flex-col items-center gap-4 rounded-xl bg-slate-800 px-6 py-5 shadow-inner">
         {SEMAFORO_LUCES.map((luz) => {
           const activo = estadoVisible === luz.estado
           return (
@@ -129,9 +129,9 @@ function SemaforoDelDia({
               aria-label={luz.label}
               aria-pressed={activo}
               className={cn(
-                "size-6 rounded-full transition",
+                "size-11 rounded-full transition",
                 activo
-                  ? `${luz.on} shadow ring-2 ring-white`
+                  ? `${luz.on} shadow-[0_0_14px_3px_rgba(255,255,255,0.35)] ring-2 ring-white`
                   : "bg-slate-600/50",
                 editable ? "cursor-pointer hover:opacity-90" : "cursor-default",
               )}

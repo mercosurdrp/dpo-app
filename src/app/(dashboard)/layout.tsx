@@ -46,7 +46,9 @@ export default async function DashboardLayout({
       <div className="flex min-h-screen">
         <Sidebar role={role} pilares={pilarNav} />
         <MobileNav role={role} pilares={pilarNav} />
-        <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-14 md:p-6 md:pt-6">
+        {/* Sin overflow-auto: crearía un scroll context que rompe los sticky
+            internos (el scroll real es del documento, igual que el sidebar). */}
+        <main className="min-w-0 flex-1 bg-slate-50 p-4 pt-14 md:p-6 md:pt-6">
           {children}
         </main>
       </div>
