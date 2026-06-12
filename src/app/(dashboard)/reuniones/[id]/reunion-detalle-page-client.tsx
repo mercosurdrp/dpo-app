@@ -107,6 +107,7 @@ interface IndicadorMesItem {
   nombre: string
   unidad: string | null
   meta: number | null
+  gatillo?: number | null
   orden: number
   agregacion: AgregacionIndicador
   valores: Record<string, IndicadorMesCellData | null>
