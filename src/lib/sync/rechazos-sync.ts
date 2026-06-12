@@ -304,6 +304,9 @@ export async function syncRechazosForDate(
     bultos: number; hl: number; neto: number; comprobantes: Set<string>
   }
   const aggCliente = new Map<string, AggCliente>()
+  // Detalle camión × SKU del día (mig 120) — clave "<fletero>|<idArticulo>"
+  type AggFleteroSku = { fletero: string; idArt: number; ds: string; bultos: number; hl: number }
+  const aggFleteroSku = new Map<string, AggFleteroSku>()
   for (const v of ventasFCVTA) {
     const a = agg.get(v.dsFleteroCarga) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>() }
     a.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
@@ -316,6 +319,15 @@ export async function syncRechazosForDate(
     s.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
     s.hl += Math.abs(Number(v.unimedtotal) || 0)
     aggSku.set(v.idArticulo, s)
+
+    const fsk = `${v.dsFleteroCarga}|${v.idArticulo}`
+    const fs = aggFleteroSku.get(fsk) ?? {
+      fletero: v.dsFleteroCarga, idArt: v.idArticulo,
+      ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0,
+    }
+    fs.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+    fs.hl += Math.abs(Number(v.unimedtotal) || 0)
+    aggFleteroSku.set(fsk, fs)
 
     if (v.idCliente != null) {
       const ck = `${v.dsFleteroCarga}|${v.idCliente}`
@@ -366,6 +378,27 @@ export async function syncRechazosForDate(
     if (error) {
       // Tabla nueva (mig 108): si aún no existe en este tenant, no es fatal.
       console.warn(`[sync] ventas_diarias_sku day=${fecha}: ${error.message}`)
+    }
+  }
+
+  // ---- upsert ventas_diarias_camion_sku (SKU × camión, batch, mig 120) ----
+  if (aggFleteroSku.size > 0) {
+    const rows = [...aggFleteroSku.values()].map((s) => ({
+      fecha,
+      origen: "chess",
+      ds_fletero_carga: s.fletero,
+      id_articulo: s.idArt,
+      ds_articulo: s.ds,
+      bultos: Math.round(s.bultos * 100) / 100,
+      hl: Math.round(s.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_camion_sku")
+      .upsert(rows, { onConflict: "fecha,origen,ds_fletero_carga,id_articulo" })
+    if (error) {
+      // Tabla nueva (mig 120): si aún no existe en este tenant, no es fatal.
+      console.warn(`[sync] ventas_diarias_camion_sku day=${fecha}: ${error.message}`)
     }
   }
 

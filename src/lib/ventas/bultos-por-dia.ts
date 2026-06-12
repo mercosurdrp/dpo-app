@@ -43,11 +43,13 @@ export async function getBultosPorDia(
       .lte("fecha", hasta),
     // Rechazos por fecha_venta (día del REPARTO al que pertenece la mercadería),
     // no por fecha del DVVTA (día en que se registró, en Chess ~1,6 días después).
+    // range(0, 9999): sin esto PostgREST corta en 1000 filas y un rango largo subcontaría.
     supa
       .from("rechazos")
       .select("fecha_venta, origen, bultos_rechazados")
       .gte("fecha_venta", desde)
-      .lte("fecha_venta", hasta),
+      .lte("fecha_venta", hasta)
+      .range(0, 9999),
   ])
 
   if (entregadosRaw.error) throw new Error(`ventas_diarias: ${entregadosRaw.error.message}`)

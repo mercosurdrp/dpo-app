@@ -69,17 +69,40 @@ interface ArticuloFactor {
   desCorta: string | null
 }
 
+/**
+ * SELECT completo paginado: PostgREST corta en 1000 filas por default y los maestros
+ * superan ese límite (chess_articulos ~1.5k, bot_clientes_cache ~2.2k) → sin esto,
+ * los artículos/clientes fuera de la primera página computaban bultos 0 / sin nombre
+ * de forma intermitente (bug detectado 2026-06-12).
+ */
+async function selectAll<T>(
+  supabase: SupabaseClient,
+  tabla: string,
+  columnas: string,
+  filtro?: Record<string, string[]>,   // { columna: valores } → .in(columna, valores)
+): Promise<T[]> {
+  const PAGE = 1000
+  const out: T[] = []
+  for (let desde = 0; ; desde += PAGE) {
+    let q = supabase.from(tabla).select(columnas).range(desde, desde + PAGE - 1)
+    for (const [col, vals] of Object.entries(filtro ?? {})) q = q.in(col, vals)
+    const { data, error } = await q
+    if (error) { console.warn(`[gescom-sync] ${tabla} no disponible: ${error.message}`); break }
+    const rows = (data ?? []) as T[]
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
 /** Maestro de artículos Chess (idArticulo → factores) para convertir unidades a HL/bultos. */
 async function loadArticulosFactores(supabase: SupabaseClient): Promise<Map<number, ArticuloFactor>> {
   const out = new Map<number, ArticuloFactor>()
-  const { data, error } = await supabase
-    .from("chess_articulos")
-    .select("id_articulo, unidades_bulto, valor_unidad_medida, des_corta")
-  if (error) { console.warn(`[gescom-sync] chess_articulos no disponible: ${error.message}`); return out }
-  for (const r of (data ?? []) as Array<{
+  const rows = await selectAll<{
     id_articulo: number; unidades_bulto: number | null
     valor_unidad_medida: number | string | null; des_corta: string | null
-  }>) {
+  }>(supabase, "chess_articulos", "id_articulo, unidades_bulto, valor_unidad_medida, des_corta")
+  for (const r of rows) {
     out.set(r.id_articulo, {
       unidadesBulto: Number(r.unidades_bulto) || 0,
       hlPorBulto: Number(r.valor_unidad_medida) || 0,
@@ -92,11 +115,10 @@ async function loadArticulosFactores(supabase: SupabaseClient): Promise<Map<numb
 /** Nombres de cliente (id_cliente Chess → nombre) desde el cache de clientes. */
 async function loadNombresClientes(supabase: SupabaseClient): Promise<Map<number, string>> {
   const out = new Map<number, string>()
-  const { data, error } = await supabase
-    .from("bot_clientes_cache")
-    .select("id_cliente, nombre_cliente")
-  if (error) { console.warn(`[gescom-sync] bot_clientes_cache no disponible: ${error.message}`); return out }
-  for (const r of (data ?? []) as Array<{ id_cliente: string; nombre_cliente: string | null }>) {
+  const rows = await selectAll<{ id_cliente: string; nombre_cliente: string | null }>(
+    supabase, "bot_clientes_cache", "id_cliente, nombre_cliente",
+  )
+  for (const r of rows) {
     const id = Number(r.id_cliente)
     if (Number.isFinite(id) && r.nombre_cliente) out.set(id, r.nombre_cliente)
   }
@@ -142,12 +164,10 @@ async function loadChecklistDominios(
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   if (fechas.length === 0) return out
-  const { data, error } = await supabase
-    .from("checklist_vehiculos")
-    .select("fecha, dominio, chofer")
-    .in("fecha", fechas)
-  if (error) { console.warn(`[gescom-sync] checklist_vehiculos no disponible: ${error.message}`); return out }
-  for (const r of (data ?? []) as Array<{ fecha: string; dominio: string | null; chofer: string | null }>) {
+  const rows = await selectAll<{ fecha: string; dominio: string | null; chofer: string | null }>(
+    supabase, "checklist_vehiculos", "fecha, dominio, chofer", { fecha: fechas },
+  )
+  for (const r of rows) {
     if (!r.dominio || !r.chofer) continue
     out.set(`${r.fecha}|${normTexto(r.chofer)}`, r.dominio.trim().toUpperCase())
   }
@@ -361,6 +381,8 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     bultos: number; hl: number; neto: number; comprobantes: number
   }
   const porDiaCliente = new Map<string, AggCliente>()
+  // Detalle camión × SKU/día (mig 120) — key "fecha|fletero" → Map<idArt, agg>
+  const porDiaFleteroSku = new Map<string, Map<number, AggSku>>()
   for (const v of ventas) {
     if (v.codigoTipoVenta !== "VEN" || v.esCredito || !esFinalizada(v)) continue
     const fecha = diaDe(v)
@@ -376,6 +398,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
           idCliente: idCliente as number, bultos: 0, hl: 0, neto: 0, comprobantes: 0,
         }
       : null
+    const skusFletero = porDiaFleteroSku.get(key) ?? new Map<number, AggSku>()
     for (const item of v.items ?? []) {
       const { bultos, hl } = bultosYHlDeItem(item, factores)
       a.bultos += bultos
@@ -391,8 +414,13 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
         s.bultos += bultos
         s.hl += hl
         skus.set(idArt, s)
+        const sf = skusFletero.get(idArt) ?? { bultos: 0, hl: 0 }
+        sf.bultos += bultos
+        sf.hl += hl
+        skusFletero.set(idArt, sf)
       }
     }
+    porDiaFleteroSku.set(key, skusFletero)
     a.comprobantes++
     porDiaFletero.set(key, a)
     porDiaSku.set(fecha, skus)
@@ -432,6 +460,26 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
       .from("ventas_diarias_sku")
       .upsert(skuRows, { onConflict: "fecha,origen,id_articulo" })
     if (error) console.warn(`[gescom-sync] ventas_diarias_sku ${fecha}: ${error.message}`)
+  }
+
+  // ---- ventas_diarias_camion_sku: SKU × camión/día (batch por fecha|fletero, mig 120) ----
+  for (const [key, skus] of porDiaFleteroSku) {
+    if (skus.size === 0) continue
+    const [fecha, fletero] = key.split("|")
+    const rows = [...skus.entries()].map(([idArt, s]) => ({
+      fecha,
+      origen: "gestion",
+      ds_fletero_carga: fletero,
+      id_articulo: idArt,
+      ds_articulo: factores.get(idArt)?.desCorta ?? `Art ${idArt}`,
+      bultos: Math.round(s.bultos * 100) / 100,
+      hl: Math.round(s.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from("ventas_diarias_camion_sku")
+      .upsert(rows, { onConflict: "fecha,origen,ds_fletero_carga,id_articulo" })
+    if (error) console.warn(`[gescom-sync] ventas_diarias_camion_sku ${key}: ${error.message}`)
   }
 
   // ---- ventas_diarias_cliente: cliente × chofer/día con patente derivada (mig 119) ----

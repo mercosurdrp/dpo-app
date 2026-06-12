@@ -24,6 +24,7 @@ import {
   getBultosDiaPatentes,
   type BultosDiaPatentes,
 } from "@/actions/bultos-dia-patentes"
+import { CamionSkusDialog } from "./camion-skus-dialog"
 
 interface Props {
   open: boolean
@@ -35,11 +36,13 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
   const [data, setData] = useState<BultosDiaPatentes | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [skuDrill, setSkuDrill] = useState<{ fletero: string; etiqueta: string } | null>(null)
 
   useEffect(() => {
     if (!open || !fecha) {
       setData(null)
       setError(null)
+      setSkuDrill(null)
       return
     }
     let cancelado = false
@@ -73,7 +76,7 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
             )}
           </DialogTitle>
           <DialogDescription>
-            Patentes/repartos que componen los bultos de la columna, con su origen. Rech. = lo rechazado de la mercadería que ese camión llevó ese día (aunque la devolución se registre después).
+            Patentes/repartos que componen los bultos de la columna, con su origen. Tocá un camión para ver sus SKUs. Rech. = lo rechazado de la mercadería que ese camión llevó ese día (aunque la devolución se registre después).
           </DialogDescription>
         </DialogHeader>
 
@@ -121,8 +124,14 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
                 )}
                 {data.patentes.map((p, i) => {
                   const pct = data.total_bultos > 0 ? (p.bultos / data.total_bultos) * 100 : 0
+                  const etiqueta = (p.patente ?? p.ds_fletero_carga.replace(/^GESTION-/, "Rep. ")) +
+                    (p.chofer_nombre ? ` · ${p.chofer_nombre}` : "")
                   return (
-                    <TableRow key={p.ds_fletero_carga}>
+                    <TableRow
+                      key={p.ds_fletero_carga}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => setSkuDrill({ fletero: p.ds_fletero_carga, etiqueta })}
+                    >
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell>
                         <span
@@ -176,6 +185,14 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
             </div>
           </div>
         )}
+
+        <CamionSkusDialog
+          open={skuDrill != null}
+          onOpenChange={(o) => { if (!o) setSkuDrill(null) }}
+          fecha={fecha}
+          fletero={skuDrill?.fletero ?? null}
+          etiqueta={skuDrill?.etiqueta ?? null}
+        />
       </DialogContent>
     </Dialog>
   )
