@@ -177,7 +177,6 @@ export const navItems: NavItem[] = [
     label: "SLA",
     href: "/sla",
     icon: <Handshake className="size-5" />,
-    pampeanaOnly: true,
     hideForEmpleado: true,
   },
   {
