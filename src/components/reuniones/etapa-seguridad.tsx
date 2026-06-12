@@ -19,6 +19,13 @@ import {
 } from "@/components/ui/card"
 import { getReportes } from "@/actions/reportes-seguridad"
 import {
+  getSeguridadSemaforo,
+  setSeguridadSemaforo,
+  type SemaforoEstado,
+} from "@/actions/reuniones"
+import { IS_MISIONES } from "@/lib/empresa"
+import { cn } from "@/lib/utils"
+import {
   PiramideSeguridad,
   type PiramideConteos,
 } from "@/components/reportes-seguridad/piramide-seguridad"
@@ -72,12 +79,91 @@ function formatFechaCorta(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`
 }
 
+function hoyArgentina(): string {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
+}
+
+const SEMAFORO_LUCES: {
+  estado: SemaforoEstado
+  label: string
+  on: string
+}[] = [
+  { estado: "rojo", label: "Rojo", on: "bg-red-500" },
+  { estado: "amarillo", label: "Amarillo", on: "bg-amber-400" },
+  { estado: "verde", label: "Verde", on: "bg-emerald-500" },
+]
+
+function SemaforoDelDia({
+  estado,
+  fecha,
+  esHoy,
+  puedeEditar,
+  guardando,
+  onElegir,
+}: {
+  estado: SemaforoEstado | null
+  fecha: string
+  /** El semáforo se reinicia a las 00:00: días pasados se ven apagados. */
+  esHoy: boolean
+  puedeEditar: boolean
+  guardando: boolean
+  onElegir: (estado: SemaforoEstado) => void
+}) {
+  const editable = puedeEditar && esHoy && !guardando
+  const estadoVisible = esHoy ? estado : null
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-2 self-center rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs font-semibold text-slate-700">Estado del día</p>
+      <div className="flex flex-col items-center gap-2.5 rounded-md bg-slate-800 px-2.5 py-3">
+        {SEMAFORO_LUCES.map((luz) => {
+          const activo = estadoVisible === luz.estado
+          return (
+            <button
+              key={luz.estado}
+              type="button"
+              disabled={!editable}
+              onClick={() => onElegir(luz.estado)}
+              title={activo ? `${luz.label} (click para apagar)` : luz.label}
+              aria-label={luz.label}
+              aria-pressed={activo}
+              className={cn(
+                "size-7 rounded-full transition",
+                activo
+                  ? `${luz.on} shadow ring-2 ring-white`
+                  : "bg-slate-600/50",
+                editable ? "cursor-pointer hover:opacity-90" : "cursor-default",
+              )}
+            />
+          )
+        })}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {formatFechaCorta(fecha)}
+      </p>
+      {!esHoy ? (
+        <p className="max-w-[110px] text-center text-[10px] text-muted-foreground">
+          Se reinicia cada día a las 00:00
+        </p>
+      ) : !puedeEditar ? (
+        <p className="text-[10px] text-muted-foreground">Solo lectura</p>
+      ) : null}
+    </div>
+  )
+}
+
 export function EtapaSeguridad({
   fechaReunion,
+  reunionId,
+  puedeEditar = false,
   currentProfileId,
   currentRole,
 }: {
   fechaReunion: string
+  /** Si se pasa, muestra el semáforo del día junto a la pirámide (solo Misiones). */
+  reunionId?: string
+  puedeEditar?: boolean
   /** Profile actual; si se pasa junto con `currentRole`, las cards abren el detalle del reporte. */
   currentProfileId?: string | null
   currentRole?: UserRole
@@ -93,6 +179,35 @@ export function EtapaSeguridad({
   const anioReunion = Number(fechaReunion.slice(0, 4)) || new Date().getFullYear()
   const [piramideAnio, setPiramideAnio] = useState<number>(anioReunion)
   const [piramideMes, setPiramideMes] = useState<number | "all">("all")
+
+  // Semáforo de seguridad del día (solo Misiones). Se reinicia a las 00:00:
+  // solo la reunión de HOY muestra/edita color; días pasados se ven apagados.
+  const muestraSemaforo = IS_MISIONES && !!reunionId
+  const esHoy = fechaReunion === hoyArgentina()
+  const [semaforo, setSemaforo] = useState<SemaforoEstado | null>(null)
+  const [guardandoSemaforo, setGuardandoSemaforo] = useState(false)
+
+  useEffect(() => {
+    if (!muestraSemaforo || !reunionId) return
+    getSeguridadSemaforo(reunionId).then((r) => {
+      if ("data" in r) setSemaforo(r.data.estado)
+    })
+  }, [muestraSemaforo, reunionId])
+
+  function elegirSemaforo(estado: SemaforoEstado) {
+    if (!reunionId || !puedeEditar || guardandoSemaforo) return
+    const previo = semaforo
+    const nuevo = previo === estado ? null : estado // re-click apaga
+    setSemaforo(nuevo) // optimista
+    setGuardandoSemaforo(true)
+    setSeguridadSemaforo(reunionId, nuevo).then((r) => {
+      setGuardandoSemaforo(false)
+      if ("error" in r) {
+        setSemaforo(previo) // revertir
+        setErrorMsg(r.error)
+      }
+    })
+  }
 
   useEffect(() => {
     setCargando(true)
@@ -274,7 +389,21 @@ export function EtapaSeguridad({
               Cargando datos…
             </div>
           ) : (
-            <PiramideSeguridad conteos={piramideConteos} />
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="min-w-0 flex-1">
+                <PiramideSeguridad conteos={piramideConteos} />
+              </div>
+              {muestraSemaforo && (
+                <SemaforoDelDia
+                  estado={semaforo}
+                  fecha={fechaReunion}
+                  esHoy={esHoy}
+                  puedeEditar={puedeEditar}
+                  guardando={guardandoSemaforo}
+                  onElegir={elegirSemaforo}
+                />
+              )}
+            </div>
           )}
         </section>
 

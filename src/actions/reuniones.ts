@@ -2437,14 +2437,14 @@ export async function getSeguridadSemaforo(
 
 export async function setSeguridadSemaforo(
   reunionId: string,
-  estado: SemaforoEstado,
-): Promise<Result<{ estado: SemaforoEstado }>> {
+  estado: SemaforoEstado | null,
+): Promise<Result<{ estado: SemaforoEstado | null }>> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
     if (!reunionId) return { error: "ID de reunión inválido" }
-    if (!SEMAFORO_ESTADOS.includes(estado))
+    if (estado !== null && !SEMAFORO_ESTADOS.includes(estado))
       return { error: "Estado de semáforo inválido" }
 
     // Permiso: editor O asistente activo de la reunión (igual que indicadores).
@@ -2461,6 +2461,17 @@ export async function setSeguridadSemaforo(
             "Solo editores o asistentes de la reunión pueden marcar el semáforo",
         }
       }
+    }
+
+    // estado null = apagar el semáforo (borrar la marca de la reunión).
+    if (estado === null) {
+      const { error } = await supabase
+        .from("reuniones_seguridad_semaforo")
+        .delete()
+        .eq("reunion_id", reunionId)
+      if (error) return { error: error.message }
+      revalidatePath(REVALIDATE_PATH)
+      return { data: { estado: null } }
     }
 
     // UPSERT por reunion_id (una marca por reunión / día).

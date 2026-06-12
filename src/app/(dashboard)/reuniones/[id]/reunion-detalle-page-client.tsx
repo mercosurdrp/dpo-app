@@ -1389,6 +1389,8 @@ export function ReunionDetallePageClient({
       {/* ETAPA 1: SEGURIDAD */}
       <EtapaSeguridad
         fechaReunion={detalle.fecha}
+        reunionId={detalle.id}
+        puedeEditar={puedeEditar}
         currentProfileId={currentProfileId}
         currentRole={currentRole}
       />
