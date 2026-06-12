@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ComponentProps } from "react"
 import { Loader2 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -22,6 +22,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { formatBultos, formatFecha } from "@/lib/format/rechazos"
 import { getBultosPorDia, type BultosPorDia } from "@/actions/bultos-por-dia"
+import { BultosPatentesDiaDialog } from "./bultos-patentes-dia-dialog"
+
+/** Firma exacta del onClick del chart en la versión de recharts instalada. */
+type ChartClickHandler = NonNullable<ComponentProps<typeof BarChart>["onClick"]>
 
 const COLOR_CHESS = "#0284c7" // sky-600 — mismo par de colores que los badges de origen
 const COLOR_GESTION = "#d97706" // amber-600
@@ -37,11 +41,13 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
   const [data, setData] = useState<BultosPorDia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [drillFecha, setDrillFecha] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) {
       setData(null)
       setError(null)
+      setDrillFecha(null)
       return
     }
     let cancelado = false
@@ -66,6 +72,15 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
     ...p,
     label: formatFechaShortDM(p.fecha),
   }))
+
+  // recharts 3.x: el onClick del chart entrega activeTooltipIndex/activeIndex
+  // (NO activePayload, que era de la 2.x) → se indexa el array local.
+  const handleChartClick: ChartClickHandler = (state) => {
+    if (!state) return
+    const idx = Number(state.activeTooltipIndex ?? state.activeIndex)
+    const p = Number.isInteger(idx) && idx >= 0 ? points[idx] : undefined
+    if (p) setDrillFecha(p.fecha)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,9 +139,17 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
                 <div>
                   <h3 className="mb-2 text-sm font-semibold text-slate-900">
                     Bultos entregados por día
+                    <span className="ml-2 text-xs font-normal text-slate-400">
+                      tocá una columna para ver los camiones
+                    </span>
                   </h3>
                   <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <BarChart
+                      data={points}
+                      margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+                      onClick={handleChartClick}
+                      className="cursor-pointer"
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} width={48} />
@@ -149,9 +172,17 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
                 <div>
                   <h3 className="mb-2 text-sm font-semibold text-slate-900">
                     Bultos rechazados por día
+                    <span className="ml-2 text-xs font-normal text-slate-400">
+                      tocá una columna para ver los camiones
+                    </span>
                   </h3>
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <BarChart
+                      data={points}
+                      margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+                      onClick={handleChartClick}
+                      className="cursor-pointer"
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} width={48} />
@@ -185,6 +216,12 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
             </div>
           </div>
         )}
+
+        <BultosPatentesDiaDialog
+          open={drillFecha != null}
+          onOpenChange={(o) => { if (!o) setDrillFecha(null) }}
+          fecha={drillFecha}
+        />
       </DialogContent>
     </Dialog>
   )
