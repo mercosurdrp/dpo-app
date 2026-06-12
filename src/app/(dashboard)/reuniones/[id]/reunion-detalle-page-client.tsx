@@ -254,9 +254,9 @@ function EstadoActividadBadge({
 }
 
 // =============================================
-// Asistente row
+// Asistente row (fila de la planilla de asistencia)
 // =============================================
-function AsistenteCard({
+function AsistenteRow({
   asistente,
   puedeEditar,
   onChanged,
@@ -280,53 +280,57 @@ function AsistenteCard({
   }
 
   return (
-    <div
-      className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+    <tr
+      className={
         asistente.presente
-          ? "border-emerald-200 bg-emerald-50/50"
-          : "border-slate-200 bg-white"
-      }`}
+          ? "bg-emerald-100/70 transition-colors"
+          : "bg-slate-100 transition-colors"
+      }
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        {asistente.presente ? (
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-        ) : (
-          <span className="inline-block size-3.5 shrink-0 rounded-full border border-slate-300 bg-white" />
-        )}
-        <div className="min-w-0 flex-1">
-          <p
-            className={`truncate text-sm ${
-              asistente.presente
-                ? "font-medium text-slate-900"
-                : "text-slate-600"
-            }`}
-          >
-            {asistente.profile_nombre}
-          </p>
-          {!asistente.presente && asistente.justificacion && (
-            <p
-              className="truncate text-xs text-muted-foreground"
-              title={asistente.justificacion}
-            >
-              {asistente.justificacion}
-            </p>
-          )}
-        </div>
-      </div>
-      {puedeEditar && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 px-2 text-red-600 hover:text-red-700"
-          onClick={handleQuitar}
-          disabled={pending}
-          title="Quitar"
+      <td className="px-3 py-2">
+        <p
+          className={`truncate text-sm ${
+            asistente.presente
+              ? "font-medium text-slate-900"
+              : "text-slate-600"
+          }`}
         >
-          <X className="size-3.5" />
-        </Button>
+          {asistente.profile_nombre}
+        </p>
+        {!asistente.presente && asistente.justificacion && (
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={asistente.justificacion}
+          >
+            {asistente.justificacion}
+          </p>
+        )}
+      </td>
+      <td className="px-3 py-2 text-center">
+        <span
+          className={`inline-block size-4 rounded-full ${
+            asistente.presente ? "bg-emerald-500" : "bg-slate-500"
+          }`}
+          title={asistente.presente ? "Presente" : "Sin marcar"}
+          aria-label={asistente.presente ? "Presente" : "Sin marcar"}
+        />
+      </td>
+      {puedeEditar && (
+        <td className="px-2 py-2 text-right">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-red-600 hover:text-red-700"
+            onClick={handleQuitar}
+            disabled={pending}
+            title="Quitar"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </td>
       )}
-    </div>
+    </tr>
   )
 }
 
@@ -1365,15 +1369,26 @@ export function ReunionDetallePageClient({
               Sin asistentes registrados.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {detalle.asistentes.map((a) => (
-                <AsistenteCard
-                  key={a.id}
-                  asistente={a}
-                  puedeEditar={puedeEditar}
-                  onChanged={refrescar}
-                />
-              ))}
+            <div className="overflow-hidden rounded-md border border-slate-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-200/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="px-3 py-2">Integrantes</th>
+                    <th className="w-28 px-3 py-2 text-center">Asistencia</th>
+                    {puedeEditar && <th className="w-14 px-2 py-2" />}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {detalle.asistentes.map((a) => (
+                    <AsistenteRow
+                      key={a.id}
+                      asistente={a}
+                      puedeEditar={puedeEditar}
+                      onChanged={refrescar}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
