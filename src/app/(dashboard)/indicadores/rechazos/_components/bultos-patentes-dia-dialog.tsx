@@ -73,7 +73,7 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
             )}
           </DialogTitle>
           <DialogDescription>
-            Patentes/repartos que componen los bultos de la columna, con su origen.
+            Patentes/repartos que componen los bultos de la columna, con su origen. Rech. = lo rechazado de la mercadería que ese camión llevó ese día (aunque la devolución se registre después).
           </DialogDescription>
         </DialogHeader>
 

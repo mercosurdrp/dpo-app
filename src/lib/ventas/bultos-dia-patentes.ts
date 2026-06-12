@@ -36,10 +36,11 @@ export async function getBultosDiaPatentes(
       .from("ventas_diarias")
       .select("origen, ds_fletero_carga, total_bultos")
       .eq("fecha", fecha),
+    // fecha_venta = día del reparto (la fecha del DVVTA llega ~1,6 días después en Chess)
     supa
       .from("rechazos")
       .select("origen, ds_fletero_carga, bultos_rechazados")
-      .eq("fecha", fecha),
+      .eq("fecha_venta", fecha),
     supa
       .from("mapeo_patente_chofer")
       .select("patente, catalogo_choferes(nombre)"),

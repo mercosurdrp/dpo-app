@@ -88,7 +88,7 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
         <DialogHeader>
           <DialogTitle>Bultos por día · Chess vs Gestión</DialogTitle>
           <DialogDescription>
-            {formatFecha(desde)} – {formatFecha(hasta)} · entregados y rechazados por origen
+            {formatFecha(desde)} – {formatFecha(hasta)} · entregados y rechazados por origen — los rechazos se atribuyen al día del reparto (no al día en que se registró la devolución)
           </DialogDescription>
         </DialogHeader>
 

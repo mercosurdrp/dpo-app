@@ -41,11 +41,13 @@ export async function getBultosPorDia(
       .select("fecha, origen, total_bultos")
       .gte("fecha", desde)
       .lte("fecha", hasta),
+    // Rechazos por fecha_venta (día del REPARTO al que pertenece la mercadería),
+    // no por fecha del DVVTA (día en que se registró, en Chess ~1,6 días después).
     supa
       .from("rechazos")
-      .select("fecha, origen, bultos_rechazados")
-      .gte("fecha", desde)
-      .lte("fecha", hasta),
+      .select("fecha_venta, origen, bultos_rechazados")
+      .gte("fecha_venta", desde)
+      .lte("fecha_venta", hasta),
   ])
 
   if (entregadosRaw.error) throw new Error(`ventas_diarias: ${entregadosRaw.error.message}`)
@@ -72,11 +74,11 @@ export async function getBultosPorDia(
   }
 
   for (const r of (rechazadosRaw.data ?? []) as Array<{
-    fecha: string; origen: string | null; bultos_rechazados: number | null
+    fecha_venta: string; origen: string | null; bultos_rechazados: number | null
   }>) {
     const b = Number(r.bultos_rechazados ?? 0)
     if (!Number.isFinite(b)) continue
-    const p = punto(r.fecha)
+    const p = punto(r.fecha_venta)
     if (r.origen === "gestion") p.gestion_rechazados += b
     else p.chess_rechazados += b
   }
