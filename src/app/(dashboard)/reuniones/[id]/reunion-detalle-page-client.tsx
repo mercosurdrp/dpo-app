@@ -259,26 +259,12 @@ function EstadoActividadBadge({
 function AsistenteRow({
   asistente,
   puedeEditar,
-  onChanged,
+  onQuitar,
 }: {
   asistente: ReunionAsistenteConProfile
   puedeEditar: boolean
-  onChanged: () => void
+  onQuitar: (a: ReunionAsistenteConProfile) => void
 }) {
-  const [pending, startTransition] = useTransition()
-
-  function handleQuitar() {
-    if (!confirm(`¿Quitar a ${asistente.profile_nombre} de la lista?`)) return
-    startTransition(async () => {
-      const result = await quitarAsistente(asistente.id)
-      if ("error" in result) {
-        alert(`Error: ${result.error}`)
-        return
-      }
-      onChanged()
-    })
-  }
-
   return (
     <tr
       className={
@@ -322,8 +308,7 @@ function AsistenteRow({
             variant="outline"
             size="sm"
             className="h-7 px-2 text-red-600 hover:text-red-700"
-            onClick={handleQuitar}
-            disabled={pending}
+            onClick={() => onQuitar(asistente)}
             title="Quitar"
           >
             <X className="size-3.5" />
@@ -343,7 +328,7 @@ function AgregarAsistenteAdHoc({
   reunionId: string
   responsables: ResponsableOpt[]
   yaAgregados: Set<string>
-  onAdded: () => void
+  onAdded: (nuevo: ReunionAsistenteConProfile) => void
 }) {
   const [seleccionado, setSeleccionado] = useState<string>("")
   const [pending, startTransition] = useTransition()
@@ -357,6 +342,7 @@ function AgregarAsistenteAdHoc({
   function handleAdd() {
     if (!seleccionado) return
     setError(null)
+    const elegido = responsables.find((r) => r.id === seleccionado)
     startTransition(async () => {
       const result = await agregarAsistente(reunionId, seleccionado)
       if ("error" in result) {
@@ -364,7 +350,11 @@ function AgregarAsistenteAdHoc({
         return
       }
       setSeleccionado("")
-      onAdded()
+      onAdded({
+        ...result.data,
+        profile_nombre: elegido?.nombre ?? "—",
+        profile_email: null,
+      })
     })
   }
 
@@ -1211,24 +1201,30 @@ export function ReunionDetallePageClient({
     return actividades.filter((a) => a.estado === filtroEstado)
   }, [actividades, filtroEstado])
 
+  // Copia local de asistentes para reflejar cambios AL INSTANTE (optimista):
+  // el router.refresh() re-corre toda la página en el server (indicadores en
+  // vivo ~8s), así que sin esto cada alta/baja/marca parece "no hacer nada".
+  const [asistentes, setAsistentes] = useState(detalle.asistentes)
+  useEffect(() => {
+    setAsistentes(detalle.asistentes)
+  }, [detalle.asistentes])
+
   const yaAgregadosSet = useMemo(
-    () => new Set(detalle.asistentes.map((a) => a.profile_id)),
-    [detalle.asistentes],
+    () => new Set(asistentes.map((a) => a.profile_id)),
+    [asistentes],
   )
 
   const miAsistente = useMemo(() => {
     if (!currentProfileId) return null
-    return (
-      detalle.asistentes.find((a) => a.profile_id === currentProfileId) ?? null
-    )
-  }, [detalle.asistentes, currentProfileId])
+    return asistentes.find((a) => a.profile_id === currentProfileId) ?? null
+  }, [asistentes, currentProfileId])
 
   const yaMarque = miAsistente?.presente === true
   const esAsistenteActivo = miAsistente !== null && yaMarque
   const puedeEditarTablero = puedeEditar || esAsistenteActivo
 
-  const totalPresentes = detalle.asistentes.filter((a) => a.presente).length
-  const totalAsistentes = detalle.asistentes.length
+  const totalPresentes = asistentes.filter((a) => a.presente).length
+  const totalAsistentes = asistentes.length
 
   function refrescar() {
     // Re-fetch del server component (todo el árbol de la página)
@@ -1266,11 +1262,36 @@ export function ReunionDetallePageClient({
   }
 
   async function handleMarcarMiAsistencia() {
+    const previos = asistentes
+    setAsistentes((prev) =>
+      prev.map((a) =>
+        a.profile_id === currentProfileId ? { ...a, presente: true } : a,
+      ),
+    )
     const result = await marcarMiAsistencia(detalle.id)
     if ("error" in result) {
+      setAsistentes(previos)
       alert(`Error: ${result.error}`)
       return
     }
+    refrescar()
+  }
+
+  async function handleQuitarAsistente(a: ReunionAsistenteConProfile) {
+    if (!confirm(`¿Quitar a ${a.profile_nombre} de la lista?`)) return
+    const previos = asistentes
+    setAsistentes((prev) => prev.filter((x) => x.id !== a.id))
+    const result = await quitarAsistente(a.id)
+    if ("error" in result) {
+      setAsistentes(previos)
+      alert(`Error: ${result.error}`)
+      return
+    }
+    refrescar()
+  }
+
+  function handleAsistenteAgregado(nuevo: ReunionAsistenteConProfile) {
+    setAsistentes((prev) => [...prev, nuevo])
     refrescar()
   }
 
@@ -1364,7 +1385,7 @@ export function ReunionDetallePageClient({
             </Button>
           )}
 
-          {detalle.asistentes.length === 0 ? (
+          {asistentes.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Sin asistentes registrados.
             </p>
@@ -1379,12 +1400,12 @@ export function ReunionDetallePageClient({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {detalle.asistentes.map((a) => (
+                  {asistentes.map((a) => (
                     <AsistenteRow
                       key={a.id}
                       asistente={a}
                       puedeEditar={puedeEditar}
-                      onChanged={refrescar}
+                      onQuitar={handleQuitarAsistente}
                     />
                   ))}
                 </tbody>
@@ -1397,7 +1418,7 @@ export function ReunionDetallePageClient({
               reunionId={detalle.id}
               responsables={responsables}
               yaAgregados={yaAgregadosSet}
-              onAdded={refrescar}
+              onAdded={handleAsistenteAgregado}
             />
           )}
         </CardContent>
