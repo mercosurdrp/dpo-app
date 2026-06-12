@@ -120,51 +120,51 @@ export function TorCountdown({
   const intacto = endAt === null && pausedRemaining === null
 
   return (
-    <div className="flex shrink-0 items-center gap-2 rounded-lg border bg-white px-3 py-1.5 shadow-sm">
-      <Timer className="size-4 text-slate-500" />
+    <div className="flex shrink-0 items-center gap-3 rounded-lg border border-slate-300 bg-slate-200 px-4 py-2 shadow-sm">
+      <Timer className="size-5 text-slate-600" />
       <div className="leading-none">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           TOR · {minutos} min
         </p>
         <p
           className={cn(
-            "font-mono text-xl font-bold tabular-nums",
+            "font-mono text-3xl font-bold tabular-nums",
             terminado && "animate-pulse",
           )}
           style={{ color }}
         >
           {formatMMSS(restante)}
         </p>
-        <div className="mt-0.5 h-1 w-24 overflow-hidden rounded-full bg-slate-200">
+        <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-slate-300">
           <div
             className="h-full rounded-full transition-[width] duration-300"
             style={{ width: `${fraccion * 100}%`, backgroundColor: color }}
           />
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         {enCurso ? (
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="size-7"
+            className="size-9"
             onClick={pausar}
             title="Pausar"
           >
-            <Pause className="size-3.5" />
+            <Pause className="size-4" />
           </Button>
         ) : (
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="size-7"
+            className="size-9"
             onClick={iniciar}
             disabled={terminado}
             title={intacto ? "Iniciar" : "Reanudar"}
           >
-            <Play className="size-3.5" />
+            <Play className="size-4" />
           </Button>
         )}
         {!intacto && (
@@ -172,11 +172,11 @@ export function TorCountdown({
             type="button"
             variant="outline"
             size="icon"
-            className="size-7"
+            className="size-9"
             onClick={reiniciar}
             title="Reiniciar a los 30 minutos"
           >
-            <RotateCcw className="size-3.5" />
+            <RotateCcw className="size-4" />
           </Button>
         )}
       </div>
