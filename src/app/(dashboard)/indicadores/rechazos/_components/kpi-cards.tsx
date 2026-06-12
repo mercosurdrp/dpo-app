@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+import { BarChart3 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Tooltip,
@@ -8,6 +10,7 @@ import {
 } from "@/components/ui/tooltip"
 import type { RechazosComparado, RechazosDelta, RechazosKPI } from "@/lib/types/rechazos"
 import { formatBultos, formatDelta, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { BultosDiaDialog } from "./bultos-dia-dialog"
 
 type Sentiment = "bad" | "good" | "neutral"
 
@@ -25,6 +28,7 @@ export function KpiCards({ data }: { data: RechazosComparado }) {
   const d = data.delta
   const hero = buildHero(a, d)
   const cards = buildSecondarySpecs(a, d)
+  const [bultosDiaOpen, setBultosDiaOpen] = useState(false)
   return (
     <div className="space-y-3">
       {/* Hero — KPI principal (tasa en HL) */}
@@ -45,14 +49,29 @@ export function KpiCards({ data }: { data: RechazosComparado }) {
               {" / "}
               <span className="font-medium text-slate-700">{formatHl(a.total_hl_entregados)}</span> entregados
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              Bultos: <span className="font-medium text-slate-600">{formatBultos(a.bultos)}</span>
-              {" / "}{formatBultos(a.total_entregados)} entregados
-              {" · "}tasa <span className="font-medium text-slate-600">{formatTasa(a.tasa_bultos)}</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setBultosDiaOpen(true)}
+              title="Ver bultos por día (Chess vs Gestión)"
+              className="group flex items-center gap-1 rounded text-left text-[11px] text-muted-foreground transition-colors hover:text-slate-900"
+            >
+              <span>
+                Bultos: <span className="font-medium text-slate-600 underline decoration-dotted underline-offset-2 group-hover:text-slate-900">{formatBultos(a.bultos)}</span>
+                {" / "}{formatBultos(a.total_entregados)} entregados
+                {" · "}tasa <span className="font-medium text-slate-600">{formatTasa(a.tasa_bultos)}</span>
+              </span>
+              <BarChart3 className="size-3 text-slate-400 group-hover:text-slate-700" />
+            </button>
           </div>
         </CardContent>
       </Card>
+
+      <BultosDiaDialog
+        open={bultosDiaOpen}
+        onOpenChange={setBultosDiaOpen}
+        desde={data.meta.actual.desde}
+        hasta={data.meta.actual.hasta}
+      />
 
       {/* Cards de soporte */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
