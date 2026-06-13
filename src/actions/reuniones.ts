@@ -2113,6 +2113,38 @@ export async function actualizarIndicadorConfig(
   }
 }
 
+// Edición inline del objetivo (target) de un indicador desde el tablero:
+// actualiza SOLO meta + polaridad (mejor_si), sin tocar el resto de la config.
+// meta=null borra el objetivo (la fila queda "sin objetivo" → tono azulado).
+export async function setIndicadorTarget(
+  id: string,
+  meta: number | null,
+  mejorSi: "mayor" | "menor" | null,
+): Promise<Result<true>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+    if (!id) return { error: "ID inválido" }
+    if (meta !== null && !Number.isFinite(meta)) {
+      return { error: "Target inválido" }
+    }
+    if (mejorSi !== null && !["mayor", "menor"].includes(mejorSi)) {
+      return { error: "Dirección inválida" }
+    }
+    const { error } = await supabase
+      .from("reuniones_indicadores_config")
+      .update({ meta, mejor_si: meta === null ? null : mejorSi })
+      .eq("id", id)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando el target",
+    }
+  }
+}
+
 export async function eliminarIndicadorConfig(
   id: string,
 ): Promise<{ success: true } | { error: string }> {
@@ -3954,8 +3986,9 @@ async function getIndicadoresMesCore(
             fecha,
             sucursal,
           )
-          // Ausentismo ya no se calcula desde Foxtrot: ahora es un indicador de
-          // carga manual (sobrevive como fila de config, ver más abajo).
+          // Ausentismo: se calcula AUTOMÁTICAMENTE desde el módulo /ausentismo
+          // (ausentismo_eventos), igual que Pampeana. Ver ausentismoAutoRow más
+          // abajo. Antes era carga manual (cuando salía del fichaje/Foxtrot).
 
           // Formato HH:MM a partir de minutos (para "Horas en ruta"). El valor
           // numérico (minutos) se preserva para que el MTD promedie bien; el
@@ -4073,7 +4106,26 @@ async function getIndicadoresMesCore(
           const sifRows = indicadores
             .filter((i) => sifRank(i.nombre) !== null)
             .sort((a, b) => (sifRank(a.nombre) ?? 99) - (sifRank(b.nombre) ?? 99))
-          const ausentismoRows = indicadores.filter((i) => esAusentismo(i.nombre))
+          // Ausentismo automático desde el módulo /ausentismo (días caídos por
+          // fecha; solo Ausencia + Licencia Médica; sectores Depósito +
+          // Distribución + Acarreo - T1). Reemplaza al viejo indicador manual.
+          // Se ocultan el día de la reunión y los futuros.
+          const ausentismoSerie = await getAusentismoSerieEventos(mes, anio)
+          const ausentismoPorFechaRaw =
+            "data" in ausentismoSerie ? ausentismoSerie.data.por_fecha : {}
+          const ausentismoPorFecha: Record<string, number | null> = {}
+          for (const [f, v] of Object.entries(ausentismoPorFechaRaw)) {
+            ausentismoPorFecha[f] = f < fecha ? v : null
+          }
+          const ausentismoAutoRow = buildSerieRow(
+            "auto_ausentismo",
+            "Ausentismo",
+            "personas",
+            ausentismoPorFecha,
+            "suma",
+            null,
+            "menor",
+          )
           const pickingPerdidasRows = indicadores
             .filter((i) => pickPerdRank(i.nombre) !== null)
             .sort(
@@ -4146,7 +4198,7 @@ async function getIndicadoresMesCore(
               reuniones_por_fecha: reunionesPorFecha,
               indicadores: [
                 ...sifRows,
-                ...ausentismoRows,
+                ausentismoAutoRow,
                 ...autosOrdenados,
                 ...otrosManuales,
               ],
