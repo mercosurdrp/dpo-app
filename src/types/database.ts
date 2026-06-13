@@ -3020,6 +3020,7 @@ export type AusentismoMotivo =
   | "accidente"
   | "otras_licencias"
   | "licencia_gremial"
+  | "suspension"
 
 export const AUSENTISMO_MOTIVOS: AusentismoMotivo[] = [
   "ausencia",
@@ -3028,6 +3029,7 @@ export const AUSENTISMO_MOTIVOS: AusentismoMotivo[] = [
   "accidente",
   "otras_licencias",
   "licencia_gremial",
+  "suspension",
 ]
 
 export const AUSENTISMO_MOTIVO_LABELS: Record<AusentismoMotivo, string> = {
@@ -3037,6 +3039,7 @@ export const AUSENTISMO_MOTIVO_LABELS: Record<AusentismoMotivo, string> = {
   accidente: "Accidente",
   otras_licencias: "Otras licencias",
   licencia_gremial: "Licencia Gremial",
+  suspension: "Suspensión",
 }
 
 export const AUSENTISMO_MOTIVO_COLORS: Record<AusentismoMotivo, string> = {
@@ -3046,6 +3049,7 @@ export const AUSENTISMO_MOTIVO_COLORS: Record<AusentismoMotivo, string> = {
   accidente: "#EF4444",
   otras_licencias: "#F59E0B",
   licencia_gremial: "#10B981",
+  suspension: "#0EA5E9",
 }
 
 export interface AusentismoEvento {
