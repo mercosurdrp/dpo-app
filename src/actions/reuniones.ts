@@ -23,7 +23,7 @@ import {
 } from "@/lib/foxtrot/auto-indicadores-misiones"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
-import { getAusentismoSerie } from "@/actions/asistencia"
+import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
   Profile,
   TipoReunion,
@@ -3097,8 +3097,68 @@ async function getIndicadoresMesCore(
       valoresIdx.set(`${v.reunion_id}|${v.indicador_id}`, v)
     }
 
+    // 6.0 Conteos AUTO de SIF (Actual/Potencial/Precursor) desde
+    //     reportes_seguridad: cuenta TODOS los reportes con ese `tipo_sif` por
+    //     día (sin importar el nivel de accidente ni si hubo reunión ese día).
+    //     Reemplazan la carga manual de esos 3 indicadores.
+    const SIF_NOMBRE_A_TIPO: Record<string, string> = {
+      "sif actual": "sif_actual",
+      "sif potencial": "sif_potencial",
+      "sif precursor": "sif_precursor",
+    }
+    const sifPorTipoYFecha: Record<string, Record<string, number>> = {
+      sif_actual: {},
+      sif_potencial: {},
+      sif_precursor: {},
+    }
+    {
+      const { data: sifRaw, error: errSif } = await supabase
+        .from("reportes_seguridad")
+        .select("fecha, tipo_sif")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .not("tipo_sif", "is", null)
+      if (!errSif) {
+        for (const r of (sifRaw ?? []) as Array<{
+          fecha: string
+          tipo_sif: string | null
+        }>) {
+          const m = r.tipo_sif ? sifPorTipoYFecha[r.tipo_sif] : undefined
+          if (m) m[r.fecha] = (m[r.fecha] ?? 0) + 1
+        }
+      }
+    }
+
     // 6. Armar matriz por indicador + MTD
     const indicadores = configs.map((c) => {
+      // Indicadores SIF: valores automáticos desde reportes_seguridad (por
+      // tipo_sif). Read-only; cada reporte con ese tipo_sif suma 1 en su día.
+      const sifTipo = SIF_NOMBRE_A_TIPO[c.nombre.trim().toLowerCase()]
+      if (sifTipo) {
+        const porFechaSif = sifPorTipoYFecha[sifTipo] ?? {}
+        const valoresSif: Record<
+          string,
+          { reunion_id: string; valor: number | null; observacion: string | null } | null
+        > = {}
+        let mtdSif = 0
+        for (const f of fechas) {
+          const v = porFechaSif[f] ?? 0
+          valoresSif[f] = { reunion_id: "auto", valor: v, observacion: null }
+          if (f <= fecha) mtdSif += v
+        }
+        return {
+          id: c.id,
+          nombre: c.nombre,
+          unidad: c.unidad,
+          meta: c.meta,
+          orden: c.orden,
+          agregacion: c.agregacion,
+          valores: valoresSif,
+          mtd: mtdSif,
+          auto: true,
+        }
+      }
+
       const valoresPorFecha: Record<
         string,
         {
@@ -4253,7 +4313,7 @@ async function getIndicadoresMesCore(
       if (tipo === "logistica") {
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
-        const ausentismoRes = await getAusentismoSerie(mes, anio)
+        const ausentismoRes = await getAusentismoSerieEventos(mes, anio)
         const ausentismoPorFechaRaw = "data" in ausentismoRes
           ? ausentismoRes.data.por_fecha
           : {}

@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation"
 import { requireRole } from "@/lib/session"
-import { IS_MISIONES } from "@/lib/empresa"
 import {
   listarEmpleadosOpciones,
   listarEventos,
@@ -17,7 +15,6 @@ function currentYearMonth(): string {
 
 export default async function AusentismoPage() {
   await requireRole(["admin", "admin_rrhh"])
-  if (IS_MISIONES) redirect("/")
 
   const ym = currentYearMonth()
   const [empleadosRes, eventosRes, resumenRes] = await Promise.all([

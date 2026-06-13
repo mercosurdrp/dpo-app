@@ -299,7 +299,6 @@ export const rrhhSections: NavSection[] = [
         label: "Ausentismo",
         href: "/ausentismo",
         icon: <ClockAlert className="size-5" />,
-        pampeanaOnly: true,
       },
       {
         label: "Jornadas",

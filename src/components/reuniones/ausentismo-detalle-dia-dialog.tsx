@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { getAusentismoDelDia } from "@/actions/asistencia"
+import { getAusentismoDelDiaEventos } from "@/actions/ausentismo"
 import type { AusentismoPersona } from "@/actions/asistencia"
 
 interface Props {
@@ -64,7 +64,7 @@ export function AusentismoDetalleDiaDialog({
     if (!open || !fecha) return
     setLoading(true)
     setError(null)
-    const res = await getAusentismoDelDia(fecha)
+    const res = await getAusentismoDelDiaEventos(fecha)
     setLoading(false)
     if ("error" in res) {
       setError(res.error)
@@ -88,7 +88,7 @@ export function AusentismoDetalleDiaDialog({
         <DialogHeader>
           <DialogTitle>Ausentismo del día</DialogTitle>
           <DialogDescription>
-            {formatFechaLarga(fecha)} · Depósito + Distribución
+            {formatFechaLarga(fecha)} · Depósito + Distribución + Acarreo
           </DialogDescription>
         </DialogHeader>
 
