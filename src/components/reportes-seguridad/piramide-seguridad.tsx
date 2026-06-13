@@ -157,15 +157,15 @@ export function PiramideSeguridad({
                 {/* Conteo grande en el centro */}
                 <text
                   x={PYR_CX}
-                  y={cy + 5}
+                  y={cy + 6}
                   textAnchor="middle"
-                  fontSize={i === 0 ? 12 : 17}
+                  fontSize={i === 0 ? 15 : 21}
                   fontWeight={900}
                   fill="#FFFFFF"
                   style={{
                     paintOrder: "stroke",
-                    stroke: "rgba(0,0,0,0.4)",
-                    strokeWidth: 2.5,
+                    stroke: "rgba(0,0,0,0.45)",
+                    strokeWidth: 3,
                   }}
                 >
                   {count}

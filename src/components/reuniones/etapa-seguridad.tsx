@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Shield, ClipboardList, Loader2, ShieldCheck } from "lucide-react"
+import { Shield, ClipboardList, Loader2, ShieldCheck, AlertTriangle } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -34,7 +34,9 @@ import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
   REPORTE_SEGURIDAD_LOCALIDAD_LABELS,
+  REPORTE_SEGURIDAD_AREA_LABELS,
   type ReporteSeguridadConAutor,
+  type ReporteSeguridadTipoAccidente,
   type UserRole,
 } from "@/types/database"
 
@@ -116,7 +118,7 @@ function SemaforoDelDia({
   return (
     <div className="flex shrink-0 flex-col items-center gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-sm">
       <p className="text-sm font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-4 rounded-xl bg-slate-800 px-6 py-5 shadow-inner">
+      <div className="flex flex-col items-center gap-3 rounded-xl bg-slate-800 px-3.5 py-4 shadow-inner">
         {SEMAFORO_LUCES.map((luz) => {
           const activo = estadoVisible === luz.estado
           return (
@@ -129,7 +131,7 @@ function SemaforoDelDia({
               aria-label={luz.label}
               aria-pressed={activo}
               className={cn(
-                "size-11 rounded-full transition",
+                "size-9 rounded-full transition",
                 activo
                   ? `${luz.on} shadow-[0_0_14px_3px_rgba(255,255,255,0.35)] ring-2 ring-white`
                   : "bg-slate-600/50",
@@ -149,6 +151,80 @@ function SemaforoDelDia({
       ) : !puedeEditar ? (
         <p className="text-[10px] text-muted-foreground">Solo lectura</p>
       ) : null}
+    </div>
+  )
+}
+
+// Niveles que cuentan como "accidente" para la ventanita (literal FAI → LTI:
+// lesión leve, moderada, grave y muy grave). Excluye muerte (FAT) y sin lesión.
+const ULTIMO_ACCIDENTE_NIVELES: ReporteSeguridadTipoAccidente[] = [
+  "fai",
+  "mti",
+  "mdi",
+  "lti",
+]
+
+const NIVEL_ACCIDENTE_LABELS: Partial<
+  Record<ReporteSeguridadTipoAccidente, string>
+> = {
+  fai: "Lesión Leve",
+  mti: "Lesión Moderada",
+  mdi: "Lesión Grave",
+  lti: "Lesión Muy Grave",
+}
+
+function UltimoAccidenteVentana({
+  reporte,
+}: {
+  reporte: ReporteSeguridadConAutor | null
+}) {
+  return (
+    <div className="flex w-[150px] shrink-0 flex-col gap-1.5 rounded-lg border border-amber-300 bg-amber-50/90 p-3 shadow-sm">
+      <p className="flex items-center gap-1 text-xs font-semibold text-amber-900">
+        <AlertTriangle className="size-3.5" />
+        Último accidente
+      </p>
+      {reporte ? (
+        <>
+          <p className="text-sm font-bold leading-tight text-slate-900">
+            {(reporte.tipo_accidente &&
+              NIVEL_ACCIDENTE_LABELS[reporte.tipo_accidente]) ||
+              reporte.tipo_accidente?.toUpperCase() ||
+              "—"}
+          </p>
+          <dl className="space-y-1 text-[11px] leading-tight text-slate-700">
+            <div>
+              <dt className="font-medium text-slate-500">Quién</dt>
+              <dd>{reporte.damnificado_nombre || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Dónde</dt>
+              <dd>
+                {reporte.lugar ||
+                  (reporte.localidad
+                    ? REPORTE_SEGURIDAD_LOCALIDAD_LABELS[reporte.localidad]
+                    : "—")}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Área</dt>
+              <dd>
+                {reporte.area
+                  ? REPORTE_SEGURIDAD_AREA_LABELS[reporte.area]
+                  : "—"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            {formatFechaCorta(reporte.fecha)}
+            {reporte.hora ? ` · ${reporte.hora.slice(0, 5)}` : ""}
+          </p>
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Sin accidentes registrados.
+        </p>
+      )}
     </div>
   )
 }
@@ -251,6 +327,24 @@ export function EtapaSeguridad({
     }
     return base
   }, [reportes, piramideAnio, piramideMes])
+
+  // Último accidente absoluto (no respeta el filtro año/mes de la pirámide):
+  // el reporte más reciente cuyo nivel sea FAI..LTI.
+  const ultimoAccidentado = useMemo<ReporteSeguridadConAutor | null>(() => {
+    const elegibles = reportes.filter(
+      (r) =>
+        r.tipo_accidente &&
+        ULTIMO_ACCIDENTE_NIVELES.includes(r.tipo_accidente),
+    )
+    if (elegibles.length === 0) return null
+    elegibles.sort((a, b) => {
+      const fa = `${a.fecha} ${a.hora ?? "00:00:00"}`
+      const fb = `${b.fecha} ${b.hora ?? "00:00:00"}`
+      if (fa !== fb) return fa < fb ? 1 : -1
+      return a.created_at < b.created_at ? 1 : -1
+    })
+    return elegibles[0]
+  }, [reportes])
 
   const periodoLabel =
     piramideMes === "all"
@@ -391,6 +485,10 @@ export function EtapaSeguridad({
           ) : (
             <div className="relative">
               <PiramideSeguridad conteos={piramideConteos} />
+              {/* Ventanita "Último accidente" a la izquierda de la pirámide */}
+              <div className="mt-3 flex justify-center xl:absolute xl:left-3 xl:top-1/2 xl:mt-0 xl:-translate-y-1/2">
+                <UltimoAccidenteVentana reporte={ultimoAccidentado} />
+              </div>
               {muestraSemaforo && (
                 <div className="mt-3 flex justify-center xl:absolute xl:right-5 xl:top-1/2 xl:mt-0 xl:-translate-y-1/2">
                   <SemaforoDelDia
