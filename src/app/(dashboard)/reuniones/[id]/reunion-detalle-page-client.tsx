@@ -18,6 +18,8 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
+  ArrowDown,
   FileDown,
   Hand,
   ListTodo,
@@ -52,6 +54,7 @@ import {
   quitarAsistente,
   setIndicadorValor,
   setIndicadorOverrideDiario,
+  setIndicadorTarget,
 } from "@/actions/reuniones"
 import { IS_MISIONES } from "@/lib/empresa"
 import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialog"
@@ -226,6 +229,24 @@ function esFinDeSemana(iso: string): boolean {
 
 function formatearValor(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
+}
+
+// Color condicional de una celda del tablero según el objetivo (meta) y la
+// polaridad (mejor_si). Verde si cumple, rojo si no. Devuelve null (neutro)
+// cuando el indicador no tiene objetivo cargado. Misma lógica que las filas
+// automáticas, para que TODAS las celdas (auto o manuales) se vean igual.
+function colorPorObjetivo(
+  valor: number | null | undefined,
+  meta: number | null | undefined,
+  mejorSi: "menor" | "mayor" | undefined,
+): string | null {
+  if (valor == null || !Number.isFinite(valor) || meta == null || !mejorSi) {
+    return null
+  }
+  const cumple = mejorSi === "menor" ? valor <= meta : valor >= meta
+  return cumple
+    ? "bg-emerald-50 font-semibold text-emerald-700"
+    : "bg-red-50 font-semibold text-red-700"
 }
 
 function EstadoActividadBadge({
@@ -489,7 +510,7 @@ function ValorInput({
         onBlur={handleBlur}
         disabled={!puedeEditar}
         className={cn(
-          "h-8 w-20 text-center text-sm",
+          "h-8 w-20 bg-transparent text-center text-sm font-semibold",
           saving && "border-blue-300",
           error && "border-red-400",
         )}
@@ -601,8 +622,7 @@ function OverrideValorInput({
         onBlur={handleBlur}
         disabled={!puedeEditar}
         className={cn(
-          "h-8 w-20 text-center text-sm",
-          esOverride && "border-amber-400 bg-amber-50 font-semibold text-amber-800",
+          "h-8 w-20 bg-transparent text-center text-sm font-semibold",
           saving && "border-blue-300",
           error && "border-red-400",
         )}
@@ -616,6 +636,121 @@ function OverrideValorInput({
       {error && (
         <span className="mt-0.5 text-[9px] text-red-600">{error}</span>
       )}
+    </div>
+  )
+}
+
+// =============================================
+// TargetInput: objetivo editable inline (número + dirección ▲/▼).
+// Actualiza la config del indicador (meta + mejor_si). Vacío = sin objetivo
+// (la fila queda en tono azulado). ▲ = mejor cuando valor ≥ target; ▼ = mejor
+// cuando valor ≤ target. Solo editable por editores.
+// =============================================
+function TargetInput({
+  indicadorId,
+  meta,
+  mejorSi,
+  puedeEditar,
+  onChanged,
+}: {
+  indicadorId: string
+  meta: number | null
+  mejorSi: "menor" | "mayor" | undefined
+  puedeEditar: boolean
+  onChanged: () => void
+}) {
+  const [val, setVal] = useState<string>(meta != null ? String(meta) : "")
+  const [dir, setDir] = useState<"menor" | "mayor">(mejorSi ?? "mayor")
+  const [saving, setSaving] = useState(false)
+  const lastRef = useRef<string>(meta != null ? String(meta) : "")
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const next = meta != null ? String(meta) : ""
+    setVal(next)
+    lastRef.current = next
+    if (mejorSi) setDir(mejorSi)
+  }, [meta, mejorSi])
+
+  const persist = useCallback(
+    (nuevoVal: string, nuevoDir: "menor" | "mayor") => {
+      const trimmed = nuevoVal.trim()
+      const numero = trimmed === "" ? null : Number(trimmed.replace(",", "."))
+      if (numero !== null && !Number.isFinite(numero)) return
+      setSaving(true)
+      void setIndicadorTarget(
+        indicadorId,
+        numero,
+        numero === null ? null : nuevoDir,
+      ).then((res) => {
+        setSaving(false)
+        if (!("error" in res)) {
+          lastRef.current = nuevoVal
+          onChanged()
+        }
+      })
+    },
+    [indicadorId, onChanged],
+  )
+
+  if (!puedeEditar) {
+    return (
+      <div className="flex items-center justify-end gap-0.5 tabular-nums">
+        <span>{meta == null ? "—" : formatearValor(meta)}</span>
+        {meta != null &&
+          mejorSi &&
+          (mejorSi === "mayor" ? (
+            <ArrowUp className="size-3 text-slate-400" />
+          ) : (
+            <ArrowDown className="size-3 text-slate-400" />
+          ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-0.5">
+      <Input
+        type="number"
+        step="any"
+        value={val}
+        onChange={(e) => {
+          const next = e.target.value
+          setVal(next)
+          if (timeoutRef.current) clearTimeout(timeoutRef.current)
+          timeoutRef.current = setTimeout(() => persist(next, dir), 600)
+        }}
+        onBlur={() => {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current)
+          if (val.trim() !== lastRef.current.trim()) persist(val, dir)
+        }}
+        className={cn(
+          "h-6 w-12 bg-transparent px-1 text-right text-xs tabular-nums",
+          saving && "border-blue-300",
+        )}
+        placeholder="—"
+        title="Objetivo del indicador (vacío = sin objetivo)"
+      />
+      <button
+        type="button"
+        onClick={() => {
+          const nd = dir === "mayor" ? "menor" : "mayor"
+          setDir(nd)
+          if (val.trim() !== "") persist(val, nd)
+        }}
+        className="rounded p-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+        title={
+          dir === "mayor"
+            ? "Más es mejor (verde si valor ≥ target). Click para invertir."
+            : "Menos es mejor (verde si valor ≤ target). Click para invertir."
+        }
+      >
+        {dir === "mayor" ? (
+          <ArrowUp className="size-3.5" />
+        ) : (
+          <ArrowDown className="size-3.5" />
+        )}
+      </button>
     </div>
   )
 }
@@ -1085,7 +1220,10 @@ export function ReunionDetallePageClient({
         semana: { key: string; label: string; fechas: string[] }
       }
   const columnasTablero = useMemo<ColTablero[]>(() => {
-    if (!esLogVentas) return fechasFiltradas.map((f) => ({ kind: "dia", f }))
+    // Orden invertido: el último día a revisar queda a la IZQUIERDA y el
+    // primero a la derecha (copia para no mutar fechasFiltradas).
+    if (!esLogVentas)
+      return [...fechasFiltradas].reverse().map((f) => ({ kind: "dia", f }))
     const map = new Map<string, string[]>()
     for (const f of fechasFiltradas) {
       const d = new Date(f + "T12:00:00")
@@ -1670,10 +1808,10 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[160px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Unidad
                     </th>
-                    <th className="sticky left-[220px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[220px] z-10 w-[84px] min-w-[84px] max-w-[84px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Target
                     </th>
-                    <th className="sticky left-[280px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[304px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
                     {columnasTablero.map((col) => {
@@ -1734,10 +1872,16 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}
                       </td>
-                      <td className="sticky left-[220px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-right align-middle text-xs tabular-nums">
-                        {ind.meta == null ? "—" : formatearValor(ind.meta)}
+                      <td className="sticky left-[220px] w-[84px] min-w-[84px] max-w-[84px] bg-white px-1 py-1 align-middle text-xs">
+                        <TargetInput
+                          indicadorId={ind.id}
+                          meta={ind.meta}
+                          mejorSi={ind.mejor_si}
+                          puedeEditar={puedeEditar && !ind.auto}
+                          onChanged={refrescar}
+                        />
                       </td>
-                      <td className="sticky left-[280px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td className="sticky left-[304px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
                         {ind.mtd_texto != null
                           ? ind.mtd_texto
                           : ind.mtd == null
@@ -1767,6 +1911,17 @@ export function ReunionDetallePageClient({
                         const dom = esFinDeSemana(f)
                         const reunionIdEnFecha =
                           indicadoresMes.reuniones_por_fecha[f] ?? null
+                        // Sin objetivo (meta vacía) → toda la fila en tono
+                        // azulado (no hay target). Con objetivo → color
+                        // condicional por valor (igual que las automáticas).
+                        const tone =
+                          ind.meta == null
+                            ? "bg-blue-50 text-blue-700"
+                            : colorPorObjetivo(
+                                cell?.valor,
+                                ind.meta,
+                                ind.mejor_si,
+                              )
 
                         // Filas editables HACIA ATRÁS (Productividad/Errores/
                         // Pérdidas): cada día <= la fecha de la reunión es una
@@ -1792,8 +1947,9 @@ export function ReunionDetallePageClient({
                               key={f}
                               className={cn(
                                 "px-1 py-1 align-middle",
-                                esHoy && "bg-blue-50",
-                                dom && "bg-slate-50",
+                                tone,
+                                !tone && esHoy && "bg-blue-50",
+                                !tone && dom && "bg-slate-50",
                               )}
                             >
                               <OverrideValorInput
@@ -1962,7 +2118,7 @@ export function ReunionDetallePageClient({
                               key={f}
                               className={cn(
                                 "px-1 py-1 align-middle",
-                                esHoy ? "bg-blue-100" : "bg-blue-50",
+                                tone ?? (esHoy ? "bg-blue-100" : "bg-blue-50"),
                               )}
                             >
                               <ValorInput
@@ -1981,9 +2137,10 @@ export function ReunionDetallePageClient({
                           <td
                             key={f}
                             className={cn(
-                              "px-2 py-1 text-center align-middle text-sm tabular-nums text-slate-500",
-                              esHoy && "bg-blue-50",
-                              dom && "bg-slate-50",
+                              "px-2 py-1 text-center align-middle text-sm tabular-nums",
+                              tone ?? "text-slate-500",
+                              !tone && esHoy && "bg-blue-50",
+                              !tone && dom && "bg-slate-50",
                             )}
                             title={`Cargado en otra reunión (${formatFechaCorta(f)})`}
                           >
