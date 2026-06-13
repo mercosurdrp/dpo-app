@@ -587,6 +587,7 @@ const MOTIVO_TIPO_TABLERO: Record<
   accidente: "ausente",
   otras_licencias: "ausente",
   licencia_gremial: "ausente",
+  suspension: "ausente",
 }
 
 // El tablero de Logística SOLO suma Ausencia y Licencia Médica. El resto de
