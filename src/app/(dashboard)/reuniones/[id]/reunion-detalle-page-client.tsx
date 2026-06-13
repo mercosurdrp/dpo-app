@@ -274,7 +274,7 @@ function AsistenteRow({
           : "bg-slate-100 transition-colors"
       }
     >
-      <td className="px-3 py-2">
+      <td className="px-3 py-1.5">
         <p
           className={`truncate text-sm ${
             asistente.presente
@@ -293,7 +293,7 @@ function AsistenteRow({
           </p>
         )}
       </td>
-      <td className="px-3 py-2 text-center">
+      <td className="px-3 py-1.5 text-center">
         <span
           className={`inline-block size-4 rounded-full ${
             asistente.presente ? "bg-emerald-500" : "bg-slate-500"
@@ -303,12 +303,12 @@ function AsistenteRow({
         />
       </td>
       {puedeEditar && (
-        <td className="px-2 py-2 text-right">
+        <td className="px-2 py-1.5 text-right">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 px-2 text-red-600 hover:text-red-700"
+            className="h-6 px-1.5 text-red-600 hover:text-red-700"
             onClick={() => onQuitar(asistente)}
             title="Quitar"
           >
@@ -1434,9 +1434,9 @@ export function ReunionDetallePageClient({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-200/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    <th className="px-3 py-2">Integrantes</th>
-                    <th className="w-28 px-3 py-2 text-center">Asistencia</th>
-                    {puedeEditar && <th className="w-14 px-2 py-2" />}
+                    <th className="px-3 py-1.5">Integrantes</th>
+                    <th className="w-28 px-3 py-1.5 text-center">Asistencia</th>
+                    {puedeEditar && <th className="w-14 px-2 py-1.5" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">

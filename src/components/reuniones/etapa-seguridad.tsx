@@ -179,7 +179,7 @@ function UltimoAccidenteVentana({
   reporte: ReporteSeguridadConAutor | null
 }) {
   return (
-    <div className="flex w-[150px] shrink-0 flex-col gap-1.5 rounded-lg border border-amber-300 bg-amber-50/90 p-3 shadow-sm">
+    <div className="flex w-[190px] shrink-0 flex-col gap-1.5 rounded-lg border border-amber-300 bg-amber-50/90 p-3 shadow-sm">
       <p className="flex items-center gap-1 text-xs font-semibold text-amber-900">
         <AlertTriangle className="size-3.5" />
         Último accidente
@@ -352,7 +352,7 @@ export function EtapaSeguridad({
       : `${MESES[piramideMes - 1]} ${piramideAnio}`
 
   // Días sin accidente: último reporte tipo=accidente (global) → hoy, en UTC.
-  const { diasSinAccidente, ultimoAccidente } = useMemo(() => {
+  const { diasSinAccidente } = useMemo(() => {
     let max: string | null = null
     for (const r of reportes) {
       if (r.tipo !== "accidente") continue
@@ -381,40 +381,53 @@ export function EtapaSeguridad({
 
   return (
     <Card className="border-red-200 bg-red-50/30">
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <CardHeader className="py-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-red-900">
             <Shield className="size-5 text-red-600" />
             Etapa 1 — Seguridad
           </CardTitle>
-          {!cargando && (
-            <div
-              className="flex items-center gap-3 rounded-lg border bg-white px-4 py-2 shadow-sm"
-              style={{ borderLeft: "4px solid #16a34a" }}
-            >
-              <ShieldCheck className="size-7 text-green-600" />
-              <div className="leading-tight">
-                {diasSinAccidente === null ? (
-                  <>
-                    <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
-                    <p className="text-[11px] text-muted-foreground">registrados</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {diasSinAccidente}{" "}
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {diasSinAccidente === 1 ? "día" : "días"}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      sin accidentes · último {formatFechaCorta(ultimoAccidente!)}
-                    </p>
-                  </>
-                )}
-              </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px] text-muted-foreground">Año</Label>
+              <Select
+                value={String(piramideAnio)}
+                onValueChange={(v) => setPiramideAnio(Number(v))}
+              >
+                <SelectTrigger className="h-7 w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aniosDisponibles.map((a) => (
+                    <SelectItem key={a} value={String(a)}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px] text-muted-foreground">Mes</Label>
+              <Select
+                value={piramideMes === "all" ? "all" : String(piramideMes)}
+                onValueChange={(v) =>
+                  setPiramideMes(v === "all" ? "all" : Number(v))
+                }
+              >
+                <SelectTrigger className="h-7 w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo el año</SelectItem>
+                  {MESES.map((nombre, i) => (
+                    <SelectItem key={i} value={String(i + 1)}>
+                      {nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -426,56 +439,13 @@ export function EtapaSeguridad({
 
         {/* Pirámide acumulada */}
         <section className="space-y-2">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">
-                Pirámide de seguridad
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Acumulado {periodoLabel}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <div>
-                <Label className="text-xs">Año</Label>
-                <Select
-                  value={String(piramideAnio)}
-                  onValueChange={(v) => setPiramideAnio(Number(v))}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {aniosDisponibles.map((a) => (
-                      <SelectItem key={a} value={String(a)}>
-                        {a}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Mes</Label>
-                <Select
-                  value={piramideMes === "all" ? "all" : String(piramideMes)}
-                  onValueChange={(v) =>
-                    setPiramideMes(v === "all" ? "all" : Number(v))
-                  }
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todo el año</SelectItem>
-                    {MESES.map((nombre, i) => (
-                      <SelectItem key={i} value={String(i + 1)}>
-                        {nombre}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">
+              Pirámide de seguridad
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Acumulado {periodoLabel}
+            </p>
           </div>
           {cargando ? (
             <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
@@ -485,12 +455,46 @@ export function EtapaSeguridad({
           ) : (
             <div className="relative">
               <PiramideSeguridad conteos={piramideConteos} />
-              {/* Ventanita "Último accidente" a la izquierda de la pirámide */}
-              <div className="mt-3 flex justify-center xl:absolute xl:left-3 xl:top-1/2 xl:mt-0 xl:-translate-y-1/2">
+              {/* Ventanita "Último accidente" a la izquierda de la pirámide.
+                  Alineada arriba (mismo top que el contador de la derecha). */}
+              <div className="mt-3 flex justify-center xl:absolute xl:left-3 xl:top-6 xl:mt-0">
                 <UltimoAccidenteVentana reporte={ultimoAccidentado} />
               </div>
-              {muestraSemaforo && (
-                <div className="mt-3 flex justify-center xl:absolute xl:right-5 xl:top-1/2 xl:mt-0 xl:-translate-y-1/2">
+              {/* Lado derecho: contador de días sin accidentes (grande, mismo
+                  ancho y mismo top que la ventanita de la izquierda) y, debajo, el
+                  semáforo del día (su ancho no necesita coincidir). */}
+              <div className="mt-3 flex flex-col items-end gap-3 xl:absolute xl:right-3 xl:top-6 xl:mt-0">
+                <div
+                  className="flex w-[190px] items-center gap-2 rounded-lg border bg-white px-3 py-2.5 shadow-sm"
+                  style={{ borderLeft: "4px solid #16a34a" }}
+                >
+                  <ShieldCheck className="size-7 shrink-0 text-green-600" />
+                  <div className="leading-tight">
+                    {diasSinAccidente === null ? (
+                      <>
+                        <p className="text-base font-bold text-slate-900">
+                          Sin accidentes
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          registrados
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold leading-none text-slate-900">
+                          {diasSinAccidente}{" "}
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {diasSinAccidente === 1 ? "día" : "días"}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          sin accidentes
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {muestraSemaforo && (
                   <SemaforoDelDia
                     estado={semaforo}
                     fecha={fechaReunion}
@@ -499,8 +503,8 @@ export function EtapaSeguridad({
                     guardando={guardandoSemaforo}
                     onElegir={elegirSemaforo}
                   />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </section>

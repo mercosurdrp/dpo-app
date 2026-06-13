@@ -53,6 +53,11 @@ export function PiramideSeguridad({
   const PYR_RIGHT = PYR_LEFT + PYR_W
   const PYR_CX = PYR_LEFT + PYR_W / 2
   const TOP_W = 0.18
+  // El FAT termina en punta continuando EXACTAMENTE el ángulo de los lados de la
+  // pirámide: el vértice cae donde la línea lateral, prolongada hacia arriba,
+  // llega al centro. Esa es la altura extra que reservamos arriba del lienzo, así
+  // el FAT y su punta se ven como un solo bloque del mismo color.
+  const PUNTA_H = (TOP_W * VIEW_H) / (1 - TOP_W)
 
   function widths(n: number): { top: number; bottom: number } {
     const top = TOP_W + (1 - TOP_W) * (n / NIV)
@@ -62,27 +67,22 @@ export function PiramideSeguridad({
 
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold text-slate-900">
-          Pirámide de Seguridad
-        </h3>
-        <p className="text-xs text-muted-foreground">
-          Conteos según los reportes cargados
-        </p>
-      </div>
-
       <div className="mx-auto max-w-3xl">
         <svg
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H + PUNTA_H}`}
           className="w-full"
           preserveAspectRatio="xMidYMid meet"
         >
+          {/* La pirámide se dibuja desplazada hacia abajo: el espacio superior
+              (PUNTA_H) lo ocupa el vértice del FAT, que sube hasta la punta. */}
+          <g transform={`translate(0, ${PUNTA_H})`}>
           {/* === Braces SIF a la izquierda === */}
           {SIF_GROUPS.map((g) => {
-            const yTop = g.fromIdx * ALTO_NIV
+            // El grupo "actual" arranca en el FAT, que ahora sube hasta la punta.
+            const yTop = g.fromIdx === 0 ? -PUNTA_H : g.fromIdx * ALTO_NIV
             const yBot = (g.toIdx + 1) * ALTO_NIV
             const yMid = (yTop + yBot) / 2
-            const xRight = PYR_LEFT - 10 - g.col * 55 // dónde apunta el brace (más cerca/lejos de pirámide)
+            const xRight = PYR_LEFT - 4 - g.col * 22 // dónde apunta el brace (más cerca/lejos de pirámide)
             const xLine = xRight - 10 // línea vertical del brace
             const xLabel = xLine - 14
             // Path tipo brace [ horizontal-vertical-horizontal ]
@@ -126,7 +126,13 @@ export function PiramideSeguridad({
             const xTopR = PYR_CX + (top * PYR_W) / 2
             const xBotL = PYR_CX - (bottom * PYR_W) / 2
             const xBotR = PYR_CX + (bottom * PYR_W) / 2
-            const points = `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
+            // FAT (i=0) termina en punta: en vez de su borde superior plano,
+            // un único vértice en el centro a -PUNTA_H, continuando el ángulo
+            // lateral → FAT + punta quedan como un solo triángulo del mismo color.
+            const points =
+              i === 0
+                ? `${PYR_CX},${-PUNTA_H} ${xBotR},${yBot} ${xBotL},${yBot}`
+                : `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
             const count = conteos[n.sigla] ?? 0
             const cy = yTop + ALTO_NIV / 2
 
@@ -217,13 +223,19 @@ export function PiramideSeguridad({
               </g>
             )
           })()}
+          </g>
         </svg>
       </div>
 
-      <p className="mt-3 text-[11px] italic text-muted-foreground">
-        La clasificación se basa en la gravedad de la lesión, no en los días de
-        baja que da la ART.
-      </p>
+      <div className="mt-3 flex items-end justify-between gap-3">
+        <p className="text-[11px] italic text-muted-foreground">
+          La clasificación se basa en la gravedad de la lesión, no en los días de
+          baja que da la ART.
+        </p>
+        <p className="whitespace-nowrap text-xs text-muted-foreground">
+          Conteos según los reportes cargados
+        </p>
+      </div>
     </div>
   )
 }
