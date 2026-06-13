@@ -24,7 +24,7 @@ import {
 } from "@/lib/foxtrot/auto-indicadores-misiones"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
-import { getAusentismoSerie } from "@/actions/asistencia"
+import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
   Profile,
   TipoReunion,
@@ -3989,7 +3989,7 @@ async function getIndicadoresMesCore(
       if (tipo === "logistica") {
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
-        const ausentismoRes = await getAusentismoSerie(mes, anio)
+        const ausentismoRes = await getAusentismoSerieEventos(mes, anio)
         const ausentismoPorFechaRaw = "data" in ausentismoRes
           ? ausentismoRes.data.por_fecha
           : {}

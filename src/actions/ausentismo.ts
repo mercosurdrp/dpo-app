@@ -1,8 +1,10 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import type { AusentismoSerie, AusentismoPersona } from "@/actions/asistencia"
 import type {
   AusentismoEmpleadoOpcion,
   AusentismoEvento,
@@ -577,4 +579,142 @@ export async function reporteLicenciasMedicas(
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
+}
+
+// ===== Serie diaria para el tablero de reuniones (fila "Ausentismo") =====
+// La fila "Ausentismo" de la reunión de Logística se alimenta de ESTE módulo
+// (ausentismo_eventos), no del fichaje. Cada evento se expande día por día
+// dentro de su rango [fecha_inicio, fecha_fin]; cada persona cuenta 1 por cada
+// fecha caída. Se replica el formato de AusentismoSerie/AusentismoPersona para
+// no tener que tocar el diálogo de detalle ni la grilla del tablero.
+
+const MOTIVO_TIPO_TABLERO: Record<
+  AusentismoMotivo,
+  AusentismoPersona["tipo"]
+> = {
+  licencia_medica: "licencia_medica",
+  ausencia: "ausente",
+  enfermedad_profesional: "ausente",
+  accidente: "ausente",
+  otras_licencias: "ausente",
+  licencia_gremial: "ausente",
+}
+
+export async function getAusentismoSerieEventos(
+  mes: number,
+  anio: number,
+  sectores: string[] = ["Depósito", "Distribución"],
+): Promise<Result<AusentismoSerie>> {
+  try {
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    // Lectura agregada para el tablero: se usa service-role porque la reunión
+    // la abren roles más allá de admin/admin_rrhh (la RLS de ausentismo_eventos
+    // es admin/admin_rrhh-only). Solo se expone el conteo + detalle del día,
+    // igual que hacía el cálculo anterior basado en fichaje.
+    const admin = createAdminClient()
+
+    const ultimoDia = new Date(anio, mes, 0).getDate()
+    const mm = String(mes).padStart(2, "0")
+    const desde = `${anio}-${mm}-01`
+    const hasta = `${anio}-${mm}-${String(ultimoDia).padStart(2, "0")}`
+
+    // Eventos que solapan el mes: fecha_inicio <= fin_mes AND fecha_fin >= ini_mes.
+    const { data: eventosRaw, error } = await admin
+      .from("ausentismo_eventos")
+      .select("empleado_id, fecha_inicio, fecha_fin, motivo, comentario")
+      .lte("fecha_inicio", hasta)
+      .gte("fecha_fin", desde)
+    if (error) return { error: error.message }
+
+    const eventos = (eventosRaw ?? []) as Array<{
+      empleado_id: string
+      fecha_inicio: string
+      fecha_fin: string
+      motivo: AusentismoMotivo
+      comentario: string | null
+    }>
+
+    // Datos de los empleados involucrados (legajo/nombre/sector) para el detalle.
+    const ids = Array.from(new Set(eventos.map((e) => e.empleado_id)))
+    const empMap = new Map<
+      string,
+      { legajo: number; nombre: string; sector: string | null }
+    >()
+    if (ids.length > 0) {
+      const { data: emps } = await admin
+        .from("empleados")
+        .select("id, legajo, nombre, sector")
+        .in("id", ids)
+      for (const e of (emps ?? []) as Array<{
+        id: string
+        legajo: number
+        nombre: string
+        sector: string | null
+      }>) {
+        empMap.set(e.id, { legajo: e.legajo, nombre: e.nombre, sector: e.sector })
+      }
+    }
+
+    const sectoresSet = new Set(sectores)
+    const hoyIso = new Date().toISOString().slice(0, 10)
+    const por_fecha: Record<string, number | null> = {}
+    const detalle_por_fecha: Record<string, AusentismoPersona[]> = {}
+
+    for (let d = 1; d <= ultimoDia; d++) {
+      const fecha = `${anio}-${mm}-${String(d).padStart(2, "0")}`
+      // Futuro: aún no hay info.
+      if (fecha > hoyIso) {
+        por_fecha[fecha] = null
+        continue
+      }
+      // Domingo: no laborable en Pampeana, no se cuenta (igual que el cálculo
+      // anterior y que los días laborales de /asistencia).
+      const diaSemana = new Date(`${fecha}T12:00:00Z`).getUTCDay()
+      if (diaSemana === 0) {
+        por_fecha[fecha] = null
+        continue
+      }
+
+      const personas: AusentismoPersona[] = []
+      const vistos = new Set<number>()
+      for (const ev of eventos) {
+        // La fecha cae dentro del evento (días caídos).
+        if (fecha < ev.fecha_inicio || fecha > ev.fecha_fin) continue
+        const emp = empMap.get(ev.empleado_id)
+        if (!emp) continue
+        if (!sectoresSet.has(emp.sector ?? "")) continue
+        // Una persona cuenta una sola vez por día aunque tenga eventos solapados.
+        if (vistos.has(emp.legajo)) continue
+        vistos.add(emp.legajo)
+        personas.push({
+          legajo: emp.legajo,
+          nombre: emp.nombre,
+          sector: emp.sector ?? "—",
+          tipo: MOTIVO_TIPO_TABLERO[ev.motivo] ?? "ausente",
+          observaciones: ev.comentario,
+        })
+      }
+      por_fecha[fecha] = personas.length
+      detalle_por_fecha[fecha] = personas
+    }
+
+    return { data: { sectores, por_fecha, detalle_por_fecha } }
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Error calculando ausentismo",
+    }
+  }
+}
+
+export async function getAusentismoDelDiaEventos(
+  fecha: string,
+  sectores: string[] = ["Depósito", "Distribución"],
+): Promise<{ data: AusentismoPersona[] } | { error: string }> {
+  const partes = fecha.split("-").map((s) => parseInt(s, 10))
+  if (partes.length !== 3 || !partes.every(Number.isFinite)) {
+    return { error: "Fecha inválida" }
+  }
+  const res = await getAusentismoSerieEventos(partes[1], partes[0], sectores)
+  if ("error" in res) return res
+  return { data: res.data.detalle_por_fecha[fecha] ?? [] }
 }
