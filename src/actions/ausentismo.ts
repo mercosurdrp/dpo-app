@@ -600,6 +600,11 @@ const MOTIVO_TIPO_TABLERO: Record<
   licencia_gremial: "ausente",
 }
 
+// El tablero de Logística SOLO suma Ausencia y Licencia Médica. El resto de
+// motivos (gremial, otras licencias, accidente, enfermedad profesional) queda
+// registrado en el módulo /ausentismo pero NO se replica en la fila del tablero.
+const MOTIVOS_TABLERO: AusentismoMotivo[] = ["ausencia", "licencia_medica"]
+
 export async function getAusentismoSerieEventos(
   mes: number,
   anio: number,
@@ -678,6 +683,8 @@ export async function getAusentismoSerieEventos(
       const personas: AusentismoPersona[] = []
       const vistos = new Set<number>()
       for (const ev of eventos) {
+        // Solo Ausencia y Licencia Médica suman al tablero.
+        if (!MOTIVOS_TABLERO.includes(ev.motivo)) continue
         // La fecha cae dentro del evento (días caídos).
         if (fecha < ev.fecha_inicio || fecha > ev.fecha_fin) continue
         const emp = empMap.get(ev.empleado_id)
