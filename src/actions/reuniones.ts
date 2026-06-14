@@ -2319,17 +2319,19 @@ const OVERRIDE_AUTO_KEYS = new Set([
   "auto_productividad_picking",
   "auto_errores_picking",
   "auto_errores_deposito",
-  "auto_ausentismo",
 ])
 // Nombres (lowercase) habilitados para override diario. Matchea tanto filas
-// AUTO como MANUALES (en Misiones productividad/pérdidas/ausentismo son carga
-// manual del usuario y errores es auto con otro id).
+// AUTO como MANUALES (en Misiones productividad/pérdidas son carga manual del
+// usuario y errores es auto con otro id).
+// OJO: "ausentismo"/auto_ausentismo NO va acá. Pasó a ser AUTOMÁTICO desde el
+// módulo /ausentismo (fila clickeable con drill-down, igual que Pampeana). Si
+// se incluye, getIndicadoresMes le pone editable_historico y el cliente lo
+// renderiza como input editable en vez del drill-down.
 const OVERRIDE_NOMBRES = new Set([
   "productividad de picking",
   "errores de picking",
   "pérdidas",
   "perdidas",
-  "ausentismo",
 ])
 
 export async function setIndicadorOverrideDiario(
