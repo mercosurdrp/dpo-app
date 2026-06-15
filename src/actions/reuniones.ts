@@ -558,10 +558,32 @@ export async function getReunionDetalle(
       return cierreYm === reunionYm
     })
 
+    // Nombres de los responsables múltiples (columna array uuid, no joinable
+    // en el select). Se resuelven con una consulta a profiles.
+    const respIds = new Set<string>()
+    for (const row of actividadesFiltradas) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const arr = (row as any).responsables
+      if (Array.isArray(arr)) for (const id of arr) if (id) respIds.add(id)
+    }
+    const nombrePorRespId = new Map<string, string>()
+    if (respIds.size > 0) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, nombre")
+        .in("id", [...respIds])
+      for (const p of (profs ?? []) as Array<{ id: string; nombre: string }>) {
+        nombrePorRespId.set(p.id, p.nombre)
+      }
+    }
+
     const actividades: ReunionActividadConResponsable[] = actividadesFiltradas.map(
       (row) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = row as any
+        const responsables: string[] = Array.isArray(r.responsables)
+          ? r.responsables
+          : []
         return {
           id: r.id,
           reunion_id: r.reunion_id,
@@ -581,12 +603,31 @@ export async function getReunionDetalle(
           s5_sector_numero: r.s5_sector_numero ?? null,
           s5_vehiculo_id: r.s5_vehiculo_id ?? null,
           mantenimiento_rubro: r.mantenimiento_rubro ?? null,
+          prioridad: (r.prioridad ?? "media") as ReunionActividad["prioridad"],
+          etiquetas: Array.isArray(r.etiquetas) ? r.etiquetas : [],
+          fecha_inicio: r.fecha_inicio ?? null,
+          checklist: Array.isArray(r.checklist) ? r.checklist : [],
+          responsables,
           responsable_nombre: r.responsable?.nombre ?? null,
+          responsables_nombres: responsables
+            .map((id) => nombrePorRespId.get(id))
+            .filter((n): n is string => !!n),
           reunion_origen_id: r.reunion_origen?.id ?? r.reunion_id,
           reunion_origen_fecha: r.reunion_origen?.fecha ?? "",
         }
       },
     )
+
+    // Misiones: el Action Log se ordena por fecha de inicio (las más nuevas
+    // arriba, las más viejas abajo); sin fecha_inicio cae a created_at.
+    if (IS_MISIONES) {
+      actividades.sort((a, b) => {
+        const ka = a.fecha_inicio ?? a.created_at.slice(0, 10)
+        const kb = b.fecha_inicio ?? b.created_at.slice(0, 10)
+        if (ka !== kb) return ka < kb ? 1 : -1
+        return a.created_at < b.created_at ? 1 : -1
+      })
+    }
 
     const archivos = (archRaw ?? []) as ReunionArchivo[]
 

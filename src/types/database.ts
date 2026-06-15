@@ -2596,6 +2596,13 @@ export interface ReunionDetalle extends Reunion {
 // =============================================
 export type EstadoReunionActividad = "no_comenzada" | "en_curso" | "cerrada"
 
+// Action Log estilo Planner (solo Misiones). Prioridad + checklist de la tarea.
+export type PrioridadActividad = "media" | "importante" | "urgente"
+export interface ChecklistItemActividad {
+  texto: string
+  completado: boolean
+}
+
 // Destino de una actividad del action log de reuniones.
 // 'simple'  → tarea aislada en reuniones (default, comportamiento legacy).
 // '5s_*'    → espejo bidireccional en s5_acciones.
@@ -2625,12 +2632,20 @@ export interface ReunionActividad {
   s5_sector_numero: number | null
   s5_vehiculo_id: string | null
   mantenimiento_rubro: string | null
+  // Campos estilo Planner (solo Misiones)
+  prioridad: PrioridadActividad
+  etiquetas: string[]
+  fecha_inicio: string | null
+  checklist: ChecklistItemActividad[]
+  responsables: string[]
 }
 
 export interface ReunionActividadConResponsable extends ReunionActividad {
   responsable_nombre: string | null
   reunion_origen_fecha: string
   reunion_origen_id: string
+  // Nombres resueltos de `responsables` (multi-asignado, solo Misiones).
+  responsables_nombres: string[]
 }
 
 // Entrada del historial de avances de una actividad del Action Log.

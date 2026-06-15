@@ -54,9 +54,9 @@ interface Props {
 }
 
 const ESTADO_LABEL: Record<EstadoReunionActividad, string> = {
-  no_comenzada: "No comenzada",
+  no_comenzada: "No iniciada",
   en_curso: "En curso",
-  cerrada: "Cerrada",
+  cerrada: "Realizada",
 }
 
 const ESTADO_CLASE: Record<EstadoReunionActividad, string> = {
@@ -362,9 +362,9 @@ export function DetalleActividadDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="no_comenzada">No comenzada</SelectItem>
+                  <SelectItem value="no_comenzada">No iniciada</SelectItem>
                   <SelectItem value="en_curso">En curso</SelectItem>
-                  <SelectItem value="cerrada">Cerrada</SelectItem>
+                  <SelectItem value="cerrada">Realizada</SelectItem>
                 </SelectContent>
               </Select>
               {cerrandoTarea && (

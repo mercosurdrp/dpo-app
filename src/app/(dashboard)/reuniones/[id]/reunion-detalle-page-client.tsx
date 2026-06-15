@@ -259,7 +259,7 @@ function EstadoActividadBadge({
   if (estado === "cerrada") {
     return (
       <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-        Cerrada
+        Realizada
       </Badge>
     )
   }
@@ -272,7 +272,7 @@ function EstadoActividadBadge({
   }
   return (
     <Badge className="border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100">
-      No comenzada
+      No iniciada
     </Badge>
   )
 }
@@ -844,7 +844,7 @@ function ActividadListItem({
           Arrastrada de {formatFechaCorta(actividad.reunion_origen_fecha)}
           {cerradaArrastrada && actividad.completado_at && (
             <span className="ml-2 text-emerald-700">
-              · Cerrada el {formatFechaHoraCorta(actividad.completado_at)}
+              · Realizada el {formatFechaHoraCorta(actividad.completado_at)}
             </span>
           )}
         </p>
@@ -864,18 +864,58 @@ function ActividadListItem({
             {actividad.descripcion}
           </button>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            {actividad.responsable_nombre ? (
-              <span>Resp: {actividad.responsable_nombre}</span>
-            ) : (
-              <span className="italic">Sin responsable</span>
+            {(() => {
+              const resp =
+                actividad.responsables_nombres.length > 0
+                  ? actividad.responsables_nombres
+                  : actividad.responsable_nombre
+                    ? [actividad.responsable_nombre]
+                    : []
+              return resp.length > 0 ? (
+                <span>Resp: {resp.join(", ")}</span>
+              ) : (
+                <span className="italic">Sin responsable</span>
+              )
+            })()}
+            {actividad.fecha_inicio && (
+              <span>Inicio: {formatFechaCorta(actividad.fecha_inicio)}</span>
             )}
             {actividad.fecha_compromiso && (
               <span>
                 Vence: {formatFechaCorta(actividad.fecha_compromiso)}
               </span>
             )}
+            {actividad.checklist.length > 0 && (
+              <span>
+                ✓ {actividad.checklist.filter((c) => c.completado).length}/
+                {actividad.checklist.length}
+              </span>
+            )}
             {actividad.motivo && <span>Motivo: {actividad.motivo}</span>}
           </div>
+          {(actividad.etiquetas.length > 0 ||
+            actividad.prioridad !== "media") && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {actividad.prioridad === "urgente" && (
+                <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                  Urgente
+                </span>
+              )}
+              {actividad.prioridad === "importante" && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                  Importante
+                </span>
+              )}
+              {actividad.etiquetas.map((e) => (
+                <span
+                  key={e}
+                  className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
+                >
+                  {e}
+                </span>
+              ))}
+            </div>
+          )}
           {actividad.observaciones && (
             <p className="mt-1 text-xs text-slate-600">
               {actividad.observaciones}
@@ -937,9 +977,9 @@ function ActividadListItem({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="no_comenzada">No comenzada</SelectItem>
+                    <SelectItem value="no_comenzada">No iniciada</SelectItem>
                     <SelectItem value="en_curso">En curso</SelectItem>
-                    <SelectItem value="cerrada">Cerrada</SelectItem>
+                    <SelectItem value="cerrada">Realizada</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button
@@ -2262,7 +2302,7 @@ export function ReunionDetallePageClient({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                   )}
                 >
-                  No comenzadas ({conteosActividades.no_comenzada})
+                  No iniciadas ({conteosActividades.no_comenzada})
                 </button>
                 <button
                   type="button"
@@ -2286,7 +2326,7 @@ export function ReunionDetallePageClient({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                   )}
                 >
-                  Cerradas ({conteosActividades.cerrada})
+                  Realizadas ({conteosActividades.cerrada})
                 </button>
               </div>
               {actividadesFiltradas.length === 0 ? (
