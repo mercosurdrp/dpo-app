@@ -63,6 +63,7 @@ import { EditarReunionDialog } from "@/components/reuniones/editar-reunion-dialo
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { TorCountdown } from "@/components/reuniones/tor-countdown"
+import { TorBookActas } from "@/components/reuniones/tor-book-actas"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -1581,6 +1582,15 @@ export function ReunionDetallePageClient({
           onOpenChange={setEditarOpen}
           reunion={detalle as unknown as Reunion}
           onSaved={() => router.refresh()}
+        />
+      )}
+
+      {/* TOR (Book de Actas) — dentro de la reunión, debajo del header
+          (fecha + contador). Solo logística Misiones; desplegable y editable. */}
+      {IS_MISIONES && detalle.tipo === "logistica" && (
+        <TorBookActas
+          tipo="logistica"
+          titulo="TOR · Book de Actas (Reunión Diaria de Logística)"
         />
       )}
 
