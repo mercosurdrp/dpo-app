@@ -4233,6 +4233,19 @@ async function getIndicadoresMesCore(
             adherenciaChecksRow,
           ]
 
+          // Anti-duplicados: si alguien creó una fila de config con el mismo
+          // nombre que una AUTO (p.ej. al editar el target de "% Entregas
+          // exitosas" o "Errores de picking", que no están en NOMBRES_AUTO),
+          // se descarta la manual vacía y queda la automática con sus datos.
+          const autoNombresSet = new Set(
+            [ausentismoAutoRow, ...autosOrdenados].map((r) =>
+              r.nombre.trim().toLowerCase(),
+            ),
+          )
+          const otrosManualesLimpio = otrosManuales.filter(
+            (m) => !autoNombresSet.has(m.nombre.trim().toLowerCase()),
+          )
+
           return {
             data: {
               anio,
@@ -4243,7 +4256,7 @@ async function getIndicadoresMesCore(
                 ...sifRows,
                 ausentismoAutoRow,
                 ...autosOrdenados,
-                ...otrosManuales,
+                ...otrosManualesLimpio,
               ],
             },
           }
