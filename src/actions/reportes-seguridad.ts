@@ -146,6 +146,58 @@ export async function getReportes(
   }
 }
 
+// Reportes de un tipo_sif (sif_actual/potencial/precursor) en un día concreto.
+// Alimenta el drill-down de las celdas SIF del tablero de reuniones.
+export async function getReportesSifPorDia(
+  fecha: string,
+  tipoSif: "sif_actual" | "sif_potencial" | "sif_precursor"
+): Promise<Result<ReporteSeguridadConAutor[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("reportes_seguridad")
+      .select("*, autor:profiles!reportes_seguridad_creado_por_fkey(id, nombre)")
+      .eq("fecha", fecha)
+      .eq("tipo_sif", tipoSif)
+      .order("hora", { ascending: true, nullsFirst: true })
+      .order("created_at", { ascending: true })
+
+    if (error) return { error: error.message }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enriched: ReporteSeguridadConAutor[] = ((data ?? []) as any[]).map((row) => ({
+      id: row.id,
+      tipo: row.tipo,
+      fecha: row.fecha,
+      hora: row.hora,
+      descripcion: row.descripcion,
+      accion_tomada: row.accion_tomada,
+      lugar: row.lugar,
+      localidad: row.localidad,
+      area: row.area,
+      damnificado_nombre: row.damnificado_nombre,
+      damnificado_puesto: row.damnificado_puesto,
+      dentro_cd: row.dentro_cd,
+      sif: row.sif,
+      tipo_sif: row.tipo_sif,
+      tipo_accidente: row.tipo_accidente,
+      quien_que: row.quien_que,
+      creado_por: row.creado_por,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      autor_nombre: row.autor?.nombre ?? "Desconocido",
+    }))
+
+    return { data: enriched }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando reportes SIF",
+    }
+  }
+}
+
 export async function getReporte(
   id: string
 ): Promise<Result<ReporteSeguridadDetalle>> {

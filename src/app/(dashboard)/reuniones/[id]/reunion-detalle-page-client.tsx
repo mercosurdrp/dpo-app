@@ -73,6 +73,7 @@ import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-deta
 import { ChecksDetalleDiaDialog } from "@/components/reuniones/checks-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
+import { SifDetalleDiaDialog } from "@/components/reuniones/sif-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   Reunion,
@@ -80,6 +81,7 @@ import type {
   ReunionActividadConResponsable,
   ReunionAsistenteConProfile,
   ReunionDetalle,
+  ReporteSeguridadTipoSif,
   TipoReunion,
   UserRole,
 } from "@/types/database"
@@ -1138,6 +1140,13 @@ export function ReunionDetallePageClient({
   // calle: horas por camión (hora de retorno − hora de liberación).
   const [horasCalleFecha, setHorasCalleFecha] = useState<string | null>(null)
 
+  // Detalle del día al hacer click en una celda SIF (Actual/Potencial/Precursor):
+  // los reportes de seguridad de ese tipo_sif cargados ese día.
+  const [sifDetalle, setSifDetalle] = useState<{
+    fecha: string
+    tipoSif: ReporteSeguridadTipoSif
+  } | null>(null)
+
   // Filtro Action Log por estado
   const [filtroEstado, setFiltroEstado] = useState<
     "todas" | "no_comenzada" | "en_curso" | "cerrada"
@@ -2046,6 +2055,18 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_errores_picking"
                           const esAusentismo = ind.id === "auto_ausentismo"
                           const esOB = ind.id === "auto_ocupacion_bodega"
+                          // SIF (Actual/Potencial/Precursor): drill-down a los
+                          // reportes de seguridad de ese tipo_sif del día.
+                          const nombreLower = ind.nombre.trim().toLowerCase()
+                          const sifTipo: ReporteSeguridadTipoSif | null =
+                            nombreLower === "sif actual"
+                              ? "sif_actual"
+                              : nombreLower === "sif potencial"
+                                ? "sif_potencial"
+                                : nombreLower === "sif precursor"
+                                  ? "sif_precursor"
+                                  : null
+                          const esSif = sifTipo !== null
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -2057,7 +2078,8 @@ export function ReunionDetallePageClient({
                               esHorasCalle ||
                               esAperturaPicking ||
                               esAusentismo ||
-                              esOB) &&
+                              esOB ||
+                              esSif) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -2071,6 +2093,8 @@ export function ReunionDetallePageClient({
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
+                            else if (esSif && sifTipo)
+                              setSifDetalle({ fecha: f, tipoSif: sifTipo })
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -2444,6 +2468,15 @@ export function ReunionDetallePageClient({
           if (!o) setHorasCalleFecha(null)
         }}
         fecha={horasCalleFecha}
+      />
+
+      <SifDetalleDiaDialog
+        open={sifDetalle !== null}
+        onOpenChange={(o) => {
+          if (!o) setSifDetalle(null)
+        }}
+        fecha={sifDetalle?.fecha ?? null}
+        tipoSif={sifDetalle?.tipoSif ?? null}
       />
     </div>
   )
