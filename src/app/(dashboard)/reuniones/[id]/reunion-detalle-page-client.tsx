@@ -730,7 +730,7 @@ function TargetInput({
           if (val.trim() !== lastRef.current.trim()) persist(val, dir)
         }}
         className={cn(
-          "h-6 w-12 bg-transparent px-1 text-right text-xs tabular-nums",
+          "h-6 w-16 bg-transparent px-1 text-right text-xs tabular-nums",
           saving && "border-blue-300",
         )}
         placeholder="—"
@@ -1820,10 +1820,10 @@ export function ReunionDetallePageClient({
                     <th className="sticky left-[160px] z-10 w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Unidad
                     </th>
-                    <th className="sticky left-[220px] z-10 w-[84px] min-w-[84px] max-w-[84px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[220px] z-10 w-[112px] min-w-[112px] max-w-[112px] bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Target
                     </th>
-                    <th className="sticky left-[304px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="sticky left-[332px] z-10 w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
                       MTD
                     </th>
                     {columnasTablero.map((col) => {
@@ -1884,7 +1884,7 @@ export function ReunionDetallePageClient({
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}
                       </td>
-                      <td className="sticky left-[220px] w-[84px] min-w-[84px] max-w-[84px] bg-white px-1 py-1 align-middle text-xs">
+                      <td className="sticky left-[220px] w-[112px] min-w-[112px] max-w-[112px] bg-white px-1 py-1 align-middle text-xs">
                         <TargetInput
                           reunionId={detalle.id}
                           nombre={ind.nombre}
@@ -1897,7 +1897,7 @@ export function ReunionDetallePageClient({
                           onChanged={refrescar}
                         />
                       </td>
-                      <td className="sticky left-[304px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
+                      <td className="sticky left-[332px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
                         {ind.mtd_texto != null
                           ? ind.mtd_texto
                           : ind.mtd == null
