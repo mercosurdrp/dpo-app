@@ -198,27 +198,49 @@ export async function getReportesSifPorDia(
   }
 }
 
-// Meta de días sin accidente (bloque Seguridad). Guardada en app_config.
-const META_CLAVE = "seguridad_meta_dias"
+// Configuración del bloque Seguridad POR ÁREA (app_config):
+//   seguridad_meta_dias_<area>  → meta de días sin accidente (editable).
+//   seguridad_ult_acc_<area>    → fecha base del último accidente (override
+//     manual; útil cuando el accidente no está cargado en el sistema, ej.
+//     depósito 2017). El contador usa el MÁS reciente entre esta fecha y el
+//     último accidente real del área.
+// Áreas: "distribucion" (entrega: logística/matinal) y "deposito" (warehouse).
+export type AreaSeguridad = "distribucion" | "deposito"
 
-export async function getSeguridadMetaDias(): Promise<Result<number | null>> {
+export async function getSeguridadConfigArea(
+  area: AreaSeguridad
+): Promise<Result<{ meta: number | null; ultimoOverride: string | null }>> {
   try {
     await requireAuth()
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("app_config")
-      .select("valor")
-      .eq("clave", META_CLAVE)
-      .maybeSingle()
+      .select("clave, valor")
+      .in("clave", [`seguridad_meta_dias_${area}`, `seguridad_ult_acc_${area}`])
     if (error) return { error: error.message }
-    const v = data?.valor ? Number(data.valor) : null
-    return { data: v != null && Number.isFinite(v) ? v : null }
+    const map = new Map(
+      ((data ?? []) as { clave: string; valor: string }[]).map((r) => [
+        r.clave,
+        r.valor,
+      ])
+    )
+    const metaRaw = map.get(`seguridad_meta_dias_${area}`)
+    const meta = metaRaw ? Number(metaRaw) : null
+    return {
+      data: {
+        meta: meta != null && Number.isFinite(meta) ? meta : null,
+        ultimoOverride: map.get(`seguridad_ult_acc_${area}`) || null,
+      },
+    }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Error cargando la meta" }
+    return {
+      error: err instanceof Error ? err.message : "Error cargando la meta",
+    }
   }
 }
 
 export async function setSeguridadMetaDias(
+  area: AreaSeguridad,
   dias: number | null
 ): Promise<Result<true>> {
   try {
@@ -232,7 +254,7 @@ export async function setSeguridadMetaDias(
     const supabase = await createClient()
     const { error } = await supabase.from("app_config").upsert(
       {
-        clave: META_CLAVE,
+        clave: `seguridad_meta_dias_${area}`,
         valor: dias === null ? "" : String(Math.round(dias)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),

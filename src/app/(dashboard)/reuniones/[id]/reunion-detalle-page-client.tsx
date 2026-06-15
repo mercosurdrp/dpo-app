@@ -1556,7 +1556,16 @@ export function ReunionDetallePageClient({
             {formatFechaLarga(detalle.fecha)}
           </h1>
         </div>
-        <TorCountdown reunionId={detalle.id} />
+        <TorCountdown
+          reunionId={detalle.id}
+          minutos={
+            detalle.tipo === "matinal-distribucion"
+              ? 10
+              : detalle.tipo === "warehouse"
+                ? 15
+                : 30
+          }
+        />
         {puedeEditar && (
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1703,6 +1712,7 @@ export function ReunionDetallePageClient({
       <EtapaSeguridad
         fechaReunion={detalle.fecha}
         reunionId={detalle.id}
+        tipo={detalle.tipo}
         puedeEditar={puedeEditar}
         currentProfileId={currentProfileId}
         currentRole={currentRole}

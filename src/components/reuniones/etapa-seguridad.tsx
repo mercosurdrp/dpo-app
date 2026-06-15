@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/card"
 import {
   getReportes,
-  getSeguridadMetaDias,
+  getSeguridadConfigArea,
   setSeguridadMetaDias,
 } from "@/actions/reportes-seguridad"
 import {
@@ -273,6 +273,7 @@ function UltimoAccidenteVentana({
 export function EtapaSeguridad({
   fechaReunion,
   reunionId,
+  tipo,
   puedeEditar = false,
   currentProfileId,
   currentRole,
@@ -280,11 +281,16 @@ export function EtapaSeguridad({
   fechaReunion: string
   /** Si se pasa, muestra el semáforo del día junto a la pirámide (solo Misiones). */
   reunionId?: string
+  /** Tipo de reunión: define el área del contador (warehouse→depósito, resto→distribución). */
+  tipo?: string
   puedeEditar?: boolean
   /** Profile actual; si se pasa junto con `currentRole`, las cards abren el detalle del reporte. */
   currentProfileId?: string | null
   currentRole?: UserRole
 }) {
+  // Área del contador de días sin accidente según el tipo de reunión.
+  const areaSeguridad: "distribucion" | "deposito" =
+    tipo === "warehouse" ? "deposito" : "distribucion"
   const [reportes, setReportes] = useState<ReporteSeguridadConAutor[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -339,24 +345,26 @@ export function EtapaSeguridad({
     })
   }, [])
 
-  // Meta de días sin accidente (editable, persistida en app_config).
+  // Meta + fecha base del último accidente, POR ÁREA (persistido en app_config).
   const [metaDias, setMetaDias] = useState<number | null>(null)
   const [metaInput, setMetaInput] = useState<string>("")
+  const [ultimoOverride, setUltimoOverride] = useState<string | null>(null)
   useEffect(() => {
-    getSeguridadMetaDias().then((r) => {
+    getSeguridadConfigArea(areaSeguridad).then((r) => {
       if ("data" in r) {
-        setMetaDias(r.data)
-        setMetaInput(r.data != null ? String(r.data) : "")
+        setMetaDias(r.data.meta)
+        setMetaInput(r.data.meta != null ? String(r.data.meta) : "")
+        setUltimoOverride(r.data.ultimoOverride)
       }
     })
-  }, [])
+  }, [areaSeguridad])
 
   function guardarMeta(nuevo: string) {
     const trimmed = nuevo.trim()
     const n = trimmed === "" ? null : Number(trimmed)
     if (n !== null && (!Number.isFinite(n) || n < 0)) return
     setMetaDias(n) // optimista
-    setSeguridadMetaDias(n).then((r) => {
+    setSeguridadMetaDias(areaSeguridad, n).then((r) => {
       if ("error" in r) setErrorMsg(r.error)
     })
   }
@@ -391,13 +399,23 @@ export function EtapaSeguridad({
     return base
   }, [reportes, piramideAnio, piramideMes])
 
-  // Último accidente absoluto (no respeta el filtro año/mes de la pirámide):
-  // el reporte más reciente cuyo nivel sea FAI..LTI.
+  // Ventanita "Último accidente": el reporte más reciente (nivel FAI..LTI)
+  // según el ÁREA de la reunión:
+  //   - warehouse → solo depósito (si no hay, queda sin completar)
+  //   - matinal   → solo distribución
+  //   - logística / log-ventas → cualquiera (el último ocurrido)
+  const areaVentanita: "deposito" | "distribucion" | null =
+    tipo === "warehouse"
+      ? "deposito"
+      : tipo === "matinal-distribucion"
+        ? "distribucion"
+        : null
   const ultimoAccidentado = useMemo<ReporteSeguridadConAutor | null>(() => {
     const elegibles = reportes.filter(
       (r) =>
         r.tipo_accidente &&
-        ULTIMO_ACCIDENTE_NIVELES.includes(r.tipo_accidente),
+        ULTIMO_ACCIDENTE_NIVELES.includes(r.tipo_accidente) &&
+        (areaVentanita === null || r.area === areaVentanita),
     )
     if (elegibles.length === 0) return null
     elegibles.sort((a, b) => {
@@ -407,21 +425,31 @@ export function EtapaSeguridad({
       return a.created_at < b.created_at ? 1 : -1
     })
     return elegibles[0]
-  }, [reportes])
+  }, [reportes, areaVentanita])
 
   const periodoLabel =
     piramideMes === "all"
       ? `año ${piramideAnio}`
       : `${MESES[piramideMes - 1]} ${piramideAnio}`
 
-  // Días sin accidente: último reporte tipo=accidente (global) → hoy, en UTC.
+  // Días sin accidente del ÁREA de esta reunión (distribución o depósito):
+  // el más reciente entre el último accidente real del área y la fecha base
+  // configurada (override). De ahí a hoy, en UTC.
   const { diasSinAccidente } = useMemo(() => {
-    let max: string | null = null
+    let max: string | null =
+      ultimoOverride && /^\d{4}-\d{2}-\d{2}$/.test(ultimoOverride)
+        ? ultimoOverride
+        : null
     for (const r of reportes) {
       if (r.tipo !== "accidente") continue
+      if (r.area !== areaSeguridad) continue
       if (max === null || r.fecha > max) max = r.fecha
     }
-    if (!max) return { diasSinAccidente: null as number | null, ultimoAccidente: null as string | null }
+    if (!max)
+      return {
+        diasSinAccidente: null as number | null,
+        ultimoAccidente: null as string | null,
+      }
     const [y, m, d] = max.split("-").map(Number)
     if (!y || !m || !d) return { diasSinAccidente: null, ultimoAccidente: null }
     const lastUTC = Date.UTC(y, m - 1, d)
@@ -429,7 +457,7 @@ export function EtapaSeguridad({
     const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
     const dias = Math.max(0, Math.floor((todayUTC - lastUTC) / 86_400_000))
     return { diasSinAccidente: dias, ultimoAccidente: max }
-  }, [reportes])
+  }, [reportes, areaSeguridad, ultimoOverride])
 
   // Días que faltan para cumplir la meta = meta − días sin accidente.
   const diasRestantes =

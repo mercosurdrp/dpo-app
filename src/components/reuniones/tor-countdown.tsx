@@ -174,7 +174,7 @@ export function TorCountdown({
             size="icon"
             className="size-9"
             onClick={reiniciar}
-            title="Reiniciar a los 30 minutos"
+            title={`Reiniciar a los ${minutos} minutos`}
           >
             <RotateCcw className="size-4" />
           </Button>
