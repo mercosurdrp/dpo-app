@@ -2113,29 +2113,62 @@ export async function actualizarIndicadorConfig(
   }
 }
 
-// Edición inline del objetivo (target) de un indicador desde el tablero:
-// actualiza SOLO meta + polaridad (mejor_si), sin tocar el resto de la config.
+// Edición inline del objetivo (target) de un indicador desde el tablero.
+// Guarda por NOMBRE (resuelve el tipo desde la reunión), así funciona también
+// para las filas AUTO que no tienen id de config: si existe la fila de config
+// con ese nombre la actualiza, si no, la crea. Solo toca meta + polaridad.
 // meta=null borra el objetivo (la fila queda "sin objetivo" → tono azulado).
 export async function setIndicadorTarget(
-  id: string,
+  reunionId: string,
+  nombre: string,
   meta: number | null,
   mejorSi: "mayor" | "menor" | null,
 ): Promise<Result<true>> {
   try {
     await requireEditor()
     const supabase = await createClient()
-    if (!id) return { error: "ID inválido" }
+    if (!reunionId || !nombre.trim()) return { error: "Datos inválidos" }
     if (meta !== null && !Number.isFinite(meta)) {
       return { error: "Target inválido" }
     }
     if (mejorSi !== null && !["mayor", "menor"].includes(mejorSi)) {
       return { error: "Dirección inválida" }
     }
-    const { error } = await supabase
+    const { data: reu } = await supabase
+      .from("reuniones")
+      .select("tipo")
+      .eq("id", reunionId)
+      .single()
+    const tipo = (reu as { tipo?: string } | null)?.tipo
+    if (!tipo) return { error: "Reunión no encontrada" }
+
+    const efectivoMejorSi = meta === null ? null : mejorSi
+    const { data: existing } = await supabase
       .from("reuniones_indicadores_config")
-      .update({ meta, mejor_si: meta === null ? null : mejorSi })
-      .eq("id", id)
-    if (error) return { error: error.message }
+      .select("id")
+      .eq("tipo", tipo)
+      .eq("nombre", nombre)
+      .maybeSingle()
+
+    if (existing) {
+      const { error } = await supabase
+        .from("reuniones_indicadores_config")
+        .update({ meta, mejor_si: efectivoMejorSi })
+        .eq("id", (existing as { id: string }).id)
+      if (error) return { error: error.message }
+    } else {
+      const { error } = await supabase
+        .from("reuniones_indicadores_config")
+        .insert({
+          tipo,
+          nombre,
+          meta,
+          mejor_si: efectivoMejorSi,
+          activo: true,
+          orden: 900,
+        })
+      if (error) return { error: error.message }
+    }
     revalidatePath(REVALIDATE_PATH)
     return { data: true }
   } catch (err) {
@@ -2848,19 +2881,25 @@ export async function getIndicadoresMes(
     if (!tipo) return base
     const { data: cfg, error } = await supabase
       .from("reuniones_indicadores_config")
-      .select("nombre, gatillo, mejor_si")
+      .select("nombre, meta, gatillo, mejor_si")
       .eq("tipo", tipo)
     if (error || !cfg) return base
     const porNombre = new Map<
       string,
-      { gatillo: number | null; mejor_si: "mayor" | "menor" | null }
+      {
+        meta: number | null
+        gatillo: number | null
+        mejor_si: "mayor" | "menor" | null
+      }
     >()
     for (const c of cfg as Array<{
       nombre: string
+      meta: number | null
       gatillo: number | null
       mejor_si: "mayor" | "menor" | null
     }>) {
       porNombre.set(c.nombre.trim().toLowerCase(), {
+        meta: c.meta ?? null,
         gatillo: c.gatillo ?? null,
         mejor_si: c.mejor_si ?? null,
       })
@@ -2868,12 +2907,14 @@ export async function getIndicadoresMes(
     const indicadores = base.data.indicadores.map((ind) => {
       const c = porNombre.get(ind.nombre.trim().toLowerCase())
       if (!c) return ind
+      // La config es la fuente de verdad del TARGET (editable desde el tablero):
+      // si hay fila de config con este nombre, su meta + dirección mandan sobre
+      // lo hardcodeado en el código.
       return {
         ...ind,
+        meta: c.meta,
         gatillo: c.gatillo,
-        // La polaridad del código (filas auto) tiene prioridad; para las
-        // manuales viene de la config.
-        mejor_si: ind.mejor_si ?? c.mejor_si ?? undefined,
+        mejor_si: c.mejor_si ?? ind.mejor_si ?? undefined,
       }
     })
 
@@ -4518,13 +4559,23 @@ async function getIndicadoresMesCore(
       }
     }
 
+    // Anti-duplicados: si una fila manual de config quedó con el mismo nombre
+    // que una automática (p.ej. al crear un target por nombre para una fila
+    // auto), se descarta la manual y queda solo la automática.
+    const autoNombres = new Set(
+      indicadoresAuto.map((a) => a.nombre.trim().toLowerCase()),
+    )
+    const indicadoresManual = indicadores.filter(
+      (m) => !autoNombres.has(m.nombre.trim().toLowerCase()),
+    )
+
     return {
       data: {
         anio,
         mes,
         fechas,
         reuniones_por_fecha: reunionesPorFecha,
-        indicadores: [...indicadoresAuto, ...indicadores],
+        indicadores: [...indicadoresAuto, ...indicadoresManual],
       },
     }
   } catch (err) {

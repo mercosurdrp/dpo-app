@@ -647,13 +647,15 @@ function OverrideValorInput({
 // cuando valor ≤ target. Solo editable por editores.
 // =============================================
 function TargetInput({
-  indicadorId,
+  reunionId,
+  nombre,
   meta,
   mejorSi,
   puedeEditar,
   onChanged,
 }: {
-  indicadorId: string
+  reunionId: string
+  nombre: string
   meta: number | null
   mejorSi: "menor" | "mayor" | undefined
   puedeEditar: boolean
@@ -679,7 +681,8 @@ function TargetInput({
       if (numero !== null && !Number.isFinite(numero)) return
       setSaving(true)
       void setIndicadorTarget(
-        indicadorId,
+        reunionId,
+        nombre,
         numero,
         numero === null ? null : nuevoDir,
       ).then((res) => {
@@ -690,7 +693,7 @@ function TargetInput({
         }
       })
     },
-    [indicadorId, onChanged],
+    [reunionId, nombre, onChanged],
   )
 
   if (!puedeEditar) {
@@ -1874,10 +1877,14 @@ export function ReunionDetallePageClient({
                       </td>
                       <td className="sticky left-[220px] w-[84px] min-w-[84px] max-w-[84px] bg-white px-1 py-1 align-middle text-xs">
                         <TargetInput
-                          indicadorId={ind.id}
+                          reunionId={detalle.id}
+                          nombre={ind.nombre}
                           meta={ind.meta}
                           mejorSi={ind.mejor_si}
-                          puedeEditar={puedeEditar && !ind.auto}
+                          puedeEditar={
+                            puedeEditar &&
+                            !ind.nombre.trim().toLowerCase().startsWith("sif ")
+                          }
                           onChanged={refrescar}
                         />
                       </td>
@@ -1984,10 +1991,13 @@ export function ReunionDetallePageClient({
                             valorValido &&
                             (ind.mostrar_cero || esLtiTri ? true : valor! > 0)
                           const esPct = ind.unidad === "%"
-                          // Color por polaridad de la meta (mejor_si). Si no hay
-                          // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
-                          // hay valor (mismo comportamiento histórico).
-                          let colorClass = "bg-red-50 font-semibold text-red-700"
+                          // Color por polaridad de la meta (mejor_si). SIN target
+                          // (meta vacía) → tono azulado (no hay objetivo). Con
+                          // target → rojo por defecto y se recalcula verde/rojo abajo.
+                          let colorClass =
+                            ind.meta == null
+                              ? "bg-blue-50 text-blue-700"
+                              : "bg-red-50 font-semibold text-red-700"
                           if (ind.mejor_si && ind.meta != null && valor != null) {
                             const cumple =
                               ind.mejor_si === "menor"
