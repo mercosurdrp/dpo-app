@@ -25,12 +25,30 @@ import {
   crearActividad,
 } from "@/actions/reuniones"
 import type {
+  ChecklistItemActividad,
+  PrioridadActividad,
   ReunionActividad,
   ReunionActividadConResponsable,
   S5SectorAlmacen,
   TareaDestino,
   TipoReunion,
 } from "@/types/database"
+import { IS_MISIONES } from "@/lib/empresa"
+import { cn } from "@/lib/utils"
+
+// Categorías (etiquetas) del Action Log de logística (Planner, solo Misiones).
+const ETIQUETAS_LOG = [
+  "ALMACEN",
+  "ENTREGA",
+  "GENTE",
+  "FLOTA",
+  "MANTENIMIENTO",
+  "VENTAS",
+  "SEGURIDAD",
+  "GESTIÓN",
+  "SLA",
+  "ADMIN",
+]
 
 interface ResponsableOpt {
   id: string
@@ -133,6 +151,27 @@ export function ActividadFormDialog({
     actividad?.mantenimiento_rubro ?? "",
   )
 
+  // Campos estilo Planner (solo Misiones)
+  const [prioridad, setPrioridad] = useState<PrioridadActividad>(
+    actividad?.prioridad ?? "media",
+  )
+  const [fechaInicio, setFechaInicio] = useState<string>(
+    actividad?.fecha_inicio ?? "",
+  )
+  const [etiquetas, setEtiquetas] = useState<string[]>(
+    actividad?.etiquetas ?? [],
+  )
+  const [respMulti, setRespMulti] = useState<string[]>(
+    actividad?.responsables?.length
+      ? actividad.responsables
+      : actividad?.responsable_id
+        ? [actividad.responsable_id]
+        : [],
+  )
+  const [checklist, setChecklist] = useState<ChecklistItemActividad[]>(
+    actividad?.checklist ?? [],
+  )
+
   const sectoresOpts = (sectoresAlmacen?.length
     ? sectoresAlmacen
     : SECTORES_FALLBACK
@@ -152,6 +191,17 @@ export function ActividadFormDialog({
       )
       setVehiculoId(actividad?.s5_vehiculo_id ?? "none")
       setMantenimientoRubro(actividad?.mantenimiento_rubro ?? "")
+      setPrioridad(actividad?.prioridad ?? "media")
+      setFechaInicio(actividad?.fecha_inicio ?? "")
+      setEtiquetas(actividad?.etiquetas ?? [])
+      setRespMulti(
+        actividad?.responsables?.length
+          ? actividad.responsables
+          : actividad?.responsable_id
+            ? [actividad.responsable_id]
+            : [],
+      )
+      setChecklist(actividad?.checklist ?? [])
     }
   }, [open, actividad])
 
@@ -195,6 +245,21 @@ export function ActividadFormDialog({
       formData.delete("s5_sector_numero")
       formData.delete("s5_vehiculo_id")
       formData.delete("mantenimiento_rubro")
+    }
+
+    // Campos estilo Planner (solo Misiones)
+    if (IS_MISIONES) {
+      formData.set("prioridad", prioridad)
+      formData.set("fecha_inicio", fechaInicio)
+      formData.set("etiquetas", JSON.stringify(etiquetas))
+      formData.set("responsables", JSON.stringify(respMulti))
+      formData.set(
+        "checklist",
+        JSON.stringify(checklist.filter((c) => c.texto.trim())),
+      )
+      // El responsable principal es el primero de la lista de asignados.
+      if (respMulti.length > 0) formData.set("responsable_id", respMulti[0])
+      else formData.delete("responsable_id")
     }
 
     startTransition(async () => {
@@ -353,26 +418,48 @@ export function ActividadFormDialog({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Responsable</Label>
-              <Select
-                value={responsableId}
-                onValueChange={(v: string | null) =>
-                  setResponsableId(v ?? "")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sin asignar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {responsables.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!IS_MISIONES && (
+              <div className="space-y-1.5">
+                <Label>Responsable</Label>
+                <Select
+                  value={responsableId}
+                  onValueChange={(v: string | null) =>
+                    setResponsableId(v ?? "")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sin asignar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {responsables.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {IS_MISIONES && (
+              <div className="space-y-1.5">
+                <Label>Prioridad</Label>
+                <Select
+                  value={prioridad}
+                  onValueChange={(v: string | null) => {
+                    if (v) setPrioridad(v as PrioridadActividad)
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="importante">Importante</SelectItem>
+                    <SelectItem value="urgente">Urgente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="act_fecha">Vencimiento</Label>
               <Input
@@ -383,6 +470,140 @@ export function ActividadFormDialog({
               />
             </div>
           </div>
+
+          {IS_MISIONES && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="act_inicio">Fecha de inicio</Label>
+                <Input
+                  id="act_inicio"
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Responsables</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {responsables.map((r) => {
+                    const on = respMulti.includes(r.id)
+                    return (
+                      <button
+                        type="button"
+                        key={r.id}
+                        onClick={() =>
+                          setRespMulti((p) =>
+                            on ? p.filter((x) => x !== r.id) : [...p, r.id],
+                          )
+                        }
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-xs transition",
+                          on
+                            ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50",
+                        )}
+                      >
+                        {r.nombre}
+                      </button>
+                    )
+                  })}
+                </div>
+                {respMulti.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Principal: {responsables.find((r) => r.id === respMulti[0])?.nombre}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Etiquetas</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {ETIQUETAS_LOG.map((e) => {
+                    const on = etiquetas.includes(e)
+                    return (
+                      <button
+                        type="button"
+                        key={e}
+                        onClick={() =>
+                          setEtiquetas((p) =>
+                            on ? p.filter((x) => x !== e) : [...p, e],
+                          )
+                        }
+                        className={cn(
+                          "rounded px-2 py-0.5 text-[11px] font-medium transition",
+                          on
+                            ? "bg-slate-700 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                        )}
+                      >
+                        {e}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Checklist</Label>
+                <div className="space-y-1.5">
+                  {checklist.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={c.completado}
+                        onChange={(e) =>
+                          setChecklist((p) =>
+                            p.map((x, j) =>
+                              j === i
+                                ? { ...x, completado: e.target.checked }
+                                : x,
+                            ),
+                          )
+                        }
+                        className="size-4 shrink-0"
+                      />
+                      <Input
+                        value={c.texto}
+                        onChange={(e) =>
+                          setChecklist((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, texto: e.target.value } : x,
+                            ),
+                          )
+                        }
+                        className="h-7 flex-1 text-sm"
+                        placeholder="Ítem del checklist…"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setChecklist((p) => p.filter((_, j) => j !== i))
+                        }
+                        className="shrink-0 text-slate-400 hover:text-red-600"
+                        title="Quitar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setChecklist((p) => [
+                        ...p,
+                        { texto: "", completado: false },
+                      ])
+                    }
+                  >
+                    + Ítem
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="act_obs">Observaciones</Label>

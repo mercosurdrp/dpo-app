@@ -1155,6 +1155,49 @@ export async function quitarAsistente(
 // Actividades (antes "compromisos")
 // =============================================
 
+// Campos estilo Planner (solo Misiones) que vienen en el FormData como JSON.
+// Devuelve solo las claves presentes (no pisa lo existente al actualizar).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parsePlannerFields(formData: FormData): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: Record<string, any> = {}
+  const prioridad = String(formData.get("prioridad") ?? "").trim()
+  if (["media", "importante", "urgente"].includes(prioridad)) {
+    out.prioridad = prioridad
+  }
+  if (formData.has("fecha_inicio")) {
+    out.fecha_inicio = String(formData.get("fecha_inicio") ?? "").trim() || null
+  }
+  const etqRaw = formData.get("etiquetas")
+  if (typeof etqRaw === "string") {
+    try {
+      const a = JSON.parse(etqRaw)
+      if (Array.isArray(a)) out.etiquetas = a.filter((x) => typeof x === "string")
+    } catch {}
+  }
+  const respRaw = formData.get("responsables")
+  if (typeof respRaw === "string") {
+    try {
+      const a = JSON.parse(respRaw)
+      if (Array.isArray(a)) out.responsables = a.filter((x) => typeof x === "string")
+    } catch {}
+  }
+  const chkRaw = formData.get("checklist")
+  if (typeof chkRaw === "string") {
+    try {
+      const a = JSON.parse(chkRaw)
+      if (Array.isArray(a)) {
+        out.checklist = a
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .filter((c: any) => c && typeof c.texto === "string")
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((c: any) => ({ texto: String(c.texto), completado: !!c.completado }))
+      }
+    } catch {}
+  }
+  return out
+}
+
 export async function crearActividad(
   formData: FormData,
 ): Promise<Result<ReunionActividad>> {
@@ -1193,6 +1236,7 @@ export async function crearActividad(
         s5_sector_numero: destinoParsed.s5_sector_numero,
         s5_vehiculo_id: destinoParsed.s5_vehiculo_id,
         mantenimiento_rubro: destinoParsed.mantenimiento_rubro,
+        ...parsePlannerFields(formData),
       })
       .select("*")
       .single()
@@ -1318,6 +1362,7 @@ export async function actualizarActividad(
       s5_sector_numero: destinoParsed.s5_sector_numero,
       s5_vehiculo_id: destinoParsed.s5_vehiculo_id,
       mantenimiento_rubro: destinoParsed.mantenimiento_rubro,
+      ...parsePlannerFields(formData),
     }
 
     if (nuevoEstado) {
