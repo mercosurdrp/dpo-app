@@ -18,6 +18,7 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ArrowUp,
   ArrowDown,
   FileDown,
@@ -1456,6 +1457,11 @@ export function ReunionDetallePageClient({
 
   const totalPresentes = asistentes.filter((a) => a.presente).length
   const totalAsistentes = asistentes.length
+  const pctAsistencia =
+    totalAsistentes > 0
+      ? Math.round((totalPresentes / totalAsistentes) * 100)
+      : 0
+  const [asistenciaAbierta, setAsistenciaAbierta] = useState(false)
 
   function refrescar() {
     // Re-fetch del server component (todo el árbol de la página)
@@ -1594,15 +1600,40 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ASISTENCIA */}
+      {/* ASISTENCIA — desplegable: se ve el % de avance y, al abrir, el detalle */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            Asistencia
-            <Badge className="border-slate-200 bg-slate-100 text-base font-semibold text-slate-800 hover:bg-slate-100">
-              {totalPresentes} / {totalAsistentes} presentes
-            </Badge>
-          </CardTitle>
+        <CardHeader className="pb-3">
+          <button
+            type="button"
+            onClick={() => setAsistenciaAbierta((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              {asistenciaAbierta ? (
+                <ChevronDown className="size-4 text-slate-500" />
+              ) : (
+                <ChevronRight className="size-4 text-slate-500" />
+              )}
+              Asistencia
+            </CardTitle>
+            <span className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "text-lg font-bold tabular-nums",
+                  pctAsistencia >= 100
+                    ? "text-emerald-600"
+                    : pctAsistencia >= 50
+                      ? "text-amber-600"
+                      : "text-slate-700",
+                )}
+              >
+                {pctAsistencia}%
+              </span>
+              <Badge className="border-slate-200 bg-slate-100 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                {totalPresentes} / {totalAsistentes}
+              </Badge>
+            </span>
+          </button>
         </CardHeader>
         <CardContent className="space-y-3">
           {miAsistente && yaMarque && (
@@ -1625,6 +1656,8 @@ export function ReunionDetallePageClient({
             </Button>
           )}
 
+          {asistenciaAbierta && (
+            <>
           {asistentes.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Sin asistentes registrados.
@@ -1660,6 +1693,8 @@ export function ReunionDetallePageClient({
               yaAgregados={yaAgregadosSet}
               onAdded={handleAsistenteAgregado}
             />
+          )}
+            </>
           )}
         </CardContent>
       </Card>
