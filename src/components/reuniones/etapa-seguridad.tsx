@@ -17,7 +17,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { getReportes } from "@/actions/reportes-seguridad"
+import {
+  getReportes,
+  getSeguridadMetaDias,
+  setSeguridadMetaDias,
+} from "@/actions/reportes-seguridad"
 import {
   getSeguridadSemaforo,
   setSeguridadSemaforo,
@@ -87,15 +91,30 @@ function hoyArgentina(): string {
   })
 }
 
+// Semáforo dibujado como el del Excel de seguridad: farol oscuro con 3 luces,
+// viseras laterales y poste. La luz del estado activo se enciende; las demás
+// quedan apagadas (gris). Clickeable cuando es editable.
+const SEM_DARK = "#3f3f46"
 const SEMAFORO_LUCES: {
   estado: SemaforoEstado
   label: string
-  on: string
+  color: string
+  cy: number
 }[] = [
-  { estado: "rojo", label: "Rojo", on: "bg-red-500" },
-  { estado: "amarillo", label: "Amarillo", on: "bg-amber-400" },
-  { estado: "verde", label: "Verde", on: "bg-emerald-500" },
+  { estado: "rojo", label: "Rojo", color: "#ef4444", cy: 44 },
+  { estado: "amarillo", label: "Amarillo", color: "#f59e0b", cy: 92 },
+  { estado: "verde", label: "Verde", color: "#22c55e", cy: 140 },
 ]
+
+// Viseras laterales: triángulo rectángulo a cada lado de una luz centrada en
+// cy. Base vertical sobre la carcasa + arista superior horizontal (90° con la
+// base); la hipotenusa baja hacia afuera.
+function visoraIzq(cy: number): string {
+  return `M 40 ${cy - 18} L 8 ${cy - 18} L 40 ${cy + 18} Z`
+}
+function visoraDer(cy: number): string {
+  return `M 100 ${cy - 18} L 132 ${cy - 18} L 100 ${cy + 18} Z`
+}
 
 function SemaforoDelDia({
   estado,
@@ -116,31 +135,53 @@ function SemaforoDelDia({
   const editable = puedeEditar && esHoy && !guardando
   const estadoVisible = esHoy ? estado : null
   return (
-    <div className="flex shrink-0 flex-col items-center gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-sm">
+    <div className="flex shrink-0 flex-col items-center gap-1.5 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-sm">
       <p className="text-sm font-semibold text-slate-700">Estado del día</p>
-      <div className="flex flex-col items-center gap-3 rounded-xl bg-slate-800 px-3.5 py-4 shadow-inner">
-        {SEMAFORO_LUCES.map((luz) => {
-          const activo = estadoVisible === luz.estado
+      <svg viewBox="0 0 140 290" className="w-[88px]" aria-label="Semáforo del día">
+        <defs>
+          <filter id="semGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="4" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {/* Poste */}
+        <rect x="63" y="180" width="14" height="106" rx="3" fill={SEM_DARK} />
+        {/* Viseras (detrás de la carcasa) */}
+        {SEMAFORO_LUCES.map((l) => (
+          <g key={`v-${l.estado}`} fill={SEM_DARK}>
+            <path d={visoraIzq(l.cy)} />
+            <path d={visoraDer(l.cy)} />
+          </g>
+        ))}
+        {/* Carcasa */}
+        <rect x="38" y="6" width="64" height="178" rx="20" fill={SEM_DARK} />
+        {/* Luces */}
+        {SEMAFORO_LUCES.map((l) => {
+          const activo = estadoVisible === l.estado
           return (
-            <button
-              key={luz.estado}
-              type="button"
-              disabled={!editable}
-              onClick={() => onElegir(luz.estado)}
-              title={activo ? `${luz.label} (click para apagar)` : luz.label}
-              aria-label={luz.label}
-              aria-pressed={activo}
-              className={cn(
-                "size-9 rounded-full transition",
-                activo
-                  ? `${luz.on} shadow-[0_0_14px_3px_rgba(255,255,255,0.35)] ring-2 ring-white`
-                  : "bg-slate-600/50",
-                editable ? "cursor-pointer hover:opacity-90" : "cursor-default",
-              )}
-            />
+            <circle
+              key={l.estado}
+              cx="70"
+              cy={l.cy}
+              r="23"
+              fill={l.color}
+              fillOpacity={activo ? 1 : 0.12}
+              stroke={activo ? "#ffffff" : "rgba(255,255,255,0.18)"}
+              strokeWidth={activo ? 2 : 1}
+              style={activo ? { filter: "url(#semGlow)" } : undefined}
+              onClick={editable ? () => onElegir(l.estado) : undefined}
+              className={editable ? "cursor-pointer" : "cursor-default"}
+            >
+              <title>
+                {activo ? `${l.label} (click para apagar)` : l.label}
+              </title>
+            </circle>
           )
         })}
-      </div>
+      </svg>
       <p className="text-[11px] text-muted-foreground">
         {formatFechaCorta(fecha)}
       </p>
@@ -298,6 +339,28 @@ export function EtapaSeguridad({
     })
   }, [])
 
+  // Meta de días sin accidente (editable, persistida en app_config).
+  const [metaDias, setMetaDias] = useState<number | null>(null)
+  const [metaInput, setMetaInput] = useState<string>("")
+  useEffect(() => {
+    getSeguridadMetaDias().then((r) => {
+      if ("data" in r) {
+        setMetaDias(r.data)
+        setMetaInput(r.data != null ? String(r.data) : "")
+      }
+    })
+  }, [])
+
+  function guardarMeta(nuevo: string) {
+    const trimmed = nuevo.trim()
+    const n = trimmed === "" ? null : Number(trimmed)
+    if (n !== null && (!Number.isFinite(n) || n < 0)) return
+    setMetaDias(n) // optimista
+    setSeguridadMetaDias(n).then((r) => {
+      if ("error" in r) setErrorMsg(r.error)
+    })
+  }
+
   const aniosDisponibles = useMemo(() => {
     const set = new Set<number>([anioReunion])
     for (const r of reportes) {
@@ -367,6 +430,12 @@ export function EtapaSeguridad({
     const dias = Math.max(0, Math.floor((todayUTC - lastUTC) / 86_400_000))
     return { diasSinAccidente: dias, ultimoAccidente: max }
   }, [reportes])
+
+  // Días que faltan para cumplir la meta = meta − días sin accidente.
+  const diasRestantes =
+    metaDias != null && diasSinAccidente != null
+      ? Math.max(0, metaDias - diasSinAccidente)
+      : null
 
   const fechaUltimoHabil = useMemo(
     () => ultimoDiaHabilAnterior(fechaReunion),
@@ -465,33 +534,80 @@ export function EtapaSeguridad({
                   semáforo del día (su ancho no necesita coincidir). */}
               <div className="mt-3 flex flex-col items-end gap-3 xl:absolute xl:right-3 xl:top-6 xl:mt-0">
                 <div
-                  className="flex w-[190px] items-center gap-2 rounded-lg border bg-white px-3 py-2.5 shadow-sm"
+                  className="flex items-stretch divide-x divide-slate-200 rounded-lg border bg-white shadow-sm"
                   style={{ borderLeft: "4px solid #16a34a" }}
                 >
-                  <ShieldCheck className="size-7 shrink-0 text-green-600" />
-                  <div className="leading-tight">
-                    {diasSinAccidente === null ? (
-                      <>
-                        <p className="text-base font-bold text-slate-900">
-                          Sin accidentes
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          registrados
-                        </p>
-                      </>
+                  {/* Días sin accidente */}
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <ShieldCheck className="size-6 shrink-0 text-green-600" />
+                    <div className="leading-tight">
+                      {diasSinAccidente === null ? (
+                        <>
+                          <p className="text-sm font-bold text-slate-900">
+                            Sin accidentes
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            registrados
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xl font-bold leading-none text-slate-900">
+                            {diasSinAccidente}{" "}
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {diasSinAccidente === 1 ? "día" : "días"}
+                            </span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            sin accidentes
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {/* Meta a cumplir (editable) */}
+                  <div className="flex flex-col items-center justify-center px-3 py-2">
+                    <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                      Meta
+                    </p>
+                    {puedeEditar ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={metaInput}
+                        onChange={(e) => setMetaInput(e.target.value)}
+                        onBlur={() => guardarMeta(metaInput)}
+                        placeholder="—"
+                        title="Meta de días sin accidente (editable)"
+                        className="w-20 rounded border border-slate-300 px-2 py-0.5 text-center text-lg font-bold leading-none text-slate-900"
+                      />
                     ) : (
-                      <>
-                        <p className="text-2xl font-bold leading-none text-slate-900">
-                          {diasSinAccidente}{" "}
-                          <span className="text-sm font-medium text-muted-foreground">
-                            {diasSinAccidente === 1 ? "día" : "días"}
-                          </span>
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          sin accidentes
-                        </p>
-                      </>
+                      <p className="text-lg font-bold leading-none text-slate-900">
+                        {metaDias ?? "—"}
+                      </p>
                     )}
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      días
+                    </p>
+                  </div>
+                  {/* Días restantes para la meta */}
+                  <div className="flex flex-col items-center justify-center px-3 py-2">
+                    <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                      Faltan
+                    </p>
+                    <p
+                      className={cn(
+                        "text-xl font-bold leading-none",
+                        diasRestantes === 0
+                          ? "text-emerald-600"
+                          : "text-slate-900",
+                      )}
+                    >
+                      {diasRestantes == null ? "—" : diasRestantes}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {diasRestantes === 0 ? "¡meta!" : "días"}
+                    </p>
                   </div>
                 </div>
                 {muestraSemaforo && (

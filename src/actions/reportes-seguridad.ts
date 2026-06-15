@@ -198,6 +198,55 @@ export async function getReportesSifPorDia(
   }
 }
 
+// Meta de días sin accidente (bloque Seguridad). Guardada en app_config.
+const META_CLAVE = "seguridad_meta_dias"
+
+export async function getSeguridadMetaDias(): Promise<Result<number | null>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("app_config")
+      .select("valor")
+      .eq("clave", META_CLAVE)
+      .maybeSingle()
+    if (error) return { error: error.message }
+    const v = data?.valor ? Number(data.valor) : null
+    return { data: v != null && Number.isFinite(v) ? v : null }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando la meta" }
+  }
+}
+
+export async function setSeguridadMetaDias(
+  dias: number | null
+): Promise<Result<true>> {
+  try {
+    const profile = await requireAuth()
+    if (!["admin", "admin_rrhh", "supervisor"].includes(profile.role)) {
+      return { error: "Sin permisos para editar la meta" }
+    }
+    if (dias !== null && (!Number.isFinite(dias) || dias < 0)) {
+      return { error: "Meta inválida" }
+    }
+    const supabase = await createClient()
+    const { error } = await supabase.from("app_config").upsert(
+      {
+        clave: META_CLAVE,
+        valor: dias === null ? "" : String(Math.round(dias)),
+        updated_by: profile.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "clave" }
+    )
+    if (error) return { error: error.message }
+    revalidatePath(DASHBOARD_PATH)
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error guardando la meta" }
+  }
+}
+
 export async function getReporte(
   id: string
 ): Promise<Result<ReporteSeguridadDetalle>> {
