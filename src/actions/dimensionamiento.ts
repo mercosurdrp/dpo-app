@@ -50,6 +50,19 @@ export interface DimConfig {
   dias_operativos_mes: number
   viajes_por_dia: number
   factor_ceq_bulto: number
+  prod_bul_hh: number
+  horas_turno: number
+  dotacion_almacen: number
+}
+
+export interface AlmacenData {
+  mes: string
+  diasConDatos: number
+  bultosPromedio: number
+  bultosPico: number
+  fteNecesariosPromedio: number
+  fteNecesariosPico: number
+  dotacionActual: number
 }
 
 export interface KpiObjetivo {
@@ -104,6 +117,8 @@ export interface DimData {
   unidadesDisponibles: number
   metricas: MetricasDistribucion | null
   metricasError: string | null
+  almacen: AlmacenData | null
+  almacenError: string | null
   planes: DimPlan[]
 }
 
@@ -117,7 +132,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -130,6 +145,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       dias_operativos_mes: Number(configRes.data?.dias_operativos_mes ?? 26),
       viajes_por_dia: Number(configRes.data?.viajes_por_dia ?? 1) || 1,
       factor_ceq_bulto: Number(configRes.data?.factor_ceq_bulto ?? 1) || 1,
+      prod_bul_hh: Number(configRes.data?.prod_bul_hh ?? 300) || 300,
+      horas_turno: Number(configRes.data?.horas_turno ?? 8) || 8,
+      dotacion_almacen: Number(configRes.data?.dotacion_almacen ?? 0),
     }
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
 
@@ -204,6 +222,40 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
     }
 
+    // Almacén (FTE): volumen procesado del mes (ocupacion_bodega_diaria, bultos/día)
+    // vs capacidad de procesamiento = dotación × productividad(bul/HH) × horas/turno.
+    let almacen: AlmacenData | null = null
+    let almacenError: string | null = null
+    const { data: ob, error: obErr } = await supabase
+      .from("ocupacion_bodega_diaria")
+      .select("fecha, bultos_total")
+      .gte("fecha", desde)
+
+    if (obErr) {
+      almacenError = obErr.message
+    } else if (ob && ob.length > 0) {
+      const porDia = new Map<string, number>()
+      for (const r of ob) {
+        const k = r.fecha as string
+        porDia.set(k, (porDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
+      }
+      const bultosDia = [...porDia.values()].filter((v) => v > 0)
+      if (bultosDia.length > 0) {
+        const bultosProm = bultosDia.reduce((s, x) => s + x, 0) / bultosDia.length
+        const bultosPicoAlm = Math.max(...bultosDia)
+        const capOperarioDia = config.prod_bul_hh * config.horas_turno // bultos/operario/día
+        almacen = {
+          mes: mesAA,
+          diasConDatos: bultosDia.length,
+          bultosPromedio: Math.round(bultosProm),
+          bultosPico: Math.round(bultosPicoAlm),
+          fteNecesariosPromedio: capOperarioDia > 0 ? Math.ceil(bultosProm / capOperarioDia) : 0,
+          fteNecesariosPico: capOperarioDia > 0 ? Math.ceil(bultosPicoAlm / capOperarioDia) : 0,
+          dotacionActual: config.dotacion_almacen,
+        }
+      }
+    }
+
     return {
       data: {
         config,
@@ -213,6 +265,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         unidadesDisponibles: disponibles.length,
         metricas,
         metricasError,
+        almacen,
+        almacenError,
         planes: (planesRes.data ?? []) as DimPlan[],
       },
     }
@@ -261,6 +315,9 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         dias_operativos_mes: Math.max(1, Number(config.dias_operativos_mes) || 26),
         viajes_por_dia: Math.max(0.1, Number(config.viajes_por_dia) || 1),
         factor_ceq_bulto: Math.max(0.0001, Number(config.factor_ceq_bulto) || 1),
+        prod_bul_hh: Math.max(1, Number(config.prod_bul_hh) || 300),
+        horas_turno: Math.max(0.1, Number(config.horas_turno) || 8),
+        dotacion_almacen: Math.max(0, Number(config.dotacion_almacen) || 0),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })

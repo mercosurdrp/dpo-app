@@ -99,6 +99,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         <TabsList>
           <TabsTrigger value="demanda">Demanda vs Capacidad</TabsTrigger>
           <TabsTrigger value="flota">Flota & Capacidad</TabsTrigger>
+          <TabsTrigger value="almacen">Almacén (FTE)</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
@@ -162,6 +163,11 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
           </Card>
         </TabsContent>
 
+        {/* ─── Almacén (FTE) ─── */}
+        <TabsContent value="almacen" className="space-y-4">
+          <AlmacenTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+        </TabsContent>
+
         {/* ─── KPIs ─── */}
         <TabsContent value="kpis" className="space-y-4">
           <Card>
@@ -197,6 +203,87 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 // ─── Subcomponentes ──────────────────────────────────────────────────────────
 
 type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => void
+
+function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+  const a = data.almacen
+  const [c, setC] = useState({
+    prod_bul_hh: String(data.config.prod_bul_hh),
+    horas_turno: String(data.config.horas_turno),
+    dotacion_almacen: String(data.config.dotacion_almacen),
+  })
+  const dot = data.config.dotacion_almacen
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard title="Volumen promedio / día" value={a ? `${fmt(a.bultosPromedio)} bultos` : "—"}
+          hint={a ? `pico ${fmt(a.bultosPico)} · ${a.diasConDatos} días` : "sin datos de bodega"} />
+        <KpiCard title="Productividad" value={`${fmt(data.config.prod_bul_hh)} bul/HH`} hint={`× ${data.config.horas_turno} h/turno`} />
+        <KpiCard title="FTE necesarios" value={a ? `${a.fteNecesariosPromedio} (pico ${a.fteNecesariosPico})` : "—"}
+          hint={`vs ${fmt(dot)} dotación`} accent />
+        <KpiCard title="Dotación actual" value={fmt(dot)} hint="operarios de depósito" accent />
+      </div>
+
+      {a && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Lectura del dimensionamiento de almacén</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            {dot <= 0 ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                Cargá la <b>dotación actual</b> de operarios para compararla contra los FTE necesarios.
+              </p>
+            ) : a.fteNecesariosPico > dot ? (
+              <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+                En el pico se necesitan <b>{a.fteNecesariosPico}</b> operarios y hay <b>{dot}</b> → faltan <b>{a.fteNecesariosPico - dot}</b> (evaluar refuerzo u horas extra).
+              </p>
+            ) : a.fteNecesariosPromedio < dot ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                En promedio se necesitan <b>{a.fteNecesariosPromedio}</b> y hay <b>{dot}</b>: dotación holgada en días normales.
+              </p>
+            ) : (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
+                La dotación cubre la demanda (necesarios {a.fteNecesariosPromedio}, dotación {dot}).
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {data.almacenError && <p className="text-sm text-red-600">Error leyendo ocupación de bodega: {data.almacenError}</p>}
+      {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen procesado (ocupación de bodega) este mes.</p>}
+
+      {canEdit && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de almacén</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-4">
+            <div>
+              <Label className="text-xs">Productividad (bul/HH)</Label>
+              <Input type="number" className="h-8 w-28" value={c.prod_bul_hh} onChange={(e) => setC((s) => ({ ...s, prod_bul_hh: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Horas / turno</Label>
+              <Input type="number" step="0.1" className="h-8 w-24" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Dotación actual (operarios)</Label>
+              <Input type="number" className="h-8 w-28" value={c.dotacion_almacen} onChange={(e) => setC((s) => ({ ...s, dotacion_almacen: e.target.value }))} />
+            </div>
+            <Button size="sm" disabled={isPending}
+              onClick={() => run(() => guardarConfigDim({
+                ...data.config,
+                prod_bul_hh: Number(c.prod_bul_hh),
+                horas_turno: Number(c.horas_turno),
+                dotacion_almacen: Number(c.dotacion_almacen),
+              }), "Parámetros de almacén guardados")}>
+              Guardar
+            </Button>
+            <p className="w-full text-xs text-muted-foreground">
+              FTE necesarios = bultos procesados/día ÷ (productividad × horas/turno). El volumen sale de la ocupación de bodega (sync Chess). Productividad default 300 bul/HH (target del ranking de depósito).
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
 
 function KpiCard({ title, value, hint, accent }: { title: string; value: string; hint?: string; accent?: boolean }) {
   return (
