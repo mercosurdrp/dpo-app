@@ -72,6 +72,11 @@ import {
   MANTENIMIENTO_CATEGORIA_LABELS,
   MANTENIMIENTO_ESTADO_LABELS,
 } from "@/types/database"
+import { TableroOperativo } from "./tablero-operativo"
+import type {
+  DocumentoVencimiento,
+  ServiceGeneralUnidad,
+} from "@/lib/vehiculos/service-general"
 
 // ==================== Helpers ====================
 
@@ -131,6 +136,7 @@ interface MantenimientoClientProps {
   overrides: MantenimientoPlanOverride[]
   mantenimientos: MantenimientoRealizado[]
   costos: CostosMantenimiento
+  tablero: { programacion: ServiceGeneralUnidad[]; documentos: DocumentoVencimiento[] }
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -147,6 +153,7 @@ export function MantenimientoClient({
   overrides,
   mantenimientos,
   costos,
+  tablero,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -281,12 +288,21 @@ export function MantenimientoClient({
         </Card>
       </div>
 
-      <Tabs defaultValue="plan">
+      <Tabs defaultValue="tablero">
         <TabsList>
+          <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
           <TabsTrigger value="plan">Estado del plan</TabsTrigger>
           <TabsTrigger value="historial">Historial</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
+
+        {/* ============ TAB: Tablero operativo ============ */}
+        <TabsContent value="tablero" className="space-y-6">
+          <TableroOperativo
+            programacion={tablero.programacion}
+            documentos={tablero.documentos}
+          />
+        </TabsContent>
 
         {/* ============ TAB: Estado del plan ============ */}
         <TabsContent value="plan" className="space-y-6">

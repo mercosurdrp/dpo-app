@@ -3,6 +3,7 @@ import {
   getCostosMantenimiento,
   getEstadoPlanFlota,
   getMantenimientos,
+  getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
@@ -12,10 +13,11 @@ export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
   if (IS_MISIONES) redirect("/")
 
-  const [estadoRes, mantenimientosRes, costosRes, profile] = await Promise.all([
+  const [estadoRes, mantenimientosRes, costosRes, tableroRes, profile] = await Promise.all([
     getEstadoPlanFlota(),
     getMantenimientos({ limit: 200 }),
     getCostosMantenimiento(),
+    getTableroOperativo(),
     getProfile(),
   ])
 
@@ -31,6 +33,8 @@ export default async function MantenimientoPage() {
   const mantenimientos = "data" in mantenimientosRes ? mantenimientosRes.data : []
   const costos =
     "data" in costosRes ? costosRes.data : { costoMes: 0, costoYTD: 0, porMes: [] }
+  const tablero =
+    "data" in tableroRes ? tableroRes.data : { programacion: [], documentos: [] }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -40,6 +44,7 @@ export default async function MantenimientoPage() {
       overrides={estadoRes.data.overrides}
       mantenimientos={mantenimientos}
       costos={costos}
+      tablero={tablero}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

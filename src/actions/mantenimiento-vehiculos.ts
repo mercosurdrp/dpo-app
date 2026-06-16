@@ -3,7 +3,13 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { loadEstadoPlan } from "@/lib/vehiculos/plan-mantenimiento"
-import { startOfYear, today } from "@/lib/vehiculos/lecturas"
+import {
+  loadServiceGeneral,
+  estadoPorDias,
+  type DocumentoVencimiento,
+  type ServiceGeneralUnidad,
+} from "@/lib/vehiculos/service-general"
+import { startOfYear, today, daysBetween } from "@/lib/vehiculos/lecturas"
 import type {
   CostosMantenimiento,
   EstadoPlanVehiculo,
@@ -32,6 +38,66 @@ export async function getEstadoPlanFlota(): Promise<
     await requireAuth()
     const { estados, tareas, overrides } = await loadEstadoPlan()
     return { data: { estados, tareas, overrides } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== TABLERO OPERATIVO ====================
+
+export async function getTableroOperativo(): Promise<
+  | { data: { programacion: ServiceGeneralUnidad[]; documentos: DocumentoVencimiento[] } }
+  | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const programacion = await loadServiceGeneral()
+
+    // Documentos (seguros/VTV/SENASA/extintores) viven en requisitos_legales,
+    // categorías con identificador = vehículo; el campo `nombre` = patente.
+    const { data: cats, error: catErr } = await supabase
+      .from("requisitos_legales_categorias")
+      .select("id, nombre, tipo_identificador")
+      .eq("tipo_identificador", "vehiculo")
+    if (catErr) throw new Error(catErr.message)
+
+    const catNombre = new Map<string, string>(
+      ((cats || []) as Array<{ id: string; nombre: string }>).map((c) => [c.id, c.nombre])
+    )
+
+    const documentos: DocumentoVencimiento[] = []
+    if (catNombre.size > 0) {
+      const hoy = today()
+      const { data: reqs, error: reqErr } = await supabase
+        .from("requisitos_legales")
+        .select("id, nombre, fecha_vencimiento, categoria_id")
+        .in("categoria_id", [...catNombre.keys()])
+        .not("fecha_vencimiento", "is", null)
+        .order("fecha_vencimiento")
+      if (reqErr) throw new Error(reqErr.message)
+
+      for (const r of (reqs || []) as Array<{
+        id: string
+        nombre: string
+        fecha_vencimiento: string
+        categoria_id: string
+      }>) {
+        const venc = r.fecha_vencimiento.slice(0, 10)
+        const dias = venc >= hoy ? daysBetween(hoy, venc) : -daysBetween(venc, hoy)
+        documentos.push({
+          id: r.id,
+          dominio: r.nombre,
+          categoria: catNombre.get(r.categoria_id) ?? "",
+          fechaVencimiento: venc,
+          diasRestantes: dias,
+          estado: estadoPorDias(dias),
+        })
+      }
+    }
+
+    return { data: { programacion, documentos } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
