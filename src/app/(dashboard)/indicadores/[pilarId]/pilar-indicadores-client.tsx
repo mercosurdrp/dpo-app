@@ -53,10 +53,10 @@ interface FlotaSeccion {
 }
 const FLOTA_SECCIONES: FlotaSeccion[] = [
   { titulo: "Checklist", sub: "Adherencia liberación + retorno", href: "/indicadores/flota/checklist", Icon: ClipboardCheck, disponible: true },
-  { titulo: "Estándar", sub: "Cumplimiento del estándar por unidad", href: "/indicadores/flota/estandar", Icon: Ruler, disponible: false },
-  { titulo: "Mantenimiento", sub: "Órdenes de trabajo y costos por tipo", href: "/indicadores/flota/mantenimiento", Icon: Wrench, disponible: false },
-  { titulo: "Combustible", sub: "Consumo, km/litro y costos", href: "/indicadores/flota/combustible", Icon: Fuel, disponible: false },
-  { titulo: "Gestión de repuestos", sub: "Stock del taller · ingresos y salidas", href: "/indicadores/flota/repuestos", Icon: Package, disponible: false },
+  { titulo: "Estándar", sub: "Cumplimiento del estándar por unidad", href: "/indicadores/flota/estandar", Icon: Ruler, disponible: true },
+  { titulo: "Mantenimiento", sub: "Órdenes de trabajo y costos por tipo", href: "/indicadores/flota/mantenimiento", Icon: Wrench, disponible: true },
+  { titulo: "Combustible", sub: "Consumo, km/litro y costos", href: "/indicadores/flota/combustible", Icon: Fuel, disponible: true },
+  { titulo: "Gestión de repuestos", sub: "Stock del taller · ingresos y salidas", href: "/indicadores/flota/repuestos", Icon: Package, disponible: true },
   { titulo: "Análisis de fallas", sub: "MTBF, MTTR, disponibilidad y prob. de falla", href: "/indicadores/flota", Icon: Gauge, disponible: true },
 ]
 
