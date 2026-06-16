@@ -178,6 +178,90 @@ export async function subirAccionesComerciales(
   }
 }
 
+// Copia las fotos/slides de Acciones Comerciales de la reunión logística-ventas
+// ANTERIOR (mismo tipo, fecha < actual) a esta reunión. Se agregan a las que ya
+// haya (no borra nada). El Action Log NO se copia: las tareas vivas ya se
+// arrastran solas semana a semana.
+export async function copiarAccionesComercialesSemanaAnterior(
+  reunionId: string,
+): Promise<Result<{ copiadas: number }>> {
+  try {
+    const profile = await requireEditorReuniones()
+    const supabase = await createClient()
+
+    // Reunión actual: fecha + tipo.
+    const { data: reuActual } = await supabase
+      .from("reuniones")
+      .select("fecha, tipo")
+      .eq("id", reunionId)
+      .single()
+    const reu = reuActual as { fecha: string; tipo: string } | null
+    if (!reu) return { error: "No se encontró la reunión" }
+
+    // Reunión anterior del mismo tipo.
+    const { data: prev } = await supabase
+      .from("reuniones")
+      .select("id, fecha")
+      .eq("tipo", reu.tipo)
+      .lt("fecha", reu.fecha)
+      .order("fecha", { ascending: false })
+      .limit(1)
+    const prevReu = (prev ?? [])[0] as { id: string; fecha: string } | undefined
+    if (!prevReu) return { error: "No hay una reunión anterior para copiar" }
+
+    const { data: rows, error: rowsErr } = await supabase
+      .from("reunion_acciones_comerciales")
+      .select("foto_path, foto_nombre, descripcion")
+      .eq("reunion_id", prevReu.id)
+      .order("created_at", { ascending: true })
+    if (rowsErr) return { error: rowsErr.message }
+    const prevRows = (rows ?? []) as Array<{
+      foto_path: string
+      foto_nombre: string | null
+      descripcion: string | null
+    }>
+    if (prevRows.length === 0) {
+      return { error: "La reunión anterior no tiene acciones comerciales cargadas" }
+    }
+
+    let copiadas = 0
+    for (let i = 0; i < prevRows.length; i++) {
+      const r = prevRows[i]
+      const newPath = `acciones-comerciales/${reunionId}/${Date.now()}-${i}-${cleanName(
+        r.foto_nombre ?? "foto.jpg",
+      )}`
+      const { error: copyErr } = await supabase.storage
+        .from(BUCKET)
+        .copy(r.foto_path, newPath)
+      if (copyErr) continue
+      const { error: insErr } = await supabase
+        .from("reunion_acciones_comerciales")
+        .insert({
+          reunion_id: reunionId,
+          foto_path: newPath,
+          foto_nombre: r.foto_nombre,
+          descripcion: r.descripcion,
+          creado_por: profile.id,
+        })
+      if (insErr) {
+        await supabase.storage.from(BUCKET).remove([newPath])
+        continue
+      }
+      copiadas++
+    }
+
+    if (copiadas === 0) {
+      return { error: "No se pudo copiar ninguna acción comercial" }
+    }
+    return { data: { copiadas } }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error copiando acciones comerciales",
+    }
+  }
+}
+
 export async function eliminarAccionComercial(
   id: string,
 ): Promise<Result<true>> {

@@ -60,6 +60,20 @@ function formatMoney(n: number): string {
     maximumFractionDigits: 0,
   }).format(n)
 }
+// Monto compacto en pesos: $1,3 M / $850 mil / $420.
+function formatMoneyCompact(n: number): string {
+  const abs = Math.abs(n)
+  const dec = (v: number, d: number) =>
+    new Intl.NumberFormat("es-AR", { maximumFractionDigits: d }).format(v)
+  if (abs >= 1_000_000) return `$${dec(abs / 1_000_000, 1)} M`
+  if (abs >= 1_000) return `$${dec(abs / 1_000, 0)} mil`
+  return `$${dec(abs, 0)}`
+}
+// Variación con signo explícito para el KPI vs. semana anterior.
+function formatDeltaMoney(n: number): string {
+  if (!n) return "$0"
+  return `${n < 0 ? "−" : "+"}${formatMoneyCompact(n)}`
+}
 
 // Normaliza una fecha pegada (YYYY-MM-DD o DD/MM/YYYY) a ISO.
 function parseFecha(s: string): string | null {
@@ -304,8 +318,25 @@ export function SeccionFrescura({
               />
               <KpiCard
                 label="vs. reunión anterior"
-                value={comp ? `−${formatInt(comp.resueltos)} / +${formatInt(comp.nuevos)}` : "—"}
-                sub={comp ? `resueltos / nuevos (${formatFecha(comp.anterior_fecha)})` : "sin comparación"}
+                value={
+                  comp && snap
+                    ? formatDeltaMoney(snap.total_valorizado - comp.anterior_total_valorizado)
+                    : "—"
+                }
+                valueClassName={
+                  comp && snap
+                    ? snap.total_valorizado - comp.anterior_total_valorizado < 0
+                      ? "text-emerald-700"
+                      : snap.total_valorizado - comp.anterior_total_valorizado > 0
+                        ? "text-rose-700"
+                        : "text-slate-900"
+                    : undefined
+                }
+                sub={
+                  comp && snap
+                    ? `antes ${formatMoneyCompact(comp.anterior_total_valorizado)} → hoy ${formatMoneyCompact(snap.total_valorizado)} (${formatFecha(comp.anterior_fecha)})`
+                    : "sin comparación"
+                }
               />
             </div>
 

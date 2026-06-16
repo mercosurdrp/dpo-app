@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  CopyPlus,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input"
 import {
   getAccionesComerciales,
   subirAccionesComerciales,
+  copiarAccionesComercialesSemanaAnterior,
   eliminarAccionComercial,
   type AccionComercial,
 } from "@/actions/reuniones-acciones-comerciales"
@@ -97,6 +99,29 @@ export function SeccionAccionesComerciales({
     })
   }
 
+  function traerSemanaAnterior() {
+    if (
+      !confirm(
+        "¿Traer las fotos de Acciones Comerciales de la reunión anterior? Se agregan a las que ya tenés (no borra nada).",
+      )
+    )
+      return
+    startPend(async () => {
+      const res = await copiarAccionesComercialesSemanaAnterior(reunionId)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      const { copiadas } = res.data
+      toast.success(
+        copiadas === 1
+          ? "1 foto copiada de la semana anterior"
+          : `${copiadas} fotos copiadas de la semana anterior`,
+      )
+      setReload((k) => k + 1)
+    })
+  }
+
   const total = items?.length ?? 0
   const verAnterior = useCallback(
     () => setViewer((i) => (i == null ? null : (i - 1 + total) % total)),
@@ -154,6 +179,21 @@ export function SeccionAccionesComerciales({
               className="hidden"
               onChange={onFileChange}
             />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              onClick={traerSemanaAnterior}
+              disabled={pendiente}
+              title="Copiar las fotos de la reunión anterior"
+            >
+              {pendiente ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <CopyPlus className="mr-1 size-3.5" />
+              )}
+              Traer semana anterior
+            </Button>
             <Button
               size="sm"
               variant="outline"
