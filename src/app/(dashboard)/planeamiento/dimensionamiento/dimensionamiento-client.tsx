@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -90,7 +90,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Dimensionamiento de Distribución/Flota (DPO 3.1)</h1>
         <p className="text-sm text-muted-foreground">
-          Demanda de volumen vs capacidad instalada de la flota, KPIs de distribución y planes — pilar Planeamiento.
+          Demanda de volumen vs capacidad instalada de la flota, en <b>cajas equivalentes (CEq)</b>, KPIs de distribución y planes — pilar Planeamiento.
           {m ? ` · Mes ${m.mes} · ${m.diasCerrados} días de ruteo cerrados` : ""}
         </p>
       </div>
@@ -106,10 +106,10 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         {/* ─── Demanda vs Capacidad ─── */}
         <TabsContent value="demanda" className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard title="Capacidad instalada / día" value={`${fmt(Math.round(data.capacidadInstaladaDiaria))} bultos`}
+            <KpiCard title="Capacidad instalada / día" value={`${fmt(Math.round(data.capacidadInstaladaDiaria))} CEq`}
               hint={`${data.unidadesDisponibles} unidades disponibles × ${data.config.viajes_por_dia} viaje(s)`} />
-            <KpiCard title="Volumen promedio / día" value={m ? `${fmt(m.bultosPromedio)} bultos` : "—"}
-              hint={m ? `pico ${fmt(m.bultosPico)} bultos` : "sin ruteos cerrados"} />
+            <KpiCard title="Volumen promedio / día" value={m ? `${fmt(m.volumenCeqPromedio)} CEq` : "—"}
+              hint={m ? `pico ${fmt(m.volumenCeqPico)} CEq` : "sin ruteos cerrados"} />
             <KpiCard title="Ocupación de flota" value={m ? `${m.ocupacionPromedio.toString().replace(".", ",")}%` : "—"}
               hint="volumen ÷ capacidad instalada" accent />
             <KpiCard title="Camiones necesarios" value={m ? `${m.camionesNecesariosPromedio} (pico ${m.camionesNecesariosPico})` : "—"}
@@ -122,7 +122,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
               <CardContent className="space-y-2 text-sm">
                 {data.capacidadInstaladaDiaria <= 0 ? (
                   <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                    Cargá la capacidad (bultos) de las unidades en la pestaña <b>Flota & Capacidad</b> para calcular ocupación y camiones necesarios.
+                    Cargá la capacidad (CEq) de las unidades en la pestaña <b>Flota & Capacidad</b> para calcular ocupación y camiones necesarios.
                   </p>
                 ) : m.camionesNecesariosPico > data.unidadesDisponibles ? (
                   <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
@@ -169,7 +169,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
             <CardContent>
               <KpiObjetivosTable data={data} canEdit={canEdit} run={run} isPending={isPending} />
               <p className="mt-3 text-xs text-muted-foreground">
-                Real calculado sobre los ruteos cerrados del mes. «Entregas por viaje» se incorpora en una etapa próxima (requiere registrar viajes por unidad).
+                Real calculado sobre los ruteos cerrados del mes, convertidos a CEq con el factor de Parámetros. «Entregas por viaje» se incorpora en una etapa próxima (requiere registrar viajes por unidad).
               </p>
             </CardContent>
           </Card>
@@ -217,6 +217,11 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
       <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de cálculo</CardTitle></CardHeader>
       <CardContent className="flex flex-wrap items-end gap-4">
         <div>
+          <Label className="text-xs">Factor CEq por bulto</Label>
+          <Input type="number" step="0.001" className="h-8 w-28" value={c.factor_ceq_bulto}
+            onChange={(e) => setC((s) => ({ ...s, factor_ceq_bulto: Number(e.target.value) }))} />
+        </div>
+        <div>
           <Label className="text-xs">Viajes por día (por unidad)</Label>
           <Input type="number" step="0.1" className="h-8 w-28" value={c.viajes_por_dia}
             onChange={(e) => setC((s) => ({ ...s, viajes_por_dia: Number(e.target.value) }))} />
@@ -226,14 +231,12 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
           <Input type="number" className="h-8 w-28" value={c.dias_operativos_mes}
             onChange={(e) => setC((s) => ({ ...s, dias_operativos_mes: Number(e.target.value) }))} />
         </div>
-        <div>
-          <Label className="text-xs">Peso kg / bulto (opc.)</Label>
-          <Input type="number" step="0.01" className="h-8 w-28" value={c.peso_kg_bulto}
-            onChange={(e) => setC((s) => ({ ...s, peso_kg_bulto: Number(e.target.value) }))} />
-        </div>
         <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim(c), "Parámetros guardados")}>
           Guardar
         </Button>
+        <p className="w-full text-xs text-muted-foreground">
+          El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). Calibralo con el mix promedio de Pampeana; 1 = sin conversión.
+        </p>
       </CardContent>
     </Card>
   )
@@ -246,7 +249,7 @@ function FlotaTable({ flota, canEdit, run, isPending }: { flota: FlotaUnidad[]; 
         <TableRow>
           <TableHead>Dominio</TableHead>
           <TableHead>Tipo</TableHead>
-          <TableHead className="text-right">Capacidad (bultos)</TableHead>
+          <TableHead className="text-right">Capacidad (CEq)</TableHead>
           <TableHead className="text-right">Capacidad (kg)</TableHead>
           <TableHead>Estado</TableHead>
           {canEdit && <TableHead></TableHead>}
@@ -260,7 +263,7 @@ function FlotaTable({ flota, canEdit, run, isPending }: { flota: FlotaUnidad[]; 
 }
 
 function FlotaRow({ u, canEdit, run, isPending }: { u: FlotaUnidad; canEdit: boolean; run: RunFn; isPending: boolean }) {
-  const [bultos, setBultos] = useState(String(u.capacidad_bultos))
+  const [ceq, setCeq] = useState(String(u.capacidad_ceq))
   const [kg, setKg] = useState(u.capacidad_kg != null ? String(u.capacidad_kg) : "")
   const [activo, setActivo] = useState(u.activo)
   return (
@@ -268,7 +271,7 @@ function FlotaRow({ u, canEdit, run, isPending }: { u: FlotaUnidad; canEdit: boo
       <TableCell className="font-medium">{u.dominio}{u.descripcion ? <span className="ml-1 text-xs text-muted-foreground">{u.descripcion}</span> : null}</TableCell>
       <TableCell className="text-sm capitalize">{u.tipo ?? "—"}</TableCell>
       <TableCell className="text-right">
-        {canEdit ? <Input type="number" className="h-8 w-24 text-right" value={bultos} onChange={(e) => setBultos(e.target.value)} /> : fmt(u.capacidad_bultos)}
+        {canEdit ? <Input type="number" className="h-8 w-24 text-right" value={ceq} onChange={(e) => setCeq(e.target.value)} /> : fmt(u.capacidad_ceq)}
       </TableCell>
       <TableCell className="text-right">
         {canEdit ? <Input type="number" className="h-8 w-24 text-right" value={kg} onChange={(e) => setKg(e.target.value)} placeholder="—" /> : (u.capacidad_kg ?? "—")}
@@ -280,7 +283,7 @@ function FlotaRow({ u, canEdit, run, isPending }: { u: FlotaUnidad; canEdit: boo
         <TableCell className="space-x-2 whitespace-nowrap text-right">
           <Button size="sm" variant="ghost" onClick={() => setActivo((v) => !v)}>{activo ? "Desactivar" : "Activar"}</Button>
           <Button size="sm" disabled={isPending}
-            onClick={() => run(() => guardarCapacidadFlota(u.dominio, Number(bultos), kg.trim() === "" ? null : Number(kg), activo), "Capacidad guardada")}>
+            onClick={() => run(() => guardarCapacidadFlota(u.dominio, Number(ceq), kg.trim() === "" ? null : Number(kg), activo), "Capacidad guardada")}>
             Guardar
           </Button>
         </TableCell>
@@ -292,7 +295,7 @@ function FlotaRow({ u, canEdit, run, isPending }: { u: FlotaUnidad; canEdit: boo
 function KpiObjetivosTable({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const m = data.metricas
   const real: Record<string, number | null> = {
-    dropsize: m?.dropsizePromedio ?? null,
+    dropsize: m?.dropsizeCeqPromedio ?? null,
     pct_no_ruteado: m?.pctNoRuteadoPromedio ?? null,
     ocupacion_pct: m?.ocupacionPromedio ?? null,
     entregas_por_viaje: null,
