@@ -170,7 +170,7 @@ export function PronosticoClient({
     i.estado === "debajo" ? (
       <Badge variant="destructive">Debajo</Badge>
     ) : i.estado === "encima" ? (
-      <Badge className="bg-amber-500 hover:bg-amber-500">Encima</Badge>
+      <Badge className="bg-amber-500 hover:bg-amber-500">Sobre stock</Badge>
     ) : i.estado === "ok" ? (
       <Badge className="bg-emerald-600 hover:bg-emerald-600">En rango</Badge>
     ) : (
@@ -184,7 +184,7 @@ export function PronosticoClient({
         <p className="text-sm text-muted-foreground">
           Política de inventario, SKUs fuera de rango, OOS teórico, altas/bajas de SKU y reunión
           mensual con TOR — pilar Planeamiento, requisito R3.2.
-          {resumen ? ` · Kardex ${resumen.kardexMes} · VPD 30 días (live chess-dashboard)` : ""}
+          {resumen ? ` · Kardex ${resumen.kardexMes} · VPD 15 días (live chess-dashboard)` : ""}
         </p>
       </div>
 
@@ -207,7 +207,7 @@ export function PronosticoClient({
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">% encima del rango</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">% sobre stock</CardTitle></CardHeader>
           <CardContent className="text-3xl font-bold text-amber-600">
             {resumen ? fmtPct(resumen.pctEncima) : "—"}
           </CardContent>
@@ -266,7 +266,7 @@ export function PronosticoClient({
               </div>
               <p className="text-xs text-muted-foreground">
                 Un SKU está <b>debajo</b> si su cobertura (stock ÷ VPD) es menor al mínimo del
-                segmento, y <b>encima</b> si supera el máximo. R3.2.2 exige medir el % fuera de
+                segmento, y en <b>sobre stock</b> si supera el máximo. R3.2.2 exige medir el % fuera de
                 rango partido en debajo / encima.
               </p>
             </CardContent>
@@ -283,7 +283,7 @@ export function PronosticoClient({
                   <SelectContent>
                     <SelectItem value="fuera">Fuera de rango</SelectItem>
                     <SelectItem value="debajo">Debajo</SelectItem>
-                    <SelectItem value="encima">Encima</SelectItem>
+                    <SelectItem value="encima">Sobre stock</SelectItem>
                     <SelectItem value="ok">En rango</SelectItem>
                     <SelectItem value="todos">Todos</SelectItem>
                   </SelectContent>
@@ -345,7 +345,7 @@ export function PronosticoClient({
                       <TableHead className="text-right">SKUs</TableHead>
                       <TableHead className="text-right">% en rango</TableHead>
                       <TableHead className="text-right">% debajo</TableHead>
-                      <TableHead className="text-right">% encima</TableHead>
+                      <TableHead className="text-right">% sobre stock</TableHead>
                       <TableHead>Tomado</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -437,7 +437,7 @@ export function PronosticoClient({
                 </div>
                 <div>
                   <Label>Brecha</Label>
-                  <Input value={planForm.brecha} placeholder="ej: cobertura 1,2 días (piso 3)"
+                  <Input value={planForm.brecha} placeholder="ej: cobertura 1,2 días (piso 8)"
                     onChange={(e) => setPlanForm((s) => ({ ...s, brecha: e.target.value }))} />
                 </div>
                 <div>

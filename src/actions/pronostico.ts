@@ -7,7 +7,7 @@
  * y % de SKUs fuera de rango (debajo/encima) · R3.2.3 SKUs nuevos/retirados ·
  * R3.2.4 OOS teórico + planes de acción.
  *
- * La cobertura por SKU (stock kardex + VPD 30d) viene live de chess-dashboard
+ * La cobertura por SKU (stock kardex + VPD 15d) viene live de chess-dashboard
  * (/api/inventario-cobertura, header x-api-key = PLANIFICADOR_API_KEY).
  */
 
@@ -163,7 +163,7 @@ function clasificarCobertura(
   const polMap = new Map(politica.map((p) => [p.segmento, p]))
   const out: CoberturaItem[] = items.map((it) => {
     const pol = polMap.get(it.segmento) ?? polMap.get("otro")
-    const min = Number(pol?.min_dias ?? 3)
+    const min = Number(pol?.min_dias ?? 8)
     const max = Number(pol?.max_dias ?? 45)
     let estado: EstadoCobertura
     if (it.coberturaDias == null) estado = "sin_vpd"

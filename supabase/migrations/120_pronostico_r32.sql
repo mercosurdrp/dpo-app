@@ -38,10 +38,10 @@ CREATE TABLE IF NOT EXISTS pronostico_politica (
 );
 
 INSERT INTO pronostico_politica (segmento, nombre, min_dias, max_dias) VALUES
-  ('cervezas', 'Cervezas', 3, 21),
-  ('aguas',    'Aguas',    3, 30),
-  ('ung',      'UNG',      3, 30),
-  ('otro',     'Otros / Marketplace', 3, 45)
+  ('cervezas', 'Cervezas', 8, 30),
+  ('aguas',    'Aguas',    8, 30),
+  ('ung',      'UNG',      8, 30),
+  ('otro',     'Otros / Marketplace', 8, 45)
 ON CONFLICT (segmento) DO NOTHING;
 
 -- ─── Snapshot mensual de cobertura (evidencia para la reunión) ──────────────
