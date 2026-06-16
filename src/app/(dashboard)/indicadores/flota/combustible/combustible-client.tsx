@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -93,8 +94,8 @@ const METRICAS = [
 type MetricaKey = (typeof METRICAS)[number]["key"]
 
 const GRUPOS = [
-  { key: "camiones" as const, titulo: "Camiones", combustible: "Gas Oil", color: CAMION_COLOR },
-  { key: "autoelevadores" as const, titulo: "Autoelevadores Toyota", combustible: "Nafta", color: AUTO_COLOR },
+  { key: "camiones" as const, titulo: "Camiones", combustible: "Gas Oil", color: CAMION_COLOR, foto: "/camion.jpg" },
+  { key: "autoelevadores" as const, titulo: "Autoelevadores Toyota", combustible: "Nafta", color: AUTO_COLOR, foto: "/autoelevador.jpg" },
 ]
 type GrupoKey = (typeof GRUPOS)[number]["key"]
 
@@ -342,6 +343,16 @@ export function CombustibleFlotaClient() {
     return { arr: [...m.values()].sort((a, b) => a.clave.localeCompare(b.clave)), porDia }
   }, [entradasGrupo, mes])
 
+  // Consumo por UNIDAD (una barra por camión / autoelevador) del grupo elegido,
+  // ordenado de mayor a menor según la métrica (litros o costo).
+  const consumoPorUnidad = useMemo(() => {
+    const arr =
+      grupo === "camiones"
+        ? porCamion.map((c) => ({ label: c.patente, litros: c.litros, costo: c.costo, cargas: c.cargas, km: c.km, horas: 0 }))
+        : porAutoelevador.map((a) => ({ label: a.patente, litros: a.litros, costo: a.costo, cargas: a.cargas, km: 0, horas: a.horas }))
+    return [...arr].sort((a, b) => (b[metrica] as number) - (a[metrica] as number))
+  }, [grupo, porCamion, porAutoelevador, metrica])
+
   const grupoDef = GRUPOS.find((g) => g.key === grupo)!
   const met = METRICAS.find((x) => x.key === metrica)!
   const periodoTexto =
@@ -461,9 +472,13 @@ export function CombustibleFlotaClient() {
                   onClick={() => setGrupo(g.key)}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg p-2.5" style={{ background: `${g.color}22`, color: g.color }}>
-                      <Fuel className="h-6 w-6" />
-                    </div>
+                    <Image
+                      src={g.foto}
+                      alt={g.titulo}
+                      width={96}
+                      height={64}
+                      className="h-16 w-24 shrink-0 rounded-lg object-cover"
+                    />
                     <div>
                       <div className="font-semibold" style={{ color: g.color }}>
                         {g.titulo} · {g.combustible}
@@ -591,6 +606,70 @@ export function CombustibleFlotaClient() {
                         <LabelList
                           dataKey={metrica}
                           position="top"
+                          formatter={(v: unknown) => met.fmt(Number(v))}
+                          style={{ fontSize: 11, fill: "#475569" }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Gráfico de consumo POR UNIDAD (una barra por camión / autoelevador) */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 font-semibold text-slate-900">
+                  <Image
+                    src={grupoDef.foto}
+                    alt={grupoDef.titulo}
+                    width={40}
+                    height={28}
+                    className="h-7 w-10 rounded object-cover"
+                  />
+                  {met.label} por {grupo === "camiones" ? "camión" : "autoelevador"} · {periodoTexto}
+                  {sucursal !== "__all__" ? ` · ${sucursal}` : ""}
+                </h2>
+                <div className="flex gap-2">
+                  {METRICAS.map((mt) => (
+                    <Button
+                      key={mt.key}
+                      size="sm"
+                      variant={metrica === mt.key ? "default" : "outline"}
+                      onClick={() => setMetrica(mt.key)}
+                    >
+                      {mt.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Ranking de {grupo === "camiones" ? "camiones" : "equipos"} por {met.label.toLowerCase()} en el período (de mayor a menor).
+              </p>
+              {consumoPorUnidad.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
+              ) : (
+                <div className="w-full" style={{ height: Math.max(220, consumoPorUnidad.length * 38) }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      layout="vertical"
+                      data={consumoPorUnidad}
+                      margin={{ top: 4, right: 60, bottom: 4, left: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        tickFormatter={(v) => met.fmt(v as number)}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis type="category" dataKey="label" width={86} tick={{ fontSize: 12 }} />
+                      <Tooltip cursor={{ fill: "#F1F5F9" }} content={<UnidadTooltip grupo={grupo} />} />
+                      <Bar dataKey={metrica} name={met.label} fill={grupoDef.color} radius={[0, 3, 3, 0]}>
+                        <LabelList
+                          dataKey={metrica}
+                          position="right"
                           formatter={(v: unknown) => met.fmt(Number(v))}
                           style={{ fontSize: 11, fill: "#475569" }}
                         />
@@ -802,6 +881,34 @@ function ThSort({
     >
       {children}
     </TableHead>
+  )
+}
+
+function UnidadTooltip({
+  active,
+  payload,
+  grupo,
+}: {
+  active?: boolean
+  payload?: Array<{ payload: { label: string; litros: number; costo: number; cargas: number; km: number; horas: number } }>
+  grupo: GrupoKey
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  return (
+    <div className="max-w-[240px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
+      <p className="font-semibold text-slate-900">
+        {grupo === "camiones" ? "🚛" : "🏗️"} {d.label}
+      </p>
+      <p className="text-muted-foreground">Litros: {fmtNum.format(d.litros)} L</p>
+      <p className="text-muted-foreground">Costo: {fmtPlata.format(d.costo)}</p>
+      {grupo === "camiones" ? (
+        <p className="text-muted-foreground">Km: {fmtNum.format(d.km)} km</p>
+      ) : (
+        <p className="text-muted-foreground">Horas: {fmtNum.format(d.horas)} hs</p>
+      )}
+      <p className="text-muted-foreground">Cargas: {d.cargas}</p>
+    </div>
   )
 }
 
