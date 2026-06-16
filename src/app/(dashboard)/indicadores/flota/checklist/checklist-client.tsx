@@ -31,6 +31,7 @@ import {
   YAxis,
 } from "recharts"
 import { ArrowLeft, ClipboardCheck, Loader2, RefreshCw } from "lucide-react"
+import { PlanesAccionFlota } from "../_components/planes-accion-flota"
 
 const LIB = "#0284C7" // Liberación (azul)
 const RET = "#10B981" // Retorno (verde)
@@ -697,6 +698,12 @@ export function ChecklistFlotaClient() {
           )}
         </CardContent>
       </Card>
+
+      {/* Planes de acción (independientes, propios de esta sección) */}
+      <PlanesAccionFlota
+        ambito="checklist"
+        descripcion="Acciones para los casos sin adherencia (liberación o retorno faltante, checks rechazados/críticos). No depende de los filtros de fecha: muestra siempre todos los planes."
+      />
 
       <p className="text-xs text-muted-foreground">
         La adherencia mide, por camión y día con actividad, si hizo liberación <em>y</em> retorno.

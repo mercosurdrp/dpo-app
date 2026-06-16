@@ -32,6 +32,7 @@ import {
   YAxis,
 } from "recharts"
 import { ArrowLeft, CarFront, Loader2, RefreshCw } from "lucide-react"
+import { PlanesAccionFlota } from "./_components/planes-accion-flota"
 
 const GREEN = "#10B981"
 const AMBER = "#F59E0B"
@@ -555,6 +556,12 @@ export function FlotaIndicadoresClient() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Planes de acción (independientes, propios de esta sección) */}
+      <PlanesAccionFlota
+        ambito="fallas"
+        descripcion="Acciones sobre las unidades con baja disponibilidad o alta probabilidad de falla. No depende de los filtros de fecha: muestra siempre todos los planes."
+      />
 
       <p className="text-xs text-muted-foreground">
         MTBF (km), MTTR, fallas y horas en taller salen de Cloudfleet. El MTBF en horas/días se
