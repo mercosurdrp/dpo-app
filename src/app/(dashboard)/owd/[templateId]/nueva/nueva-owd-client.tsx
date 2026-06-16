@@ -31,6 +31,39 @@ interface Props {
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
 type FotoLocal = { file: File; url: string }
 
+// Comprime una imagen en el navegador antes de subirla: la reescala a un lado
+// máximo y la re-exporta como JPEG. Una foto de celular (3–8 MB) baja a
+// ~200–400 KB, así varias fotos no revientan el límite de 25 MB del request.
+// Si algo falla, devuelve el archivo original sin tocar.
+async function compressImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const MAX = 1600
+    let { width, height } = bitmap
+    if (width > MAX || height > MAX) {
+      const scale = Math.min(MAX / width, MAX / height)
+      width = Math.round(width * scale)
+      height = Math.round(height * scale)
+    }
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return file
+    ctx.drawImage(bitmap, 0, 0, width, height)
+    bitmap.close()
+    const blob = await new Promise<Blob | null>((res) =>
+      canvas.toBlob(res, "image/jpeg", 0.7),
+    )
+    if (!blob || blob.size >= file.size) return file
+    const nombre = file.name.replace(/\.\w+$/, "") + ".jpg"
+    return new File([blob], nombre, { type: "image/jpeg" })
+  } catch {
+    return file
+  }
+}
+
 export function NuevaOwdClient({ templateId, titulo, items, empleados, supervisorDefault, vehiculos }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
@@ -49,17 +82,18 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     pasteTargetRef.current = pasteTarget
   }, [pasteTarget])
 
-  const addFotos = useCallback((itemId: string, files: File[]) => {
+  const addFotos = useCallback(async (itemId: string, files: File[]) => {
     const imgs = files.filter((f) => f.type.startsWith("image/"))
     if (imgs.length === 0) {
       toast.error("Solo se pueden adjuntar imágenes")
       return
     }
+    const comprimidas = await Promise.all(imgs.map(compressImage))
     setFotos((prev) => ({
       ...prev,
       [itemId]: [
         ...(prev[itemId] ?? []),
-        ...imgs.map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+        ...comprimidas.map((f) => ({ file: f, url: URL.createObjectURL(f) })),
       ],
     }))
   }, [])
@@ -172,14 +206,21 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     for (const i of items) {
       for (const f of fotos[i.id] ?? []) fd.append(`foto__${i.id}`, f.file)
     }
-    const result = await createObservacion(fd)
-    setSaving(false)
-    if ("error" in result) {
-      toast.error(result.error)
-      return
+    try {
+      const result = await createObservacion(fd)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("OWD guardada")
+      router.push(`/owd/${templateId}/${result.data.id}`)
+    } catch {
+      toast.error(
+        "No se pudo guardar. Si cargaste fotos, puede que pesen demasiado: quitá algunas o sacalas más livianas e intentá de nuevo.",
+      )
+    } finally {
+      setSaving(false)
     }
-    toast.success("OWD guardada")
-    router.push(`/owd/${templateId}/${result.data.id}`)
   }
 
   const personasOptions = empleados.map((e) => e.nombre)
