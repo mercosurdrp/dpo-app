@@ -426,7 +426,7 @@ export function MantenimientoFlotaClient() {
             value={unidad}
             onValueChange={(v) => { setUnidad(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[150px]">
+            <SelectTrigger className="h-9 w-[150px] font-semibold">
               <SelectValue placeholder="Unidad">
                 {(v) => (v === "__all__" || v == null ? "Todas" : String(v))}
               </SelectValue>
@@ -445,7 +445,7 @@ export function MantenimientoFlotaClient() {
             value={sucursal}
             onValueChange={(v) => { setSucursal(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[150px]">
+            <SelectTrigger className="h-9 w-[150px] font-semibold">
               <SelectValue placeholder="Sucursal">
                 {(v) => (v === "__all__" || v == null ? "Todas" : String(v))}
               </SelectValue>
@@ -463,7 +463,7 @@ export function MantenimientoFlotaClient() {
             value={anio}
             onValueChange={(v) => { setAnio(v ?? "__all__"); setMes("__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[120px]">
+            <SelectTrigger className="h-9 w-[120px] font-semibold">
               <SelectValue placeholder="Año">
                 {(v) => (v === "__all__" || v == null ? "Todos" : String(v))}
               </SelectValue>
@@ -482,7 +482,7 @@ export function MantenimientoFlotaClient() {
             value={mes}
             onValueChange={(v) => { setMes(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[160px]">
+            <SelectTrigger className="h-9 w-[160px] font-semibold">
               <SelectValue placeholder="Mes">
                 {(v) => (v === "__all__" || v == null ? "Todos" : etiquetaMes(String(v)))}
               </SelectValue>
@@ -501,7 +501,7 @@ export function MantenimientoFlotaClient() {
             value={tipo}
             onValueChange={(v) => { setTipo(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[170px]">
+            <SelectTrigger className="h-9 w-[170px] font-semibold">
               <SelectValue placeholder="Tipo">
                 {(v) => (v === "__all__" || v == null ? "Todos" : String(v))}
               </SelectValue>

@@ -621,6 +621,7 @@ export function RepuestosFlotaClient() {
             key={r.key}
             size="sm"
             variant={rangoActivo === r.key ? "default" : "outline"}
+            className="font-semibold"
             onClick={() => {
               setDesde(r.desde)
               setHasta(r.hasta)
@@ -637,7 +638,7 @@ export function RepuestosFlotaClient() {
             value={desde}
             max={hasta}
             onChange={(e) => setDesde(e.target.value)}
-            className="h-9 w-[150px]"
+            className="h-9 w-[150px] font-semibold"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -647,7 +648,7 @@ export function RepuestosFlotaClient() {
             value={hasta}
             max={hoy}
             onChange={(e) => setHasta(e.target.value)}
-            className="h-9 w-[150px]"
+            className="h-9 w-[150px] font-semibold"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -657,13 +658,13 @@ export function RepuestosFlotaClient() {
             value={mesFiltro}
             max={hoy.slice(0, 7)}
             onChange={(e) => aplicarMes(e.target.value)}
-            className="h-9 w-[140px]"
+            className="h-9 w-[140px] font-semibold"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Año
           <Select value={anioFiltro || ""} onValueChange={(v) => aplicarAnio(v ?? "")}>
-            <SelectTrigger className="h-9 w-[110px]">
+            <SelectTrigger className="h-9 w-[110px] font-semibold">
               <SelectValue placeholder="—">{(v) => (v ? String(v) : "—")}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -676,7 +677,7 @@ export function RepuestosFlotaClient() {
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Sucursal
           <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? SUC_ALL)}>
-            <SelectTrigger className="h-9 w-[150px]">
+            <SelectTrigger className="h-9 w-[150px] font-semibold">
               <SelectValue placeholder="Todas">
                 {(v) => (v === SUC_ALL || v == null ? "Todas" : String(v))}
               </SelectValue>
@@ -1065,18 +1066,18 @@ export function RepuestosFlotaClient() {
               Movimientos <span className="font-normal text-muted-foreground">· {historial.length}</span>
             </h2>
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant={fTipo === "" ? "default" : "outline"} onClick={() => setFTipo("")}>
+              <Button size="sm" variant={fTipo === "" ? "default" : "outline"} className="font-semibold" onClick={() => setFTipo("")}>
                 Todos
               </Button>
-              <Button size="sm" variant={fTipo === "ingreso" ? "default" : "outline"} onClick={() => setFTipo("ingreso")}>
+              <Button size="sm" variant={fTipo === "ingreso" ? "default" : "outline"} className="font-semibold" onClick={() => setFTipo("ingreso")}>
                 Ingresos
               </Button>
-              <Button size="sm" variant={fTipo === "salida" ? "default" : "outline"} onClick={() => setFTipo("salida")}>
+              <Button size="sm" variant={fTipo === "salida" ? "default" : "outline"} className="font-semibold" onClick={() => setFTipo("salida")}>
                 Salidas
               </Button>
               {nombresCatalogo.length > 0 && (
                 <Select value={fRepuesto} onValueChange={(v) => setFRepuesto(v ?? SUC_ALL)}>
-                  <SelectTrigger className="h-9 w-[200px]">
+                  <SelectTrigger className="h-9 w-[200px] font-semibold">
                     <SelectValue placeholder="Todos los repuestos">
                       {(v) => (v === SUC_ALL || v == null ? "Todos los repuestos" : String(v))}
                     </SelectValue>
@@ -1090,7 +1091,7 @@ export function RepuestosFlotaClient() {
                 </Select>
               )}
               <Select value={fVehiculo} onValueChange={(v) => setFVehiculo(v ?? SUC_ALL)}>
-                <SelectTrigger className="h-9 w-[200px]">
+                <SelectTrigger className="h-9 w-[200px] font-semibold">
                   <SelectValue placeholder="Todas las unidades">
                     {(v) =>
                       v === SUC_ALL || v == null

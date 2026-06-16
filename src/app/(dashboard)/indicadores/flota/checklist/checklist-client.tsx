@@ -507,6 +507,7 @@ export function ChecklistFlotaClient() {
             key={r.key}
             size="sm"
             variant={rangoActivo === r.key ? "default" : "outline"}
+            className="font-semibold"
             onClick={() => { setDesde(r.desde); setHasta(r.hasta) }}
           >
             {r.label}
@@ -515,11 +516,11 @@ export function ChecklistFlotaClient() {
         <span className="mx-1 h-9 w-px bg-slate-200" />
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Desde
-          <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="h-9 w-[150px]" />
+          <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="h-9 w-[150px] font-semibold" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Hasta
-          <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="h-9 w-[150px]" />
+          <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="h-9 w-[150px] font-semibold" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Mes
@@ -528,11 +529,11 @@ export function ChecklistFlotaClient() {
             value={mesFiltro}
             max={hoy.slice(0, 7)}
             onChange={(e) => aplicarMes(e.target.value)}
-            className="h-9 w-[140px]"
+            className="h-9 w-[140px] font-semibold"
           />
         </label>
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-[170px] font-semibold">
             <SelectValue placeholder="Sucursal">
               {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
             </SelectValue>
@@ -545,7 +546,7 @@ export function ChecklistFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={tipo} onValueChange={(v) => setTipo(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[150px]">
+          <SelectTrigger className="h-9 w-[150px] font-semibold">
             <SelectValue placeholder="Tipo">
               {(v) =>
                 v === "LIBERACION"
@@ -562,7 +563,7 @@ export function ChecklistFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={estado} onValueChange={(v) => setEstado(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-[170px] font-semibold">
             <SelectValue placeholder="Cumplimiento">
               {(v) =>
                 v === "APROBADO"

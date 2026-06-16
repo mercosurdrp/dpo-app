@@ -210,7 +210,7 @@ export function EstandarFlotaClient() {
       {/* Filtro sucursal */}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={sucursal} onValueChange={(v) => { setSucursal(v ?? "__all__"); setAbierta(null) }}>
-          <SelectTrigger className="h-9 w-[200px]">
+          <SelectTrigger className="h-9 w-[200px] font-semibold">
             <SelectValue placeholder="Sucursal">
               {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
             </SelectValue>

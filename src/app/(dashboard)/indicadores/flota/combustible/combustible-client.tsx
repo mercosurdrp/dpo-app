@@ -414,7 +414,7 @@ export function CombustibleFlotaClient() {
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-2">
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-[170px] font-semibold">
             <SelectValue placeholder="Sucursal">
               {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
             </SelectValue>
@@ -432,7 +432,7 @@ export function CombustibleFlotaClient() {
             setDia("__all__")
           }}
         >
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-[170px] font-semibold">
             <SelectValue placeholder="Mes">
               {(v) => (v === "__all__" || v == null ? "Todos los meses" : etiquetaMes(String(v)))}
             </SelectValue>
@@ -445,7 +445,7 @@ export function CombustibleFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={dia} onValueChange={(v) => setDia(v ?? "__all__")} disabled={mes === "__all__"}>
-          <SelectTrigger className="h-9 w-[150px]">
+          <SelectTrigger className="h-9 w-[150px] font-semibold">
             <SelectValue placeholder="Día">
               {(v) =>
                 v === "__all__" || v == null

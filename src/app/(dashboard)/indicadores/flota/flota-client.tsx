@@ -310,6 +310,7 @@ export function FlotaIndicadoresClient() {
             key={r.key}
             size="sm"
             variant={rangoActivo === r.key ? "default" : "outline"}
+            className="font-semibold"
             onClick={() => { setDesde(r.desde); setHasta(r.hasta) }}
           >
             {r.label}
@@ -321,6 +322,7 @@ export function FlotaIndicadoresClient() {
             key={c}
             size="sm"
             variant={cats.has(c) ? "default" : "outline"}
+            className="font-semibold"
             onClick={() => toggleCat(c)}
           >
             {c}
@@ -328,7 +330,7 @@ export function FlotaIndicadoresClient() {
         ))}
         <span className="mx-1 h-5 w-px bg-slate-200" />
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[180px]">
+          <SelectTrigger className="h-9 w-[180px] font-semibold">
             <SelectValue placeholder="Sucursal">
               {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
             </SelectValue>
@@ -348,7 +350,7 @@ export function FlotaIndicadoresClient() {
             max={365}
             value={horizonte}
             onChange={(e) => setHorizonte(Math.max(1, Number(e.target.value) || 0))}
-            className="h-9 w-16"
+            className="h-9 w-16 font-semibold"
           />
           días
         </label>
