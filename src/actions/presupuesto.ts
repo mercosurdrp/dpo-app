@@ -585,6 +585,13 @@ export async function actualizarTarea(
       update.estado = estadoRaw
     }
 
+    // Editores pueden corregir la justificación desde el form de edición,
+    // incluso en tareas ya completadas (solo se toca si el form la envía).
+    if (formData.has("justificacion")) {
+      update.justificacion =
+        String(formData.get("justificacion") ?? "").trim() || null
+    }
+
     const { data, error } = await supabase
       .from("presupuestos_tareas")
       .update(update)

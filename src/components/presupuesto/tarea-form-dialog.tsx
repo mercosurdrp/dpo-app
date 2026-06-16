@@ -192,6 +192,22 @@ export function TareaFormDialog({
             />
           </div>
 
+          {editing && (
+            <div className="space-y-1.5">
+              <Label htmlFor="justificacion">Justificación</Label>
+              <Textarea
+                id="justificacion"
+                name="justificacion"
+                rows={3}
+                defaultValue={tarea?.justificacion ?? ""}
+                placeholder="Justificación del desvío / respuesta de la tarea…"
+              />
+              <p className="text-xs text-muted-foreground">
+                Editable también en tareas ya completadas.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Responsable</Label>
