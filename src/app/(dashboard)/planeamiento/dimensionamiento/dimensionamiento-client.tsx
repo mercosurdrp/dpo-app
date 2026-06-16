@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   type DimData, type FlotaUnidad, type DimConfig, type DimPlan,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
-  crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim,
+  crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
 } from "@/actions/dimensionamiento"
 
 function fmt(v: number) {
@@ -212,14 +212,27 @@ function KpiCard({ title, value, hint, accent }: { title: string; value: string;
 
 function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn; isPending: boolean }) {
   const [c, setC] = useState<DimConfig>(config)
+  const [recalc, startRecalc] = useTransition()
+  const onRecalcular = () =>
+    startRecalc(async () => {
+      const res = await recalcularFactorCeq()
+      if ("error" in res) { toast.error(res.error); return }
+      setC((s) => ({ ...s, factor_ceq_bulto: res.data.factor }))
+      toast.success(`Factor ${res.data.factor} · ${res.data.periodo.desde}→${res.data.periodo.hasta} · ${res.data.skusConPallet} SKUs (sin envases)`)
+    })
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de cálculo</CardTitle></CardHeader>
       <CardContent className="flex flex-wrap items-end gap-4">
         <div>
           <Label className="text-xs">Factor CEq por bulto</Label>
-          <Input type="number" step="0.001" className="h-8 w-28" value={c.factor_ceq_bulto}
-            onChange={(e) => setC((s) => ({ ...s, factor_ceq_bulto: Number(e.target.value) }))} />
+          <div className="flex items-center gap-1">
+            <Input type="number" step="0.001" className="h-8 w-28" value={c.factor_ceq_bulto}
+              onChange={(e) => setC((s) => ({ ...s, factor_ceq_bulto: Number(e.target.value) }))} />
+            <Button size="sm" variant="outline" disabled={recalc} onClick={onRecalcular} title="Recalcular desde Chess (mes anterior, sin envases)">
+              {recalc ? "Calculando…" : "↻ Recalcular"}
+            </Button>
+          </div>
         </div>
         <div>
           <Label className="text-xs">Viajes por día (por unidad)</Label>
@@ -235,7 +248,7 @@ function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn;
           Guardar
         </Button>
         <p className="w-full text-xs text-muted-foreground">
-          El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). Calibralo con el mix promedio de Pampeana; 1 = sin conversión.
+          El factor convierte los bultos ruteados a cajas equivalentes (CEq = bultos × factor). «↻ Recalcular» lo recomputa con el mix del mes anterior cerrado en Chess, excluyendo envases (CEq = 120 × bultos / bultosPallet).
         </p>
       </CardContent>
     </Card>

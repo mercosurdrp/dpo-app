@@ -17,6 +17,31 @@ type Result<T> = { data: T } | { error: string }
 
 const ROLES_EDICION: ("admin" | "admin_rrhh" | "supervisor")[] = ["admin", "admin_rrhh", "supervisor"]
 const SOLO_PAMPEANA = "El dimensionamiento solo está disponible en Región Pampeana."
+const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"
+
+export interface FactorCeqResult {
+  factor: number
+  periodo: { desde: string; hasta: string }
+  sumCeq: number
+  sumBultos: number
+  skusConPallet: number
+  bultosEnvaseExcluidos: number
+}
+
+async function fetchFactorCeq(): Promise<FactorCeqResult | null> {
+  const key = process.env.PLANIFICADOR_API_KEY
+  if (!key) return null
+  try {
+    const res = await fetch(`${CHESS_DASHBOARD_BASE}/api/factor-ceq?empresa=pampeana`, {
+      headers: { "x-api-key": key },
+      cache: "no-store",
+    })
+    if (!res.ok) return null
+    return (await res.json()) as FactorCeqResult
+  } catch {
+    return null
+  }
+}
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 
@@ -312,6 +337,28 @@ export async function actualizarEstadoPlanDim(
     if (error) return { error: error.message }
     revalidatePath("/planeamiento/dimensionamiento")
     return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+/** Recalcula el factor CEq/bulto desde chess-dashboard (mes anterior, sin envases) y lo guarda. */
+export async function recalcularFactorCeq(): Promise<Result<FactorCeqResult>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const r = await fetchFactorCeq()
+    if (!r || !r.factor) {
+      return { error: "No se pudo calcular el factor desde chess-dashboard (¿PLANIFICADOR_API_KEY configurada?)." }
+    }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("dim_config")
+      .update({ factor_ceq_bulto: r.factor, updated_by: profile.id, updated_at: new Date().toISOString() })
+      .eq("id", 1)
+    if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: r }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error" }
   }
