@@ -200,37 +200,6 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
         </Card>
       )}
 
-      {/* Acceso a Rutina de Pronóstico (R3.2), pilar Planeamiento — solo Pampeana */}
-      {pilar.nombre === "Planeamiento" && !IS_MISIONES && (
-        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className="rounded-xl p-3"
-                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
-                >
-                  <BarChart3 className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">Rutina de Pronóstico (3.2)</p>
-                  <p className="text-sm text-muted-foreground">
-                    Política de inventario · % SKUs fuera de rango · OOS teórico · altas/bajas de SKU · reunión mensual con TOR
-                  </p>
-                </div>
-              </div>
-              <Link
-                href="/planeamiento/pronostico"
-                className={buttonVariants({ size: "lg" })}
-                style={{ backgroundColor: pilar.color, color: "#fff" }}
-              >
-                Abrir <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Acceso a Dimensionamiento de Distribución/Flota (R3.1), pilar Planeamiento — solo Pampeana */}
       {pilar.nombre === "Planeamiento" && !IS_MISIONES && (
         <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
