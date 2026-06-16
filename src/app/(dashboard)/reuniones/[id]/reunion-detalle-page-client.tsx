@@ -1685,13 +1685,20 @@ export function ReunionDetallePageClient({
                           const valor = cell?.valor ?? null
                           const esLtiTri =
                             ind.id === "auto_lti" || ind.id === "auto_tri"
+                          // Errores de picking: un día con datos y 0 errores
+                          // se muestra como 0 (no como "—"). El "—" queda
+                          // reservado a los días sin datos (valor null).
+                          const esErroresPicking =
+                            ind.id === "auto_errores_picking"
                           const valorValido =
                             valor != null && Number.isFinite(valor) && f <= detalle.fecha
                           // LTI/TRI muestran 0 (días sin accidente) como el resto
                           // de indicadores con `mostrar_cero`.
                           const muestra =
                             valorValido &&
-                            (ind.mostrar_cero || esLtiTri ? true : valor! > 0)
+                            (ind.mostrar_cero || esLtiTri || esErroresPicking
+                              ? true
+                              : valor! > 0)
                           const esPct = ind.unidad === "%"
                           // Color por polaridad de la meta (mejor_si). Si no hay
                           // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
@@ -1717,7 +1724,9 @@ export function ReunionDetallePageClient({
                           }
                           // LTI/TRI: un 0 (día sin accidente) en gris neutro,
                           // el rojo se reserva para los días con evento.
-                          if (esLtiTri && valor === 0) {
+                          // Errores de picking: ídem, un 0 (día sin errores)
+                          // en gris neutro y no en rojo.
+                          if ((esLtiTri || esErroresPicking) && valor === 0) {
                             colorClass = "text-slate-300"
                           }
                           // Checklist "X/Y": verde si todas aprobadas, ámbar
