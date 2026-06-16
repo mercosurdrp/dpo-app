@@ -23,6 +23,13 @@ import {
   Calculator,
   ExternalLink,
   CalendarRange,
+  ClipboardCheck,
+  Ruler,
+  Wrench,
+  Fuel,
+  Package,
+  Gauge,
+  type LucideIcon,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
 import type { BloqueIndicadores } from "@/actions/indicadores"
@@ -33,6 +40,25 @@ import { IS_MISIONES } from "@/lib/empresa"
 // Se muestra como acceso dentro del pilar Planeamiento sólo en Misiones.
 const SIMULADOR_URL =
   process.env.NEXT_PUBLIC_SIMULADOR_URL ?? "https://dimensionamiento-misiones.vercel.app"
+
+// Secciones del pilar Flota (sólo Misiones): paquete de gestión de flota con
+// datos vivos de Cloudfleet (vía proxy a herminio-web). Se publican por etapas;
+// las no disponibles se muestran como "Próximamente".
+interface FlotaSeccion {
+  titulo: string
+  sub: string
+  href: string
+  Icon: LucideIcon
+  disponible: boolean
+}
+const FLOTA_SECCIONES: FlotaSeccion[] = [
+  { titulo: "Checklist", sub: "Adherencia liberación + retorno", href: "/indicadores/flota/checklist", Icon: ClipboardCheck, disponible: true },
+  { titulo: "Estándar", sub: "Cumplimiento del estándar por unidad", href: "/indicadores/flota/estandar", Icon: Ruler, disponible: false },
+  { titulo: "Mantenimiento", sub: "Órdenes de trabajo y costos por tipo", href: "/indicadores/flota/mantenimiento", Icon: Wrench, disponible: false },
+  { titulo: "Combustible", sub: "Consumo, km/litro y costos", href: "/indicadores/flota/combustible", Icon: Fuel, disponible: false },
+  { titulo: "Gestión de repuestos", sub: "Stock del taller · ingresos y salidas", href: "/indicadores/flota/repuestos", Icon: Package, disponible: false },
+  { titulo: "Análisis de fallas", sub: "MTBF, MTTR, disponibilidad y prob. de falla", href: "/indicadores/flota", Icon: Gauge, disponible: true },
+]
 
 interface Props {
   pilar: Pilar
@@ -192,6 +218,54 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Secciones del pilar Flota (sólo Misiones) */}
+      {IS_MISIONES && pilar.nombre === "Flota" && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Gestión de flota
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {FLOTA_SECCIONES.map((s) => {
+              const inner = (
+                <Card
+                  className="h-full border-l-4 transition-colors hover:bg-slate-50"
+                  style={{ borderLeftColor: pilar.color }}
+                >
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="shrink-0 rounded-xl p-3"
+                        style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                      >
+                        <s.Icon className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900">{s.titulo}</p>
+                        <p className="text-sm text-muted-foreground">{s.sub}</p>
+                        <span className="mt-2 inline-flex items-center gap-1 text-sm font-medium">
+                          {s.disponible ? (
+                            <span className="inline-flex items-center gap-1" style={{ color: pilar.color }}>
+                              Abrir <ChevronRight className="h-4 w-4" />
+                            </span>
+                          ) : (
+                            <Badge variant="secondary" className="font-normal">Próximamente</Badge>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+              return s.disponible ? (
+                <Link key={s.titulo} href={s.href}>{inner}</Link>
+              ) : (
+                <div key={s.titulo} className="cursor-default opacity-60">{inner}</div>
+              )
+            })}
+          </div>
         </div>
       )}
 

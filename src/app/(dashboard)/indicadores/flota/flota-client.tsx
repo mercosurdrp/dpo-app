@@ -135,10 +135,10 @@ export function FlotaIndicadoresClient() {
       const j: MantData = await r.json()
       if (!j.ok) throw new Error(j.error || "Error al traer datos")
       setData(j)
-      const edadMin = j.actualizado
-        ? (Date.now() - new Date(j.actualizado).getTime()) / 60000
-        : Infinity
-      if (j.cacheado && (j.aproximado || edadMin > 15)) {
+      // Para auditoría: si la respuesta vino de la copia guardada, SIEMPRE
+      // refrescamos en vivo contra Cloudfleet por detrás (sin importar la
+      // antigüedad) para mostrar el informe actualizado al instante.
+      if (j.cacheado) {
         setRefrescando(true)
         fetch(`/api/flota-mantenimiento?desde=${desde}&hasta=${hasta}&fresco=1`)
           .then((r2) => r2.json())
