@@ -795,7 +795,18 @@ export function CombustibleFlotaClient() {
                         <TableBody>
                           {porAutoelevador.map((a) => (
                             <TableRow key={a.patente}>
-                              <TableCell className="font-semibold">🏗️ {a.patente}</TableCell>
+                              <TableCell className="font-semibold">
+                                <span className="flex items-center gap-2">
+                                  <Image
+                                    src="/autoelevador.jpg"
+                                    alt="Autoelevador"
+                                    width={40}
+                                    height={28}
+                                    className="h-7 w-10 rounded object-cover"
+                                  />
+                                  {a.patente}
+                                </span>
+                              </TableCell>
                               <TableCell className="text-right">{a.cargas}</TableCell>
                               <TableCell className="text-right">{fmtNum.format(a.litros)} L</TableCell>
                               <TableCell className="text-right">{fmtNum.format(a.horas)} hs</TableCell>
@@ -897,8 +908,13 @@ function UnidadTooltip({
   const d = payload[0].payload
   return (
     <div className="max-w-[240px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
-      <p className="font-semibold text-slate-900">
-        {grupo === "camiones" ? "🚛" : "🏗️"} {d.label}
+      <p className="flex items-center gap-1.5 font-semibold text-slate-900">
+        {grupo === "camiones" ? (
+          <span>🚛</span>
+        ) : (
+          <Image src="/autoelevador.jpg" alt="" width={28} height={18} className="h-[18px] w-7 rounded object-cover" />
+        )}
+        {d.label}
       </p>
       <p className="text-muted-foreground">Litros: {fmtNum.format(d.litros)} L</p>
       <p className="text-muted-foreground">Costo: {fmtPlata.format(d.costo)}</p>
