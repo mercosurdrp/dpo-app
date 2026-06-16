@@ -426,7 +426,11 @@ export function MantenimientoFlotaClient() {
             value={unidad}
             onValueChange={(v) => { setUnidad(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Unidad" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[150px]">
+              <SelectValue placeholder="Unidad">
+                {(v) => (v === "__all__" || v == null ? "Todas" : String(v))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todas</SelectItem>
               {unidades.map((u) => (
@@ -441,7 +445,11 @@ export function MantenimientoFlotaClient() {
             value={sucursal}
             onValueChange={(v) => { setSucursal(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[150px]">
+              <SelectValue placeholder="Sucursal">
+                {(v) => (v === "__all__" || v == null ? "Todas" : String(v))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todas</SelectItem>
               <SelectItem value="Eldorado">Eldorado</SelectItem>
@@ -455,7 +463,11 @@ export function MantenimientoFlotaClient() {
             value={anio}
             onValueChange={(v) => { setAnio(v ?? "__all__"); setMes("__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[120px]"><SelectValue placeholder="Año" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[120px]">
+              <SelectValue placeholder="Año">
+                {(v) => (v === "__all__" || v == null ? "Todos" : String(v))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todos</SelectItem>
               {anios.map((a) => (
@@ -470,7 +482,11 @@ export function MantenimientoFlotaClient() {
             value={mes}
             onValueChange={(v) => { setMes(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Mes" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue placeholder="Mes">
+                {(v) => (v === "__all__" || v == null ? "Todos" : etiquetaMes(String(v)))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todos</SelectItem>
               {(anioF ? meses.filter((m) => m.startsWith(anioF)) : meses).map((m) => (
@@ -485,7 +501,11 @@ export function MantenimientoFlotaClient() {
             value={tipo}
             onValueChange={(v) => { setTipo(v ?? "__all__"); setAbierta(null) }}
           >
-            <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[170px]">
+              <SelectValue placeholder="Tipo">
+                {(v) => (v === "__all__" || v == null ? "Todos" : String(v))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todos</SelectItem>
               {TIPOS.map((t) => (

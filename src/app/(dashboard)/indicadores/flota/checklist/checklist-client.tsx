@@ -532,7 +532,11 @@ export function ChecklistFlotaClient() {
           />
         </label>
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[170px]">
+            <SelectValue placeholder="Sucursal">
+              {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todas las sucursales</SelectItem>
             {sucursales.map((s) => (
@@ -541,7 +545,16 @@ export function ChecklistFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={tipo} onValueChange={(v) => setTipo(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[150px]">
+            <SelectValue placeholder="Tipo">
+              {(v) =>
+                v === "LIBERACION"
+                  ? "Liberación"
+                  : v === "RETORNO"
+                  ? "Retorno"
+                  : "Todos los tipos"}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todos los tipos</SelectItem>
             <SelectItem value="LIBERACION">Liberación</SelectItem>
@@ -549,7 +562,16 @@ export function ChecklistFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={estado} onValueChange={(v) => setEstado(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Cumplimiento" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[170px]">
+            <SelectValue placeholder="Cumplimiento">
+              {(v) =>
+                v === "APROBADO"
+                  ? "Aprobados"
+                  : v === "OBS"
+                  ? "Con observaciones"
+                  : "Todos"}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todos</SelectItem>
             <SelectItem value="APROBADO">Aprobados</SelectItem>

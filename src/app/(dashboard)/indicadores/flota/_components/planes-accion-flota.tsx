@@ -223,7 +223,11 @@ export function PlanesAccionFlota({
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">Estado</label>
             <Select value={nuevo.estado} onValueChange={(v) => setNuevo({ ...nuevo, estado: v ?? "no_iniciado" })}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="No iniciado">
+                  {(v) => ESTADOS.find((e) => e.value === v)?.label ?? "No iniciado"}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 {ESTADOS.map((s) => (
                   <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
@@ -291,7 +295,11 @@ export function PlanesAccionFlota({
                             value={p.estado}
                             onValueChange={(v) => mutar("editar", { id: p.id, estado: v ?? p.estado })}
                           >
-                            <SelectTrigger className="h-8 w-[130px]"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 w-[130px]">
+                              <SelectValue placeholder="Estado">
+                                {(v) => ESTADOS.find((e) => e.value === v)?.label ?? "Estado"}
+                              </SelectValue>
+                            </SelectTrigger>
                             <SelectContent>
                               {ESTADOS.map((s) => (
                                 <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>

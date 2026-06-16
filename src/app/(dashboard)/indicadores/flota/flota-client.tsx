@@ -329,7 +329,9 @@ export function FlotaIndicadoresClient() {
         <span className="mx-1 h-5 w-px bg-slate-200" />
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
           <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue placeholder="Sucursal" />
+            <SelectValue placeholder="Sucursal">
+              {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todas las sucursales</SelectItem>
@@ -514,7 +516,9 @@ export function FlotaIndicadoresClient() {
             <h2 className="font-semibold text-slate-900">Curva de probabilidad de falla</h2>
             <Select value={graficoSel} onValueChange={(v) => setGraficoSel(v ?? "flota")}>
               <SelectTrigger className="h-9 w-[200px]">
-                <SelectValue />
+                <SelectValue placeholder="Flota (general)">
+                  {(v) => (v === "flota" || v == null ? "Flota (general)" : String(v))}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="flota">Flota (general)</SelectItem>

@@ -414,7 +414,11 @@ export function CombustibleFlotaClient() {
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-2">
         <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? "__all__")}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[170px]">
+            <SelectValue placeholder="Sucursal">
+              {(v) => (v === "__all__" || v == null ? "Todas las sucursales" : String(v))}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todas las sucursales</SelectItem>
             <SelectItem value="Eldorado">Eldorado</SelectItem>
@@ -428,7 +432,11 @@ export function CombustibleFlotaClient() {
             setDia("__all__")
           }}
         >
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Mes" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[170px]">
+            <SelectValue placeholder="Mes">
+              {(v) => (v === "__all__" || v == null ? "Todos los meses" : etiquetaMes(String(v)))}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todos los meses</SelectItem>
             {meses.map((m) => (
@@ -437,7 +445,16 @@ export function CombustibleFlotaClient() {
           </SelectContent>
         </Select>
         <Select value={dia} onValueChange={(v) => setDia(v ?? "__all__")} disabled={mes === "__all__"}>
-          <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Día" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-[150px]">
+            <SelectValue placeholder="Día">
+              {(v) =>
+                v === "__all__" || v == null
+                  ? mes !== "__all__"
+                    ? "Todos los días"
+                    : "Elegí un mes"
+                  : fmtFecha(String(v))}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{mes !== "__all__" ? "Todos los días" : "Elegí un mes"}</SelectItem>
             {dias.map((d) => (

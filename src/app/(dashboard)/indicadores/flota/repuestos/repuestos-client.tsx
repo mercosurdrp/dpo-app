@@ -663,7 +663,9 @@ export function RepuestosFlotaClient() {
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Año
           <Select value={anioFiltro || ""} onValueChange={(v) => aplicarAnio(v ?? "")}>
-            <SelectTrigger className="h-9 w-[110px]"><SelectValue placeholder="—" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[110px]">
+              <SelectValue placeholder="—">{(v) => (v ? String(v) : "—")}</SelectValue>
+            </SelectTrigger>
             <SelectContent>
               {anios.map((a) => (
                 <SelectItem key={a} value={a}>{a}</SelectItem>
@@ -674,7 +676,11 @@ export function RepuestosFlotaClient() {
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Sucursal
           <Select value={sucursal} onValueChange={(v) => setSucursal(v ?? SUC_ALL)}>
-            <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Todas" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[150px]">
+              <SelectValue placeholder="Todas">
+                {(v) => (v === SUC_ALL || v == null ? "Todas" : String(v))}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value={SUC_ALL}>Todas</SelectItem>
               {SUCURSALES.map((s) => (
@@ -761,7 +767,11 @@ export function RepuestosFlotaClient() {
                 value={nuevo.sucursal || SUC_NONE}
                 onValueChange={(v) => setNuevo({ ...nuevo, sucursal: v && v !== SUC_NONE ? v : "" })}
               >
-                <SelectTrigger className="h-9"><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="—">
+                    {(v) => (v === SUC_NONE || v == null ? "—" : String(v))}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={SUC_NONE}>—</SelectItem>
                   {SUCURSALES.map((s) => (
@@ -797,7 +807,11 @@ export function RepuestosFlotaClient() {
                   value={nuevo.vehiculo || SUC_NONE}
                   onValueChange={(v) => setNuevo({ ...nuevo, vehiculo: v && v !== SUC_NONE ? v : "" })}
                 >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="— Elegir unidad —" /></SelectTrigger>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="— Elegir unidad —">
+                      {(v) => (v === SUC_NONE || v == null ? "— Elegir unidad —" : etiquetaUnidad(String(v)))}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={SUC_NONE}>— Elegir unidad —</SelectItem>
                     {FLOTA.map((u) => (
@@ -1062,7 +1076,11 @@ export function RepuestosFlotaClient() {
               </Button>
               {nombresCatalogo.length > 0 && (
                 <Select value={fRepuesto} onValueChange={(v) => setFRepuesto(v ?? SUC_ALL)}>
-                  <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Todos los repuestos" /></SelectTrigger>
+                  <SelectTrigger className="h-9 w-[200px]">
+                    <SelectValue placeholder="Todos los repuestos">
+                      {(v) => (v === SUC_ALL || v == null ? "Todos los repuestos" : String(v))}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={SUC_ALL}>Todos los repuestos</SelectItem>
                     {nombresCatalogo.map((n) => (
@@ -1072,7 +1090,16 @@ export function RepuestosFlotaClient() {
                 </Select>
               )}
               <Select value={fVehiculo} onValueChange={(v) => setFVehiculo(v ?? SUC_ALL)}>
-                <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Todas las unidades" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-[200px]">
+                  <SelectValue placeholder="Todas las unidades">
+                    {(v) =>
+                      v === SUC_ALL || v == null
+                        ? "Todas las unidades"
+                        : v === UNIDAD_SIN
+                        ? "Sin unidad"
+                        : etiquetaUnidad(String(v))}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={SUC_ALL}>Todas las unidades</SelectItem>
                   {FLOTA_VALUES.map((p) => (
@@ -1129,7 +1156,11 @@ export function RepuestosFlotaClient() {
                         </TableCell>
                         <TableCell>
                           <Select value={edit.tipo} onValueChange={(v) => setEdit({ ...edit, tipo: v ?? "ingreso" })}>
-                            <SelectTrigger className="h-8 w-[110px]"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 w-[110px]">
+                              <SelectValue placeholder="Tipo">
+                                {(v) => (v === "salida" ? "⬆️ Salida" : "⬇️ Ingreso")}
+                              </SelectValue>
+                            </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="ingreso">⬇️ Ingreso</SelectItem>
                               <SelectItem value="salida">⬆️ Salida</SelectItem>
@@ -1174,7 +1205,11 @@ export function RepuestosFlotaClient() {
                             value={edit.sucursal || SUC_NONE}
                             onValueChange={(v) => setEdit({ ...edit, sucursal: v && v !== SUC_NONE ? v : "" })}
                           >
-                            <SelectTrigger className="h-8 w-[120px]"><SelectValue placeholder="—" /></SelectTrigger>
+                            <SelectTrigger className="h-8 w-[120px]">
+                              <SelectValue placeholder="—">
+                                {(v) => (v === SUC_NONE || v == null ? "—" : String(v))}
+                              </SelectValue>
+                            </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={SUC_NONE}>—</SelectItem>
                               {SUCURSALES.map((s) => (
@@ -1203,7 +1238,11 @@ export function RepuestosFlotaClient() {
                               value={edit.vehiculo || SUC_NONE}
                               onValueChange={(v) => setEdit({ ...edit, vehiculo: v && v !== SUC_NONE ? v : "" })}
                             >
-                              <SelectTrigger className="h-8 w-[150px]"><SelectValue placeholder="— Asignar —" /></SelectTrigger>
+                              <SelectTrigger className="h-8 w-[150px]">
+                                <SelectValue placeholder="— Asignar —">
+                                  {(v) => (v === SUC_NONE || v == null ? "— Asignar —" : etiquetaUnidad(String(v)))}
+                                </SelectValue>
+                              </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value={SUC_NONE}>— Asignar —</SelectItem>
                                 {FLOTA.map((u) => (
@@ -1267,7 +1306,11 @@ export function RepuestosFlotaClient() {
                               disabled={guardando}
                               onValueChange={(v) => mutar("editar", { id: m.id, vehiculo: v && v !== SUC_NONE ? v : "" })}
                             >
-                              <SelectTrigger className="h-8 w-[150px]"><SelectValue placeholder="— Asignar —" /></SelectTrigger>
+                              <SelectTrigger className="h-8 w-[150px]">
+                                <SelectValue placeholder="— Asignar —">
+                                  {(v) => (v === SUC_NONE || v == null ? "— Asignar —" : etiquetaUnidad(String(v)))}
+                                </SelectValue>
+                              </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value={SUC_NONE}>— Asignar —</SelectItem>
                                 {FLOTA.map((u) => (
