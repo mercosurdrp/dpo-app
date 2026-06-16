@@ -143,21 +143,41 @@ export async function buscarIndiceUltimaPagina(creds: GescomCredentials, token: 
 }
 
 /**
- * Ventas recientes para el sync diario: localiza la última página y lee solo las últimas
- * `paginas` (con un solapamiento de seguridad), filtrando por `fechaEntrega` en [desde, hasta].
- * Eficiente (~paginas + log2(total) requests) vs. recorrer el histórico completo.
+ * Ventas recientes para el sync diario: localiza la última página y RETROCEDE desde el final
+ * hasta cubrir todo el rango [desde, hasta] por `fechaEntrega`, filtrando esas ventas.
+ *
+ * No usa un tope fijo de páginas: para a la primera página cuya fecha de entrega MÁXIMA ya es
+ * anterior a `desde` (con `SOLAPE` páginas extra de seguridad porque la API ordena por id de
+ * creación, no estrictamente por fechaEntrega). Esto recaptura finalizaciones tardías de días
+ * que ya "envejecieron" en la paginación — el motivo por el que un tope fijo (25) dejaba días
+ * recientes congelados/subcontados (incidente 2026-06-16). `minPaginas` es un piso de seguridad.
+ * Costo ≈ (páginas que cubren el rango) + log2(total) requests; sigue sin recorrer el histórico.
  */
 export async function fetchVentasRecientes(
-  creds: GescomCredentials, token: string, desde: string, hasta: string, paginas = 25,
+  creds: GescomCredentials, token: string, desde: string, hasta: string, minPaginas = 25,
 ): Promise<GescomVenta[]> {
   const ultima = await buscarIndiceUltimaPagina(creds, token)
   if (ultima < 0) return []
-  const inicio = Math.max(0, ultima - paginas + 1)
+  const SOLAPE = 3
   const out: GescomVenta[] = []
-  for (let page = inicio; page <= ultima; page++) {
-    for (const v of await fetchVentasPagina(creds, token, page)) {
+  let leidas = 0
+  let paginasBajoDesde = 0
+  for (let page = ultima; page >= 0; page--) {
+    const chunk = await fetchVentasPagina(creds, token, page)
+    leidas++
+    let maxFecha = ""
+    for (const v of chunk) {
       const f = (v.fechaEntrega ?? "").slice(0, 10)
-      if (f && f >= desde && f <= hasta) out.push(v)
+      if (!f) continue
+      if (f > maxFecha) maxFecha = f
+      if (f >= desde && f <= hasta) out.push(v)
+    }
+    // Toda la página ya cae antes del rango: cortar tras `minPaginas` y `SOLAPE` consecutivas.
+    if (maxFecha && maxFecha < desde) {
+      paginasBajoDesde++
+      if (leidas >= minPaginas && paginasBajoDesde >= SOLAPE) break
+    } else {
+      paginasBajoDesde = 0
     }
   }
   return out
