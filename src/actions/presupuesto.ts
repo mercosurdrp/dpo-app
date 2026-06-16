@@ -694,6 +694,9 @@ export async function responderTarea(
       update.estado = nuevoEstado
       if (nuevoEstado === "completada") {
         update.completada_at = new Date().toISOString()
+      } else {
+        // Reabrir: limpiar la marca de cierre para mantener consistencia
+        update.completada_at = null
       }
     }
 

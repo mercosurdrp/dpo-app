@@ -288,8 +288,10 @@ export function PresupuestoClient({
   )
 
   function puedeResponder(t: PresupuestoTareaConResponsable): boolean {
-    if (t.estado === "completada") return false
+    // Los editores (admin/supervisor) pueden reabrir/modificar incluso una
+    // tarea ya completada; el responsable no puede tocarla una vez cerrada.
     if (puedeEditar) return true
+    if (t.estado === "completada") return false
     if (currentProfileId && t.responsable_id === currentProfileId) return true
     return false
   }
