@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -55,13 +56,14 @@ interface Grupo {
   key: string
   titulo: string
   color: string
+  foto: string
   patentes: Set<string>
 }
 
 // Recuadros clickables de cabecera: Camiones (con acoplados) y Autoelevadores.
 const GRUPOS: Grupo[] = [
-  { key: "camiones", titulo: "Camiones", color: "#1d4ed8", patentes: new Set([...CAMIONES, ...ACOPLADOS]) },
-  { key: "autoelevadores", titulo: "Autoelevadores", color: "#0d9488", patentes: AUTOELEVADORES },
+  { key: "camiones", titulo: "Camiones", color: "#1d4ed8", foto: "/camion.jpg", patentes: new Set([...CAMIONES, ...ACOPLADOS]) },
+  { key: "autoelevadores", titulo: "Autoelevadores", color: "#0d9488", foto: "/autoelevador.jpg", patentes: AUTOELEVADORES },
 ]
 
 interface TipoDef {
@@ -396,12 +398,13 @@ export function MantenimientoFlotaClient() {
                 onClick={() => { setGrupo(g.key); setUnidad("__all__"); setAbierta(null) }}
               >
                 <CardContent className="flex items-center gap-3 pt-6">
-                  <div
-                    className="flex h-12 w-12 items-center justify-center rounded-full"
-                    style={{ background: `${g.color}22`, color: g.color }}
-                  >
-                    <Wrench className="h-6 w-6" />
-                  </div>
+                  <Image
+                    src={g.foto}
+                    alt={g.titulo}
+                    width={96}
+                    height={64}
+                    className="h-16 w-24 shrink-0 rounded-lg object-cover"
+                  />
                   <div>
                     <div className="font-semibold" style={{ color: g.color }}>{g.titulo}</div>
                     <div className="text-sm text-muted-foreground">
@@ -605,7 +608,16 @@ export function MantenimientoFlotaClient() {
                         >
                           <span className="text-muted-foreground">#{o.numero}</span>
                           <span className="text-muted-foreground">{fmtFecha(o.fecha)}</span>
-                          <span className="font-semibold">🚛 {o.patente}</span>
+                          <span className="flex items-center gap-2 font-semibold">
+                            <Image
+                              src={AUTOELEVADORES.has(o.patente) ? "/autoelevador.jpg" : "/camion.jpg"}
+                              alt=""
+                              width={32}
+                              height={22}
+                              className="h-[22px] w-8 rounded object-cover"
+                            />
+                            {o.patente}
+                          </span>
                           {suc && <Badge variant="secondary">{suc}</Badge>}
                           <span className="flex flex-wrap gap-1">
                             {o.tipos.map((t) => <BadgeTipo tipo={t} key={t} />)}

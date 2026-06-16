@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -76,8 +77,8 @@ interface Resp {
 }
 
 const TIPOS = [
-  { key: "camiones" as const, label: "Camiones", emoji: "🚛" },
-  { key: "autoelevadores" as const, label: "Autoelevadores", emoji: "🏗️" },
+  { key: "camiones" as const, label: "Camiones", foto: "/camion.jpg" },
+  { key: "autoelevadores" as const, label: "Autoelevadores", foto: "/autoelevador.jpg" },
 ]
 
 // Iguazú aparece con y sin tilde según la ficha; unificar para filtrar.
@@ -242,7 +243,16 @@ export function EstandarFlotaClient() {
                     <CardContent className="flex items-center gap-4 pt-6">
                       <Dona pct={r.pct} />
                       <div>
-                        <p className="font-semibold text-slate-900">{t.emoji} {t.label}</p>
+                        <p className="flex items-center gap-2 font-semibold text-slate-900">
+                          <Image
+                            src={t.foto}
+                            alt={t.label}
+                            width={48}
+                            height={32}
+                            className="h-8 w-12 rounded object-cover"
+                          />
+                          {t.label}
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           {r.unidades.length} unidades{sucursal !== "__all__" ? ` en ${sucursal}` : ""}
                         </p>
@@ -282,7 +292,16 @@ export function EstandarFlotaClient() {
                           className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50"
                           onClick={() => setAbierta(abierto ? null : u.patente)}
                         >
-                          <span className="w-28 shrink-0 font-medium">{tipo.emoji} {u.patente}</span>
+                          <span className="flex w-36 shrink-0 items-center gap-2 font-medium">
+                            <Image
+                              src={tipo.foto}
+                              alt={tipo.label}
+                              width={32}
+                              height={22}
+                              className="h-[22px] w-8 rounded object-cover"
+                            />
+                            {u.patente}
+                          </span>
                           {suc && <Badge variant="secondary" className="shrink-0">{suc}</Badge>}
                           <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
                             <span

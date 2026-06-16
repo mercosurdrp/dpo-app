@@ -710,7 +710,18 @@ export function CombustibleFlotaClient() {
                         <TableBody>
                           {porCamion.map((c) => (
                             <TableRow key={c.patente}>
-                              <TableCell className="font-semibold">🚛 {c.patente}</TableCell>
+                              <TableCell className="font-semibold">
+                                <span className="flex items-center gap-2">
+                                  <Image
+                                    src="/camion.jpg"
+                                    alt="Camión"
+                                    width={40}
+                                    height={28}
+                                    className="h-7 w-10 rounded object-cover"
+                                  />
+                                  {c.patente}
+                                </span>
+                              </TableCell>
                               <TableCell>{c.sucursal ? <Badge variant="secondary">{c.sucursal}</Badge> : "—"}</TableCell>
                               <TableCell className="text-right">{c.cargas}</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.litros)} L</TableCell>
@@ -909,11 +920,13 @@ function UnidadTooltip({
   return (
     <div className="max-w-[240px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
       <p className="flex items-center gap-1.5 font-semibold text-slate-900">
-        {grupo === "camiones" ? (
-          <span>🚛</span>
-        ) : (
-          <Image src="/autoelevador.jpg" alt="" width={28} height={18} className="h-[18px] w-7 rounded object-cover" />
-        )}
+        <Image
+          src={grupo === "camiones" ? "/camion.jpg" : "/autoelevador.jpg"}
+          alt=""
+          width={28}
+          height={18}
+          className="h-[18px] w-7 rounded object-cover"
+        />
         {d.label}
       </p>
       <p className="text-muted-foreground">Litros: {fmtNum.format(d.litros)} L</p>
