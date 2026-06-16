@@ -12,9 +12,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
+  recalcularProductividadAlmacen,
 } from "@/actions/dimensionamiento"
 
 function fmt(v: number) {
@@ -204,79 +205,112 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
 type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => void
 
+function RolFteBlock({ titulo, rol, unidadVol, unidadProd, detalle }: {
+  titulo: string; rol: RolFte; unidadVol: string; unidadProd: string; detalle?: string
+}) {
+  const dot = rol.dotacion
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-base">{titulo}</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard title="Volumen promedio / día" value={`${fmt(rol.volumenProm)} ${unidadVol}`}
+            hint={`pico ${fmt(rol.volumenPico)} · ${rol.diasConDatos} días`} />
+          <KpiCard title="Productividad" value={`${fmt(rol.productividad)} ${unidadProd}`} />
+          <KpiCard title="FTE necesarios" value={`${rol.fteNecesariosProm} (pico ${rol.fteNecesariosPico})`}
+            hint={`vs ${fmt(dot)} dotación`} accent />
+          <KpiCard title="Dotación actual" value={fmt(dot)} accent />
+        </div>
+        {detalle && <p className="text-xs text-muted-foreground">{detalle}</p>}
+        <div className="text-sm">
+          {dot <= 0 ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Cargá la dotación para compararla contra los FTE necesarios.</p>
+          ) : rol.fteNecesariosPico > dot ? (
+            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">En el pico se necesitan <b>{rol.fteNecesariosPico}</b> y hay <b>{dot}</b> → faltan <b>{rol.fteNecesariosPico - dot}</b> (refuerzo u horas extra).</p>
+          ) : rol.fteNecesariosProm < dot ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">En promedio se necesitan <b>{rol.fteNecesariosProm}</b> y hay <b>{dot}</b>: dotación holgada en días normales.</p>
+          ) : (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">La dotación cubre la demanda (necesarios {rol.fteNecesariosProm}, dotación {dot}).</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+const ALM_FIELDS = [
+  ["prod_bul_hh", "Pickeros: prod (bul/HH)", "1"],
+  ["dotacion_almacen", "Pickeros: dotación", "1"],
+  ["prod_pal_h", "Maquinistas: prod (pal/HH)", "0.1"],
+  ["dotacion_maquinistas", "Maquinistas: dotación", "1"],
+  ["horas_turno", "Horas / turno", "0.1"],
+  ["factor_retorno_distrib", "Retorno distrib. (0–1)", "0.05"],
+] as const
+
 function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
   const [c, setC] = useState({
     prod_bul_hh: String(data.config.prod_bul_hh),
-    horas_turno: String(data.config.horas_turno),
     dotacion_almacen: String(data.config.dotacion_almacen),
+    prod_pal_h: String(data.config.prod_pal_h),
+    dotacion_maquinistas: String(data.config.dotacion_maquinistas),
+    horas_turno: String(data.config.horas_turno),
+    factor_retorno_distrib: String(data.config.factor_retorno_distrib),
   })
-  const dot = data.config.dotacion_almacen
+  const [recalc, startRecalc] = useTransition()
+  const onRecalcProd = () =>
+    startRecalc(async () => {
+      const res = await recalcularProductividadAlmacen()
+      if ("error" in res) { toast.error(res.error); return }
+      const p = res.data
+      setC((s) => ({
+        ...s,
+        prod_bul_hh: p.picking ? String(p.picking.prod) : s.prod_bul_hh,
+        prod_pal_h: p.maquinistas ? String(p.maquinistas.prod) : s.prod_pal_h,
+      }))
+      toast.success(`Picking ${p.picking?.prod ?? "s/d"} bul/HH · Maquinistas ${p.maquinistas?.prod ?? "s/d"} pal/HH (mes)`)
+    })
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard title="Volumen promedio / día" value={a ? `${fmt(a.bultosPromedio)} bultos` : "—"}
-          hint={a ? `pico ${fmt(a.bultosPico)} · ${a.diasConDatos} días` : "sin datos de bodega"} />
-        <KpiCard title="Productividad" value={`${fmt(data.config.prod_bul_hh)} bul/HH`} hint={`× ${data.config.horas_turno} h/turno`} />
-        <KpiCard title="FTE necesarios" value={a ? `${a.fteNecesariosPromedio} (pico ${a.fteNecesariosPico})` : "—"}
-          hint={`vs ${fmt(dot)} dotación`} accent />
-        <KpiCard title="Dotación actual" value={fmt(dot)} hint="operarios de depósito" accent />
-      </div>
-
-      {a && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Lectura del dimensionamiento de almacén</CardTitle></CardHeader>
-          <CardContent className="text-sm">
-            {dot <= 0 ? (
-              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                Cargá la <b>dotación actual</b> de operarios para compararla contra los FTE necesarios.
-              </p>
-            ) : a.fteNecesariosPico > dot ? (
-              <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                En el pico se necesitan <b>{a.fteNecesariosPico}</b> operarios y hay <b>{dot}</b> → faltan <b>{a.fteNecesariosPico - dot}</b> (evaluar refuerzo u horas extra).
-              </p>
-            ) : a.fteNecesariosPromedio < dot ? (
-              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                En promedio se necesitan <b>{a.fteNecesariosPromedio}</b> y hay <b>{dot}</b>: dotación holgada en días normales.
-              </p>
-            ) : (
-              <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
-                La dotación cubre la demanda (necesarios {a.fteNecesariosPromedio}, dotación {dot}).
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      {canEdit && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" disabled={recalc} onClick={onRecalcProd}>
+            {recalc ? "Calculando…" : "↻ Recalcular productividad (deposito-esteban)"}
+          </Button>
+        </div>
       )}
-      {data.almacenError && <p className="text-sm text-red-600">Error leyendo ocupación de bodega: {data.almacenError}</p>}
-      {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen procesado (ocupación de bodega) este mes.</p>}
+      {data.almacenError && <p className="text-sm text-red-600">Error: {data.almacenError}</p>}
+      {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen procesado este mes.</p>}
+
+      {a && <RolFteBlock titulo="Pickeros (picking)" rol={a.pickeros} unidadVol="bultos" unidadProd="bul/HH" />}
+      {a && <RolFteBlock titulo="Maquinistas (autoelevadores)" rol={a.maquinistas} unidadVol="pallets" unidadProd="pal/HH"
+        detalle={`Pallets/día: acarreo ${fmt(a.maquinistas.palAcarreoProm)} + carga distribución ${fmt(a.maquinistas.palCargaProm)}${a.maquinistas.factorRetorno > 0 ? ` (+${Math.round(a.maquinistas.factorRetorno * 100)}% retorno)` : ""}`} />}
 
       {canEdit && (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de almacén</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap items-end gap-4">
-            <div>
-              <Label className="text-xs">Productividad (bul/HH)</Label>
-              <Input type="number" className="h-8 w-28" value={c.prod_bul_hh} onChange={(e) => setC((s) => ({ ...s, prod_bul_hh: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Horas / turno</Label>
-              <Input type="number" step="0.1" className="h-8 w-24" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Dotación actual (operarios)</Label>
-              <Input type="number" className="h-8 w-28" value={c.dotacion_almacen} onChange={(e) => setC((s) => ({ ...s, dotacion_almacen: e.target.value }))} />
-            </div>
+            {ALM_FIELDS.map(([k, label, step]) => (
+              <div key={k}>
+                <Label className="text-xs">{label}</Label>
+                <Input type="number" step={step} className="h-8 w-36" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} />
+              </div>
+            ))}
             <Button size="sm" disabled={isPending}
               onClick={() => run(() => guardarConfigDim({
                 ...data.config,
                 prod_bul_hh: Number(c.prod_bul_hh),
-                horas_turno: Number(c.horas_turno),
                 dotacion_almacen: Number(c.dotacion_almacen),
+                prod_pal_h: Number(c.prod_pal_h),
+                dotacion_maquinistas: Number(c.dotacion_maquinistas),
+                horas_turno: Number(c.horas_turno),
+                factor_retorno_distrib: Number(c.factor_retorno_distrib),
               }), "Parámetros de almacén guardados")}>
               Guardar
             </Button>
             <p className="w-full text-xs text-muted-foreground">
-              FTE necesarios = bultos procesados/día ÷ (productividad × horas/turno). El volumen sale de la ocupación de bodega (sync Chess). Productividad default 300 bul/HH (target del ranking de depósito).
+              FTE = volumen/día ÷ (productividad × horas/turno). Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
             </p>
           </CardContent>
         </Card>

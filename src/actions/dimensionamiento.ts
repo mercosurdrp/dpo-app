@@ -10,8 +10,30 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import { requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+
+const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
+
+/** Promedio y pico (sobre valores > 0) de un Map fecha→valor. */
+function statsPorDia(m: Map<string, number>): { prom: number; pico: number; dias: number } {
+  const vals = [...m.values()].filter((v) => v > 0)
+  if (!vals.length) return { prom: 0, pico: 0, dias: 0 }
+  return { prom: vals.reduce((s, x) => s + x, 0) / vals.length, pico: Math.max(...vals), dias: vals.length }
+}
+
+/** Lee las filas de un blob de deposito-esteban (shared/load). [] si falla. */
+async function fetchDepositoFilas(module: string): Promise<Record<string, unknown>[]> {
+  try {
+    const res = await fetch(`${DEPOSITO_API_BASE}/api/shared/load?module=${module}`, { cache: "no-store" })
+    if (!res.ok) return []
+    const j = (await res.json()) as { data?: { filas?: Record<string, unknown>[] } }
+    return j.data?.filas ?? []
+  } catch {
+    return []
+  }
+}
 
 type Result<T> = { data: T } | { error: string }
 
@@ -53,16 +75,25 @@ export interface DimConfig {
   prod_bul_hh: number
   horas_turno: number
   dotacion_almacen: number
+  prod_pal_h: number
+  dotacion_maquinistas: number
+  factor_retorno_distrib: number
+}
+
+export interface RolFte {
+  volumenProm: number          // bultos/día (pickeros) o pallets/día (maquinistas)
+  volumenPico: number
+  productividad: number         // bul/HH (pickeros) o pal/HH (maquinistas)
+  diasConDatos: number
+  fteNecesariosProm: number
+  fteNecesariosPico: number
+  dotacion: number
 }
 
 export interface AlmacenData {
   mes: string
-  diasConDatos: number
-  bultosPromedio: number
-  bultosPico: number
-  fteNecesariosPromedio: number
-  fteNecesariosPico: number
-  dotacionActual: number
+  pickeros: RolFte
+  maquinistas: RolFte & { palAcarreoProm: number; palCargaProm: number; factorRetorno: number }
 }
 
 export interface KpiObjetivo {
@@ -132,7 +163,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -148,6 +179,9 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       prod_bul_hh: Number(configRes.data?.prod_bul_hh ?? 300) || 300,
       horas_turno: Number(configRes.data?.horas_turno ?? 8) || 8,
       dotacion_almacen: Number(configRes.data?.dotacion_almacen ?? 0),
+      prod_pal_h: Number(configRes.data?.prod_pal_h ?? 15) || 15,
+      dotacion_maquinistas: Number(configRes.data?.dotacion_maquinistas ?? 3),
+      factor_retorno_distrib: Number(configRes.data?.factor_retorno_distrib ?? 0),
     }
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
 
@@ -222,38 +256,71 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       }
     }
 
-    // Almacén (FTE): volumen procesado del mes (ocupacion_bodega_diaria, bultos/día)
-    // vs capacidad de procesamiento = dotación × productividad(bul/HH) × horas/turno.
+    // Almacén (FTE): pickeros (bultos procesados) + maquinistas (pallets a procesar).
     let almacen: AlmacenData | null = null
     let almacenError: string | null = null
-    const { data: ob, error: obErr } = await supabase
-      .from("ocupacion_bodega_diaria")
-      .select("fecha, bultos_total")
-      .gte("fecha", desde)
-
-    if (obErr) {
-      almacenError = obErr.message
-    } else if (ob && ob.length > 0) {
-      const porDia = new Map<string, number>()
-      for (const r of ob) {
+    try {
+      // Pickeros: bultos/día de ocupacion_bodega_diaria
+      const { data: ob } = await supabase.from("ocupacion_bodega_diaria").select("fecha, bultos_total").gte("fecha", desde)
+      const bultosPorDia = new Map<string, number>()
+      for (const r of ob ?? []) {
         const k = r.fecha as string
-        porDia.set(k, (porDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
+        bultosPorDia.set(k, (bultosPorDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
       }
-      const bultosDia = [...porDia.values()].filter((v) => v > 0)
-      if (bultosDia.length > 0) {
-        const bultosProm = bultosDia.reduce((s, x) => s + x, 0) / bultosDia.length
-        const bultosPicoAlm = Math.max(...bultosDia)
-        const capOperarioDia = config.prod_bul_hh * config.horas_turno // bultos/operario/día
-        almacen = {
-          mes: mesAA,
-          diasConDatos: bultosDia.length,
-          bultosPromedio: Math.round(bultosProm),
-          bultosPico: Math.round(bultosPicoAlm),
-          fteNecesariosPromedio: capOperarioDia > 0 ? Math.ceil(bultosProm / capOperarioDia) : 0,
-          fteNecesariosPico: capOperarioDia > 0 ? Math.ceil(bultosPicoAlm / capOperarioDia) : 0,
-          dotacionActual: config.dotacion_almacen,
+      const pk = statsPorDia(bultosPorDia)
+      const capPicker = config.prod_bul_hh * config.horas_turno
+      const pickeros: RolFte = {
+        volumenProm: Math.round(pk.prom), volumenPico: Math.round(pk.pico), productividad: config.prod_bul_hh,
+        diasConDatos: pk.dias,
+        fteNecesariosProm: capPicker > 0 ? Math.ceil(pk.prom / capPicker) : 0,
+        fteNecesariosPico: capPicker > 0 ? Math.ceil(pk.pico / capPicker) : 0,
+        dotacion: config.dotacion_almacen,
+      }
+
+      // Maquinistas: pallets acarreo (recepcion_acarreos) + carga distribución (carga-camiones)
+      const acarreoPorDia = new Map<string, number>()
+      try {
+        const acarreo = createAcarreoClient()
+        if (acarreo) {
+          const { data: rec } = await acarreo.from("recepcion_acarreos").select("fecha, pallets").gte("fecha", desde)
+          for (const r of rec ?? []) {
+            const k = r.fecha as string
+            acarreoPorDia.set(k, (acarreoPorDia.get(k) ?? 0) + Number(r.pallets ?? 0))
+          }
         }
+      } catch {
+        // acarreo-rdf no configurado → maquinistas solo con carga de distribución
       }
+      const cargaPorDia = new Map<string, number>()
+      for (const r of await fetchDepositoFilas("carga-camiones")) {
+        const fch = String((r as { fecha?: string }).fecha ?? "")
+        if (fch >= desde) cargaPorDia.set(fch, (cargaPorDia.get(fch) ?? 0) + Number((r as { pallets?: number }).pallets ?? 0))
+      }
+      const palPorDia = new Map<string, number>()
+      const acaVals: number[] = [], cargaVals: number[] = []
+      for (const fch of new Set([...acarreoPorDia.keys(), ...cargaPorDia.keys()])) {
+        const aca = acarreoPorDia.get(fch) ?? 0
+        const car = cargaPorDia.get(fch) ?? 0
+        palPorDia.set(fch, aca + car * (1 + config.factor_retorno_distrib))
+        acaVals.push(aca); cargaVals.push(car)
+      }
+      const mq = statsPorDia(palPorDia)
+      const capMaq = config.prod_pal_h * config.horas_turno
+      const avgArr = (a: number[]) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0)
+      const maquinistas = {
+        volumenProm: Math.round(mq.prom), volumenPico: Math.round(mq.pico), productividad: config.prod_pal_h,
+        diasConDatos: mq.dias,
+        fteNecesariosProm: capMaq > 0 ? Math.ceil(mq.prom / capMaq) : 0,
+        fteNecesariosPico: capMaq > 0 ? Math.ceil(mq.pico / capMaq) : 0,
+        dotacion: config.dotacion_maquinistas,
+        palAcarreoProm: avgArr(acaVals),
+        palCargaProm: avgArr(cargaVals),
+        factorRetorno: config.factor_retorno_distrib,
+      }
+
+      if (pk.dias > 0 || mq.dias > 0) almacen = { mes: mesAA, pickeros, maquinistas }
+    } catch (e) {
+      almacenError = e instanceof Error ? e.message : "Error almacén"
     }
 
     return {
@@ -318,6 +385,9 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         prod_bul_hh: Math.max(1, Number(config.prod_bul_hh) || 300),
         horas_turno: Math.max(0.1, Number(config.horas_turno) || 8),
         dotacion_almacen: Math.max(0, Number(config.dotacion_almacen) || 0),
+        prod_pal_h: Math.max(0.1, Number(config.prod_pal_h) || 15),
+        dotacion_maquinistas: Math.max(0, Number(config.dotacion_maquinistas) || 0),
+        factor_retorno_distrib: Math.max(0, Number(config.factor_retorno_distrib) || 0),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })
@@ -416,6 +486,46 @@ export async function recalcularFactorCeq(): Promise<Result<FactorCeqResult>> {
     if (error) return { error: error.message }
     revalidatePath("/planeamiento/dimensionamiento")
     return { data: r }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+export interface ProductividadReal {
+  picking: { prod: number; dias: number } | null
+  maquinistas: { prod: number; dias: number } | null
+}
+
+/** Trae el promedio real de productividad del mes (deposito-esteban) y lo guarda en config. */
+export async function recalcularProductividadAlmacen(): Promise<Result<ProductividadReal>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const hoy = new Date()
+    const desde = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`
+
+    const promedio = (filas: Record<string, unknown>[], campo: string): { prod: number; dias: number } | null => {
+      const vals = filas
+        .filter((r) => String(r.fecha ?? "") >= desde)
+        .map((r) => Number(r[campo] ?? 0))
+        .filter((v) => v > 0)
+      if (!vals.length) return null
+      return { prod: Math.round((vals.reduce((s, x) => s + x, 0) / vals.length) * 10) / 10, dias: vals.length }
+    }
+
+    const picking = promedio(await fetchDepositoFilas("productividad-picking"), "bul_hh")
+    const maquinistas = promedio(await fetchDepositoFilas("productividad-maquinistas"), "pal_hh")
+    if (!picking && !maquinistas) return { error: "deposito-esteban no devolvió productividad de este mes." }
+
+    const patch: Record<string, unknown> = { updated_by: profile.id, updated_at: new Date().toISOString() }
+    if (picking) patch.prod_bul_hh = picking.prod
+    if (maquinistas) patch.prod_pal_h = maquinistas.prod
+
+    const supabase = await createClient()
+    const { error } = await supabase.from("dim_config").update(patch).eq("id", 1)
+    if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: { picking, maquinistas } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error" }
   }
