@@ -562,15 +562,16 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           }
 
           // Almacén (dotación fija) → horas-hombre extra por mes en los días que el volumen supera la capacidad.
-          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; usePico?: boolean; prodH: number; dotacion: number; unidad: string }> = [
+          // Base = volumen PROMEDIO diario; el pico del día lo genera el peso del día de semana (jue/vie ×1,5).
+          const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string }> = [
             { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos" },
-            { rol: "Clasificadores", rolFte: almacen?.clasificadores, usePico: true, prodH: config.prod_clasif_pal_h, dotacion: config.dotacion_clasif, unidad: "paletas" },
+            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h, dotacion: config.dotacion_clasif, unidad: "paletas" },
             { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dotacion: config.dotacion_reempaque, unidad: "bultos" },
             { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets" },
           ]
           const maxPesoNorm = Math.max(...pesos) / sumaPesos
           const almacenProy: ProyeccionAlmacenRol[] = rolesAlm.map((r) => {
-            const volBase = r.rolFte ? (r.usePico ? r.rolFte.volumenPico : r.rolFte.volumenProm) : 0
+            const volBase = r.rolFte?.volumenProm ?? 0                            // promedio diario (NO el pico)
             const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * r.dotacion          // dotación completa
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
             const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
@@ -583,10 +584,11 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const volDia = volMes * DIAS_SEMANA * w
                 if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
               }
-              const pico = volMes * DIAS_SEMANA * maxPesoNorm
+              const pico = volMes * DIAS_SEMANA * maxPesoNorm                     // volumen del día más cargado (jue/vie)
               horasExtra.push(Math.round(hh * 10) / 10)
               volPicoDia.push(Math.round(pico))
-              faltanPico.push(capPersona > 0 ? Math.max(0, Math.ceil(pico / capPersona) - r.dotacion) : 0)
+              // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
+              faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
             }
             return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia }
           })
