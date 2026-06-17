@@ -29,6 +29,7 @@ import {
   Fuel,
   Package,
   Gauge,
+  Truck,
   type LucideIcon,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
@@ -40,6 +41,11 @@ import { IS_MISIONES } from "@/lib/empresa"
 // Se muestra como acceso dentro del pilar Planeamiento sólo en Misiones.
 const SIMULADOR_URL =
   process.env.NEXT_PUBLIC_SIMULADOR_URL ?? "https://dimensionamiento-misiones.vercel.app"
+
+// Simulador de Flota (app standalone, tenant Misiones): dimensionamiento de
+// camiones de distribución, simulador diario y plan vs. real.
+const SIMULADOR_FLOTA_URL =
+  process.env.NEXT_PUBLIC_SIMULADOR_FLOTA_URL ?? "https://simulador-flota-misiones.vercel.app"
 
 // Secciones del pilar Flota (sólo Misiones): paquete de gestión de flota con
 // datos vivos de Cloudfleet (vía proxy a herminio-web). Se publican por etapas;
@@ -215,6 +221,36 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                 >
                   Abrir <ChevronRight className="h-4 w-4" />
                 </Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                  >
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Simulador de Flota</p>
+                    <p className="text-sm text-muted-foreground">
+                      Dimensionamiento de camiones, simulador diario y plan vs. real
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={SIMULADOR_FLOTA_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants({ size: "sm" })}
+                  style={{ backgroundColor: pilar.color, color: "#fff" }}
+                >
+                  Abrir <ExternalLink className="h-4 w-4" />
+                </a>
               </div>
             </CardContent>
           </Card>
