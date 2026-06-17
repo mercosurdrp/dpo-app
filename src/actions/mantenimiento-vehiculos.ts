@@ -421,6 +421,116 @@ export async function deleteMantenimiento(
   }
 }
 
+// ==================== CHECK LISTS (vista mantenimiento) ====================
+
+export interface ChecklistItemNoOk {
+  id: string
+  checklistId: string
+  fecha: string
+  dominio: string
+  chofer: string | null
+  tipo: string // liberacion | retorno
+  categoria: string
+  item: string
+  valor: string // nook | regular | malo
+  critico: boolean
+  comentario: string | null
+}
+
+export interface ChecklistComentario {
+  id: string
+  fecha: string
+  dominio: string
+  chofer: string | null
+  tipo: string
+  resultado: string | null
+  observaciones: string
+}
+
+// Observaciones triviales que no aportan al análisis de mantenimiento.
+const OBS_TRIVIALES = new Set([
+  "ok", "okey", "oka", "todo ok", "todo bien", "bien", "sin novedad",
+  "sin novedades", "sin observaciones", "s/n", "n/a", "na", "-", ".",
+])
+
+export async function getChecklistsMtto(): Promise<
+  | { data: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] } }
+  | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const [respRes, cvRes] = await Promise.all([
+      supabase
+        .from("checklist_respuestas")
+        .select(
+          "id, checklist_id, valor, comentario, item:checklist_items(nombre, categoria, critico), cv:checklist_vehiculos(fecha, dominio, chofer, tipo)"
+        )
+        .not("valor", "in", '("ok","bueno")'),
+      supabase
+        .from("checklist_vehiculos")
+        .select("id, fecha, dominio, chofer, tipo, resultado, observaciones")
+        .not("observaciones", "is", null)
+        .order("fecha", { ascending: false })
+        .limit(300),
+    ])
+    if (respRes.error) throw new Error(respRes.error.message)
+    if (cvRes.error) throw new Error(cvRes.error.message)
+
+    type RespRow = {
+      id: string
+      checklist_id: string
+      valor: string
+      comentario: string | null
+      item: { nombre: string; categoria: string; critico: boolean } | null
+      cv: { fecha: string; dominio: string; chofer: string | null; tipo: string } | null
+    }
+    const itemsNoOk: ChecklistItemNoOk[] = ((respRes.data || []) as unknown as RespRow[])
+      .filter((r) => r.cv && r.item)
+      .map((r) => ({
+        id: r.id,
+        checklistId: r.checklist_id,
+        fecha: r.cv!.fecha,
+        dominio: r.cv!.dominio,
+        chofer: r.cv!.chofer,
+        tipo: r.cv!.tipo,
+        categoria: r.item!.categoria,
+        item: r.item!.nombre,
+        valor: r.valor,
+        critico: r.item!.critico,
+        comentario: r.comentario?.trim() || null,
+      }))
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))
+
+    type CvRow = {
+      id: string
+      fecha: string
+      dominio: string
+      chofer: string | null
+      tipo: string
+      resultado: string | null
+      observaciones: string | null
+    }
+    const comentarios: ChecklistComentario[] = ((cvRes.data || []) as CvRow[])
+      .map((c) => ({ ...c, obs: (c.observaciones || "").trim() }))
+      .filter((c) => c.obs !== "" && !OBS_TRIVIALES.has(c.obs.toLowerCase()))
+      .map((c) => ({
+        id: c.id,
+        fecha: c.fecha,
+        dominio: c.dominio,
+        chofer: c.chofer,
+        tipo: c.tipo,
+        resultado: c.resultado,
+        observaciones: c.obs,
+      }))
+
+    return { data: { itemsNoOk, comentarios } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ==================== COSTOS ====================
 
 export async function getCostosMantenimiento(): Promise<

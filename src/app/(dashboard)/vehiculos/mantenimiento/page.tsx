@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import {
+  getChecklistsMtto,
   getCostosMantenimiento,
   getEstadoPlanFlota,
   getMantenimientos,
@@ -13,13 +14,15 @@ export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
   if (IS_MISIONES) redirect("/")
 
-  const [estadoRes, mantenimientosRes, costosRes, tableroRes, profile] = await Promise.all([
-    getEstadoPlanFlota(),
-    getMantenimientos({ limit: 200 }),
-    getCostosMantenimiento(),
-    getTableroOperativo(),
-    getProfile(),
-  ])
+  const [estadoRes, mantenimientosRes, costosRes, tableroRes, checklistsRes, profile] =
+    await Promise.all([
+      getEstadoPlanFlota(),
+      getMantenimientos({ limit: 200 }),
+      getCostosMantenimiento(),
+      getTableroOperativo(),
+      getChecklistsMtto(),
+      getProfile(),
+    ])
 
   if ("error" in estadoRes) {
     return (
@@ -35,6 +38,8 @@ export default async function MantenimientoPage() {
     "data" in costosRes ? costosRes.data : { costoMes: 0, costoYTD: 0, porMes: [] }
   const tablero =
     "data" in tableroRes ? tableroRes.data : { programacion: [], documentos: [] }
+  const checklists =
+    "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -45,6 +50,7 @@ export default async function MantenimientoPage() {
       mantenimientos={mantenimientos}
       costos={costos}
       tablero={tablero}
+      checklists={checklists}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

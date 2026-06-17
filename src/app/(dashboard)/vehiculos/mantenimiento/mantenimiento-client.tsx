@@ -73,10 +73,15 @@ import {
   MANTENIMIENTO_ESTADO_LABELS,
 } from "@/types/database"
 import { TableroOperativo } from "./tablero-operativo"
+import { ChecklistsMtto } from "./checklists-mtto"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
+import type {
+  ChecklistComentario,
+  ChecklistItemNoOk,
+} from "@/actions/mantenimiento-vehiculos"
 
 // ==================== Helpers ====================
 
@@ -137,6 +142,7 @@ interface MantenimientoClientProps {
   mantenimientos: MantenimientoRealizado[]
   costos: CostosMantenimiento
   tablero: { programacion: ServiceGeneralUnidad[]; documentos: DocumentoVencimiento[] }
+  checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -154,6 +160,7 @@ export function MantenimientoClient({
   mantenimientos,
   costos,
   tablero,
+  checklists,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -291,8 +298,9 @@ export function MantenimientoClient({
       <Tabs defaultValue="tablero">
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
-          <TabsTrigger value="plan">Estado del plan</TabsTrigger>
+          <TabsTrigger value="checklists">Check lists</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
+          <TabsTrigger value="plan">Estado del plan</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
 
@@ -301,6 +309,14 @@ export function MantenimientoClient({
           <TableroOperativo
             programacion={tablero.programacion}
             documentos={tablero.documentos}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Check lists ============ */}
+        <TabsContent value="checklists" className="space-y-6">
+          <ChecklistsMtto
+            itemsNoOk={checklists.itemsNoOk}
+            comentarios={checklists.comentarios}
           />
         </TabsContent>
 
