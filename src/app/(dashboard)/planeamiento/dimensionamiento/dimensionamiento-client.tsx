@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type AlmacenData,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -100,7 +100,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         <TabsList>
           <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
           <TabsTrigger value="almacen">Almacén (FTE)</TabsTrigger>
-          <TabsTrigger value="proyeccion">Proyección</TabsTrigger>
+          <TabsTrigger value="proyeccion">Proyección flota</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
@@ -182,7 +182,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
         {/* ─── Proyección de dotación vs volumen ─── */}
         <TabsContent value="proyeccion" className="space-y-4">
-          <ProyeccionTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+          <ProyeccionTab data={data} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}
@@ -220,40 +220,6 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 // ─── Subcomponentes ──────────────────────────────────────────────────────────
 
 type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => void
-
-function RolFteBlock({ titulo, rol, unidadVol, unidadProd, detalle }: {
-  titulo: string; rol: RolFte; unidadVol: string; unidadProd: string; detalle?: string
-}) {
-  const dot = rol.dotacion
-  return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">{titulo}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard title="Volumen promedio / día" value={`${fmt(rol.volumenProm)} ${unidadVol}`}
-            hint={`pico ${fmt(rol.volumenPico)} · ${rol.diasConDatos} días`} />
-          <KpiCard title="Productividad" value={`${fmt(rol.productividad)} ${unidadProd}`}
-            hint={`cap. efectiva ${fmt(rol.capDiariaFte)} ${unidadVol}/día·pers (util. ${Math.round(rol.utilizacion * 100)}%)`} />
-          <KpiCard title="FTE necesarios" value={`${rol.fteNecesariosProm} (pico ${rol.fteNecesariosPico})`}
-            hint={`vs ${fmt(dot)} dotación`} accent />
-          <KpiCard title="Dotación actual" value={fmt(dot)} accent />
-        </div>
-        {detalle && <p className="text-xs text-muted-foreground">{detalle}</p>}
-        <div className="text-sm">
-          {dot <= 0 ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Cargá la dotación para compararla contra los FTE necesarios.</p>
-          ) : rol.fteNecesariosPico > dot ? (
-            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">En el pico se necesitan <b>{rol.fteNecesariosPico}</b> y hay <b>{dot}</b> → faltan <b>{rol.fteNecesariosPico - dot}</b> (refuerzo u horas extra).</p>
-          ) : rol.fteNecesariosProm < dot ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">En promedio se necesitan <b>{rol.fteNecesariosProm}</b> y hay <b>{dot}</b>: dotación holgada en días normales.</p>
-          ) : (
-            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">La dotación cubre la demanda (necesarios {rol.fteNecesariosProm}, dotación {dot}).</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 // ─── FTE de reparto (flota/entrega) ─────────────────────────────────────────
 
@@ -333,97 +299,26 @@ function RepartoTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
   )
 }
 
-const ALM_FIELDS = [
-  ["prod_bul_hh", "Pickeros: prod (bul/HH)", "1"],
-  ["util_pickeros", "Pickeros: util. turno (0–1)", "0.05"],
-  ["dotacion_almacen", "Pickeros: dotación", "1"],
-  ["prod_clasif_pal_h", "Clasif.: prod (pal/HH)", "0.1"],
-  ["util_clasif", "Clasif.: util. turno (0–1)", "0.05"],
-  ["dotacion_clasif", "Clasif.: dotación", "1"],
-  ["prod_reempaque_bul_hh", "Reempaque: prod (bul/HH)", "1"],
-  ["util_reempaque", "Reempaque: util. turno (0–1)", "0.05"],
-  ["dotacion_reempaque", "Reempaque: dotación", "1"],
-  ["prod_pal_h", "Maquinistas: prod (pal/HH)", "0.1"],
-  ["util_maquinistas", "Maquinistas: util. turno (0–1)", "0.05"],
-  ["dotacion_maquinistas", "Maquinistas: dotación", "1"],
-  ["horas_turno", "Horas / turno", "0.1"],
-  ["factor_retorno_distrib", "Retorno distrib. (0–1)", "0.05"],
-] as const
+// ─── Solapa Almacén (dotación) — única, autocontenida ────────────────────────
 
-function ResumenAlmacen({ a }: { a: AlmacenData }) {
-  const roles: Array<{ n: string; r: RolFte; u: string }> = [
-    { n: "Pickeros", r: a.pickeros, u: "bultos" },
-    { n: "Clasificadores", r: a.clasificadores, u: "paletas (pico)" },
-    { n: "Tareas generales (reempaque)", r: a.reempaque, u: "bultos" },
-    { n: "Maquinistas", r: a.maquinistas, u: "pallets" },
-  ]
-  const totNec = roles.reduce((s, x) => s + x.r.fteNecesariosProm, 0)
-  const totDot = roles.reduce((s, x) => s + x.r.dotacion, 0)
-  const brechaCls = (b: number) => (b < 0 ? "text-red-600" : b > 0 ? "text-amber-600" : "text-emerald-600")
-  const brechaTxt = (b: number) => (b === 0 ? "OK" : b > 0 ? `+${b}` : String(b))
-  return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">Dotación necesaria del almacén</CardTitle></CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Rol</TableHead>
-              <TableHead className="text-right">Volumen/día</TableHead>
-              <TableHead className="text-right">FTE necesarios</TableHead>
-              <TableHead className="text-right">Dotación actual</TableHead>
-              <TableHead className="text-right">Brecha</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {roles.map((x) => {
-              const b = x.r.dotacion - x.r.fteNecesariosProm
-              return (
-                <TableRow key={x.n}>
-                  <TableCell className="font-medium">{x.n}</TableCell>
-                  <TableCell className="text-right">{fmt(x.r.volumenProm)} {x.u}</TableCell>
-                  <TableCell className="text-right font-semibold">
-                    {x.r.fteNecesariosProm}{x.r.fteNecesariosPico > x.r.fteNecesariosProm ? ` (pico ${x.r.fteNecesariosPico})` : ""}
-                  </TableCell>
-                  <TableCell className="text-right">{fmt(x.r.dotacion)}</TableCell>
-                  <TableCell className={`text-right font-semibold ${brechaCls(b)}`}>{brechaTxt(b)}</TableCell>
-                </TableRow>
-              )
-            })}
-            <TableRow className="border-t-2">
-              <TableCell className="font-bold">Total almacén</TableCell>
-              <TableCell />
-              <TableCell className="text-right font-bold">{totNec}</TableCell>
-              <TableCell className="text-right font-bold">{totDot}</TableCell>
-              <TableCell className={`text-right font-bold ${brechaCls(totDot - totNec)}`}>{brechaTxt(totDot - totNec)}</TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-        <p className="mt-2 text-xs text-muted-foreground">
-          FTE necesarios = volumen/día ÷ (prod × horas × utilización). Clasificadores se dimensiona sobre el día PICO de paletas. Brecha = dotación − necesarios (− faltan, + holgura).
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
+const PARAM_ROLES = [
+  { n: "Pickeros", dot: "dotacion_almacen", prod: "prod_bul_hh", util: "util_pickeros", u: "bul/HH", stepProd: "1" },
+  { n: "Clasificadores", dot: "dotacion_clasif", prod: "prod_clasif_pal_h", util: "util_clasif", u: "pal/HH", stepProd: "0.1" },
+  { n: "Tareas generales", dot: "dotacion_reempaque", prod: "prod_reempaque_bul_hh", util: "util_reempaque", u: "bul/HH", stepProd: "1" },
+  { n: "Maquinistas", dot: "dotacion_maquinistas", prod: "prod_pal_h", util: "util_maquinistas", u: "pal/HH", stepProd: "0.1" },
+] as const
 
 function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
+  const proy = data.proyeccion
   const [c, setC] = useState({
-    prod_bul_hh: String(data.config.prod_bul_hh),
-    util_pickeros: String(data.config.util_pickeros),
-    dotacion_almacen: String(data.config.dotacion_almacen),
-    prod_clasif_pal_h: String(data.config.prod_clasif_pal_h),
-    util_clasif: String(data.config.util_clasif),
-    dotacion_clasif: String(data.config.dotacion_clasif),
-    prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh),
-    util_reempaque: String(data.config.util_reempaque),
-    dotacion_reempaque: String(data.config.dotacion_reempaque),
-    prod_pal_h: String(data.config.prod_pal_h),
-    util_maquinistas: String(data.config.util_maquinistas),
-    dotacion_maquinistas: String(data.config.dotacion_maquinistas),
+    prod_bul_hh: String(data.config.prod_bul_hh), util_pickeros: String(data.config.util_pickeros), dotacion_almacen: String(data.config.dotacion_almacen),
+    prod_clasif_pal_h: String(data.config.prod_clasif_pal_h), util_clasif: String(data.config.util_clasif), dotacion_clasif: String(data.config.dotacion_clasif),
+    prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh), util_reempaque: String(data.config.util_reempaque), dotacion_reempaque: String(data.config.dotacion_reempaque),
+    prod_pal_h: String(data.config.prod_pal_h), util_maquinistas: String(data.config.util_maquinistas), dotacion_maquinistas: String(data.config.dotacion_maquinistas),
     horas_turno: String(data.config.horas_turno),
-    factor_retorno_distrib: String(data.config.factor_retorno_distrib),
+    peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar), peso_mie: String(data.config.peso_mie),
+    peso_jue: String(data.config.peso_jue), peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
   })
   const [recalc, startRecalc] = useTransition()
   const onRecalcProd = () =>
@@ -431,70 +326,149 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
       const res = await recalcularProductividadAlmacen()
       if ("error" in res) { toast.error(res.error); return }
       const p = res.data
-      setC((s) => ({
-        ...s,
+      setC((s) => ({ ...s,
         prod_bul_hh: p.picking ? String(p.picking.prod) : s.prod_bul_hh,
         prod_pal_h: p.maquinistas ? String(p.maquinistas.prod) : s.prod_pal_h,
         prod_clasif_pal_h: p.clasif ? String(p.clasif.prod) : s.prod_clasif_pal_h,
         prod_reempaque_bul_hh: p.reempaque ? String(p.reempaque.prod) : s.prod_reempaque_bul_hh,
       }))
-      toast.success(`Picking ${p.picking?.prod ?? "s/d"} bul/HH · Maquinistas ${p.maquinistas?.prod ?? "s/d"} pal/HH · Clasif. ${p.clasif?.prod ?? "s/d"} pal/HH · Reempaque ${p.reempaque?.prod ?? "s/d"} bul/HH (mes)`)
+      toast.success(`Real del mes — Picking ${p.picking?.prod ?? "s/d"} · Maquinistas ${p.maquinistas?.prod ?? "s/d"} · Clasif ${p.clasif?.prod ?? "s/d"} · Reempaque ${p.reempaque?.prod ?? "s/d"}. Revisá y Guardá.`)
     })
+  const guardar = () => run(() => guardarConfigDim({
+    ...data.config,
+    prod_bul_hh: Number(c.prod_bul_hh), util_pickeros: Number(c.util_pickeros), dotacion_almacen: Number(c.dotacion_almacen),
+    prod_clasif_pal_h: Number(c.prod_clasif_pal_h), util_clasif: Number(c.util_clasif), dotacion_clasif: Number(c.dotacion_clasif),
+    prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh), util_reempaque: Number(c.util_reempaque), dotacion_reempaque: Number(c.dotacion_reempaque),
+    prod_pal_h: Number(c.prod_pal_h), util_maquinistas: Number(c.util_maquinistas), dotacion_maquinistas: Number(c.dotacion_maquinistas),
+    horas_turno: Number(c.horas_turno),
+    peso_lun: Number(c.peso_lun), peso_mar: Number(c.peso_mar), peso_mie: Number(c.peso_mie),
+    peso_jue: Number(c.peso_jue), peso_vie: Number(c.peso_vie), peso_sab: Number(c.peso_sab),
+  }), "Datos de almacén guardados")
+
+  const rolesHoy = a ? [
+    { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false },
+    { n: "Clasificadores", r: a.clasificadores, u: "paletas", pico: true },
+    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false },
+    { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false },
+  ] : []
+  const estadoHoy = (r: RolFte) =>
+    r.fteNecesariosPico <= r.dotacion ? { txt: "Cubre", cls: "text-emerald-700" }
+      : r.fteNecesariosProm <= r.dotacion ? { txt: "Extras en pico", cls: "text-amber-700" }
+        : { txt: `Faltan ${r.fteNecesariosProm - r.dotacion}`, cls: "text-red-700 font-semibold" }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* ════ SECCIÓN 1 — DATOS DE ENTRADA ════ */}
       {canEdit && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="outline" disabled={recalc} onClick={onRecalcProd}>
-            {recalc ? "Calculando…" : "↻ Recalcular productividad (deposito-esteban)"}
-          </Button>
-        </div>
-      )}
-      {data.almacenError && <p className="text-sm text-red-600">Error: {data.almacenError}</p>}
-      {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen procesado este mes.</p>}
-
-      {a && <ResumenAlmacen a={a} />}
-      {a && <RolFteBlock titulo="Pickeros (picking)" rol={a.pickeros} unidadVol="bultos" unidadProd="bul/HH" />}
-      {a && <RolFteBlock titulo="Clasificadores (envases)" rol={a.clasificadores} unidadVol="paletas" unidadProd="pal/HH"
-        detalle="Se dimensiona sobre el día PICO de paletas clasificadas (tabla clasificacion_envases)." />}
-      {a && <RolFteBlock titulo="Tareas generales (reempaque)" rol={a.reempaque} unidadVol="bultos" unidadProd="bul/HH"
-        detalle="Bultos reempacados/día y productividad desde deposito-esteban (sidebar Reempaque)." />}
-      {a && <RolFteBlock titulo="Maquinistas (autoelevadores)" rol={a.maquinistas} unidadVol="pallets" unidadProd="pal/HH"
-        detalle={`Pallets/día: acarreo ${fmt(a.maquinistas.palAcarreoProm)} + carga distribución ${fmt(a.maquinistas.palCargaProm)}${a.maquinistas.factorRetorno > 0 ? ` (+${Math.round(a.maquinistas.factorRetorno * 100)}% retorno)` : ""}`} />}
-
-      {canEdit && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de almacén</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap items-end gap-4">
-            {ALM_FIELDS.map(([k, label, step]) => (
-              <div key={k}>
-                <Label className="text-xs">{label}</Label>
-                <Input type="number" step={step} className="h-8 w-36" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} />
-              </div>
-            ))}
-            <Button size="sm" disabled={isPending}
-              onClick={() => run(() => guardarConfigDim({
-                ...data.config,
-                prod_bul_hh: Number(c.prod_bul_hh),
-                util_pickeros: Number(c.util_pickeros),
-                dotacion_almacen: Number(c.dotacion_almacen),
-                prod_clasif_pal_h: Number(c.prod_clasif_pal_h),
-                util_clasif: Number(c.util_clasif),
-                dotacion_clasif: Number(c.dotacion_clasif),
-                prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh),
-                util_reempaque: Number(c.util_reempaque),
-                dotacion_reempaque: Number(c.dotacion_reempaque),
-                prod_pal_h: Number(c.prod_pal_h),
-                util_maquinistas: Number(c.util_maquinistas),
-                dotacion_maquinistas: Number(c.dotacion_maquinistas),
-                horas_turno: Number(c.horas_turno),
-                factor_retorno_distrib: Number(c.factor_retorno_distrib),
-              }), "Parámetros de almacén guardados")}>
-              Guardar
+        <Card className="border-sky-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-base">1 · Datos de entrada</CardTitle>
+            <Button size="sm" variant="outline" disabled={recalc} onClick={onRecalcProd}>
+              {recalc ? "Calculando…" : "↻ Traer productividad real (deposito-esteban)"}
             </Button>
-            <p className="w-full text-xs text-muted-foreground">
-              FTE = volumen/día ÷ (productividad × horas/turno × utilización). La utilización es la fracción del turno que la persona dedica realmente a la tarea (el resto: reposición, traslados, despacho, esperas); el bul/HH y pal/HH del WMS son de horas de actividad pura, no sostenibles todo el turno. Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Clasificadores: paletas de envases (clasificacion_envases), sobre el pico. Reempaque: bultos reempacados (deposito-esteban) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. La prod de clasificación y reempaque ya es real por hora trabajada → utilización por defecto 1. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban (picking/maquinistas/reempaque) y de la tabla de clasificación. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Rol</TableHead><TableHead>Dotación</TableHead><TableHead>Productividad</TableHead><TableHead>Utilización (0–1)</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {PARAM_ROLES.map((pr) => (
+                  <TableRow key={pr.n}>
+                    <TableCell className="font-medium">{pr.n}</TableCell>
+                    <TableCell><Input type="number" step="1" className="h-8 w-20" value={c[pr.dot]} onChange={(e) => setC((s) => ({ ...s, [pr.dot]: e.target.value }))} /></TableCell>
+                    <TableCell className="flex items-center gap-1"><Input type="number" step={pr.stepProd} className="h-8 w-24" value={c[pr.prod]} onChange={(e) => setC((s) => ({ ...s, [pr.prod]: e.target.value }))} /><span className="text-xs text-muted-foreground">{pr.u}</span></TableCell>
+                    <TableCell><Input type="number" step="0.025" className="h-8 w-20" value={c[pr.util]} onChange={(e) => setC((s) => ({ ...s, [pr.util]: e.target.value }))} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="flex flex-wrap items-end gap-3">
+              <div><Label className="text-xs">Horas / turno</Label><Input type="number" step="0.1" className="h-8 w-20" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} /></div>
+              <span className="self-center text-xs font-medium text-muted-foreground">Peso de volumen por día:</span>
+              {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, l]) => (
+                <div key={k}><Label className="text-xs">{l}</Label><Input type="number" step="0.05" className="h-8 w-16" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} /></div>
+              ))}
+              <Button size="sm" disabled={isPending} onClick={guardar}>Guardar</Button>
+            </div>
+            {proy && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Volumen proyectado (HL/mes) — del presupuesto anual</p>
+                <Table>
+                  <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">{mesLabel(proy.mesBase)} (base)</TableHead>{proy.meses.map((m) => (<TableHead key={m.mes} className="text-right">{mesLabel(m.mes)}</TableHead>))}</TableRow></TableHeader>
+                  <TableBody><TableRow><TableCell className="font-medium">HL</TableCell><TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>{proy.meses.map((m) => (<TableCell key={m.mes} className="text-right">{fmt(Math.round(m.hl))}</TableCell>))}</TableRow></TableBody>
+                </Table>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. Utilización por defecto 0,875 (7 h efectivas sobre 8). Tras recalcular, revisá y tocá <b>Guardar</b>.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ════ SECCIÓN 2 — RESULTADOS ════ */}
+      {data.almacenError && <p className="text-sm text-red-600">Error: {data.almacenError}</p>}
+      {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen este mes.</p>}
+
+      {a && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">2 · Resultado — dotación vs demanda ({a.mes})</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Rol</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">Prod.</TableHead>
+                <TableHead className="text-right">Util.</TableHead><TableHead className="text-right">Cap/día</TableHead>
+                <TableHead className="text-right">Vol/día</TableHead><TableHead className="text-right">Necesarios</TableHead><TableHead>Estado</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {rolesHoy.map(({ n, r, u, pico }) => {
+                  const e = estadoHoy(r)
+                  const unidadProd = (u === "paletas" || u === "pallets") ? "pal/HH" : "bul/HH"
+                  return (
+                    <TableRow key={n}>
+                      <TableCell className="font-medium">{n}</TableCell>
+                      <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
+                      <TableCell className="text-right">{fmt(r.productividad)} {unidadProd}</TableCell>
+                      <TableCell className="text-right">{Math.round(r.utilizacion * 100)}%</TableCell>
+                      <TableCell className="text-right">{fmt(r.capDiariaFte * r.dotacion)} {u}</TableCell>
+                      <TableCell className="text-right">{fmt(pico ? r.volumenPico : r.volumenProm)} <span className="text-xs text-muted-foreground">(pico {fmt(r.volumenPico)})</span></TableCell>
+                      <TableCell className="text-right font-semibold">{r.fteNecesariosProm}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${r.fteNecesariosPico})` : ""}</TableCell>
+                      <TableCell className={e.cls}>{e.txt}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación × productividad × horas/turno × utilización. Clasificadores se evalúa sobre el día pico de paletas. «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {proy && proy.almacen.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — horas extra por mes (dotación fija)</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow><TableHead>Rol</TableHead>{proy.meses.map((m) => (<TableHead key={m.mes} className="text-right">{mesLabel(m.mes)}</TableHead>))}</TableRow></TableHeader>
+              <TableBody>
+                {proy.almacen.map((r) => (
+                  <TableRow key={r.rol}>
+                    <TableCell className="font-medium">{r.rol}</TableCell>
+                    {r.horasExtra.map((hh, i) => {
+                      const falta = r.faltanPico[i]
+                      return (
+                        <TableCell key={i} className={`text-right ${hh > 0 ? (falta > 0 ? "bg-red-50 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"}`}>
+                          {hh > 0 ? `${fmt(hh)} h` : "✓"}
+                          {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta}</span> : null}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N» = personas que faltarían en el día pico para no hacer horas extra. <span className="text-emerald-700">✓</span> = cubre sin extras.</p>
           </CardContent>
         </Card>
       )}
@@ -507,20 +481,14 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
 const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
 
-function ProyeccionTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+function ProyeccionTab({ data }: { data: DimData }) {
   const p = data.proyeccion
-  const [pesos, setPesos] = useState({
-    peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar),
-    peso_mie: String(data.config.peso_mie), peso_jue: String(data.config.peso_jue),
-    peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
-  })
   if (data.proyeccionError) return <p className="text-sm text-red-600">Error: {data.proyeccionError}</p>
   if (!p) return <p className="text-sm text-muted-foreground">Sin volumen proyectado para el año en curso (tabla dim_volumen_proyectado) o sin métricas de distribución.</p>
 
-  const heCls = (hh: number) => (hh > 0 ? "bg-red-50 text-red-700 font-semibold" : "text-muted-foreground")
-
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">Proyección de <b>flota / entrega</b> (la de almacén está en su propia solapa). Volumen del presupuesto repartido por el peso del día de semana que se carga en Almacén.</p>
       {/* Volumen e índice */}
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (presupuesto) — {mesLabel(p.mesBase)} a Dic</CardTitle></CardHeader>
@@ -532,28 +500,7 @@ function ProyeccionTab({ data, canEdit, run, isPending }: { data: DimData; canEd
               <TableRow><TableCell className="font-medium">Índice vs {mesLabel(p.mesBase)}</TableCell>{p.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">×{mm.indice.toFixed(2).replace(".", ",")}</TableCell>))}</TableRow>
             </TableBody>
           </Table>
-          <p className="mt-1 text-xs text-muted-foreground">Base {mesLabel(p.mesBase)} = {fmt(Math.round(p.hlBase))} HL. El volumen de cada día se reparte según el peso del día de semana (jue/vie = días fuertes).</p>
-        </CardContent>
-      </Card>
-
-      {/* Horas extra de almacén */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Horas extra de almacén (dotación fija) — hora-hombre por mes</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader><TableRow><TableHead>Rol</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">Cap/día</TableHead>{p.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
-            <TableBody>
-              {p.almacen.map((r) => (
-                <TableRow key={r.rol}>
-                  <TableCell className="font-medium">{r.rol}</TableCell>
-                  <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">{fmt(r.capDiaria)} {r.unidadVol}</TableCell>
-                  {r.horasExtra.map((hh, i) => (<TableCell key={i} className={`text-right ${heCls(hh)}`}>{hh > 0 ? `${fmt(hh)} h` : "—"}</TableCell>))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (según el peso del día de semana) supera la capacidad de la dotación. <span className="font-medium text-red-700">Rojo</span> = requiere horas extra. Cap/día = lo que cubre la dotación en jornada normal.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Base {mesLabel(p.mesBase)} = {fmt(Math.round(p.hlBase))} HL.</p>
         </CardContent>
       </Card>
 
@@ -580,33 +527,9 @@ function ProyeccionTab({ data, canEdit, run, isPending }: { data: DimData; canEd
               })}
             </TableBody>
           </Table>
-          <p className="mt-2 text-xs text-muted-foreground">«Días con refuerzo» = días donde el volumen supera lo que {p.choferesDisp} choferes mueven en 1 vuelta. Con {p.camionesDisp} camiones disponibles, esos días se cubren contratando choferes o con 2ª vuelta; la 2ª vuelta solo es obligada si se supera la capacidad de los {p.camionesDisp} camiones.</p>
+          <p className="mt-2 text-xs text-muted-foreground">«Días con refuerzo» = días donde el volumen supera lo que {p.choferesDisp} choferes mueven en 1 vuelta. Con {p.camionesDisp} camiones disponibles, esos días se cubren contratando choferes o con 2ª vuelta; la 2ª vuelta solo es obligada si se supera la capacidad de los {p.camionesDisp} camiones. Los pesos por día se editan en la solapa Almacén.</p>
         </CardContent>
       </Card>
-
-      {/* Editor de pesos por día de semana */}
-      {canEdit && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Peso de volumen por día de semana</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap items-end gap-4">
-            {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, label]) => (
-              <div key={k}>
-                <Label className="text-xs">{label}</Label>
-                <Input type="number" step="0.05" className="h-8 w-20" value={pesos[k]} onChange={(e) => setPesos((s) => ({ ...s, [k]: e.target.value }))} />
-              </div>
-            ))}
-            <Button size="sm" disabled={isPending}
-              onClick={() => run(() => guardarConfigDim({
-                ...data.config,
-                peso_lun: Number(pesos.peso_lun), peso_mar: Number(pesos.peso_mar), peso_mie: Number(pesos.peso_mie),
-                peso_jue: Number(pesos.peso_jue), peso_vie: Number(pesos.peso_vie), peso_sab: Number(pesos.peso_sab),
-              }), "Pesos por día guardados")}>
-              Guardar
-            </Button>
-            <p className="w-full text-xs text-muted-foreground">Fracción del volumen semanal por día (se normalizan si no suman 1; domingo no opera).</p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

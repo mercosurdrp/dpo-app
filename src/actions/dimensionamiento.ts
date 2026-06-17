@@ -201,6 +201,8 @@ export interface ProyeccionAlmacenRol {
   capDiaria: number        // volumen/día que cubre la dotación en jornada normal
   unidadVol: string        // "bultos" | "paletas" | "pallets"
   horasExtra: number[]     // hora-hombre extra por mes (mismo orden que meses)
+  faltanPico: number[]     // personas que faltarían en el día pico de cada mes (0 = cubre)
+  volPicoDia: number[]     // volumen del día más cargado del mes
 }
 // Flota: dotación de choferes fija → días que requieren refuerzo (2ª vuelta o contratar).
 export interface ProyeccionFlotaMes {
@@ -280,7 +282,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       dotacion_maquinistas: Number(configRes.data?.dotacion_maquinistas ?? 3),
       factor_retorno_distrib: Number(configRes.data?.factor_retorno_distrib ?? 0),
       util_pickeros: Number(configRes.data?.util_pickeros ?? 0.35) || 0.35,
-      util_maquinistas: Number(configRes.data?.util_maquinistas ?? 0.4) || 0.4,
+      util_maquinistas: Number(configRes.data?.util_maquinistas ?? 0.875) || 0.875,
       choferes_por_camion: Number(configRes.data?.choferes_por_camion ?? 1) || 1,
       ayudantes_por_camion: Number(configRes.data?.ayudantes_por_camion ?? 1) || 1,
       peso_lun: Number(configRes.data?.peso_lun ?? 0.1),
@@ -290,10 +292,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       peso_vie: Number(configRes.data?.peso_vie ?? 0.25),
       peso_sab: Number(configRes.data?.peso_sab ?? 0.15),
       prod_clasif_pal_h: Number(configRes.data?.prod_clasif_pal_h ?? 5) || 5,
-      util_clasif: Number(configRes.data?.util_clasif ?? 1) || 1,
+      util_clasif: Number(configRes.data?.util_clasif ?? 0.875) || 0.875,
       dotacion_clasif: Number(configRes.data?.dotacion_clasif ?? 1),
       prod_reempaque_bul_hh: Number(configRes.data?.prod_reempaque_bul_hh ?? 37) || 37,
-      util_reempaque: Number(configRes.data?.util_reempaque ?? 1) || 1,
+      util_reempaque: Number(configRes.data?.util_reempaque ?? 0.875) || 0.875,
       dotacion_reempaque: Number(configRes.data?.dotacion_reempaque ?? 1),
     }
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
@@ -566,10 +568,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dotacion: config.dotacion_reempaque, unidad: "bultos" },
             { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets" },
           ]
+          const maxPesoNorm = Math.max(...pesos) / sumaPesos
           const almacenProy: ProyeccionAlmacenRol[] = rolesAlm.map((r) => {
             const volBase = r.rolFte ? (r.usePico ? r.rolFte.volumenPico : r.rolFte.volumenProm) : 0
-            const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * r.dotacion
-            const horasExtra = meses.map((mm) => {
+            const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * r.dotacion          // dotación completa
+            const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
+            const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
+            for (const mm of meses) {
               const volMes = volBase * mm.indice
               let hh = 0
               for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
@@ -578,9 +583,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const volDia = volMes * DIAS_SEMANA * w
                 if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
               }
-              return Math.round(hh * 10) / 10
-            })
-            return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra }
+              const pico = volMes * DIAS_SEMANA * maxPesoNorm
+              horasExtra.push(Math.round(hh * 10) / 10)
+              volPicoDia.push(Math.round(pico))
+              faltanPico.push(capPersona > 0 ? Math.max(0, Math.ceil(pico / capPersona) - r.dotacion) : 0)
+            }
+            return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia }
           })
 
           // Flota → días que requieren refuerzo (2ª vuelta o contratar chofer).
@@ -686,7 +694,7 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         dotacion_maquinistas: Math.max(0, Number(config.dotacion_maquinistas) || 0),
         factor_retorno_distrib: Math.max(0, Number(config.factor_retorno_distrib) || 0),
         util_pickeros: Math.min(1, Math.max(0.01, Number(config.util_pickeros) || 0.35)),
-        util_maquinistas: Math.min(1, Math.max(0.01, Number(config.util_maquinistas) || 0.4)),
+        util_maquinistas: Math.min(1, Math.max(0.01, Number(config.util_maquinistas) || 0.875)),
         choferes_por_camion: Math.max(0, Number(config.choferes_por_camion) || 1),
         ayudantes_por_camion: Math.max(0, Number(config.ayudantes_por_camion) || 1),
         peso_lun: Math.max(0, Number(config.peso_lun) || 0),
@@ -696,10 +704,10 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         peso_vie: Math.max(0, Number(config.peso_vie) || 0),
         peso_sab: Math.max(0, Number(config.peso_sab) || 0),
         prod_clasif_pal_h: Math.max(0.1, Number(config.prod_clasif_pal_h) || 5),
-        util_clasif: Math.min(1, Math.max(0.01, Number(config.util_clasif) || 1)),
+        util_clasif: Math.min(1, Math.max(0.01, Number(config.util_clasif) || 0.875)),
         dotacion_clasif: Math.max(0, Number(config.dotacion_clasif) || 0),
         prod_reempaque_bul_hh: Math.max(0.1, Number(config.prod_reempaque_bul_hh) || 37),
-        util_reempaque: Math.min(1, Math.max(0.01, Number(config.util_reempaque) || 1)),
+        util_reempaque: Math.min(1, Math.max(0.01, Number(config.util_reempaque) || 0.875)),
         dotacion_reempaque: Math.max(0, Number(config.dotacion_reempaque) || 0),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
