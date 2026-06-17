@@ -56,6 +56,7 @@ export interface GescomSyncResult {
   rechazos_excluidos_admin: number
   rechazos_eliminados: number
   ventas_diarias_upserted: number
+  ventas_calle_contadas: number
   dev_re_revertidos: number
   errors: Array<{ kind: "rechazo" | "ventas_diarias" | "fatal"; message: string }>
 }
@@ -256,6 +257,14 @@ function fleteroDe(v: GescomVenta): string {
 
 const esFinalizada = (v: GescomVenta) => v.estado === "Finalizada"
 
+// Estados que cuentan como bulto DESPACHADO del día para el denominador de
+// ventas. "Pendiente" = salió a la calle pero todavía no volvió/cerró: se
+// cuenta igual para ver los bultos del día sin esperar el cierre (~2 días). Si
+// luego hay un rechazo, el DEV-RE lo descuenta como siempre. Empresa 98 sólo
+// expone Finalizada/Pendiente (verificado 2026-06-17); un estado nuevo no
+// listado NO se cuenta (conservador).
+const ESTADOS_VENTA_DESPACHADA = new Set(["Finalizada", "Pendiente"])
+
 export interface GescomSyncDeps {
   supabase: SupabaseClient
   creds: GescomCredentials
@@ -272,7 +281,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     desde, hasta, modo,
     ventas_consideradas: 0, excluidas_otra_empresa: 0, excluidas_venta_directa: 0,
     rechazos_upserted: 0, rechazos_excluidos_admin: 0, rechazos_eliminados: 0,
-    ventas_diarias_upserted: 0, dev_re_revertidos: 0, errors: [],
+    ventas_diarias_upserted: 0, ventas_calle_contadas: 0, dev_re_revertidos: 0, errors: [],
   }
 
   let ventas: GescomVenta[]
@@ -407,7 +416,8 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   // Detalle camión × SKU/día (mig 120) — key "fecha|fletero" → Map<idArt, agg>
   const porDiaFleteroSku = new Map<string, Map<number, AggSku>>()
   for (const v of ventas) {
-    if (v.codigoTipoVenta !== "VEN" || v.esCredito || !esFinalizada(v)) continue
+    if (v.codigoTipoVenta !== "VEN" || v.esCredito || !ESTADOS_VENTA_DESPACHADA.has(v.estado)) continue
+    if (!esFinalizada(v)) result.ventas_calle_contadas++   // VEN en la calle (Pendiente) contada para ver el día
     const fecha = diaDe(v)
     if (!fecha) continue
     const key = `${fecha}|${fleteroDe(v)}`
