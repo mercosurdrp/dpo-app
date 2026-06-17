@@ -30,6 +30,19 @@ import { PlanesAccionFlota } from "../_components/planes-accion-flota"
 
 const SUCURSALES = ["Eldorado", "Iguazú"]
 
+// Grupos de repuesto sugeridos (el campo igual admite escribir uno nuevo). Se
+// combinan con los grupos que ya existan en el catálogo para armar el datalist.
+const GRUPOS_SUGERIDOS = [
+  "Eléctrico",
+  "Mecánico",
+  "Hidráulico",
+  "Neumático",
+  "Iluminación",
+  "Filtros",
+  "Lubricantes",
+  "Consumibles",
+]
+
 // Flota actualizada (FLOTA QUILMES ACTUALIZADA). Lista curada por Herminio: cada
 // salida de repuesto se imputa a una de estas unidades para medir el gasto por
 // unidad. Si cambia la flota, editar acá.
@@ -268,8 +281,19 @@ export function RepuestosFlotaClient() {
       setError("Elegí el repuesto, la cantidad (mayor a 0) y la fecha.")
       return
     }
-    const ok = await mutar("crear", { ...nuevo, repuesto: nuevo.repuesto.trim() })
-    if (ok)
+    const nombreRep = nuevo.repuesto.trim()
+    const ok = await mutar("crear", { ...nuevo, repuesto: nombreRep })
+    if (ok) {
+      // Si el repuesto no estaba en el catálogo, lo agrega automáticamente para
+      // que quede listado y se le pueda asignar el grupo (no queda "huérfano").
+      const existe = catalogo.some((c) => claveRepuesto(c.nombre) === claveRepuesto(nombreRep))
+      if (!existe) {
+        await mutarCatalogo("crear", {
+          nombre: nombreRep,
+          grupo: "",
+          ubicacion: nuevo.sucursal ? `Taller ${nuevo.sucursal}` : "",
+        })
+      }
       setNuevo({
         ...vacio,
         tipo: nuevo.tipo,
@@ -277,6 +301,7 @@ export function RepuestosFlotaClient() {
         sucursal: nuevo.sucursal,
         vehiculo: nuevo.vehiculo,
       })
+    }
   }
 
   const borrar = async (m: Mov) => {
@@ -420,6 +445,12 @@ export function RepuestosFlotaClient() {
     () => catalogo.map((c) => c.nombre).sort((a, b) => a.localeCompare(b)),
     [catalogo]
   )
+  // Grupos sugeridos + los que ya existan en el catálogo (para el datalist).
+  const gruposDisponibles = useMemo(() => {
+    const set = new Set(GRUPOS_SUGERIDOS)
+    for (const c of catalogo) if (c.grupo?.trim()) set.add(c.grupo.trim())
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [catalogo])
   // Grupo por clave de repuesto (para mostrarlo en la tabla de stock).
   const grupoPorClave = useMemo(() => {
     const m = new Map<string, string>()
@@ -1021,11 +1052,17 @@ export function RepuestosFlotaClient() {
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">Grupo</label>
                   <Input
+                    list="lista-grupos"
                     placeholder="Ej. Eléctrico"
                     autoComplete="off"
                     value={repNuevo.grupo}
                     onChange={(e) => setRepNuevo({ ...repNuevo, grupo: e.target.value })}
                   />
+                  <datalist id="lista-grupos">
+                    {gruposDisponibles.map((g) => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">Ubicación</label>
@@ -1047,10 +1084,10 @@ export function RepuestosFlotaClient() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Acciones</TableHead>
                       <TableHead>Repuesto</TableHead>
                       <TableHead>Grupo</TableHead>
                       <TableHead>Ubicación</TableHead>
-                      <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1067,32 +1104,6 @@ export function RepuestosFlotaClient() {
                           editCatId === c.id ? (
                             // Repuesto del catálogo en modo edición.
                             <TableRow key={c.id} className="bg-slate-50/60">
-                              <TableCell>
-                                <Input
-                                  autoComplete="off"
-                                  className="h-8 min-w-[150px]"
-                                  value={editCat.nombre}
-                                  onChange={(e) => setEditCat({ ...editCat, nombre: e.target.value })}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  autoComplete="off"
-                                  placeholder="Ej. Eléctrico"
-                                  className="h-8 min-w-[120px]"
-                                  value={editCat.grupo}
-                                  onChange={(e) => setEditCat({ ...editCat, grupo: e.target.value })}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  autoComplete="off"
-                                  placeholder="Ej. Taller Eldorado"
-                                  className="h-8 min-w-[140px]"
-                                  value={editCat.ubicacion}
-                                  onChange={(e) => setEditCat({ ...editCat, ubicacion: e.target.value })}
-                                />
-                              </TableCell>
                               <TableCell>
                                 <div className="flex gap-1">
                                   <Button
@@ -1117,12 +1128,36 @@ export function RepuestosFlotaClient() {
                                   </Button>
                                 </div>
                               </TableCell>
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  className="h-8 min-w-[150px]"
+                                  value={editCat.nombre}
+                                  onChange={(e) => setEditCat({ ...editCat, nombre: e.target.value })}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  list="lista-grupos"
+                                  placeholder="Ej. Eléctrico"
+                                  className="h-8 min-w-[120px]"
+                                  value={editCat.grupo}
+                                  onChange={(e) => setEditCat({ ...editCat, grupo: e.target.value })}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  placeholder="Ej. Taller Eldorado"
+                                  className="h-8 min-w-[140px]"
+                                  value={editCat.ubicacion}
+                                  onChange={(e) => setEditCat({ ...editCat, ubicacion: e.target.value })}
+                                />
+                              </TableCell>
                             </TableRow>
                           ) : (
                             <TableRow key={c.id}>
-                              <TableCell className="font-semibold">{c.nombre}</TableCell>
-                              <TableCell className="text-muted-foreground">{c.grupo || "—"}</TableCell>
-                              <TableCell className="text-muted-foreground">{c.ubicacion || "—"}</TableCell>
                               <TableCell>
                                 <div className="flex gap-1">
                                   <Button
@@ -1147,6 +1182,9 @@ export function RepuestosFlotaClient() {
                                   </Button>
                                 </div>
                               </TableCell>
+                              <TableCell className="font-semibold">{c.nombre}</TableCell>
+                              <TableCell className="text-muted-foreground">{c.grupo || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{c.ubicacion || "—"}</TableCell>
                             </TableRow>
                           )
                         )
