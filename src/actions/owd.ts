@@ -803,6 +803,97 @@ export async function getOwdFotoSignedUrl(
   }
 }
 
+// Agrega fotos de evidencia a una observación YA GUARDADA.
+// FormData: observacionId + entradas `foto__<item_id>` (0..n File por ítem).
+// Las imágenes ya vienen comprimidas desde el cliente.
+export async function addOwdFotos(
+  formData: FormData,
+): Promise<{ data: { agregadas: number } } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const observacionId = String(formData.get("observacionId") || "")
+    if (!observacionId) return { error: "Falta la observación" }
+
+    // Respuestas de la observación: necesito item_id -> respuesta.id
+    const { data: resp, error: errResp } = await supabase
+      .from("owd_respuestas")
+      .select("id, item_id")
+      .eq("observacion_id", observacionId)
+    if (errResp) return { error: errResp.message }
+    if (!resp || resp.length === 0) return { error: "La observación no tiene respuestas" }
+    const respByItem = new Map((resp as { id: string; item_id: string }[]).map((r) => [r.item_id, r.id]))
+    const respIds = resp.map((r) => r.id)
+
+    // Orden de arranque por respuesta = cantidad de fotos ya existentes
+    const { data: existentes } = await supabase
+      .from("owd_respuesta_fotos")
+      .select("respuesta_id")
+      .in("respuesta_id", respIds)
+    const ordenBase = new Map<string, number>()
+    for (const f of (existentes || []) as { respuesta_id: string }[]) {
+      ordenBase.set(f.respuesta_id, (ordenBase.get(f.respuesta_id) ?? 0) + 1)
+    }
+
+    const fotosPayload: Array<{
+      respuesta_id: string
+      path: string
+      nombre: string
+      mime: string | null
+      bytes: number
+      orden: number
+    }> = []
+    const subidas: string[] = []
+
+    for (const [itemId, respuestaId] of respByItem) {
+      const files = formData
+        .getAll(`foto__${itemId}`)
+        .filter((f): f is File => f instanceof File && f.size > 0)
+      let orden = ordenBase.get(respuestaId) ?? 0
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const path = `${observacionId}/${itemId}/${Date.now()}-${i}-${cleanFileName(file.name)}`
+        const arrayBuffer = await file.arrayBuffer()
+        const { error: upErr } = await supabase.storage
+          .from(OWD_FOTOS_BUCKET)
+          .upload(path, arrayBuffer, {
+            contentType: file.type || "application/octet-stream",
+            upsert: false,
+          })
+        if (upErr) {
+          // Limpiar lo ya subido en esta tanda y abortar
+          if (subidas.length > 0) await supabase.storage.from(OWD_FOTOS_BUCKET).remove(subidas)
+          return { error: `Subiendo foto: ${upErr.message}` }
+        }
+        subidas.push(path)
+        fotosPayload.push({
+          respuesta_id: respuestaId,
+          path,
+          nombre: file.name,
+          mime: file.type || null,
+          bytes: file.size,
+          orden: orden++,
+        })
+      }
+    }
+
+    if (fotosPayload.length === 0) return { error: "No se recibieron fotos" }
+
+    const { error: errFotos } = await supabase
+      .from("owd_respuesta_fotos")
+      .insert(fotosPayload)
+    if (errFotos) {
+      await supabase.storage.from(OWD_FOTOS_BUCKET).remove(subidas)
+      return { error: errFotos.message }
+    }
+
+    return { data: { agregadas: fotosPayload.length } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function deleteObservacion(
   id: string,
 ): Promise<{ success: true } | { error: string }> {

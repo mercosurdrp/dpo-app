@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
+import type { ChangeEvent } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,9 +15,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { CheckCircle2, XCircle, MinusCircle, Trash2, Loader2 } from "lucide-react"
+import { CheckCircle2, XCircle, MinusCircle, Trash2, Loader2, ImagePlus } from "lucide-react"
 import type { OwdObservacion, OwdRespuesta, OwdItem, OwdRespuestaFoto } from "@/types/database"
-import { deleteObservacion, getOwdFotoSignedUrl } from "@/actions/owd"
+import { addOwdFotos, deleteObservacion, getOwdFotoSignedUrl } from "@/actions/owd"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 
 interface Props {
   templateId: string
@@ -31,6 +33,32 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items, f
   const [isPending, startTransition] = useTransition()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [uploadingItem, setUploadingItem] = useState<string | null>(null)
+
+  // Agregar fotos a esta observación ya guardada (con compresión en el navegador)
+  async function handleAddFotos(itemId: string, e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ""
+    if (files.length === 0) return
+    setUploadingItem(itemId)
+    try {
+      const fd = new FormData()
+      fd.append("observacionId", observacion.id)
+      for (const file of files) {
+        const comprimida = await comprimirImagen(file).catch(() => file)
+        fd.append(`foto__${itemId}`, comprimida)
+      }
+      const r = await addOwdFotos(fd)
+      if ("error" in r) {
+        toast.error(r.error)
+        return
+      }
+      toast.success(`${r.data.agregadas} foto${r.data.agregadas === 1 ? "" : "s"} agregada${r.data.agregadas === 1 ? "" : "s"}`)
+      startTransition(() => router.refresh())
+    } finally {
+      setUploadingItem(null)
+    }
+  }
 
   const respMap = useMemo(() => new Map(respuestas.map((r) => [r.item_id, r])), [respuestas])
   const itemsUsados = items.filter((i) => respMap.has(i.id))
@@ -203,6 +231,22 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items, f
                       })}
                     </div>
                   )}
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700">
+                    {uploadingItem === item.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ImagePlus className="h-3.5 w-3.5" />
+                    )}
+                    {uploadingItem === item.id ? "Subiendo…" : "Agregar fotos"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      disabled={uploadingItem !== null}
+                      onChange={(e) => handleAddFotos(item.id, e)}
+                    />
+                  </label>
                 </div>
               )
             })}

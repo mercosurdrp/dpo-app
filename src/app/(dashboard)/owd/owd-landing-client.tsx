@@ -80,7 +80,9 @@ export function OwdLandingClient({ templates, isAdmin }: Props) {
                   <div className="flex items-center justify-between border-t pt-3 text-sm">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <CalendarCheck className="h-4 w-4" />
-                      {t.obs_mes}/{t.template.meta_mensual} este mes
+                      {t.pilar_nombre === "Almacén"
+                        ? `${t.obs_mes} este mes`
+                        : `${t.obs_mes}/${t.template.meta_mensual} este mes`}
                     </span>
                     <span className={`font-bold ${pctColor(t.pct_cumplimiento_mes)}`}>
                       {t.obs_mes > 0 ? `${t.pct_cumplimiento_mes.toFixed(0)}%` : "—"}

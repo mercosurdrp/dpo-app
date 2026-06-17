@@ -18,6 +18,7 @@ import {
 import type { OwdItem, OwdResultado, CatalogoVehiculo } from "@/types/database"
 import { Loader2, CheckCircle2, XCircle, MinusCircle, ImagePlus, X } from "lucide-react"
 import { createObservacion } from "@/actions/owd"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 
 interface Props {
   templateId: string
@@ -204,7 +205,11 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
       ),
     )
     for (const i of items) {
-      for (const f of fotos[i.id] ?? []) fd.append(`foto__${i.id}`, f.file)
+      for (const f of fotos[i.id] ?? []) {
+        // Comprimir en el navegador antes de subir (esquiva el límite de payload)
+        const comprimida = await comprimirImagen(f.file).catch(() => f.file)
+        fd.append(`foto__${i.id}`, comprimida)
+      }
     }
     try {
       const result = await createObservacion(fd)
