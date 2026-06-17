@@ -100,6 +100,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         <TabsList>
           <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
           <TabsTrigger value="almacen">Almacén (FTE)</TabsTrigger>
+          <TabsTrigger value="proyeccion">Proyección</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
@@ -177,6 +178,11 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         {/* ─── Almacén (FTE) ─── */}
         <TabsContent value="almacen" className="space-y-4">
           <AlmacenTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+        </TabsContent>
+
+        {/* ─── Proyección de dotación vs volumen ─── */}
+        <TabsContent value="proyeccion" className="space-y-4">
+          <ProyeccionTab data={data} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}
@@ -489,6 +495,80 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
             <p className="w-full text-xs text-muted-foreground">
               FTE = volumen/día ÷ (productividad × horas/turno × utilización). La utilización es la fracción del turno que la persona dedica realmente a la tarea (el resto: reposición, traslados, despacho, esperas); el bul/HH y pal/HH del WMS son de horas de actividad pura, no sostenibles todo el turno. Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Clasificadores: paletas de envases (clasificacion_envases), sobre el pico. Reempaque: bultos reempacados (deposito-esteban) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. La prod de clasificación y reempaque ya es real por hora trabajada → utilización por defecto 1. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban (picking/maquinistas/reempaque) y de la tabla de clasificación. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
             </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ─── Proyección de dotación vs volumen futuro ───────────────────────────────
+
+const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
+
+function ProyeccionTab({ data }: { data: DimData }) {
+  const p = data.proyeccion
+  if (data.proyeccionError) return <p className="text-sm text-red-600">Error: {data.proyeccionError}</p>
+  if (!p) return <p className="text-sm text-muted-foreground">Sin volumen proyectado para el año en curso (tabla dim_volumen_proyectado) o sin métricas de distribución.</p>
+
+  const alertas: string[] = []
+  p.meses.forEach((mm, i) => {
+    const faltan = p.recursos.filter((r) => r.necesarios[i] > r.dotacion)
+    if (faltan.length) alertas.push(`${mesLabel(mm.mes)}: ${faltan.map((r) => `${r.rol} (necesita ${r.necesarios[i]} vs ${r.dotacion})`).join(" · ")}`)
+  })
+  const cellCls = (nec: number, dot: number) =>
+    nec > dot ? "bg-red-50 text-red-700 font-semibold" : nec === dot ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Dotación necesaria proyectada — {mesLabel(p.mesBase)} a Dic (volumen del presupuesto)</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Recurso</TableHead>
+                <TableHead className="text-right">Dotación actual</TableHead>
+                {p.meses.map((mm) => (
+                  <TableHead key={mm.mes} className="text-right">
+                    {mesLabel(mm.mes)}
+                    <span className="block text-[10px] font-normal text-muted-foreground">×{mm.indice.toFixed(2).replace(".", ",")}</span>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {p.recursos.map((r) => (
+                <TableRow key={r.rol}>
+                  <TableCell className="font-medium">{r.rol}</TableCell>
+                  <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
+                  {r.necesarios.map((nec, i) => (
+                    <TableCell key={i} className={`text-right ${cellCls(nec, r.dotacion)}`}>{nec}</TableCell>
+                  ))}
+                </TableRow>
+              ))}
+              <TableRow className="border-t-2">
+                <TableCell className="font-bold">Volumen (HL)</TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground">base {fmt(Math.round(p.hlBase))}</TableCell>
+                {p.meses.map((mm) => (
+                  <TableCell key={mm.mes} className="text-right text-xs text-muted-foreground">{fmt(Math.round(mm.hl))}</TableCell>
+                ))}
+              </TableRow>
+            </TableBody>
+          </Table>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Necesarios = el recurso del mes actual escalado por el índice de volumen (HL del presupuesto ÷ HL del mes base). Dotación fija (la actual). <span className="font-medium text-red-700">Rojo</span> = falta gente ese mes (horas extra / refuerzo), <span className="font-medium text-amber-700">ámbar</span> = al límite, <span className="font-medium text-emerald-700">verde</span> = cubre.
+          </p>
+        </CardContent>
+      </Card>
+      {alertas.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Meses con déficit de dotación (refuerzo u horas extra)</CardTitle></CardHeader>
+          <CardContent>
+            <ul className="ml-4 list-disc space-y-1 text-sm text-red-700">
+              {alertas.map((a, i) => <li key={i}>{a}</li>)}
+            </ul>
           </CardContent>
         </Card>
       )}

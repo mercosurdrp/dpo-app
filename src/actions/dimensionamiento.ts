@@ -181,6 +181,25 @@ export interface RepartoData {
   ayudantes: RolReparto
 }
 
+// Proyección de dotación vs volumen futuro (HL/mes del presupuesto). Necesarios escalados
+// por el índice hl_mes / hl_mes_actual; dotación fija → anticipa horas extra / refuerzo.
+export interface ProyeccionRecurso {
+  rol: string
+  dotacion: number
+  necesarios: number[]    // uno por mes proyectado (mismo orden que ProyeccionData.meses)
+}
+export interface ProyeccionMes {
+  mes: string             // "2026-07"
+  hl: number
+  indice: number          // hl / hlBase
+}
+export interface ProyeccionData {
+  mesBase: string
+  hlBase: number
+  meses: ProyeccionMes[]
+  recursos: ProyeccionRecurso[]
+}
+
 export interface DimPlan {
   id: string
   que: string
@@ -206,6 +225,8 @@ export interface DimData {
   almacenError: string | null
   reparto: RepartoData | null
   repartoError: string | null
+  proyeccion: ProyeccionData | null
+  proyeccionError: string | null
   planes: DimPlan[]
 }
 
@@ -481,6 +502,50 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       repartoError = e instanceof Error ? e.message : "Error reparto"
     }
 
+    // Proyección de dotación vs volumen futuro (HL/mes presupuesto). Escala los necesarios
+    // de cada recurso por el índice hl_mes/hl_mes_actual y compara con la dotación fija.
+    let proyeccion: ProyeccionData | null = null
+    let proyeccionError: string | null = null
+    try {
+      const anioActual = hoy.getFullYear()
+      const mesActual = hoy.getMonth() + 1
+      const { data: vol } = await supabase.from("dim_volumen_proyectado").select("mes, hl").eq("anio", anioActual)
+      const hlPorMes = new Map<number, number>()
+      for (const r of vol ?? []) hlPorMes.set(Number(r.mes), Number(r.hl))
+      const hlBase = hlPorMes.get(mesActual) ?? 0
+      if (hlBase > 0) {
+        const meses: ProyeccionMes[] = []
+        for (let m = mesActual + 1; m <= 12; m++) {
+          const hl = hlPorMes.get(m)
+          if (hl && hl > 0) meses.push({ mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, indice: hl / hlBase })
+        }
+        if (meses.length > 0) {
+          // necesarioRaw (sin redondear) de cada recurso, replicando las fórmulas del módulo.
+          const capUnidad = disponibles.length > 0 ? capacidadInstaladaDiaria / disponibles.length : 0
+          const rawCamiones = capUnidad > 0 && metricas ? metricas.volumenCeqPromedio / (capUnidad * config.viajes_por_dia) : 0
+          const rawFte = (rol: RolFte | undefined, usePico = false) =>
+            rol && rol.capDiariaFte > 0 ? (usePico ? rol.volumenPico : rol.volumenProm) / rol.capDiariaFte : 0
+          const base: Array<{ rol: string; raw: number; dotacion: number }> = [
+            { rol: "Camiones", raw: rawCamiones, dotacion: disponibles.length },
+            { rol: "Choferes", raw: rawCamiones * config.choferes_por_camion, dotacion: Math.round(reparto?.choferes.dotacionProm ?? 0) },
+            { rol: "Ayudantes", raw: rawCamiones * config.ayudantes_por_camion, dotacion: Math.round(reparto?.ayudantes.dotacionProm ?? 0) },
+            { rol: "Pickeros", raw: rawFte(almacen?.pickeros), dotacion: config.dotacion_almacen },
+            { rol: "Clasificadores", raw: rawFte(almacen?.clasificadores, true), dotacion: config.dotacion_clasif },
+            { rol: "Tareas grales (reempaque)", raw: rawFte(almacen?.reempaque), dotacion: config.dotacion_reempaque },
+            { rol: "Maquinistas", raw: rawFte(almacen?.maquinistas), dotacion: config.dotacion_maquinistas },
+          ]
+          const recursos: ProyeccionRecurso[] = base.map((b) => ({
+            rol: b.rol,
+            dotacion: b.dotacion,
+            necesarios: meses.map((mm) => Math.ceil(b.raw * mm.indice)),
+          }))
+          proyeccion = { mesBase: `${anioActual}-${String(mesActual).padStart(2, "0")}`, hlBase, meses, recursos }
+        }
+      }
+    } catch (e) {
+      proyeccionError = e instanceof Error ? e.message : "Error proyección"
+    }
+
     return {
       data: {
         config,
@@ -494,6 +559,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         almacenError,
         reparto,
         repartoError,
+        proyeccion,
+        proyeccionError,
         planes: (planesRes.data ?? []) as DimPlan[],
       },
     }
