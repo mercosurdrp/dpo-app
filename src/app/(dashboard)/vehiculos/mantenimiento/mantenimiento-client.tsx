@@ -81,6 +81,7 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
+  TableroResumen,
 } from "@/actions/mantenimiento-vehiculos"
 
 // ==================== Helpers ====================
@@ -141,7 +142,11 @@ interface MantenimientoClientProps {
   overrides: MantenimientoPlanOverride[]
   mantenimientos: MantenimientoRealizado[]
   costos: CostosMantenimiento
-  tablero: { programacion: ServiceGeneralUnidad[]; documentos: DocumentoVencimiento[] }
+  tablero: {
+    programacion: ServiceGeneralUnidad[]
+    documentos: DocumentoVencimiento[]
+    resumen: TableroResumen
+  }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   puedeEditar: boolean
   esAdmin: boolean
@@ -309,6 +314,7 @@ export function MantenimientoClient({
           <TableroOperativo
             programacion={tablero.programacion}
             documentos={tablero.documentos}
+            resumen={tablero.resumen}
           />
         </TabsContent>
 

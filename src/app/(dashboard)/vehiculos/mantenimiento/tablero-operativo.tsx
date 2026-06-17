@@ -9,13 +9,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { AlertTriangle, CalendarClock, FileWarning, Gauge } from "lucide-react"
+import { ClipboardList, FileWarning, Gauge, ListChecks } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type {
   DocumentoVencimiento,
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
+import type { TableroAlertaTri, TableroResumen } from "@/actions/mantenimiento-vehiculos"
 
 const ESTADO_SG: Record<
   EstadoServiceGeneral,
@@ -55,23 +56,94 @@ function Dot({ estado }: { estado: EstadoServiceGeneral }) {
   return <span className={cn("inline-block size-2.5 rounded-full", ESTADO_SG[estado].dot)} />
 }
 
+// ---------- Tarjetas tipo Cloudfleet ----------
+
+type Tono = "danger" | "warn"
+
+function Circulo({ label, value, tono }: { label: string; value: number; tono: Tono }) {
+  const cero = value === 0
+  const bg = cero ? "bg-emerald-500" : tono === "warn" ? "bg-amber-400" : "bg-red-500"
+  return (
+    <div className="flex flex-1 flex-col items-center gap-1.5">
+      <span className="text-center text-[11px] leading-tight text-slate-500">{label}</span>
+      <span
+        className={cn(
+          "flex size-11 items-center justify-center rounded-full text-base font-bold text-white",
+          bg
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function CirclesCard({
+  title,
+  items,
+}: {
+  title: string
+  items: { label: string; value: number; tono: Tono }[]
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <p className="mb-3 text-center text-sm font-medium text-slate-600">{title}</p>
+      <div className="flex justify-around gap-2">
+        {items.map((it) => (
+          <Circulo key={it.label} {...it} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function triItems(tri: TableroAlertaTri): { label: string; value: number; tono: Tono }[] {
+  return [
+    { label: "Vencidas", value: tri.vencidas, tono: "danger" },
+    { label: "Vencen hoy", value: tri.hoy, tono: "danger" },
+    { label: "Próximas", value: tri.proximas, tono: "warn" },
+  ]
+}
+
+function StatRow({
+  label,
+  value,
+  tono,
+}: {
+  label: string
+  value: number
+  tono: "pendiente" | "info"
+}) {
+  const bg =
+    tono === "info"
+      ? "bg-slate-100 text-slate-700"
+      : value > 0
+        ? "bg-red-500 text-white"
+        : "bg-emerald-500 text-white"
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
+      <span className="text-sm text-slate-600">{label}</span>
+      <span
+        className={cn(
+          "inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold",
+          bg
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
 interface Props {
   programacion: ServiceGeneralUnidad[]
   documentos: DocumentoVencimiento[]
+  resumen: TableroResumen
 }
 
-export function TableroOperativo({ programacion, documentos }: Props) {
+export function TableroOperativo({ programacion, documentos, resumen }: Props) {
   const alerta = (e: EstadoServiceGeneral) =>
     e === "vencido" || e === "rojo" || e === "naranja" || e === "amarillo"
-
-  const svcVencidos = programacion.filter((p) => p.estado === "vencido").length
-  const svcProximos = programacion.filter(
-    (p) => p.estado === "rojo" || p.estado === "naranja" || p.estado === "amarillo"
-  ).length
-  const docsVencidos = documentos.filter((d) => d.estado === "vencido").length
-  const docsProximos = documentos.filter(
-    (d) => d.estado === "rojo" || d.estado === "naranja" || d.estado === "amarillo"
-  ).length
 
   const progOrdenada = [...programacion].sort((a, b) => {
     const oe = ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]
@@ -81,62 +153,117 @@ export function TableroOperativo({ programacion, documentos }: Props) {
     return da - db
   })
 
-  // Solo documentos vencidos o por vencer (≤30 días).
   const docsAlerta = documentos
     .filter((d) => alerta(d.estado))
     .sort((a, b) => a.diasRestantes - b.diasRestantes)
 
+  const { pendientes, hoy, alertas } = resumen
+
   return (
     <div className="space-y-6">
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
+      {/* ===== Vista general estilo Cloudfleet ===== */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Columna izquierda: Pendientes + Registro de actividades */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardList className="size-4 text-slate-500" /> Pendientes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <StatRow label="OT abiertas" value={pendientes.otAbiertas} tono="pendiente" />
+              <StatRow
+                label="Trabajos pendientes"
+                value={pendientes.trabajosPendientes}
+                tono="pendiente"
+              />
+              <StatRow
+                label="Novedades sin resolver"
+                value={pendientes.novedadesSinResolver}
+                tono="pendiente"
+              />
+              <StatRow label="OC sin compra" value={pendientes.ocSinCompra} tono="pendiente" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ListChecks className="size-4 text-slate-500" /> Registro de actividades (hoy)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <StatRow label="Vehículos con checklist" value={hoy.vehiculosChecklist} tono="info" />
+              <StatRow label="Novedades creadas" value={hoy.novedadesCreadas} tono="info" />
+              <StatRow label="OT creadas" value={hoy.otCreadas} tono="info" />
+              <StatRow
+                label="OT cerradas técnicamente"
+                value={hoy.otCerradasTecnica}
+                tono="info"
+              />
+              <StatRow
+                label="OT cerradas completamente"
+                value={hoy.otCerradasCompleta}
+                tono="info"
+              />
+              <StatRow
+                label="Llantas inspeccionadas"
+                value={hoy.llantasInspeccionadas}
+                tono="info"
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Columna derecha: Alertas */}
+        <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <AlertTriangle className="size-4 text-red-500" /> Services vencidos
-            </CardTitle>
+            <CardTitle className="text-base">Alertas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className={cn("text-2xl font-bold", svcVencidos > 0 ? "text-red-600" : "text-slate-900")}>
-              {svcVencidos}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <CalendarClock className="size-4 text-amber-500" /> Services por vencer (≤30 d)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{svcProximos}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <FileWarning className="size-4 text-red-500" /> Documentos vencidos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={cn("text-2xl font-bold", docsVencidos > 0 ? "text-red-600" : "text-slate-900")}>
-              {docsVencidos}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <FileWarning className="size-4 text-amber-500" /> Documentos por vencer (≤30 d)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{docsProximos}</p>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <CirclesCard
+                title="Programaciones de Mantenimiento"
+                items={triItems(alertas.mantenimiento)}
+              />
+              <CirclesCard
+                title="Documentos de Vehículos"
+                items={triItems(alertas.docsVehiculos)}
+              />
+              <CirclesCard
+                title="Documentos de Personal"
+                items={triItems(alertas.docsPersonal)}
+              />
+              <CirclesCard
+                title="Documentos de Proveedores"
+                items={triItems(alertas.docsProveedores)}
+              />
+              <CirclesCard
+                title="Llantas"
+                items={[
+                  { label: "Profundidad mínima", value: alertas.llantas.profundidadBaja, tono: "danger" },
+                  { label: "Presión mínima", value: alertas.llantas.presionBaja, tono: "danger" },
+                  { label: "Presión máxima", value: alertas.llantas.presionAlta, tono: "danger" },
+                ]}
+              />
+              <CirclesCard
+                title="Próximo Checklist"
+                items={triItems(alertas.proximoChecklist)}
+              />
+              <CirclesCard
+                title="Existencias de Inventario"
+                items={[
+                  { label: "Mínima superada", value: alertas.inventario.minimaSuperada, tono: "danger" },
+                  { label: "Máxima superada", value: alertas.inventario.maximaSuperada, tono: "danger" },
+                ]}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Leyenda */}
+      {/* Leyenda del semáforo de service */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
         {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos"] as EstadoServiceGeneral[]).map(
           (k) => (
@@ -147,7 +274,7 @@ export function TableroOperativo({ programacion, documentos }: Props) {
         )}
       </div>
 
-      {/* Programación de mantenimiento */}
+      {/* Programación de mantenimiento (detalle service general) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

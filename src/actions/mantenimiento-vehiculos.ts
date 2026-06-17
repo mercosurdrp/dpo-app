@@ -45,47 +45,135 @@ export async function getEstadoPlanFlota(): Promise<
 
 // ==================== TABLERO OPERATIVO ====================
 
+export interface TableroAlertaTri {
+  vencidas: number
+  hoy: number
+  proximas: number
+}
+
+export interface TableroResumen {
+  pendientes: {
+    otAbiertas: number
+    trabajosPendientes: number
+    novedadesSinResolver: number
+    ocSinCompra: number
+  }
+  hoy: {
+    vehiculosChecklist: number
+    novedadesCreadas: number
+    otCreadas: number
+    otCerradasTecnica: number
+    otCerradasCompleta: number
+    llantasInspeccionadas: number
+  }
+  alertas: {
+    mantenimiento: TableroAlertaTri
+    docsVehiculos: TableroAlertaTri
+    docsPersonal: TableroAlertaTri
+    docsProveedores: TableroAlertaTri
+    proximoChecklist: TableroAlertaTri
+    llantas: { profundidadBaja: number; presionBaja: number; presionAlta: number }
+    inventario: { minimaSuperada: number; maximaSuperada: number }
+  }
+}
+
+// Umbrales de llantas (orientativos, ajustables luego por config).
+const LLANTA_PROF_MIN_MM = 3
+const LLANTA_PRESION_MIN_PSI = 90
+const LLANTA_PRESION_MAX_PSI = 120
+
+function triVacio(): TableroAlertaTri {
+  return { vencidas: 0, hoy: 0, proximas: 0 }
+}
+
+function clasificarDias(tri: TableroAlertaTri, dias: number) {
+  if (dias < 0) tri.vencidas++
+  else if (dias === 0) tri.hoy++
+  else if (dias <= 30) tri.proximas++
+}
+
 export async function getTableroOperativo(): Promise<
-  | { data: { programacion: ServiceGeneralUnidad[]; documentos: DocumentoVencimiento[] } }
+  | {
+      data: {
+        programacion: ServiceGeneralUnidad[]
+        documentos: DocumentoVencimiento[]
+        resumen: TableroResumen
+      }
+    }
   | { error: string }
 > {
   try {
     await requireAuth()
     const supabase = await createClient()
+    const hoy = today()
 
     const programacion = await loadServiceGeneral()
 
-    // Documentos (seguros/VTV/SENASA/extintores) viven en requisitos_legales,
-    // categorías con identificador = vehículo; el campo `nombre` = patente.
-    const { data: cats, error: catErr } = await supabase
-      .from("requisitos_legales_categorias")
-      .select("id, nombre, tipo_identificador")
-      .eq("tipo_identificador", "vehiculo")
-    if (catErr) throw new Error(catErr.message)
-
-    const catNombre = new Map<string, string>(
-      ((cats || []) as Array<{ id: string; nombre: string }>).map((c) => [c.id, c.nombre])
-    )
-
-    const documentos: DocumentoVencimiento[] = []
-    if (catNombre.size > 0) {
-      const hoy = today()
-      const { data: reqs, error: reqErr } = await supabase
+    const [
+      catsRes,
+      reqsRes,
+      otRes,
+      chkRes,
+      vehRes,
+      novRes,
+      llantasRes,
+      repuestosRes,
+      ocRes,
+    ] = await Promise.all([
+      supabase
+        .from("requisitos_legales_categorias")
+        .select("id, nombre, tipo_identificador"),
+      supabase
         .from("requisitos_legales")
         .select("id, nombre, fecha_vencimiento, categoria_id")
-        .in("categoria_id", [...catNombre.keys()])
         .not("fecha_vencimiento", "is", null)
-        .order("fecha_vencimiento")
-      if (reqErr) throw new Error(reqErr.message)
+        .order("fecha_vencimiento"),
+      supabase
+        .from("mantenimiento_realizados")
+        .select("estado, costo, created_at, updated_at"),
+      supabase.from("checklist_vehiculos").select("dominio, fecha, tipo"),
+      supabase.from("catalogo_vehiculos").select("dominio, tipo").eq("active", true),
+      supabase.from("mantenimiento_novedades").select("estado, fecha"),
+      supabase
+        .from("mantenimiento_llantas")
+        .select("dominio, posicion, fecha, profundidad_mm, presion_psi"),
+      supabase.from("mantenimiento_repuestos").select("stock_actual, stock_min, stock_max"),
+      supabase.from("mantenimiento_ordenes_compra").select("estado"),
+    ])
+    for (const r of [
+      catsRes, reqsRes, otRes, chkRes, vehRes, novRes, llantasRes, repuestosRes, ocRes,
+    ]) {
+      if (r.error) throw new Error(r.error.message)
+    }
 
-      for (const r of (reqs || []) as Array<{
-        id: string
-        nombre: string
-        fecha_vencimiento: string
-        categoria_id: string
-      }>) {
-        const venc = r.fecha_vencimiento.slice(0, 10)
-        const dias = venc >= hoy ? daysBetween(hoy, venc) : -daysBetween(venc, hoy)
+    // --- Categorías de documentos por tipo de identificador ---
+    const catTipo = new Map<string, string>()
+    const catNombre = new Map<string, string>()
+    for (const c of (catsRes.data || []) as Array<{
+      id: string
+      nombre: string
+      tipo_identificador: string
+    }>) {
+      catTipo.set(c.id, c.tipo_identificador)
+      catNombre.set(c.id, c.nombre)
+    }
+
+    // --- Documentos: detalle de vehículos + buckets por tipo ---
+    const documentos: DocumentoVencimiento[] = []
+    const docsVehiculos = triVacio()
+    const docsPersonal = triVacio()
+    const docsProveedores = triVacio()
+    for (const r of (reqsRes.data || []) as Array<{
+      id: string
+      nombre: string
+      fecha_vencimiento: string
+      categoria_id: string
+    }>) {
+      const venc = r.fecha_vencimiento.slice(0, 10)
+      const dias = venc >= hoy ? daysBetween(hoy, venc) : -daysBetween(venc, hoy)
+      const tipo = catTipo.get(r.categoria_id)
+      if (tipo === "vehiculo") {
+        clasificarDias(docsVehiculos, dias)
         documentos.push({
           id: r.id,
           dominio: r.nombre,
@@ -94,10 +182,144 @@ export async function getTableroOperativo(): Promise<
           diasRestantes: dias,
           estado: estadoPorDias(dias),
         })
+      } else if (tipo === "persona") {
+        clasificarDias(docsPersonal, dias)
+      } else if (tipo === "proveedor") {
+        clasificarDias(docsProveedores, dias)
       }
     }
 
-    return { data: { programacion, documentos } }
+    // --- Programaciones de mantenimiento (service general) ---
+    const mantenimiento = triVacio()
+    for (const p of programacion) {
+      if (p.diasRestantes != null) clasificarDias(mantenimiento, p.diasRestantes)
+    }
+
+    // --- Órdenes de trabajo ---
+    let otAbiertas = 0
+    let trabajosPendientes = 0
+    let otCreadas = 0
+    let otCerradasTecnica = 0
+    let otCerradasCompleta = 0
+    for (const o of (otRes.data || []) as Array<{
+      estado: string
+      costo: number | null
+      created_at: string
+      updated_at: string
+    }>) {
+      if (o.estado === "programado") otAbiertas++
+      else if (o.estado === "en_taller") trabajosPendientes++
+      if (o.created_at?.slice(0, 10) === hoy) otCreadas++
+      if (o.estado === "completado" && o.updated_at?.slice(0, 10) === hoy) {
+        if (o.costo == null) otCerradasTecnica++
+        else otCerradasCompleta++
+      }
+    }
+
+    // --- Checklists: hechos hoy + programación (diaria) ---
+    const ultimoChkPorDom = new Map<string, string>()
+    const checklistHoy = new Set<string>()
+    for (const c of (chkRes.data || []) as Array<{
+      dominio: string
+      fecha: string
+      tipo: string
+    }>) {
+      const f = c.fecha.slice(0, 10)
+      if (f === hoy) checklistHoy.add(c.dominio)
+      const prev = ultimoChkPorDom.get(c.dominio)
+      if (!prev || f > prev) ultimoChkPorDom.set(c.dominio, f)
+    }
+    const proximoChecklist = triVacio()
+    for (const v of (vehRes.data || []) as Array<{ dominio: string; tipo: string | null }>) {
+      // Solo unidades que hacen checklist de ruta (no autoelevadores).
+      if (v.tipo === "autoelevador") continue
+      const ult = ultimoChkPorDom.get(v.dominio)
+      const dias = ult ? daysBetween(ult, hoy) : 999
+      if (dias >= 2) proximoChecklist.vencidas++
+      else if (dias === 1) proximoChecklist.hoy++
+      else proximoChecklist.proximas++ // hecho hoy → al día
+    }
+
+    // --- Novedades ---
+    let novedadesSinResolver = 0
+    let novedadesCreadas = 0
+    for (const n of (novRes.data || []) as Array<{ estado: string; fecha: string }>) {
+      if (n.estado !== "resuelta") novedadesSinResolver++
+      if (n.fecha?.slice(0, 10) === hoy) novedadesCreadas++
+    }
+
+    // --- Llantas: última inspección por dominio+posición ---
+    const llaveLlanta = (d: string, p: string | null) => `${d}|${p ?? ""}`
+    const ultLlanta = new Map<string, { fecha: string; prof: number | null; presion: number | null }>()
+    let llantasInspeccionadas = 0
+    for (const l of (llantasRes.data || []) as Array<{
+      dominio: string
+      posicion: string | null
+      fecha: string
+      profundidad_mm: number | null
+      presion_psi: number | null
+    }>) {
+      if (l.fecha?.slice(0, 10) === hoy) llantasInspeccionadas++
+      const k = llaveLlanta(l.dominio, l.posicion)
+      const prev = ultLlanta.get(k)
+      if (!prev || l.fecha > prev.fecha) {
+        ultLlanta.set(k, {
+          fecha: l.fecha,
+          prof: l.profundidad_mm != null ? Number(l.profundidad_mm) : null,
+          presion: l.presion_psi != null ? Number(l.presion_psi) : null,
+        })
+      }
+    }
+    let profundidadBaja = 0
+    let presionBaja = 0
+    let presionAlta = 0
+    for (const v of ultLlanta.values()) {
+      if (v.prof != null && v.prof < LLANTA_PROF_MIN_MM) profundidadBaja++
+      if (v.presion != null && v.presion < LLANTA_PRESION_MIN_PSI) presionBaja++
+      if (v.presion != null && v.presion > LLANTA_PRESION_MAX_PSI) presionAlta++
+    }
+
+    // --- Inventario de repuestos ---
+    let minimaSuperada = 0
+    let maximaSuperada = 0
+    for (const r of (repuestosRes.data || []) as Array<{
+      stock_actual: number | null
+      stock_min: number | null
+      stock_max: number | null
+    }>) {
+      const act = Number(r.stock_actual ?? 0)
+      if (r.stock_min != null && act <= Number(r.stock_min)) minimaSuperada++
+      if (r.stock_max != null && act >= Number(r.stock_max)) maximaSuperada++
+    }
+
+    // --- Órdenes de compra ---
+    let ocSinCompra = 0
+    for (const o of (ocRes.data || []) as Array<{ estado: string }>) {
+      if (o.estado === "pendiente") ocSinCompra++
+    }
+
+    const resumen: TableroResumen = {
+      pendientes: { otAbiertas, trabajosPendientes, novedadesSinResolver, ocSinCompra },
+      hoy: {
+        vehiculosChecklist: checklistHoy.size,
+        novedadesCreadas,
+        otCreadas,
+        otCerradasTecnica,
+        otCerradasCompleta,
+        llantasInspeccionadas,
+      },
+      alertas: {
+        mantenimiento,
+        docsVehiculos,
+        docsPersonal,
+        docsProveedores,
+        proximoChecklist,
+        llantas: { profundidadBaja, presionBaja, presionAlta },
+        inventario: { minimaSuperada, maximaSuperada },
+      },
+    }
+
+    return { data: { programacion, documentos, resumen } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

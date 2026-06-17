@@ -37,7 +37,37 @@ export default async function MantenimientoPage() {
   const costos =
     "data" in costosRes ? costosRes.data : { costoMes: 0, costoYTD: 0, porMes: [] }
   const tablero =
-    "data" in tableroRes ? tableroRes.data : { programacion: [], documentos: [] }
+    "data" in tableroRes
+      ? tableroRes.data
+      : {
+          programacion: [],
+          documentos: [],
+          resumen: {
+            pendientes: {
+              otAbiertas: 0,
+              trabajosPendientes: 0,
+              novedadesSinResolver: 0,
+              ocSinCompra: 0,
+            },
+            hoy: {
+              vehiculosChecklist: 0,
+              novedadesCreadas: 0,
+              otCreadas: 0,
+              otCerradasTecnica: 0,
+              otCerradasCompleta: 0,
+              llantasInspeccionadas: 0,
+            },
+            alertas: {
+              mantenimiento: { vencidas: 0, hoy: 0, proximas: 0 },
+              docsVehiculos: { vencidas: 0, hoy: 0, proximas: 0 },
+              docsPersonal: { vencidas: 0, hoy: 0, proximas: 0 },
+              docsProveedores: { vencidas: 0, hoy: 0, proximas: 0 },
+              proximoChecklist: { vencidas: 0, hoy: 0, proximas: 0 },
+              llantas: { profundidadBaja: 0, presionBaja: 0, presionAlta: 0 },
+              inventario: { minimaSuperada: 0, maximaSuperada: 0 },
+            },
+          },
+        }
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const role = profile?.role ?? "viewer"
