@@ -78,6 +78,7 @@ import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-de
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
+import { WarehousePerdidasDetalleDiaDialog } from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -844,6 +845,9 @@ export function ReunionDetallePageClient({
   )
   // Detalle del día seleccionado al hacer click en celda HL vendidos
   const [ventasHlFecha, setVentasHlFecha] = useState<string | null>(null)
+  // Detalle del día al hacer click en celda WQI / Roturas / Faltantes (warehouse):
+  // popover con bultos vendidos + pérdidas del día (blob precocido warehouse-dia-detalle).
+  const [wqiDetalleFecha, setWqiDetalleFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
@@ -1690,13 +1694,20 @@ export function ReunionDetallePageClient({
                           // reservado a los días sin datos (valor null).
                           const esErroresPicking =
                             ind.id === "auto_errores_picking"
+                          // WQI / Roturas / Faltantes: un día operativo con 0
+                          // (sin roturas/faltantes ese día) se muestra como 0 y es
+                          // clickeable, no "—". Así el WQI=0 deja de ser un misterio.
+                          const esWqiPerdidasCero =
+                            ind.id === "auto_wqi" ||
+                            ind.id === "auto_roturas" ||
+                            ind.id === "auto_faltantes"
                           const valorValido =
                             valor != null && Number.isFinite(valor) && f <= detalle.fecha
                           // LTI/TRI muestran 0 (días sin accidente) como el resto
                           // de indicadores con `mostrar_cero`.
                           const muestra =
                             valorValido &&
-                            (ind.mostrar_cero || esLtiTri || esErroresPicking
+                            (ind.mostrar_cero || esLtiTri || esErroresPicking || esWqiPerdidasCero
                               ? true
                               : valor! > 0)
                           const esPct = ind.unidad === "%"
@@ -1750,6 +1761,13 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_errores_picking"
                           const esAusentismo = ind.id === "auto_ausentismo"
                           const esOB = ind.id === "auto_ocupacion_bodega"
+                          // WQI / Roturas / Faltantes (warehouse): mismo popover de
+                          // detalle del día (bultos vendidos + pérdidas). Explica el
+                          // "WQI = 0" (día sin roturas o sin venta cargada todavía).
+                          const esWqiPerdidas =
+                            ind.id === "auto_wqi" ||
+                            ind.id === "auto_roturas" ||
+                            ind.id === "auto_faltantes"
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -1760,7 +1778,8 @@ export function ReunionDetallePageClient({
                               esHorasCalle ||
                               esAperturaPicking ||
                               esAusentismo ||
-                              esOB) &&
+                              esOB ||
+                              esWqiPerdidas) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -1773,6 +1792,7 @@ export function ReunionDetallePageClient({
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
+                            else if (esWqiPerdidas) setWqiDetalleFecha(f)
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -2016,6 +2036,14 @@ export function ReunionDetallePageClient({
           if (!o) setHorasCalleFecha(null)
         }}
         fecha={horasCalleFecha}
+      />
+
+      <WarehousePerdidasDetalleDiaDialog
+        open={wqiDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setWqiDetalleFecha(null)
+        }}
+        fecha={wqiDetalleFecha}
       />
     </div>
   )
