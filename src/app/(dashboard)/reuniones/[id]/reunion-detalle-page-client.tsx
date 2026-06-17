@@ -1718,12 +1718,151 @@ export function ReunionDetallePageClient({
         currentRole={currentRole}
       />
 
-      {/* ETAPA 2: TABLERO DE CONTROL */}
+      {/* ETAPA 2: ACTION LOG */}
+      <Card className="border-emerald-200 bg-emerald-50/30">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
+            <ListTodo className="size-5 text-emerald-600" />
+            Etapa 2 — Action Log ({actividades.length})
+          </CardTitle>
+          {puedeEditar && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setActividadEditando(null)
+                setOpenActForm(true)
+              }}
+            >
+              <Plus className="mr-2 size-4" />
+              Nueva actividad
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="px-0">
+          {actividades.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Sin actividades registradas.
+              </p>
+              {puedeEditar && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    setActividadEditando(null)
+                    setOpenActForm(true)
+                  }}
+                >
+                  <Plus className="mr-2 size-4" />
+                  Crear primera
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
+                <span className="mr-1 font-medium text-slate-600">Estado:</span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("todas")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "todas"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Todas ({actividades.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("no_comenzada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "no_comenzada"
+                      ? "border-slate-500 bg-slate-100 font-semibold text-slate-800"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  No iniciadas ({conteosActividades.no_comenzada})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("en_curso")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "en_curso"
+                      ? "border-amber-500 bg-amber-50 font-semibold text-amber-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  En curso ({conteosActividades.en_curso})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado("cerrada")}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs transition",
+                    filtroEstado === "cerrada"
+                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  Realizadas ({conteosActividades.cerrada})
+                </button>
+              </div>
+              {actividadesFiltradas.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Ninguna actividad coincide con este filtro.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setFiltroEstado("todas")}
+                  >
+                    Ver todas
+                  </Button>
+                </div>
+              ) : (
+                <ul className="border-y bg-white">
+                  {actividadesFiltradas.map((act) => (
+                    <ActividadListItem
+                      key={act.id}
+                      actividad={act}
+                      reunionId={detalle.id}
+                      puedeEditar={puedeEditar}
+                      currentProfileId={currentProfileId}
+                      onEdit={() => {
+                        setActividadEditando(act)
+                        setOpenActForm(true)
+                      }}
+                      onAbrirDetalle={(estadoInicial) =>
+                        setActividadDetalle({ actividad: act, estadoInicial })
+                      }
+                      onActualizada={aplicarActividadLocal}
+                      onEliminada={eliminarActividadLocal}
+                      onAbrirArchivo={abrirArchivo}
+                    />
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ETAPA 3: TABLERO DE CONTROL */}
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
             <BarChart3 className="size-5 text-blue-600" />
-            Etapa 2 — Tablero de control
+            Etapa 3 — Tablero de control
             {indicadoresMes && (
               <span className="text-sm font-normal capitalize text-muted-foreground">
                 · {nombreMes(indicadoresMes.mes)} {indicadoresMes.anio}
@@ -2284,145 +2423,6 @@ export function ReunionDetallePageClient({
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ETAPA 3: ACTION LOG */}
-      <Card className="border-emerald-200 bg-emerald-50/30">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold text-emerald-900">
-            <ListTodo className="size-5 text-emerald-600" />
-            Etapa 3 — Action Log ({actividades.length})
-          </CardTitle>
-          {puedeEditar && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setActividadEditando(null)
-                setOpenActForm(true)
-              }}
-            >
-              <Plus className="mr-2 size-4" />
-              Nueva actividad
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="px-0">
-          {actividades.length === 0 ? (
-            <div className="px-4 py-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                Sin actividades registradas.
-              </p>
-              {puedeEditar && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setActividadEditando(null)
-                    setOpenActForm(true)
-                  }}
-                >
-                  <Plus className="mr-2 size-4" />
-                  Crear primera
-                </Button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 text-xs">
-                <span className="mr-1 font-medium text-slate-600">Estado:</span>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("todas")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "todas"
-                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  Todas ({actividades.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("no_comenzada")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "no_comenzada"
-                      ? "border-slate-500 bg-slate-100 font-semibold text-slate-800"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  No iniciadas ({conteosActividades.no_comenzada})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("en_curso")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "en_curso"
-                      ? "border-amber-500 bg-amber-50 font-semibold text-amber-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  En curso ({conteosActividades.en_curso})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("cerrada")}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-xs transition",
-                    filtroEstado === "cerrada"
-                      ? "border-emerald-500 bg-emerald-50 font-semibold text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                  )}
-                >
-                  Realizadas ({conteosActividades.cerrada})
-                </button>
-              </div>
-              {actividadesFiltradas.length === 0 ? (
-                <div className="px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Ninguna actividad coincide con este filtro.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => setFiltroEstado("todas")}
-                  >
-                    Ver todas
-                  </Button>
-                </div>
-              ) : (
-                <ul className="border-y bg-white">
-                  {actividadesFiltradas.map((act) => (
-                    <ActividadListItem
-                      key={act.id}
-                      actividad={act}
-                      reunionId={detalle.id}
-                      puedeEditar={puedeEditar}
-                      currentProfileId={currentProfileId}
-                      onEdit={() => {
-                        setActividadEditando(act)
-                        setOpenActForm(true)
-                      }}
-                      onAbrirDetalle={(estadoInicial) =>
-                        setActividadDetalle({ actividad: act, estadoInicial })
-                      }
-                      onActualizada={aplicarActividadLocal}
-                      onEliminada={eliminarActividadLocal}
-                      onAbrirArchivo={abrirArchivo}
-                    />
-                  ))}
-                </ul>
-              )}
-            </>
           )}
         </CardContent>
       </Card>
