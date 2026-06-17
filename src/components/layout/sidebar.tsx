@@ -35,6 +35,7 @@ import {
   Wrench,
   Route,
   Handshake,
+  HeartHandshake,
   Megaphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -110,6 +111,13 @@ export const navItems: NavItem[] = [
     label: "Indicadores",
     href: "/indicadores",
     icon: <BarChart3 className="size-5" />,
+  },
+  {
+    label: "NPS",
+    href: "/nps",
+    icon: <HeartHandshake className="size-5" />,
+    misionesOnly: true,
+    hideForEmpleado: true,
   },
   {
     label: "OWD",
