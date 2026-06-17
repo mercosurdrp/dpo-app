@@ -208,7 +208,7 @@ export function TableroOperativo({ programacion, documentos, resumen }: Props) {
                 tono="info"
               />
               <StatRow
-                label="Llantas inspeccionadas"
+                label="Neumáticos inspeccionados"
                 value={hoy.llantasInspeccionadas}
                 tono="info"
               />
@@ -240,7 +240,7 @@ export function TableroOperativo({ programacion, documentos, resumen }: Props) {
                 items={triItems(alertas.docsProveedores)}
               />
               <CirclesCard
-                title="Llantas"
+                title="Neumáticos"
                 items={[
                   { label: "Profundidad mínima", value: alertas.llantas.profundidadBaja, tono: "danger" },
                   { label: "Presión mínima", value: alertas.llantas.presionBaja, tono: "danger" },

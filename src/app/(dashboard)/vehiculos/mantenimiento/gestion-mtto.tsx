@@ -121,7 +121,7 @@ export function GestionMtto({
       <Tabs defaultValue="novedades">
         <TabsList>
           <TabsTrigger value="novedades">Novedades</TabsTrigger>
-          <TabsTrigger value="llantas">Llantas</TabsTrigger>
+          <TabsTrigger value="llantas">Neumáticos</TabsTrigger>
           <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
           <TabsTrigger value="oc">Órdenes de compra</TabsTrigger>
         </TabsList>
@@ -221,7 +221,7 @@ export function GestionMtto({
             <CardContent className="overflow-x-auto pt-6">
               {llantas.length === 0 ? (
                 <p className="py-6 text-center text-sm text-slate-500">
-                  Sin inspecciones de llantas cargadas.
+                  Sin inspecciones de neumáticos cargadas.
                 </p>
               ) : (
                 <Table>
@@ -633,7 +633,7 @@ function LlantaDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nueva inspección de llanta</DialogTitle>
+          <DialogTitle>Nueva inspección de neumático</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

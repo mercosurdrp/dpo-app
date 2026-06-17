@@ -2533,6 +2533,7 @@ export type TipoIdentificadorRequisito =
   | "vehiculo"
   | "persona"
   | "ubicacion"
+  | "proveedor"
 
 export interface RequisitoLegalCategoria {
   id: string

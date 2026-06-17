@@ -60,6 +60,11 @@ const TIPO_OPCIONES: {
     label: "Ubicación",
     hint: "El nombre del item es la ubicación física.",
   },
+  {
+    value: "proveedor",
+    label: "Proveedor",
+    hint: "El nombre del item es el proveedor (ej. Neumáticos XYZ).",
+  },
 ]
 
 export function CategoriaFormDialog({

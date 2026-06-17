@@ -39,6 +39,7 @@ import {
   CalendarClock,
   CircleDollarSign,
   Clock,
+  Paperclip,
   Plus,
   Pencil,
   Trash2,
@@ -46,11 +47,13 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
   createMantenimiento,
   createPlanTarea,
   deleteMantenimiento,
   deletePlanOverride,
+  subirFacturasMantenimiento,
   updateMantenimiento,
   updatePlanTarea,
   upsertPlanOverride,
@@ -137,6 +140,32 @@ function parseNum(s: string): number | null {
   if (!s.trim()) return null
   const n = Number(s.replace(",", "."))
   return isNaN(n) ? null : n
+}
+
+// Comprime imágenes (deja PDFs/otros tal cual) y sube las facturas al Storage,
+// devolviendo las URLs públicas. null si hubo error (ya muestra el toast).
+async function subirFacturas(dominio: string, files: File[]): Promise<string[] | null> {
+  if (files.length === 0) return []
+  const fd = new FormData()
+  fd.append("dominio", dominio)
+  for (const f of files) fd.append("facturas", await comprimirImagen(f))
+  const res = await subirFacturasMantenimiento(fd)
+  if ("error" in res) {
+    toast.error(res.error)
+    return null
+  }
+  return res.data
+}
+
+const ACCEPT_FACTURA = "image/*,application/pdf,.pdf,.doc,.docx"
+
+function nombreArchivoDeUrl(url: string): string {
+  try {
+    const last = url.split("/").pop() || "archivo"
+    return decodeURIComponent(last.replace(/^\d+-\d+-/, ""))
+  } catch {
+    return "archivo"
+  }
 }
 
 // ==================== Componente principal ====================
@@ -589,6 +618,21 @@ export function MantenimientoClient({
                               .filter(Boolean)
                               .join(" · ") || "—"}
                           </span>
+                          {(m.evidencia_urls?.length ?? 0) > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {m.evidencia_urls!.map((url, i) => (
+                                <a
+                                  key={url}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-0.5 text-xs text-sky-600 hover:underline"
+                                >
+                                  <Paperclip className="size-3" /> Factura{i > 0 ? ` ${i + 1}` : ""}
+                                </a>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-slate-600">
                           {m.odometro != null
@@ -1016,6 +1060,7 @@ function NuevoMantenimientoDialog({
   )
   const [libres, setLibres] = useState<string[]>([])
   const [libreInput, setLibreInput] = useState("")
+  const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
   const vehiculoSel = estados.find((e) => e.vehiculo.dominio === dominio)
@@ -1055,6 +1100,11 @@ function NuevoMantenimientoDialog({
     ]
     if (tareas.length === 0) tareas.push({ descripcion: "Service general (rodado)" })
     setSaving(true)
+    const urls = await subirFacturas(dominio, facturas)
+    if (urls === null) {
+      setSaving(false)
+      return
+    }
     const res = await createMantenimiento({
       dominio,
       fecha,
@@ -1067,6 +1117,7 @@ function NuevoMantenimientoDialog({
       numero_factura: factura,
       observaciones: obs,
       es_service_general: esServiceGeneral,
+      evidencia_urls: urls.length ? urls : null,
       tareas,
     })
     setSaving(false)
@@ -1262,6 +1313,8 @@ function NuevoMantenimientoDialog({
             <Label>Observaciones</Label>
             <Textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} />
           </div>
+
+          <FacturasInput facturas={facturas} setFacturas={setFacturas} />
         </div>
 
         <DialogFooter>
@@ -1274,6 +1327,44 @@ function NuevoMantenimientoDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// Campo reutilizable para adjuntar facturas/comprobantes (imágenes o PDF).
+function FacturasInput({
+  facturas,
+  setFacturas,
+}: {
+  facturas: File[]
+  setFacturas: (f: File[]) => void
+}) {
+  return (
+    <div>
+      <Label>Factura / comprobante</Label>
+      <Input
+        type="file"
+        accept={ACCEPT_FACTURA}
+        multiple
+        onChange={(e) => {
+          const nuevos = Array.from(e.target.files ?? [])
+          if (nuevos.length) setFacturas([...facturas, ...nuevos])
+          e.target.value = ""
+        }}
+      />
+      {facturas.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {facturas.map((f, i) => (
+            <Badge key={i} variant="outline" className="gap-1">
+              <Paperclip className="size-3" />
+              {f.name.length > 24 ? f.name.slice(0, 22) + "…" : f.name}
+              <button onClick={() => setFacturas(facturas.filter((_, j) => j !== i))}>
+                <X className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1298,10 +1389,18 @@ function EditarMantenimientoDialog({
   const [factura, setFactura] = useState(m.numero_factura ?? "")
   const [obs, setObs] = useState(m.observaciones ?? "")
   const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
+  const [urlsExistentes, setUrlsExistentes] = useState<string[]>(m.evidencia_urls ?? [])
+  const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
     setSaving(true)
+    const nuevas = await subirFacturas(m.dominio, facturas)
+    if (nuevas === null) {
+      setSaving(false)
+      return
+    }
+    const evidencia = [...urlsExistentes, ...nuevas]
     const res = await updateMantenimiento({
       id: m.id,
       fecha,
@@ -1313,6 +1412,7 @@ function EditarMantenimientoDialog({
       numero_factura: factura,
       observaciones: obs,
       es_service_general: esServiceGeneral,
+      evidencia_urls: evidencia,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1395,6 +1495,25 @@ function EditarMantenimientoDialog({
               </span>
             </span>
           </label>
+
+          <div className="col-span-2">
+            {urlsExistentes.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {urlsExistentes.map((url, i) => (
+                  <Badge key={url} variant="outline" className="gap-1">
+                    <Paperclip className="size-3" />
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {nombreArchivoDeUrl(url)}
+                    </a>
+                    <button onClick={() => setUrlsExistentes(urlsExistentes.filter((_, j) => j !== i))}>
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <FacturasInput facturas={facturas} setFacturas={setFacturas} />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

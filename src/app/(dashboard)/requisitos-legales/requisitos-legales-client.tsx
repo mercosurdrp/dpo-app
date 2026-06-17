@@ -80,6 +80,8 @@ function columnaPrincipalLabel(tipo: TipoIdentificadorRequisito): string {
       return "Persona"
     case "ubicacion":
       return "Ubicación"
+    case "proveedor":
+      return "Proveedor"
     default:
       return "Requisito"
   }

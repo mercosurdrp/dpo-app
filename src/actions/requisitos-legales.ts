@@ -191,7 +191,7 @@ export async function crearCategoria(
 
     if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
     if (
-      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
+      !["ninguno", "vehiculo", "persona", "ubicacion", "proveedor"].includes(
         tipo_identificador,
       )
     ) {
@@ -267,7 +267,7 @@ export async function actualizarCategoria(
 
     if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
     if (
-      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
+      !["ninguno", "vehiculo", "persona", "ubicacion", "proveedor"].includes(
         tipo_identificador,
       )
     ) {

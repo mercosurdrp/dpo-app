@@ -49,6 +49,8 @@ function nombreLabel(tipo: TipoIdentificadorRequisito | undefined): string {
       return "Persona"
     case "ubicacion":
       return "Ubicación"
+    case "proveedor":
+      return "Proveedor"
     default:
       return "Requisito"
   }
@@ -62,6 +64,8 @@ function nombrePlaceholder(tipo: TipoIdentificadorRequisito | undefined): string
       return "Ej. Juan Pérez"
     case "ubicacion":
       return "Ej. NAVE 1 - Puerta adelante"
+    case "proveedor":
+      return "Ej. Neumáticos XYZ S.A."
     default:
       return "Ej. Habilitación Municipal Ramallo"
   }

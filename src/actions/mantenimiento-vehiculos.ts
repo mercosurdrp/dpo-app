@@ -503,7 +503,48 @@ interface CreateMantenimientoInput {
   numero_factura?: string
   observaciones?: string
   es_service_general?: boolean
+  evidencia_urls?: string[] | null
   tareas: MantenimientoTareaInput[]
+}
+
+const FACTURAS_BUCKET = "mantenimiento-evidencias"
+
+/**
+ * Sube las facturas/comprobantes de un mantenimiento al Storage y devuelve las
+ * URLs públicas (para guardar en mantenimiento_realizados.evidencia_urls).
+ * Recibe FormData con el campo `facturas` (uno o más File) y `dominio`.
+ */
+export async function subirFacturasMantenimiento(
+  formData: FormData
+): Promise<{ data: string[] } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const files = formData
+      .getAll("facturas")
+      .filter((f): f is File => f instanceof File && f.size > 0)
+    if (files.length === 0) return { data: [] }
+    const dominio = String(formData.get("dominio") || "SIN").trim().toUpperCase() || "SIN"
+    const urls: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const clean = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = `${dominio}/${Date.now()}-${i}-${clean}`
+      const ab = await file.arrayBuffer()
+      const { error } = await supabase.storage
+        .from(FACTURAS_BUCKET)
+        .upload(path, ab, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (error) return { error: error.message }
+      const { data: pub } = supabase.storage.from(FACTURAS_BUCKET).getPublicUrl(path)
+      urls.push(pub.publicUrl)
+    }
+    return { data: urls }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
 }
 
 export async function createMantenimiento(
@@ -530,6 +571,7 @@ export async function createMantenimiento(
         numero_factura: input.numero_factura?.trim() || null,
         observaciones: input.observaciones?.trim() || null,
         es_service_general: input.es_service_general ?? false,
+        evidencia_urls: input.evidencia_urls ?? null,
         created_by: profile.id,
       })
       .select()
@@ -569,6 +611,7 @@ interface UpdateMantenimientoInput {
   numero_factura?: string
   observaciones?: string
   es_service_general?: boolean
+  evidencia_urls?: string[] | null
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
 }
@@ -594,6 +637,7 @@ export async function updateMantenimiento(
       patch.observaciones = input.observaciones?.trim() || null
     if (input.es_service_general !== undefined)
       patch.es_service_general = input.es_service_general
+    if (input.evidencia_urls !== undefined) patch.evidencia_urls = input.evidencia_urls
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
