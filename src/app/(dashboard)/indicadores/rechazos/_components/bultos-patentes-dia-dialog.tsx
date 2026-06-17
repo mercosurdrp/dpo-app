@@ -106,7 +106,6 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
-                  <TableHead className="w-24">Origen</TableHead>
                   <TableHead className="w-32">Patente</TableHead>
                   <TableHead>Chofer</TableHead>
                   <TableHead className="w-24 text-right">Bultos</TableHead>
@@ -117,7 +116,7 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
               <TableBody>
                 {data.patentes.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       Sin ventas para este día
                     </TableCell>
                   </TableRow>
@@ -133,18 +132,6 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
                       onClick={() => setSkuDrill({ fletero: p.ds_fletero_carga, etiqueta })}
                     >
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                      <TableCell>
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                            p.origen === "gestion"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-sky-100 text-sky-800",
-                          )}
-                        >
-                          {p.origen === "gestion" ? "Gestión" : "Chess"}
-                        </span>
-                      </TableCell>
                       <TableCell className="font-mono text-xs">
                         {p.patente ?? p.ds_fletero_carga.replace(/^GESTION-/, "Rep. ")}
                         {p.origen === "gestion" && p.patente && (

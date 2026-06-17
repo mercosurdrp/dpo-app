@@ -58,7 +58,6 @@ export function Filtros({
   const canales = q.canales ?? []
   const supervisores = q.supervisores ?? []
   const origenes = q.origenes ?? []
-  const origenSel = origenes.length === 1 ? origenes[0] : "ambos"
 
   const hasFilters =
     motivos.length > 0 || fleteros.length > 0 ||
@@ -154,24 +153,6 @@ export function Filtros({
           selected={supervisores}
           onChange={(next) => setQ({ supervisores: next.length ? next : null })}
         />
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-muted-foreground">Origen</Label>
-          <Select
-            value={origenSel}
-            onValueChange={(v) =>
-              setQ({ origenes: v === "ambos" ? null : [v as "chess" | "gestion"] })
-            }
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder="Ambos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ambos">Ambos (Chess + Gestión)</SelectItem>
-              <SelectItem value="chess">Chess</SelectItem>
-              <SelectItem value="gestion">Gestión</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         <div className="col-span-2 flex items-end justify-end md:col-span-2 lg:col-span-2">
           {hasFilters && (
             <Button

@@ -52,7 +52,7 @@ export function KpiCards({ data }: { data: RechazosComparado }) {
             <button
               type="button"
               onClick={() => setBultosDiaOpen(true)}
-              title="Ver bultos por día (Chess vs Gestión)"
+              title="Ver bultos por día"
               className="group flex items-center gap-1 rounded text-left text-[11px] text-muted-foreground transition-colors hover:text-slate-900"
             >
               <span>

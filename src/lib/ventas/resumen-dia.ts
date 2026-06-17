@@ -125,7 +125,7 @@ export async function getVentasResumenDia(
   // Choferes de Gestión: la "patente" es GESTION-<codigo>; el nombre sale de mapeo_chofer_gescom.
   if (!mapeoGescomRaw.error && mapeoGescomRaw.data) {
     for (const mg of mapeoGescomRaw.data as Array<{ codigo: string; nombre: string }>) {
-      choferIdx.set(`GESTION-${mg.codigo}`, `${mg.nombre} (Gestión)`)
+      choferIdx.set(`GESTION-${mg.codigo}`, mg.nombre)
     }
   }
 
@@ -185,22 +185,37 @@ export async function getVentasResumenDia(
       skusPorOrigen.set(origen, arr)
     }
   }
-  const por_origen: VentasOrigenRow[] = (["chess", "gestion"] as const)
-    .filter((o) => porOrigenAgg.has(o) || (skusPorOrigen.get(o)?.length ?? 0) > 0)
-    .map((o) => ({
-      origen: o,
-      bultos: porOrigenAgg.get(o)?.bultos ?? 0,
-      hl: Math.round((porOrigenAgg.get(o)?.hl ?? 0) * 100) / 100,
-      patentes: [...(porOrigenPatenteAgg.get(o) ?? new Map()).entries()]
-        .map(([patente, agg]: [string, { bultos: number; hl: number }]) => ({
-          patente,
-          chofer_nombre: choferIdx.get(patente) ?? null,
-          bultos: agg.bultos,
-          hl: agg.hl,
-        }))
-        .sort((a, b) => b.bultos - a.bultos),
-      skus: (skusPorOrigen.get(o) ?? []).sort((a, b) => b.bultos - a.bultos),
-    }))
+  // Unificado: todo se presenta como un solo origen "chess" (Chess+Gestión
+  // sumados). Internamente la data sigue separada por origen; acá se combinan
+  // bultos, HL, camiones y SKUs en una sola entrada para no exponer "Gestión".
+  const combBultos = [...porOrigenAgg.values()].reduce((s, c) => s + c.bultos, 0)
+  const combHl = [...porOrigenAgg.values()].reduce((s, c) => s + c.hl, 0)
+  const combPatentes: VentasPatenteRow[] = []
+  for (const porPat of porOrigenPatenteAgg.values()) {
+    for (const [patente, agg] of porPat.entries()) {
+      combPatentes.push({ patente, chofer_nombre: choferIdx.get(patente) ?? null, bultos: agg.bultos, hl: agg.hl })
+    }
+  }
+  combPatentes.sort((a, b) => b.bultos - a.bultos)
+  const combSkus = new Map<number, VentasSkuRow>()
+  for (const arr of skusPorOrigen.values()) {
+    for (const s of arr) {
+      const cur = combSkus.get(s.id_articulo) ?? { id_articulo: s.id_articulo, ds_articulo: s.ds_articulo, bultos: 0, hl: 0 }
+      cur.bultos += s.bultos
+      cur.hl += s.hl
+      combSkus.set(s.id_articulo, cur)
+    }
+  }
+  const por_origen: VentasOrigenRow[] =
+    combBultos !== 0 || combHl !== 0 || combPatentes.length > 0 || combSkus.size > 0
+      ? [{
+          origen: "chess",
+          bultos: combBultos,
+          hl: Math.round(combHl * 100) / 100,
+          patentes: combPatentes,
+          skus: [...combSkus.values()].sort((a, b) => b.bultos - a.bultos),
+        }]
+      : []
 
   // Promedios diarios mes anterior
   let promedioBultos: number | null = null

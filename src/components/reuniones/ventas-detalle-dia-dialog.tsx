@@ -222,15 +222,15 @@ export function VentasDetalleDiaDialog({
 
             {data.por_origen.length > 0 && (
               <Section
-                title="Por origen (Chess / Gestión)"
-                subtitle="Tocá un origen para ver el detalle por camión y por SKU"
+                title="Detalle por camión y SKU"
+                subtitle="Tocá para ver el detalle por camión y por SKU"
               >
                 <div className="divide-y divide-slate-100">
                   {data.por_origen.map((o) => {
                     const valor = metrica === "hl" ? o.hl : o.bultos
                     const pct = total > 0 ? (valor / total) * 100 : 0
                     const abierto = origenAbierto === o.origen
-                    const label = o.origen === "gestion" ? "Gestión" : "Chess"
+                    const label = "Chess"  // unificado: todo se presenta como Chess
                     return (
                       <div key={o.origen}>
                         <button
@@ -416,7 +416,8 @@ export function VentasDetalleDiaDialog({
                               ),
                             ),
                           ]
-                          const origenes = [...new Set(c.origenes.map((o) => o.origen))]
+                          // Unificado: todo se muestra como Chess (no se expone "Gestión").
+                          const origenes = [...new Set(c.origenes.map(() => "chess"))]
                           return (
                             <TableRow key={c.id_cliente}>
                               <TableCell className="text-muted-foreground">{i + 1}</TableCell>
@@ -443,7 +444,7 @@ export function VentasDetalleDiaDialog({
                                           : "bg-sky-100 text-sky-800",
                                       )}
                                     >
-                                      {o === "gestion" ? "Gestión" : "Chess"}
+                                      Chess
                                     </span>
                                   ))}
                                 </span>
@@ -510,7 +511,7 @@ export function VentasDetalleDiaDialog({
                           {i + 1}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {p.patente}
+                          {p.patente.replace(/^GESTION-/, "Rep. ")}
                         </TableCell>
                         <TableCell>
                           {p.chofer_nombre ?? (

@@ -27,8 +27,7 @@ import { BultosPatentesDiaDialog } from "./bultos-patentes-dia-dialog"
 /** Firma exacta del onClick del chart en la versión de recharts instalada. */
 type ChartClickHandler = NonNullable<ComponentProps<typeof BarChart>["onClick"]>
 
-const COLOR_CHESS = "#0284c7" // sky-600 — mismo par de colores que los badges de origen
-const COLOR_GESTION = "#d97706" // amber-600
+const COLOR_CHESS = "#0284c7" // sky-600
 
 interface Props {
   open: boolean
@@ -68,8 +67,11 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
     }
   }, [open, desde, hasta])
 
+  // Unificado: se suman ambos orígenes (no se expone "Gestión").
   const points = (data?.puntos ?? []).map((p) => ({
     ...p,
+    entregados: p.chess + p.gestion,
+    rechazados: p.chess_rechazados + p.gestion_rechazados,
     label: formatFechaShortDM(p.fecha),
   }))
 
@@ -86,9 +88,9 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1100px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1100px]">
         <DialogHeader>
-          <DialogTitle>Bultos por día · Chess vs Gestión</DialogTitle>
+          <DialogTitle>Bultos por día</DialogTitle>
           <DialogDescription>
-            {formatFecha(desde)} – {formatFecha(hasta)} · entregados y rechazados por origen — los rechazos se atribuyen al día del reparto (no al día en que se registró la devolución)
+            {formatFecha(desde)} – {formatFecha(hasta)} · entregados y rechazados por día — los rechazos se atribuyen al día del reparto (no al día en que se registró la devolución)
           </DialogDescription>
         </DialogHeader>
 
@@ -107,26 +109,16 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
 
         {!loading && !error && data && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3">
               <KpiMini
-                label="Entregados Chess"
-                value={formatBultos(data.total_chess)}
+                label="Entregados"
+                value={formatBultos(data.total_chess + data.total_gestion)}
                 color={COLOR_CHESS}
               />
               <KpiMini
-                label="Entregados Gestión"
-                value={formatBultos(data.total_gestion)}
-                color={COLOR_GESTION}
-              />
-              <KpiMini
-                label="Rechazados Chess"
-                value={formatBultos(data.total_chess_rechazados)}
+                label="Rechazados"
+                value={formatBultos(data.total_chess_rechazados + data.total_gestion_rechazados)}
                 color={COLOR_CHESS}
-              />
-              <KpiMini
-                label="Rechazados Gestión"
-                value={formatBultos(data.total_gestion_rechazados)}
-                color={COLOR_GESTION}
               />
             </div>
 
@@ -157,14 +149,7 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
                         formatter={(v, name) => [formatBultos(Number(v ?? 0)), String(name)]}
                       />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="chess" name="Chess" stackId="e" fill={COLOR_CHESS} />
-                      <Bar
-                        dataKey="gestion"
-                        name="Gestión"
-                        stackId="e"
-                        fill={COLOR_GESTION}
-                        radius={[3, 3, 0, 0]}
-                      />
+                      <Bar dataKey="entregados" name="Entregados" fill={COLOR_CHESS} radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -190,19 +175,7 @@ export function BultosDiaDialog({ open, onOpenChange, desde, hasta }: Props) {
                         formatter={(v, name) => [formatBultos(Number(v ?? 0)), String(name)]}
                       />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar
-                        dataKey="chess_rechazados"
-                        name="Chess"
-                        stackId="r"
-                        fill={COLOR_CHESS}
-                      />
-                      <Bar
-                        dataKey="gestion_rechazados"
-                        name="Gestión"
-                        stackId="r"
-                        fill={COLOR_GESTION}
-                        radius={[3, 3, 0, 0]}
-                      />
+                      <Bar dataKey="rechazados" name="Rechazados" fill={COLOR_CHESS} radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
