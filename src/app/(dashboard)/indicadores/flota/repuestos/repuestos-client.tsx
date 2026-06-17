@@ -189,6 +189,10 @@ export function RepuestosFlotaClient() {
   const repVacio = { nombre: "", grupo: "", ubicacion: "" }
   const [repNuevo, setRepNuevo] = useState(repVacio)
 
+  // Edición inline de un repuesto del catálogo (corregir nombre/grupo/ubicación).
+  const [editCatId, setEditCatId] = useState<string | null>(null)
+  const [editCat, setEditCat] = useState({ nombre: "", grupo: "", ubicacion: "" })
+
   const cargar = useCallback(async () => {
     setCargando(true)
     setError(null)
@@ -328,6 +332,29 @@ export function RepuestosFlotaClient() {
   const borrarRepuesto = async (c: CatItem) => {
     if (!window.confirm(`¿Quitar "${c.nombre}" de la lista de repuestos?`)) return
     await mutarCatalogo("borrar", { id: c.id })
+  }
+
+  const empezarEdicionCat = (c: CatItem) => {
+    setEditCatId(c.id)
+    setEditCat({ nombre: c.nombre || "", grupo: c.grupo || "", ubicacion: c.ubicacion || "" })
+  }
+  const cancelarEdicionCat = () => {
+    setEditCatId(null)
+    setEditCat({ nombre: "", grupo: "", ubicacion: "" })
+  }
+  const guardarEdicionCat = async () => {
+    if (!editCatId) return
+    if (!editCat.nombre.trim()) {
+      setError("El repuesto necesita un nombre.")
+      return
+    }
+    const ok = await mutarCatalogo("editar", {
+      id: editCatId,
+      nombre: editCat.nombre.trim(),
+      grupo: editCat.grupo.trim(),
+      ubicacion: editCat.ubicacion.trim(),
+    })
+    if (ok) cancelarEdicionCat()
   }
 
   // Al elegir un repuesto del catálogo, autocompleta la sucursal por su ubicación.
@@ -726,6 +753,7 @@ export function RepuestosFlotaClient() {
               <Input
                 list="lista-repuestos"
                 placeholder="Escribí para filtrar o elegí…"
+                autoComplete="off"
                 value={nuevo.repuesto}
                 onChange={(e) => elegirRepuesto(e.target.value)}
               />
@@ -797,6 +825,7 @@ export function RepuestosFlotaClient() {
                 <label className="text-xs text-muted-foreground">Proveedor / remito</label>
                 <Input
                   placeholder="De dónde vino"
+                  autoComplete="off"
                   value={nuevo.ref}
                   onChange={(e) => setNuevo({ ...nuevo, ref: e.target.value })}
                 />
@@ -826,6 +855,7 @@ export function RepuestosFlotaClient() {
               <label className="text-xs text-muted-foreground">Comentario</label>
               <Input
                 placeholder="Opcional"
+                autoComplete="off"
                 value={nuevo.comentario}
                 onChange={(e) => setNuevo({ ...nuevo, comentario: e.target.value })}
               />
@@ -983,6 +1013,7 @@ export function RepuestosFlotaClient() {
                   <label className="text-xs text-muted-foreground">Nombre del repuesto</label>
                   <Input
                     placeholder="Ej. RELÉ 24V"
+                    autoComplete="off"
                     value={repNuevo.nombre}
                     onChange={(e) => setRepNuevo({ ...repNuevo, nombre: e.target.value })}
                   />
@@ -991,6 +1022,7 @@ export function RepuestosFlotaClient() {
                   <label className="text-xs text-muted-foreground">Grupo</label>
                   <Input
                     placeholder="Ej. Eléctrico"
+                    autoComplete="off"
                     value={repNuevo.grupo}
                     onChange={(e) => setRepNuevo({ ...repNuevo, grupo: e.target.value })}
                   />
@@ -999,6 +1031,7 @@ export function RepuestosFlotaClient() {
                   <label className="text-xs text-muted-foreground">Ubicación</label>
                   <Input
                     placeholder="Ej. Taller Eldorado"
+                    autoComplete="off"
                     value={repNuevo.ubicacion}
                     onChange={(e) => setRepNuevo({ ...repNuevo, ubicacion: e.target.value })}
                   />
@@ -1030,25 +1063,93 @@ export function RepuestosFlotaClient() {
                     ) : (
                       [...catalogo]
                         .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""))
-                        .map((c) => (
-                          <TableRow key={c.id}>
-                            <TableCell className="font-semibold">{c.nombre}</TableCell>
-                            <TableCell className="text-muted-foreground">{c.grupo || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">{c.ubicacion || "—"}</TableCell>
-                            <TableCell>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 text-muted-foreground hover:text-red-600"
-                                disabled={guardando}
-                                onClick={() => borrarRepuesto(c)}
-                                title="Quitar de la lista"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        .map((c) =>
+                          editCatId === c.id ? (
+                            // Repuesto del catálogo en modo edición.
+                            <TableRow key={c.id} className="bg-slate-50/60">
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  className="h-8 min-w-[150px]"
+                                  value={editCat.nombre}
+                                  onChange={(e) => setEditCat({ ...editCat, nombre: e.target.value })}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  placeholder="Ej. Eléctrico"
+                                  className="h-8 min-w-[120px]"
+                                  value={editCat.grupo}
+                                  onChange={(e) => setEditCat({ ...editCat, grupo: e.target.value })}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  autoComplete="off"
+                                  placeholder="Ej. Taller Eldorado"
+                                  className="h-8 min-w-[140px]"
+                                  value={editCat.ubicacion}
+                                  onChange={(e) => setEditCat({ ...editCat, ubicacion: e.target.value })}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
+                                    disabled={guardando}
+                                    onClick={guardarEdicionCat}
+                                    title="Guardar cambios"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground"
+                                    disabled={guardando}
+                                    onClick={cancelarEdicionCat}
+                                    title="Cancelar"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            <TableRow key={c.id}>
+                              <TableCell className="font-semibold">{c.nombre}</TableCell>
+                              <TableCell className="text-muted-foreground">{c.grupo || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{c.ubicacion || "—"}</TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground hover:text-slate-900"
+                                    disabled={guardando}
+                                    onClick={() => empezarEdicionCat(c)}
+                                    title="Editar repuesto"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                                    disabled={guardando}
+                                    onClick={() => borrarRepuesto(c)}
+                                    title="Quitar de la lista"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        )
                     )}
                   </TableBody>
                 </Table>
@@ -1195,6 +1296,7 @@ export function RepuestosFlotaClient() {
                         <TableCell>
                           <Input
                             list="lista-repuestos"
+                            autoComplete="off"
                             value={edit.repuesto}
                             className="h-8 min-w-[150px]"
                             onChange={(e) => setEdit({ ...edit, repuesto: e.target.value })}
@@ -1246,6 +1348,7 @@ export function RepuestosFlotaClient() {
                         <TableCell>
                           <Input
                             className="h-8 min-w-[120px]"
+                            autoComplete="off"
                             value={edit.ref}
                             onChange={(e) => setEdit({ ...edit, ref: e.target.value })}
                           />
@@ -1253,6 +1356,7 @@ export function RepuestosFlotaClient() {
                         <TableCell>
                           <Input
                             className="h-8 min-w-[120px]"
+                            autoComplete="off"
                             value={edit.comentario}
                             onChange={(e) => setEdit({ ...edit, comentario: e.target.value })}
                           />
