@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type AlmacenData,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -331,6 +331,12 @@ const ALM_FIELDS = [
   ["prod_bul_hh", "Pickeros: prod (bul/HH)", "1"],
   ["util_pickeros", "Pickeros: util. turno (0–1)", "0.05"],
   ["dotacion_almacen", "Pickeros: dotación", "1"],
+  ["prod_clasif_pal_h", "Clasif.: prod (pal/HH)", "0.1"],
+  ["util_clasif", "Clasif.: util. turno (0–1)", "0.05"],
+  ["dotacion_clasif", "Clasif.: dotación", "1"],
+  ["prod_reempaque_bul_hh", "Reempaque: prod (bul/HH)", "1"],
+  ["util_reempaque", "Reempaque: util. turno (0–1)", "0.05"],
+  ["dotacion_reempaque", "Reempaque: dotación", "1"],
   ["prod_pal_h", "Maquinistas: prod (pal/HH)", "0.1"],
   ["util_maquinistas", "Maquinistas: util. turno (0–1)", "0.05"],
   ["dotacion_maquinistas", "Maquinistas: dotación", "1"],
@@ -338,12 +344,75 @@ const ALM_FIELDS = [
   ["factor_retorno_distrib", "Retorno distrib. (0–1)", "0.05"],
 ] as const
 
+function ResumenAlmacen({ a }: { a: AlmacenData }) {
+  const roles: Array<{ n: string; r: RolFte; u: string }> = [
+    { n: "Pickeros", r: a.pickeros, u: "bultos" },
+    { n: "Clasificadores", r: a.clasificadores, u: "paletas (pico)" },
+    { n: "Tareas generales (reempaque)", r: a.reempaque, u: "bultos" },
+    { n: "Maquinistas", r: a.maquinistas, u: "pallets" },
+  ]
+  const totNec = roles.reduce((s, x) => s + x.r.fteNecesariosProm, 0)
+  const totDot = roles.reduce((s, x) => s + x.r.dotacion, 0)
+  const brechaCls = (b: number) => (b < 0 ? "text-red-600" : b > 0 ? "text-amber-600" : "text-emerald-600")
+  const brechaTxt = (b: number) => (b === 0 ? "OK" : b > 0 ? `+${b}` : String(b))
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-base">Dotación necesaria del almacén</CardTitle></CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Rol</TableHead>
+              <TableHead className="text-right">Volumen/día</TableHead>
+              <TableHead className="text-right">FTE necesarios</TableHead>
+              <TableHead className="text-right">Dotación actual</TableHead>
+              <TableHead className="text-right">Brecha</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {roles.map((x) => {
+              const b = x.r.dotacion - x.r.fteNecesariosProm
+              return (
+                <TableRow key={x.n}>
+                  <TableCell className="font-medium">{x.n}</TableCell>
+                  <TableCell className="text-right">{fmt(x.r.volumenProm)} {x.u}</TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {x.r.fteNecesariosProm}{x.r.fteNecesariosPico > x.r.fteNecesariosProm ? ` (pico ${x.r.fteNecesariosPico})` : ""}
+                  </TableCell>
+                  <TableCell className="text-right">{fmt(x.r.dotacion)}</TableCell>
+                  <TableCell className={`text-right font-semibold ${brechaCls(b)}`}>{brechaTxt(b)}</TableCell>
+                </TableRow>
+              )
+            })}
+            <TableRow className="border-t-2">
+              <TableCell className="font-bold">Total almacén</TableCell>
+              <TableCell />
+              <TableCell className="text-right font-bold">{totNec}</TableCell>
+              <TableCell className="text-right font-bold">{totDot}</TableCell>
+              <TableCell className={`text-right font-bold ${brechaCls(totDot - totNec)}`}>{brechaTxt(totDot - totNec)}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+        <p className="mt-2 text-xs text-muted-foreground">
+          FTE necesarios = volumen/día ÷ (prod × horas × utilización). Clasificadores se dimensiona sobre el día PICO de paletas. Brecha = dotación − necesarios (− faltan, + holgura).
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
   const [c, setC] = useState({
     prod_bul_hh: String(data.config.prod_bul_hh),
     util_pickeros: String(data.config.util_pickeros),
     dotacion_almacen: String(data.config.dotacion_almacen),
+    prod_clasif_pal_h: String(data.config.prod_clasif_pal_h),
+    util_clasif: String(data.config.util_clasif),
+    dotacion_clasif: String(data.config.dotacion_clasif),
+    prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh),
+    util_reempaque: String(data.config.util_reempaque),
+    dotacion_reempaque: String(data.config.dotacion_reempaque),
     prod_pal_h: String(data.config.prod_pal_h),
     util_maquinistas: String(data.config.util_maquinistas),
     dotacion_maquinistas: String(data.config.dotacion_maquinistas),
@@ -360,8 +429,10 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
         ...s,
         prod_bul_hh: p.picking ? String(p.picking.prod) : s.prod_bul_hh,
         prod_pal_h: p.maquinistas ? String(p.maquinistas.prod) : s.prod_pal_h,
+        prod_clasif_pal_h: p.clasif ? String(p.clasif.prod) : s.prod_clasif_pal_h,
+        prod_reempaque_bul_hh: p.reempaque ? String(p.reempaque.prod) : s.prod_reempaque_bul_hh,
       }))
-      toast.success(`Picking ${p.picking?.prod ?? "s/d"} bul/HH · Maquinistas ${p.maquinistas?.prod ?? "s/d"} pal/HH (mes)`)
+      toast.success(`Picking ${p.picking?.prod ?? "s/d"} bul/HH · Maquinistas ${p.maquinistas?.prod ?? "s/d"} pal/HH · Clasif. ${p.clasif?.prod ?? "s/d"} pal/HH · Reempaque ${p.reempaque?.prod ?? "s/d"} bul/HH (mes)`)
     })
 
   return (
@@ -376,7 +447,12 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
       {data.almacenError && <p className="text-sm text-red-600">Error: {data.almacenError}</p>}
       {!a && !data.almacenError && <p className="text-sm text-muted-foreground">Sin datos de volumen procesado este mes.</p>}
 
+      {a && <ResumenAlmacen a={a} />}
       {a && <RolFteBlock titulo="Pickeros (picking)" rol={a.pickeros} unidadVol="bultos" unidadProd="bul/HH" />}
+      {a && <RolFteBlock titulo="Clasificadores (envases)" rol={a.clasificadores} unidadVol="paletas" unidadProd="pal/HH"
+        detalle="Se dimensiona sobre el día PICO de paletas clasificadas (tabla clasificacion_envases)." />}
+      {a && <RolFteBlock titulo="Tareas generales (reempaque)" rol={a.reempaque} unidadVol="bultos" unidadProd="bul/HH"
+        detalle="Bultos reempacados/día y productividad desde deposito-esteban (sidebar Reempaque)." />}
       {a && <RolFteBlock titulo="Maquinistas (autoelevadores)" rol={a.maquinistas} unidadVol="pallets" unidadProd="pal/HH"
         detalle={`Pallets/día: acarreo ${fmt(a.maquinistas.palAcarreoProm)} + carga distribución ${fmt(a.maquinistas.palCargaProm)}${a.maquinistas.factorRetorno > 0 ? ` (+${Math.round(a.maquinistas.factorRetorno * 100)}% retorno)` : ""}`} />}
 
@@ -396,6 +472,12 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
                 prod_bul_hh: Number(c.prod_bul_hh),
                 util_pickeros: Number(c.util_pickeros),
                 dotacion_almacen: Number(c.dotacion_almacen),
+                prod_clasif_pal_h: Number(c.prod_clasif_pal_h),
+                util_clasif: Number(c.util_clasif),
+                dotacion_clasif: Number(c.dotacion_clasif),
+                prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh),
+                util_reempaque: Number(c.util_reempaque),
+                dotacion_reempaque: Number(c.dotacion_reempaque),
                 prod_pal_h: Number(c.prod_pal_h),
                 util_maquinistas: Number(c.util_maquinistas),
                 dotacion_maquinistas: Number(c.dotacion_maquinistas),
@@ -405,7 +487,7 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
               Guardar
             </Button>
             <p className="w-full text-xs text-muted-foreground">
-              FTE = volumen/día ÷ (productividad × horas/turno × utilización). La utilización es la fracción del turno que la persona dedica realmente a la tarea (el resto: reposición, traslados, despacho, esperas); el bul/HH y pal/HH del WMS son de horas de actividad pura, no sostenibles todo el turno. Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
+              FTE = volumen/día ÷ (productividad × horas/turno × utilización). La utilización es la fracción del turno que la persona dedica realmente a la tarea (el resto: reposición, traslados, despacho, esperas); el bul/HH y pal/HH del WMS son de horas de actividad pura, no sostenibles todo el turno. Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Clasificadores: paletas de envases (clasificacion_envases), sobre el pico. Reempaque: bultos reempacados (deposito-esteban) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. La prod de clasificación y reempaque ya es real por hora trabajada → utilización por defecto 1. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban (picking/maquinistas/reempaque) y de la tabla de clasificación. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
             </p>
           </CardContent>
         </Card>

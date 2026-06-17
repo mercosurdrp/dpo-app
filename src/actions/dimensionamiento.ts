@@ -35,6 +35,28 @@ async function fetchDepositoFilas(module: string): Promise<Record<string, unknow
   }
 }
 
+// Endpoints propios de deposito-esteban (no son blobs shared): reempaque diario/productividad.
+async function fetchDepositoJson(path: string): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${DEPOSITO_API_BASE}${path}`, { cache: "no-store" })
+    if (!res.ok) return null
+    return (await res.json()) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+// "HH:MM:SS" → horas decimales.
+function horasEntre(inicio?: string | null, fin?: string | null): number {
+  const toH = (t?: string | null) => {
+    if (!t) return NaN
+    const [h, m, s] = String(t).split(":").map(Number)
+    return (h || 0) + (m || 0) / 60 + (s || 0) / 3600
+  }
+  const a = toH(inicio), b = toH(fin)
+  return Number.isFinite(a) && Number.isFinite(b) && b > a ? b - a : 0
+}
+
 type Result<T> = { data: T } | { error: string }
 
 const ROLES_EDICION: ("admin" | "admin_rrhh" | "supervisor")[] = ["admin", "admin_rrhh", "supervisor"]
@@ -82,6 +104,12 @@ export interface DimConfig {
   util_maquinistas: number   // % del turno dedicado a mover pallets (0–1)
   choferes_por_camion: number   // tripulación de choferes por camión (≈1)
   ayudantes_por_camion: number  // tripulación de ayudantes por camión
+  prod_clasif_pal_h: number     // productividad clasificación de envases (paletas/HH)
+  util_clasif: number           // % del turno aplicado a clasificar (0–1)
+  dotacion_clasif: number       // clasificadores actuales
+  prod_reempaque_bul_hh: number // productividad reempaque (bultos/HH)
+  util_reempaque: number        // % del turno aplicado a reempaque (0–1)
+  dotacion_reempaque: number    // tareas generales / reempaque actuales
 }
 
 export interface RolFte {
@@ -99,6 +127,8 @@ export interface RolFte {
 export interface AlmacenData {
   mes: string
   pickeros: RolFte
+  clasificadores: RolFte       // envases; se dimensiona sobre el PICO de paletas/día
+  reempaque: RolFte            // tareas generales
   maquinistas: RolFte & { palAcarreoProm: number; palCargaProm: number; factorRetorno: number }
 }
 
@@ -189,7 +219,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -212,6 +242,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       util_maquinistas: Number(configRes.data?.util_maquinistas ?? 0.4) || 0.4,
       choferes_por_camion: Number(configRes.data?.choferes_por_camion ?? 1) || 1,
       ayudantes_por_camion: Number(configRes.data?.ayudantes_por_camion ?? 1) || 1,
+      prod_clasif_pal_h: Number(configRes.data?.prod_clasif_pal_h ?? 5) || 5,
+      util_clasif: Number(configRes.data?.util_clasif ?? 1) || 1,
+      dotacion_clasif: Number(configRes.data?.dotacion_clasif ?? 1),
+      prod_reempaque_bul_hh: Number(configRes.data?.prod_reempaque_bul_hh ?? 37) || 37,
+      util_reempaque: Number(configRes.data?.util_reempaque ?? 1) || 1,
+      dotacion_reempaque: Number(configRes.data?.dotacion_reempaque ?? 1),
     }
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
 
@@ -352,7 +388,47 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         factorRetorno: config.factor_retorno_distrib,
       }
 
-      if (pk.dias > 0 || mq.dias > 0) almacen = { mes: mesAA, pickeros, maquinistas }
+      // Clasificadores: paletas/día de clasificacion_envases. Se dimensiona sobre el PICO.
+      const { data: clz } = await supabase.from("clasificacion_envases").select("fecha, pallets_total").gte("fecha", desde)
+      const palClasifPorDia = new Map<string, number>()
+      for (const r of clz ?? []) {
+        const k = r.fecha as string
+        palClasifPorDia.set(k, (palClasifPorDia.get(k) ?? 0) + Number(r.pallets_total ?? 0))
+      }
+      const cl = statsPorDia(palClasifPorDia)
+      const capClasif = config.prod_clasif_pal_h * config.horas_turno * config.util_clasif
+      const clasificadores: RolFte = {
+        volumenProm: Math.round(cl.prom), volumenPico: Math.round(cl.pico), productividad: config.prod_clasif_pal_h,
+        diasConDatos: cl.dias,
+        // dimensiona contra el pico (pedido del usuario): prom y pico usan el pico.
+        fteNecesariosProm: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
+        fteNecesariosPico: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
+        dotacion: config.dotacion_clasif,
+        utilizacion: config.util_clasif,
+        capDiariaFte: Math.round(capClasif),
+      }
+
+      // Reempaque (tareas generales): bultos/día de deposito-esteban /api/reempaque/diario.
+      const reJson = await fetchDepositoJson(`/api/reempaque/diario?mes=${hoy.getMonth() + 1}&anio=${hoy.getFullYear()}`)
+      const reempaquePorDia = new Map<string, number>()
+      for (const r of (reJson?.diario as Array<{ fecha?: string; bultos?: number }> | undefined) ?? []) {
+        const b = Number(r.bultos ?? 0)
+        if (b > 0 && String(r.fecha ?? "") >= desde) reempaquePorDia.set(String(r.fecha), b)
+      }
+      const re = statsPorDia(reempaquePorDia)
+      const capReempaque = config.prod_reempaque_bul_hh * config.horas_turno * config.util_reempaque
+      const reempaque: RolFte = {
+        volumenProm: Math.round(re.prom), volumenPico: Math.round(re.pico), productividad: config.prod_reempaque_bul_hh,
+        diasConDatos: re.dias,
+        fteNecesariosProm: capReempaque > 0 ? Math.ceil(re.prom / capReempaque) : 0,
+        fteNecesariosPico: capReempaque > 0 ? Math.ceil(re.pico / capReempaque) : 0,
+        dotacion: config.dotacion_reempaque,
+        utilizacion: config.util_reempaque,
+        capDiariaFte: Math.round(capReempaque),
+      }
+
+      if (pk.dias > 0 || mq.dias > 0 || cl.dias > 0 || re.dias > 0)
+        almacen = { mes: mesAA, pickeros, clasificadores, reempaque, maquinistas }
     } catch (e) {
       almacenError = e instanceof Error ? e.message : "Error almacén"
     }
@@ -476,6 +552,12 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         util_maquinistas: Math.min(1, Math.max(0.01, Number(config.util_maquinistas) || 0.4)),
         choferes_por_camion: Math.max(0, Number(config.choferes_por_camion) || 1),
         ayudantes_por_camion: Math.max(0, Number(config.ayudantes_por_camion) || 1),
+        prod_clasif_pal_h: Math.max(0.1, Number(config.prod_clasif_pal_h) || 5),
+        util_clasif: Math.min(1, Math.max(0.01, Number(config.util_clasif) || 1)),
+        dotacion_clasif: Math.max(0, Number(config.dotacion_clasif) || 0),
+        prod_reempaque_bul_hh: Math.max(0.1, Number(config.prod_reempaque_bul_hh) || 37),
+        util_reempaque: Math.min(1, Math.max(0.01, Number(config.util_reempaque) || 1)),
+        dotacion_reempaque: Math.max(0, Number(config.dotacion_reempaque) || 0),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })
@@ -582,6 +664,8 @@ export async function recalcularFactorCeq(): Promise<Result<FactorCeqResult>> {
 export interface ProductividadReal {
   picking: { prod: number; dias: number } | null
   maquinistas: { prod: number; dias: number } | null
+  clasif: { prod: number; dias: number } | null
+  reempaque: { prod: number; dias: number } | null
 }
 
 /** Trae el promedio real de productividad del mes (deposito-esteban) y lo guarda en config. */
@@ -603,17 +687,47 @@ export async function recalcularProductividadAlmacen(): Promise<Result<Productiv
 
     const picking = promedio(await fetchDepositoFilas("productividad-picking"), "bul_hh")
     const maquinistas = promedio(await fetchDepositoFilas("productividad-maquinistas"), "pal_hh")
-    if (!picking && !maquinistas) return { error: "deposito-esteban no devolvió productividad de este mes." }
+
+    const supabase = await createClient()
+
+    // Clasificación: paletas ÷ horas del mes (tabla clasificacion_envases).
+    let clasif: { prod: number; dias: number } | null = null
+    {
+      const { data: clz } = await supabase
+        .from("clasificacion_envases").select("pallets_total, hora_inicio, hora_fin").gte("fecha", desde)
+      let tb = 0, th = 0, dias = 0
+      for (const r of clz ?? []) {
+        const pal = Number(r.pallets_total ?? 0)
+        const h = horasEntre(r.hora_inicio as string, r.hora_fin as string)
+        if (pal > 0 && h > 0) { tb += pal; th += h; dias++ }
+      }
+      if (th > 0) clasif = { prod: Math.round((tb / th) * 10) / 10, dias }
+    }
+
+    // Reempaque: bultos ÷ horas del mes (deposito-esteban /api/reempaque/productividad, ponderado).
+    let reempaque: { prod: number; dias: number } | null = null
+    {
+      const j = await fetchDepositoJson("/api/reempaque/productividad")
+      const filas = ((j?.productividad as Array<{ fecha?: string; bultos?: number; horas?: number }> | undefined) ?? [])
+        .filter((f) => String(f.fecha ?? "") >= desde)
+      const tb = filas.reduce((s, f) => s + Number(f.bultos ?? 0), 0)
+      const th = filas.reduce((s, f) => s + Number(f.horas ?? 0), 0)
+      if (th > 0) reempaque = { prod: Math.round((tb / th) * 10) / 10, dias: filas.length }
+    }
+
+    if (!picking && !maquinistas && !clasif && !reempaque)
+      return { error: "deposito-esteban no devolvió productividad de este mes." }
 
     const patch: Record<string, unknown> = { updated_by: profile.id, updated_at: new Date().toISOString() }
     if (picking) patch.prod_bul_hh = picking.prod
     if (maquinistas) patch.prod_pal_h = maquinistas.prod
+    if (clasif) patch.prod_clasif_pal_h = clasif.prod
+    if (reempaque) patch.prod_reempaque_bul_hh = reempaque.prod
 
-    const supabase = await createClient()
     const { error } = await supabase.from("dim_config").update(patch).eq("id", 1)
     if (error) return { error: error.message }
     revalidatePath("/planeamiento/dimensionamiento")
-    return { data: { picking, maquinistas } }
+    return { data: { picking, maquinistas, clasif, reempaque } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error" }
   }
