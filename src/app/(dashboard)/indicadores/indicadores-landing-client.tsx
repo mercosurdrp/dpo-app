@@ -11,7 +11,6 @@ import {
   Users,
   Settings,
   Truck,
-  CarFront,
   Warehouse,
   CalendarClock,
   PackageX,
@@ -29,7 +28,7 @@ const PILAR_ICONS: Record<string, React.ReactNode> = {
   Gente: <Users className="h-6 w-6" />,
   "Gestión": <Settings className="h-6 w-6" />,
   Entrega: <Truck className="h-6 w-6" />,
-  Flota: <CarFront className="h-6 w-6" />,
+  Flota: <Truck className="h-6 w-6" />,
   "Almacén": <Warehouse className="h-6 w-6" />,
   Planeamiento: <CalendarClock className="h-6 w-6" />,
 }
@@ -323,7 +322,7 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-sky-300">
                 <CardContent className="flex items-center gap-4 pt-6">
                   <div className="rounded-xl p-3 bg-sky-100 text-sky-600 group-hover:bg-sky-200 transition-colors">
-                    <CarFront className="h-6 w-6" />
+                    <Truck className="h-6 w-6" />
                   </div>
                   <div>
                     <p className="font-semibold text-slate-900">
