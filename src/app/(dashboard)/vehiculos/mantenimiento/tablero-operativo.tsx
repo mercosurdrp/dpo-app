@@ -160,52 +160,59 @@ export function TableroOperativo({ programacion, documentos }: Props) {
               <TableRow>
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Unidad</TableHead>
-                <TableHead>Km / Hs actual</TableHead>
                 <TableHead>Último service</TableHead>
+                <TableHead>Últ. registro</TableHead>
                 <TableHead>Próximo service</TableHead>
-                <TableHead>Restante</TableHead>
+                <TableHead className="text-right">Días para service</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {progOrdenada.map((p) => {
-                const actual = p.mide === "horas" ? p.ultimoHorometro : p.kmActual
-                const proximoTxt =
-                  p.motivo === "km" && p.proximoKm != null
-                    ? `${fmtNum(p.proximoKm)} km`
-                    : p.proximaFecha
-                      ? fmtFecha(p.proximaFecha)
-                      : "—"
+                const u = p.mide === "horas" ? "hs" : "km"
                 const ultimoTxt =
                   p.ultimaFecha == null
                     ? "—"
                     : `${fmtFecha(p.ultimaFecha)}${
-                        p.ultimoOdometro != null ? ` · ${fmtNum(p.ultimoOdometro)} km` : ""
+                        p.ultimoOdometro != null ? ` · ${fmtNum(p.ultimoOdometro)} ${u}` : ""
+                      }`
+                const registroTxt =
+                  p.fechaUltRegistro == null
+                    ? "—"
+                    : `${fmtFecha(p.fechaUltRegistro)}${
+                        p.kmUltRegistro != null ? ` · ${fmtNum(p.kmUltRegistro)} ${u}` : ""
+                      }`
+                const proximoTxt =
+                  p.proximaFecha == null
+                    ? "—"
+                    : `${fmtFecha(p.proximaFecha)}${
+                        p.motivo === "km" && p.proximoKm != null
+                          ? ` · ${fmtNum(p.proximoKm)} ${u}`
+                          : ""
                       }`
                 return (
                   <TableRow key={p.dominio}>
                     <TableCell>
                       <Dot estado={p.estado} />
                     </TableCell>
-                    <TableCell className="font-medium">{p.dominio}</TableCell>
-                    <TableCell>
-                      {actual != null ? `${fmtNum(actual)} ${p.mide === "horas" ? "hs" : "km"}` : "—"}
+                    <TableCell className="font-medium">
+                      {p.dominio}
+                      {p.motivo === "tiempo" && (
+                        <span className="ml-1 text-xs font-normal text-slate-400">(por tiempo)</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-slate-600">{ultimoTxt}</TableCell>
+                    <TableCell className="text-slate-600">{registroTxt}</TableCell>
                     <TableCell className="text-slate-600">{proximoTxt}</TableCell>
                     <TableCell
                       className={cn(
-                        "font-medium",
+                        "text-right font-semibold tabular-nums",
                         p.estado === "vencido" || p.estado === "rojo"
                           ? "text-red-600"
                           : "text-slate-700"
                       )}
                     >
-                      {p.estado === "sin_datos"
-                        ? "—"
-                        : p.mide === "km" && p.kmRestante != null && p.motivo === "km"
-                          ? `${fmtNum(p.kmRestante)} km (${diasTexto(p.diasRestantes)})`
-                          : diasTexto(p.diasRestantes)}
+                      {p.diasRestantes == null ? "—" : p.diasRestantes}
                     </TableCell>
                     <TableCell>
                       <span

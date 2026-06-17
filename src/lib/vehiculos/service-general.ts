@@ -1,20 +1,27 @@
 import { createClient } from "@/lib/supabase/server"
 import {
+  addDays,
   addMonths,
   daysBetween,
   fetchLecturas,
-  kmActualPorDominio,
   today,
+  type Lectura,
 } from "@/lib/vehiculos/lecturas"
 import type { CatalogoVehiculo, VehiculoTipo } from "@/types/database"
 
 // "Service general" por unidad para el Tablero operativo de mantenimiento.
 //
-// A diferencia de la matriz granular por tarea (plan-mantenimiento.ts), acá se
-// modela UN próximo service por unidad (como la planilla "Próximo Service GRAL
-// FLOTA"): se parte del último service PREVENTIVO registrado y se proyecta el
-// vencimiento por km (usando km/día) y/o por tiempo. El semáforo es por días
-// restantes: ≤10 rojo, ≤15 naranja, ≤30 amarillo, vencido si ya pasó.
+// Replica EXACTAMENTE el criterio de la planilla "Próximo Service GRAL FLOTA"
+// (columna G "DIAS PARA SERVICIO"):
+//   1. tasa medida = (km últ. registro − km últ. servicio) / días(últ. servicio → últ. registro)
+//   2. días del intervalo = frecuencia (20.000 km) ÷ tasa
+//        = días(servicio→registro) × frecuencia / km recorridos
+//   3. fecha próximo service (F) = fecha últ. servicio + días del intervalo
+//   4. días para servicio (G) = fecha próximo service − HOY
+// Cuando no se puede medir la tasa (sin recorrido, o autoelevadores que miden
+// horas y no hay lectura) se cae a la frecuencia en meses desde el últ. servicio.
+// El semáforo es por días restantes: ≤10 rojo, ≤15 naranja, ≤30 amarillo,
+// vencido si ya pasó.
 
 export type EstadoServiceGeneral =
   | "vencido"
@@ -29,21 +36,24 @@ export interface ServiceGeneralUnidad {
   tipo: VehiculoTipo | null
   mide: "km" | "horas"
   estado: EstadoServiceGeneral
-  // Último service preventivo
+  // Último service preventivo (col B/C de la planilla)
   ultimaFecha: string | null
   ultimoOdometro: number | null
   ultimoHorometro: number | null
+  // Última lectura/registro de odómetro (col D/E)
+  fechaUltRegistro: string | null
+  kmUltRegistro: number | null
   // Frecuencia efectiva (config por unidad ?? default por tipo)
   frecuenciaKm: number | null
   frecuenciaHoras: number | null
   frecuenciaMeses: number | null
   // Estado actual / proyección
   kmActual: number | null
-  kmDia: number | null
-  proximoKm: number | null
+  kmDia: number | null // tasa medida km/día (col K/J)
+  proximoKm: number | null // col H = último km servicio + frecuencia
   kmRestante: number | null
-  proximaFecha: string | null
-  diasRestantes: number | null
+  proximaFecha: string | null // col F
+  diasRestantes: number | null // col G
   // Texto auxiliar para mostrar qué eje manda
   motivo: "km" | "tiempo" | null
 }
@@ -51,7 +61,6 @@ export interface ServiceGeneralUnidad {
 const UMBRAL_ROJO = 10
 const UMBRAL_NARANJA = 15
 const UMBRAL_AMARILLO = 30
-const KM_DIA_DEFAULT = 100
 
 // Defaults por tipo cuando no hay fila en mantenimiento_config_unidad.
 function defaultsPorTipo(tipo: VehiculoTipo | null): {
@@ -105,7 +114,6 @@ export function computeServiceGeneral(params: {
   vehiculos: CatalogoVehiculo[]
   ultimos: Map<string, UltimoPreventivo>
   kmActuales: Map<string, { odometro: number; fecha: string }>
-  kmDiaPorDominio: Map<string, number>
   configs: Map<string, ConfigUnidad>
   hoy?: string
 }): ServiceGeneralUnidad[] {
@@ -122,8 +130,9 @@ export function computeServiceGeneral(params: {
     const frecMeses = cfg?.frecuencia_meses ?? def.meses
 
     const ultimo = params.ultimos.get(v.dominio)
-    const kmAct = params.kmActuales.get(v.dominio)?.odometro ?? null
-    const kmDia = cfg?.km_dia ?? params.kmDiaPorDominio.get(v.dominio) ?? null
+    const registro = params.kmActuales.get(v.dominio) ?? null
+    const kmAct = registro?.odometro ?? null
+    const fechaReg = registro?.fecha ?? null
 
     const base: ServiceGeneralUnidad = {
       dominio: v.dominio,
@@ -133,11 +142,13 @@ export function computeServiceGeneral(params: {
       ultimaFecha: ultimo?.fecha ?? null,
       ultimoOdometro: ultimo?.odometro ?? null,
       ultimoHorometro: ultimo?.horometro ?? null,
+      fechaUltRegistro: fechaReg,
+      kmUltRegistro: kmAct,
       frecuenciaKm: frecKm,
       frecuenciaHoras: frecHoras,
       frecuenciaMeses: frecMeses,
       kmActual: kmAct,
-      kmDia: kmDia,
+      kmDia: null,
       proximoKm: null,
       kmRestante: null,
       proximaFecha: null,
@@ -150,35 +161,43 @@ export function computeServiceGeneral(params: {
       continue
     }
 
-    const candidatos: { dias: number; motivo: "km" | "tiempo" }[] = []
-
-    // Eje km (solo unidades que miden km y tienen odómetro + km/día)
-    if (mide === "km" && frecKm != null && ultimo.odometro != null) {
+    // --- Criterio columna G de la planilla -------------------------------
+    // Proyección por km: tasa medida (servicio→registro) → fecha próximo service.
+    if (
+      mide === "km" &&
+      frecKm != null &&
+      ultimo.odometro != null &&
+      kmAct != null &&
+      fechaReg != null
+    ) {
       base.proximoKm = ultimo.odometro + frecKm
-      if (kmAct != null) {
-        base.kmRestante = base.proximoKm - kmAct
-        const kd = kmDia && kmDia > 0 ? kmDia : KM_DIA_DEFAULT
-        const dias = Math.round(base.kmRestante / kd)
-        candidatos.push({ dias, motivo: "km" })
+      base.kmRestante = base.proximoKm - kmAct
+
+      const deltaKm = kmAct - ultimo.odometro
+      const deltaDias = daysBetween(ultimo.fecha, fechaReg)
+      // tasa preferida: medida; si no se puede medir, override de config.
+      let tasa: number | null = null
+      if (deltaKm > 0 && deltaDias > 0) tasa = deltaKm / deltaDias
+      else if (cfg?.km_dia && cfg.km_dia > 0) tasa = cfg.km_dia
+
+      if (tasa != null && tasa > 0) {
+        base.kmDia = Math.round(tasa * 10) / 10
+        const intervaloDias = Math.round(frecKm / tasa)
+        base.proximaFecha = addDays(ultimo.fecha, intervaloDias)
+        base.diasRestantes = daysBetween(hoy, base.proximaFecha)
+        base.motivo = "km"
       }
     }
 
-    // Eje tiempo (sirve para todos; único disponible para autoelevadores)
-    if (frecMeses != null) {
+    // Fallback temporal: sin tasa medible (autoelevadores sin lectura de horas,
+    // o unidades sin recorrido desde el service). Vence a los `frecMeses`.
+    if (base.diasRestantes == null && frecMeses != null) {
       base.proximaFecha = addMonths(ultimo.fecha, frecMeses)
-      const dias = hoy >= base.proximaFecha
-        ? -daysBetween(base.proximaFecha, hoy)
-        : daysBetween(hoy, base.proximaFecha)
-      candidatos.push({ dias, motivo: "tiempo" })
+      base.diasRestantes = daysBetween(hoy, base.proximaFecha)
+      base.motivo = "tiempo"
     }
 
-    if (candidatos.length > 0) {
-      // El que vence primero (menos días restantes) manda.
-      candidatos.sort((a, b) => a.dias - b.dias)
-      base.diasRestantes = candidatos[0].dias
-      base.motivo = candidatos[0].motivo
-      base.estado = estadoPorDias(base.diasRestantes)
-    }
+    if (base.diasRestantes != null) base.estado = estadoPorDias(base.diasRestantes)
 
     out.push(base)
   }
@@ -186,32 +205,52 @@ export function computeServiceGeneral(params: {
   return out
 }
 
+// Cota máxima de km/día plausible: por encima se considera lectura errónea
+// (típicamente un cero de más tipeado en el checklist).
+const KM_DIA_MAX_PLAUSIBLE = 1500
+
 /**
- * Estima km/día por dominio a partir de las lecturas (pendiente entre la primera
- * y la última lectura disponible si están separadas ≥7 días). Sin datos => no
- * setea (el caller usará el default).
+ * Km actual ROBUSTO por dominio: replica el criterio de "últ. registro" de la
+ * planilla = la lectura MÁS RECIENTE por fecha que sea plausible respecto del
+ * último service (odómetro ≥ km del service y km/día implícito desde el service
+ * ≤ KM_DIA_MAX_PLAUSIBLE). A diferencia de `kmActualPorDominio` (que toma el
+ * odómetro máximo), no se deja engañar por outliers altos puntuales (p. ej. un
+ * 10.000.000 o un 75.905 viejo cuando la unidad hoy marca 71.404).
  */
-function estimarKmDia(
-  lecturas: { dominio: string; fecha: string; odometro: number }[]
-): Map<string, number> {
-  const porDom = new Map<string, { fecha: string; odometro: number }[]>()
+export function kmActualRobustoPorDominio(
+  lecturas: Lectura[],
+  anclas: Map<string, { fecha: string; odometro: number }>
+): Map<string, { odometro: number; fecha: string }> {
+  const porDom = new Map<string, Lectura[]>()
   for (const l of lecturas) {
     if (!porDom.has(l.dominio)) porDom.set(l.dominio, [])
     porDom.get(l.dominio)!.push(l)
   }
-  const res = new Map<string, number>()
+
+  const result = new Map<string, { odometro: number; fecha: string }>()
   for (const [dom, arr] of porDom) {
-    arr.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0))
-    const first = arr[0]
-    const last = arr[arr.length - 1]
-    const dias = daysBetween(first.fecha, last.fecha)
-    const km = last.odometro - first.odometro
-    if (dias >= 7 && km > 0) {
-      const kmDia = km / dias
-      if (kmDia > 0 && kmDia < 2000) res.set(dom, Math.round(kmDia * 10) / 10)
+    // Orden cronológico ascendente: al sobrescribir, queda la más reciente.
+    arr.sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
+      return a.hora < b.hora ? -1 : 1
+    })
+
+    const ancla = anclas.get(dom) ?? null
+    let best: { odometro: number; fecha: string } | null = null
+
+    for (const l of arr) {
+      if (ancla != null) {
+        if (l.fecha < ancla.fecha) continue // anterior al service
+        if (l.odometro < ancla.odometro) continue // por debajo del km del service
+        const dias = Math.max(1, daysBetween(ancla.fecha, l.fecha))
+        if ((l.odometro - ancla.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue // outlier
+      }
+      best = { odometro: l.odometro, fecha: l.fecha } // la más reciente plausible gana
     }
+
+    if (best != null) result.set(dom, best)
   }
-  return res
+  return result
 }
 
 /** Carga datos y computa el service general de la flota activa. */
@@ -222,9 +261,8 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
     supabase.from("catalogo_vehiculos").select("*").eq("active", true).order("dominio"),
     supabase
       .from("mantenimiento_realizados")
-      .select("dominio, fecha, odometro, horometro")
+      .select("dominio, fecha, odometro, horometro, tipo, es_service_general")
       .eq("estado", "completado")
-      .eq("tipo", "preventivo")
       .order("fecha", { ascending: false }),
     supabase.from("mantenimiento_config_unidad").select("*"),
     fetchLecturas(),
@@ -236,20 +274,34 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
 
   const vehiculos = (vehRes.data || []) as CatalogoVehiculo[]
 
-  // Último preventivo por dominio (la query viene ordenada por fecha desc).
+  // Ancla del próximo service por dominio: el ÚLTIMO registro con
+  // es_service_general (service rodado, replica la planilla); si la unidad no
+  // tiene ninguno, cae al último preventivo. La query viene ordenada por fecha
+  // desc, así que la primera coincidencia de cada tipo es la más reciente.
   const ultimos = new Map<string, UltimoPreventivo>()
+  const ultimosPreventivo = new Map<string, UltimoPreventivo>()
   for (const r of (prevRes.data || []) as Array<{
     dominio: string
     fecha: string
     odometro: number | null
     horometro: number | null
+    tipo: string | null
+    es_service_general: boolean | null
   }>) {
-    if (ultimos.has(r.dominio)) continue
-    ultimos.set(r.dominio, {
+    const reg: UltimoPreventivo = {
       fecha: r.fecha,
       odometro: r.odometro != null ? Number(r.odometro) : null,
       horometro: r.horometro != null ? Number(r.horometro) : null,
-    })
+    }
+    if (r.es_service_general && !ultimos.has(r.dominio)) {
+      ultimos.set(r.dominio, reg)
+    } else if (r.tipo === "preventivo" && !ultimosPreventivo.has(r.dominio)) {
+      ultimosPreventivo.set(r.dominio, reg)
+    }
+  }
+  // Fallback: unidades sin service general usan su último preventivo.
+  for (const [dom, reg] of ultimosPreventivo) {
+    if (!ultimos.has(dom)) ultimos.set(dom, reg)
   }
 
   const configs = new Map<string, ConfigUnidad>()
@@ -262,10 +314,12 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
     })
   }
 
-  const kmActuales = kmActualPorDominio(lecturas)
-  const kmDiaPorDominio = estimarKmDia(
-    lecturas.map((l) => ({ dominio: l.dominio, fecha: l.fecha, odometro: l.odometro }))
-  )
+  // Ancla del km actual robusto = último service (fecha + odómetro) cuando existe.
+  const anclas = new Map<string, { fecha: string; odometro: number }>()
+  for (const [dom, u] of ultimos) {
+    if (u.odometro != null) anclas.set(dom, { fecha: u.fecha, odometro: u.odometro })
+  }
+  const kmActuales = kmActualRobustoPorDominio(lecturas, anclas)
 
-  return computeServiceGeneral({ vehiculos, ultimos, kmActuales, kmDiaPorDominio, configs })
+  return computeServiceGeneral({ vehiculos, ultimos, kmActuales, configs })
 }
