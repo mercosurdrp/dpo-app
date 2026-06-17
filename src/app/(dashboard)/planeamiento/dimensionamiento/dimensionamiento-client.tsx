@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -89,24 +89,31 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
   return (
     <div className="space-y-4 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Dimensionamiento de Distribución/Flota (DPO 3.1)</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Dimensionamiento de Dotación (DPO 3.1)</h1>
         <p className="text-sm text-muted-foreground">
-          Demanda de volumen vs capacidad instalada de la flota, en <b>cajas equivalentes (CEq)</b>, KPIs de distribución y planes — pilar Planeamiento.
+          Recursos necesarios vs disponibles — <b>flota/entrega</b> (camiones + FTE de reparto) y <b>almacén</b> (FTE), KPIs de distribución y planes — pilar Planeamiento.
           {m ? ` · Mes ${m.mes} · ${m.diasCerrados} días de ruteo cerrados` : ""}
         </p>
       </div>
 
-      <Tabs defaultValue="demanda">
+      <Tabs defaultValue="flotaentrega">
         <TabsList>
-          <TabsTrigger value="demanda">Demanda vs Capacidad</TabsTrigger>
-          <TabsTrigger value="flota">Flota & Capacidad</TabsTrigger>
+          <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
           <TabsTrigger value="almacen">Almacén (FTE)</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
 
-        {/* ─── Demanda vs Capacidad ─── */}
-        <TabsContent value="demanda" className="space-y-4">
+        {/* ─── Flota / Entrega: camiones + FTE de reparto ─── */}
+        <TabsContent value="flotaentrega" className="space-y-4">
+        <Tabs defaultValue="camiones">
+          <TabsList>
+            <TabsTrigger value="camiones">Camiones</TabsTrigger>
+            <TabsTrigger value="reparto">FTE de reparto</TabsTrigger>
+          </TabsList>
+
+          {/* ── Camiones: demanda vs capacidad + flota ── */}
+          <TabsContent value="camiones" className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard title="Capacidad instalada / día" value={`${fmt(Math.round(data.capacidadInstaladaDiaria))} CEq`}
               hint={`${data.unidadesDisponibles} unidades disponibles × ${data.config.viajes_por_dia} viaje(s)`} />
@@ -148,10 +155,6 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
           )}
 
           {canEdit && <ConfigCard config={data.config} run={run} isPending={isPending} />}
-        </TabsContent>
-
-        {/* ─── Flota & Capacidad ─── */}
-        <TabsContent value="flota" className="space-y-4">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">Unidades de distribución ({data.flota.length})</CardTitle></CardHeader>
             <CardContent>
@@ -162,6 +165,13 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
               )}
             </CardContent>
           </Card>
+          </TabsContent>
+
+          {/* ── FTE de reparto: choferes + ayudantes ── */}
+          <TabsContent value="reparto" className="space-y-4">
+            <RepartoTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+          </TabsContent>
+        </Tabs>
         </TabsContent>
 
         {/* ─── Almacén (FTE) ─── */}
@@ -236,6 +246,84 @@ function RolFteBlock({ titulo, rol, unidadVol, unidadProd, detalle }: {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+// ─── FTE de reparto (flota/entrega) ─────────────────────────────────────────
+
+const REPARTO_FIELDS = [
+  ["choferes_por_camion", "Choferes por camión", "0.1"],
+  ["ayudantes_por_camion", "Ayudantes por camión", "0.1"],
+] as const
+
+function RepartoRolBlock({ titulo, rol, camionesProm, camionesPico }: {
+  titulo: string; rol: RolReparto; camionesProm: number; camionesPico: number
+}) {
+  const dotProm = rol.dotacionProm
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-base">{titulo}</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard title="Camiones necesarios" value={`${fmt(camionesProm)} (pico ${fmt(camionesPico)})`} />
+          <KpiCard title="Tripulación / camión" value={fmt(rol.porCamion)} />
+          <KpiCard title="FTE necesarios" value={`${rol.fteNecesariosProm} (pico ${rol.fteNecesariosPico})`}
+            hint={`camiones × ${fmt(rol.porCamion)}/camión`} accent />
+          <KpiCard title="Dotación actual (prom)" value={fmt(dotProm)} hint={`pico ${fmt(rol.dotacionPico)} · real dpo-app`} accent />
+        </div>
+        <div className="text-sm">
+          {dotProm <= 0 ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Sin egresos de vehículos registrados este mes para estimar la dotación real.</p>
+          ) : rol.fteNecesariosPico > rol.dotacionPico ? (
+            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">En el pico se necesitan <b>{rol.fteNecesariosPico}</b> y salieron <b>{fmt(rol.dotacionPico)}</b> → faltan <b>{rol.fteNecesariosPico - rol.dotacionPico}</b>.</p>
+          ) : rol.fteNecesariosProm < dotProm ? (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">La dotación real ({fmt(dotProm)} prom/día) cubre los <b>{rol.fteNecesariosProm}</b> necesarios.</p>
+          ) : (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Necesarios <b>{rol.fteNecesariosProm}</b> vs dotación real <b>{fmt(dotProm)}</b> prom/día: ajustado.</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RepartoTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+  const r = data.reparto
+  const [c, setC] = useState({
+    choferes_por_camion: String(data.config.choferes_por_camion),
+    ayudantes_por_camion: String(data.config.ayudantes_por_camion),
+  })
+  return (
+    <div className="space-y-4">
+      {data.repartoError && <p className="text-sm text-red-600">Error: {data.repartoError}</p>}
+      {!r && !data.repartoError && <p className="text-sm text-muted-foreground">Sin datos de reparto este mes (faltan camiones necesarios o egresos de vehículos registrados).</p>}
+      {r && <RepartoRolBlock titulo="Choferes" rol={r.choferes} camionesProm={r.camionesNecesariosProm} camionesPico={r.camionesNecesariosPico} />}
+      {r && <RepartoRolBlock titulo="Ayudantes" rol={r.ayudantes} camionesProm={r.camionesNecesariosProm} camionesPico={r.camionesNecesariosPico} />}
+      {canEdit && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de reparto</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-4">
+            {REPARTO_FIELDS.map(([k, label, step]) => (
+              <div key={k}>
+                <Label className="text-xs">{label}</Label>
+                <Input type="number" step={step} className="h-8 w-36" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} />
+              </div>
+            ))}
+            <Button size="sm" disabled={isPending}
+              onClick={() => run(() => guardarConfigDim({
+                ...data.config,
+                choferes_por_camion: Number(c.choferes_por_camion),
+                ayudantes_por_camion: Number(c.ayudantes_por_camion),
+              }), "Parámetros de reparto guardados")}>
+              Guardar
+            </Button>
+            <p className="w-full text-xs text-muted-foreground">
+              FTE necesarios = camiones necesarios (pestaña Camiones) × tripulación por camión. Los camiones necesarios ya consideran los viajes/día, por eso no se vuelve a multiplicar. Dotación actual = promedio diario real de choferes/ayudantes que registraron egreso de vehículo en dpo-app este mes (pico = día de mayor salida).
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 
