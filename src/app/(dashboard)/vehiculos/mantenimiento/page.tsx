@@ -3,6 +3,7 @@ import {
   getChecklistsMtto,
   getCostosMantenimiento,
   getEstadoPlanFlota,
+  getGestionMtto,
   getMantenimientos,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
@@ -14,15 +15,23 @@ export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
   if (IS_MISIONES) redirect("/")
 
-  const [estadoRes, mantenimientosRes, costosRes, tableroRes, checklistsRes, profile] =
-    await Promise.all([
-      getEstadoPlanFlota(),
-      getMantenimientos({ limit: 200 }),
-      getCostosMantenimiento(),
-      getTableroOperativo(),
-      getChecklistsMtto(),
-      getProfile(),
-    ])
+  const [
+    estadoRes,
+    mantenimientosRes,
+    costosRes,
+    tableroRes,
+    checklistsRes,
+    gestionRes,
+    profile,
+  ] = await Promise.all([
+    getEstadoPlanFlota(),
+    getMantenimientos({ limit: 200 }),
+    getCostosMantenimiento(),
+    getTableroOperativo(),
+    getChecklistsMtto(),
+    getGestionMtto(),
+    getProfile(),
+  ])
 
   if ("error" in estadoRes) {
     return (
@@ -70,6 +79,10 @@ export default async function MantenimientoPage() {
         }
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
+  const gestion =
+    "data" in gestionRes
+      ? gestionRes.data
+      : { novedades: [], llantas: [], repuestos: [], ordenesCompra: [] }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -81,6 +94,7 @@ export default async function MantenimientoPage() {
       costos={costos}
       tablero={tablero}
       checklists={checklists}
+      gestion={gestion}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

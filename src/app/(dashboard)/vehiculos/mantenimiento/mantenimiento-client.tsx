@@ -74,6 +74,7 @@ import {
 } from "@/types/database"
 import { TableroOperativo } from "./tablero-operativo"
 import { ChecklistsMtto } from "./checklists-mtto"
+import { GestionMtto } from "./gestion-mtto"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -81,6 +82,10 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
+  LlantaInspeccion,
+  Novedad,
+  OrdenCompra,
+  Repuesto,
   TableroResumen,
 } from "@/actions/mantenimiento-vehiculos"
 
@@ -148,6 +153,12 @@ interface MantenimientoClientProps {
     resumen: TableroResumen
   }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
+  gestion: {
+    novedades: Novedad[]
+    llantas: LlantaInspeccion[]
+    repuestos: Repuesto[]
+    ordenesCompra: OrdenCompra[]
+  }
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -166,6 +177,7 @@ export function MantenimientoClient({
   costos,
   tablero,
   checklists,
+  gestion,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -306,6 +318,7 @@ export function MantenimientoClient({
           <TabsTrigger value="checklists">Check lists</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           <TabsTrigger value="plan">Estado del plan</TabsTrigger>
+          <TabsTrigger value="gestion">Carga / Gestión</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
 
@@ -323,6 +336,18 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Carga / Gestión ============ */}
+        <TabsContent value="gestion" className="space-y-6">
+          <GestionMtto
+            dominios={estados.map((e) => e.vehiculo.dominio)}
+            novedades={gestion.novedades}
+            llantas={gestion.llantas}
+            repuestos={gestion.repuestos}
+            ordenesCompra={gestion.ordenesCompra}
+            puedeEditar={puedeEditar}
           />
         </TabsContent>
 

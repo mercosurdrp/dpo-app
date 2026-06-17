@@ -753,6 +753,263 @@ export async function getChecklistsMtto(): Promise<
   }
 }
 
+// ==================== GESTIÓN / CARGA (novedades, llantas, repuestos, OC) ====
+
+export interface Novedad {
+  id: string
+  dominio: string
+  fecha: string
+  descripcion: string
+  origen: string
+  prioridad: string
+  estado: string
+  created_at: string
+}
+export interface LlantaInspeccion {
+  id: string
+  dominio: string
+  fecha: string
+  posicion: string | null
+  profundidad_mm: number | null
+  presion_psi: number | null
+  observaciones: string | null
+}
+export interface Repuesto {
+  id: string
+  codigo: string | null
+  nombre: string
+  unidad: string | null
+  stock_actual: number
+  stock_min: number
+  stock_max: number | null
+  ubicacion: string | null
+}
+export interface OrdenCompra {
+  id: string
+  numero: string | null
+  proveedor: string | null
+  descripcion: string | null
+  monto: number | null
+  fecha: string
+  estado: string
+}
+
+export async function getGestionMtto(): Promise<
+  | {
+      data: {
+        novedades: Novedad[]
+        llantas: LlantaInspeccion[]
+        repuestos: Repuesto[]
+        ordenesCompra: OrdenCompra[]
+      }
+    }
+  | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const [nov, lla, rep, oc] = await Promise.all([
+      supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
+      supabase.from("mantenimiento_llantas").select("*").order("fecha", { ascending: false }),
+      supabase.from("mantenimiento_repuestos").select("*").order("nombre"),
+      supabase
+        .from("mantenimiento_ordenes_compra")
+        .select("*")
+        .order("fecha", { ascending: false }),
+    ])
+    for (const r of [nov, lla, rep, oc]) if (r.error) throw new Error(r.error.message)
+    return {
+      data: {
+        novedades: (nov.data || []) as Novedad[],
+        llantas: (lla.data || []) as LlantaInspeccion[],
+        repuestos: (rep.data || []) as Repuesto[],
+        ordenesCompra: (oc.data || []) as OrdenCompra[],
+      },
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Novedades -----
+export async function createNovedad(input: {
+  dominio: string
+  fecha: string
+  descripcion: string
+  prioridad?: string
+  origen?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio || !input.descripcion.trim())
+      return { error: "Completá unidad y descripción" }
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_novedades").insert({
+      dominio: input.dominio.trim().toUpperCase(),
+      fecha: input.fecha,
+      descripcion: input.descripcion.trim(),
+      prioridad: input.prioridad ?? "media",
+      origen: input.origen ?? "manual",
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function updateNovedadEstado(
+  id: string,
+  estado: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_novedades")
+      .update({
+        estado,
+        resuelta_at: estado === "resuelta" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Llantas -----
+export async function createLlanta(input: {
+  dominio: string
+  fecha: string
+  posicion?: string
+  profundidad_mm?: number | null
+  presion_psi?: number | null
+  observaciones?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio) return { error: "Elegí la unidad" }
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_llantas").insert({
+      dominio: input.dominio.trim().toUpperCase(),
+      fecha: input.fecha,
+      posicion: input.posicion?.trim() || null,
+      profundidad_mm: input.profundidad_mm ?? null,
+      presion_psi: input.presion_psi ?? null,
+      observaciones: input.observaciones?.trim() || null,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Repuestos -----
+export async function upsertRepuesto(input: {
+  id?: string
+  codigo?: string
+  nombre: string
+  unidad?: string
+  stock_actual?: number | null
+  stock_min?: number | null
+  stock_max?: number | null
+  ubicacion?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.nombre.trim()) return { error: "Ingresá el nombre del repuesto" }
+    const supabase = await createClient()
+    const row = {
+      codigo: input.codigo?.trim() || null,
+      nombre: input.nombre.trim(),
+      unidad: input.unidad?.trim() || null,
+      stock_actual: input.stock_actual ?? 0,
+      stock_min: input.stock_min ?? 0,
+      stock_max: input.stock_max ?? null,
+      ubicacion: input.ubicacion?.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = input.id
+      ? await supabase.from("mantenimiento_repuestos").update(row).eq("id", input.id)
+      : await supabase
+          .from("mantenimiento_repuestos")
+          .insert({ ...row, created_by: profile.id })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Órdenes de compra -----
+export async function createOrdenCompra(input: {
+  numero?: string
+  proveedor?: string
+  descripcion?: string
+  monto?: number | null
+  fecha: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_ordenes_compra").insert({
+      numero: input.numero?.trim() || null,
+      proveedor: input.proveedor?.trim() || null,
+      descripcion: input.descripcion?.trim() || null,
+      monto: input.monto ?? null,
+      fecha: input.fecha,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function updateOrdenCompraEstado(
+  id: string,
+  estado: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_ordenes_compra")
+      .update({ estado, updated_at: new Date().toISOString() })
+      .eq("id", id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Borrado genérico de filas de gestión -----
+export async function deleteGestionRow(
+  tabla: "novedades" | "llantas" | "repuestos" | "ordenes_compra",
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from(`mantenimiento_${tabla}`)
+      .delete()
+      .eq("id", id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ==================== COSTOS ====================
 
 export async function getCostosMantenimiento(): Promise<
