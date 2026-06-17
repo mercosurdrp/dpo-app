@@ -1115,6 +1115,7 @@ export function RepuestosFlotaClient() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Acciones</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Repuesto</TableHead>
@@ -1125,7 +1126,6 @@ export function RepuestosFlotaClient() {
                   <TableHead>Proveedor</TableHead>
                   <TableHead>Comentario</TableHead>
                   <TableHead>Unidad (camión)</TableHead>
-                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1146,6 +1146,30 @@ export function RepuestosFlotaClient() {
                     editId === m.id && edit ? (
                       // Fila en modo edición.
                       <TableRow key={m.id} className="bg-slate-50/60">
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
+                              disabled={guardando}
+                              onClick={guardarEdicion}
+                              title="Guardar cambios"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-muted-foreground"
+                              disabled={guardando}
+                              onClick={cancelarEdicion}
+                              title="Cancelar"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Input
                             type="date"
@@ -1255,34 +1279,34 @@ export function RepuestosFlotaClient() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
+                      </TableRow>
+                    ) : (
+                      // Fila en modo vista.
+                      <TableRow key={m.id}>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
+                              className="h-8 w-8 text-muted-foreground hover:text-slate-900"
                               disabled={guardando}
-                              onClick={guardarEdicion}
-                              title="Guardar cambios"
+                              onClick={() => empezarEdicion(m)}
+                              title="Editar movimiento"
                             >
-                              <Check className="h-4 w-4" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-8 w-8 text-muted-foreground"
+                              className="h-8 w-8 text-muted-foreground hover:text-red-600"
                               disabled={guardando}
-                              onClick={cancelarEdicion}
-                              title="Cancelar"
+                              onClick={() => borrar(m)}
+                              title="Borrar movimiento"
                             >
-                              <X className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>
-                      </TableRow>
-                    ) : (
-                      // Fila en modo vista.
-                      <TableRow key={m.id}>
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
                         <TableCell>
                           {m.tipo === "ingreso" ? (
@@ -1322,30 +1346,6 @@ export function RepuestosFlotaClient() {
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-muted-foreground hover:text-slate-900"
-                              disabled={guardando}
-                              onClick={() => empezarEdicion(m)}
-                              title="Editar movimiento"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-muted-foreground hover:text-red-600"
-                              disabled={guardando}
-                              onClick={() => borrar(m)}
-                              title="Borrar movimiento"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
                         </TableCell>
                       </TableRow>
                     )
