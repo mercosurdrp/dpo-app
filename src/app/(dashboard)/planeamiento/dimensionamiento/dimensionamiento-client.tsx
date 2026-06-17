@@ -182,7 +182,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
         {/* ─── Proyección de dotación vs volumen ─── */}
         <TabsContent value="proyeccion" className="space-y-4">
-          <ProyeccionTab data={data} />
+          <ProyeccionTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}
@@ -507,68 +507,103 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
 const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
 
-function ProyeccionTab({ data }: { data: DimData }) {
+function ProyeccionTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const p = data.proyeccion
+  const [pesos, setPesos] = useState({
+    peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar),
+    peso_mie: String(data.config.peso_mie), peso_jue: String(data.config.peso_jue),
+    peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
+  })
   if (data.proyeccionError) return <p className="text-sm text-red-600">Error: {data.proyeccionError}</p>
   if (!p) return <p className="text-sm text-muted-foreground">Sin volumen proyectado para el año en curso (tabla dim_volumen_proyectado) o sin métricas de distribución.</p>
 
-  const alertas: string[] = []
-  p.meses.forEach((mm, i) => {
-    const faltan = p.recursos.filter((r) => r.necesarios[i] > r.dotacion)
-    if (faltan.length) alertas.push(`${mesLabel(mm.mes)}: ${faltan.map((r) => `${r.rol} (necesita ${r.necesarios[i]} vs ${r.dotacion})`).join(" · ")}`)
-  })
-  const cellCls = (nec: number, dot: number) =>
-    nec > dot ? "bg-red-50 text-red-700 font-semibold" : nec === dot ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"
+  const heCls = (hh: number) => (hh > 0 ? "bg-red-50 text-red-700 font-semibold" : "text-muted-foreground")
 
   return (
     <div className="space-y-4">
+      {/* Volumen e índice */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Dotación necesaria proyectada — {mesLabel(p.mesBase)} a Dic (volumen del presupuesto)</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (presupuesto) — {mesLabel(p.mesBase)} a Dic</CardTitle></CardHeader>
         <CardContent>
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Recurso</TableHead>
-                <TableHead className="text-right">Dotación actual</TableHead>
-                {p.meses.map((mm) => (
-                  <TableHead key={mm.mes} className="text-right">
-                    {mesLabel(mm.mes)}
-                    <span className="block text-[10px] font-normal text-muted-foreground">×{mm.indice.toFixed(2).replace(".", ",")}</span>
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
+            <TableHeader><TableRow><TableHead>Mes</TableHead>{p.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
             <TableBody>
-              {p.recursos.map((r) => (
+              <TableRow><TableCell className="font-medium">Volumen (HL)</TableCell>{p.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">{fmt(Math.round(mm.hl))}</TableCell>))}</TableRow>
+              <TableRow><TableCell className="font-medium">Índice vs {mesLabel(p.mesBase)}</TableCell>{p.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">×{mm.indice.toFixed(2).replace(".", ",")}</TableCell>))}</TableRow>
+            </TableBody>
+          </Table>
+          <p className="mt-1 text-xs text-muted-foreground">Base {mesLabel(p.mesBase)} = {fmt(Math.round(p.hlBase))} HL. El volumen de cada día se reparte según el peso del día de semana (jue/vie = días fuertes).</p>
+        </CardContent>
+      </Card>
+
+      {/* Horas extra de almacén */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Horas extra de almacén (dotación fija) — hora-hombre por mes</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader><TableRow><TableHead>Rol</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">Cap/día</TableHead>{p.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
+            <TableBody>
+              {p.almacen.map((r) => (
                 <TableRow key={r.rol}>
                   <TableCell className="font-medium">{r.rol}</TableCell>
                   <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
-                  {r.necesarios.map((nec, i) => (
-                    <TableCell key={i} className={`text-right ${cellCls(nec, r.dotacion)}`}>{nec}</TableCell>
-                  ))}
+                  <TableCell className="text-right text-xs text-muted-foreground">{fmt(r.capDiaria)} {r.unidadVol}</TableCell>
+                  {r.horasExtra.map((hh, i) => (<TableCell key={i} className={`text-right ${heCls(hh)}`}>{hh > 0 ? `${fmt(hh)} h` : "—"}</TableCell>))}
                 </TableRow>
               ))}
-              <TableRow className="border-t-2">
-                <TableCell className="font-bold">Volumen (HL)</TableCell>
-                <TableCell className="text-right text-xs text-muted-foreground">base {fmt(Math.round(p.hlBase))}</TableCell>
-                {p.meses.map((mm) => (
-                  <TableCell key={mm.mes} className="text-right text-xs text-muted-foreground">{fmt(Math.round(mm.hl))}</TableCell>
-                ))}
-              </TableRow>
             </TableBody>
           </Table>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Necesarios = el recurso del mes actual escalado por el índice de volumen (HL del presupuesto ÷ HL del mes base). Dotación fija (la actual). <span className="font-medium text-red-700">Rojo</span> = falta gente ese mes (horas extra / refuerzo), <span className="font-medium text-amber-700">ámbar</span> = al límite, <span className="font-medium text-emerald-700">verde</span> = cubre.
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (según el peso del día de semana) supera la capacidad de la dotación. <span className="font-medium text-red-700">Rojo</span> = requiere horas extra. Cap/día = lo que cubre la dotación en jornada normal.</p>
         </CardContent>
       </Card>
-      {alertas.length > 0 && (
+
+      {/* Flota — refuerzo */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Flota — refuerzo de reparto (choferes {p.choferesDisp} · {p.camionesDisp} camiones × {fmt(p.capCamion)} CEq)</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Días con refuerzo</TableHead><TableHead className="text-right">Choferes pico</TableHead><TableHead>Solución</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {p.meses.map((mm, i) => {
+                const f = p.flota[i]
+                const sol = f.diasRefuerzo === 0 ? "Sin refuerzo" : f.segundaVueltaObligada
+                  ? "2ª vuelta obligada (supera todos los camiones)"
+                  : `Contratar hasta ${f.choferesPico} choferes (hay ${p.camionesDisp} camiones) o 2ª vuelta`
+                return (
+                  <TableRow key={mm.mes}>
+                    <TableCell className="font-medium">{mesLabel(mm.mes)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${f.diasRefuerzo > 0 ? "text-red-700" : "text-emerald-700"}`}>{f.diasRefuerzo}</TableCell>
+                    <TableCell className={`text-right ${f.choferesPico > p.choferesDisp ? "text-red-700 font-semibold" : ""}`}>{f.choferesPico} / {p.choferesDisp}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{sol}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+          <p className="mt-2 text-xs text-muted-foreground">«Días con refuerzo» = días donde el volumen supera lo que {p.choferesDisp} choferes mueven en 1 vuelta. Con {p.camionesDisp} camiones disponibles, esos días se cubren contratando choferes o con 2ª vuelta; la 2ª vuelta solo es obligada si se supera la capacidad de los {p.camionesDisp} camiones.</p>
+        </CardContent>
+      </Card>
+
+      {/* Editor de pesos por día de semana */}
+      {canEdit && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Meses con déficit de dotación (refuerzo u horas extra)</CardTitle></CardHeader>
-          <CardContent>
-            <ul className="ml-4 list-disc space-y-1 text-sm text-red-700">
-              {alertas.map((a, i) => <li key={i}>{a}</li>)}
-            </ul>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Peso de volumen por día de semana</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-4">
+            {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, label]) => (
+              <div key={k}>
+                <Label className="text-xs">{label}</Label>
+                <Input type="number" step="0.05" className="h-8 w-20" value={pesos[k]} onChange={(e) => setPesos((s) => ({ ...s, [k]: e.target.value }))} />
+              </div>
+            ))}
+            <Button size="sm" disabled={isPending}
+              onClick={() => run(() => guardarConfigDim({
+                ...data.config,
+                peso_lun: Number(pesos.peso_lun), peso_mar: Number(pesos.peso_mar), peso_mie: Number(pesos.peso_mie),
+                peso_jue: Number(pesos.peso_jue), peso_vie: Number(pesos.peso_vie), peso_sab: Number(pesos.peso_sab),
+              }), "Pesos por día guardados")}>
+              Guardar
+            </Button>
+            <p className="w-full text-xs text-muted-foreground">Fracción del volumen semanal por día (se normalizan si no suman 1; domingo no opera).</p>
           </CardContent>
         </Card>
       )}
