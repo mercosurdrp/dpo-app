@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
     const durationMs = Date.now() - startedAt
     console.log(
       `[gescom-sync] done source=${source} ventas=${r.ventas_consideradas} ` +
-      `rechazos_upserted=${r.rechazos_upserted} ventas_diarias=${r.ventas_diarias_upserted} ` +
+      `rechazos_upserted=${r.rechazos_upserted} rechazos_eliminados=${r.rechazos_eliminados} ventas_diarias=${r.ventas_diarias_upserted} ` +
       `revertidos=${r.dev_re_revertidos} errors=${r.errors.length} duration_ms=${durationMs}`,
     )
 

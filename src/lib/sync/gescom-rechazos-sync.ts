@@ -27,6 +27,7 @@ import {
   type GescomCredentials, type GescomVenta, type GescomItem,
   gescomLogin, fetchVentasRecientes, fetchVentasPorRango, normalizarCodigoCliente,
 } from "@/lib/gescom/client"
+import { reconciliarComprobante } from "@/lib/sync/rechazos-sync"
 
 export const GESCOM_FLETERO = "GESTION"
 export const GESCOM_EMPRESA = "98"          // Gestión Pampeana; 99/1/2 = otras operaciones
@@ -53,6 +54,7 @@ export interface GescomSyncResult {
   excluidas_venta_directa: number
   rechazos_upserted: number
   rechazos_excluidos_admin: number
+  rechazos_eliminados: number
   ventas_diarias_upserted: number
   dev_re_revertidos: number
   errors: Array<{ kind: "rechazo" | "ventas_diarias" | "fatal"; message: string }>
@@ -269,7 +271,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
   const result: GescomSyncResult = {
     desde, hasta, modo,
     ventas_consideradas: 0, excluidas_otra_empresa: 0, excluidas_venta_directa: 0,
-    rechazos_upserted: 0, rechazos_excluidos_admin: 0,
+    rechazos_upserted: 0, rechazos_excluidos_admin: 0, rechazos_eliminados: 0,
     ventas_diarias_upserted: 0, dev_re_revertidos: 0, errors: [],
   }
 
@@ -330,6 +332,18 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     (v) => v.codigoTipoVenta === "DEV-RE" && revertidos.has(v.id),
   ).length
 
+  // Comprobantes de rechazo tocados por el fetch = TODOS los DEV-RE finalizados
+  // que vinieron (incluidos los revertidos/excluidos por admin, que terminan con
+  // líneas vigentes vacías → al reconciliar se borran sus líneas previas). Clave
+  // "0|<id>" porque en Gestión serie=0 y nrodoc=v.id.
+  const lineasVigentesPorComp = new Map<string, Set<number>>()
+  for (const v of ventas) {
+    if (v.codigoTipoVenta === "DEV-RE" && esFinalizada(v)) {
+      const k = `0|${v.id}`
+      if (!lineasVigentesPorComp.has(k)) lineasVigentesPorComp.set(k, new Set<number>())
+    }
+  }
+
   for (const v of devRe) {
     const fecha = diaDe(v)
     if (!fecha) continue
@@ -341,6 +355,7 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
     for (const item of v.items ?? []) {
       const idArt = Number(item.codigoItem)
       if (!Number.isFinite(idArt)) continue
+      lineasVigentesPorComp.get(`0|${v.id}`)?.add(idArt)
       const { bultos, hl } = bultosYHlDeItem(item, factores)
       const row = {
         origen: "gestion",
@@ -367,6 +382,14 @@ export async function syncGescomRechazos(deps: GescomSyncDeps): Promise<GescomSy
       if (error) result.errors.push({ kind: "rechazo", message: error.message })
       else result.rechazos_upserted++
     }
+  }
+
+  // ---- reconciliar: borrar líneas de rechazos que GESCOM ya no reporta ----
+  // Cada comprobante GESCOM llega completo, así que es seguro en cualquier modo
+  // (recientes/full): sólo se tocan comprobantes que vinieron en este fetch.
+  for (const [key, vig] of lineasVigentesPorComp) {
+    const nrodoc = Number(key.split("|")[1])
+    result.rechazos_eliminados += await reconciliarComprobante(supabase, "gestion", 0, nrodoc, vig)
   }
 
   // ---- denominador: ventas VEN agrupadas por día y chofer (ds_fletero_carga = 'GESTION-<cod>') ----

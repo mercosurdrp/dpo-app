@@ -151,6 +151,7 @@ export async function POST(request: NextRequest) {
 
     let totalRechazosUp = 0
     let totalRechazosRep = 0
+    let totalRechazosDel = 0
     let totalVentasUp = 0
     let totalDias = 0
     let diasSinDatos = 0
@@ -167,6 +168,7 @@ export async function POST(request: NextRequest) {
       if (r.sin_datos) diasSinDatos++
       totalRechazosUp += r.rechazos_upserted
       totalRechazosRep += r.rechazos_repetidos
+      totalRechazosDel += r.rechazos_eliminados
       totalVentasUp += r.ventas_diarias_upserted
       chMap += r.chofer.mapeo; chSin += r.chofer.sin_resolver
       errors.push(...r.errors)
@@ -218,7 +220,7 @@ export async function POST(request: NextRequest) {
     const durationMs = Date.now() - startedAt
     console.log(
       `[sync] done source=${source} dias=${totalDias} sin_datos=${diasSinDatos} ` +
-      `rechazos_upserted=${totalRechazosUp} ventas_upserted=${totalVentasUp} ` +
+      `rechazos_upserted=${totalRechazosUp} rechazos_eliminados=${totalRechazosDel} ventas_upserted=${totalVentasUp} ` +
       `chofer_mapeo=${chMap} chofer_sin_resolver=${chSin} ` +
       `errors=${errors.length} duration_ms=${durationMs}`
     )
@@ -240,6 +242,7 @@ export async function POST(request: NextRequest) {
       dias_procesados: totalDias,
       rechazos_insertados: totalRechazosUp,
       rechazos_repetidos: totalRechazosRep,
+      rechazos_eliminados: totalRechazosDel,
       ventas_upserted: totalVentasUp,
       dias_sin_datos: diasSinDatos,
       kpis_calculados: kpisCalculados,

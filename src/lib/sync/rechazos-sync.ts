@@ -29,6 +29,7 @@ export interface SyncDayResult {
   sin_datos: boolean
   rechazos_upserted: number
   rechazos_repetidos: number
+  rechazos_eliminados: number
   ventas_diarias_upserted: number
   total_rechazos_intentados: number
   chofer: { mapeo: number; sin_resolver: number }
@@ -160,6 +161,62 @@ export async function loadMapeoManualChofer(
   return out
 }
 
+// ----------------------------- Reconciliación por comprobante -----------------------------
+
+/**
+ * Reconcilia un COMPROBANTE de rechazos: borra de `rechazos` las líneas
+ * (id_articulo) de ese (origen, serie, nrodoc) que YA NO vinieron del origen.
+ * Es el equivalente al "borrar + reinsertar el día" del dashboard de Misiones,
+ * pero a nivel comprobante — necesario porque la columna `fecha` guarda la fecha
+ * de VENTA, no la de registro del fetch, así que no se puede particionar por día.
+ *
+ * Cubre: líneas quitadas de un comprobante y comprobantes anulados/revertidos
+ * enteros (idArticulosVigentes vacío → borra todas sus líneas). Sin esto, un
+ * rechazo que el origen corrige/anula quedaba zombie inflando el indicador,
+ * porque el sync sólo hacía upsert (nunca borraba).
+ *
+ * 🚨 SEGURIDAD: invocar SÓLO con comprobantes que vinieron en el fetch. Un
+ * comprobante siempre llega con TODOS sus ítems (la parcialidad de paginación es
+ * entre comprobantes, no dentro de uno), así que es seguro en cualquier modo.
+ * Devuelve cuántas filas eliminó.
+ */
+export async function reconciliarComprobante(
+  supabase: SupabaseClient,
+  origen: string,
+  serie: number,
+  nrodoc: number,
+  idArticulosVigentes: Set<number>,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("rechazos")
+    .select("id_articulo")
+    .eq("origen", origen)
+    .eq("serie", serie)
+    .eq("nrodoc", nrodoc)
+  if (error) {
+    console.warn(`[sync] reconciliar ${origen} ${serie}-${nrodoc}: no se pudo leer líneas: ${error.message}`)
+    return 0
+  }
+  const zombies = ((data ?? []) as Array<{ id_articulo: number }>)
+    .filter((r) => !idArticulosVigentes.has(r.id_articulo))
+  let borradas = 0
+  for (const z of zombies) {
+    const { error: delErr } = await supabase
+      .from("rechazos")
+      .delete()
+      .eq("origen", origen)
+      .eq("serie", serie)
+      .eq("nrodoc", nrodoc)
+      .eq("id_articulo", z.id_articulo)
+    if (delErr) {
+      console.warn(`[sync] reconciliar ${origen} ${serie}-${nrodoc}: no se pudo borrar art ${z.id_articulo}: ${delErr.message}`)
+      continue
+    }
+    borradas++
+  }
+  return borradas
+}
+
 // ----------------------------- Sync por día -----------------------------
 
 export interface SyncDayDeps {
@@ -185,6 +242,7 @@ export async function syncRechazosForDate(
     sin_datos: false,
     rechazos_upserted: 0,
     rechazos_repetidos: 0,
+    rechazos_eliminados: 0,
     ventas_diarias_upserted: 0,
     total_rechazos_intentados: 0,
     chofer: { mapeo: 0, sin_resolver: 0 },
@@ -218,8 +276,20 @@ export async function syncRechazosForDate(
   )
   result.total_rechazos_intentados = rechazos.length
 
+  // Comprobantes de rechazo que el fetch del día tocó (incluye anulados/sin
+  // patente, para detectar líneas que dejaron de ser rechazo) → líneas vigentes
+  // por comprobante, para reconciliar al final. Clave "serie|nrodoc".
+  const lineasVigentesPorComp = new Map<string, Set<number>>()
+  for (const v of ventas) {
+    if (v.idRechazo > 0 && v.idDocumento !== "PRDVO") {
+      const k = `${v.serie}|${v.nrodoc}`
+      if (!lineasVigentesPorComp.has(k)) lineasVigentesPorComp.set(k, new Set<number>())
+    }
+  }
+
   // ---- upsert rechazos ----
   for (const r of rechazos) {
+    lineasVigentesPorComp.get(`${r.serie}|${r.nrodoc}`)?.add(r.idArticulo)
     const patenteNorm = normalizarPatente(r.dsFleteroCarga)
     const choferMapeo = mapeoManualChofer.get(patenteNorm) ?? null
     if (choferMapeo) result.chofer.mapeo++
@@ -287,6 +357,14 @@ export async function syncRechazosForDate(
     } else {
       result.rechazos_upserted++
     }
+  }
+
+  // ---- reconciliar: borrar líneas de rechazo que el origen ya no reporta ----
+  // El fetch del día trae cada DVVTA completo, así que es seguro limpiar por
+  // comprobante lo que sobra (líneas corregidas / comprobantes anulados).
+  for (const [key, vig] of lineasVigentesPorComp) {
+    const [serie, nrodoc] = key.split("|").map(Number)
+    result.rechazos_eliminados += await reconciliarComprobante(supabase, "chess", serie, nrodoc, vig)
   }
 
   // ---- upsert ventas_diarias (solo FCVTA + patente válida) ----

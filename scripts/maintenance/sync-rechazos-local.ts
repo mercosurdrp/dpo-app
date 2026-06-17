@@ -49,7 +49,8 @@ const supabase = createClient(SUPABASE_URL, SVC, {
 
 function logDay(r: SyncDayResult) {
   if (r.sin_datos) { console.log(`${r.fecha}: sin datos`); return }
-  const tag = `R=${r.rechazos_upserted}/${r.total_rechazos_intentados} V=${r.ventas_diarias_upserted}`
+  const del = r.rechazos_eliminados ? ` D=${r.rechazos_eliminados}` : ""
+  const tag = `R=${r.rechazos_upserted}/${r.total_rechazos_intentados}${del} V=${r.ventas_diarias_upserted}`
   const cho = `[chofer map=${r.chofer.mapeo} sin=${r.chofer.sin_resolver}]`
   const err = r.errors.length ? ` ERR(${r.errors.length}: ${r.errors[0].message})` : ""
   console.log(`${r.fecha}: ${tag} ${cho}${err}`)
