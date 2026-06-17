@@ -280,6 +280,7 @@ interface CreateMantenimientoInput {
   costo?: number | null
   numero_factura?: string
   observaciones?: string
+  es_service_general?: boolean
   tareas: MantenimientoTareaInput[]
 }
 
@@ -306,6 +307,7 @@ export async function createMantenimiento(
         costo: input.costo ?? null,
         numero_factura: input.numero_factura?.trim() || null,
         observaciones: input.observaciones?.trim() || null,
+        es_service_general: input.es_service_general ?? false,
         created_by: profile.id,
       })
       .select()
@@ -344,6 +346,7 @@ interface UpdateMantenimientoInput {
   costo?: number | null
   numero_factura?: string
   observaciones?: string
+  es_service_general?: boolean
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
 }
@@ -367,6 +370,8 @@ export async function updateMantenimiento(
       patch.numero_factura = input.numero_factura?.trim() || null
     if (input.observaciones !== undefined)
       patch.observaciones = input.observaciones?.trim() || null
+    if (input.es_service_general !== undefined)
+      patch.es_service_general = input.es_service_general
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")

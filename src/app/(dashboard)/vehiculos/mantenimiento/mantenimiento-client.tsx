@@ -237,7 +237,7 @@ export function MantenimientoClient({
         </div>
         {puedeEditar && (
           <Button onClick={() => abrirRegistro()}>
-            <Plus className="mr-1 size-4" /> Registrar mantenimiento
+            <Plus className="mr-1 size-4" /> Nueva orden de trabajo
           </Button>
         )}
       </div>
@@ -292,7 +292,7 @@ export function MantenimientoClient({
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
           <TabsTrigger value="plan">Estado del plan</TabsTrigger>
-          <TabsTrigger value="historial">Historial</TabsTrigger>
+          <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
 
@@ -409,8 +409,13 @@ export function MantenimientoClient({
           })}
         </TabsContent>
 
-        {/* ============ TAB: Historial ============ */}
+        {/* ============ TAB: Órdenes de Trabajo ============ */}
         <TabsContent value="historial" className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Cada intervención de la flota (preventiva o correctiva). Una OT marcada como{" "}
+            <span className="font-medium text-emerald-700">service general</span> reinicia el
+            contador del próximo service en el tablero operativo.
+          </p>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <Label className="text-xs text-slate-500">Dominio</Label>
@@ -500,16 +505,26 @@ export function MantenimientoClient({
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
                         <TableCell className="font-medium">{m.dominio}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              m.tipo === "correctivo"
-                                ? "border-orange-200 bg-orange-50 text-orange-700"
-                                : "border-sky-200 bg-sky-50 text-sky-700"
-                            }
-                          >
-                            {m.tipo === "correctivo" ? "Correctivo" : "Preventivo"}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant="outline"
+                              className={
+                                m.tipo === "correctivo"
+                                  ? "border-orange-200 bg-orange-50 text-orange-700"
+                                  : "border-sky-200 bg-sky-50 text-sky-700"
+                              }
+                            >
+                              {m.tipo === "correctivo" ? "Correctivo" : "Preventivo"}
+                            </Badge>
+                            {m.es_service_general && (
+                              <Badge
+                                variant="outline"
+                                className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700"
+                              >
+                                <Wrench className="size-3" /> Service general
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={ESTADO_MANT_BADGE[m.estado]}>
@@ -948,6 +963,7 @@ function NuevoMantenimientoDialog({
   const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
   const [obs, setObs] = useState("")
+  const [esServiceGeneral, setEsServiceGeneral] = useState(false)
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
   )
@@ -981,10 +997,16 @@ function NuevoMantenimientoDialog({
       toast.error("Elegí la unidad")
       return
     }
-    if (tareasSel.size === 0 && libres.length === 0) {
+    if (tareasSel.size === 0 && libres.length === 0 && !esServiceGeneral) {
       toast.error("Marcá al menos una tarea realizada")
       return
     }
+    // Un service general puede registrarse sin desglose de tareas del plan.
+    const tareas = [
+      ...Array.from(tareasSel).map((tareaId) => ({ tareaId })),
+      ...libres.map((descripcion) => ({ descripcion })),
+    ]
+    if (tareas.length === 0) tareas.push({ descripcion: "Service general (rodado)" })
     setSaving(true)
     const res = await createMantenimiento({
       dominio,
@@ -997,10 +1019,8 @@ function NuevoMantenimientoDialog({
       costo: parseNum(costo),
       numero_factura: factura,
       observaciones: obs,
-      tareas: [
-        ...Array.from(tareasSel).map((tareaId) => ({ tareaId })),
-        ...libres.map((descripcion) => ({ descripcion })),
-      ],
+      es_service_general: esServiceGeneral,
+      tareas,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1110,6 +1130,23 @@ function NuevoMantenimientoDialog({
             </div>
           </div>
 
+          <label className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={esServiceGeneral}
+              onCheckedChange={(c) => setEsServiceGeneral(c === true)}
+            />
+            <span>
+              <span className="font-medium text-emerald-800">
+                Es service general (rodado)
+              </span>
+              <span className="mt-0.5 block text-xs text-emerald-700">
+                Reinicia el contador del próximo service en el tablero: la proyección pasa a
+                tomar esta fecha y estos km como punto de partida.
+              </span>
+            </span>
+          </label>
+
           {dominio && (
             <div>
               <Label>Tareas del plan realizadas</Label>
@@ -1213,6 +1250,7 @@ function EditarMantenimientoDialog({
   const [costo, setCosto] = useState(m.costo != null ? String(m.costo) : "")
   const [factura, setFactura] = useState(m.numero_factura ?? "")
   const [obs, setObs] = useState(m.observaciones ?? "")
+  const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
@@ -1227,6 +1265,7 @@ function EditarMantenimientoDialog({
       costo: parseNum(costo),
       numero_factura: factura,
       observaciones: obs,
+      es_service_general: esServiceGeneral,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1296,6 +1335,19 @@ function EditarMantenimientoDialog({
             <Label>Observaciones</Label>
             <Textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} />
           </div>
+          <label className="col-span-2 flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={esServiceGeneral}
+              onCheckedChange={(c) => setEsServiceGeneral(c === true)}
+            />
+            <span>
+              <span className="font-medium text-emerald-800">Es service general (rodado)</span>
+              <span className="mt-0.5 block text-xs text-emerald-700">
+                Ancla el contador del próximo service en esta fecha y estos km.
+              </span>
+            </span>
+          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
