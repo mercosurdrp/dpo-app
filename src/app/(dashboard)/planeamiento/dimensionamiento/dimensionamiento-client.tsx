@@ -216,7 +216,8 @@ function RolFteBlock({ titulo, rol, unidadVol, unidadProd, detalle }: {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard title="Volumen promedio / día" value={`${fmt(rol.volumenProm)} ${unidadVol}`}
             hint={`pico ${fmt(rol.volumenPico)} · ${rol.diasConDatos} días`} />
-          <KpiCard title="Productividad" value={`${fmt(rol.productividad)} ${unidadProd}`} />
+          <KpiCard title="Productividad" value={`${fmt(rol.productividad)} ${unidadProd}`}
+            hint={`cap. efectiva ${fmt(rol.capDiariaFte)} ${unidadVol}/día·pers (util. ${Math.round(rol.utilizacion * 100)}%)`} />
           <KpiCard title="FTE necesarios" value={`${rol.fteNecesariosProm} (pico ${rol.fteNecesariosPico})`}
             hint={`vs ${fmt(dot)} dotación`} accent />
           <KpiCard title="Dotación actual" value={fmt(dot)} accent />
@@ -240,8 +241,10 @@ function RolFteBlock({ titulo, rol, unidadVol, unidadProd, detalle }: {
 
 const ALM_FIELDS = [
   ["prod_bul_hh", "Pickeros: prod (bul/HH)", "1"],
+  ["util_pickeros", "Pickeros: util. turno (0–1)", "0.05"],
   ["dotacion_almacen", "Pickeros: dotación", "1"],
   ["prod_pal_h", "Maquinistas: prod (pal/HH)", "0.1"],
+  ["util_maquinistas", "Maquinistas: util. turno (0–1)", "0.05"],
   ["dotacion_maquinistas", "Maquinistas: dotación", "1"],
   ["horas_turno", "Horas / turno", "0.1"],
   ["factor_retorno_distrib", "Retorno distrib. (0–1)", "0.05"],
@@ -251,8 +254,10 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
   const a = data.almacen
   const [c, setC] = useState({
     prod_bul_hh: String(data.config.prod_bul_hh),
+    util_pickeros: String(data.config.util_pickeros),
     dotacion_almacen: String(data.config.dotacion_almacen),
     prod_pal_h: String(data.config.prod_pal_h),
+    util_maquinistas: String(data.config.util_maquinistas),
     dotacion_maquinistas: String(data.config.dotacion_maquinistas),
     horas_turno: String(data.config.horas_turno),
     factor_retorno_distrib: String(data.config.factor_retorno_distrib),
@@ -301,8 +306,10 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
               onClick={() => run(() => guardarConfigDim({
                 ...data.config,
                 prod_bul_hh: Number(c.prod_bul_hh),
+                util_pickeros: Number(c.util_pickeros),
                 dotacion_almacen: Number(c.dotacion_almacen),
                 prod_pal_h: Number(c.prod_pal_h),
+                util_maquinistas: Number(c.util_maquinistas),
                 dotacion_maquinistas: Number(c.dotacion_maquinistas),
                 horas_turno: Number(c.horas_turno),
                 factor_retorno_distrib: Number(c.factor_retorno_distrib),
@@ -310,7 +317,7 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
               Guardar
             </Button>
             <p className="w-full text-xs text-muted-foreground">
-              FTE = volumen/día ÷ (productividad × horas/turno). Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
+              FTE = volumen/día ÷ (productividad × horas/turno × utilización). La utilización es la fracción del turno que la persona dedica realmente a la tarea (el resto: reposición, traslados, despacho, esperas); el bul/HH y pal/HH del WMS son de horas de actividad pura, no sostenibles todo el turno. Pickeros: bultos (ocupación de bodega) ÷ bul/HH. Maquinistas: pallets (acarreo descargado + carga de distribución) ÷ pal/HH. «↻ Recalcular productividad» trae el promedio real del mes de deposito-esteban. Retorno distrib. = fracción de los pallets cargados que se descargan al volver (0 = no contar).
             </p>
           </CardContent>
         </Card>

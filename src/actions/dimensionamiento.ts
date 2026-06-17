@@ -78,6 +78,8 @@ export interface DimConfig {
   prod_pal_h: number
   dotacion_maquinistas: number
   factor_retorno_distrib: number
+  util_pickeros: number      // % del turno dedicado a picking puro (0–1)
+  util_maquinistas: number   // % del turno dedicado a mover pallets (0–1)
 }
 
 export interface RolFte {
@@ -88,6 +90,8 @@ export interface RolFte {
   fteNecesariosProm: number
   fteNecesariosPico: number
   dotacion: number
+  utilizacion: number           // % del turno aplicado a la tarea (0–1)
+  capDiariaFte: number          // capacidad efectiva por persona/día = prod × horas × utilización
 }
 
 export interface AlmacenData {
@@ -163,7 +167,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -182,6 +186,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       prod_pal_h: Number(configRes.data?.prod_pal_h ?? 15) || 15,
       dotacion_maquinistas: Number(configRes.data?.dotacion_maquinistas ?? 3),
       factor_retorno_distrib: Number(configRes.data?.factor_retorno_distrib ?? 0),
+      util_pickeros: Number(configRes.data?.util_pickeros ?? 0.35) || 0.35,
+      util_maquinistas: Number(configRes.data?.util_maquinistas ?? 0.4) || 0.4,
     }
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
 
@@ -268,13 +274,15 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         bultosPorDia.set(k, (bultosPorDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
       }
       const pk = statsPorDia(bultosPorDia)
-      const capPicker = config.prod_bul_hh * config.horas_turno
+      const capPicker = config.prod_bul_hh * config.horas_turno * config.util_pickeros
       const pickeros: RolFte = {
         volumenProm: Math.round(pk.prom), volumenPico: Math.round(pk.pico), productividad: config.prod_bul_hh,
         diasConDatos: pk.dias,
         fteNecesariosProm: capPicker > 0 ? Math.ceil(pk.prom / capPicker) : 0,
         fteNecesariosPico: capPicker > 0 ? Math.ceil(pk.pico / capPicker) : 0,
         dotacion: config.dotacion_almacen,
+        utilizacion: config.util_pickeros,
+        capDiariaFte: Math.round(capPicker),
       }
 
       // Maquinistas: pallets acarreo (recepcion_acarreos) + carga distribución (carga-camiones)
@@ -305,7 +313,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         acaVals.push(aca); cargaVals.push(car)
       }
       const mq = statsPorDia(palPorDia)
-      const capMaq = config.prod_pal_h * config.horas_turno
+      const capMaq = config.prod_pal_h * config.horas_turno * config.util_maquinistas
       const avgArr = (a: number[]) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0)
       const maquinistas = {
         volumenProm: Math.round(mq.prom), volumenPico: Math.round(mq.pico), productividad: config.prod_pal_h,
@@ -313,6 +321,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         fteNecesariosProm: capMaq > 0 ? Math.ceil(mq.prom / capMaq) : 0,
         fteNecesariosPico: capMaq > 0 ? Math.ceil(mq.pico / capMaq) : 0,
         dotacion: config.dotacion_maquinistas,
+        utilizacion: config.util_maquinistas,
+        capDiariaFte: Math.round(capMaq),
         palAcarreoProm: avgArr(acaVals),
         palCargaProm: avgArr(cargaVals),
         factorRetorno: config.factor_retorno_distrib,
@@ -388,6 +398,8 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         prod_pal_h: Math.max(0.1, Number(config.prod_pal_h) || 15),
         dotacion_maquinistas: Math.max(0, Number(config.dotacion_maquinistas) || 0),
         factor_retorno_distrib: Math.max(0, Number(config.factor_retorno_distrib) || 0),
+        util_pickeros: Math.min(1, Math.max(0.01, Number(config.util_pickeros) || 0.35)),
+        util_maquinistas: Math.min(1, Math.max(0.01, Number(config.util_maquinistas) || 0.4)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })
