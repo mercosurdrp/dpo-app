@@ -104,6 +104,8 @@ export interface DimConfig {
   util_maquinistas: number   // % del turno dedicado a mover pallets (0–1)
   choferes_por_camion: number   // tripulación de choferes por camión (≈1)
   ayudantes_por_camion: number  // tripulación de ayudantes por camión
+  dotacion_choferes: number     // plantel de choferes (0 = usar promedio real de registros_vehiculos)
+  dotacion_ayudantes: number    // plantel de ayudantes (0 = usar promedio real)
   peso_lun: number              // ponderación de volumen por día de semana (suman ~1)
   peso_mar: number
   peso_mie: number
@@ -175,8 +177,9 @@ export interface RolReparto {
   porCamion: number             // tripulación de este rol por camión
   fteNecesariosProm: number     // camiones necesarios (prom) × porCamion
   fteNecesariosPico: number
-  dotacionProm: number          // promedio diario real (dpo-app)
+  dotacionProm: number          // dotación EFECTIVA (cargada manual si >0; si no, promedio real dpo-app)
   dotacionPico: number
+  dotacionObservada: number     // promedio real observado (registros_vehiculos), siempre, como referencia
 }
 export interface RepartoData {
   mes: string
@@ -269,7 +272,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, dotacion_choferes, dotacion_ayudantes, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -292,6 +295,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       util_maquinistas: Number(configRes.data?.util_maquinistas ?? 0.875) || 0.875,
       choferes_por_camion: Number(configRes.data?.choferes_por_camion ?? 1) || 1,
       ayudantes_por_camion: Number(configRes.data?.ayudantes_por_camion ?? 1) || 1,
+      dotacion_choferes: Number(configRes.data?.dotacion_choferes ?? 0),
+      dotacion_ayudantes: Number(configRes.data?.dotacion_ayudantes ?? 0),
       peso_lun: Number(configRes.data?.peso_lun ?? 0.1),
       peso_mar: Number(configRes.data?.peso_mar ?? 0.1),
       peso_mie: Number(configRes.data?.peso_mie ?? 0.15),
@@ -516,21 +521,28 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const choC = sizes(choByDia), ayuC = sizes(ayuByDia)
       const cnProm = metricas?.camionesNecesariosPromedio ?? 0
       const cnPico = metricas?.camionesNecesariosPico ?? 0
-      const rol = (porCamion: number, counts: number[]): RolReparto => ({
-        porCamion,
-        fteNecesariosProm: Math.ceil(cnProm * porCamion),
-        fteNecesariosPico: Math.ceil(cnPico * porCamion),
-        dotacionProm: Math.round(avgN(counts) * 10) / 10,
-        dotacionPico: maxN(counts),
-      })
+      // dotación efectiva: plantel cargado a mano si >0, si no el promedio real observado.
+      const rol = (porCamion: number, counts: number[], override: number): RolReparto => {
+        const obsProm = Math.round(avgN(counts) * 10) / 10
+        const obsPico = maxN(counts)
+        const efectiva = override > 0 ? override : obsProm
+        return {
+          porCamion,
+          fteNecesariosProm: Math.ceil(cnProm * porCamion),
+          fteNecesariosPico: Math.ceil(cnPico * porCamion),
+          dotacionProm: efectiva,
+          dotacionPico: override > 0 ? override : obsPico,
+          dotacionObservada: obsProm,
+        }
+      }
       if (choByDia.size > 0 || ayuByDia.size > 0) {
         reparto = {
           mes: mesAA,
           diasConDatos: choByDia.size,
           camionesNecesariosProm: cnProm,
           camionesNecesariosPico: cnPico,
-          choferes: rol(config.choferes_por_camion, choC),
-          ayudantes: rol(config.ayudantes_por_camion, ayuC),
+          choferes: rol(config.choferes_por_camion, choC, config.dotacion_choferes),
+          ayudantes: rol(config.ayudantes_por_camion, ayuC, config.dotacion_ayudantes),
         }
       }
     } catch (e) {
@@ -720,6 +732,8 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         util_maquinistas: Math.min(1, Math.max(0.01, Number(config.util_maquinistas) || 0.875)),
         choferes_por_camion: Math.max(0, Number(config.choferes_por_camion) || 1),
         ayudantes_por_camion: Math.max(0, Number(config.ayudantes_por_camion) || 1),
+        dotacion_choferes: Math.max(0, Number(config.dotacion_choferes) || 0),
+        dotacion_ayudantes: Math.max(0, Number(config.dotacion_ayudantes) || 0),
         peso_lun: Math.max(0, Number(config.peso_lun) || 0),
         peso_mar: Math.max(0, Number(config.peso_mar) || 0),
         peso_mie: Math.max(0, Number(config.peso_mie) || 0),

@@ -205,6 +205,8 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
   const [c, setC] = useState({
     choferes_por_camion: String(data.config.choferes_por_camion),
     ayudantes_por_camion: String(data.config.ayudantes_por_camion),
+    dotacion_choferes: String(data.config.dotacion_choferes),
+    dotacion_ayudantes: String(data.config.dotacion_ayudantes),
   })
   const estado = (nec: number, dot: number, pico: number) =>
     pico <= dot ? { t: "Cubre", c: "text-emerald-700" } : nec <= dot ? { t: "Refuerzo en pico", c: "text-amber-700" } : { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
@@ -226,10 +228,12 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">Tripulación y dotación de reparto</CardTitle></CardHeader>
             <CardContent className="flex flex-wrap items-end gap-4">
+              <div><Label className="text-xs">Dotación choferes</Label><Input type="number" step="1" className="h-8 w-24" value={c.dotacion_choferes} onChange={(e) => setC((s) => ({ ...s, dotacion_choferes: e.target.value }))} /></div>
+              <div><Label className="text-xs">Dotación ayudantes</Label><Input type="number" step="1" className="h-8 w-24" value={c.dotacion_ayudantes} onChange={(e) => setC((s) => ({ ...s, dotacion_ayudantes: e.target.value }))} /></div>
               <div><Label className="text-xs">Choferes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.choferes_por_camion} onChange={(e) => setC((s) => ({ ...s, choferes_por_camion: e.target.value }))} /></div>
               <div><Label className="text-xs">Ayudantes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.ayudantes_por_camion} onChange={(e) => setC((s) => ({ ...s, ayudantes_por_camion: e.target.value }))} /></div>
-              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion) }), "Tripulación guardada")}>Guardar</Button>
-              {rep && <p className="w-full text-xs text-muted-foreground">Dotación real (de <b>registros_vehiculos</b>, egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionProm))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionProm))} ayudantes</b> por día (pico {fmt(rep.choferes.dotacionPico)}/{fmt(rep.ayudantes.dotacionPico)}). Viajes/día y capacidad CEq se configuran arriba.</p>}
+              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion), dotacion_choferes: Number(c.dotacion_choferes), dotacion_ayudantes: Number(c.dotacion_ayudantes) }), "Tripulación y dotación guardadas")}>Guardar</Button>
+              {rep && <p className="w-full text-xs text-muted-foreground">Dotación de choferes/ayudantes: poné tu plantel real; si lo dejás en <b>0</b> se usa el promedio real de <b>registros_vehiculos</b> (egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionObservada))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionObservada))} ayudantes</b> por día. Tripulación = personas por camión. Viajes/día y capacidad CEq se configuran arriba.</p>}
             </CardContent>
           </Card>
           {proy && (
