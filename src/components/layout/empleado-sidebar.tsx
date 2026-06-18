@@ -17,6 +17,7 @@ import {
   Megaphone,
   Wrench,
   PackageX,
+  Sparkles,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -51,6 +52,10 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
     { label: "Comunicaciones", href: "/portal/comunicaciones", icon: <Megaphone className="size-5" /> },
     { label: "Servicios", href: "/portal/servicios", icon: <Wrench className="size-5" /> },
     { label: "Reportar", href: "/reportar-seguridad", icon: <ShieldAlert className="size-5" /> },
+    // Buenas Prácticas: enviar ideas de mejora (solo Pampeana — punto 4.4 Gestión).
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Buenas Prácticas", href: "/mis-buenas-practicas", icon: <Sparkles className="size-5" /> }]),
     // Clasificar envases: solo Pampeana.
     ...(IS_MISIONES
       ? []

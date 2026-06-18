@@ -17,6 +17,7 @@ import {
   Link2,
   Settings,
   Lightbulb,
+  Sparkles,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
@@ -105,6 +106,13 @@ export const navItems: NavItem[] = [
     href: "/herramientas-gestion",
     icon: <Wrench className="size-5" />,
     pampeanaOnly: true,
+  },
+  {
+    label: "Buenas Prácticas",
+    href: "/buenas-practicas",
+    icon: <Sparkles className="size-5" />,
+    pampeanaOnly: true,
+    hideForEmpleado: true,
   },
   {
     label: "Mis tareas",
