@@ -203,6 +203,8 @@ export interface ProyeccionAlmacenRol {
   horasExtra: number[]     // hora-hombre extra por mes (mismo orden que meses)
   faltanPico: number[]     // personas que faltarían en el día pico de cada mes (0 = cubre)
   volPicoDia: number[]     // volumen del día más cargado del mes
+  volPromBase: number      // volumen promedio diario base (mes actual); el modal reconstruye por día
+  prodH: number            // productividad horaria del rol (para derivar horas extra en el modal)
 }
 // Flota: dotación de choferes fija → días que requieren refuerzo (2ª vuelta o contratar).
 export interface ProyeccionFlotaMes {
@@ -590,7 +592,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
               faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
             }
-            return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia }
+            return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
           })
 
           // Flota → días que requieren refuerzo (2ª vuelta o contratar chofer).

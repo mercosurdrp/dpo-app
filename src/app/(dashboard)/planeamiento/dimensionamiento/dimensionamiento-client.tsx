@@ -11,8 +11,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type ProyeccionAlmacenRol, type ProyeccionMes,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -308,6 +309,53 @@ const PARAM_ROLES = [
   { n: "Maquinistas", dot: "dotacion_maquinistas", prod: "prod_pal_h", util: "util_maquinistas", u: "pal/HH", stepProd: "0.1" },
 ] as const
 
+const DIAS_SEM = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
+
+// Modal con el "por qué": volumen por día de semana (pico jue/vie vs más bajo lun/mar) vs capacidad.
+function DetalleRolModal({ rol, meses, pesos, mesBase }: { rol: ProyeccionAlmacenRol; meses: ProyeccionMes[]; pesos: number[]; mesBase: string }) {
+  const cap = rol.capDiaria
+  const filas = [{ mes: mesBase, indice: 1 }, ...meses]
+  const volDia = (indice: number, d: number) => Math.round(rol.volPromBase * indice * 6 * (pesos[d] ?? 0))
+  return (
+    <DialogContent className="max-w-3xl">
+      <DialogHeader><DialogTitle>{rol.rol} — ¿por qué cumple?</DialogTitle></DialogHeader>
+      <p className="text-sm text-muted-foreground">
+        Capacidad por día (dotación {rol.dotacion}): <b>{fmt(cap)} {rol.unidadVol}/día</b>. Volumen de cada día = volumen del mes × peso del día (Jue/Vie = picos). Celda en <span className="font-medium text-red-700">rojo</span> = supera la capacidad → ese día hay horas extra.
+      </p>
+      <div className="max-h-[60vh] overflow-auto">
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>Mes</TableHead>
+            {DIAS_SEM.map((d) => (<TableHead key={d} className="text-right">{d}</TableHead>))}
+            <TableHead className="text-right">Pico</TableHead>
+            <TableHead className="text-right">Más bajo</TableHead>
+            <TableHead className="text-right">Capacidad</TableHead>
+            <TableHead>Estado</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {filas.map((f, idx) => {
+              const vals = DIAS_SEM.map((_, d) => volDia(f.indice, d))
+              const pico = Math.max(...vals), bajo = Math.min(...vals)
+              const supera = pico > cap
+              return (
+                <TableRow key={f.mes} className={idx === 0 ? "bg-muted/40" : ""}>
+                  <TableCell className="font-medium">{mesLabel(f.mes)}{idx === 0 ? " (hoy)" : ""}</TableCell>
+                  {vals.map((v, d) => (<TableCell key={d} className={`text-right ${v > cap ? "bg-red-50 text-red-700 font-semibold" : ""}`}>{fmt(v)}</TableCell>))}
+                  <TableCell className="text-right font-semibold">{fmt(pico)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmt(bajo)}</TableCell>
+                  <TableCell className="text-right">{fmt(cap)}</TableCell>
+                  <TableCell className={supera ? "text-red-700 font-medium" : "text-emerald-700"}>{supera ? "Horas extra" : "Cubre"}</TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="text-xs text-muted-foreground">Productividad {fmt(rol.prodH)} {rol.unidadVol}/HH. Horas extra de un día = (volumen del día − capacidad) ÷ productividad. El volumen mensual sale del presupuesto; el reparto por día usa los pesos cargados en esta solapa.</p>
+    </DialogContent>
+  )
+}
+
 function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
   const proy = data.proyeccion
@@ -454,7 +502,14 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
               <TableBody>
                 {proy.almacen.map((r) => (
                   <TableRow key={r.rol}>
-                    <TableCell className="font-medium">{r.rol}</TableCell>
+                    <TableCell className="font-medium">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <button className="text-left underline decoration-dotted underline-offset-2 hover:text-sky-600">{r.rol}</button>
+                        </DialogTrigger>
+                        <DetalleRolModal rol={r} meses={proy.meses} pesos={proy.pesos} mesBase={proy.mesBase} />
+                      </Dialog>
+                    </TableCell>
                     {r.horasExtra.map((hh, i) => {
                       const falta = r.faltanPico[i]
                       return (
