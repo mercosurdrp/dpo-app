@@ -4001,13 +4001,60 @@ async function getIndicadoresMesCore(
           ausentismoPorFecha[f] = f < fecha ? v : null
         }
 
+        // WQI recalculado sobre el HL VENDIDOS del tablero
+        // (`ventas_diarias.total_hl`, Chess/rechazos-sync), NO sobre el HL
+        // despachado de deposito-esteban (mercosur-dashboard) que trae
+        // `serie.wqi_dia/serie.wqi`. Numerador: HL de roturas de serie-diaria
+        // (ya enmascarado al último día cerrado). Misma fuente HL que la fila
+        // auto "HL vendidos" del tablero, para que ambas coincidan.
+        // Pedido del usuario 2026-06-18.
+        const { data: ventHlRaw } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_hl")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
+        const hlVendidoDia: Record<string, number> = {}
+        for (const v of (ventHlRaw ?? []) as Array<{
+          fecha: string
+          total_hl: number | null
+        }>) {
+          const h = Number(v.total_hl ?? 0)
+          if (Number.isFinite(h)) {
+            hlVendidoDia[v.fecha] = (hlVendidoDia[v.fecha] ?? 0) + h
+          }
+        }
+        // Celda diaria = HL roturas día / HL vendido día × 1M.
+        // MTD acumulado = Σ HL roturas / Σ HL vendido (solo días cerrados),
+        // numerador tomado de `serie.roturas` para coincidir con la fila Roturas.
+        const wqiDiaTablero: Record<string, number | null> = {}
+        const wqiMtdTablero: Record<string, number | null> = {}
+        let accHlVend = 0
+        for (const f of fechas) {
+          const rotDia = serie.roturas_dia[f]
+          const hlDia = hlVendidoDia[f] ?? 0
+          wqiDiaTablero[f] =
+            rotDia != null && Number.isFinite(rotDia) && hlDia > 0
+              ? Math.round((rotDia / hlDia) * 1_000_000 * 10) / 10
+              : null
+          if (f < fecha) {
+            accHlVend += hlDia
+            const rotAcum = serie.roturas[f]
+            wqiMtdTablero[f] =
+              rotAcum != null && Number.isFinite(rotAcum) && accHlVend > 0
+                ? Math.round((rotAcum / accHlVend) * 1_000_000 * 10) / 10
+                : null
+          } else {
+            wqiMtdTablero[f] = null
+          }
+        }
+
         indicadoresAuto.push(
           buildDiarioConMtdRow(
             "auto_wqi",
             "WQI",
             "PPM",
-            serie.wqi_dia,
-            serie.wqi,
+            wqiDiaTablero,
+            wqiMtdTablero,
             serie.targets.wqi,
             "menor",
           ),
