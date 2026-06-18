@@ -2451,6 +2451,10 @@ const OVERRIDE_NOMBRES = new Set([
   "errores de picking",
   "pérdidas",
   "perdidas",
+  // RMD (Rate My Delivery) en la Matinal de Distribución: manual, sin valor
+  // automático. Habilitarlo acá lo hace editable hacia atrás día por día, así
+  // se pueden completar fechas anteriores sin abrir la reunión de cada día.
+  "rmd",
 ])
 
 export async function setIndicadorOverrideDiario(
