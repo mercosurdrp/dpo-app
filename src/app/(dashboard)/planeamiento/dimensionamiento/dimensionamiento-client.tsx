@@ -504,9 +504,7 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
                   <TableRow key={r.rol}>
                     <TableCell className="font-medium">
                       <Dialog>
-                        <DialogTrigger asChild>
-                          <button className="text-left underline decoration-dotted underline-offset-2 hover:text-sky-600">{r.rol}</button>
-                        </DialogTrigger>
+                        <DialogTrigger className="text-left underline decoration-dotted underline-offset-2 hover:text-sky-600">{r.rol}</DialogTrigger>
                         <DetalleRolModal rol={r} meses={proy.meses} pesos={proy.pesos} mesBase={proy.mesBase} />
                       </Dialog>
                     </TableCell>
