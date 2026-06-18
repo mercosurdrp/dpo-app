@@ -6,6 +6,8 @@ import { requireAuth } from "@/lib/session"
 import type {
   BpIdea,
   BpAvance,
+  BpAccion,
+  BpAccionEstado,
   BpEstado,
   BpStats,
   BpDashboard,
@@ -174,18 +176,24 @@ export async function getBuenasPracticasDashboard(): Promise<Result<BpDashboard>
 
 export async function getIdeaDetalle(
   id: string,
-): Promise<Result<{ idea: BpIdea; avances: BpAvance[] }>> {
+): Promise<Result<{ idea: BpIdea; avances: BpAvance[]; acciones: BpAccion[] }>> {
   try {
     await requireAuth()
     const supabase = await createClient()
 
-    const [ideaRes, avRes] = await Promise.all([
+    const [ideaRes, avRes, accRes] = await Promise.all([
       supabase.from("bp_ideas").select("*").eq("id", id).single(),
       supabase
         .from("bp_avances")
         .select("*")
         .eq("idea_id", id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("bp_acciones")
+        .select("*")
+        .eq("idea_id", id)
+        .order("orden", { ascending: true })
+        .order("created_at", { ascending: true }),
     ])
 
     if (ideaRes.error) return { error: ideaRes.error.message }
@@ -193,8 +201,104 @@ export async function getIdeaDetalle(
       data: {
         idea: ideaRes.data as BpIdea,
         avances: (avRes.data ?? []) as BpAvance[],
+        acciones: (accRes.data ?? []) as BpAccion[],
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// -------- Plan de implementación: qué hacer + ejecución (R4.4.3) --------
+interface NuevaAccionInput {
+  que_hacer: string
+  responsable?: string
+  fecha_limite?: string | null
+}
+
+export async function agregarAccion(
+  ideaId: string,
+  input: NuevaAccionInput,
+): Promise<Result<BpAccion>> {
+  try {
+    const profile = await requireAuth()
+    if (!esEditor(profile.role)) return { error: "Sin permiso" }
+    if (!input.que_hacer?.trim()) return { error: "Indicá qué hacer" }
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("bp_acciones")
+      .insert({
+        idea_id: ideaId,
+        que_hacer: input.que_hacer.trim(),
+        responsable: input.responsable?.trim() || null,
+        fecha_limite: input.fecha_limite || null,
+        created_by: profile.id,
+      })
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+    revalidatePath("/buenas-practicas")
+    return { data: data as BpAccion }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+interface ActualizarAccionInput {
+  que_hacer?: string
+  responsable?: string | null
+  fecha_limite?: string | null
+  estado?: BpAccionEstado
+}
+
+export async function actualizarAccion(
+  id: string,
+  input: ActualizarAccionInput,
+): Promise<Result<BpAccion>> {
+  try {
+    const profile = await requireAuth()
+    if (!esEditor(profile.role)) return { error: "Sin permiso" }
+    const supabase = await createClient()
+
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (input.que_hacer !== undefined) update.que_hacer = input.que_hacer.trim()
+    if (input.responsable !== undefined)
+      update.responsable = input.responsable?.trim() || null
+    if (input.fecha_limite !== undefined) update.fecha_limite = input.fecha_limite || null
+    if (input.estado !== undefined) {
+      update.estado = input.estado
+      update.completado_at = input.estado === "hecho" ? new Date().toISOString() : null
+    }
+
+    const { data, error } = await supabase
+      .from("bp_acciones")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+    revalidatePath("/buenas-practicas")
+    return { data: data as BpAccion }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function eliminarAccion(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (!esEditor(profile.role)) return { error: "Sin permiso" }
+    const supabase = await createClient()
+
+    const { error } = await supabase.from("bp_acciones").delete().eq("id", id)
+    if (error) return { error: error.message }
+    revalidatePath("/buenas-practicas")
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

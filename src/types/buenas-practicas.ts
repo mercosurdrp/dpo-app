@@ -82,8 +82,31 @@ export interface BpAvance {
   created_at: string
 }
 
+export type BpAccionEstado = "pendiente" | "en_curso" | "hecho"
+
+export interface BpAccion {
+  id: string
+  idea_id: string
+  que_hacer: string
+  responsable: string | null
+  fecha_limite: string | null
+  estado: BpAccionEstado
+  completado_at: string | null
+  orden: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface BpIdeaConAvances extends BpIdea {
   avances: BpAvance[]
+  acciones: BpAccion[]
+}
+
+export const BP_ACCION_ESTADO_LABEL: Record<BpAccionEstado, string> = {
+  pendiente: "Pendiente",
+  en_curso: "En curso",
+  hecho: "Hecho",
 }
 
 /** Estado de cumplimiento de cada requisito R4.4.x del manual. */

@@ -42,11 +42,16 @@ import {
   eliminarIdea,
   getIdeaDetalle,
   sincronizarEvidencia44,
+  agregarAccion,
+  actualizarAccion,
+  eliminarAccion,
 } from "@/actions/buenas-practicas"
 import type {
   BpDashboard,
   BpIdea,
   BpAvance,
+  BpAccion,
+  BpAccionEstado,
   BpEstado,
   BpArea,
   BpCategoria,
@@ -56,6 +61,7 @@ import {
   BP_CATEGORIA_LABEL,
   BP_ESTADO_LABEL,
   BP_AVANCE_TIPO_LABEL,
+  BP_ACCION_ESTADO_LABEL,
 } from "@/types/buenas-practicas"
 
 const AREAS: BpArea[] = ["almacen", "entrega", "flota", "gestion", "seguridad", "otro"]
@@ -97,6 +103,17 @@ function fecha(iso: string | null): string {
     return iso
   }
 }
+
+function fechaDia(d: string | null): string {
+  if (!d) return ""
+  try {
+    return format(new Date(`${d}T00:00:00`), "dd/MM/yyyy", { locale: es })
+  } catch {
+    return d
+  }
+}
+
+const ACCION_ESTADOS: BpAccionEstado[] = ["pendiente", "en_curso", "hecho"]
 
 const NIVEL_COLOR: Record<number, string> = {
   0: "bg-red-100 text-red-700 border-red-200",
@@ -481,8 +498,14 @@ function DetalleDialog({
 }) {
   const [idea, setIdea] = useState<BpIdea | null>(null)
   const [avances, setAvances] = useState<BpAvance[]>([])
+  const [acciones, setAcciones] = useState<BpAccion[]>([])
   const [loading, startLoad] = useTransition()
   const [acting, startAct] = useTransition()
+
+  // Nueva acción del plan de implementación
+  const [accQue, setAccQue] = useState("")
+  const [accResp, setAccResp] = useState("")
+  const [accFecha, setAccFecha] = useState("")
 
   // Formularios de acción
   const [revEstado, setRevEstado] = useState<BpEstado>("aprobada")
@@ -510,6 +533,7 @@ function DetalleDialog({
       }
       setIdea(r.data.idea)
       setAvances(r.data.avances)
+      setAcciones(r.data.acciones)
       setKpiNombre(r.data.idea.kpi_nombre ?? "")
       setKpiUnidad(r.data.idea.kpi_unidad ?? "")
       setKpiBase(r.data.idea.kpi_linea_base?.toString() ?? "")
@@ -857,6 +881,129 @@ function DetalleDialog({
               </Button>
             </div>
           )}
+
+          {/* Plan de implementación: qué hacer + llevarlo a cabo */}
+          <div className="space-y-2 rounded-lg border p-3">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">
+              Plan de implementación — ¿qué hacer?
+            </Label>
+            {acciones.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Sin pasos definidos todavía.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {acciones.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-start gap-2 rounded-md border bg-slate-50 p-2 text-xs"
+                  >
+                    <select
+                      value={a.estado}
+                      disabled={!esEditor || acting}
+                      onChange={(e) =>
+                        startAct(async () => {
+                          tras(
+                            await actualizarAccion(a.id, {
+                              estado: e.target.value as BpAccionEstado,
+                            }),
+                          )
+                        })
+                      }
+                      className="h-6 rounded border border-input bg-background px-1 text-[11px]"
+                    >
+                      {ACCION_ESTADOS.map((s) => (
+                        <option key={s} value={s}>
+                          {BP_ACCION_ESTADO_LABEL[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex-1">
+                      <p
+                        className={
+                          a.estado === "hecho"
+                            ? "text-muted-foreground line-through"
+                            : "text-slate-700"
+                        }
+                      >
+                        {a.que_hacer}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {a.responsable || "sin responsable"}
+                        {a.fecha_limite ? ` · vence ${fechaDia(a.fecha_limite)}` : ""}
+                      </p>
+                    </div>
+                    {esEditor && (
+                      <button
+                        type="button"
+                        disabled={acting}
+                        onClick={() =>
+                          startAct(async () => {
+                            const r = await eliminarAccion(a.id)
+                            if ("error" in r) toast.error(r.error)
+                            else {
+                              cargar()
+                              onChanged()
+                            }
+                          })
+                        }
+                        className="text-muted-foreground hover:text-red-600"
+                        aria-label="Eliminar paso"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {esEditor && (
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  value={accQue}
+                  onChange={(e) => setAccQue(e.target.value)}
+                  placeholder="Qué hacer (paso de implementación)"
+                  className="min-w-[160px] flex-1"
+                />
+                <Input
+                  value={accResp}
+                  onChange={(e) => setAccResp(e.target.value)}
+                  placeholder="Responsable"
+                  className="w-32"
+                />
+                <Input
+                  type="date"
+                  value={accFecha}
+                  onChange={(e) => setAccFecha(e.target.value)}
+                  className="w-36"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={acting}
+                  onClick={() =>
+                    startAct(async () => {
+                      if (
+                        tras(
+                          await agregarAccion(idea.id, {
+                            que_hacer: accQue,
+                            responsable: accResp,
+                            fecha_limite: accFecha || null,
+                          }),
+                        )
+                      ) {
+                        setAccQue("")
+                        setAccResp("")
+                        setAccFecha("")
+                      }
+                    })
+                  }
+                >
+                  <Plus className="size-3.5" /> Agregar paso
+                </Button>
+              </div>
+            )}
+          </div>
 
           {/* Comentario libre + timeline */}
           <div className="space-y-2">
