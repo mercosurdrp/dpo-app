@@ -115,17 +115,24 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
 
         {!loading && !error && data && (
           <div className="space-y-4">
-            {/* Bultos vendidos */}
+            {/* Bultos + HL vendidos (tablero) */}
             <Card>
               <CardContent className="flex items-center justify-between pt-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Bultos vendidos</p>
-                  <p className="text-3xl font-bold">{fmt(data.bultos)}</p>
-                  {data.devoluciones != null && data.devoluciones !== 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Devoluciones (NC): {fmt(Math.abs(data.devoluciones))} bultos
-                    </p>
-                  )}
+                <div className="flex gap-8">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Bultos vendidos</p>
+                    <p className="text-3xl font-bold">{fmt(data.bultos)}</p>
+                    {data.devoluciones != null && data.devoluciones !== 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Devoluciones (NC): {fmt(Math.abs(data.devoluciones))} bultos
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">HL vendidos</p>
+                    <p className="text-3xl font-bold">{fmt(data.hl_vendido, 2)}</p>
+                    <p className="text-xs text-muted-foreground">denominador del WQI</p>
+                  </div>
                 </div>
                 <ShoppingCart className="size-6 text-slate-400" />
               </CardContent>
