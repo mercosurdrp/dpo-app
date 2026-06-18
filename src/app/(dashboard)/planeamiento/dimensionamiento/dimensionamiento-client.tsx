@@ -311,47 +311,42 @@ const PARAM_ROLES = [
 
 const DIAS_SEM = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 
-// Modal con el "por qué": volumen por día de semana (pico jue/vie vs más bajo lun/mar) vs capacidad.
-function DetalleRolModal({ rol, meses, pesos, mesBase }: { rol: ProyeccionAlmacenRol; meses: ProyeccionMes[]; pesos: number[]; mesBase: string }) {
+// Modal por celda (rol + mes): explica el "por qué" de ESE mes — volumen por día de semana vs capacidad.
+function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes }: { rol: ProyeccionAlmacenRol; mes: ProyeccionMes; pesos: number[]; horasExtraMes: number }) {
   const cap = rol.capDiaria
-  const filas = [{ mes: mesBase, indice: 1 }, ...meses]
-  const volDia = (indice: number, d: number) => Math.round(rol.volPromBase * indice * 6 * (pesos[d] ?? 0))
+  const volProm = rol.volPromBase * mes.indice
+  const vals = DIAS_SEM.map((_, d) => Math.round(volProm * 6 * (pesos[d] ?? 0)))
+  const pico = Math.max(...vals), bajo = Math.min(...vals)
+  const supera = pico > cap
   return (
-    <DialogContent className="max-w-3xl">
-      <DialogHeader><DialogTitle>{rol.rol} — ¿por qué cumple?</DialogTitle></DialogHeader>
+    <DialogContent className="max-w-lg">
+      <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Capacidad por día (dotación {rol.dotacion}): <b>{fmt(cap)} {rol.unidadVol}/día</b>. Volumen de cada día = volumen del mes × peso del día (Jue/Vie = picos). Celda en <span className="font-medium text-red-700">rojo</span> = supera la capacidad → ese día hay horas extra.
+        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}.
       </p>
-      <div className="max-h-[60vh] overflow-auto">
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>Mes</TableHead>
-            {DIAS_SEM.map((d) => (<TableHead key={d} className="text-right">{d}</TableHead>))}
-            <TableHead className="text-right">Pico</TableHead>
-            <TableHead className="text-right">Más bajo</TableHead>
-            <TableHead className="text-right">Capacidad</TableHead>
-            <TableHead>Estado</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {filas.map((f, idx) => {
-              const vals = DIAS_SEM.map((_, d) => volDia(f.indice, d))
-              const pico = Math.max(...vals), bajo = Math.min(...vals)
-              const supera = pico > cap
-              return (
-                <TableRow key={f.mes} className={idx === 0 ? "bg-muted/40" : ""}>
-                  <TableCell className="font-medium">{mesLabel(f.mes)}{idx === 0 ? " (hoy)" : ""}</TableCell>
-                  {vals.map((v, d) => (<TableCell key={d} className={`text-right ${v > cap ? "bg-red-50 text-red-700 font-semibold" : ""}`}>{fmt(v)}</TableCell>))}
-                  <TableCell className="text-right font-semibold">{fmt(pico)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{fmt(bajo)}</TableCell>
-                  <TableCell className="text-right">{fmt(cap)}</TableCell>
-                  <TableCell className={supera ? "text-red-700 font-medium" : "text-emerald-700"}>{supera ? "Horas extra" : "Cubre"}</TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
-      <p className="text-xs text-muted-foreground">Productividad {fmt(rol.prodH)} {rol.unidadVol}/HH. Horas extra de un día = (volumen del día − capacidad) ÷ productividad. El volumen mensual sale del presupuesto; el reparto por día usa los pesos cargados en esta solapa.</p>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Día</TableHead><TableHead className="text-right">Volumen</TableHead><TableHead className="text-right">Capacidad</TableHead><TableHead className="text-right">Diferencia</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          {DIAS_SEM.map((d, i) => {
+            const v = vals[i], over = v > cap
+            return (
+              <TableRow key={d} className={over ? "bg-red-50" : ""}>
+                <TableCell className="font-medium">{d}{(i === 3 || i === 4) ? " · pico" : ""}</TableCell>
+                <TableCell className={`text-right ${over ? "text-red-700 font-semibold" : ""}`}>{fmt(v)}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{fmt(cap)}</TableCell>
+                <TableCell className={`text-right ${over ? "text-red-700" : "text-emerald-700"}`}>{over ? `+${fmt(v - cap)}` : fmt(v - cap)}</TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+      <p className="text-sm">
+        {supera
+          ? <>El pico (Jue/Vie = <b>{fmt(pico)}</b>) supera la capacidad de <b>{fmt(cap)}</b> → <b className="text-red-700">{fmt(horasExtraMes)} h extra</b> en el mes. El día más flojo es <b>{fmt(bajo)}</b>.</>
+          : <>Incluso el día pico (<b>{fmt(pico)}</b>) queda por debajo de la capacidad (<b>{fmt(cap)}</b>) → <b className="text-emerald-700">cubre sin horas extra</b>. Día más flojo {fmt(bajo)}.</>}
+      </p>
     </DialogContent>
   )
 }
@@ -502,18 +497,19 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
               <TableBody>
                 {proy.almacen.map((r) => (
                   <TableRow key={r.rol}>
-                    <TableCell className="font-medium">
-                      <Dialog>
-                        <DialogTrigger className="text-left underline decoration-dotted underline-offset-2 hover:text-sky-600">{r.rol}</DialogTrigger>
-                        <DetalleRolModal rol={r} meses={proy.meses} pesos={proy.pesos} mesBase={proy.mesBase} />
-                      </Dialog>
-                    </TableCell>
+                    <TableCell className="font-medium">{r.rol}</TableCell>
                     {r.horasExtra.map((hh, i) => {
                       const falta = r.faltanPico[i]
+                      const cls = hh > 0 ? (falta > 0 ? "bg-red-50 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"
                       return (
-                        <TableCell key={i} className={`text-right ${hh > 0 ? (falta > 0 ? "bg-red-50 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"}`}>
-                          {hh > 0 ? `${fmt(hh)} h` : "✓"}
-                          {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta}</span> : null}
+                        <TableCell key={i} className="p-0">
+                          <Dialog>
+                            <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>
+                              {hh > 0 ? `${fmt(hh)} h` : "✓"}
+                              {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta}</span> : null}
+                            </DialogTrigger>
+                            <DetalleCeldaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} horasExtraMes={hh} />
+                          </Dialog>
                         </TableCell>
                       )
                     })}
@@ -521,7 +517,7 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N» = personas que faltarían en el día pico para no hacer horas extra. <span className="text-emerald-700">✓</span> = cubre sin extras.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Hora-hombre extra estimadas cuando el volumen del día (volumen del presupuesto repartido por el peso del día de semana) supera la capacidad de la dotación fija. «falta N» = personas que faltarían en el día pico para no hacer horas extra. <span className="text-emerald-700">✓</span> = cubre sin extras. <b>Tocá cualquier celda</b> para ver el desglose por día de ese mes.</p>
           </CardContent>
         </Card>
       )}
