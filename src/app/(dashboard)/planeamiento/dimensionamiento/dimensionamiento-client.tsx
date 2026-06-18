@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type ProyeccionAlmacenRol, type ProyeccionMes,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -100,90 +100,19 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
       <Tabs defaultValue="flotaentrega">
         <TabsList>
           <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
-          <TabsTrigger value="almacen">Almacén (FTE)</TabsTrigger>
-          <TabsTrigger value="proyeccion">Proyección flota</TabsTrigger>
+          <TabsTrigger value="almacen">Almacén</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
 
-        {/* ─── Flota / Entrega: camiones + FTE de reparto ─── */}
+        {/* ─── Flota / Entrega ─── */}
         <TabsContent value="flotaentrega" className="space-y-4">
-        <Tabs defaultValue="camiones">
-          <TabsList>
-            <TabsTrigger value="camiones">Camiones</TabsTrigger>
-            <TabsTrigger value="reparto">FTE de reparto</TabsTrigger>
-          </TabsList>
-
-          {/* ── Camiones: demanda vs capacidad + flota ── */}
-          <TabsContent value="camiones" className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard title="Capacidad instalada / día" value={`${fmt(Math.round(data.capacidadInstaladaDiaria))} CEq`}
-              hint={`${data.unidadesDisponibles} unidades disponibles × ${data.config.viajes_por_dia} viaje(s)`} />
-            <KpiCard title="Volumen promedio / día" value={m ? `${fmt(m.volumenCeqPromedio)} CEq` : "—"}
-              hint={m ? `pico ${fmt(m.volumenCeqPico)} CEq` : "sin ruteos cerrados"} />
-            <KpiCard title="Ocupación de flota" value={m ? `${m.ocupacionPromedio.toString().replace(".", ",")}%` : "—"}
-              hint="volumen ÷ capacidad instalada" accent />
-            <KpiCard title="Camiones necesarios" value={m ? `${m.camionesNecesariosPromedio} (pico ${m.camionesNecesariosPico})` : "—"}
-              hint={`vs ${data.unidadesDisponibles} disponibles`} accent />
-          </div>
-
-          {m && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-base">Lectura del dimensionamiento</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                {data.capacidadInstaladaDiaria <= 0 ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                    Cargá la capacidad (CEq) de las unidades en la pestaña <b>Flota & Capacidad</b> para calcular ocupación y camiones necesarios.
-                  </p>
-                ) : m.camionesNecesariosPico > data.unidadesDisponibles ? (
-                  <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                    En el pico se necesitan <b>{m.camionesNecesariosPico}</b> camiones y hay <b>{data.unidadesDisponibles}</b> disponibles
-                    → faltan <b>{m.camionesNecesariosPico - data.unidadesDisponibles}</b> (evaluar refuerzo o segunda vuelta).
-                  </p>
-                ) : m.ocupacionPromedio < 70 ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                    Ocupación promedio <b>{m.ocupacionPromedio.toString().replace(".", ",")}%</b>: hay capacidad ociosa, evaluar reasignación de flota.
-                  </p>
-                ) : (
-                  <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
-                    La flota disponible cubre la demanda (ocupación {m.ocupacionPromedio.toString().replace(".", ",")}%).
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-          {data.metricasError && (
-            <p className="text-sm text-red-600">Error leyendo ruteo: {data.metricasError}</p>
-          )}
-
-          {canEdit && <ConfigCard config={data.config} run={run} isPending={isPending} />}
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">Unidades de distribución ({data.flota.length})</CardTitle></CardHeader>
-            <CardContent>
-              {data.flota.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay unidades con sector «distribución» en el maestro de flota.</p>
-              ) : (
-                <FlotaTable flota={data.flota} canEdit={canEdit} run={run} isPending={isPending} />
-              )}
-            </CardContent>
-          </Card>
-          </TabsContent>
-
-          {/* ── FTE de reparto: choferes + ayudantes ── */}
-          <TabsContent value="reparto" className="space-y-4">
-            <RepartoTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
-          </TabsContent>
-        </Tabs>
+          <FlotaTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
-        {/* ─── Almacén (FTE) ─── */}
+        {/* ─── Almacén ─── */}
         <TabsContent value="almacen" className="space-y-4">
           <AlmacenTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
-        </TabsContent>
-
-        {/* ─── Proyección de dotación vs volumen ─── */}
-        <TabsContent value="proyeccion" className="space-y-4">
-          <ProyeccionTab data={data} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}
@@ -222,77 +151,166 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
 type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => void
 
-// ─── FTE de reparto (flota/entrega) ─────────────────────────────────────────
+// ─── Solapa Flota / Entrega — única (datos de entrada + resultados) ──────────
 
-const REPARTO_FIELDS = [
-  ["choferes_por_camion", "Choferes por camión", "0.1"],
-  ["ayudantes_por_camion", "Ayudantes por camión", "0.1"],
-] as const
-
-function RepartoRolBlock({ titulo, rol, camionesProm, camionesPico }: {
-  titulo: string; rol: RolReparto; camionesProm: number; camionesPico: number
+// Modal por celda (recurso de flota + mes): desglose por día de semana del volumen CEq vs capacidad.
+function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camionesDisp }: {
+  rol: ProyeccionFlotaRol; mes: ProyeccionMes; pesos: number[]; ceqPromBase: number; capCamionViaje: number; camionesDisp: number
 }) {
-  const dotProm = rol.dotacionProm
+  const ceqProm = ceqPromBase * mes.indice
+  const filas = DIAS_SEM.map((d, i) => {
+    const ceqDia = Math.round(ceqProm * 6 * (pesos[i] ?? 0))
+    const camionesDia = capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0
+    const necesarios = camionesDia * rol.tripulacion
+    return { d, i, ceqDia, camionesDia, necesarios, over: necesarios > rol.dotacion, sv: camionesDia > camionesDisp }
+  })
+  const pico = Math.max(...filas.map((f) => f.necesarios))
+  const algunaSV = filas.some((f) => f.sv)
   return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">{titulo}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard title="Camiones necesarios" value={`${fmt(camionesProm)} (pico ${fmt(camionesPico)})`} />
-          <KpiCard title="Tripulación / camión" value={fmt(rol.porCamion)} />
-          <KpiCard title="FTE necesarios" value={`${rol.fteNecesariosProm} (pico ${rol.fteNecesariosPico})`}
-            hint={`camiones × ${fmt(rol.porCamion)}/camión`} accent />
-          <KpiCard title="Dotación actual (prom)" value={fmt(dotProm)} hint={`pico ${fmt(rol.dotacionPico)} · real dpo-app`} accent />
-        </div>
-        <div className="text-sm">
-          {dotProm <= 0 ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Sin egresos de vehículos registrados este mes para estimar la dotación real.</p>
-          ) : rol.fteNecesariosPico > rol.dotacionPico ? (
-            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">En el pico se necesitan <b>{rol.fteNecesariosPico}</b> y salieron <b>{fmt(rol.dotacionPico)}</b> → faltan <b>{rol.fteNecesariosPico - rol.dotacionPico}</b>.</p>
-          ) : rol.fteNecesariosProm < dotProm ? (
-            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">La dotación real ({fmt(dotProm)} prom/día) cubre los <b>{rol.fteNecesariosProm}</b> necesarios.</p>
-          ) : (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">Necesarios <b>{rol.fteNecesariosProm}</b> vs dotación real <b>{fmt(dotProm)}</b> prom/día: ajustado.</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <DialogContent className="max-w-lg">
+      <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
+      <p className="text-sm text-muted-foreground">
+        Dotación: <b>{fmt(rol.dotacion)}</b>{rol.tripulacion !== 1 ? ` · ${fmt(rol.tripulacion)} por camión` : ""}. Capacidad de un camión: <b>{fmt(capCamionViaje)} CEq/día</b>. Volumen CEq prom del mes: <b>{fmt(Math.round(ceqProm))}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}.
+      </p>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Día</TableHead><TableHead className="text-right">Volumen CEq</TableHead><TableHead className="text-right">Camiones</TableHead><TableHead className="text-right">Necesarios</TableHead><TableHead className="text-right">Dotación</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          {filas.map((f) => (
+            <TableRow key={f.d} className={f.over ? "bg-red-50" : ""}>
+              <TableCell className="font-medium">{f.d}{(f.i === 3 || f.i === 4) ? " · pico" : ""}</TableCell>
+              <TableCell className="text-right">{fmt(f.ceqDia)}</TableCell>
+              <TableCell className="text-right">{fmt(f.camionesDia)}{f.sv ? " ⚠" : ""}</TableCell>
+              <TableCell className={`text-right ${f.over ? "text-red-700 font-semibold" : ""}`}>{fmt(f.necesarios)}</TableCell>
+              <TableCell className="text-right text-muted-foreground">{fmt(rol.dotacion)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <p className="text-sm">
+        {pico > rol.dotacion
+          ? <>El pico (Jue/Vie) necesita <b className="text-red-700">{fmt(pico)}</b> y hay <b>{fmt(rol.dotacion)}</b> → refuerzo (contratar o 2ª vuelta).{algunaSV ? <b className="text-red-700"> ⚠ Algún día supera los {camionesDisp} camiones → 2ª vuelta obligada.</b> : null}</>
+          : <>Incluso el día pico ({fmt(pico)}) se cubre con la dotación de <b>{fmt(rol.dotacion)}</b> → <b className="text-emerald-700">sin refuerzo</b>.</>}
+      </p>
+    </DialogContent>
   )
 }
 
-function RepartoTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
-  const r = data.reparto
+function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+  const m = data.metricas
+  const rep = data.reparto
+  const proy = data.proyeccion
+  const dispo = data.unidadesDisponibles
   const [c, setC] = useState({
     choferes_por_camion: String(data.config.choferes_por_camion),
     ayudantes_por_camion: String(data.config.ayudantes_por_camion),
   })
+  const estado = (nec: number, dot: number, pico: number) =>
+    pico <= dot ? { t: "Cubre", c: "text-emerald-700" } : nec <= dot ? { t: "Refuerzo en pico", c: "text-amber-700" } : { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
+
   return (
-    <div className="space-y-4">
-      {data.repartoError && <p className="text-sm text-red-600">Error: {data.repartoError}</p>}
-      {!r && !data.repartoError && <p className="text-sm text-muted-foreground">Sin datos de reparto este mes (faltan camiones necesarios o egresos de vehículos registrados).</p>}
-      {r && <RepartoRolBlock titulo="Choferes" rol={r.choferes} camionesProm={r.camionesNecesariosProm} camionesPico={r.camionesNecesariosPico} />}
-      {r && <RepartoRolBlock titulo="Ayudantes" rol={r.ayudantes} camionesProm={r.camionesNecesariosProm} camionesPico={r.camionesNecesariosPico} />}
+    <div className="space-y-6">
+      {/* ════ SECCIÓN 1 — DATOS DE ENTRADA ════ */}
       {canEdit && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-slate-900">1 · Datos de entrada</h3>
+          <ConfigCard config={data.config} run={run} isPending={isPending} />
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Capacidad de la flota — CEq por unidad ({data.flota.length})</CardTitle></CardHeader>
+            <CardContent>
+              {data.flota.length === 0 ? <p className="text-sm text-muted-foreground">No hay unidades con sector «distribución».</p>
+                : <FlotaTable flota={data.flota} canEdit={canEdit} run={run} isPending={isPending} />}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Tripulación y dotación de reparto</CardTitle></CardHeader>
+            <CardContent className="flex flex-wrap items-end gap-4">
+              <div><Label className="text-xs">Choferes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.choferes_por_camion} onChange={(e) => setC((s) => ({ ...s, choferes_por_camion: e.target.value }))} /></div>
+              <div><Label className="text-xs">Ayudantes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.ayudantes_por_camion} onChange={(e) => setC((s) => ({ ...s, ayudantes_por_camion: e.target.value }))} /></div>
+              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion) }), "Tripulación guardada")}>Guardar</Button>
+              {rep && <p className="w-full text-xs text-muted-foreground">Dotación real (de <b>registros_vehiculos</b>, egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionProm))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionProm))} ayudantes</b> por día (pico {fmt(rep.choferes.dotacionPico)}/{fmt(rep.ayudantes.dotacionPico)}). Viajes/día y capacidad CEq se configuran arriba.</p>}
+            </CardContent>
+          </Card>
+          {proy && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (HL/mes) — del presupuesto</CardTitle></CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">{mesLabel(proy.mesBase)} (base)</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
+                  <TableBody><TableRow><TableCell className="font-medium">HL</TableCell><TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>{proy.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">{fmt(Math.round(mm.hl))}</TableCell>))}</TableRow></TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ════ SECCIÓN 2 — RESULTADOS ════ */}
+      {data.metricasError && <p className="text-sm text-red-600">Error leyendo ruteo: {data.metricasError}</p>}
+      {!m && !data.metricasError && <p className="text-sm text-muted-foreground">Sin ruteos cerrados este mes para calcular la demanda.</p>}
+      {m && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Parámetros de reparto</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap items-end gap-4">
-            {REPARTO_FIELDS.map(([k, label, step]) => (
-              <div key={k}>
-                <Label className="text-xs">{label}</Label>
-                <Input type="number" step={step} className="h-8 w-36" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} />
-              </div>
-            ))}
-            <Button size="sm" disabled={isPending}
-              onClick={() => run(() => guardarConfigDim({
-                ...data.config,
-                choferes_por_camion: Number(c.choferes_por_camion),
-                ayudantes_por_camion: Number(c.ayudantes_por_camion),
-              }), "Parámetros de reparto guardados")}>
-              Guardar
-            </Button>
-            <p className="w-full text-xs text-muted-foreground">
-              FTE necesarios = camiones necesarios (pestaña Camiones) × tripulación por camión. Los camiones necesarios ya consideran los viajes/día, por eso no se vuelve a multiplicar. Dotación actual = promedio diario real de choferes/ayudantes que registraron egreso de vehículo en dpo-app este mes (pico = día de mayor salida).
-            </p>
+          <CardHeader className="pb-2"><CardTitle className="text-base">2 · Resultado — flota vs demanda ({m.mes})</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Recurso</TableHead><TableHead className="text-right">Demanda/día</TableHead><TableHead className="text-right">Capacidad / Dotación</TableHead><TableHead className="text-right">Necesarios</TableHead><TableHead>Estado</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="font-medium">Camiones</TableCell>
+                  <TableCell className="text-right">{fmt(m.volumenCeqPromedio)} CEq <span className="text-xs text-muted-foreground">(pico {fmt(m.volumenCeqPico)})</span></TableCell>
+                  <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq</TableCell>
+                  <TableCell className="text-right font-semibold">{m.camionesNecesariosPromedio} (pico {m.camionesNecesariosPico})</TableCell>
+                  <TableCell className={estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).c}>{estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).t}</TableCell>
+                </TableRow>
+                {rep && (["choferes", "ayudantes"] as const).map((k) => {
+                  const r = rep[k]; const dot = Math.round(r.dotacionProm); const e = estado(r.fteNecesariosProm, dot, r.fteNecesariosPico)
+                  return (
+                    <TableRow key={k}>
+                      <TableCell className="font-medium capitalize">{k}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{m.camionesNecesariosPromedio} camiones × {fmt(r.porCamion)}</TableCell>
+                      <TableCell className="text-right">{fmt(dot)} <span className="text-xs text-muted-foreground">(real)</span></TableCell>
+                      <TableCell className="text-right font-semibold">{r.fteNecesariosProm} (pico {r.fteNecesariosPico})</TableCell>
+                      <TableCell className={e.c}>{e.t}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = volumen CEq ÷ (capacidad por camión × viajes/día). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {proy && proy.flota.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Proyección a diciembre — días con refuerzo por mes</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow><TableHead>Recurso</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
+              <TableBody>
+                {proy.flota.map((r) => (
+                  <TableRow key={r.rol}>
+                    <TableCell className="font-medium">{r.rol} <span className="text-xs text-muted-foreground">({fmt(r.dotacion)})</span></TableCell>
+                    {r.diasRefuerzo.map((d, i) => {
+                      const sv = r.segundaVueltaMeses[i]
+                      const cls = d > 0 ? (sv ? "bg-red-100 text-red-700 font-semibold" : "bg-amber-50 text-amber-700") : "text-emerald-700"
+                      return (
+                        <TableCell key={i} className="p-0">
+                          <Dialog>
+                            <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>{d > 0 ? `${d} días` : "✓"}</DialogTrigger>
+                            <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} />
+                          </Dialog>
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="mt-2 text-xs text-muted-foreground">«N días» = días del mes donde el volumen supera lo que la dotación cubre en los viajes actuales → contratar o 2ª vuelta. Fondo <span className="font-medium text-red-700">rojo fuerte</span> = algún día supera los {proy.camionesDisp} camiones (2ª vuelta obligada). Tocá una celda para ver el desglose por día.</p>
           </CardContent>
         </Card>
       )}
@@ -525,75 +543,8 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
   )
 }
 
-// ─── Proyección de dotación vs volumen futuro ───────────────────────────────
-
 const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
-
-function ProyeccionTab({ data }: { data: DimData }) {
-  const p = data.proyeccion
-  if (data.proyeccionError) return <p className="text-sm text-red-600">Error: {data.proyeccionError}</p>
-  if (!p) return <p className="text-sm text-muted-foreground">Sin volumen proyectado para el año en curso (tabla dim_volumen_proyectado) o sin métricas de distribución.</p>
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Proyección de <b>flota / entrega</b> (la de almacén está en su propia solapa). Volumen del presupuesto repartido por el peso del día de semana que se carga en Almacén.</p>
-      {/* Volumen e índice */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (presupuesto) — {mesLabel(p.mesBase)} a Dic</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader><TableRow><TableHead>Mes</TableHead>{p.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
-            <TableBody>
-              <TableRow><TableCell className="font-medium">Volumen (HL)</TableCell>{p.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">{fmt(Math.round(mm.hl))}</TableCell>))}</TableRow>
-              <TableRow><TableCell className="font-medium">Índice vs {mesLabel(p.mesBase)}</TableCell>{p.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">×{mm.indice.toFixed(2).replace(".", ",")}</TableCell>))}</TableRow>
-            </TableBody>
-          </Table>
-          <p className="mt-1 text-xs text-muted-foreground">Base {mesLabel(p.mesBase)} = {fmt(Math.round(p.hlBase))} HL.</p>
-        </CardContent>
-      </Card>
-
-      {/* Flota — refuerzo */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Flota — refuerzo de reparto (choferes {p.choferesDisp} · {p.camionesDisp} camiones × {fmt(p.capCamion)} CEq)</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Días con refuerzo</TableHead><TableHead className="text-right">Choferes pico</TableHead><TableHead>Solución</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {p.meses.map((mm, i) => {
-                const f = p.flota[i]
-                const sol = f.diasRefuerzo === 0 ? "Sin refuerzo" : f.segundaVueltaObligada
-                  ? "2ª vuelta obligada (supera todos los camiones)"
-                  : `Contratar hasta ${f.choferesPico} choferes (hay ${p.camionesDisp} camiones) o 2ª vuelta`
-                return (
-                  <TableRow key={mm.mes}>
-                    <TableCell className="font-medium">{mesLabel(mm.mes)}</TableCell>
-                    <TableCell className={`text-right font-semibold ${f.diasRefuerzo > 0 ? "text-red-700" : "text-emerald-700"}`}>{f.diasRefuerzo}</TableCell>
-                    <TableCell className={`text-right ${f.choferesPico > p.choferesDisp ? "text-red-700 font-semibold" : ""}`}>{f.choferesPico} / {p.choferesDisp}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{sol}</TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-          <p className="mt-2 text-xs text-muted-foreground">«Días con refuerzo» = días donde el volumen supera lo que {p.choferesDisp} choferes mueven en 1 vuelta. Con {p.camionesDisp} camiones disponibles, esos días se cubren contratando choferes o con 2ª vuelta; la 2ª vuelta solo es obligada si se supera la capacidad de los {p.camionesDisp} camiones. Los pesos por día se editan en la solapa Almacén.</p>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function KpiCard({ title, value, hint, accent }: { title: string; value: string; hint?: string; accent?: boolean }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{title}</CardTitle></CardHeader>
-      <CardContent>
-        <p className={`text-2xl font-bold ${accent ? "text-sky-600" : "text-slate-900"}`}>{value}</p>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  )
-}
 
 function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn; isPending: boolean }) {
   const [c, setC] = useState<DimConfig>(config)

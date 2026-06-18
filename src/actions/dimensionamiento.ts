@@ -206,18 +206,23 @@ export interface ProyeccionAlmacenRol {
   volPromBase: number      // volumen promedio diario base (mes actual); el modal reconstruye por día
   prodH: number            // productividad horaria del rol (para derivar horas extra en el modal)
 }
-// Flota: dotación de choferes fija → días que requieren refuerzo (2ª vuelta o contratar).
-export interface ProyeccionFlotaMes {
-  diasRefuerzo: number     // días del mes con volumen > capacidad de choferes en 1 vuelta
-  choferesPico: number     // choferes/camiones necesarios el día más cargado
-  segundaVueltaObligada: boolean  // algún día supera la capacidad de TODOS los camiones en 1 vuelta
+// Flota: por recurso (camiones/choferes/ayudantes), dotación fija → días/mes que requieren refuerzo.
+export interface ProyeccionFlotaRol {
+  rol: string                    // "Camiones" | "Choferes" | "Ayudantes"
+  dotacion: number
+  tripulacion: number            // unidades del recurso por camión (camiones = 1)
+  diasRefuerzo: number[]         // por mes: días con necesarios > dotación
+  picoNecesario: number[]        // por mes: necesarios el día más cargado
+  segundaVueltaMeses: boolean[]  // por mes: algún día supera los camiones disponibles (2ª vuelta obligada)
 }
 export interface ProyeccionData {
   mesBase: string
   hlBase: number
   meses: ProyeccionMes[]
   almacen: ProyeccionAlmacenRol[]
-  flota: ProyeccionFlotaMes[]    // mismo orden que meses
+  flota: ProyeccionFlotaRol[]
+  flotaCeqPromBase: number       // CEq/día promedio (mes base) para el modal de flota
+  capCamionViaje: number         // capacidad de un camión por día = capCeq × viajes
   choferesDisp: number
   camionesDisp: number
   capCamion: number
@@ -595,30 +600,44 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
           })
 
-          // Flota → días que requieren refuerzo (2ª vuelta o contratar chofer).
+          // Flota → por recurso, días que requieren refuerzo (2ª vuelta o contratar).
           const dispCap = flota.filter((f) => f.activo && !f.enTaller && f.capacidad_ceq > 0)
           const camionesDisp = dispCap.length
           const capCamion = camionesDisp > 0 ? dispCap.reduce((s, f) => s + f.capacidad_ceq, 0) / camionesDisp : 0
+          const viajes = config.viajes_por_dia || 1
+          const capCamionViaje = capCamion * viajes
           const choferesDisp = Math.round(reparto?.choferes.dotacionProm ?? 0)
+          const ayudantesDisp = Math.round(reparto?.ayudantes.dotacionProm ?? 0)
           const ceqProm = metricas?.volumenCeqPromedio ?? 0
-          const flotaProy: ProyeccionFlotaMes[] = meses.map((mm) => {
-            const ceqMes = ceqProm * mm.indice
-            let diasRefuerzo = 0, choferesPico = 0, segundaVueltaObligada = false
-            for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
-              const w = pesoDe(wd)
-              if (w <= 0) continue
-              const ceqDia = ceqMes * DIAS_SEMANA * w
-              const necesarios = capCamion > 0 ? Math.ceil(ceqDia / capCamion) : 0
-              if (necesarios > choferesDisp) diasRefuerzo++
-              if (necesarios > camionesDisp) segundaVueltaObligada = true
-              choferesPico = Math.max(choferesPico, necesarios)
+          const recursosFlota = [
+            { rol: "Camiones", dotacion: camionesDisp, tripulacion: 1 },
+            { rol: "Choferes", dotacion: choferesDisp, tripulacion: config.choferes_por_camion },
+            { rol: "Ayudantes", dotacion: ayudantesDisp, tripulacion: config.ayudantes_por_camion },
+          ]
+          const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
+            const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
+            for (const mm of meses) {
+              const ceqMes = ceqProm * mm.indice
+              let dias = 0, pico = 0, sv = false
+              for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
+                const w = pesoDe(wd)
+                if (w <= 0) continue
+                const ceqDia = ceqMes * DIAS_SEMANA * w
+                const camionesDia = capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0
+                const necesarios = camionesDia * rf.tripulacion
+                if (necesarios > rf.dotacion) dias++
+                if (camionesDia > camionesDisp) sv = true
+                pico = Math.max(pico, necesarios)
+              }
+              diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
             }
-            return { diasRefuerzo, choferesPico, segundaVueltaObligada }
+            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses }
           })
 
           proyeccion = {
             mesBase: `${anioActual}-${String(mesActual).padStart(2, "0")}`,
             hlBase, meses, almacen: almacenProy, flota: flotaProy,
+            flotaCeqPromBase: Math.round(ceqProm), capCamionViaje: Math.round(capCamionViaje),
             choferesDisp, camionesDisp, capCamion: Math.round(capCamion),
             pesos: pesos.map((x) => Math.round((x / sumaPesos) * 1000) / 1000),
           }
