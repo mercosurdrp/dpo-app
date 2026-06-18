@@ -13,7 +13,6 @@ import {
   TrendingUp,
   Award,
   Copy,
-  ArrowUpCircle,
   RefreshCw,
   Trash2,
   Users,
@@ -34,10 +33,9 @@ import {
 import {
   crearIdea,
   revisarIdea,
-  registrarReconocimiento,
+  reconocerEnMatinal,
   registrarImpacto,
   actualizarReplicacion,
-  elevarAMejorPractica,
   agregarComentario,
   eliminarIdea,
   getIdeaDetalle,
@@ -110,6 +108,16 @@ function fechaDia(d: string | null): string {
     return format(new Date(`${d}T00:00:00`), "dd/MM/yyyy", { locale: es })
   } catch {
     return d
+  }
+}
+
+// Timestamp → solo fecha (sin hora).
+function soloFecha(iso: string | null): string {
+  if (!iso) return "—"
+  try {
+    return format(new Date(iso), "dd/MM/yyyy", { locale: es })
+  } catch {
+    return iso
   }
 }
 
@@ -226,13 +234,12 @@ export function BuenasPracticasClient({ dashboard, esEditor }: Props) {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Ideas totales" value={stats.total} icon={<Sparkles className="size-4" />} />
         <StatCard label="De empleados" value={stats.desdePortal} icon={<Users className="size-4" />} />
         <StatCard label="Implementadas" value={stats.implementadas} icon={<CheckCircle2 className="size-4" />} />
         <StatCard label="Con impacto KPI" value={stats.conImpacto} icon={<TrendingUp className="size-4" />} />
         <StatCard label="Replicables" value={stats.replicables} icon={<Copy className="size-4" />} />
-        <StatCard label="Elevadas a Zona" value={stats.elevadas} icon={<ArrowUpCircle className="size-4" />} />
       </div>
 
       {/* Filtros */}
@@ -290,15 +297,15 @@ export function BuenasPracticasClient({ dashboard, esEditor }: Props) {
                       <Users className="size-3" /> Empleado
                     </Badge>
                   )}
-                  {idea.elevada_zona && (
-                    <Badge variant="outline" className="gap-1 text-emerald-700">
-                      <Award className="size-3" /> Zona
+                  {idea.reconocido && (
+                    <Badge variant="outline" className="gap-1 text-amber-700">
+                      <Award className="size-3" /> Reconocida
                     </Badge>
                   )}
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
                   {BP_AREA_LABEL[idea.area]} · {BP_CATEGORIA_LABEL[idea.categoria]} ·{" "}
-                  {idea.autor_nombre} · {fecha(idea.created_at)}
+                  {idea.autor_nombre} · {soloFecha(idea.created_at)}
                 </p>
               </div>
               {idea.kpi_nombre && idea.kpi_logrado != null && (
@@ -510,19 +517,15 @@ function DetalleDialog({
   // Formularios de acción
   const [revEstado, setRevEstado] = useState<BpEstado>("aprobada")
   const [revComentario, setRevComentario] = useState("")
-  const [recoTexto, setRecoTexto] = useState("")
+  const [recoFecha, setRecoFecha] = useState("")
   const [comentario, setComentario] = useState("")
-  const [elevComentario, setElevComentario] = useState("")
-  // KPI
+  // KPI (valor de ahora vs. logrado)
   const [kpiNombre, setKpiNombre] = useState("")
   const [kpiUnidad, setKpiUnidad] = useState("")
   const [kpiBase, setKpiBase] = useState("")
-  const [kpiObj, setKpiObj] = useState("")
   const [kpiLogr, setKpiLogr] = useState("")
-  const [kpiComent, setKpiComent] = useState("")
   // Replicación
   const [repAreas, setRepAreas] = useState("")
-  const [repComent, setRepComent] = useState("")
 
   function cargar() {
     startLoad(async () => {
@@ -537,11 +540,8 @@ function DetalleDialog({
       setKpiNombre(r.data.idea.kpi_nombre ?? "")
       setKpiUnidad(r.data.idea.kpi_unidad ?? "")
       setKpiBase(r.data.idea.kpi_linea_base?.toString() ?? "")
-      setKpiObj(r.data.idea.kpi_objetivo?.toString() ?? "")
       setKpiLogr(r.data.idea.kpi_logrado?.toString() ?? "")
-      setKpiComent(r.data.idea.kpi_comentario ?? "")
       setRepAreas(r.data.idea.replica_areas ?? "")
-      setRepComent(r.data.idea.replica_comentario ?? "")
     })
   }
 
@@ -591,7 +591,7 @@ function DetalleDialog({
           <DialogDescription>
             {BP_AREA_LABEL[idea.area]} · {BP_CATEGORIA_LABEL[idea.categoria]} · Propone:{" "}
             {idea.autor_nombre}
-            {idea.autor_area ? ` (${idea.autor_area})` : ""} · {fecha(idea.created_at)}
+            {idea.autor_area ? ` (${idea.autor_area})` : ""} · {soloFecha(idea.created_at)}
             {idea.origen === "portal" ? " · enviada desde el Portal" : ""}
           </DialogDescription>
         </DialogHeader>
@@ -621,25 +621,15 @@ function DetalleDialog({
           )}
           {idea.kpi_nombre && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
-              <span className="font-semibold">Impacto · {idea.kpi_nombre}:</span>{" "}
-              {idea.kpi_linea_base ?? "—"} → {idea.kpi_logrado ?? "—"}{" "}
+              <span className="font-semibold">KPI · {idea.kpi_nombre}:</span>{" "}
+              actual {idea.kpi_linea_base ?? "—"} → logrado {idea.kpi_logrado ?? "—"}{" "}
               {idea.kpi_unidad ?? ""}
-              {idea.kpi_objetivo != null ? ` (objetivo ${idea.kpi_objetivo})` : ""}
-              {idea.kpi_comentario ? `. ${idea.kpi_comentario}` : ""}
             </div>
           )}
           {idea.replicable && (
             <p className="text-xs">
               <span className="font-semibold">Replicable</span>
               {idea.replica_areas ? ` en: ${idea.replica_areas}` : ""}
-              {idea.replica_comentario ? `. ${idea.replica_comentario}` : ""}
-            </p>
-          )}
-          {idea.elevada_zona && (
-            <p className="text-xs text-emerald-700">
-              <Award className="mr-1 inline size-3.5" />
-              Elevada a Mejor Práctica de Zona/UN el {fecha(idea.fecha_elevacion)}
-              {idea.elevacion_comentario ? `. ${idea.elevacion_comentario}` : ""}
             </p>
           )}
 
@@ -652,7 +642,7 @@ function DetalleDialog({
 
               {/* Revisión */}
               <div className="space-y-2">
-                <Label className="text-xs">Revisar / cambiar estado (R4.4.3)</Label>
+                <Label className="text-xs">Revisar / aprobar (se trata en la matinal)</Label>
                 <div className="flex flex-wrap gap-2">
                   <select
                     value={revEstado}
@@ -686,15 +676,15 @@ function DetalleDialog({
                 </div>
               </div>
 
-              {/* Reconocimiento */}
+              {/* Reconocimiento en la reunión matinal */}
               <div className="space-y-2">
-                <Label className="text-xs">Reconocimiento al empleado (R4.4.3)</Label>
-                <div className="flex flex-wrap gap-2">
+                <Label className="text-xs">Reconocer en la reunión matinal (R4.4.3)</Label>
+                <div className="flex flex-wrap items-center gap-2">
                   <Input
-                    value={recoTexto}
-                    onChange={(e) => setRecoTexto(e.target.value)}
-                    placeholder="Ej: Mención en reunión mensual"
-                    className="flex-1"
+                    type="date"
+                    value={recoFecha}
+                    onChange={(e) => setRecoFecha(e.target.value)}
+                    className="w-40"
                   />
                   <Button
                     size="sm"
@@ -702,24 +692,31 @@ function DetalleDialog({
                     disabled={acting}
                     onClick={() =>
                       startAct(async () => {
-                        if (tras(await registrarReconocimiento(idea.id, recoTexto)))
-                          setRecoTexto("")
+                        if (tras(await reconocerEnMatinal(idea.id, recoFecha)))
+                          setRecoFecha("")
                       })
                     }
                   >
-                    <Award className="size-3.5" /> Reconocer
+                    <Award className="size-3.5" /> Reconocer en matinal
                   </Button>
+                  {idea.reconocida_matinal_fecha && (
+                    <span className="text-xs text-amber-700">
+                      Reconocida en matinal del {fechaDia(idea.reconocida_matinal_fecha)}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Impacto KPI */}
+              {/* KPI: valor de ahora y, al tiempo, el impacto */}
               <div className="space-y-2">
-                <Label className="text-xs">Impacto medible en KPI/PI (R4.4.5)</Label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <Label className="text-xs">
+                  KPI — valor de ahora y, al tiempo, el impacto logrado (R4.4.5)
+                </Label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Input
                     value={kpiNombre}
                     onChange={(e) => setKpiNombre(e.target.value)}
-                    placeholder="KPI/PI"
+                    placeholder="KPI"
                   />
                   <Input
                     value={kpiUnidad}
@@ -729,28 +726,16 @@ function DetalleDialog({
                   <Input
                     value={kpiBase}
                     onChange={(e) => setKpiBase(e.target.value)}
-                    placeholder="Línea base"
-                    inputMode="decimal"
-                  />
-                  <Input
-                    value={kpiObj}
-                    onChange={(e) => setKpiObj(e.target.value)}
-                    placeholder="Objetivo"
+                    placeholder="Valor actual (ahora)"
                     inputMode="decimal"
                   />
                   <Input
                     value={kpiLogr}
                     onChange={(e) => setKpiLogr(e.target.value)}
-                    placeholder="Logrado"
+                    placeholder="Valor logrado (impacto)"
                     inputMode="decimal"
                   />
                 </div>
-                <Textarea
-                  value={kpiComent}
-                  onChange={(e) => setKpiComent(e.target.value)}
-                  placeholder="Comentario del impacto"
-                  rows={2}
-                />
                 <Button
                   size="sm"
                   variant="secondary"
@@ -762,36 +747,27 @@ function DetalleDialog({
                           kpi_nombre: kpiNombre,
                           kpi_unidad: kpiUnidad,
                           kpi_linea_base: num(kpiBase),
-                          kpi_objetivo: num(kpiObj),
                           kpi_logrado: num(kpiLogr),
-                          kpi_comentario: kpiComent,
-                          marcarImplementada: true,
+                          marcarImplementada: num(kpiLogr) != null,
                         }),
                       )
                     })
                   }
                 >
-                  <TrendingUp className="size-3.5" /> Guardar impacto + marcar implementada
+                  <TrendingUp className="size-3.5" /> Guardar KPI / impacto
                 </Button>
               </div>
 
               {/* Replicación */}
               <div className="space-y-2">
-                <Label className="text-xs">
-                  Analizar replicación / implementar en otras áreas (R4.4.4)
-                </Label>
-                <Input
-                  value={repAreas}
-                  onChange={(e) => setRepAreas(e.target.value)}
-                  placeholder="Áreas/unidades donde replicar"
-                />
-                <Textarea
-                  value={repComent}
-                  onChange={(e) => setRepComent(e.target.value)}
-                  placeholder="Análisis de replicación"
-                  rows={2}
-                />
-                <div className="flex gap-2">
+                <Label className="text-xs">Replicar en otras áreas (R4.4.4)</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    value={repAreas}
+                    onChange={(e) => setRepAreas(e.target.value)}
+                    placeholder="¿Dónde más se puede aplicar?"
+                    className="min-w-[160px] flex-1"
+                  />
                   <Button
                     size="sm"
                     variant="secondary"
@@ -802,60 +778,12 @@ function DetalleDialog({
                           await actualizarReplicacion(idea.id, {
                             replicable: true,
                             replica_areas: repAreas,
-                            replica_comentario: repComent,
                           }),
                         )
                       })
                     }
                   >
                     <Copy className="size-3.5" /> Marcar replicable
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={acting}
-                    onClick={() =>
-                      startAct(async () => {
-                        tras(
-                          await actualizarReplicacion(idea.id, {
-                            replicable: true,
-                            replica_areas: repAreas,
-                            replica_comentario: repComent,
-                            marcarReplicada: true,
-                          }),
-                        )
-                      })
-                    }
-                  >
-                    Replicada
-                  </Button>
-                </div>
-              </div>
-
-              {/* Elevar a Zona */}
-              <div className="space-y-2">
-                <Label className="text-xs">
-                  Elevar a Mejor Práctica de Zona/UN (R4.4.6)
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    value={elevComentario}
-                    onChange={(e) => setElevComentario(e.target.value)}
-                    placeholder="Nota de la presentación a Zona"
-                    className="flex-1"
-                  />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={acting || idea.elevada_zona}
-                    onClick={() =>
-                      startAct(async () => {
-                        if (tras(await elevarAMejorPractica(idea.id, elevComentario)))
-                          setElevComentario("")
-                      })
-                    }
-                  >
-                    <ArrowUpCircle className="size-3.5" /> Elevar
                   </Button>
                 </div>
               </div>

@@ -52,7 +52,6 @@ function calcularCumplimiento(ideas: BpIdea[]): BpCumplimiento {
   const r5 = ideas.some(
     (i) => i.kpi_nombre != null && i.kpi_nombre.trim() !== "" && i.kpi_logrado != null,
   )
-  const r6 = ultimos12m.some((i) => i.elevada_zona)
 
   const requisitos: BpRequisito[] = [
     {
@@ -95,32 +94,21 @@ function calcularCumplimiento(ideas: BpIdea[]): BpCumplimiento {
       cumple: r5,
       detalle: r5
         ? `${ideas.filter((i) => i.kpi_nombre && i.kpi_logrado != null).length} idea(s) con impacto medido en un KPI.`
-        : "Falta cargar la mejora medible de KPI de alguna idea.",
-    },
-    {
-      codigo: "R4.4.6",
-      texto: "Mejores prácticas elevadas a Mejor Práctica de Zona/UN (12 meses).",
-      cumple: r6,
-      detalle: r6
-        ? `${ultimos12m.filter((i) => i.elevada_zona).length} idea(s) elevada(s) a Mejor Práctica de Zona.`
-        : "Ninguna idea fue elevada a Mejor Práctica de Zona en los últimos 12 meses.",
+        : "Falta cargar el impacto en el KPI (valor logrado) de alguna idea implementada.",
     },
   ]
 
   let nivelEstimado: 0 | 1 | 3 | 5 = 0
-  if (r1 && r2 && r3 && r4 && r5 && r6) nivelEstimado = 5
-  else if (r1 && r2 && r3 && r4 && r5) nivelEstimado = 3
+  if (r1 && r2 && r3 && r4 && r5) nivelEstimado = 3
   else if (r1 && r2 && r3) nivelEstimado = 1
   else nivelEstimado = 0
 
   const nivelTexto =
-    nivelEstimado === 5
-      ? "Nivel 5 — Todos los requisitos se cumplen."
-      : nivelEstimado === 3
-        ? "Nivel 3 — Se cumplen R4.4.1-3 más R4.4.4 y R4.4.5."
-        : nivelEstimado === 1
-          ? "Nivel 1 — Se cumplen R4.4.1, R4.4.2 y R4.4.3."
-          : "Nivel 0 — No se cumple el mínimo (R4.4.1 + R4.4.2 + R4.4.3)."
+    nivelEstimado === 3
+      ? "Nivel 3 — Se cumplen R4.4.1, R4.4.2 y R4.4.3 más R4.4.4 y R4.4.5."
+      : nivelEstimado === 1
+        ? "Nivel 1 — Se cumplen R4.4.1, R4.4.2 y R4.4.3."
+        : "Nivel 0 — No se cumple el mínimo (R4.4.1 + R4.4.2 + R4.4.3)."
 
   return { requisitos, nivelEstimado, nivelTexto }
 }
@@ -459,22 +447,31 @@ export async function revisarIdea(
   }
 }
 
-// Reconocimiento al empleado (R4.4.3).
-export async function registrarReconocimiento(
+// Reconocimiento al empleado en la reunión matinal (R4.4.3).
+function formatFechaDMY(d: string): string {
+  // d en formato YYYY-MM-DD → DD/MM/YYYY (sin tocar zona horaria)
+  const [y, m, dd] = d.split("-")
+  return dd && m && y ? `${dd}/${m}/${y}` : d
+}
+
+export async function reconocerEnMatinal(
   id: string,
-  texto: string,
+  fecha: string,
 ): Promise<Result<BpIdea>> {
   try {
     const profile = await requireAuth()
     if (!esEditor(profile.role)) return { error: "Sin permiso" }
-    if (!texto?.trim()) return { error: "Escribí el reconocimiento" }
+    if (!fecha) return { error: "Indicá la fecha de la reunión matinal" }
     const supabase = await createClient()
+
+    const texto = `Reconocida en la reunión matinal del ${formatFechaDMY(fecha)}`
 
     const { data, error } = await supabase
       .from("bp_ideas")
       .update({
         reconocido: true,
-        reconocimiento: texto.trim(),
+        reconocida_matinal_fecha: fecha,
+        reconocimiento: texto,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -485,7 +482,7 @@ export async function registrarReconocimiento(
 
     await registrarAvance(supabase, id, profile, {
       tipo: "reconocimiento",
-      descripcion: texto.trim(),
+      descripcion: texto,
     })
 
     revalidatePath("/buenas-practicas")

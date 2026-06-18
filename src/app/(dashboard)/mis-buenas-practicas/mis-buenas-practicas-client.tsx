@@ -154,9 +154,9 @@ export function MisBuenasPracticasClient({ ideas }: { ideas: BpIdea[] }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium text-slate-900">{idea.titulo}</span>
                     <Badge variant="outline">{BP_ESTADO_LABEL[idea.estado]}</Badge>
-                    {idea.elevada_zona && (
-                      <Badge variant="outline" className="gap-1 text-emerald-700">
-                        <Award className="size-3" /> Zona
+                    {idea.reconocido && (
+                      <Badge variant="outline" className="gap-1 text-amber-700">
+                        <Award className="size-3" /> Reconocida
                       </Badge>
                     )}
                   </div>

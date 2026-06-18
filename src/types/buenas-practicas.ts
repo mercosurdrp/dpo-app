@@ -50,6 +50,7 @@ export interface BpIdea {
   fecha_revision: string | null
   reconocido: boolean
   reconocimiento: string | null
+  reconocida_matinal_fecha: string | null
   kpi_nombre: string | null
   kpi_unidad: string | null
   kpi_linea_base: number | null
