@@ -138,6 +138,13 @@ interface Faltante {
   fecha: string
   falta: string
 }
+// Faltante del gráfico "Checks por día": unidad con descuadre de cantidades
+// (cuántas liberaciones/retornos le faltan ese día) para armar el plan de acción.
+interface FaltaDia {
+  patente: string
+  falta: string
+  cant: number
+}
 interface Rechazado {
   patente: string
   fecha: string
@@ -344,14 +351,14 @@ export function ChecklistFlotaClient() {
 
   // Serie "Checks por día": liberaciones, retornos y rechazados.
   const serieDiaria = useMemo(() => {
-    const m = new Map<string, { fecha: string; label: string; lib: number; ret: number; rech: number; rechazados: Rechazado[] }>()
+    const m = new Map<string, { fecha: string; label: string; lib: number; ret: number; rech: number; rechazados: Rechazado[]; faltantes: FaltaDia[] }>()
     for (const x of filas) {
       if (!x.fecha) continue
       if (!m.has(x.fecha))
         m.set(x.fecha, {
           fecha: x.fecha,
           label: `${x.fecha.slice(8, 10)}/${x.fecha.slice(5, 7)}`,
-          lib: 0, ret: 0, rech: 0, rechazados: [],
+          lib: 0, ret: 0, rech: 0, rechazados: [], faltantes: [],
         })
       const o = m.get(x.fecha)!
       if (x.tipo === "LIBERACION") o.lib += 1
@@ -361,8 +368,36 @@ export function ChecklistFlotaClient() {
         o.rechazados.push({ patente: x.patente || "—", fecha: x.fecha, tipo: x.tipo, estado: x.estado })
       }
     }
+    // Faltantes por día = qué unidad NO completó el par ese día, comparando
+    // CANTIDADES de liberación vs retorno por camión-día (no sí/no). Usa ambos
+    // tipos (sólo filtro de sucursal) para poder cruzarlos aunque el gráfico
+    // tenga un filtro de tipo aplicado.
+    let base = data?.datos || []
+    if (sucursal !== "__all__") base = base.filter((x) => (x.sucursal || "") === sucursal)
+    const pf = new Map<string, { lib: number; ret: number }>()
+    for (const x of base) {
+      if (!x.fecha || !x.patente) continue
+      const k = `${x.fecha}|${x.patente}`
+      if (!pf.has(k)) pf.set(k, { lib: 0, ret: 0 })
+      const o = pf.get(k)!
+      if (x.tipo === "LIBERACION") o.lib += 1
+      else if (x.tipo === "RETORNO") o.ret += 1
+    }
+    for (const [k, v] of pf) {
+      if (v.lib === v.ret) continue
+      const [fecha, patente] = k.split("|")
+      const g = m.get(fecha)
+      if (!g) continue
+      g.faltantes.push({
+        patente,
+        falta: v.lib > v.ret ? "RETORNO" : "LIBERACION",
+        cant: Math.abs(v.lib - v.ret),
+      })
+    }
+    for (const g of m.values())
+      g.faltantes.sort((a, b) => a.patente.localeCompare(b.patente))
     return [...m.values()].sort((a, b) => a.fecha.localeCompare(b.fecha))
-  }, [filas])
+  }, [filas, data, sucursal])
 
   return (
     <div className="space-y-6">
@@ -769,22 +804,38 @@ function AdhTooltip({ active, payload }: { active?: boolean; payload?: Array<{ p
   )
 }
 
-function DiaTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { label: string; lib: number; ret: number; rech: number; rechazados: Rechazado[] } }> }) {
+function DiaTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { label: string; lib: number; ret: number; rech: number; rechazados: Rechazado[]; faltantes: FaltaDia[] } }> }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
   return (
-    <div className="max-w-[260px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
+    <div className="max-w-[280px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
       <p className="font-semibold text-slate-900">{d.label}</p>
       <p className="text-muted-foreground">
         🟦 {d.lib} liberación · 🟩 {d.ret} retorno · ⛔ {d.rech} rech
       </p>
-      {d.rech > 0
-        ? d.rechazados.slice(0, 10).map((r, i) => (
+      {d.faltantes && d.faltantes.length > 0 ? (
+        <>
+          <p className="mt-1 font-medium text-slate-700">Proceso sin completar:</p>
+          {d.faltantes.slice(0, 12).map((f, i) => (
+            <p key={`fd-${f.patente}-${i}`} className="text-amber-600">
+              🚛 {f.patente} · faltó {f.falta === "RETORNO" ? "Retorno" : "Liberación"}
+              {f.cant > 1 ? ` (×${f.cant})` : ""}
+            </p>
+          ))}
+        </>
+      ) : (
+        <p className="mt-1 text-green-600">✅ Liberaciones y retornos cuadran</p>
+      )}
+      {d.rech > 0 && (
+        <>
+          <p className="mt-1 font-medium text-slate-700">Rechazados/críticos:</p>
+          {d.rechazados.slice(0, 10).map((r, i) => (
             <p key={`rd-${r.patente}-${i}`} className="text-red-600">
               🚛 {r.patente} · {(r.estado || "").toUpperCase() === "CRITICO" ? "crítico" : "rechazado"}
             </p>
-          ))
-        : <p className="text-green-600">✅ Sin rechazos este día</p>}
+          ))}
+        </>
+      )}
     </div>
   )
 }
