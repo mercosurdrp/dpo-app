@@ -1,14 +1,25 @@
 "use client"
 
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ClipboardCheck, Settings, Plus, CalendarCheck } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { ClipboardCheck, Settings, Plus, CalendarCheck, Loader2 } from "lucide-react"
+import { getOwdTemplates } from "@/actions/owd"
 import type { OwdTemplateResumen } from "@/types/database"
 
 interface Props {
   templates: OwdTemplateResumen[]
+  periodos: string[]
+  periodoInicial: string
   isAdmin: boolean
 }
 
@@ -18,7 +29,37 @@ function pctColor(pct: number) {
   return "text-red-600"
 }
 
-export function OwdLandingClient({ templates, isAdmin }: Props) {
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+// "YYYY-MM" -> "Junio 2026"
+function periodoLabel(periodo: string): string {
+  const [year, mes] = periodo.split("-").map(Number)
+  const nombre = MESES[mes - 1] ?? periodo
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${year}`
+}
+
+export function OwdLandingClient({
+  templates: templatesIniciales,
+  periodos,
+  periodoInicial,
+  isAdmin,
+}: Props) {
+  const [templates, setTemplates] = useState(templatesIniciales)
+  const [periodo, setPeriodo] = useState(periodoInicial)
+  const [pending, startTransition] = useTransition()
+
+  function handlePeriodoChange(nuevo: string | null) {
+    if (!nuevo) return
+    setPeriodo(nuevo)
+    startTransition(async () => {
+      const res = await getOwdTemplates(nuevo)
+      if ("data" in res) setTemplates(res.data)
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -28,13 +69,32 @@ export function OwdLandingClient({ templates, isAdmin }: Props) {
             Observación en el puesto de trabajo. Cada punto del manual DPO con plantilla aparece acá.
           </p>
         </div>
-        {isAdmin && (
-          <Link href="/owd/admin">
-            <Button variant="outline">
-              <Settings className="mr-2 h-4 w-4" /> Administrar plantillas
-            </Button>
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <Select value={periodo} onValueChange={handlePeriodoChange}>
+            <SelectTrigger className="w-[180px]">
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+              )}
+              <SelectValue placeholder="Mes" />
+            </SelectTrigger>
+            <SelectContent>
+              {periodos.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {periodoLabel(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {isAdmin && (
+            <Link href="/owd/admin">
+              <Button variant="outline">
+                <Settings className="mr-2 h-4 w-4" /> Administrar plantillas
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {templates.length === 0 ? (
@@ -54,7 +114,11 @@ export function OwdLandingClient({ templates, isAdmin }: Props) {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={`grid gap-4 transition-opacity sm:grid-cols-2 lg:grid-cols-3 ${
+            pending ? "opacity-50" : ""
+          }`}
+        >
           {templates.map((t) => (
             <Link key={t.template.id} href={`/owd/${t.template.id}`} className="group">
               <Card className="h-full transition-shadow hover:shadow-md">
@@ -80,7 +144,7 @@ export function OwdLandingClient({ templates, isAdmin }: Props) {
                   <div className="flex items-center justify-between border-t pt-3 text-sm">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <CalendarCheck className="h-4 w-4" />
-                      {t.obs_mes}/{t.template.meta_mensual} este mes
+                      {t.obs_mes}/{t.template.meta_mensual} en {MESES[Number(periodo.split("-")[1]) - 1]}
                     </span>
                     <span className={`font-bold ${pctColor(t.pct_cumplimiento_mes)}`}>
                       {t.obs_mes > 0 ? `${t.pct_cumplimiento_mes.toFixed(0)}%` : "—"}

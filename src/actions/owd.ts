@@ -50,9 +50,13 @@ interface OwdKpis {
 // PLANTILLAS
 // =============================================
 
-// Landing /owd: todas las plantillas activas con contexto del punto + KPIs del mes
-export async function getOwdTemplates(): Promise<
-  { data: OwdTemplateResumen[] } | { error: string }
+// Landing /owd: todas las plantillas activas con contexto del punto + KPIs del mes.
+// `periodo` es "YYYY-MM"; si no se pasa, se usa el mes actual. Devuelve además
+// la lista de períodos con observaciones (para el filtro de mes de la landing).
+export async function getOwdTemplates(
+  periodo?: string,
+): Promise<
+  { data: OwdTemplateResumen[]; periodos: string[]; periodo: string } | { error: string }
 > {
   try {
     await requireAuth()
@@ -63,7 +67,15 @@ export async function getOwdTemplates(): Promise<
       .select("*")
       .eq("activo", true)
     if (errT) return { error: errT.message }
-    if (!templates || templates.length === 0) return { data: [] }
+
+    // Período seleccionado ("YYYY-MM"); por defecto, el mes actual
+    const now = new Date()
+    const periodoActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    const periodoSel = /^\d{4}-\d{2}$/.test(periodo ?? "") ? (periodo as string) : periodoActual
+    const [yearSel, mesSel] = periodoSel.split("-").map(Number)
+
+    if (!templates || templates.length === 0)
+      return { data: [], periodos: [periodoActual], periodo: periodoSel }
 
     const preguntaIds = templates.map((t) => t.pregunta_id)
     const templateIds = templates.map((t) => t.id)
@@ -103,24 +115,25 @@ export async function getOwdTemplates(): Promise<
       if (it.active) itemsCount.set(it.template_id, (itemsCount.get(it.template_id) ?? 0) + 1)
     }
 
-    const now = new Date()
-    const mesActual = now.getMonth() + 1
-    const yearActual = now.getFullYear()
     const obsByTemplate = new Map<
       string,
       { totalPct: number; total: number; mesPct: number; mes: number }
     >()
+    const periodosSet = new Set<string>([periodoActual])
     for (const o of obsRes.data ?? []) {
       const g = obsByTemplate.get(o.template_id) ?? { totalPct: 0, total: 0, mesPct: 0, mes: 0 }
       g.totalPct += Number(o.pct_cumplimiento)
       g.total += 1
       const d = new Date(o.fecha + "T12:00:00")
-      if (d.getMonth() + 1 === mesActual && d.getFullYear() === yearActual) {
+      periodosSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`)
+      if (d.getMonth() + 1 === mesSel && d.getFullYear() === yearSel) {
         g.mesPct += Number(o.pct_cumplimiento)
         g.mes += 1
       }
       obsByTemplate.set(o.template_id, g)
     }
+    // Períodos disponibles, más reciente primero
+    const periodos = Array.from(periodosSet).sort((a, b) => b.localeCompare(a))
 
     const resumenes: OwdTemplateResumen[] = templates.map((t) => {
       const preg = pregById.get(t.pregunta_id)
@@ -150,7 +163,7 @@ export async function getOwdTemplates(): Promise<
         a.pregunta_numero.localeCompare(b.pregunta_numero, undefined, { numeric: true }),
     )
 
-    return { data: resumenes }
+    return { data: resumenes, periodos, periodo: periodoSel }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
