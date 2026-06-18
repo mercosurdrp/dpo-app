@@ -13,8 +13,8 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol,
-  guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ZonaReparto,
+  guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
 } from "@/actions/dimensionamiento"
@@ -154,13 +154,17 @@ type RunFn = (fn: () => Promise<{ error?: string } | unknown>, ok: string) => vo
 // ─── Solapa Flota / Entrega — única (datos de entrada + resultados) ──────────
 
 // Modal por celda (recurso de flota + mes): desglose por día de semana del volumen CEq vs capacidad.
-function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camionesDisp }: {
-  rol: ProyeccionFlotaRol; mes: ProyeccionMes; pesos: number[]; ceqPromBase: number; capCamionViaje: number; camionesDisp: number
+function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camionesDisp, zonas }: {
+  rol: ProyeccionFlotaRol; mes: ProyeccionMes; pesos: number[]; ceqPromBase: number; capCamionViaje: number; camionesDisp: number; zonas: ZonaReparto[]
 }) {
   const ceqProm = ceqPromBase * mes.indice
+  // camiones por cobertura de zonas (mismo criterio que el cálculo del backend)
+  const camionesDeVol = (ceqDia: number) => zonas.length > 0 && capCamionViaje > 0
+    ? zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((ceqDia * z.peso) / capCamionViaje)), 0)
+    : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
   const filas = DIAS_SEM.map((d, i) => {
     const ceqDia = Math.round(ceqProm * 6 * (pesos[i] ?? 0))
-    const camionesDia = capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0
+    const camionesDia = camionesDeVol(ceqDia)
     const necesarios = camionesDia * rol.tripulacion
     return { d, i, ceqDia, camionesDia, necesarios, over: necesarios > rol.dotacion, sv: camionesDia > camionesDisp }
   })
@@ -208,8 +212,14 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
     dotacion_choferes: String(data.config.dotacion_choferes),
     dotacion_ayudantes: String(data.config.dotacion_ayudantes),
   })
+  const [zonas, setZonas] = useState(data.zonas.map((z) => ({ zona: z.zona, peso: String(z.peso), camiones_minimos: String(z.camiones_minimos) })))
   const estado = (nec: number, dot: number, pico: number) =>
     pico <= dot ? { t: "Cubre", c: "text-emerald-700" } : nec <= dot ? { t: "Refuerzo en pico", c: "text-amber-700" } : { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
+  // capacidad de un camión por día (CEq) para el desglose por zona
+  const capCamVj = dispo > 0 ? data.capacidadInstaladaDiaria / dispo : 0
+  const volProm = m?.volumenCeqPromedio ?? 0
+  const sumaPesos = zonas.reduce((s, z) => s + (Number(z.peso) || 0), 0)
+  const camZona = (peso: number, min: number) => Math.max(min, capCamVj > 0 ? Math.ceil((volProm * peso) / capCamVj) : 0)
 
   return (
     <div className="space-y-6">
@@ -234,6 +244,40 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
               <div><Label className="text-xs">Ayudantes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.ayudantes_por_camion} onChange={(e) => setC((s) => ({ ...s, ayudantes_por_camion: e.target.value }))} /></div>
               <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion), dotacion_choferes: Number(c.dotacion_choferes), dotacion_ayudantes: Number(c.dotacion_ayudantes) }), "Tripulación y dotación guardadas")}>Guardar</Button>
               {rep && <p className="w-full text-xs text-muted-foreground">Dotación de choferes/ayudantes: poné tu plantel real; si lo dejás en <b>0</b> se usa el promedio real de <b>registros_vehiculos</b> (egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionObservada))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionObservada))} ayudantes</b> por día. Tripulación = personas por camión. Viajes/día y capacidad CEq se configuran arriba.</p>}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Zonas de reparto (cobertura geográfica)</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Zona</TableHead><TableHead className="text-right">Peso (%)</TableHead><TableHead className="text-right">Camiones mín.</TableHead><TableHead className="text-right">Camiones hoy</TableHead><TableHead></TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {zonas.map((z, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Input className="h-8 w-44" value={z.zona} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, zona: e.target.value } : x))} /></TableCell>
+                      <TableCell className="text-right"><Input type="number" step="0.01" className="h-8 w-20" value={z.peso} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, peso: e.target.value } : x))} /></TableCell>
+                      <TableCell className="text-right"><Input type="number" step="1" className="h-8 w-20" value={z.camiones_minimos} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, camiones_minimos: e.target.value } : x))} /></TableCell>
+                      <TableCell className="text-right font-semibold">{camZona(Number(z.peso) || 0, Number(z.camiones_minimos) || 0)}</TableCell>
+                      <TableCell className="text-right"><button className="text-xs text-red-600 hover:underline" onClick={() => setZonas((s) => s.filter((_, j) => j !== i))}>quitar</button></TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="border-t-2">
+                    <TableCell className="font-bold">Total</TableCell>
+                    <TableCell className={`text-right font-bold ${Math.abs(sumaPesos - 1) > 0.001 ? "text-amber-600" : ""}`}>{Math.round(sumaPesos * 100)}%</TableCell>
+                    <TableCell className="text-right font-bold">{zonas.reduce((s, z) => s + (Number(z.camiones_minimos) || 0), 0)}</TableCell>
+                    <TableCell className="text-right font-bold">{zonas.reduce((s, z) => s + camZona(Number(z.peso) || 0, Number(z.camiones_minimos) || 0), 0)}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+              <div className="flex items-center gap-3">
+                <Button size="sm" variant="outline" onClick={() => setZonas((s) => [...s, { zona: "", peso: "0", camiones_minimos: "1" }])}>+ Zona</Button>
+                <Button size="sm" disabled={isPending} onClick={() => run(() => guardarZonasReparto(zonas.map((z) => ({ zona: z.zona, peso: Number(z.peso), camiones_minimos: Number(z.camiones_minimos) }))), "Zonas guardadas")}>Guardar zonas</Button>
+                {Math.abs(sumaPesos - 1) > 0.001 && <span className="text-xs text-amber-600">Los pesos suman {Math.round(sumaPesos * 100)}% (idealmente 100%).</span>}
+              </div>
+              <p className="text-xs text-muted-foreground">Cada zona toma su parte del volumen (peso) y necesita un mínimo de camiones por distancia. «Camiones hoy» = máx(mínimo, volumen×peso ÷ capacidad) con el volumen promedio del mes ({fmt(volProm)} CEq). El total es la flota que se necesita por cobertura, aunque por capacidad pura entrarían menos.</p>
             </CardContent>
           </Card>
           {proy && (
@@ -305,7 +349,7 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
                         <TableCell key={i} className="p-0">
                           <Dialog>
                             <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-right hover:brightness-95 ${cls}`}>{d > 0 ? `${d} días` : "✓"}</DialogTrigger>
-                            <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} />
+                            <DetalleFlotaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} ceqPromBase={proy.flotaCeqPromBase} capCamionViaje={proy.capCamionViaje} camionesDisp={proy.camionesDisp} zonas={data.zonas} />
                           </Dialog>
                         </TableCell>
                       )

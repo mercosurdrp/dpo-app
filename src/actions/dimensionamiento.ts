@@ -245,10 +245,25 @@ export interface DimPlan {
   created_at: string
 }
 
+export interface ZonaReparto {
+  id: string
+  zona: string
+  peso: number              // fracción del volumen diario (0–1)
+  camiones_minimos: number  // piso de cobertura por distancia
+  orden: number
+}
+
+// camiones necesarios para un volumen CEq, por zona: máx(mínimo de cobertura, volumen×peso ÷ capacidad).
+function camionesPorZonas(volCeq: number, zonas: ZonaReparto[], capCamionViaje: number): number {
+  if (capCamionViaje <= 0 || zonas.length === 0) return 0
+  return zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((volCeq * z.peso) / capCamionViaje)), 0)
+}
+
 export interface DimData {
   config: DimConfig
   objetivos: KpiObjetivo[]
   flota: FlotaUnidad[]
+  zonas: ZonaReparto[]
   capacidadInstaladaDiaria: number // CEq: Σ capacidad_ceq (disponibles) × viajes_por_dia
   unidadesDisponibles: number
   metricas: MetricasDistribucion | null
@@ -270,7 +285,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     if (IS_MISIONES) return { error: SOLO_PAMPEANA }
     const supabase = await createClient()
 
-    const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes] =
+    const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes, zonasRes] =
       await Promise.all([
         supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, dotacion_choferes, dotacion_ayudantes, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
@@ -278,7 +293,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
         supabase.from("mantenimiento_realizados").select("dominio").eq("estado", "en_taller"),
         supabase.from("dim_planes").select("*").order("created_at", { ascending: false }).limit(100),
+        supabase.from("dim_zonas_reparto").select("id, zona, peso, camiones_minimos, orden").order("orden"),
       ])
+
+    const zonas: ZonaReparto[] = (zonasRes.data ?? []).map((z) => ({
+      id: z.id as string, zona: z.zona as string,
+      peso: Number(z.peso ?? 0), camiones_minimos: Number(z.camiones_minimos ?? 1), orden: Number(z.orden ?? 0),
+    }))
 
     const config: DimConfig = {
       peso_kg_bulto: Number(configRes.data?.peso_kg_bulto ?? 0),
@@ -367,7 +388,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const avg = (arr: number[]) => arr.reduce((s, x) => s + x, 0) / n
       const volProm = avg(filas.map((x) => x.ceq))
       const volPico = Math.max(...filas.map((x) => x.ceq))
+      // capUnidad = capacidad de un camión por día (capacidadInstaladaDiaria ya incluye viajes/día).
       const capUnidad = disponibles.length > 0 ? capacidadInstaladaDiaria / disponibles.length : 0
+      // Camiones por COBERTURA DE ZONAS: máx(mínimo, volumen×peso ÷ capacidad) por zona; fallback a capacidad pura.
+      const camionesNec = (vol: number) => zonas.length > 0
+        ? camionesPorZonas(vol, zonas, capUnidad)
+        : (capUnidad > 0 ? Math.ceil(vol / capUnidad) : 0)
       metricas = {
         mes: mesAA,
         diasCerrados: n,
@@ -378,8 +404,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         pctNoRuteadoPromedio: Math.round(avg(filas.map((x) => x.pctNoRut)) * 10) / 10,
         ocupacionPromedio:
           capacidadInstaladaDiaria > 0 ? Math.round((volProm / capacidadInstaladaDiaria) * 1000) / 10 : 0,
-        camionesNecesariosPromedio: capUnidad > 0 ? Math.ceil(volProm / (capUnidad * config.viajes_por_dia)) : 0,
-        camionesNecesariosPico: capUnidad > 0 ? Math.ceil(volPico / (capUnidad * config.viajes_por_dia)) : 0,
+        camionesNecesariosPromedio: camionesNec(volProm),
+        camionesNecesariosPico: camionesNec(volPico),
       }
     }
 
@@ -635,7 +661,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
-                const camionesDia = capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0
+                const camionesDia = zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
                 const necesarios = camionesDia * rf.tripulacion
                 if (necesarios > rf.dotacion) dias++
                 if (camionesDia > camionesDisp) sv = true
@@ -664,6 +690,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         config,
         objetivos,
         flota,
+        zonas,
         capacidadInstaladaDiaria,
         unidadesDisponibles: disponibles.length,
         metricas,
@@ -751,6 +778,33 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
       })
       .eq("id", 1)
     if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+// Reemplaza el set completo de zonas de reparto (cobertura de flota).
+export async function guardarZonasReparto(zonas: { zona: string; peso: number; camiones_minimos: number }[]): Promise<Result<true>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const supabase = await createClient()
+    await supabase.from("dim_zonas_reparto").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+    const rows = zonas
+      .filter((z) => z.zona.trim())
+      .map((z, i) => ({
+        zona: z.zona.trim(),
+        peso: Math.max(0, Number(z.peso) || 0),
+        camiones_minimos: Math.max(0, Math.round(Number(z.camiones_minimos) || 0)),
+        orden: i + 1,
+        updated_by: profile.id,
+      }))
+    if (rows.length) {
+      const { error } = await supabase.from("dim_zonas_reparto").insert(rows)
+      if (error) return { error: error.message }
+    }
     revalidatePath("/planeamiento/dimensionamiento")
     return { data: true }
   } catch (err) {
