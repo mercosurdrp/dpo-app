@@ -30,55 +30,19 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   fecha: string | null
+  /** Métrica por la que se ordena y se resalta. El diálogo siempre muestra
+   *  bultos Y HL lado a lado; `metrica` solo define el orden y el énfasis. */
   metrica: Metrica
 }
 
-interface MetricaCfg {
-  label: string
-  unidad: string
-  total: (d: VentasResumenDia) => number
-  promedio: (d: VentasResumenDia) => number | null
-  porPatente: (
-    d: VentasResumenDia,
-  ) => Array<{ patente: string; chofer_nombre: string | null; valor: number }>
-  formatValor: (n: number) => string
-}
-
-const CONFIG: Record<Metrica, MetricaCfg> = {
-  bultos: {
-    label: "Bultos vendidos",
-    unidad: "bultos",
-    total: (d) => d.total_bultos,
-    promedio: (d) => d.promedio_bultos_mes_anterior,
-    porPatente: (d) =>
-      d.por_patente.map((p) => ({
-        patente: p.patente,
-        chofer_nombre: p.chofer_nombre,
-        valor: p.bultos,
-      })),
-    formatValor: (n) =>
-      new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n),
-  },
-  hl: {
-    label: "HL vendidos",
-    unidad: "HL",
-    total: (d) => d.total_hl,
-    promedio: (d) => d.promedio_hl_mes_anterior,
-    porPatente: (d) =>
-      d.por_patente
-        .map((p) => ({
-          patente: p.patente,
-          chofer_nombre: p.chofer_nombre,
-          valor: p.hl,
-        }))
-        .sort((a, b) => b.valor - a.valor),
-    formatValor: (n) =>
-      new Intl.NumberFormat("es-AR", {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      }).format(n),
-  },
-}
+// Formateadores: bultos enteros, HL con 1 decimal.
+const fmtBultos = (n: number) =>
+  new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n)
+const fmtHl = (n: number) =>
+  new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(n)
 
 export function VentasDetalleDiaDialog({
   open,
@@ -120,19 +84,30 @@ export function VentasDetalleDiaDialog({
     }
   }, [open, fecha])
 
-  const cfg = CONFIG[metrica]
-  const total = data ? cfg.total(data) : 0
-  const promedio = data ? cfg.promedio(data) : null
+  // Énfasis y orden según la métrica con la que se abrió el diálogo.
+  const esHl = metrica === "hl"
+  const valorPrimario = (v: { bultos: number; hl: number }) =>
+    esHl ? v.hl : v.bultos
+  const fmtPrimario = esHl ? fmtHl : fmtBultos
+  const unidadPrimaria = esHl ? "HL" : "bultos"
+  const totalPrimario = data ? (esHl ? data.total_hl : data.total_bultos) : 0
+  const promedio = data
+    ? esHl
+      ? data.promedio_hl_mes_anterior
+      : data.promedio_bultos_mes_anterior
+    : null
   const superaPromedio =
-    promedio != null && promedio > 0 ? total >= promedio : null
-  const filas = data ? cfg.porPatente(data) : []
+    promedio != null && promedio > 0 ? totalPrimario >= promedio : null
+  const patentes = data
+    ? [...data.por_patente].sort((a, b) => valorPrimario(b) - valorPrimario(a))
+    : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1100px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1100px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {cfg.label}
+            Ventas del día
             {fecha && (
               <span className="text-base font-normal text-muted-foreground">
                 · {formatFechaLarga(fecha)}
@@ -140,8 +115,7 @@ export function VentasDetalleDiaDialog({
             )}
           </DialogTitle>
           <DialogDescription>
-            Desglose del volumen entregado del día por patente
-            {metrica === "hl" ? " (en hectolitros)" : ""}.
+            Bultos y HL entregados del día, por camión, SKU y cliente.
           </DialogDescription>
         </DialogHeader>
 
@@ -162,30 +136,33 @@ export function VentasDetalleDiaDialog({
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <KpiCard
-                label={`${cfg.label} del día`}
-                value={`${cfg.formatValor(total)} ${cfg.unidad}`}
+                label="Bultos del día"
+                value={`${fmtBultos(data.total_bultos)} bultos`}
                 sub="total entregado"
                 valueClassName={
-                  superaPromedio == null
-                    ? "text-slate-900"
-                    : superaPromedio
+                  !esHl && superaPromedio != null
+                    ? superaPromedio
                       ? "text-emerald-700"
                       : "text-red-700"
+                    : "text-slate-900"
+                }
+              />
+              <KpiCard
+                label="HL del día"
+                value={`${fmtHl(data.total_hl)} HL`}
+                sub="total entregado"
+                valueClassName={
+                  esHl && superaPromedio != null
+                    ? superaPromedio
+                      ? "text-emerald-700"
+                      : "text-red-700"
+                    : "text-slate-900"
                 }
               />
               <KpiCard
                 label="Patentes con venta"
                 value={formatInt(data.patentes_con_venta)}
                 sub="vehículos"
-              />
-              <KpiCard
-                label="Promedio mes anterior"
-                value={
-                  promedio == null
-                    ? "—"
-                    : `${cfg.formatValor(promedio)} ${cfg.unidad}`
-                }
-                sub={`${cfg.unidad}/día`}
               />
             </div>
 
@@ -203,7 +180,8 @@ export function VentasDetalleDiaDialog({
                     El día <strong>supera</strong> el promedio del mes anterior
                     por{" "}
                     <strong>
-                      {cfg.formatValor(total - (promedio ?? 0))} {cfg.unidad}
+                      {fmtPrimario(totalPrimario - (promedio ?? 0))}{" "}
+                      {unidadPrimaria}
                     </strong>
                     .
                   </>
@@ -212,7 +190,8 @@ export function VentasDetalleDiaDialog({
                     El día está <strong>por debajo</strong> del promedio del mes
                     anterior por{" "}
                     <strong>
-                      {cfg.formatValor((promedio ?? 0) - total)} {cfg.unidad}
+                      {fmtPrimario((promedio ?? 0) - totalPrimario)}{" "}
+                      {unidadPrimaria}
                     </strong>
                     .
                   </>
@@ -227,10 +206,9 @@ export function VentasDetalleDiaDialog({
               >
                 <div className="divide-y divide-slate-100">
                   {data.por_origen.map((o) => {
-                    const valor = metrica === "hl" ? o.hl : o.bultos
-                    const pct = total > 0 ? (valor / total) * 100 : 0
+                    const valor = valorPrimario(o)
+                    const pct = totalPrimario > 0 ? (valor / totalPrimario) * 100 : 0
                     const abierto = origenAbierto === o.origen
-                    const label = "Chess"  // unificado: todo se presenta como Chess
                     return (
                       <div key={o.origen}>
                         <button
@@ -243,18 +221,13 @@ export function VentasDetalleDiaDialog({
                           ) : (
                             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                           )}
-                          <span
-                            className={cn(
-                              "rounded px-2 py-0.5 text-xs font-semibold",
-                              o.origen === "gestion"
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-sky-100 text-sky-800",
-                            )}
-                          >
-                            {label}
+                          <span className="rounded bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
+                            Chess
                           </span>
                           <span className="ml-auto font-semibold tabular-nums">
-                            {cfg.formatValor(valor)} {cfg.unidad}
+                            {fmtBultos(o.bultos)} bultos
+                            <span className="mx-1 text-muted-foreground">·</span>
+                            {fmtHl(o.hl)} HL
                           </span>
                           <span className="w-16 text-right text-xs tabular-nums text-muted-foreground">
                             {pct.toFixed(1)}%
@@ -279,14 +252,15 @@ export function VentasDetalleDiaDialog({
                                         {o.origen === "gestion" ? "Reparto" : "Patente"}
                                       </TableHead>
                                       <TableHead>Chofer</TableHead>
-                                      <TableHead className="w-28 text-right">{cfg.unidad}</TableHead>
+                                      <TableHead className="w-24 text-right">Bultos</TableHead>
+                                      <TableHead className="w-24 text-right">HL</TableHead>
                                       <TableHead className="w-20 text-right">% origen</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {o.patentes.map((p, i) => {
-                                      const pv = metrica === "hl" ? p.hl : p.bultos
-                                      const pPct = valor > 0 ? (pv / valor) * 100 : 0
+                                      const pPct =
+                                        valor > 0 ? (valorPrimario(p) / valor) * 100 : 0
                                       return (
                                         <TableRow key={p.patente}>
                                           <TableCell className="text-muted-foreground">{i + 1}</TableCell>
@@ -301,7 +275,10 @@ export function VentasDetalleDiaDialog({
                                             )}
                                           </TableCell>
                                           <TableCell className="text-right font-medium tabular-nums">
-                                            {cfg.formatValor(pv)}
+                                            {fmtBultos(p.bultos)}
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium tabular-nums">
+                                            {fmtHl(p.hl)}
                                           </TableCell>
                                           <TableCell className="text-right tabular-nums text-muted-foreground">
                                             {pPct.toFixed(1)}%
@@ -326,14 +303,15 @@ export function VentasDetalleDiaDialog({
                                   <TableRow>
                                     <TableHead className="w-10">#</TableHead>
                                     <TableHead>Artículo</TableHead>
-                                    <TableHead className="w-28 text-right">{cfg.unidad}</TableHead>
+                                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                                    <TableHead className="w-24 text-right">HL</TableHead>
                                     <TableHead className="w-20 text-right">% origen</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                   {o.skus.map((s, i) => {
-                                    const sv = metrica === "hl" ? s.hl : s.bultos
-                                    const sPct = valor > 0 ? (sv / valor) * 100 : 0
+                                    const sPct =
+                                      valor > 0 ? (valorPrimario(s) / valor) * 100 : 0
                                     return (
                                       <TableRow key={s.id_articulo}>
                                         <TableCell className="text-muted-foreground">{i + 1}</TableCell>
@@ -344,7 +322,10 @@ export function VentasDetalleDiaDialog({
                                           </span>
                                         </TableCell>
                                         <TableCell className="text-right font-medium tabular-nums">
-                                          {cfg.formatValor(sv)}
+                                          {fmtBultos(s.bultos)}
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium tabular-nums">
+                                          {fmtHl(s.hl)}
                                         </TableCell>
                                         <TableCell className="text-right tabular-nums text-muted-foreground">
                                           {sPct.toFixed(1)}%
@@ -394,21 +375,22 @@ export function VentasDetalleDiaDialog({
                           <TableHead>Cliente</TableHead>
                           <TableHead className="w-40">Camión</TableHead>
                           <TableHead className="w-24">Origen</TableHead>
-                          <TableHead className="w-24 text-right">{cfg.unidad}</TableHead>
+                          <TableHead className="w-24 text-right">Bultos</TableHead>
+                          <TableHead className="w-24 text-right">HL</TableHead>
                           <TableHead className="w-20 text-right">% del día</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {visibles.length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                            <TableCell colSpan={7} className="text-center text-muted-foreground">
                               Sin clientes que coincidan con la búsqueda
                             </TableCell>
                           </TableRow>
                         )}
                         {visibles.map((c, i) => {
-                          const cv = metrica === "hl" ? c.hl : c.bultos
-                          const cPct = total > 0 ? (cv / total) * 100 : 0
+                          const cPct =
+                            totalPrimario > 0 ? (valorPrimario(c) / totalPrimario) * 100 : 0
                           const camiones = [
                             ...new Set(
                               c.origenes.map(
@@ -437,12 +419,7 @@ export function VentasDetalleDiaDialog({
                                   {origenes.map((o) => (
                                     <span
                                       key={o}
-                                      className={cn(
-                                        "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                                        o === "gestion"
-                                          ? "bg-amber-100 text-amber-800"
-                                          : "bg-sky-100 text-sky-800",
-                                      )}
+                                      className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
                                     >
                                       Chess
                                     </span>
@@ -450,7 +427,10 @@ export function VentasDetalleDiaDialog({
                                 </span>
                               </TableCell>
                               <TableCell className="text-right font-medium tabular-nums">
-                                {cfg.formatValor(cv)}
+                                {fmtBultos(c.bultos)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {fmtHl(c.hl)}
                               </TableCell>
                               <TableCell className="text-right tabular-nums text-muted-foreground">
                                 {cPct.toFixed(1)}%
@@ -477,8 +457,8 @@ export function VentasDetalleDiaDialog({
             })()}
 
             <Section
-              title={`${cfg.label === "HL vendidos" ? "HL" : "Bultos"} por patente`}
-              subtitle={`${filas.length} patente${filas.length === 1 ? "" : "s"} con venta`}
+              title="Por patente"
+              subtitle={`${patentes.length} patente${patentes.length === 1 ? "" : "s"} con venta`}
             >
               <Table>
                 <TableHeader>
@@ -486,25 +466,25 @@ export function VentasDetalleDiaDialog({
                     <TableHead className="w-10">#</TableHead>
                     <TableHead className="w-32">Patente</TableHead>
                     <TableHead>Chofer</TableHead>
-                    <TableHead className="w-28 text-right">
-                      {cfg.unidad}
-                    </TableHead>
-                    <TableHead className="w-24 text-right">% del día</TableHead>
+                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">% del día</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filas.length === 0 && (
+                  {patentes.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="text-center text-muted-foreground"
                       >
                         Sin ventas para este día
                       </TableCell>
                     </TableRow>
                   )}
-                  {filas.map((p, i) => {
-                    const pct = total > 0 ? (p.valor / total) * 100 : 0
+                  {patentes.map((p, i) => {
+                    const pct =
+                      totalPrimario > 0 ? (valorPrimario(p) / totalPrimario) * 100 : 0
                     return (
                       <TableRow key={p.patente}>
                         <TableCell className="text-muted-foreground">
@@ -521,7 +501,10 @@ export function VentasDetalleDiaDialog({
                           )}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">
-                          {cfg.formatValor(p.valor)}
+                          {fmtBultos(p.bultos)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {fmtHl(p.hl)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {pct.toFixed(1)}%
