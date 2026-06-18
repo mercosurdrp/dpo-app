@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import {
   AlertTriangle,
   ChevronDown,
@@ -33,6 +33,7 @@ import type { NpsClienteDP } from "@/actions/nps"
 const TODOS = "__todos__"
 
 type AgruparPor = "ninguno" | "promotor" | "localidad" | "driver" | "categoria"
+type OrdenarPor = "score" | "fecha"
 
 const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -58,6 +59,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
   const [fDriver, setFDriver] = useState<string>(TODOS)
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
+  const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("score")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
   const [clienteModal, setClienteModal] = useState<NpsClienteDP | null>(null)
 
@@ -86,6 +88,25 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
           (fDriver === TODOS || c.drivers.includes(fDriver)),
       ),
     [clientes, fCategoria, fPromotor, fLocalidad, fDriver],
+  )
+
+  // Orden: por score (peor primero) o por fecha de última encuesta (más
+  // reciente primero). El criterio secundario desempata.
+  const ordenar = useCallback(
+    (arr: NpsClienteDP[]) =>
+      [...arr].sort((a, b) =>
+        ordenarPor === "score"
+          ? a.score - b.score ||
+            +new Date(b.fecha_enc) - +new Date(a.fecha_enc)
+          : +new Date(b.fecha_enc) - +new Date(a.fecha_enc) ||
+            a.score - b.score,
+      ),
+    [ordenarPor],
+  )
+
+  const filtradosOrden = useMemo(
+    () => ordenar(filtrados),
+    [filtrados, ordenar],
   )
 
   const hayFiltros =
@@ -167,7 +188,8 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             {c.nombre_cliente}
           </span>
           <span className="block truncate text-xs text-slate-400">
-            #{c.cod_cliente} · {c.localidad ?? "—"}
+            #{c.cod_cliente} · {c.localidad ?? "—"} ·{" "}
+            {FMT_DIA.format(new Date(c.fecha_enc))}
           </span>
         </span>
         <span className="col-span-1 text-center">
@@ -274,6 +296,21 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             </Button>
           )}
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-500">
+            Ordenar por
+            <Select
+              value={ordenarPor}
+              onValueChange={(v) => v && setOrdenarPor(v as OrdenarPor)}
+            >
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="score">Score (peor primero)</SelectItem>
+                <SelectItem value="fecha">Última encuesta</SelectItem>
+              </SelectContent>
+            </Select>
+          </span>
+          <span className="flex items-center gap-2 text-xs text-slate-500">
             Agrupar por
             <Select
               value={agruparPor}
@@ -308,7 +345,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
         ) : grupos === null ? (
           <div className="space-y-1">
             {encabezadoColumnas()}
-            {filtrados.map((c) => filaCliente(c))}
+            {filtradosOrden.map((c) => filaCliente(c))}
           </div>
         ) : (
           <div className="space-y-2">
@@ -350,7 +387,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
                   </button>
                   {abierto && (
                     <div className="space-y-1 border-t border-slate-100 p-2">
-                      {items.map((c) => filaCliente(c))}
+                      {ordenar(items).map((c) => filaCliente(c))}
                     </div>
                   )}
                 </div>
