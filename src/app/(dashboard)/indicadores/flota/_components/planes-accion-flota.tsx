@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ClipboardList, Loader2, Trash2 } from "lucide-react"
+import { Check, ClipboardList, Loader2, Pencil, Trash2, X } from "lucide-react"
 
 const ESTADOS = [
   { value: "no_iniciado", label: "No iniciado" },
@@ -78,6 +78,8 @@ export function PlanesAccionFlota({
   const [error, setError] = useState<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState("")
   const [comentAbierto, setComentAbierto] = useState<string | null>(null)
+  const [editando, setEditando] = useState<string | null>(null)
+  const [borrador, setBorrador] = useState({ accion: "", responsable: "", vence: "" })
   const [nuevo, setNuevo] = useState(VACIO)
 
   const cargar = useCallback(async () => {
@@ -132,6 +134,26 @@ export function PlanesAccionFlota({
   const borrar = async (p: Plan) => {
     if (!window.confirm(`¿Borrar el plan "${p.accion}"?`)) return
     await mutar("borrar", { id: p.id })
+  }
+
+  const abrirEdicion = (p: Plan) => {
+    setComentAbierto(null)
+    setEditando(p.id)
+    setBorrador({ accion: p.accion, responsable: p.responsable, vence: p.vence })
+  }
+
+  const guardarEdicion = async (p: Plan) => {
+    if (!borrador.accion.trim() || !borrador.responsable.trim() || !borrador.vence) {
+      setError("Completá acción, responsable y fecha de vencimiento.")
+      return
+    }
+    const ok = await mutar("editar", {
+      id: p.id,
+      accion: borrador.accion.trim(),
+      responsable: borrador.responsable.trim(),
+      vence: borrador.vence,
+    })
+    if (ok) setEditando(null)
   }
 
   const estaVencido = useCallback(
@@ -281,12 +303,44 @@ export function PlanesAccionFlota({
               ) : (
                 filtrados.map((p) => {
                   const vencido = estaVencido(p)
+                  const enEdicion = editando === p.id
                   return (
                     <TableRow key={p.id} className={vencido ? "bg-red-50/50" : ""}>
-                      <TableCell className="whitespace-normal font-medium">{p.accion}</TableCell>
-                      <TableCell>{p.responsable}</TableCell>
-                      <TableCell className={vencido ? "font-semibold text-red-600" : ""}>
-                        {fmtFecha(p.vence)}{vencido && " ⚠️"}
+                      <TableCell className="whitespace-normal font-medium">
+                        {enEdicion ? (
+                          <Textarea
+                            autoFocus
+                            rows={2}
+                            value={borrador.accion}
+                            disabled={guardando}
+                            onChange={(e) => setBorrador({ ...borrador, accion: e.target.value })}
+                          />
+                        ) : (
+                          p.accion
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {enEdicion ? (
+                          <Input
+                            value={borrador.responsable}
+                            disabled={guardando}
+                            onChange={(e) => setBorrador({ ...borrador, responsable: e.target.value })}
+                          />
+                        ) : (
+                          p.responsable
+                        )}
+                      </TableCell>
+                      <TableCell className={!enEdicion && vencido ? "font-semibold text-red-600" : ""}>
+                        {enEdicion ? (
+                          <Input
+                            type="date"
+                            value={borrador.vence}
+                            disabled={guardando}
+                            onChange={(e) => setBorrador({ ...borrador, vence: e.target.value })}
+                          />
+                        ) : (
+                          <>{fmtFecha(p.vence)}{vencido && " ⚠️"}</>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -334,16 +388,59 @@ export function PlanesAccionFlota({
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-muted-foreground hover:text-red-600"
-                          disabled={guardando}
-                          onClick={() => borrar(p)}
-                          title="Borrar plan"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {enEdicion ? (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-green-600"
+                                disabled={guardando}
+                                onClick={() => guardarEdicion(p)}
+                                title="Guardar cambios"
+                              >
+                                {guardando ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-slate-900"
+                                disabled={guardando}
+                                onClick={() => setEditando(null)}
+                                title="Cancelar"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-sky-600"
+                                disabled={guardando}
+                                onClick={() => abrirEdicion(p)}
+                                title="Editar plan"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                                disabled={guardando}
+                                onClick={() => borrar(p)}
+                                title="Borrar plan"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
