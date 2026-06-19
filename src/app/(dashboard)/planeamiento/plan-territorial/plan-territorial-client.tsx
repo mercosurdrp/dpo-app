@@ -190,9 +190,14 @@ function PanelVlcHl() {
   }, [cargar])
 
   const ratio = (m: MesVlc) => (m.hl > 0 ? m.vlc_total / m.hl : 0)
-  const limpios = meses.filter((m) => !m.nota && m.hl > 0)
-  const base =
-    limpios.length > 0 ? limpios.reduce((a, m) => a + ratio(m), 0) / limpios.length : 0
+  // Base = VLC/HL ponderado del período (Σ VLC / Σ HL), excluyendo meses con HL
+  // parcial. Ponderado (no promedio) para que las reversas contables se netén.
+  const baseMeses = meses.filter(
+    (m) => m.hl > 0 && !(m.nota ?? "").toLowerCase().includes("parcial"),
+  )
+  const sumV = baseMeses.reduce((a, m) => a + Number(m.vlc_total), 0)
+  const sumH = baseMeses.reduce((a, m) => a + Number(m.hl), 0)
+  const base = sumH > 0 ? sumV / sumH : 0
   const obj = Number(objetivo) || 0
   const brecha = base > 0 && obj > 0 ? ((base - obj) / base) * 100 : 0
 
@@ -243,7 +248,7 @@ function PanelVlcHl() {
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg bg-slate-50 p-4">
-            <p className="text-xs text-slate-500">VLC/HL actual (base meses limpios)</p>
+            <p className="text-xs text-slate-500">VLC/HL actual (real, período Ene–Abr)</p>
             <p className="text-3xl font-bold text-slate-900">${fmt0(base)}</p>
             <p className="text-xs text-muted-foreground">por hectolitro distribuido</p>
           </div>
@@ -311,9 +316,11 @@ function PanelVlcHl() {
           </Table>
         </div>
         <p className="text-xs text-muted-foreground">
-          VLC = Almacén + Entrega + Flota + Acarreo (del PxQ, solo costos recurrentes;{" "}
-          <b>preliminar — validar</b>). HL = hectolitros distribuidos (ventas_diarias). El plan
-          territorial baja el VLC/HL al reducir viajes y mejorar el llenado del camión.
+          VLC = costo <b>REAL</b> de Almacén + Entrega + Flota + Acarreo (Datos_CC, P&L). HL =
+          hectolitros distribuidos (ventas_diarias). Base = período Ene–Abr ponderado (las reversas
+          contables de Acarreo se netean; mayo excluido por HL parcial). ⚠️ El costo por centro
+          mezcla fijo + variable — <b>pendiente afinar el componente variable con Finanzas</b>. El
+          plan territorial baja el VLC/HL al reducir viajes y mejorar el llenado del camión.
         </p>
       </CardContent>
     </Card>
