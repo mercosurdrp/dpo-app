@@ -3355,3 +3355,83 @@ export const SG_ESTADO_ORDEN: SgEstado[] = [
   "resuelto",
   "cerrado",
 ]
+
+// =============================================
+// Iniciativas de Ahorro (Rutina de Campeones · Planeamiento 5.2)
+// Portado de Pampeana + campos extra de la plantilla de Misiones
+// (área / CAPEX / nivel de impacto / acciones clave / justificación).
+// =============================================
+export type TipoIniciativaAhorro =
+  | "hhee"
+  | "ausentismo"
+  | "mermas_wh_del"
+  | "ocupacion_capacidad"
+  | "productividad_wh_del"
+  | "renovacion_flota"
+  | "cambio_glp"
+  | "consumo_combustible"
+  | "otro"
+
+export type EstadoIniciativaAhorro =
+  | "planificada"
+  | "en_implementacion"
+  | "implementada"
+  | "cancelada"
+
+export type DireccionKpiIniciativa = "menor" | "mayor"
+
+export type AreaIniciativaAhorro =
+  | "distribucion"
+  | "gente"
+  | "operaciones"
+  | "otro"
+
+export interface IniciativaAhorroSeguimiento {
+  id: string
+  iniciativa_id: string
+  anio: number
+  trimestre: number // 1..4
+  ahorro_real: number | null
+  kpi_valor: number | null
+  comentario: string | null
+  evidencia_url: string | null
+  evidencia_nombre: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface IniciativaAhorro {
+  id: string
+  anio: number
+  tipo: TipoIniciativaAhorro
+  tipo_otro: string | null
+  titulo: string
+  descripcion: string | null
+  responsable_id: string | null
+  fecha_implementacion: string | null
+  ahorro_comprometido_anual: number | null
+  kpi_nombre: string | null
+  kpi_unidad: string | null
+  kpi_linea_base: number | null
+  kpi_objetivo: number | null
+  kpi_mejor_si: DireccionKpiIniciativa
+  incluida_en_presupuesto: boolean
+  estado: EstadoIniciativaAhorro
+  observaciones: string | null
+  // Campos extra (plantilla Misiones)
+  area: AreaIniciativaAhorro | null
+  inversion_capex: number | null
+  nivel_impacto: number | null // 0..100 (%)
+  acciones_clave: string | null
+  justificacion: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface IniciativaAhorroConDetalle extends IniciativaAhorro {
+  responsable_nombre: string | null
+  responsable_email: string | null
+  seguimientos: IniciativaAhorroSeguimiento[]
+}

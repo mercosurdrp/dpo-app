@@ -36,6 +36,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import { IniciativasAhorroSection } from "@/components/presupuesto/iniciativas-ahorro-section"
+import {
   eliminarEerrAnual,
   eliminarTarea,
   getSignedUrl,
@@ -48,6 +55,7 @@ import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-d
 import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type {
   EstadoPresupuestoTarea,
+  IniciativaAhorroConDetalle,
   PresupuestoAnual,
   PresupuestoEerrAnual,
   PresupuestoTareaConResponsable,
@@ -68,6 +76,8 @@ interface Props {
   responsables: ResponsableOpt[]
   puedeEditar: boolean
   currentProfileId: string | null
+  mostrarIniciativas: boolean
+  iniciativas: IniciativaAhorroConDetalle[]
 }
 
 const MESES = [
@@ -175,6 +185,8 @@ export function PresupuestoClient({
   responsables,
   puedeEditar,
   currentProfileId,
+  mostrarIniciativas,
+  iniciativas,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -326,6 +338,15 @@ export function PresupuestoClient({
         </div>
       </div>
 
+      <Tabs defaultValue="presupuesto" className="w-full">
+        <TabsList variant="line">
+          <TabsTrigger value="presupuesto">Presupuesto</TabsTrigger>
+          {mostrarIniciativas && (
+            <TabsTrigger value="iniciativas">Iniciativas de Ahorro</TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="presupuesto" className="mt-4 space-y-6">
       {/* Sección 1 — Presupuesto anual */}
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-700">
@@ -767,6 +788,19 @@ export function PresupuestoClient({
           </Table>
         </div>
       </section>
+        </TabsContent>
+
+        {mostrarIniciativas && (
+          <TabsContent value="iniciativas" className="mt-4">
+            <IniciativasAhorroSection
+              anio={anioActivo}
+              iniciativas={iniciativas}
+              responsables={responsables}
+              puedeEditar={puedeEditar}
+            />
+          </TabsContent>
+        )}
+      </Tabs>
 
       {/* Diálogos */}
       {puedeEditar && (
