@@ -68,8 +68,54 @@ export async function getCuadroMensualIndicadores(): Promise<
 
   const supabase = await createClient()
 
-  // ── Fetches de rango (independientes, en paralelo) ──
-  const [repRes, ventRes, rechRes, foxRes] = await Promise.all([
+  // PostgREST corta cada request en 1000 filas. ventas_diarias y rechazos
+  // superan eso en el rango ene→hoy (≈2k y ≈7k filas), así que hay que paginar
+  // o las sumas quedan truncadas. Se ordena por id (uuid, único) para que la
+  // paginación sea estable entre requests.
+  async function ventasDiariasTodas() {
+    const PAGE = 1000
+    const rows: Array<{
+      fecha: string
+      total_hl: number | null
+      total_bultos: number | null
+    }> = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("ventas_diarias")
+        .select("fecha, total_hl, total_bultos")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
+  async function rechazosTodos() {
+    const PAGE = 1000
+    const rows: Array<{ fecha_venta: string; hl_rechazados: number | null }> =
+      []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("rechazos")
+        .select("fecha_venta, hl_rechazados")
+        .gte("fecha_venta", desde)
+        .lte("fecha_venta", hasta)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
+
+  // ── Fetches de rango (en paralelo) ──
+  // reportes_seguridad y foxtrot_routes están muy por debajo de 1000 filas en
+  // el rango, así que no necesitan paginación.
+  const [repRes, ventasRows, rechazosRows, foxRes] = await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -77,16 +123,8 @@ export async function getCuadroMensualIndicadores(): Promise<
       .select("tipo_accidente, fecha")
       .lte("fecha", hasta)
       .order("fecha", { ascending: true }),
-    supabase
-      .from("ventas_diarias")
-      .select("fecha, total_hl, total_bultos")
-      .gte("fecha", desde)
-      .lte("fecha", hasta),
-    supabase
-      .from("rechazos")
-      .select("fecha_venta, hl_rechazados")
-      .gte("fecha_venta", desde)
-      .lte("fecha_venta", hasta),
+    ventasDiariasTodas(),
+    rechazosTodos(),
     supabase
       .from("foxtrot_routes")
       .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
@@ -141,11 +179,7 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── ENTREGA: HL vendidos + % rechazo (de los fetches de rango) ──
   const ventasHlPorMes: Record<string, number> = {}
   const ventasBultosPorMes: Record<string, number> = {}
-  for (const v of (ventRes.data ?? []) as Array<{
-    fecha: string
-    total_hl: number | null
-    total_bultos: number | null
-  }>) {
+  for (const v of ventasRows) {
     const mes = v.fecha.slice(0, 7)
     const hl = Number(v.total_hl ?? 0)
     if (Number.isFinite(hl)) ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
@@ -154,10 +188,7 @@ export async function getCuadroMensualIndicadores(): Promise<
       ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
   }
   const rechHlPorMes: Record<string, number> = {}
-  for (const r of (rechRes.data ?? []) as Array<{
-    fecha_venta: string
-    hl_rechazados: number | null
-  }>) {
+  for (const r of rechazosRows) {
     const hl = Number(r.hl_rechazados ?? 0)
     if (!Number.isFinite(hl)) continue
     const mes = r.fecha_venta.slice(0, 7)
