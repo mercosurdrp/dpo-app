@@ -2753,6 +2753,54 @@ export interface PlanAccionPresupuestoConDetalle extends PlanAccionPresupuesto {
 }
 
 // =============================================
+// Inversiones del Presupuesto — solo Pampeana
+// =============================================
+export type CategoriaInversion =
+  | "flota"
+  | "equipos_almacen"
+  | "tecnologia"
+  | "infraestructura"
+  | "otro"
+
+export type EstadoInversion =
+  | "programada"
+  | "aprobada"
+  | "en_curso"
+  | "realizada"
+  | "cancelada"
+
+export interface Inversion {
+  id: string
+  anio: number
+  titulo: string
+  categoria: CategoriaInversion
+  cantidad: number | null
+  descripcion: string | null
+  beneficio_esperado: string | null
+  kpi_nombre: string | null
+  kpi_unidad: string | null
+  kpi_objetivo: number | null
+  proveedor: string | null
+  fecha_programada: string | null
+  monto_estimado: number | null
+  estado: EstadoInversion
+  fecha_realizada: string | null
+  monto_real: number | null
+  evidencia_url: string | null
+  evidencia_nombre: string | null
+  responsable_id: string | null
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InversionConDetalle extends Inversion {
+  responsable_nombre: string | null
+  responsable_email: string | null
+}
+
+// =============================================
 // Reuniones (módulo /reuniones)
 // =============================================
 export type TipoReunion =

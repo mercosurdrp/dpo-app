@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/tabs"
 import { IniciativasAhorroSection } from "@/components/presupuesto/iniciativas-ahorro-section"
 import { PlanesAccionSection } from "@/components/presupuesto/planes-accion-section"
+import { InversionesSection } from "@/components/presupuesto/inversiones-section"
 import {
   eliminarEerrAnual,
   eliminarTarea,
@@ -57,6 +58,7 @@ import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
+  InversionConDetalle,
   PlanAccionPresupuestoConDetalle,
   PresupuestoAnual,
   PresupuestoEerrAnual,
@@ -82,6 +84,8 @@ interface Props {
   iniciativas: IniciativaAhorroConDetalle[]
   mostrarPlanesAccion: boolean
   planesAccion: PlanAccionPresupuestoConDetalle[]
+  mostrarInversiones: boolean
+  inversiones: InversionConDetalle[]
 }
 
 const MESES = [
@@ -193,6 +197,8 @@ export function PresupuestoClient({
   iniciativas,
   mostrarPlanesAccion,
   planesAccion,
+  mostrarInversiones,
+  inversiones,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -354,6 +360,9 @@ export function PresupuestoClient({
           )}
           {mostrarPlanesAccion && (
             <TabsTrigger value="planes-accion">Plan de Acción</TabsTrigger>
+          )}
+          {mostrarInversiones && (
+            <TabsTrigger value="inversiones">Inversiones</TabsTrigger>
           )}
         </TabsList>
 
@@ -819,6 +828,17 @@ export function PresupuestoClient({
               planes={planesAccion}
               responsables={responsables}
               tareas={tareas}
+              puedeEditar={puedeEditar}
+            />
+          </TabsContent>
+        )}
+
+        {mostrarInversiones && (
+          <TabsContent value="inversiones" className="mt-4">
+            <InversionesSection
+              anio={anioActivo}
+              inversiones={inversiones}
+              responsables={responsables}
               puedeEditar={puedeEditar}
             />
           </TabsContent>
