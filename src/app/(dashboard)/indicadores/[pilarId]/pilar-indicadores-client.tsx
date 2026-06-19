@@ -30,6 +30,7 @@ import {
   Package,
   Gauge,
   Truck,
+  Users,
   type LucideIcon,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
@@ -219,6 +220,34 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                 </div>
                 <Link
                   href="/planeamiento/periodos-criticos"
+                  className={buttonVariants({ size: "sm" })}
+                  style={{ backgroundColor: pilar.color, color: "#fff" }}
+                >
+                  Abrir <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                  >
+                    <Users className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Plan de Agrupación de Clientes (4.2)</p>
+                    <p className="text-sm text-muted-foreground">
+                      Clústeres por ABC de Pareto (ingreso × crecimiento) + cruce RMD / In Full
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/planeamiento/cluster-clientes"
                   className={buttonVariants({ size: "sm" })}
                   style={{ backgroundColor: pilar.color, color: "#fff" }}
                 >
