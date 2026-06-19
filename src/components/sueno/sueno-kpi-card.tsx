@@ -30,7 +30,7 @@ export function SuenoKpiCard({
   const semColor = SEMAFORO_COLOR[nodo.estado]
 
   return (
-    <Card className="relative overflow-hidden p-0 gap-0">
+    <Card className="relative overflow-hidden rounded-none border-slate-200 p-0 gap-0 shadow-md">
       {/* barra de color de la rama */}
       <div className="h-1.5 w-full" style={{ backgroundColor: ramaColor }} />
 

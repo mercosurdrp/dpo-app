@@ -146,7 +146,7 @@ export function ArbolSueno({
         </div>
 
         {abierto && (
-          <div className="p-5">
+          <div className="bg-gradient-to-b from-[#1a2d52] to-[#0e1f44] p-5">
             {/* 3 ramas lado a lado (como el PPT); scroll horizontal si no entra */}
             <div className="overflow-x-auto pb-2">
               <div className="mx-auto flex w-max items-start justify-center gap-5 md:gap-8">
@@ -157,7 +157,7 @@ export function ArbolSueno({
                         className="inline-block size-3 rounded-full"
                         style={{ backgroundColor: RAMA_COLOR[raiz.rama] }}
                       />
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-100">
                         {RAMA_LABEL[raiz.rama]}
                       </p>
                     </div>
@@ -184,7 +184,7 @@ export function ArbolSueno({
               </div>
             </div>
 
-            <p className="mt-3 text-center text-xs text-slate-400">
+            <p className="mt-3 text-center text-xs text-blue-200/80">
               Las flechas muestran cómo cada indicador se despliega en los del
               nivel siguiente (cascadeo del Sueño).
             </p>
