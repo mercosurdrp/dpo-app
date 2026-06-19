@@ -3,7 +3,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { consultarAvanceEmpresa } from "@/lib/mercosur-dashboard"
 import { getCumplimientoMes } from "@/actions/sla"
 import { buildWarehouseSerieDiaria } from "@/lib/warehouse/auto-indicadores"
 import {
@@ -80,7 +79,7 @@ export async function getCuadroMensualIndicadores(): Promise<
       .order("fecha", { ascending: true }),
     supabase
       .from("ventas_diarias")
-      .select("fecha, total_hl")
+      .select("fecha, total_hl, total_bultos")
       .gte("fecha", desde)
       .lte("fecha", hasta),
     supabase
@@ -141,14 +140,18 @@ export async function getCuadroMensualIndicadores(): Promise<
 
   // ── ENTREGA: HL vendidos + % rechazo (de los fetches de rango) ──
   const ventasHlPorMes: Record<string, number> = {}
+  const ventasBultosPorMes: Record<string, number> = {}
   for (const v of (ventRes.data ?? []) as Array<{
     fecha: string
     total_hl: number | null
+    total_bultos: number | null
   }>) {
-    const hl = Number(v.total_hl ?? 0)
-    if (!Number.isFinite(hl)) continue
     const mes = v.fecha.slice(0, 7)
-    ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+    const hl = Number(v.total_hl ?? 0)
+    if (Number.isFinite(hl)) ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+    const bultos = Number(v.total_bultos ?? 0)
+    if (Number.isFinite(bultos))
+      ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
   }
   const rechHlPorMes: Record<string, number> = {}
   for (const r of (rechRes.data ?? []) as Array<{
@@ -163,7 +166,13 @@ export async function getCuadroMensualIndicadores(): Promise<
   for (const mes of meses) {
     const esActual = mes === mesActual
     const ventas = ventasHlPorMes[mes] ?? 0
+    const bultos = ventasBultosPorMes[mes] ?? 0
     const rech = rechHlPorMes[mes] ?? 0
+    celdas.bultos_vendidos[mes] = {
+      mes,
+      valor: bultos > 0 ? bultos : null,
+      parcial: esActual,
+    }
     celdas.hl_vendidos[mes] = {
       mes,
       valor: ventas > 0 ? ventas : null,
@@ -211,20 +220,10 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.mantenimiento[mes] = { mes, valor: null, parcial: esActual }
   }
 
-  // ── ENTREGA: % avance (pool, secuencial) + SLA (secuencial) ──
+  // ── ENTREGA: SLA (secuencial por mes) ──
   for (const mes of meses) {
     const [a, m] = mes.split("-").map(Number)
     const esActual = mes === mesActual
-    try {
-      const av = await consultarAvanceEmpresa(a, m)
-      celdas.avance_venta[mes] = {
-        mes,
-        valor: av.objetivo_disponible ? av.total.pct_avance : null,
-        parcial: esActual,
-      }
-    } catch {
-      celdas.avance_venta[mes] = { mes, valor: null, parcial: esActual }
-    }
 
     const sla = await getCumplimientoMes(a, m)
     if ("data" in sla) {

@@ -35,7 +35,7 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "dias_sin_acc", pilar: "Seguridad", nombre: "Días sin accidentes", unidad: "días", meta: null, mejor_si: "mayor", resumen: "ultimo", nota: "Días al cierre del mes desde el último accidente con tiempo perdido (LTI)." },
 
   // ── Entrega ──
-  { id: "avance_venta", pilar: "Entrega", nombre: "% Avance de venta", unidad: "%", meta: 100, mejor_si: "mayor", resumen: "promedio", nota: "Real vs objetivo de venta (HL) del mes. Gris si el objetivo no estaba cargado." },
+  { id: "bultos_vendidos", pilar: "Entrega", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cantidad total de bultos facturados del mes (ventas_diarias)." },
   { id: "hl_vendidos", pilar: "Entrega", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Volumen total facturado del mes en hectolitros (ventas_diarias)." },
   { id: "rechazo", pilar: "Entrega", nombre: "% Rechazo", unidad: "%", meta: 1.7, mejor_si: "menor", resumen: "promedio", nota: "HL rechazados / HL vendidos del mes. Meta ≤ 1,7%." },
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
@@ -167,6 +167,8 @@ export function formatValor(valor: number | null, unidad: string): string {
     case "%":
       return `${valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
     case "HL":
+      return valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })
+    case "bultos":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })
     case "PPM":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })
