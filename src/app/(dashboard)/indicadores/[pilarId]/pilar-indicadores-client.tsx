@@ -182,7 +182,7 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                     <Calculator className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">Simulador de Dimensionamiento</p>
+                    <p className="font-semibold text-slate-900">Simulador de Warehouse</p>
                     <p className="text-sm text-muted-foreground">
                       Escenarios de dotación, plan vs. real, plan de acción
                     </p>
@@ -190,6 +190,36 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                 </div>
                 <a
                   href={SIMULADOR_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants({ size: "sm" })}
+                  style={{ backgroundColor: pilar.color, color: "#fff" }}
+                >
+                  Abrir <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                  >
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Simulador de Flota</p>
+                    <p className="text-sm text-muted-foreground">
+                      Dimensionamiento de camiones, simulador diario y plan vs. real
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={SIMULADOR_FLOTA_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={buttonVariants({ size: "sm" })}
@@ -237,17 +267,17 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                     className="rounded-xl p-3"
                     style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
                   >
-                    <Users className="h-6 w-6" />
+                    <Wrench className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">Plan de Agrupación de Clientes (4.2)</p>
+                    <p className="font-semibold text-slate-900">Mantenimiento de Instalaciones (2.4)</p>
                     <p className="text-sm text-muted-foreground">
-                      Clústeres por ABC de Pareto (ingreso × crecimiento) + cruce RMD / In Full
+                      Checklist trimestral edilicio + planes de acción · base de proveedores + RACI
                     </p>
                   </div>
                 </div>
                 <Link
-                  href="/planeamiento/cluster-clientes"
+                  href="/planeamiento/mantenimiento-instalaciones"
                   className={buttonVariants({ size: "sm" })}
                   style={{ backgroundColor: pilar.color, color: "#fff" }}
                 >
@@ -265,24 +295,22 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                     className="rounded-xl p-3"
                     style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
                   >
-                    <Truck className="h-6 w-6" />
+                    <Users className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">Simulador de Flota</p>
+                    <p className="font-semibold text-slate-900">Plan de Agrupación de Clientes (4.2)</p>
                     <p className="text-sm text-muted-foreground">
-                      Dimensionamiento de camiones, simulador diario y plan vs. real
+                      Clústeres por ABC de Pareto (ingreso × crecimiento) + cruce RMD / In Full
                     </p>
                   </div>
                 </div>
-                <a
-                  href={SIMULADOR_FLOTA_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/planeamiento/cluster-clientes"
                   className={buttonVariants({ size: "sm" })}
                   style={{ backgroundColor: pilar.color, color: "#fff" }}
                 >
-                  Abrir <ExternalLink className="h-4 w-4" />
-                </a>
+                  Abrir <ChevronRight className="h-4 w-4" />
+                </Link>
               </div>
             </CardContent>
           </Card>
