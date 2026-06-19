@@ -222,6 +222,26 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
   }
 
+  // ── ENTREGA: CEq vendidas (bultos × ceq_factor, vía función SQL) ──
+  {
+    const { data: ceqRows } = await supabase.rpc("cuadro_ceq_mensual", {
+      p_desde: desde,
+    })
+    const ceqPorMes: Record<string, number> = {}
+    for (const r of (ceqRows ?? []) as Array<{ mes: string; ceq: number | null }>) {
+      const v = Number(r.ceq ?? 0)
+      if (Number.isFinite(v)) ceqPorMes[r.mes] = v
+    }
+    for (const mes of meses) {
+      const v = ceqPorMes[mes]
+      celdas.ceq_vendidas[mes] = {
+        mes,
+        valor: v !== undefined && v > 0 ? v : null,
+        parcial: mes === mesActual,
+      }
+    }
+  }
+
   // ── FLOTA: tiempo en ruta + camiones/día (Foxtrot) ──
   const foxPorMes: Record<
     string,
