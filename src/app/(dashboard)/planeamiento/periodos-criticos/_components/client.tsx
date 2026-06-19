@@ -33,6 +33,7 @@ export type DiaCalendario = {
   clasif_vol: "PICO" | "ALTO" | "MEDIO" | "BAJO"
   es_feriado: boolean
   nombre_feriado: string | null
+  tipo_feriado: string | null   // nacional | provincial | empresa
   score: number
   // Triggers booleanos (modelo Mercosur)
   trigger_vol: boolean

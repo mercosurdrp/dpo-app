@@ -15,6 +15,7 @@ import {
   CalendarRange, Star, AlertTriangle, CalendarClock, Copy, Check,
   Target, Plus, Pencil, Trash2, Sparkles,
 } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { DiaCalendario, PlanAccion } from "./client"
 import { intensidadDia, INTENSIDAD_BG } from "./client"
 import { detectarPeriodosCriticos, type PeriodoCritico } from "../_lib/detectar-periodos"
@@ -40,8 +41,30 @@ const PRIORIDAD_BADGE: Record<string, string> = {
 const FOCO_API = "/api/planeamiento/periodos-criticos/foco"
 
 const fmtHL = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
+const fmtPct = (n: number) =>
+  (Number(n) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%"
 const fmtFecha = (f: string) =>
   new Date(f + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "short" })
+
+type VarP = {
+  label: string
+  trigger: keyof DiaCalendario
+  valor: (d: DiaCalendario) => string
+}
+
+// Las 3 "P" que definen un período CRÍTICO en distribución: no cumple Volumen,
+// no cumple Clientes y se suma OTIF. Son las que mira el tooltip.
+const VARIABLES_P: VarP[] = [
+  { label: "Volumen", trigger: "trigger_vol", valor: (d) => `${fmtHL(d.hl)} HL · ${d.clasif_vol}` },
+  { label: "Clientes", trigger: "trigger_cli", valor: (d) => String(d.clientes_dia) },
+  { label: "OTIF", trigger: "trigger_otif", valor: (d) => fmtPct(d.otif_estimado) },
+]
+
+// El ausentismo es una variable secundaria (no define "crítico"): se muestra
+// como dato aparte porque suele estar activa casi todo el mes e infla el conteo.
+const VAR_AUSENTISMO: VarP = {
+  label: "Ausentismo", trigger: "trigger_aus", valor: (d) => fmtPct(d.pct_ausentismo),
+}
 
 // Proyecta una fecha 'YYYY-MM-DD' del año base al año a anticipar (mismo mes/día).
 // 29-feb cae a 28-feb si el año destino no es bisiesto.
@@ -314,19 +337,21 @@ export function PeriodosTab({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {periodos.map((p, idx) => (
-            <PeriodoCard
-              key={p.id}
-              periodo={p}
-              indice={idx + 1}
-              anioBase={anioBase}
-              anioAnticipar={anioAnticipar}
-              plan={planByCodigo[p.codigoPredominante]}
-              onMarcarFoco={() => marcarComoFoco(p)}
-            />
-          ))}
-        </div>
+        <TooltipProvider delay={200}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {periodos.map((p, idx) => (
+              <PeriodoCard
+                key={p.id}
+                periodo={p}
+                indice={idx + 1}
+                anioBase={anioBase}
+                anioAnticipar={anioAnticipar}
+                plan={planByCodigo[p.codigoPredominante]}
+                onMarcarFoco={() => marcarComoFoco(p)}
+              />
+            ))}
+          </div>
+        </TooltipProvider>
       )}
 
       {editor && (
@@ -363,6 +388,20 @@ function PeriodoCard({
   const iniProy = proyectarFecha(p.fechaInicio, anioAnticipar)
   const finProy = proyectarFecha(p.fechaFin, anioAnticipar)
 
+  // Día más intenso del período (el de mayor score) → de ahí tomamos el valor
+  // puntual de cada variable en el tooltip.
+  const diaPico = p.dias.find((d) => d.fecha === p.diaPico) ?? p.dias[0]
+  // Para cada "P" contamos en cuántos días del período NO se cumple (su trigger
+  // se dispara). Una P "no cumple" si falla en al menos un día del período.
+  const diasNoCumple = (v: VarP) => p.dias.filter((d) => d[v.trigger] === true).length
+  const pNoCumple = VARIABLES_P.filter((v) => diasNoCumple(v) > 0)
+  // Crítico (criterio del equipo): algún día no cumple las 3 P juntas (Volumen +
+  // Clientes + OTIF).
+  const esCritico = p.dias.some(
+    (d) => d.trigger_vol === true && d.trigger_cli === true && d.trigger_otif === true,
+  )
+  const ausDias = p.dias.filter((d) => d.trigger_aus === true).length
+
   async function copiarPlan() {
     if (!plan) return
     const texto =
@@ -376,7 +415,10 @@ function PeriodoCard({
   }
 
   return (
-    <Card>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+    <Card className="cursor-help">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-start justify-between gap-2">
           <span className="flex items-center gap-2">
@@ -476,6 +518,49 @@ function PeriodoCard({
         )}
       </CardContent>
     </Card>
+        }
+      />
+      <TooltipContent side="top" className="max-w-none">
+        <div className="space-y-1 min-w-[230px]">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold">
+              {pNoCumple.length === 0
+                ? "Cumple las 3 P"
+                : `No cumple ${pNoCumple.length} de 3 P: ${pNoCumple.map((v) => v.label).join(", ")}`}
+            </span>
+            {esCritico && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white">
+                CRÍTICO
+              </span>
+            )}
+          </div>
+          <div className="space-y-0.5 pt-1 border-t border-white/15">
+            {VARIABLES_P.map((v) => {
+              const dias = diasNoCumple(v)
+              const noCumple = dias > 0
+              return (
+                <div key={v.label} className="flex items-center justify-between gap-4 text-[11px]">
+                  <span className={noCumple ? "text-red-300 font-medium" : "text-emerald-300"}>
+                    {noCumple ? "✗" : "✓"} {v.label}
+                  </span>
+                  <span className="opacity-80">
+                    {diaPico ? v.valor(diaPico) : "—"}
+                    {noCumple && ` · ${dias}d`}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex items-center justify-between gap-4 text-[10px] opacity-70 pt-1 border-t border-white/15">
+            <span>{VAR_AUSENTISMO.label} (secundario)</span>
+            <span>{diaPico ? VAR_AUSENTISMO.valor(diaPico) : "—"}{ausDias > 0 && ` · ${ausDias}d`}</span>
+          </div>
+          <div className="text-[10px] opacity-60 pt-1 border-t border-white/15">
+            ✗ = no cumple (cruzó su umbral). «{esCritico ? "Crítico" : "No crítico"}»: crítico = no cumplir Volumen + Clientes + OTIF el mismo día.
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

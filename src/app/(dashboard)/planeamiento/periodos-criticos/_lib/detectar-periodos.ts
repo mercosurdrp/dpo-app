@@ -13,6 +13,15 @@ import type { DiaCalendario } from "../_components/client"
 // o más. 2 = MEDIO+ (descarta el ruido de los días con una sola variable).
 const MIN_VARS_PERIODO = 2
 
+// Un EVENTO DE EMPRESA (ej. Expoagro) queda FIJO: sus días siempre integran un
+// período sugerido aunque no crucen el umbral de variables, así no dependen del
+// filtro `minVars`. Se marcan con tipo='empresa' en pc_feriados.
+const esEventoEmpresa = (d: DiaCalendario) => d.tipo_feriado === "empresa"
+
+// Un día "ancla" un período si cruza el umbral de variables O es evento de empresa.
+const esAncla = (d: DiaCalendario, minVars: number) =>
+  (d.trigger_count ?? 0) >= minVars || esEventoEmpresa(d)
+
 export type PeriodoCritico = {
   /** "{añoMM}-{idx}" para listar y trackear. */
   id: string
@@ -148,7 +157,7 @@ export function detectarPeriodosCriticos(
   let gap = 0
 
   for (const d of dias) {
-    const esAlto = (d.trigger_count ?? 0) >= minVars
+    const esAlto = esAncla(d, minVars)
 
     if (esAlto) {
       // si hay gap acumulado pero estoy abriendo bloque, los días no-ALTO previos
@@ -169,8 +178,8 @@ export function detectarPeriodosCriticos(
         actual.push(d)
         gap++
       } else {
-        // cortar el bloque, descartar los gap finales para que arranque/cierre en ALTO
-        while (actual.length > 0 && (actual[actual.length - 1].trigger_count ?? 0) < minVars) {
+        // cortar el bloque, descartar los gap finales para que arranque/cierre en ancla
+        while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
           actual.pop()
         }
         if (actual.length > 0) bloques.push(actual)
@@ -180,7 +189,7 @@ export function detectarPeriodosCriticos(
     }
   }
   // Cerrar el último bloque si quedó abierto
-  while (actual.length > 0 && (actual[actual.length - 1].trigger_count ?? 0) < minVars) {
+  while (actual.length > 0 && !esAncla(actual[actual.length - 1], minVars)) {
     actual.pop()
   }
   if (actual.length > 0) bloques.push(actual)
