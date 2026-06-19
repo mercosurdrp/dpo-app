@@ -20,17 +20,24 @@ export function SuenoKpiCard({
   editable,
   destacado = false,
   onEdit,
+  onClick,
 }: {
   nodo: SuenoNodo
   editable: boolean
   destacado?: boolean
   onEdit?: (nodo: SuenoNodo) => void
+  onClick?: (nodo: SuenoNodo) => void
 }) {
   const ramaColor = RAMA_COLOR[nodo.rama]
   const semColor = SEMAFORO_COLOR[nodo.estado]
 
   return (
-    <Card className="relative overflow-hidden rounded-none border-slate-200 p-0 gap-0 shadow-md">
+    <Card
+      onClick={() => onClick?.(nodo)}
+      role={onClick ? "button" : undefined}
+      title={onClick ? "Ver detalle mensual" : undefined}
+      className="relative cursor-pointer overflow-hidden rounded-none border-slate-200 p-0 gap-0 shadow-md transition hover:shadow-xl hover:ring-2 hover:ring-slate-300"
+    >
       {/* barra de color de la rama */}
       <div className="h-1.5 w-full" style={{ backgroundColor: ramaColor }} />
 
@@ -54,7 +61,10 @@ export function SuenoKpiCard({
             {editable && (
               <button
                 type="button"
-                onClick={() => onEdit?.(nodo)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit?.(nodo)
+                }}
                 className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label={`Editar ${nodo.label}`}
               >

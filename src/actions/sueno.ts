@@ -72,6 +72,97 @@ export async function getSuenoArbol(
   }
 }
 
+const MES_LABEL = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
+
+const EXPLICACION: Record<string, string> = {
+  otif: "OTIF = 1 − (bultos rechazados ÷ bultos entregados). Detalle mensual del % logrado y los bultos rechazados de cada mes.",
+  rechazo: "Rechazo = bultos rechazados ÷ bultos entregados (%). Por mes, con los bultos rechazados.",
+  in_full: "In-Full = % de bultos entregados completos (100 − % de rechazo). Detalle por mes.",
+  n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
+  comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
+  sin_dinero: "Rechazos por motivo «Sin dinero», por mes (cantidad y bultos).",
+  cerrado: "Rechazos por motivo «Cerrado», por mes (cantidad y bultos).",
+}
+
+export interface SuenoDetalleMes {
+  mes: number
+  etiqueta: string
+  valor: number
+  detalle: number | null
+}
+
+export interface SuenoDetalle {
+  kpiKey: string
+  label: string
+  unidad: string
+  fuente: "auto" | "manual"
+  explicacion: string
+  meses: SuenoDetalleMes[]
+}
+
+/** Detalle mensual de un KPI (para el modal que explica el número). */
+export async function getSuenoDetalle(
+  kpiKey: string,
+  anio?: number,
+): Promise<{ data: SuenoDetalle } | { error: string }> {
+  try {
+    await requireAuth()
+    const year = anio ?? anioActual()
+    const cfg = ARBOL_SUENO.find((n) => n.key === kpiKey)
+    if (!cfg) return { error: "KPI desconocido" }
+
+    const explicacion = EXPLICACION[kpiKey]
+    if (!explicacion) {
+      // KPI manual: sin detalle automático
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: "manual",
+          explicacion:
+            "Indicador de carga manual: todavía no tiene detalle mensual automático.",
+          meses: [],
+        },
+      }
+    }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc("sueno_kpi_detalle", {
+      p_kpi: kpiKey,
+      p_anio: year,
+    })
+    if (error && error.code !== "PGRST202") return { error: error.message }
+
+    const meses: SuenoDetalleMes[] = ((data ?? []) as {
+      mes: number
+      valor: number | null
+      detalle: number | null
+    }[]).map((r) => ({
+      mes: r.mes,
+      etiqueta: MES_LABEL[r.mes - 1] ?? String(r.mes),
+      valor: Number(r.valor ?? 0),
+      detalle: r.detalle == null ? null : Number(r.detalle),
+    }))
+
+    return {
+      data: {
+        kpiKey,
+        label: cfg.label,
+        unidad: cfg.unidad,
+        fuente: "auto",
+        explicacion,
+        meses,
+      },
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 /** Carga/edita el valor de un KPI. Solo admin. */
 export async function setSuenoValor(input: {
   kpi_key: string

@@ -13,6 +13,7 @@ import {
 } from "@/lib/sueno/arbol-config"
 import { SuenoKpiCard } from "./sueno-kpi-card"
 import { SuenoEditDialog } from "./sueno-edit-dialog"
+import { SuenoDetalleDialog } from "./sueno-detalle-dialog"
 import "./arbol-tree.css"
 
 const RAMA_ORDEN: SuenoRama[] = ["seguridad", "productividad", "cliente"]
@@ -24,12 +25,14 @@ function TreeNode({
   editable,
   isRoot,
   onEdit,
+  onOpen,
 }: {
   node: SuenoNodo
   childrenMap: Map<string, SuenoNodo[]>
   editable: boolean
   isRoot: boolean
   onEdit: (n: SuenoNodo) => void
+  onOpen: (n: SuenoNodo) => void
 }) {
   const kids = childrenMap.get(node.key) ?? []
   return (
@@ -42,6 +45,7 @@ function TreeNode({
             editable={editable}
             destacado={isRoot}
             onEdit={onEdit}
+            onClick={onOpen}
           />
         </div>
       </div>
@@ -55,6 +59,7 @@ function TreeNode({
               editable={editable}
               isRoot={false}
               onEdit={onEdit}
+              onOpen={onOpen}
             />
           ))}
         </ul>
@@ -76,6 +81,8 @@ export function ArbolSueno({
   const [abierto, setAbierto] = useState(true)
   const [editNodo, setEditNodo] = useState<SuenoNodo | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [detalleNodo, setDetalleNodo] = useState<SuenoNodo | null>(null)
+  const [detalleOpen, setDetalleOpen] = useState(false)
 
   const childrenMap = useMemo(() => {
     const m = new Map<string, SuenoNodo[]>()
@@ -101,6 +108,11 @@ export function ArbolSueno({
   function openEdit(n: SuenoNodo) {
     setEditNodo(n)
     setDialogOpen(true)
+  }
+
+  function openDetalle(n: SuenoNodo) {
+    setDetalleNodo(n)
+    setDetalleOpen(true)
   }
 
   return (
@@ -176,6 +188,7 @@ export function ArbolSueno({
                           editable={editable}
                           isRoot
                           onEdit={openEdit}
+                          onOpen={openDetalle}
                         />
                       </ul>
                     </div>
@@ -191,6 +204,12 @@ export function ArbolSueno({
           </div>
         )}
       </Card>
+
+      <SuenoDetalleDialog
+        nodo={detalleNodo}
+        open={detalleOpen}
+        onOpenChange={setDetalleOpen}
+      />
 
       {editable && (
         <SuenoEditDialog
