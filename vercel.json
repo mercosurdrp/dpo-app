@@ -6,6 +6,10 @@
       "schedule": "0 12 * * *"
     },
     {
+      "path": "/api/tareas/cron-vencimientos",
+      "schedule": "15 12 * * *"
+    },
+    {
       "path": "/api/reuniones/cron-crear-diarias",
       "schedule": "0 9 * * *"
     },
