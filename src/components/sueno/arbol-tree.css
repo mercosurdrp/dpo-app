@@ -4,7 +4,7 @@
 .sueno-tree ul {
   display: flex;
   justify-content: center;
-  padding-top: 24px;
+  padding-top: 20px;
   position: relative;
   margin: 0;
   padding-left: 0;
@@ -14,7 +14,7 @@
 .sueno-tree li {
   list-style: none;
   position: relative;
-  padding: 24px 8px 0;
+  padding: 20px 3px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -28,7 +28,7 @@
   top: 0;
   right: 50%;
   width: 50%;
-  height: 24px;
+  height: 20px;
   border-top: 2px solid var(--sueno-line, #cbd5e1);
 }
 .sueno-tree li::after {
@@ -64,7 +64,7 @@
   left: 50%;
   border-left: 2px solid var(--sueno-line, #cbd5e1);
   width: 0;
-  height: 24px;
+  height: 20px;
 }
 
 /* raíz: sin conector entrante arriba */

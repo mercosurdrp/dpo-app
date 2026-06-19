@@ -34,12 +34,12 @@ export function SuenoKpiCard({
       {/* barra de color de la rama */}
       <div className="h-1.5 w-full" style={{ backgroundColor: ramaColor }} />
 
-      <div className={cn("flex flex-col gap-2", destacado ? "p-4" : "p-3")}>
-        <div className="flex items-start justify-between gap-2">
+      <div className={cn("flex flex-col gap-1.5", destacado ? "p-3" : "p-2.5")}>
+        <div className="flex items-start justify-between gap-1.5">
           <span
             className={cn(
               "font-semibold leading-tight text-slate-800",
-              destacado ? "text-base" : "text-sm",
+              destacado ? "text-sm" : "text-[13px]",
             )}
           >
             {nodo.label}
@@ -66,7 +66,7 @@ export function SuenoKpiCard({
 
         <div className="flex items-baseline gap-1">
           <span
-            className={cn("font-bold tabular-nums", destacado ? "text-3xl" : "text-2xl")}
+            className={cn("font-bold tabular-nums", destacado ? "text-2xl" : "text-xl")}
             style={{ color: nodo.valorYtd == null ? "#94A3B8" : semColor }}
           >
             {formatValor(nodo.valorYtd, nodo.unidad)}

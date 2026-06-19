@@ -36,7 +36,7 @@ function TreeNode({
     <li>
       <div className="sueno-node">
         {!isRoot && <span className="sueno-arrow" aria-hidden />}
-        <div className="w-40 sm:w-44">
+        <div className="w-32 sm:w-36">
           <SuenoKpiCard
             nodo={node}
             editable={editable}
@@ -146,42 +146,45 @@ export function ArbolSueno({
         </div>
 
         {abierto && (
-          <div className="space-y-6 p-5">
-            {raices.map((raiz) => (
-              <div key={raiz.key}>
-                <div className="mb-1 flex items-center gap-2">
-                  <span
-                    className="inline-block size-3 rounded-full"
-                    style={{ backgroundColor: RAMA_COLOR[raiz.rama] }}
-                  />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {RAMA_LABEL[raiz.rama]}
-                  </p>
-                </div>
-                <div className="overflow-x-auto pb-2">
-                  <div
-                    className="sueno-tree mx-auto w-max"
-                    style={
-                      {
-                        "--sueno-line": RAMA_COLOR[raiz.rama],
-                      } as React.CSSProperties
-                    }
-                  >
-                    <ul>
-                      <TreeNode
-                        node={raiz}
-                        childrenMap={childrenMap}
-                        editable={editable}
-                        isRoot
-                        onEdit={openEdit}
+          <div className="p-5">
+            {/* 3 ramas lado a lado (como el PPT); scroll horizontal si no entra */}
+            <div className="overflow-x-auto pb-2">
+              <div className="mx-auto flex w-max items-start justify-center gap-5 md:gap-8">
+                {raices.map((raiz) => (
+                  <div key={raiz.key} className="flex flex-col items-center">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span
+                        className="inline-block size-3 rounded-full"
+                        style={{ backgroundColor: RAMA_COLOR[raiz.rama] }}
                       />
-                    </ul>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {RAMA_LABEL[raiz.rama]}
+                      </p>
+                    </div>
+                    <div
+                      className="sueno-tree"
+                      style={
+                        {
+                          "--sueno-line": RAMA_COLOR[raiz.rama],
+                        } as React.CSSProperties
+                      }
+                    >
+                      <ul>
+                        <TreeNode
+                          node={raiz}
+                          childrenMap={childrenMap}
+                          editable={editable}
+                          isRoot
+                          onEdit={openEdit}
+                        />
+                      </ul>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            </div>
 
-            <p className="text-center text-xs text-slate-400">
+            <p className="mt-3 text-center text-xs text-slate-400">
               Las flechas muestran cómo cada indicador se despliega en los del
               nivel siguiente (cascadeo del Sueño).
             </p>
