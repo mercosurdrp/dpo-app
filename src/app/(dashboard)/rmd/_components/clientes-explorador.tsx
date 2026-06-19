@@ -69,7 +69,9 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [busqueda, setBusqueda] = useState("")
   const [fPromotor, setFPromotor] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
-  const [soloDetractoras, setSoloDetractoras] = useState(false)
+  // Por defecto el explorador arranca enfocado en los clientes con puntuaciones
+  // bajas (1-3), que son los accionables; el botón permite ver todos.
+  const [soloDetractoras, setSoloDetractoras] = useState(true)
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("rmd")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())

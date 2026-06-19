@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
 import type { RmdPlan } from "@/actions/rmd-planes"
-import { ClientesExplorador, rmdBadge } from "./clientes-explorador"
+import { ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -395,68 +395,6 @@ export function RmdClient({ data, planesIniciales }: Props) {
         </Card>
       </div>
 
-      {/* RMD por promotor */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            RMD por promotor (clientes que atiende en Chess)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase text-slate-500">
-                  <th className="py-2 pr-2">Promotor</th>
-                  <th className="px-2 py-2 text-right">RMD</th>
-                  <th className="px-2 py-2 text-right">Puntuaciones</th>
-                  <th className="px-2 py-2 text-right">Bajas (1-3)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {por_promotor.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-slate-400">
-                      Sin promotor asignado en los registros de RMD todavía.
-                    </td>
-                  </tr>
-                ) : (
-                  por_promotor.map((p) => (
-                    <tr
-                      key={p.promotor}
-                      className="border-b border-slate-100 last:border-0"
-                    >
-                      <td className="py-1.5 pr-2 font-medium text-slate-800">
-                        {p.promotor}
-                      </td>
-                      <td className="px-2 py-1.5 text-right">
-                        <Badge variant="outline" className={rmdBadge(p.rmd)}>
-                          {p.rmd.toFixed(2)}
-                        </Badge>
-                      </td>
-                      <td className="px-2 py-1.5 text-right text-slate-600">
-                        {p.puntuaciones.toLocaleString("es-AR")}
-                      </td>
-                      <td
-                        className={`px-2 py-1.5 text-right font-medium ${
-                          p.detractoras > 0 ? "text-red-600" : "text-slate-400"
-                        }`}
-                      >
-                        {p.detractoras}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            RMD promedio de los clientes que cada promotor atiende hoy (ruta de
-            preventa vigente en Chess). Ordenado del más crítico al mejor.
-          </p>
-        </CardContent>
-      </Card>
-
       {/* Explorador de toda la base */}
       <ClientesExplorador clientes={clientes} onCrearPlan={planParaCliente} />
 
@@ -492,8 +430,8 @@ export function RmdClient({ data, planesIniciales }: Props) {
           <p>
             Acá se ve <span className="font-semibold">toda la base</span>:
             distribución de puntuaciones, motivos de las bajas, evolución
-            mensual, cruce con el OTIF interno, detalle por promotor y el
-            explorador cliente por cliente. Para cada cliente con RMD bajo se
+            mensual, cruce con el OTIF interno y el explorador cliente por
+            cliente. Para cada cliente con RMD bajo se
             puede abrir un{" "}
             <span className="font-semibold">plan de acción</span> con
             responsable, seguimiento y evidencia, y medir si el RMD mejora.
