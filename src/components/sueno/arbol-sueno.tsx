@@ -1,10 +1,12 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { ChevronDown, ChevronUp, Sparkles } from "lucide-react"
+import { ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { toast } from "sonner"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { refreshSuenoAuto } from "@/actions/sueno"
 import {
   RAMA_COLOR,
   RAMA_LABEL,
@@ -83,6 +85,19 @@ export function ArbolSueno({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detalleNodo, setDetalleNodo] = useState<SuenoNodo | null>(null)
   const [detalleOpen, setDetalleOpen] = useState(false)
+  const [refrescando, startRefresh] = useTransition()
+
+  function refrescar() {
+    startRefresh(async () => {
+      const r = await refreshSuenoAuto(anio)
+      if ("error" in r) {
+        toast.error(r.error)
+      } else {
+        toast.success("Indicadores actualizados")
+        router.refresh()
+      }
+    })
+  }
 
   const childrenMap = useMemo(() => {
     const m = new Map<string, SuenoNodo[]>()
@@ -138,22 +153,41 @@ export function ArbolSueno({
                 </p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAbierto((v) => !v)}
-              className="shrink-0 text-white hover:bg-white/10 hover:text-white"
-            >
-              {abierto ? (
-                <>
-                  Ocultar <ChevronUp className="ml-1 size-4" />
-                </>
-              ) : (
-                <>
-                  Ver indicadores <ChevronDown className="ml-1 size-4" />
-                </>
+            <div className="flex shrink-0 items-center gap-1">
+              {editable && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={refrescar}
+                  disabled={refrescando}
+                  title="Recalcular los indicadores con datos del día"
+                  className="text-white hover:bg-white/10 hover:text-white"
+                >
+                  {refrescando ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  <span className="ml-1 hidden sm:inline">Actualizar</span>
+                </Button>
               )}
-            </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAbierto((v) => !v)}
+                className="text-white hover:bg-white/10 hover:text-white"
+              >
+                {abierto ? (
+                  <>
+                    Ocultar <ChevronUp className="ml-1 size-4" />
+                  </>
+                ) : (
+                  <>
+                    Ver indicadores <ChevronDown className="ml-1 size-4" />
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 

@@ -163,6 +163,24 @@ export async function getSuenoDetalle(
   }
 }
 
+/** Recalcula los KPIs con fuente automática (YTD) desde las tablas vivas. Solo admin. */
+export async function refreshSuenoAuto(
+  anio?: number,
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    const year = anio ?? anioActual()
+    const supabase = await createClient()
+    const { error } = await supabase.rpc("sueno_kpi_refresh", { p_anio: year })
+    if (error) return { error: error.message }
+    revalidatePath("/")
+    revalidatePath("/mis-capacitaciones")
+    return { ok: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 /** Carga/edita el valor de un KPI. Solo admin. */
 export async function setSuenoValor(input: {
   kpi_key: string
