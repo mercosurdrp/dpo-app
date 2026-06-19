@@ -22,6 +22,7 @@ export function puedeOperarAcarreo(
 // admin, esta lista acotada habilita a personas puntuales sin darles rol admin.
 export const INGRESO_OPERADORES = [
   "135@dpo.local", // German Veidoski (habilitado para dar ingreso, sigue siendo auditor)
+  "110@dpo.local", // Marcos Sala (habilitado para dar ingreso, sigue siendo auditor)
 ]
 
 export function puedeDarIngreso(
