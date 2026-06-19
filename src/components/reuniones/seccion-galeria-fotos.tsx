@@ -9,12 +9,14 @@ import {
   Maximize2,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   X,
   type LucideIcon,
 } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   getSeccionFotos,
@@ -51,6 +53,7 @@ export function SeccionGaleriaFotos({
   reunionId,
   reunionTipo = "logistica-ventas",
   seccion,
+  seccionesLectura,
   titulo,
   icono: Icono,
   tema = "rose",
@@ -59,10 +62,15 @@ export function SeccionGaleriaFotos({
   responsables,
   puedeEditar,
   onActividadesChanged,
+  verMasHref,
+  verMasLabel,
 }: {
   reunionId: string
   reunionTipo?: TipoReunion
   seccion: string
+  /** Secciones adicionales cuyas fotos se MUESTRAN además de `seccion` (lo nuevo
+   *  siempre se sube a `seccion`). Permite unificar varias etiquetas en una caja. */
+  seccionesLectura?: string[]
   titulo: string
   icono: LucideIcon
   tema?: TemaGaleria
@@ -71,6 +79,9 @@ export function SeccionGaleriaFotos({
   responsables: ResponsableOpt[]
   puedeEditar: boolean
   onActividadesChanged: () => void
+  /** Si se pasa, muestra un botón en el header que enlaza a esa ruta. */
+  verMasHref?: string
+  verMasLabel?: string
 }) {
   const t = TEMAS[tema]
   const [items, setItems] = useState<SeccionFoto[] | null>(null)
@@ -82,19 +93,33 @@ export function SeccionGaleriaFotos({
   // Índice de la foto abierta en el visor a pantalla completa (null = cerrado)
   const [viewer, setViewer] = useState<number | null>(null)
 
+  // Clave estable de las secciones extra para deps del efecto (evita re-fetch en bucle).
+  const extrasKey = (seccionesLectura ?? []).join(",")
+
   useEffect(() => {
     let cancel = false
     setLoading(true)
-    void getSeccionFotos(reunionId, seccion).then((res) => {
-      if (cancel) return
-      setItems("error" in res ? [] : res.data)
-      if ("error" in res) toast.error(res.error)
-      setLoading(false)
-    })
+    const secciones = [seccion, ...(extrasKey ? extrasKey.split(",") : [])]
+    void Promise.all(secciones.map((s) => getSeccionFotos(reunionId, s))).then(
+      (resultados) => {
+        if (cancel) return
+        const todas: SeccionFoto[] = []
+        let errorMsg: string | null = null
+        for (const res of resultados) {
+          if ("error" in res) errorMsg = res.error
+          else todas.push(...res.data)
+        }
+        // Orden cronológico estable entre todas las secciones unificadas.
+        todas.sort((a, b) => a.created_at.localeCompare(b.created_at))
+        setItems(todas)
+        if (errorMsg) toast.error(errorMsg)
+        setLoading(false)
+      },
+    )
     return () => {
       cancel = true
     }
-  }, [reunionId, seccion, reload])
+  }, [reunionId, seccion, extrasKey, reload])
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -164,8 +189,18 @@ export function SeccionGaleriaFotos({
           <Icono className={`size-5 ${t.icon}`} />
           {titulo}
         </CardTitle>
-        {puedeEditar && (
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {verMasHref && (
+            <Link
+              href={verMasHref}
+              className={buttonVariants({ size: "sm", variant: "outline" }) + " h-8 text-xs"}
+            >
+              <ExternalLink className="mr-1 size-3.5" />
+              {verMasLabel ?? "Ver más"}
+            </Link>
+          )}
+          {puedeEditar && (
+            <>
             <Input
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
@@ -194,8 +229,9 @@ export function SeccionGaleriaFotos({
               )}
               Subir fotos
             </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">

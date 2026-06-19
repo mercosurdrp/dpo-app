@@ -24,7 +24,6 @@ import {
   Plus,
   RefreshCw,
   Settings,
-  Star,
   Trash2,
   UserPlus,
   X,
@@ -989,12 +988,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
     [actividadesAll],
   )
-  const actividadesRmd = useMemo(
-    () => actividadesAll.filter((a) => a.seccion === "rmd"),
-    [actividadesAll],
-  )
-  const actividadesNps = useMemo(
-    () => actividadesAll.filter((a) => a.seccion === "nps"),
+  // RMD y NPS unificados en una sola caja: se muestran juntos los action logs
+  // ya cargados de ambas etiquetas (lo nuevo se crea bajo "rmd").
+  const actividadesRmdNps = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === "rmd" || a.seccion === "nps"),
     [actividadesAll],
   )
 
@@ -1256,35 +1253,23 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* Sección RMD (Rate my Delivery) — subir fotos para analizar + action log */}
+      {/* Sección unificada RMD + NPS — fotos y action log de ambas etiquetas
+          en una sola caja; el botón lleva al dashboard completo de NPS. */}
       {detalle.tipo === "logistica-ventas" && (
         <SeccionGaleriaFotos
           reunionId={detalle.id}
           seccion="rmd"
-          titulo="RMD (Rate my Delivery)"
-          icono={Star}
-          tema="violet"
-          emptyHint="Sin fotos cargadas. Subí las capturas de Rate my Delivery (RMD) para analizarlas acá."
-          actividades={actividadesRmd}
-          responsables={responsables}
-          puedeEditar={puedeEditar}
-          onActividadesChanged={refrescar}
-        />
-      )}
-
-      {/* Sección NPS — subir fotos para analizar + action log */}
-      {detalle.tipo === "logistica-ventas" && (
-        <SeccionGaleriaFotos
-          reunionId={detalle.id}
-          seccion="nps"
-          titulo="NPS"
+          seccionesLectura={["nps"]}
+          titulo="RMD y NPS"
           icono={Gauge}
-          tema="sky"
-          emptyHint="Sin fotos cargadas. Subí las capturas de NPS para analizarlas acá."
-          actividades={actividadesNps}
+          tema="violet"
+          emptyHint="Sin fotos cargadas. Subí las capturas de RMD (Rate my Delivery) y NPS para analizarlas acá."
+          actividades={actividadesRmdNps}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
+          verMasHref={IS_MISIONES ? undefined : "/nps"}
+          verMasLabel="Ver NPS completo"
         />
       )}
 
