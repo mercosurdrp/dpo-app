@@ -6,6 +6,7 @@ import { getMiDashboard } from "@/actions/mi-asistencia"
 import { getMiEntrega } from "@/actions/mi-entrega"
 import { getMisSobrecargas } from "@/actions/sobrecargas"
 import { IS_MISIONES } from "@/lib/empresa"
+import { SuenoSection } from "@/components/sueno/sueno-section"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
@@ -37,15 +38,18 @@ export default async function MisCapacitacionesPage() {
   const sobrecargas = sobreRes && "data" in sobreRes ? sobreRes.data : null
 
   return (
-    <MisCapacitacionesClient
-      capacitaciones={result.data}
-      nombre={profile?.nombre ?? ""}
-      reunion={reunion}
-      reunionWarehouse={reunionWarehouse}
-      reunionLogistica={reunionLogistica}
-      dashboard={dashboard}
-      entrega={entrega}
-      sobrecargas={sobrecargas}
-    />
+    <>
+      <SuenoSection />
+      <MisCapacitacionesClient
+        capacitaciones={result.data}
+        nombre={profile?.nombre ?? ""}
+        reunion={reunion}
+        reunionWarehouse={reunionWarehouse}
+        reunionLogistica={reunionLogistica}
+        dashboard={dashboard}
+        entrega={entrega}
+        sobrecargas={sobrecargas}
+      />
+    </>
   )
 }

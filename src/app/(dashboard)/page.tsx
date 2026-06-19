@@ -2,6 +2,7 @@ import { getDashboardData } from "@/actions/dashboard"
 import { getResumenPuntos } from "@/actions/dpo-evidencia"
 import { createClient } from "@/lib/supabase/server"
 import type { DpoPuntoResumen, Pilar } from "@/types/database"
+import { SuenoSection } from "@/components/sueno/sueno-section"
 import { DashboardClient } from "./dashboard-client"
 
 export default async function DashboardPage() {
@@ -27,10 +28,13 @@ export default async function DashboardPage() {
     "data" in resumenRes ? resumenRes.data : []
 
   return (
-    <DashboardClient
-      data={data}
-      pilares={(pilaresRes.data ?? []) as Pilar[]}
-      resumenPuntos={resumenPuntos}
-    />
+    <>
+      <SuenoSection />
+      <DashboardClient
+        data={data}
+        pilares={(pilaresRes.data ?? []) as Pilar[]}
+        resumenPuntos={resumenPuntos}
+      />
+    </>
   )
 }
