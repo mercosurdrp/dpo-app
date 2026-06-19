@@ -12,7 +12,7 @@ import { Pool } from "pg"
 
 let _pool: Pool | null = null
 
-function getPool(): Pool {
+export function getPool(): Pool {
   if (!_pool) {
     const url = process.env.MERCOSUR_DB_URL
     if (!url) {

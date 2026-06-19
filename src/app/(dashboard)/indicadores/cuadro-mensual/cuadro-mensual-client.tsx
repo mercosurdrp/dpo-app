@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +12,10 @@ import {
   type CuadroMensual,
   type FilaIndicador,
 } from "@/lib/indicadores/cuadro-mensual"
+import { BultosDetalleDialog } from "@/components/indicadores/bultos-detalle-dialog"
+
+// Indicador cuyas celdas son clickeables (abren el modal de detalle).
+const INDICADOR_DETALLE = "bultos_vendidos"
 
 interface Props {
   data: CuadroMensual
@@ -18,6 +23,9 @@ interface Props {
 
 export function CuadroMensualClient({ data }: Props) {
   const { meses, mesActual, filas, generadoEn } = data
+  const [detalle, setDetalle] = useState<{ mes: string; bultos: number | null } | null>(
+    null,
+  )
 
   async function exportar() {
     const XLSX = await import("xlsx")
@@ -122,12 +130,20 @@ export function CuadroMensualClient({ data }: Props) {
                   filas={filasPilar}
                   meses={meses}
                   totalCols={meses.length + 2}
+                  onBultosClick={(mes, bultos) => setDetalle({ mes, bultos })}
                 />
               )
             })}
           </tbody>
         </table>
       </div>
+
+      <BultosDetalleDialog
+        open={detalle !== null}
+        onOpenChange={(o) => !o && setDetalle(null)}
+        mes={detalle?.mes ?? null}
+        bultosCelda={detalle?.bultos ?? null}
+      />
 
       {/* Leyenda */}
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
@@ -157,12 +173,14 @@ function PilarBloque({
   filas,
   meses,
   totalCols,
+  onBultosClick,
 }: {
   pilar: string
   color: string
   filas: FilaIndicador[]
   meses: string[]
   totalCols: number
+  onBultosClick: (mes: string, bultos: number | null) => void
 }) {
   return (
     <>
@@ -177,6 +195,7 @@ function PilarBloque({
       </tr>
       {filas.map((fila) => {
         const metaDefault = fila.def.meta
+        const esDetalle = fila.def.id === INDICADOR_DETALLE
         return (
           <tr
             key={fila.def.id}
@@ -197,6 +216,7 @@ function PilarBloque({
               const celda = fila.celdas[m]
               const valor = celda?.valor ?? null
               const meta = celda?.meta ?? metaDefault
+              const clickeable = esDetalle && valor !== null
               return (
                 <td
                   key={m}
@@ -204,7 +224,15 @@ function PilarBloque({
                     valor,
                     meta,
                     fila.def.mejor_si,
-                  )}`}
+                  )} ${
+                    clickeable
+                      ? "cursor-pointer font-medium text-blue-700 underline decoration-dotted underline-offset-2 hover:bg-blue-50"
+                      : ""
+                  }`}
+                  onClick={
+                    clickeable ? () => onBultosClick(m, valor) : undefined
+                  }
+                  title={clickeable ? "Ver desglose del mes" : undefined}
                 >
                   {formatValor(valor, fila.def.unidad)}
                 </td>

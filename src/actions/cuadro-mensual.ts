@@ -16,6 +16,12 @@ import {
   type CeldaMes,
   type FilaIndicador,
 } from "@/lib/indicadores/cuadro-mensual"
+import {
+  clasificarFamilia,
+  armarItems,
+  ORDEN_FAMILIAS,
+  type DetalleBultos,
+} from "@/lib/indicadores/cuadro-mensual-detalle"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -328,4 +334,86 @@ export async function getCuadroMensualIndicadores(): Promise<
       generadoEn: new Date().toISOString(),
     },
   }
+}
+
+/**
+ * Desglose de Bultos vendidos de un mes por FAMILIA de producto
+ * (Cervezas/Aguas/Gaseosas/Otros). Cruza ventas_diarias_sku (bultos por SKU,
+ * misma base que la celda) con la clasificación uneg/segmento de chess_articulos.
+ * Cuadra con la celda porque incluye "Otros" (los SKU sin clasificación).
+ */
+export async function getDetalleBultosFamilia(
+  mes: string,
+): Promise<Result<DetalleBultos>> {
+  await requireAuth()
+  if (IS_MISIONES) {
+    return { error: "Solo disponible en Pampeana." }
+  }
+  if (!/^\d{4}-\d{2}$/.test(mes)) {
+    return { error: "Mes inválido." }
+  }
+
+  const dias = diasDelMes(mes)
+  const desde = dias[0]
+  const hasta = dias[dias.length - 1]
+  const supabase = await createClient()
+
+  // 1. Bultos por id_articulo del mes (paginado: >1000 filas/mes).
+  const bultosPorArticulo = new Map<number, number>()
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("ventas_diarias_sku")
+      .select("id_articulo, bultos")
+      .gte("fecha", desde)
+      .lte("fecha", hasta)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    for (const r of data as Array<{
+      id_articulo: number
+      bultos: number | null
+    }>) {
+      const b = Number(r.bultos ?? 0)
+      if (Number.isFinite(b)) {
+        bultosPorArticulo.set(
+          r.id_articulo,
+          (bultosPorArticulo.get(r.id_articulo) ?? 0) + b,
+        )
+      }
+    }
+    if (data.length < PAGE) break
+  }
+
+  // 2. Clasificación uneg/segmento de los SKU presentes (chunks por el límite de IN).
+  const ids = [...bultosPorArticulo.keys()]
+  const clasePorArticulo = new Map<
+    number,
+    { uneg: string | null; segmento: string | null }
+  >()
+  const CHUNK = 400
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data } = await supabase
+      .from("chess_articulos")
+      .select("id_articulo, uneg, segmento")
+      .in("id_articulo", ids.slice(i, i + CHUNK))
+    for (const a of (data ?? []) as Array<{
+      id_articulo: number
+      uneg: string | null
+      segmento: string | null
+    }>) {
+      clasePorArticulo.set(a.id_articulo, { uneg: a.uneg, segmento: a.segmento })
+    }
+  }
+
+  // 3. Sumar por familia.
+  const porFamilia: Record<string, number> = {}
+  for (const [id, bultos] of bultosPorArticulo) {
+    const c = clasePorArticulo.get(id)
+    const fam = clasificarFamilia(c?.uneg ?? null, c?.segmento ?? null)
+    porFamilia[fam] = (porFamilia[fam] ?? 0) + bultos
+  }
+
+  const { items, total } = armarItems(porFamilia, ORDEN_FAMILIAS)
+  return { data: { mes, total, items } }
 }
