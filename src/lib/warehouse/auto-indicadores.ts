@@ -8,7 +8,7 @@
  *   - /api/shared/load?module=ocupacion    → Capacidad utilizada por día
  *   - /api/shared/load?module=productividad-picking → bul/HH por operario
  *   - Google Sheet "Errores picking"        → errores por operario
- * y computa por día apertura por operador (Troli/Galvez/Ovejero).
+ * y computa por día apertura por operador (Troli/Galvez/Ovejero/Selenzo).
  *
  * Esto reemplaza al esquema anterior que hacía 4 fetches en cada apertura
  * de reunión y tardaba 5-15s en cold start. Ahora la apertura solo lee 1
@@ -29,7 +29,12 @@ const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.verc
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
 
-export const OPERADORES_APERTURA = ["Troli", "Galvez", "Ovejero"] as const
+export const OPERADORES_APERTURA = [
+  "Troli",
+  "Galvez",
+  "Ovejero",
+  "Selenzo",
+] as const
 export type OperadorApertura = (typeof OPERADORES_APERTURA)[number]
 
 /**

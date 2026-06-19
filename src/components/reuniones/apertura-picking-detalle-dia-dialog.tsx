@@ -79,6 +79,7 @@ export function AperturaPickingDetalleDiaDialog({
     Troli: "",
     Galvez: "",
     Ovejero: "",
+    Selenzo: "",
   })
   const [saving, startSaving] = useTransition()
   const [savingFor, setSavingFor] = useState<OperadorApertura | null>(null)
@@ -97,6 +98,7 @@ export function AperturaPickingDetalleDiaDialog({
         Troli: "",
         Galvez: "",
         Ovejero: "",
+        Selenzo: "",
       }
       for (const fila of res.data.filas) {
         if (fila.bul_hh_manual !== null && fila.bul_hh_manual !== undefined) {
