@@ -1560,7 +1560,7 @@ export function ReunionDetallePageClient({
           reunionId={detalle.id}
           minutos={
             detalle.tipo === "matinal-distribucion"
-              ? 10
+              ? 12
               : detalle.tipo === "warehouse"
                 ? 15
                 : 30
