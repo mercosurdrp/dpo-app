@@ -7,9 +7,13 @@ import {
   puedeEditarPresupuesto,
 } from "@/actions/presupuesto"
 import { listIniciativas } from "@/actions/presupuesto-iniciativas"
+import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { getProfile } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import type { IniciativaAhorroConDetalle } from "@/types/database"
+import type {
+  IniciativaAhorroConDetalle,
+  PlanAccionPresupuestoConDetalle,
+} from "@/types/database"
 import { PresupuestoClient } from "./presupuesto-client"
 
 export default async function PresupuestoPage({
@@ -51,6 +55,7 @@ export default async function PresupuestoPage({
   }
 
   const mostrarIniciativas = !IS_MISIONES
+  const mostrarPlanesAccion = !IS_MISIONES
 
   const [
     anualRes,
@@ -59,6 +64,7 @@ export default async function PresupuestoPage({
     responsablesRes,
     puedeEditar,
     iniciativasRes,
+    planesAccionRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -68,6 +74,9 @@ export default async function PresupuestoPage({
     mostrarIniciativas
       ? listIniciativas(anioActivo)
       : Promise.resolve<{ data: IniciativaAhorroConDetalle[] }>({ data: [] }),
+    mostrarPlanesAccion
+      ? listPlanesAccion(anioActivo)
+      : Promise.resolve<{ data: PlanAccionPresupuestoConDetalle[] }>({ data: [] }),
   ])
 
   if ("error" in tareasRes) {
@@ -91,6 +100,8 @@ export default async function PresupuestoPage({
       currentProfileId={profile?.id ?? null}
       mostrarIniciativas={mostrarIniciativas}
       iniciativas={"data" in iniciativasRes ? iniciativasRes.data : []}
+      mostrarPlanesAccion={mostrarPlanesAccion}
+      planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
     />
   )
 }

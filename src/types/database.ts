@@ -2698,6 +2698,61 @@ export interface IniciativaAhorroConDetalle extends IniciativaAhorro {
 }
 
 // =============================================
+// Planes de Acción del Presupuesto — solo Pampeana
+// =============================================
+export type EstadoPlanAccion =
+  | "abierto"
+  | "en_progreso"
+  | "cerrado"
+  | "cancelado"
+
+export type EstadoPasoPlanAccion =
+  | "pendiente"
+  | "en_progreso"
+  | "completado"
+
+export interface PlanAccionPaso {
+  id: string
+  plan_id: string
+  orden: number
+  que: string
+  como: string | null
+  responsable_id: string | null
+  fecha_limite: string | null
+  estado: EstadoPasoPlanAccion
+  avance: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  responsable_nombre: string | null
+}
+
+export interface PlanAccionPresupuesto {
+  id: string
+  anio: number
+  tarea_id: string | null
+  titulo: string
+  desvio_detectado: string | null
+  causa_raiz: string | null
+  responsable_id: string | null
+  fecha_limite: string | null
+  estado: EstadoPlanAccion
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PlanAccionPresupuestoConDetalle extends PlanAccionPresupuesto {
+  responsable_nombre: string | null
+  responsable_email: string | null
+  // Datos de la tarea de análisis vinculada (si la hay)
+  tarea_rubro: string | null
+  tarea_mes: number | null
+  pasos: PlanAccionPaso[]
+}
+
+// =============================================
 // Reuniones (módulo /reuniones)
 // =============================================
 export type TipoReunion =

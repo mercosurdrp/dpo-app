@@ -42,6 +42,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import { IniciativasAhorroSection } from "@/components/presupuesto/iniciativas-ahorro-section"
+import { PlanesAccionSection } from "@/components/presupuesto/planes-accion-section"
 import {
   eliminarEerrAnual,
   eliminarTarea,
@@ -56,6 +57,7 @@ import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
+  PlanAccionPresupuestoConDetalle,
   PresupuestoAnual,
   PresupuestoEerrAnual,
   PresupuestoTareaConResponsable,
@@ -78,6 +80,8 @@ interface Props {
   currentProfileId: string | null
   mostrarIniciativas: boolean
   iniciativas: IniciativaAhorroConDetalle[]
+  mostrarPlanesAccion: boolean
+  planesAccion: PlanAccionPresupuestoConDetalle[]
 }
 
 const MESES = [
@@ -187,6 +191,8 @@ export function PresupuestoClient({
   currentProfileId,
   mostrarIniciativas,
   iniciativas,
+  mostrarPlanesAccion,
+  planesAccion,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -345,6 +351,9 @@ export function PresupuestoClient({
           <TabsTrigger value="presupuesto">Presupuesto</TabsTrigger>
           {mostrarIniciativas && (
             <TabsTrigger value="iniciativas">Iniciativas de Ahorro</TabsTrigger>
+          )}
+          {mostrarPlanesAccion && (
+            <TabsTrigger value="planes-accion">Plan de Acción</TabsTrigger>
           )}
         </TabsList>
 
@@ -798,6 +807,18 @@ export function PresupuestoClient({
               anio={anioActivo}
               iniciativas={iniciativas}
               responsables={responsables}
+              puedeEditar={puedeEditar}
+            />
+          </TabsContent>
+        )}
+
+        {mostrarPlanesAccion && (
+          <TabsContent value="planes-accion" className="mt-4">
+            <PlanesAccionSection
+              anio={anioActivo}
+              planes={planesAccion}
+              responsables={responsables}
+              tareas={tareas}
               puedeEditar={puedeEditar}
             />
           </TabsContent>
