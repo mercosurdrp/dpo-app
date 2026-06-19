@@ -78,6 +78,7 @@ import {
 import { TableroOperativo } from "./tablero-operativo"
 import { ChecklistsMtto } from "./checklists-mtto"
 import { GestionMtto } from "./gestion-mtto"
+import { PiramideDefectos } from "./piramide-defectos"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -345,6 +346,7 @@ export function MantenimientoClient({
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
           <TabsTrigger value="checklists">Check lists</TabsTrigger>
+          <TabsTrigger value="piramide">Pirámide de defectos</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           <TabsTrigger value="plan">Estado del plan</TabsTrigger>
           <TabsTrigger value="gestion">Carga / Gestión</TabsTrigger>
@@ -365,6 +367,14 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Pirámide de defectos ============ */}
+        <TabsContent value="piramide" className="space-y-6">
+          <PiramideDefectos
+            itemsNoOk={checklists.itemsNoOk}
+            mantenimientos={mantenimientos}
           />
         </TabsContent>
 
