@@ -44,6 +44,11 @@ interface OwdKpis {
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
+  // Cumplimiento por ruteador del mes actual (1 OWD/mes a cada uno).
+  // empleados_permitidos del template = ruteadores a observar.
+  porRuteador: Array<{ nombre: string; obsMes: number; cubierto: boolean }>
+  ruteadoresTotal: number
+  ruteadoresCubiertos: number
 }
 
 // =============================================
@@ -940,7 +945,7 @@ export async function getOwdKpis(
     const [tplRes, obsRes, itemsRes] = await Promise.all([
       supabase
         .from("owd_templates")
-        .select("meta_mensual, meta_cumplimiento_pct")
+        .select("*")
         .eq("id", templateId)
         .maybeSingle(),
       supabase
@@ -955,6 +960,10 @@ export async function getOwdKpis(
 
     const metaMensual = tplRes.data?.meta_mensual ?? 8
     const metaCumplimiento = Number(tplRes.data?.meta_cumplimiento_pct ?? 90)
+    // Ruteadores asignados al punto (defensivo: en esquemas sin la columna queda [])
+    const permitidos = ((tplRes.data?.empleados_permitidos ?? []) as string[])
+      .map((n) => (n || "").trim())
+      .filter(Boolean)
 
     const observaciones = (obsRes.data || []) as OwdObservacion[]
     const items = (itemsRes.data || []) as OwdItem[]
@@ -968,6 +977,13 @@ export async function getOwdKpis(
       mensual: [],
       porEtapa: [],
       itemsMasFallados: [],
+      porRuteador: permitidos.map((nombre) => ({
+        nombre,
+        obsMes: 0,
+        cubierto: false,
+      })),
+      ruteadoresTotal: permitidos.length,
+      ruteadoresCubiertos: 0,
     }
     if (observaciones.length === 0) return { data: emptyKpis }
 
@@ -993,10 +1009,25 @@ export async function getOwdKpis(
     const now = new Date()
     const mesActual = now.getMonth() + 1
     const yearActual = now.getFullYear()
-    const obsMesActual = observaciones.filter((o) => {
+    const obsDelMes = observaciones.filter((o) => {
       const d = new Date(o.fecha + "T12:00:00")
       return d.getMonth() + 1 === mesActual && d.getFullYear() === yearActual
-    }).length
+    })
+    const obsMesActual = obsDelMes.length
+
+    // Cobertura por ruteador del mes actual: cuántas OWD tuvo cada permitido
+    const obsPorEmpleadoMes = new Map<string, number>()
+    for (const o of obsDelMes) {
+      const e = (o.empleado_observado || "").trim()
+      if (!e) continue
+      obsPorEmpleadoMes.set(e, (obsPorEmpleadoMes.get(e) ?? 0) + 1)
+    }
+    const porRuteador = permitidos.map((nombre) => {
+      const obsMes = obsPorEmpleadoMes.get(nombre) ?? 0
+      return { nombre, obsMes, cubierto: obsMes >= 1 }
+    })
+    const ruteadoresTotal = permitidos.length
+    const ruteadoresCubiertos = porRuteador.filter((r) => r.cubierto).length
 
     const mensualMap = new Map<
       string,
@@ -1074,6 +1105,9 @@ export async function getOwdKpis(
         mensual,
         porEtapa,
         itemsMasFallados,
+        porRuteador,
+        ruteadoresTotal,
+        ruteadoresCubiertos,
       },
     }
   } catch (e) {

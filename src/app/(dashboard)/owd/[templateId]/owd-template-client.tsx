@@ -39,6 +39,9 @@ interface KpiData {
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
+  porRuteador: Array<{ nombre: string; obsMes: number; cubierto: boolean }>
+  ruteadoresTotal: number
+  ruteadoresCubiertos: number
 }
 
 interface Contexto {
@@ -188,6 +191,65 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
           </CardContent>
         </Card>
       </div>
+
+      {/* Cumplimiento por ruteador — meta 1 OWD/mes a cada uno */}
+      {kpis.ruteadoresTotal > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-base">
+                Cumplimiento por ruteador — mes actual
+              </CardTitle>
+              <Badge
+                className={
+                  kpis.ruteadoresCubiertos >= kpis.ruteadoresTotal
+                    ? "bg-green-100 text-green-700 hover:bg-green-100"
+                    : "bg-amber-100 text-amber-700 hover:bg-amber-100"
+                }
+              >
+                {kpis.ruteadoresCubiertos}/{kpis.ruteadoresTotal} con su OWD
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Meta: 1 OWD por mes a cada ruteador.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {kpis.porRuteador.map((r) => (
+                <div
+                  key={r.nombre}
+                  className={`flex items-center justify-between rounded-lg border p-3 ${
+                    r.cubierto
+                      ? "border-green-200 bg-green-50"
+                      : "border-amber-200 bg-amber-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`size-2.5 rounded-full ${
+                        r.cubierto ? "bg-green-500" : "bg-amber-400"
+                      }`}
+                    />
+                    <span className="text-sm font-medium text-slate-800">
+                      {r.nombre}
+                    </span>
+                  </div>
+                  {r.cubierto ? (
+                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                      {r.obsMes === 1 ? "Hecha" : `${r.obsMes} hechas`}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                      Pendiente
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts */}
       <div className="grid gap-4 lg:grid-cols-2">
