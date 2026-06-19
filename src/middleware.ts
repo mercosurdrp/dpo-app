@@ -31,7 +31,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/cloudfleet/cron-sync" ||
     pathname === "/api/planeamiento/periodos-criticos/volumen/cron-sync" ||
     pathname === "/api/wa-bot/sync-clientes" ||
-    pathname === "/api/wa-bot/webhook"
+    pathname === "/api/wa-bot/webhook" ||
+    pathname === "/api/indicadores/sync-familias"
   ) {
     return NextResponse.next()
   }
