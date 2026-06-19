@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronUp, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import {
-  NIVEL_LABEL,
   RAMA_COLOR,
   RAMA_LABEL,
   type SuenoNodo,
@@ -15,9 +13,55 @@ import {
 } from "@/lib/sueno/arbol-config"
 import { SuenoKpiCard } from "./sueno-kpi-card"
 import { SuenoEditDialog } from "./sueno-edit-dialog"
+import "./arbol-tree.css"
 
 const RAMA_ORDEN: SuenoRama[] = ["seguridad", "productividad", "cliente"]
-const NIVELES_HIJOS = ["gestion", "operacional", "estacion"] as const
+
+/** Nodo recursivo del árbol (tarjeta + flecha + hijos en cascada). */
+function TreeNode({
+  node,
+  childrenMap,
+  editable,
+  isRoot,
+  onEdit,
+}: {
+  node: SuenoNodo
+  childrenMap: Map<string, SuenoNodo[]>
+  editable: boolean
+  isRoot: boolean
+  onEdit: (n: SuenoNodo) => void
+}) {
+  const kids = childrenMap.get(node.key) ?? []
+  return (
+    <li>
+      <div className="sueno-node">
+        {!isRoot && <span className="sueno-arrow" aria-hidden />}
+        <div className="w-40 sm:w-44">
+          <SuenoKpiCard
+            nodo={node}
+            editable={editable}
+            destacado={isRoot}
+            onEdit={onEdit}
+          />
+        </div>
+      </div>
+      {kids.length > 0 && (
+        <ul>
+          {kids.map((k) => (
+            <TreeNode
+              key={k.key}
+              node={k}
+              childrenMap={childrenMap}
+              editable={editable}
+              isRoot={false}
+              onEdit={onEdit}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
+}
 
 export function ArbolSueno({
   nodos,
@@ -33,23 +77,26 @@ export function ArbolSueno({
   const [editNodo, setEditNodo] = useState<SuenoNodo | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const estrategicos = useMemo(
+  const childrenMap = useMemo(() => {
+    const m = new Map<string, SuenoNodo[]>()
+    for (const n of nodos) {
+      if (!n.parentKey) continue
+      const arr = m.get(n.parentKey) ?? []
+      arr.push(n)
+      m.set(n.parentKey, arr)
+    }
+    return m
+  }, [nodos])
+
+  const raices = useMemo(
     () =>
-      [...nodos.filter((n) => n.nivel === "estrategia")].sort(
-        (a, b) => RAMA_ORDEN.indexOf(a.rama) - RAMA_ORDEN.indexOf(b.rama),
-      ),
+      nodos
+        .filter((n) => !n.parentKey)
+        .sort(
+          (a, b) => RAMA_ORDEN.indexOf(a.rama) - RAMA_ORDEN.indexOf(b.rama),
+        ),
     [nodos],
   )
-
-  const porNivel = useMemo(() => {
-    const map: Record<string, SuenoNodo[]> = {}
-    for (const niv of NIVELES_HIJOS) {
-      map[niv] = nodos
-        .filter((n) => n.nivel === niv)
-        .sort((a, b) => RAMA_ORDEN.indexOf(a.rama) - RAMA_ORDEN.indexOf(b.rama))
-    }
-    return map
-  }, [nodos])
 
   function openEdit(n: SuenoNodo) {
     setEditNodo(n)
@@ -58,8 +105,8 @@ export function ArbolSueno({
 
   return (
     <section className="mb-6">
-      {/* Encabezado del Sueño */}
       <Card className="overflow-hidden border-slate-200 p-0 gap-0">
+        {/* Banner del Sueño */}
         <div className="bg-gradient-to-r from-[#0a1628] to-[#1a2d52] px-5 py-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -96,67 +143,48 @@ export function ArbolSueno({
               )}
             </Button>
           </div>
-
-          {/* Leyenda de ramas */}
-          <div className="mt-3 flex flex-wrap gap-3">
-            {RAMA_ORDEN.map((r) => (
-              <span key={r} className="flex items-center gap-1.5 text-xs text-slate-200">
-                <span
-                  className="inline-block size-2.5 rounded-full"
-                  style={{ backgroundColor: RAMA_COLOR[r] }}
-                />
-                {RAMA_LABEL[r]}
-              </span>
-            ))}
-          </div>
         </div>
 
         {abierto && (
-          <div className="space-y-5 p-5">
-            {/* KPIs estratégicos (Resultados) */}
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {NIVEL_LABEL.estrategia}
-              </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {estrategicos.map((n) => (
-                  <SuenoKpiCard
-                    key={n.key}
-                    nodo={n}
-                    editable={editable}
-                    destacado
-                    onEdit={openEdit}
+          <div className="space-y-6 p-5">
+            {raices.map((raiz) => (
+              <div key={raiz.key}>
+                <div className="mb-1 flex items-center gap-2">
+                  <span
+                    className="inline-block size-3 rounded-full"
+                    style={{ backgroundColor: RAMA_COLOR[raiz.rama] }}
                   />
-                ))}
-              </div>
-            </div>
-
-            {/* Resto de niveles en cascada */}
-            {NIVELES_HIJOS.map((niv) => (
-              <div key={niv}>
-                <div className="mb-2 flex items-center gap-2">
-                  <ChevronDown className="size-4 text-slate-300" />
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {NIVEL_LABEL[niv]}
+                    {RAMA_LABEL[raiz.rama]}
                   </p>
                 </div>
-                <div
-                  className={cn(
-                    "grid grid-cols-2 gap-3 sm:grid-cols-3",
-                    "lg:grid-cols-4 xl:grid-cols-5",
-                  )}
-                >
-                  {porNivel[niv].map((n) => (
-                    <SuenoKpiCard
-                      key={n.key}
-                      nodo={n}
-                      editable={editable}
-                      onEdit={openEdit}
-                    />
-                  ))}
+                <div className="overflow-x-auto pb-2">
+                  <div
+                    className="sueno-tree mx-auto w-max"
+                    style={
+                      {
+                        "--sueno-line": RAMA_COLOR[raiz.rama],
+                      } as React.CSSProperties
+                    }
+                  >
+                    <ul>
+                      <TreeNode
+                        node={raiz}
+                        childrenMap={childrenMap}
+                        editable={editable}
+                        isRoot
+                        onEdit={openEdit}
+                      />
+                    </ul>
+                  </div>
                 </div>
               </div>
             ))}
+
+            <p className="text-center text-xs text-slate-400">
+              Las flechas muestran cómo cada indicador se despliega en los del
+              nivel siguiente (cascadeo del Sueño).
+            </p>
           </div>
         )}
       </Card>
