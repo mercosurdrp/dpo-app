@@ -42,41 +42,31 @@ const PERIODO_OPCIONES: { value: PeriodoKey; label: string }[] = [
   { value: "todo", label: "Histórico completo" },
 ]
 
-// Niveles de la pirámide, de la BASE (ancho, leve) a la PUNTA (angosto, grave).
-// El ancho es fijo por nivel para que siempre se vea como pirámide; el dato real
-// es el número de eventos.
+// Niveles de la pirámide, de la PUNTA (grave) hacia la BASE (leve).
 const NIVELES = [
   {
     key: "averia",
     titulo: "Avería grave / fuera de servicio",
     detalle: "Correctivos con la unidad parada en taller",
-    ancho: "34%",
-    barra: "bg-red-500",
-    chip: "border-red-200 bg-red-100 text-red-700",
+    color: "#C0392B",
   },
   {
     key: "correctivo",
     titulo: "Falla → correctivo en taller",
     detalle: "Mantenimientos correctivos registrados",
-    ancho: "56%",
-    barra: "bg-orange-500",
-    chip: "border-orange-200 bg-orange-100 text-orange-700",
+    color: "#E67E22",
   },
   {
     key: "critico",
     titulo: "Defecto crítico detectado",
     detalle: "Ítems críticos no conformes en checklist",
-    ancho: "78%",
-    barra: "bg-amber-400",
-    chip: "border-amber-200 bg-amber-100 text-amber-800",
+    color: "#F1C40F",
   },
   {
     key: "leve",
     titulo: "Observaciones / defectos leves",
     detalle: "Ítems no conformes no críticos en checklist",
-    ancho: "100%",
-    barra: "bg-sky-400",
-    chip: "border-sky-200 bg-sky-100 text-sky-700",
+    color: "#5DADE2",
   },
 ] as const
 
@@ -86,7 +76,6 @@ function dentroDePeriodo(fechaISO: string, periodo: PeriodoKey): boolean {
   if (!f) return false
   const hoy = new Date()
   if (periodo === "anio") return f.slice(0, 4) === String(hoy.getFullYear())
-  // últimos 12 meses
   const limite = new Date(hoy)
   limite.setMonth(limite.getMonth() - 12)
   return f >= limite.toISOString().slice(0, 10)
@@ -107,7 +96,6 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       averia: correctivos.filter((m) => m.estado === "en_taller").length,
     }
 
-    // Defectos por unidad (ítems no conformes), top
     const porUnidad = new Map<string, { leves: number; criticos: number }>()
     for (const i of items) {
       const u = porUnidad.get(i.dominio) ?? { leves: 0, criticos: 0 }
@@ -128,33 +116,31 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
     return { conteo, ranking, totalDefectos, ratioFalla }
   }, [itemsNoOk, mantenimientos, periodo])
 
-  return (
-    <div className="space-y-6">
-      {/* Intro */}
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <div className="flex gap-3">
-          <Info className="size-5 shrink-0 text-blue-600" />
-          <div className="text-sm text-slate-700">
-            <p className="font-semibold text-slate-900">
-              Pirámide de defectos de flota
-            </p>
-            <p className="mt-1">
-              Misma lógica que la pirámide de seguridad: en la{" "}
-              <strong>base</strong> los defectos leves detectados en los
-              checklists y, hacia la <strong>punta</strong>, los eventos graves.
-              Por cada avería grave hay debajo muchos defectos menores —
-              gestionando la base se previene la punta.
-            </p>
-          </div>
-        </div>
-      </div>
+  // ===== Geometría de la pirámide (SVG compacto) =====
+  const NIV = NIVELES.length // 4
+  const VIEW_W = 560
+  const VIEW_H = 230
+  const ALTO_NIV = VIEW_H / NIV
+  const PYR_LEFT = 24
+  const PYR_W = 300
+  const PYR_CX = PYR_LEFT + PYR_W / 2
+  const PYR_RIGHT = PYR_LEFT + PYR_W
+  const TOP_W = 0.16
 
-      {/* Selector de período */}
+  function widths(n: number): { top: number; bottom: number } {
+    const top = TOP_W + (1 - TOP_W) * (n / NIV)
+    const bottom = TOP_W + (1 - TOP_W) * ((n + 1) / NIV)
+    return { top, bottom }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Encabezado + período */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-700">
-          Composición de defectos
+          Pirámide de defectos de flota
         </h2>
-        <div className="w-52">
+        <div className="w-48">
           <Select
             value={periodo}
             onValueChange={(v: string | null) =>
@@ -176,73 +162,101 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
       </div>
 
       {/* Pirámide */}
-      <Card>
-        <CardContent className="space-y-2 py-6">
-          {NIVELES.map((n) => {
-            const cant = datos.conteo[n.key] ?? 0
-            return (
-              <div
-                key={n.key}
-                className="mx-auto flex items-center justify-center"
-                style={{ width: n.ancho }}
-              >
-                <div
-                  className={`flex w-full items-center justify-between gap-3 rounded-md px-4 py-3 text-white ${n.barra}`}
-                >
-                  <span className="text-sm font-medium drop-shadow-sm">
+      <div className="rounded-lg border bg-card p-3">
+        <div className="mx-auto max-w-xl">
+          <svg
+            viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+            className="w-full"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {NIVELES.map((n, i) => {
+              const { top, bottom } = widths(i)
+              const yTop = i * ALTO_NIV
+              const yBot = (i + 1) * ALTO_NIV
+              const xTopL = PYR_CX - (top * PYR_W) / 2
+              const xTopR = PYR_CX + (top * PYR_W) / 2
+              const xBotL = PYR_CX - (bottom * PYR_W) / 2
+              const xBotR = PYR_CX + (bottom * PYR_W) / 2
+              const points = `${xTopL},${yTop} ${xTopR},${yTop} ${xBotR},${yBot} ${xBotL},${yBot}`
+              const count = datos.conteo[n.key] ?? 0
+              const cy = yTop + ALTO_NIV / 2
+              return (
+                <g key={n.key}>
+                  <polygon
+                    points={points}
+                    fill={n.color}
+                    stroke="#ffffff"
+                    strokeWidth={1.2}
+                  />
+                  {/* Conteo en el centro */}
+                  <text
+                    x={PYR_CX}
+                    y={cy + 5}
+                    textAnchor="middle"
+                    fontSize={i === 0 ? 13 : 16}
+                    fontWeight={900}
+                    fill="#FFFFFF"
+                    style={{
+                      paintOrder: "stroke",
+                      stroke: "rgba(0,0,0,0.35)",
+                      strokeWidth: 2.5,
+                    }}
+                  >
+                    {count}
+                  </text>
+                  {/* Etiqueta a la derecha */}
+                  <text
+                    x={PYR_RIGHT + 10}
+                    y={cy + 4}
+                    textAnchor="start"
+                    fontSize={11}
+                    fontWeight={500}
+                    fill="#374151"
+                  >
                     {n.titulo}
-                  </span>
-                  <span className="text-lg font-bold tabular-nums">
-                    {fmtNum(cant)}
-                  </span>
-                </div>
-              </div>
-            )
-          })}
-          {/* Leyenda de fuentes */}
-          <div className="mx-auto mt-3 max-w-2xl space-y-1 pt-2 text-center text-xs text-muted-foreground">
-            {NIVELES.map((n) => (
-              <p key={n.key}>
-                <span className="font-medium text-slate-600">{n.titulo}:</span>{" "}
-                {n.detalle}
-              </p>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                  </text>
+                </g>
+              )
+            })}
+          </svg>
+        </div>
+        <p className="mt-1 flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+          <Info className="size-3" />
+          De la base (defectos leves de checklist) a la punta (avería grave).
+          Gestionando la base se previene la punta.
+        </p>
+      </div>
 
       {/* Indicadores */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">Defectos detectados</p>
-            <p className="text-lg font-bold text-slate-900">
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Defectos</p>
+            <p className="text-base font-bold text-slate-900">
               {fmtNum(datos.totalDefectos)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">de ellos, críticos</p>
-            <p className="text-lg font-bold text-amber-700">
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Críticos</p>
+            <p className="text-base font-bold text-amber-700">
               {fmtNum(datos.conteo.critico)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="py-4">
+          <CardContent className="py-3">
             <p className="text-xs text-muted-foreground">Correctivos</p>
-            <p className="text-lg font-bold text-orange-700">
+            <p className="text-base font-bold text-orange-700">
               {fmtNum(datos.conteo.correctivo)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">
-              Defectos por correctivo
-            </p>
-            <p className="text-lg font-bold text-slate-900">
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Defectos / correctivo</p>
+            <p className="text-base font-bold text-slate-900">
               {datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "—"}
             </p>
           </CardContent>
@@ -251,14 +265,14 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
 
       {/* Ranking por unidad */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700">
             Defectos por unidad
           </CardTitle>
         </CardHeader>
         <CardContent>
           {datos.ranking.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
+            <p className="py-5 text-center text-sm text-muted-foreground">
               Sin defectos registrados en checklists para el período
               seleccionado.
             </p>
