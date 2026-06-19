@@ -15,6 +15,7 @@ export interface ClasificacionEnvaseRow {
   cajones_total: number
   cajones_rotos: number
   botellas_rotas: number
+  creado_por?: string | null // id del perfil que cargó el registro
 }
 
 export interface ProductividadTotales {
@@ -37,11 +38,22 @@ export interface ProductividadDia extends ProductividadTotales {
   fecha: string // YYYY-MM-DD
 }
 
+// Productividad de una persona en una fecha (una fila por persona × día).
+// Permite a los consumidores agregar por el período/mes que quieran.
+export interface ProductividadPersonaDia extends ProductividadTotales {
+  fecha: string // YYYY-MM-DD
+  creado_por: string | null
+  nombre: string // nombre del perfil, ya resuelto y remapeado
+}
+
 export interface ProductividadResp {
   rango: { desde: string; hasta: string }
   totales: ProductividadTotales
   serie: ProductividadDia[] // por fecha, ascendente
+  por_persona_dia: ProductividadPersonaDia[] // por persona × fecha
 }
+
+const SIN_ASIGNAR = "Sin asignar"
 
 /**
  * Duración en horas entre dos horas "HH:MM[:SS]". Si la hora de fin es menor o
@@ -102,12 +114,15 @@ function totalesDesde(rows: ClasificacionEnvaseRow[]): ProductividadTotales {
 }
 
 /**
- * Agrega un conjunto de cargas en totales del período + serie diaria.
+ * Agrega un conjunto de cargas en totales del período + serie diaria + una
+ * serie por persona × día. `nombresPorId` mapea creado_por → nombre a mostrar
+ * (ya remapeado por quien llama); si falta, se rotula "Sin asignar".
  */
 export function agregarProductividad(
   rows: ClasificacionEnvaseRow[],
   desde: string,
-  hasta: string
+  hasta: string,
+  nombresPorId: Record<string, string> = {}
 ): ProductividadResp {
   const porDia = new Map<string, ClasificacionEnvaseRow[]>()
   for (const r of rows) {
@@ -120,9 +135,29 @@ export function agregarProductividad(
     .sort()
     .map((fecha) => ({ fecha, ...totalesDesde(porDia.get(fecha)!) }))
 
+  // Agrupar por (creado_por, fecha) para la serie por persona × día.
+  const porPersonaDia = new Map<string, ClasificacionEnvaseRow[]>()
+  for (const r of rows) {
+    const pid = r.creado_por ?? ""
+    const key = `${pid}|${r.fecha}`
+    const arr = porPersonaDia.get(key) ?? []
+    arr.push(r)
+    porPersonaDia.set(key, arr)
+  }
+
+  const por_persona_dia: ProductividadPersonaDia[] = Array.from(porPersonaDia.keys())
+    .sort()
+    .map((key) => {
+      const grupo = porPersonaDia.get(key)!
+      const creado_por = grupo[0].creado_por ?? null
+      const nombre = (creado_por && nombresPorId[creado_por]) || SIN_ASIGNAR
+      return { fecha: grupo[0].fecha, creado_por, nombre, ...totalesDesde(grupo) }
+    })
+
   return {
     rango: { desde, hasta },
     totales: totalesDesde(rows),
     serie,
+    por_persona_dia,
   }
 }

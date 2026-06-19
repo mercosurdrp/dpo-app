@@ -24,6 +24,13 @@ function rangoMesActualARG(): { desde: string; hasta: string } {
 
 const esFecha = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s)
 
+// Remapeo de autoría: algunos usuarios físicos cargan con la cuenta de otro.
+// Clave = id del perfil dueño de la cuenta; valor = nombre real a atribuir.
+// Pablo Selenzo usa la cuenta de CEJAS EZEQUIEL (42323256@mercosur.local).
+const REMAP_NOMBRE: Record<string, string> = {
+  "d15c10b7-b45c-4fcf-b603-9175ab9a2cea": "Pablo Selenzo",
+}
+
 export async function GET(request: NextRequest) {
   // En el deploy compartido de Misiones esta tabla no existe.
   if (IS_MISIONES) {
@@ -50,7 +57,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("clasificacion_envases")
     .select(
-      "fecha, hora_inicio, hora_fin, pallets_total, pallets_rotos, cajones_total, cajones_rotos, botellas_rotas"
+      "fecha, hora_inicio, hora_fin, pallets_total, pallets_rotos, cajones_total, cajones_rotos, botellas_rotas, creado_por"
     )
     .gte("fecha", desde)
     .lte("fecha", hasta)
@@ -60,10 +67,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const productividad = agregarProductividad(
-    (data ?? []) as ClasificacionEnvaseRow[],
-    desde,
-    hasta
-  )
+  const rows = (data ?? []) as ClasificacionEnvaseRow[]
+
+  // Resolver nombres de los perfiles que cargaron, y aplicar el remapeo de autoría.
+  const ids = [...new Set(rows.map((r) => r.creado_por).filter((v): v is string => !!v))]
+  const nombresPorId: Record<string, string> = {}
+  if (ids.length > 0) {
+    const { data: perfiles } = await supabase
+      .from("profiles")
+      .select("id, nombre")
+      .in("id", ids)
+    for (const p of perfiles ?? []) {
+      nombresPorId[p.id as string] = (p.nombre as string) || "Sin nombre"
+    }
+  }
+  for (const [id, nombre] of Object.entries(REMAP_NOMBRE)) {
+    if (id in nombresPorId || ids.includes(id)) nombresPorId[id] = nombre
+  }
+
+  const productividad = agregarProductividad(rows, desde, hasta, nombresPorId)
   return NextResponse.json(productividad)
 }
