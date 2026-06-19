@@ -137,6 +137,13 @@ export const navItems: NavItem[] = [
     hideForEmpleado: true,
   },
   {
+    label: "RMD",
+    href: "/rmd",
+    icon: <Truck className="size-5" />,
+    pampeanaOnly: true,
+    hideForEmpleado: true,
+  },
+  {
     label: "OWD",
     href: "/owd",
     icon: <ClipboardCheck className="size-5" />,
