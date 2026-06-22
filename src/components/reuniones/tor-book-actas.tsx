@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react"
 import { puedeEditarReuniones } from "@/actions/reuniones"
+import { TemarioReunion } from "./temario-reunion"
 
 type Seccion = "participante" | "regla" | "entrada" | "salida" | "kpi" | "temario"
 
@@ -276,7 +277,10 @@ export function TorBookActas({
 
               {/* Listas — en 2 columnas, cada sección recuadrada */}
               <div className="grid items-start gap-3 md:grid-cols-2">
-                {SECCIONES.map((s) => (
+                {(tipo === "logistica-ventas"
+                  ? SECCIONES.filter((s) => s.key !== "temario")
+                  : SECCIONES
+                ).map((s) => (
                   <ListaSeccion
                     key={s.key}
                     titulo={s.titulo}
@@ -290,6 +294,23 @@ export function TorBookActas({
                   />
                 ))}
               </div>
+
+              {/* Temario del día (full-width) — solo en Logística-Ventas.
+                  Una sola lista: arriba los temas con responsable (TOR) y,
+                  debajo, las herramientas/links que antes vivían afuera. */}
+              {tipo === "logistica-ventas" && (
+                <ListaSeccion
+                  titulo="Temario del día"
+                  conResponsable
+                  items={itemsDe("temario")}
+                  editando={editando}
+                  onTexto={(idx, v) => setTexto("temario", idx, v)}
+                  onResponsable={(idx, v) => setResponsable("temario", idx, v)}
+                  onQuitar={(idx) => quitar("temario", idx)}
+                  onAgregar={() => agregar("temario")}
+                  footer={<TemarioReunion embebido editando={editando} />}
+                />
+              )}
             </>
           )}
         </CardContent>
@@ -342,6 +363,7 @@ function ListaSeccion({
   onResponsable,
   onQuitar,
   onAgregar,
+  footer,
 }: {
   titulo: string
   conResponsable: boolean
@@ -351,6 +373,7 @@ function ListaSeccion({
   onResponsable: (idx: number, v: string) => void
   onQuitar: (idx: number) => void
   onAgregar: () => void
+  footer?: ReactNode
 }) {
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
@@ -414,6 +437,9 @@ function ListaSeccion({
         >
           <Plus className="size-3.5" /> Agregar
         </Button>
+      )}
+      {footer && (
+        <div className="mt-3 border-t border-slate-200 pt-3">{footer}</div>
       )}
     </div>
   )

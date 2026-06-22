@@ -11,7 +11,13 @@ const API = "/api/planeamiento/periodos-criticos/temario"
 
 type Item = { id: string; bloque: string; titulo: string; url: string | null; orden: number }
 
-export function TemarioReunion() {
+export function TemarioReunion({
+  embebido = false,
+  editando = false,
+}: {
+  embebido?: boolean
+  editando?: boolean
+}) {
   const [items, setItems] = useState<Item[]>([])
   const [cargado, setCargado] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -73,13 +79,14 @@ export function TemarioReunion() {
 
   if (!cargado || items.length === 0) return null
 
-  return (
-    <Card className="mt-4">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2"><ListChecks className="w-4 h-4 text-violet-600" /> Temario de la reunión</CardTitle>
-        <p className="text-xs text-slate-500">Temas a tocar, con acceso directo a la herramienta de cada uno. Editá el link con el ícono 🔗 (admin/supervisor).</p>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  // Embebido en la TOR: los controles (editar link, agregar tema) se habilitan
+  // solo cuando la TOR está en modo edición; eliminar queda deshabilitado.
+  // Standalone (sin embeber): controles siempre visibles, como antes.
+  const controles = embebido ? editando : true
+  const permitirEliminar = !embebido
+
+  const cuerpo = (
+    <div className="space-y-4">
         {bloques.map((b) => (
           <div key={b.nombre}>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1.5">{b.nombre}</p>
@@ -93,39 +100,58 @@ export function TemarioReunion() {
                       <ExternalLink className="w-3 h-3" /> abrir
                     </a>
                   )}
-                  <span className="ml-auto flex items-center gap-1">
-                    {editId === it.id ? (
-                      <span className="flex items-center gap-1">
-                        <Input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} placeholder="https://…" className="h-7 w-56 text-xs" autoFocus />
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-emerald-700" onClick={() => guardarUrl(it.id)}><Check className="w-4 h-4" /></Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500" onClick={() => { setEditId(null); setEditUrl("") }}><X className="w-4 h-4" /></Button>
-                      </span>
-                    ) : (
-                      <>
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-xs text-slate-500" title={it.url ? "Editar link" : "Agregar link"} onClick={() => { setEditId(it.id); setEditUrl(it.url ?? "") }}>
-                          <Link2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50" title="Quitar tema" onClick={() => borrar(it.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                      </>
-                    )}
-                  </span>
+                  {controles && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {editId === it.id ? (
+                        <span className="flex items-center gap-1">
+                          <Input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} placeholder="https://…" className="h-7 w-56 text-xs" autoFocus />
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-emerald-700" onClick={() => guardarUrl(it.id)}><Check className="w-4 h-4" /></Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500" onClick={() => { setEditId(null); setEditUrl("") }}><X className="w-4 h-4" /></Button>
+                        </span>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="h-7 px-1.5 text-xs text-slate-500" title={it.url ? "Editar link" : "Agregar link"} onClick={() => { setEditId(it.id); setEditUrl(it.url ?? "") }}>
+                            <Link2 className="w-3.5 h-3.5" />
+                          </Button>
+                          {permitirEliminar && (
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50" title="Quitar tema" onClick={() => borrar(it.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-            {nuevoEn === b.nombre ? (
-              <div className="flex items-center gap-1 mt-1.5">
-                <Input value={nuevoTitulo} onChange={(e) => setNuevoTitulo(e.target.value)} placeholder="Nuevo tema…" className="h-7 text-xs" autoFocus />
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-emerald-700" onClick={() => agregar(b.nombre)}>Agregar</Button>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500" onClick={() => { setNuevoEn(null); setNuevoTitulo("") }}><X className="w-4 h-4" /></Button>
-              </div>
-            ) : (
-              <Button size="sm" variant="ghost" className="h-6 px-1 mt-1 text-xs text-slate-400 hover:text-slate-700" onClick={() => { setNuevoEn(b.nombre); setNuevoTitulo("") }}>
-                <Plus className="w-3 h-3 mr-1" /> tema
-              </Button>
-            )}
+            {controles &&
+              (nuevoEn === b.nombre ? (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <Input value={nuevoTitulo} onChange={(e) => setNuevoTitulo(e.target.value)} placeholder="Nuevo tema…" className="h-7 text-xs" autoFocus />
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-emerald-700" onClick={() => agregar(b.nombre)}>Agregar</Button>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500" onClick={() => { setNuevoEn(null); setNuevoTitulo("") }}><X className="w-4 h-4" /></Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="ghost" className="h-6 px-1 mt-1 text-xs text-slate-400 hover:text-slate-700" onClick={() => { setNuevoEn(b.nombre); setNuevoTitulo("") }}>
+                  <Plus className="w-3 h-3 mr-1" /> tema
+                </Button>
+              ))}
           </div>
         ))}
-      </CardContent>
+    </div>
+  )
+
+  // Embebido dentro de la caja "Temario del día" de la TOR: solo el cuerpo
+  // (los bloques con links), sin caja ni título propios — el encabezado lo
+  // pone la sección que lo contiene.
+  if (embebido) return cuerpo
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2"><ListChecks className="w-4 h-4 text-violet-600" /> Temario de la reunión</CardTitle>
+        <p className="text-xs text-slate-500">Temas a tocar, con acceso directo a la herramienta de cada uno. Editá el link con el ícono 🔗 (admin/supervisor).</p>
+      </CardHeader>
+      <CardContent>{cuerpo}</CardContent>
     </Card>
   )
 }

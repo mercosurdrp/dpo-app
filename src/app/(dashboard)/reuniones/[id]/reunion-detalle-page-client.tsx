@@ -1601,13 +1601,20 @@ export function ReunionDetallePageClient({
       )}
 
       {/* TOR (Book de Actas) — dentro de la reunión, debajo del header
-          (fecha + contador). Solo logística Misiones; desplegable y editable. */}
-      {IS_MISIONES && detalle.tipo === "logistica" && (
-        <TorBookActas
-          tipo="logistica"
-          titulo="TOR · Book de Actas (Reunión Diaria de Logística)"
-        />
-      )}
+          (fecha + contador). Logística y Logística-Ventas en Misiones;
+          desplegable y editable. */}
+      {IS_MISIONES &&
+        (detalle.tipo === "logistica" ||
+          detalle.tipo === "logistica-ventas") && (
+          <TorBookActas
+            tipo={detalle.tipo}
+            titulo={
+              detalle.tipo === "logistica"
+                ? "TOR · Book de Actas (Reunión Diaria de Logística)"
+                : "TOR · Book de Actas (Reunión Ventas-Logística-Compras)"
+            }
+          />
+        )}
 
       {/* ASISTENCIA — desplegable: se ve el % de avance y, al abrir, el detalle */}
       <Card>
