@@ -289,9 +289,10 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       }
       cur.suma += f.puntuacion
       cur.n += 1
-      if (f.puntuacion <= 3) {
-        cur.det += 1
-        // filas asc por fecha → guardamos la baja más reciente
+      if (f.puntuacion <= 3) cur.det += 1
+      // "baja" para el explorador/recuperados = 1-4 (solo el 5 es bueno).
+      // filas asc por fecha → guardamos la baja más reciente.
+      if (f.puntuacion <= 4) {
         cur.ultimaBajaPunt = f.puntuacion
         cur.ultimaBajaFecha = f.fecha_puntuacion
       }
@@ -349,7 +350,8 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
     const choferCli = new Map(clientes.map((c) => [c.cod_cliente, c.chofer]))
     const recuperados: RmdRecuperado[] = [...porCli.entries()]
       .filter(
-        ([, c]) => c.ultimaPunt >= 4 && c.ultimaBajaFecha != null,
+        // recuperado = su última puntuación es 5 (el tope) y antes tuvo una baja (1-4)
+        ([, c]) => c.ultimaPunt === 5 && c.ultimaBajaFecha != null,
       )
       .map(([cod, c]) => ({
         cod_cliente: cod,

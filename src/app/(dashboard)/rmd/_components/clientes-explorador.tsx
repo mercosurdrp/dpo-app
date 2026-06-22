@@ -69,8 +69,8 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [busqueda, setBusqueda] = useState("")
   const [fChofer, setFChofer] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
-  // Por defecto el explorador arranca enfocado en los clientes con puntuaciones
-  // bajas (1-3), que son los accionables; el botón permite ver todos.
+  // Por defecto el explorador arranca enfocado en los clientes cuya ÚLTIMA
+  // puntuación es baja (1-4) — los accionables hoy; el botón permite ver todos.
   const [soloDetractoras, setSoloDetractoras] = useState(true)
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("rmd")
@@ -98,7 +98,9 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
       (c) =>
         (fChofer === TODOS || c.chofer === fChofer) &&
         (fLocalidad === TODOS || c.localidad === fLocalidad) &&
-        (!soloDetractoras || c.detractoras > 0) &&
+        // "baja puntuación" = su ÚLTIMA puntuación es 1-4 (los que se
+        // recuperaron a 5 quedan fuera y aparecen en su propia vitrina)
+        (!soloDetractoras || c.ultima_puntuacion <= 4) &&
         (!q ||
           c.nombre_cliente.toLowerCase().includes(q) ||
           String(c.cod_cliente).includes(q)),
@@ -283,7 +285,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             className="h-8 text-xs"
             onClick={() => setSoloDetractoras((v) => !v)}
           >
-            Con puntuaciones bajas
+            Baja puntuación (últ. 1-4)
           </Button>
           {hayFiltros && (
             <Button
