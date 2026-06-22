@@ -1,9 +1,22 @@
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
-import { getOwdTemplateById, getOwdKpis, getObservaciones } from "@/actions/owd"
+import {
+  getOwdTemplateById,
+  getOwdKpis,
+  getObservaciones,
+  getOwdTendenciaOperarios,
+  getOwdPlanes,
+  getEmpleadosActivos,
+} from "@/actions/owd"
+import { listResponsablesPosibles } from "@/actions/presupuesto"
 import { requireAuth } from "@/lib/session"
+import { IS_MISIONES } from "@/lib/empresa"
 import { OwdTemplateClient } from "./owd-template-client"
+import { OwdAnalisisClient } from "./owd-analisis-client"
+
+const ROLES_GESTION = ["admin", "supervisor", "admin_rrhh"]
 
 export default async function OwdTemplatePage({
   params,
@@ -39,6 +52,36 @@ export default async function OwdTemplatePage({
 
   const observaciones = "data" in obsRes ? obsRes.data : []
 
+  // Análisis (tendencia por operario + planes de acción): solo Pampeana.
+  let analisis: ReactNode = null
+  if (!IS_MISIONES) {
+    const [tendRes, planesRes, empRes, respRes] = await Promise.all([
+      getOwdTendenciaOperarios(templateId),
+      getOwdPlanes(templateId),
+      getEmpleadosActivos(),
+      listResponsablesPosibles(),
+    ])
+    analisis = (
+      <OwdAnalisisClient
+        templateId={templateId}
+        meta={Number(tplRes.data.template.meta_cumplimiento_pct)}
+        tendencias={"data" in tendRes ? tendRes.data : []}
+        planes={"data" in planesRes ? planesRes.data : []}
+        observaciones={observaciones.map((o) => ({
+          id: o.id,
+          fecha: o.fecha,
+          empleado_observado: o.empleado_observado,
+          pct_cumplimiento: Number(o.pct_cumplimiento),
+        }))}
+        empleados={"data" in empRes ? empRes.data.map((e) => e.nombre) : []}
+        responsables={
+          "data" in respRes ? respRes.data.map((r) => ({ id: r.id, nombre: r.nombre })) : []
+        }
+        canManage={ROLES_GESTION.includes(profile.role)}
+      />
+    )
+  }
+
   return (
     <div className="space-y-4">
       <Link
@@ -54,6 +97,7 @@ export default async function OwdTemplatePage({
         observaciones={observaciones}
         isAdmin={profile.role === "admin"}
       />
+      {analisis}
     </div>
   )
 }

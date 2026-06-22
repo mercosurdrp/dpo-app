@@ -20,10 +20,19 @@ import type {
   OwdRespuesta,
   OwdRespuestaFoto,
   OwdResultado,
+  OwdResponsable,
   OwdMensual,
   OwdItemStats,
   OwdTemplate,
   OwdTemplateResumen,
+  OwdTendenciaOperario,
+  OwdEstadoOperario,
+  OwdPlan,
+  OwdPlanAvance,
+  OwdPlanConDetalle,
+  OwdPlanOrigen,
+  OwdPlanEstado,
+  OwdPlanPrioridad,
 } from "@/types/database"
 
 // pilar_codigo usado en el feed de actividad / evidencias: nombre en minúsculas sin acentos
@@ -397,6 +406,7 @@ interface CreateItemInput {
   texto: string
   descripcion?: string
   critico?: boolean
+  responsable?: OwdResponsable
   orden?: number
 }
 
@@ -427,6 +437,7 @@ export async function createOwdItem(
         texto: input.texto.trim(),
         descripcion: input.descripcion?.trim() || null,
         critico: input.critico ?? false,
+        responsable: input.responsable ?? "operario",
         orden,
       })
       .select("*")
@@ -445,6 +456,7 @@ export async function updateOwdItem(
     texto: string
     descripcion: string | null
     critico: boolean
+    responsable: OwdResponsable
     orden: number
     active: boolean
   }>,
@@ -1110,6 +1122,402 @@ export async function getOwdKpis(
         ruteadoresCubiertos,
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// =============================================
+// TENDENCIA POR OPERARIO
+// El cumplimiento del operario se calcula SOLO sobre ítems atribuibles a él
+// (responsable = 'operario'). Así no lo "marca en rojo" por cosas del SDR o
+// del proceso/admin. Detecta promedio bajo meta, tendencia descendente,
+// críticos en NO OK e ítems que falla de forma recurrente.
+// =============================================
+
+export async function getOwdTendenciaOperarios(
+  templateId: string,
+): Promise<{ data: OwdTendenciaOperario[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const [tplRes, obsRes, itemsRes, planesRes] = await Promise.all([
+      supabase
+        .from("owd_templates")
+        .select("meta_cumplimiento_pct")
+        .eq("id", templateId)
+        .maybeSingle(),
+      supabase
+        .from("owd_observaciones")
+        .select("id, empleado_observado, rol_empleado, fecha, pct_cumplimiento")
+        .eq("template_id", templateId)
+        .order("fecha", { ascending: true }),
+      supabase.from("owd_items").select("*").eq("template_id", templateId).eq("active", true),
+      supabase
+        .from("owd_planes")
+        .select("operario, estado")
+        .eq("template_id", templateId)
+        .eq("origen", "operario"),
+    ])
+    if (obsRes.error) return { error: obsRes.error.message }
+    if (itemsRes.error) return { error: itemsRes.error.message }
+
+    const meta = Number(tplRes.data?.meta_cumplimiento_pct ?? 90)
+    const observaciones = (obsRes.data || []) as Array<{
+      id: string
+      empleado_observado: string
+      rol_empleado: string | null
+      fecha: string
+      pct_cumplimiento: number
+    }>
+    const items = (itemsRes.data || []) as OwdItem[]
+    if (observaciones.length === 0) return { data: [] }
+
+    // Ítems atribuibles al operario
+    const itemsOperario = new Map(
+      items.filter((i) => (i.responsable ?? "operario") === "operario").map((i) => [i.id, i]),
+    )
+
+    // Respuestas de la plantilla
+    const itemIds = items.map((i) => i.id)
+    let respuestas: OwdRespuesta[] = []
+    if (itemIds.length > 0) {
+      const { data: respData, error: errR } = await supabase
+        .from("owd_respuestas")
+        .select("observacion_id, item_id, resultado")
+        .in("item_id", itemIds)
+      if (errR) return { error: errR.message }
+      respuestas = (respData || []) as OwdRespuesta[]
+    }
+
+    // Agrupo respuestas por observación
+    const respPorObs = new Map<string, OwdRespuesta[]>()
+    for (const r of respuestas) {
+      if (!respPorObs.has(r.observacion_id)) respPorObs.set(r.observacion_id, [])
+      respPorObs.get(r.observacion_id)!.push(r)
+    }
+
+    // Planes de mejora abiertos por operario
+    const planesAbiertosPorOp = new Map<string, number>()
+    for (const p of (planesRes.data || []) as Array<{ operario: string | null; estado: string }>) {
+      if (!p.operario || p.estado === "completado") continue
+      planesAbiertosPorOp.set(p.operario, (planesAbiertosPorOp.get(p.operario) ?? 0) + 1)
+    }
+
+    // % por observación contando SOLO ítems del operario
+    interface ObsCalc {
+      fecha: string
+      pctOp: number | null
+      pctGlobal: number
+      criticoNook: boolean
+      itemsNook: string[] // item_id de ítems del operario en NO OK
+    }
+    const porOperario = new Map<
+      string,
+      { rol: string | null; obs: ObsCalc[]; itemNookCount: Map<string, number> }
+    >()
+
+    for (const o of observaciones) {
+      const rs = respPorObs.get(o.id) || []
+      let ok = 0
+      let nook = 0
+      let criticoNook = false
+      const itemsNook: string[] = []
+      for (const r of rs) {
+        const it = itemsOperario.get(r.item_id)
+        if (!it) continue // ítem no atribuible al operario
+        if (r.resultado === "ok") ok += 1
+        else if (r.resultado === "nook") {
+          nook += 1
+          itemsNook.push(r.item_id)
+          if (it.critico) criticoNook = true
+        }
+      }
+      const denom = ok + nook
+      const pctOp = denom === 0 ? null : Math.round((ok / denom) * 10000) / 100
+      const entry =
+        porOperario.get(o.empleado_observado) ??
+        { rol: o.rol_empleado, obs: [], itemNookCount: new Map<string, number>() }
+      entry.obs.push({
+        fecha: o.fecha,
+        pctOp,
+        pctGlobal: Number(o.pct_cumplimiento),
+        criticoNook,
+        itemsNook,
+      })
+      for (const id of itemsNook) entry.itemNookCount.set(id, (entry.itemNookCount.get(id) ?? 0) + 1)
+      porOperario.set(o.empleado_observado, entry)
+    }
+
+    const itemsById = new Map(items.map((i) => [i.id, i]))
+
+    const result: OwdTendenciaOperario[] = Array.from(porOperario.entries()).map(
+      ([operario, e]) => {
+        const conPct = e.obs.filter((o) => o.pctOp != null) as Array<ObsCalc & { pctOp: number }>
+        const auditorias = e.obs.length
+        const promPropio =
+          conPct.length === 0
+            ? 100
+            : Math.round((conPct.reduce((a, b) => a + b.pctOp, 0) / conPct.length) * 100) / 100
+        const promGlobal =
+          Math.round((e.obs.reduce((a, b) => a + b.pctGlobal, 0) / auditorias) * 100) / 100
+        const primera = conPct.length ? conPct[0].pctOp : promPropio
+        const ultima = conPct.length ? conPct[conPct.length - 1].pctOp : promPropio
+        const tendencia: OwdTendenciaOperario["tendencia"] =
+          conPct.length >= 2 && ultima < primera - 0.01
+            ? "baja"
+            : conPct.length >= 2 && ultima > primera + 0.01
+            ? "sube"
+            : "estable"
+        const algunCritico = e.obs.some((o) => o.criticoNook)
+        const itemsRecurrentes = Array.from(e.itemNookCount.entries())
+          .map(([id, veces]) => ({
+            texto: itemsById.get(id)?.texto ?? "—",
+            critico: itemsById.get(id)?.critico ?? false,
+            veces,
+          }))
+          .sort((a, b) => b.veces - a.veces)
+        const itemRepetido = itemsRecurrentes.find((i) => i.veces >= 2)
+
+        const motivos: string[] = []
+        let estado: OwdEstadoOperario = "verde"
+
+        if (promPropio < meta) {
+          estado = "rojo"
+          motivos.push(`Promedio propio ${promPropio.toFixed(1)}% < meta ${meta.toFixed(0)}%`)
+        }
+        if (algunCritico) {
+          estado = "rojo"
+          motivos.push("Falló un ítem crítico (NO OK)")
+        }
+        if (tendencia === "baja" && ultima < meta) {
+          estado = "rojo"
+          motivos.push(`Tendencia descendente (${primera.toFixed(0)}% → ${ultima.toFixed(0)}%)`)
+        }
+        if (itemRepetido) {
+          estado = "rojo"
+          motivos.push(`Repite el mismo desvío: "${itemRepetido.texto}" (${itemRepetido.veces}×)`)
+        }
+
+        if (estado === "verde") {
+          if (tendencia === "baja") {
+            estado = "amarillo"
+            motivos.push(`Empeoró respecto de la anterior (${primera.toFixed(0)}% → ${ultima.toFixed(0)}%)`)
+          } else if (conPct.some((o) => o.pctOp < 100)) {
+            estado = "amarillo"
+            motivos.push("Tuvo algún desvío propio (sobre la meta)")
+          }
+        }
+
+        return {
+          operario,
+          rol: e.rol,
+          auditorias,
+          promPropio,
+          promGlobal,
+          primera,
+          ultima,
+          tendencia,
+          estado,
+          motivos,
+          itemsRecurrentes: itemsRecurrentes.slice(0, 5),
+          planesAbiertos: planesAbiertosPorOp.get(operario) ?? 0,
+        }
+      },
+    )
+
+    const ordenEstado: Record<OwdEstadoOperario, number> = { rojo: 0, amarillo: 1, verde: 2 }
+    result.sort(
+      (a, b) => ordenEstado[a.estado] - ordenEstado[b.estado] || a.promPropio - b.promPropio,
+    )
+
+    return { data: result }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// =============================================
+// PLANES DE ACCIÓN OWD
+// Dos niveles: puntual (sobre una observación) o de mejora (sobre un operario).
+// =============================================
+
+export async function getOwdPlanes(
+  templateId: string,
+): Promise<{ data: OwdPlanConDetalle[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: planesData, error } = await supabase
+      .from("owd_planes")
+      .select("*")
+      .eq("template_id", templateId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+    const planes = (planesData || []) as OwdPlan[]
+    if (planes.length === 0) return { data: [] }
+
+    const planIds = planes.map((p) => p.id)
+    const respIds = planes.map((p) => p.responsable_id).filter(Boolean) as string[]
+
+    const [avancesRes, profilesRes] = await Promise.all([
+      supabase
+        .from("owd_planes_avances")
+        .select("*")
+        .in("plan_id", planIds)
+        .order("created_at", { ascending: false }),
+      respIds.length
+        ? supabase.from("profiles").select("id, nombre").in("id", respIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+    if (avancesRes.error) return { error: avancesRes.error.message }
+
+    const avances = (avancesRes.data || []) as OwdPlanAvance[]
+    const avancesPorPlan = new Map<string, OwdPlanAvance[]>()
+    for (const a of avances) {
+      if (!avancesPorPlan.has(a.plan_id)) avancesPorPlan.set(a.plan_id, [])
+      avancesPorPlan.get(a.plan_id)!.push(a)
+    }
+    const nombrePorId = new Map(
+      ((profilesRes.data || []) as Array<{ id: string; nombre: string }>).map((p) => [
+        p.id,
+        p.nombre,
+      ]),
+    )
+
+    return {
+      data: planes.map((p) => ({
+        ...p,
+        responsable_nombre: p.responsable_id ? nombrePorId.get(p.responsable_id) ?? null : null,
+        avances: avancesPorPlan.get(p.id) ?? [],
+      })),
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+interface CreateOwdPlanInput {
+  templateId: string
+  origen: OwdPlanOrigen
+  titulo: string
+  descripcion?: string | null
+  causaRaiz?: string | null
+  prioridad?: OwdPlanPrioridad
+  responsableId?: string | null
+  fechaObjetivo?: string | null
+  observacionId?: string | null
+  operario?: string | null
+  baselinePct?: number | null
+}
+
+export async function createOwdPlan(
+  input: CreateOwdPlanInput,
+): Promise<{ data: OwdPlan } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (!input.titulo?.trim()) return { error: "Indicá un título para el plan." }
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("owd_planes")
+      .insert({
+        template_id: input.templateId,
+        origen: input.origen,
+        titulo: input.titulo.trim(),
+        descripcion: input.descripcion?.trim() || null,
+        causa_raiz: input.causaRaiz?.trim() || null,
+        prioridad: input.prioridad ?? "media",
+        responsable_id: input.responsableId || null,
+        fecha_objetivo: input.fechaObjetivo || null,
+        observacion_id: input.origen === "observacion" ? input.observacionId || null : null,
+        operario: input.origen === "operario" ? input.operario?.trim() || null : null,
+        baseline_pct: input.baselinePct ?? null,
+        created_by: profile.id,
+      })
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+    return { data: data as OwdPlan }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function updateOwdPlan(
+  planId: string,
+  patch: Partial<{
+    titulo: string
+    descripcion: string | null
+    causa_raiz: string | null
+    prioridad: OwdPlanPrioridad
+    estado: OwdPlanEstado
+    responsable_id: string | null
+    fecha_objetivo: string | null
+  }>,
+): Promise<{ data: OwdPlan } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("owd_planes")
+      .update(patch)
+      .eq("id", planId)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+    return { data: data as OwdPlan }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function deleteOwdPlan(
+  planId: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { error } = await supabase.from("owd_planes").delete().eq("id", planId)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function addOwdPlanAvance(input: {
+  planId: string
+  comentario?: string
+  estadoResultante?: OwdPlanEstado
+}): Promise<{ data: OwdPlanAvance } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const comentario = input.comentario?.trim() || null
+    if (!comentario && !input.estadoResultante) {
+      return { error: "Escribí un comentario o cambiá el estado." }
+    }
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("owd_planes_avances")
+      .insert({
+        plan_id: input.planId,
+        comentario,
+        estado_resultante: input.estadoResultante ?? null,
+        autor_id: profile.id,
+      })
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+    // Si el avance trae nuevo estado, sincronizo la cabecera del plan
+    if (input.estadoResultante) {
+      await supabase
+        .from("owd_planes")
+        .update({ estado: input.estadoResultante })
+        .eq("id", input.planId)
+    }
+    return { data: data as OwdPlanAvance }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

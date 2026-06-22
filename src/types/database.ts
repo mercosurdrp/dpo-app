@@ -823,6 +823,9 @@ export interface RendimientoMensual {
 // OWD Pre-Ruta
 export type OwdResultado = "ok" | "nook" | "na"
 
+// A quién se atribuye un ítem del checklist: condiciona la tendencia por operario
+export type OwdResponsable = "operario" | "sdr" | "proceso"
+
 export interface OwdItem {
   id: string
   template_id: string | null
@@ -832,6 +835,7 @@ export interface OwdItem {
   texto: string
   descripcion: string | null
   critico: boolean
+  responsable: OwdResponsable
   active: boolean
   created_at: string
 }
@@ -924,6 +928,68 @@ export interface OwdTemplateResumen {
   obs_mes: number
   pct_cumplimiento_mes: number
   pct_cumplimiento_global: number
+}
+
+// ---------- OWD · Tendencia por operario ----------
+export type OwdEstadoOperario = "rojo" | "amarillo" | "verde"
+
+// Métricas de un operario calculadas SOLO sobre ítems atribuibles a él
+export interface OwdTendenciaOperario {
+  operario: string
+  rol: string | null
+  auditorias: number
+  promPropio: number // % promedio sobre ítems del operario
+  promGlobal: number // % promedio sobre todos los ítems (para comparar)
+  primera: number
+  ultima: number
+  tendencia: "sube" | "baja" | "estable"
+  estado: OwdEstadoOperario
+  motivos: string[] // por qué quedó en este estado
+  itemsRecurrentes: Array<{ texto: string; critico: boolean; veces: number }>
+  planesAbiertos: number
+}
+
+// ---------- OWD · Planes de acción ----------
+export type OwdPlanOrigen = "observacion" | "operario"
+export type OwdPlanEstado = "pendiente" | "en_progreso" | "completado"
+export type OwdPlanPrioridad = "alta" | "media" | "baja"
+
+export interface OwdPlan {
+  id: string
+  template_id: string | null
+  origen: OwdPlanOrigen
+  observacion_id: string | null
+  operario: string | null
+  titulo: string
+  descripcion: string | null
+  causa_raiz: string | null
+  prioridad: OwdPlanPrioridad
+  estado: OwdPlanEstado
+  responsable_id: string | null
+  fecha_objetivo: string | null
+  baseline_pct: number | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OwdPlanAvance {
+  id: string
+  plan_id: string
+  comentario: string | null
+  archivo_path: string | null
+  archivo_nombre: string | null
+  archivo_mime: string | null
+  archivo_bytes: number | null
+  estado_resultante: OwdPlanEstado | null
+  autor_id: string | null
+  created_at: string
+}
+
+// Plan + datos derivados para la UI
+export interface OwdPlanConDetalle extends OwdPlan {
+  responsable_nombre: string | null
+  avances: OwdPlanAvance[]
 }
 
 // Plan de Acción TML (R1.1.4)

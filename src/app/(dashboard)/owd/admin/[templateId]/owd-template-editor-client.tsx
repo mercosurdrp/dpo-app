@@ -19,8 +19,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Plus, Pencil, Trash2, Loader2, Save, ExternalLink } from "lucide-react"
-import type { OwdItem, OwdTemplate } from "@/types/database"
+import type { OwdItem, OwdTemplate, OwdResponsable } from "@/types/database"
 import { createOwdItem, updateOwdItem, deleteOwdItem, updateOwdTemplate } from "@/actions/owd"
+
+const RESPONSABLE_LABEL: Record<OwdResponsable, string> = {
+  operario: "Operario observado",
+  sdr: "SDR / supervisor",
+  proceso: "Proceso / Admin",
+}
 
 interface Contexto {
   template: OwdTemplate
@@ -84,6 +90,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
   const [fTexto, setFTexto] = useState("")
   const [fDescripcion, setFDescripcion] = useState("")
   const [fCritico, setFCritico] = useState(false)
+  const [fResponsable, setFResponsable] = useState<OwdResponsable>("operario")
   const [fOrden, setFOrden] = useState("")
   const [savingItem, setSavingItem] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -94,6 +101,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
     setFTexto("")
     setFDescripcion("")
     setFCritico(false)
+    setFResponsable("operario")
     setFOrden("")
     setDialogOpen(true)
   }
@@ -103,6 +111,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
     setFTexto(item.texto)
     setFDescripcion(item.descripcion ?? "")
     setFCritico(item.critico)
+    setFResponsable(item.responsable ?? "operario")
     setFOrden(String(item.orden))
     setDialogOpen(true)
   }
@@ -117,6 +126,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
           texto: fTexto.trim(),
           descripcion: fDescripcion.trim() || null,
           critico: fCritico,
+          responsable: fResponsable,
           ...(fOrden ? { orden: Number(fOrden) } : {}),
         })
       : await createOwdItem({
@@ -125,6 +135,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
           texto: fTexto.trim(),
           descripcion: fDescripcion.trim() || undefined,
           critico: fCritico,
+          responsable: fResponsable,
           ...(fOrden ? { orden: Number(fOrden) } : {}),
         })
     setSavingItem(false)
@@ -263,6 +274,14 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
                           {item.critico && (
                             <span className="ml-1 text-xs font-bold text-red-600">*</span>
                           )}
+                          {(item.responsable ?? "operario") !== "operario" && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 align-middle text-[10px] text-slate-500"
+                            >
+                              {RESPONSABLE_LABEL[item.responsable ?? "operario"]}
+                            </Badge>
+                          )}
                         </p>
                         {item.descripcion && (
                           <p className="text-xs text-muted-foreground">{item.descripcion}</p>
@@ -354,6 +373,22 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
                 />
                 Ítem crítico
               </label>
+            </div>
+            <div className="space-y-1.5">
+              <Label>¿De quién depende este ítem?</Label>
+              <select
+                className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                value={fResponsable}
+                onChange={(e) => setFResponsable(e.target.value as OwdResponsable)}
+              >
+                <option value="operario">Operario observado</option>
+                <option value="sdr">SDR / supervisor</option>
+                <option value="proceso">Proceso / Admin</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                La tendencia por operario sólo computa los ítems del operario, así no se lo penaliza
+                por desvíos del SDR o del proceso.
+              </p>
             </div>
           </div>
           <DialogFooter>
