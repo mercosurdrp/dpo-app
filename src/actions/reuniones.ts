@@ -4140,6 +4140,17 @@ async function getIndicadoresMesCore(
             f < fecha ? (serie.productividad[f] ?? null) : null
         }
 
+        // Productividad de maquinistas (carga de camiones / despacho) en
+        // Pal/HH. Sólo warehouse. Detalle por operario al clickear el día
+        // (ver getAperturaMaquinistasDia + AperturaMaquinistasDetalleDiaDialog).
+        // Se enmascara el día en curso (igual que picking): el despacho de hoy
+        // todavía no está cerrado. Va inmediatamente debajo del picking.
+        const maqDespacho = await buildMaquinistasDespachoSerie(fechas)
+        const maqHastaAyer: Record<string, number | null> = {}
+        for (const f of fechas) {
+          maqHastaAyer[f] = f < fecha ? (maqDespacho[f] ?? null) : null
+        }
+
         indicadoresAuto.push(
           buildSerieRow(
             "auto_productividad_picking",
@@ -4148,6 +4159,15 @@ async function getIndicadoresMesCore(
             productividadHastaAyer,
             "promedio",
             300,
+            "mayor",
+          ),
+          buildSerieRow(
+            "auto_productividad_maquinistas",
+            "Productividad maquinistas",
+            "Pal/HH",
+            maqHastaAyer,
+            "promedio",
+            25,
             "mayor",
           ),
           buildSerieRow(
@@ -4185,28 +4205,6 @@ async function getIndicadoresMesCore(
             serie.faltantes,
             serie.targets.faltantes,
             "menor",
-          ),
-        )
-
-        // Productividad de maquinistas (carga de camiones / despacho) en
-        // Pal/HH. Sólo warehouse. Detalle por operario al clickear el día
-        // (ver getAperturaMaquinistasDia + AperturaMaquinistasDetalleDiaDialog).
-        // Se enmascara el día en curso (igual que picking): el despacho de hoy
-        // todavía no está cerrado.
-        const maqDespacho = await buildMaquinistasDespachoSerie(fechas)
-        const maqHastaAyer: Record<string, number | null> = {}
-        for (const f of fechas) {
-          maqHastaAyer[f] = f < fecha ? (maqDespacho[f] ?? null) : null
-        }
-        indicadoresAuto.push(
-          buildSerieRow(
-            "auto_productividad_maquinistas",
-            "Productividad maquinistas",
-            "Pal/HH",
-            maqHastaAyer,
-            "promedio",
-            25,
-            "mayor",
           ),
         )
       }
