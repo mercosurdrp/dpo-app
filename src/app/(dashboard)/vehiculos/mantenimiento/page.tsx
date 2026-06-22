@@ -3,10 +3,10 @@ import {
   getChecklistsMtto,
   getCostosMantenimiento,
   getEstadoPlanFlota,
-  getGestionMtto,
   getMantenimientos,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
+import { getNeumaticos } from "@/actions/neumaticos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -21,7 +21,7 @@ export default async function MantenimientoPage() {
     costosRes,
     tableroRes,
     checklistsRes,
-    gestionRes,
+    neumaticosRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -29,7 +29,7 @@ export default async function MantenimientoPage() {
     getCostosMantenimiento(),
     getTableroOperativo(),
     getChecklistsMtto(),
-    getGestionMtto(),
+    getNeumaticos(),
     getProfile(),
   ])
 
@@ -79,10 +79,7 @@ export default async function MantenimientoPage() {
         }
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
-  const gestion =
-    "data" in gestionRes
-      ? gestionRes.data
-      : { novedades: [], llantas: [], repuestos: [], ordenesCompra: [] }
+  const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -94,7 +91,7 @@ export default async function MantenimientoPage() {
       costos={costos}
       tablero={tablero}
       checklists={checklists}
-      gestion={gestion}
+      neumaticos={neumaticos}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

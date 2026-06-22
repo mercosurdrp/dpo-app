@@ -38,7 +38,6 @@ import {
   AlertTriangle,
   CalendarClock,
   CircleDollarSign,
-  Clock,
   Paperclip,
   Plus,
   Pencil,
@@ -60,9 +59,7 @@ import {
 } from "@/actions/mantenimiento-vehiculos"
 import type {
   CostosMantenimiento,
-  EstadoPlanCelda,
   EstadoPlanVehiculo,
-  EstadoTareaMantenimiento,
   MantenimientoCategoria,
   MantenimientoEstado,
   MantenimientoPlanOverride,
@@ -75,9 +72,9 @@ import {
   MANTENIMIENTO_CATEGORIA_LABELS,
   MANTENIMIENTO_ESTADO_LABELS,
 } from "@/types/database"
-import { TableroOperativo } from "./tablero-operativo"
+import { TableroOperativo, type OTPendiente } from "./tablero-operativo"
 import { ChecklistsMtto } from "./checklists-mtto"
-import { GestionMtto } from "./gestion-mtto"
+import { NeumaticosModule } from "./neumaticos-module"
 import { PiramideDefectos } from "./piramide-defectos"
 import type {
   DocumentoVencimiento,
@@ -86,12 +83,9 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
-  LlantaInspeccion,
-  Novedad,
-  OrdenCompra,
-  Repuesto,
   TableroResumen,
 } from "@/actions/mantenimiento-vehiculos"
+import type { Neumatico } from "@/lib/vehiculos/neumaticos-tipos"
 
 // ==================== Helpers ====================
 
@@ -100,16 +94,7 @@ const TIPO_VEHICULO_LABELS: Record<VehiculoTipo, string> = {
   camioneta: "Camionetas",
   autoelevador: "Autoelevadores",
   utilitario: "Utilitarios",
-}
-
-const ESTADO_CELDA: Record<
-  EstadoTareaMantenimiento,
-  { label: string; dot: string; badge: string }
-> = {
-  vencido: { label: "Vencido", dot: "bg-red-500", badge: "bg-red-100 text-red-700" },
-  proximo: { label: "Próximo", dot: "bg-amber-400", badge: "bg-amber-100 text-amber-700" },
-  ok: { label: "Al día", dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700" },
-  sin_datos: { label: "Sin datos", dot: "bg-slate-300", badge: "bg-slate-100 text-slate-500" },
+  acoplado: "Acoplados",
 }
 
 const ESTADO_MANT_BADGE: Record<MantenimientoEstado, string> = {
@@ -183,20 +168,9 @@ interface MantenimientoClientProps {
     resumen: TableroResumen
   }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
-  gestion: {
-    novedades: Novedad[]
-    llantas: LlantaInspeccion[]
-    repuestos: Repuesto[]
-    ordenesCompra: OrdenCompra[]
-  }
+  neumaticos: Neumatico[]
   puedeEditar: boolean
   esAdmin: boolean
-}
-
-interface CeldaSeleccionada {
-  estado: EstadoPlanVehiculo
-  tarea: MantenimientoPlanTarea
-  celda: EstadoPlanCelda
 }
 
 export function MantenimientoClient({
@@ -207,16 +181,16 @@ export function MantenimientoClient({
   costos,
   tablero,
   checklists,
-  gestion,
+  neumaticos,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
+  const [tab, setTab] = useState("tablero")
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [nuevoPrefill, setNuevoPrefill] = useState<{ dominio?: string; tareaId?: string }>({})
-  const [celdaSel, setCeldaSel] = useState<CeldaSeleccionada | null>(null)
   const [editMant, setEditMant] = useState<MantenimientoRealizado | null>(null)
   const [deleteMantId, setDeleteMantId] = useState<string | null>(null)
   const [tareaEdit, setTareaEdit] = useState<MantenimientoPlanTarea | null>(null)
@@ -231,13 +205,6 @@ export function MantenimientoClient({
   const refresh = () => startTransition(() => router.refresh())
 
   const tareasById = useMemo(() => new Map(tareas.map((t) => [t.id, t])), [tareas])
-
-  // Tipos de vehículo presentes en la flota, en orden fijo
-  const tiposPresentes = useMemo(() => {
-    const orden: VehiculoTipo[] = ["camion", "camioneta", "autoelevador", "utilitario"]
-    const presentes = new Set(estados.map((e) => e.vehiculo.tipo ?? "camion"))
-    return orden.filter((t) => presentes.has(t))
-  }, [estados])
 
   const tareasPorTipo = useMemo(() => {
     const map = new Map<VehiculoTipo, MantenimientoPlanTarea[]>()
@@ -273,9 +240,55 @@ export function MantenimientoClient({
     [mantenimientos, fDominio, fTipo, fEstado]
   )
 
+  // Órdenes de trabajo abiertas (programadas / en taller) para el tablero.
+  const otPendientes = useMemo<OTPendiente[]>(
+    () =>
+      mantenimientos
+        .filter((m) => m.estado === "programado" || m.estado === "en_taller")
+        .sort((a, b) => b.fecha.localeCompare(a.fecha))
+        .map((m) => ({
+          id: m.id,
+          dominio: m.dominio,
+          fecha: m.fecha,
+          estado: m.estado as "programado" | "en_taller",
+          motivo:
+            m.tareas?.map((t) => t.descripcion).filter(Boolean).join(", ") ||
+            m.observaciones ||
+            (m.tipo === "preventivo" ? "Service / preventivo" : "Correctivo"),
+        })),
+    [mantenimientos]
+  )
+
+  // Resumen de neumáticos para la tarjeta del tablero.
+  const neumaticosResumen = useMemo(() => {
+    const ahora = new Date()
+    const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}`
+    let stock = 0
+    let instalados = 0
+    let criticos = 0
+    let bajasMes = 0
+    for (const n of neumaticos) {
+      if (n.estado === "stock") stock++
+      else if (n.estado === "instalado") {
+        instalados++
+        if (n.profundidad_actual_mm != null && n.profundidad_actual_mm <= 3) criticos++
+      } else if (n.estado === "baja" && n.fecha_baja?.slice(0, 7) === mes) bajasMes++
+    }
+    return { stock, instalados, criticos, bajasMes }
+  }, [neumaticos])
+
+  const unidades = useMemo(
+    () => estados.map((e) => ({ dominio: e.vehiculo.dominio, tipo: e.vehiculo.tipo })),
+    [estados]
+  )
+
+  const navegar = (destino: string, dominio?: string) => {
+    if (dominio && destino === "historial") setFDominio(dominio)
+    setTab(destino)
+  }
+
   const abrirRegistro = (dominio?: string, tareaId?: string) => {
     setNuevoPrefill({ dominio, tareaId })
-    setCeldaSel(null)
     setNuevoOpen(true)
   }
 
@@ -342,14 +355,13 @@ export function MantenimientoClient({
         </Card>
       </div>
 
-      <Tabs defaultValue="tablero">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
           <TabsTrigger value="checklists">Check lists</TabsTrigger>
           <TabsTrigger value="piramide">Pirámide de defectos</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
-          <TabsTrigger value="plan">Estado del plan</TabsTrigger>
-          <TabsTrigger value="gestion">Carga / Gestión</TabsTrigger>
+          <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
 
@@ -357,8 +369,9 @@ export function MantenimientoClient({
         <TabsContent value="tablero" className="space-y-6">
           <TableroOperativo
             programacion={tablero.programacion}
-            documentos={tablero.documentos}
-            resumen={tablero.resumen}
+            otPendientes={otPendientes}
+            neumaticos={neumaticosResumen}
+            onNavigate={navegar}
           />
         </TabsContent>
 
@@ -378,122 +391,15 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
-        {/* ============ TAB: Carga / Gestión ============ */}
-        <TabsContent value="gestion" className="space-y-6">
-          <GestionMtto
-            dominios={estados.map((e) => e.vehiculo.dominio)}
-            novedades={gestion.novedades}
-            llantas={gestion.llantas}
-            repuestos={gestion.repuestos}
-            ordenesCompra={gestion.ordenesCompra}
+        {/* ============ TAB: Neumáticos ============ */}
+        <TabsContent value="neumaticos" className="space-y-6">
+          <NeumaticosModule
+            neumaticos={neumaticos}
+            unidades={unidades}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
 
-        {/* ============ TAB: Estado del plan ============ */}
-        <TabsContent value="plan" className="space-y-6">
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-            {(Object.keys(ESTADO_CELDA) as EstadoTareaMantenimiento[]).map((k) => (
-              <span key={k} className="flex items-center gap-1.5">
-                <span className={cn("size-2.5 rounded-full", ESTADO_CELDA[k].dot)} />
-                {ESTADO_CELDA[k].label}
-              </span>
-            ))}
-            <span className="text-slate-400">
-              Hacé clic en una celda para ver el detalle y registrar.
-            </span>
-          </div>
-
-          {tiposPresentes.map((tipo) => {
-            const vehiculosTipo = estados.filter((e) => (e.vehiculo.tipo ?? "camion") === tipo)
-            const tareasTipo = tareasPorTipo.get(tipo) ?? []
-            const esHoras = tipo === "autoelevador"
-            return (
-              <Card key={tipo}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{TIPO_VEHICULO_LABELS[tipo]}</CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="min-w-24">Dominio</TableHead>
-                        <TableHead className="min-w-20 text-right">
-                          {esHoras ? "Horas" : "Km actual"}
-                        </TableHead>
-                        {tareasTipo.map((t) => (
-                          <TableHead
-                            key={t.id}
-                            className="min-w-16 max-w-28 text-center text-[11px] leading-tight"
-                            title={t.nombre}
-                          >
-                            {t.nombre.length > 26 ? t.nombre.slice(0, 24) + "…" : t.nombre}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {vehiculosTipo.map((e) => {
-                        const celdasByTarea = new Map(e.celdas.map((c) => [c.tareaId, c]))
-                        return (
-                          <TableRow key={e.vehiculo.dominio}>
-                            <TableCell className="font-medium">
-                              {e.vehiculo.dominio}
-                              {!esHoras && e.kmActual == null && (
-                                <span
-                                  className="ml-1.5 align-middle text-[10px] font-normal text-slate-400"
-                                  title="Sin lecturas de odómetro: el plan se controla solo por tiempo"
-                                >
-                                  <Clock className="inline size-3" />
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-slate-600">
-                              {esHoras
-                                ? e.horasActuales != null
-                                  ? fmtNum(e.horasActuales)
-                                  : "—"
-                                : e.kmActual != null
-                                  ? fmtNum(e.kmActual)
-                                  : "—"}
-                            </TableCell>
-                            {tareasTipo.map((t) => {
-                              const celda = celdasByTarea.get(t.id)
-                              if (!celda) {
-                                return (
-                                  <TableCell key={t.id} className="text-center text-slate-300">
-                                    —
-                                  </TableCell>
-                                )
-                              }
-                              const cfg = ESTADO_CELDA[celda.estado]
-                              return (
-                                <TableCell key={t.id} className="p-1 text-center">
-                                  <button
-                                    onClick={() => setCeldaSel({ estado: e, tarea: t, celda })}
-                                    title={`${t.nombre}: ${cfg.label}`}
-                                    className="inline-flex w-full flex-col items-center gap-0.5 rounded-md px-1 py-1.5 transition-colors hover:bg-slate-100"
-                                  >
-                                    <span className={cn("size-3 rounded-full", cfg.dot)} />
-                                    {celda.pctConsumido != null && (
-                                      <span className="text-[10px] tabular-nums text-slate-400">
-                                        {celda.pctConsumido}%
-                                      </span>
-                                    )}
-                                  </button>
-                                </TableCell>
-                              )
-                            })}
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </TabsContent>
 
         {/* ============ TAB: Órdenes de Trabajo ============ */}
         <TabsContent value="historial" className="space-y-4">
@@ -844,15 +750,6 @@ export function MantenimientoClient({
       </Tabs>
 
       {/* ============ Dialogs ============ */}
-      {celdaSel && (
-        <CeldaDetalleDialog
-          sel={celdaSel}
-          puedeEditar={puedeEditar}
-          onRegistrar={() => abrirRegistro(celdaSel.estado.vehiculo.dominio, celdaSel.tarea.id)}
-          onClose={() => setCeldaSel(null)}
-        />
-      )}
-
       {nuevoOpen && (
         <NuevoMantenimientoDialog
           estados={estados}
@@ -936,102 +833,6 @@ export function MantenimientoClient({
         />
       )}
     </div>
-  )
-}
-
-// ==================== Dialog: detalle de celda ====================
-
-function CeldaDetalleDialog({
-  sel,
-  puedeEditar,
-  onRegistrar,
-  onClose,
-}: {
-  sel: CeldaSeleccionada
-  puedeEditar: boolean
-  onRegistrar: () => void
-  onClose: () => void
-}) {
-  const { estado, tarea, celda } = sel
-  const cfg = ESTADO_CELDA[celda.estado]
-  const esHoras = (estado.vehiculo.tipo ?? "camion") === "autoelevador"
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {estado.vehiculo.dominio} · {tarea.nombre}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 text-sm">
-          <Badge variant="outline" className={cfg.badge}>
-            {cfg.label}
-            {celda.pctConsumido != null && ` · ${celda.pctConsumido}% consumido`}
-          </Badge>
-          {celda.soloPorTiempo && (
-            <p className="text-xs text-amber-600">
-              Sin lecturas de {esHoras ? "horómetro" : "odómetro"}: estado estimado solo por
-              tiempo.
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-slate-600">
-            <span className="text-slate-400">Última vez</span>
-            <span>{fmtFecha(celda.ultimaFecha)}</span>
-            {celda.ultimoOdometro != null && (
-              <>
-                <span className="text-slate-400">Km en esa fecha</span>
-                <span>{fmtNum(celda.ultimoOdometro)}</span>
-              </>
-            )}
-            {celda.ultimoHorometro != null && (
-              <>
-                <span className="text-slate-400">Horas en esa fecha</span>
-                <span>{fmtNum(celda.ultimoHorometro)}</span>
-              </>
-            )}
-            {celda.proximoKm != null && (
-              <>
-                <span className="text-slate-400">Próximo por km</span>
-                <span>
-                  {fmtNum(celda.proximoKm)}
-                  {estado.kmActual != null &&
-                    ` (faltan ${fmtNum(Math.max(0, celda.proximoKm - estado.kmActual))})`}
-                </span>
-              </>
-            )}
-            {celda.proximasHoras != null && (
-              <>
-                <span className="text-slate-400">Próximo por horas</span>
-                <span>{fmtNum(celda.proximasHoras)}</span>
-              </>
-            )}
-            {celda.proximaFecha != null && (
-              <>
-                <span className="text-slate-400">Próximo por fecha</span>
-                <span>{fmtFecha(celda.proximaFecha)}</span>
-              </>
-            )}
-            {celda.estado === "sin_datos" && (
-              <p className="col-span-2 text-xs text-slate-500">
-                Nunca se registró esta tarea para la unidad. Cargá el último realizado conocido
-                para inicializar el seguimiento.
-              </p>
-            )}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cerrar
-          </Button>
-          {puedeEditar && (
-            <Button onClick={onRegistrar}>
-              <Wrench className="mr-1 size-4" /> Registrar
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 

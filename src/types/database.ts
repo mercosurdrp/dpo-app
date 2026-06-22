@@ -361,7 +361,7 @@ export interface CatalogoChofer {
 }
 
 export type VehiculoSector = "distribucion" | "deposito"
-export type VehiculoTipo = "camion" | "camioneta" | "autoelevador" | "utilitario"
+export type VehiculoTipo = "camion" | "camioneta" | "autoelevador" | "utilitario" | "acoplado"
 
 export interface CatalogoVehiculo {
   id: string
@@ -383,6 +383,7 @@ export const VEHICULO_TIPO_LABELS: Record<VehiculoTipo, string> = {
   camioneta: "Camioneta",
   autoelevador: "Autoelevador",
   utilitario: "Utilitario",
+  acoplado: "Acoplado",
 }
 
 // KPI aggregated types

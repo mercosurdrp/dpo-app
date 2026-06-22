@@ -1,6 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -9,25 +11,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ClipboardList, FileWarning, Gauge, ListChecks } from "lucide-react"
+import { CircleDot, ClipboardList, Gauge, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type {
-  DocumentoVencimiento,
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
-import type { TableroAlertaTri, TableroResumen } from "@/actions/mantenimiento-vehiculos"
+import type { NeumaticosResumen } from "@/lib/vehiculos/neumaticos-tipos"
 
 const ESTADO_SG: Record<
   EstadoServiceGeneral,
   { label: string; dot: string; badge: string }
 > = {
-  vencido: { label: "Vencido", dot: "bg-red-600", badge: "bg-red-100 text-red-700" },
-  rojo: { label: "≤10 días", dot: "bg-red-500", badge: "bg-red-100 text-red-700" },
-  naranja: { label: "≤15 días", dot: "bg-orange-400", badge: "bg-orange-100 text-orange-700" },
-  amarillo: { label: "≤30 días", dot: "bg-amber-400", badge: "bg-amber-100 text-amber-700" },
-  ok: { label: "Al día", dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700" },
-  sin_datos: { label: "Sin datos", dot: "bg-slate-300", badge: "bg-slate-100 text-slate-500" },
+  vencido: { label: "Vencido", dot: "bg-red-600", badge: "border-red-200 bg-red-100 text-red-700" },
+  rojo: { label: "≤10 días", dot: "bg-red-500", badge: "border-red-200 bg-red-100 text-red-700" },
+  naranja: { label: "≤15 días", dot: "bg-orange-400", badge: "border-orange-200 bg-orange-100 text-orange-700" },
+  amarillo: { label: "≤30 días", dot: "bg-amber-400", badge: "border-amber-200 bg-amber-100 text-amber-800" },
+  ok: { label: "Al día", dot: "bg-emerald-500", badge: "border-emerald-200 bg-emerald-100 text-emerald-700" },
+  sin_datos: { label: "Sin datos", dot: "bg-slate-300", badge: "border-slate-200 bg-slate-100 text-slate-500" },
 }
 
 const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
@@ -37,6 +38,19 @@ const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
   amarillo: 3,
   ok: 4,
   sin_datos: 5,
+}
+
+export interface OTPendiente {
+  id: string
+  dominio: string
+  fecha: string
+  estado: "programado" | "en_taller"
+  motivo: string
+}
+
+const OT_BADGE: Record<OTPendiente["estado"], { label: string; cls: string }> = {
+  programado: { label: "Programada", cls: "border-blue-200 bg-blue-100 text-blue-700" },
+  en_taller: { label: "En taller", cls: "border-amber-200 bg-amber-100 text-amber-800" },
 }
 
 const fmtNum = (v: number | null) =>
@@ -52,233 +66,194 @@ function diasTexto(dias: number | null): string {
   return `en ${dias} d`
 }
 
+function antiguedad(fecha: string): string {
+  const hoy = new Date()
+  const f = new Date(fecha + "T00:00:00")
+  const d = Math.round((hoy.getTime() - f.getTime()) / 86_400_000)
+  if (d <= 0) return "hoy"
+  if (d === 1) return "ayer"
+  return `hace ${d} d`
+}
+
 function Dot({ estado }: { estado: EstadoServiceGeneral }) {
   return <span className={cn("inline-block size-2.5 rounded-full", ESTADO_SG[estado].dot)} />
 }
 
-// ---------- Tarjetas tipo Cloudfleet ----------
-
-type Tono = "danger" | "warn"
-
-function Circulo({ label, value, tono }: { label: string; value: number; tono: Tono }) {
-  const cero = value === 0
-  const bg = cero ? "bg-emerald-500" : tono === "warn" ? "bg-amber-400" : "bg-red-500"
-  return (
-    <div className="flex flex-1 flex-col items-center gap-1.5">
-      <span className="text-center text-[11px] leading-tight text-slate-500">{label}</span>
-      <span
-        className={cn(
-          "flex size-11 items-center justify-center rounded-full text-base font-bold text-white",
-          bg
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-function CirclesCard({
-  title,
-  items,
-}: {
-  title: string
-  items: { label: string; value: number; tono: Tono }[]
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <p className="mb-3 text-center text-sm font-medium text-slate-600">{title}</p>
-      <div className="flex justify-around gap-2">
-        {items.map((it) => (
-          <Circulo key={it.label} {...it} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function triItems(tri: TableroAlertaTri): { label: string; value: number; tono: Tono }[] {
-  return [
-    { label: "Vencidas", value: tri.vencidas, tono: "danger" },
-    { label: "Vencen hoy", value: tri.hoy, tono: "danger" },
-    { label: "Próximas", value: tri.proximas, tono: "warn" },
-  ]
-}
-
-function StatRow({
-  label,
-  value,
-  tono,
-}: {
-  label: string
-  value: number
-  tono: "pendiente" | "info"
-}) {
-  const bg =
-    tono === "info"
-      ? "bg-slate-100 text-slate-700"
-      : value > 0
-        ? "bg-red-500 text-white"
-        : "bg-emerald-500 text-white"
-  return (
-    <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
-      <span className="text-sm text-slate-600">{label}</span>
-      <span
-        className={cn(
-          "inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold",
-          bg
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
 interface Props {
   programacion: ServiceGeneralUnidad[]
-  documentos: DocumentoVencimiento[]
-  resumen: TableroResumen
+  otPendientes: OTPendiente[]
+  neumaticos: NeumaticosResumen
+  onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, documentos, resumen }: Props) {
-  const alerta = (e: EstadoServiceGeneral) =>
+export function TableroOperativo({ programacion, otPendientes, neumaticos, onNavigate }: Props) {
+  const [resaltado, setResaltado] = useState<string | null>(null)
+
+  const esAlerta = (e: EstadoServiceGeneral) =>
     e === "vencido" || e === "rojo" || e === "naranja" || e === "amarillo"
 
   const progOrdenada = [...programacion].sort((a, b) => {
     const oe = ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]
     if (oe !== 0) return oe
-    const da = a.diasRestantes ?? Infinity
-    const db = b.diasRestantes ?? Infinity
-    return da - db
+    return (a.diasRestantes ?? Infinity) - (b.diasRestantes ?? Infinity)
   })
 
-  const docsAlerta = documentos
-    .filter((d) => alerta(d.estado))
-    .sort((a, b) => a.diasRestantes - b.diasRestantes)
+  const servicePendientes = progOrdenada.filter((p) => esAlerta(p.estado))
+  const serviceVencidos = servicePendientes.filter((p) => p.estado === "vencido").length
+  const servicePorVencer = servicePendientes.length - serviceVencidos
 
-  const { pendientes, hoy, alertas } = resumen
+  const irAProgramacion = (dominio: string) => {
+    setResaltado(dominio)
+    const el = document.getElementById(`svc-${dominio}`)
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
 
   return (
     <div className="space-y-6">
-      {/* ===== Vista general estilo Cloudfleet ===== */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Columna izquierda: Pendientes + Registro de actividades */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ClipboardList className="size-4 text-slate-500" /> Pendientes
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <StatRow label="OT abiertas" value={pendientes.otAbiertas} tono="pendiente" />
-              <StatRow
-                label="Trabajos pendientes"
-                value={pendientes.trabajosPendientes}
-                tono="pendiente"
-              />
-              <StatRow
-                label="Novedades sin resolver"
-                value={pendientes.novedadesSinResolver}
-                tono="pendiente"
-              />
-              <StatRow label="OC sin compra" value={pendientes.ocSinCompra} tono="pendiente" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ListChecks className="size-4 text-slate-500" /> Registro de actividades (hoy)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <StatRow label="Vehículos con checklist" value={hoy.vehiculosChecklist} tono="info" />
-              <StatRow label="Novedades creadas" value={hoy.novedadesCreadas} tono="info" />
-              <StatRow label="OT creadas" value={hoy.otCreadas} tono="info" />
-              <StatRow
-                label="OT cerradas técnicamente"
-                value={hoy.otCerradasTecnica}
-                tono="info"
-              />
-              <StatRow
-                label="OT cerradas completamente"
-                value={hoy.otCerradasCompleta}
-                tono="info"
-              />
-              <StatRow
-                label="Neumáticos inspeccionados"
-                value={hoy.llantasInspeccionadas}
-                tono="info"
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Columna derecha: Alertas */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Alertas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <CirclesCard
-                title="Programaciones de Mantenimiento"
-                items={triItems(alertas.mantenimiento)}
-              />
-              <CirclesCard
-                title="Documentos de Vehículos"
-                items={triItems(alertas.docsVehiculos)}
-              />
-              <CirclesCard
-                title="Documentos de Personal"
-                items={triItems(alertas.docsPersonal)}
-              />
-              <CirclesCard
-                title="Documentos de Proveedores"
-                items={triItems(alertas.docsProveedores)}
-              />
-              <CirclesCard
-                title="Neumáticos"
-                items={[
-                  { label: "Profundidad mínima", value: alertas.llantas.profundidadBaja, tono: "danger" },
-                  { label: "Presión mínima", value: alertas.llantas.presionBaja, tono: "danger" },
-                  { label: "Presión máxima", value: alertas.llantas.presionAlta, tono: "danger" },
-                ]}
-              />
-              <CirclesCard
-                title="Próximo Checklist"
-                items={triItems(alertas.proximoChecklist)}
-              />
-              <CirclesCard
-                title="Existencias de Inventario"
-                items={[
-                  { label: "Mínima superada", value: alertas.inventario.minimaSuperada, tono: "danger" },
-                  { label: "Máxima superada", value: alertas.inventario.maximaSuperada, tono: "danger" },
-                ]}
-              />
+      {/* ===== Alertas: solo Service pendientes + Órdenes de trabajo ===== */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Service pendientes */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gauge className="size-4 text-slate-500" /> Service pendientes
+            </CardTitle>
+            <div className="flex gap-1.5">
+              <Badge className="border-red-200 bg-red-50 text-red-700">Vencidos: {serviceVencidos}</Badge>
+              <Badge className="border-amber-200 bg-amber-50 text-amber-800">Por vencer: {servicePorVencer}</Badge>
             </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto pt-0">
+            {servicePendientes.length === 0 ? (
+              <p className="py-3 text-sm text-slate-500">No hay services vencidos ni próximos.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead>Próx. service</TableHead>
+                    <TableHead>Vence</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {servicePendientes.map((p) => {
+                    const u = p.mide === "horas" ? "hs" : "km"
+                    const prox =
+                      p.proximaFecha == null
+                        ? "—"
+                        : `${fmtFecha(p.proximaFecha)}${
+                            p.motivo === "km" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""
+                          }`
+                    return (
+                      <TableRow
+                        key={p.dominio}
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => irAProgramacion(p.dominio)}
+                      >
+                        <TableCell className="font-medium">{p.dominio}</TableCell>
+                        <TableCell className="text-slate-600">{prox}</TableCell>
+                        <TableCell
+                          className={cn(
+                            "font-medium",
+                            p.estado === "vencido" || p.estado === "rojo" ? "text-red-600" : "text-slate-700"
+                          )}
+                        >
+                          {diasTexto(p.diasRestantes)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={ESTADO_SG[p.estado].badge}>
+                            {ESTADO_SG[p.estado].label}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Órdenes de trabajo pendientes */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wrench className="size-4 text-slate-500" /> Órdenes de trabajo
+            </CardTitle>
+            <Badge className="border-blue-200 bg-blue-50 text-blue-700">Abiertas: {otPendientes.length}</Badge>
+          </CardHeader>
+          <CardContent className="overflow-x-auto pt-0">
+            {otPendientes.length === 0 ? (
+              <p className="py-3 text-sm text-slate-500">No hay órdenes de trabajo abiertas.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead>OT / motivo</TableHead>
+                    <TableHead>Abierta</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {otPendientes.map((ot) => (
+                    <TableRow
+                      key={ot.id}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => onNavigate("historial", ot.dominio)}
+                    >
+                      <TableCell className="font-medium">{ot.dominio}</TableCell>
+                      <TableCell className="max-w-48 truncate text-slate-600">{ot.motivo}</TableCell>
+                      <TableCell className="text-slate-600">{antiguedad(ot.fecha)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={OT_BADGE[ot.estado].cls}>
+                          {OT_BADGE[ot.estado].label}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>
 
+      {/* ===== Neumáticos (resumen, atajo a la pestaña) ===== */}
+      <Card
+        className="cursor-pointer transition-colors hover:bg-slate-50"
+        onClick={() => onNavigate("neumaticos")}
+      >
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CircleDot className="size-4 text-slate-500" /> Neumáticos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Mini label="En stock" value={neumaticos.stock} />
+            <Mini label="Instaladas" value={neumaticos.instalados} />
+            <Mini label="Desgaste crítico" value={neumaticos.criticos} danger />
+            <Mini label="Bajas del mes" value={neumaticos.bajasMes} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Leyenda del semáforo de service */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos"] as EstadoServiceGeneral[]).map(
-          (k) => (
-            <span key={k} className="flex items-center gap-1.5">
-              <Dot estado={k} /> {ESTADO_SG[k].label}
-            </span>
-          )
-        )}
+        {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos"] as EstadoServiceGeneral[]).map((k) => (
+          <span key={k} className="flex items-center gap-1.5">
+            <Dot estado={k} /> {ESTADO_SG[k].label}
+          </span>
+        ))}
       </div>
 
       {/* Programación de mantenimiento (detalle service general) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Gauge className="size-4 text-slate-500" /> Programación de mantenimiento (service general)
+            <ClipboardList className="size-4 text-slate-500" /> Programación de mantenimiento (service general)
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -300,25 +275,21 @@ export function TableroOperativo({ programacion, documentos, resumen }: Props) {
                 const ultimoTxt =
                   p.ultimaFecha == null
                     ? "—"
-                    : `${fmtFecha(p.ultimaFecha)}${
-                        p.ultimoOdometro != null ? ` · ${fmtNum(p.ultimoOdometro)} ${u}` : ""
-                      }`
+                    : `${fmtFecha(p.ultimaFecha)}${p.ultimoOdometro != null ? ` · ${fmtNum(p.ultimoOdometro)} ${u}` : ""}`
                 const registroTxt =
                   p.fechaUltRegistro == null
                     ? "—"
-                    : `${fmtFecha(p.fechaUltRegistro)}${
-                        p.kmUltRegistro != null ? ` · ${fmtNum(p.kmUltRegistro)} ${u}` : ""
-                      }`
+                    : `${fmtFecha(p.fechaUltRegistro)}${p.kmUltRegistro != null ? ` · ${fmtNum(p.kmUltRegistro)} ${u}` : ""}`
                 const proximoTxt =
                   p.proximaFecha == null
                     ? "—"
-                    : `${fmtFecha(p.proximaFecha)}${
-                        p.motivo === "km" && p.proximoKm != null
-                          ? ` · ${fmtNum(p.proximoKm)} ${u}`
-                          : ""
-                      }`
+                    : `${fmtFecha(p.proximaFecha)}${p.motivo === "km" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""}`
                 return (
-                  <TableRow key={p.dominio}>
+                  <TableRow
+                    key={p.dominio}
+                    id={`svc-${p.dominio}`}
+                    className={cn(resaltado === p.dominio && "bg-amber-50 ring-1 ring-amber-200")}
+                  >
                     <TableCell>
                       <Dot estado={p.estado} />
                     </TableCell>
@@ -334,22 +305,15 @@ export function TableroOperativo({ programacion, documentos, resumen }: Props) {
                     <TableCell
                       className={cn(
                         "text-right font-semibold tabular-nums",
-                        p.estado === "vencido" || p.estado === "rojo"
-                          ? "text-red-600"
-                          : "text-slate-700"
+                        p.estado === "vencido" || p.estado === "rojo" ? "text-red-600" : "text-slate-700"
                       )}
                     >
                       {p.diasRestantes == null ? "—" : p.diasRestantes}
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={cn(
-                          "inline-flex rounded px-2 py-0.5 text-xs font-medium",
-                          ESTADO_SG[p.estado].badge
-                        )}
-                      >
+                      <Badge variant="outline" className={ESTADO_SG[p.estado].badge}>
                         {ESTADO_SG[p.estado].label}
-                      </span>
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 )
@@ -358,56 +322,17 @@ export function TableroOperativo({ programacion, documentos, resumen }: Props) {
           </Table>
         </CardContent>
       </Card>
+    </div>
+  )
+}
 
-      {/* Documentos vencidos y por vencer */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FileWarning className="size-4 text-slate-500" /> Documentos vencidos y por vencer
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {docsAlerta.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No hay documentos vencidos ni por vencer en los próximos 30 días.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8"></TableHead>
-                  <TableHead>Unidad</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Vence</TableHead>
-                  <TableHead>Restante</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {docsAlerta.map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell>
-                      <Dot estado={d.estado} />
-                    </TableCell>
-                    <TableCell className="font-medium">{d.dominio}</TableCell>
-                    <TableCell>{d.categoria}</TableCell>
-                    <TableCell className="text-slate-600">{fmtFecha(d.fechaVencimiento)}</TableCell>
-                    <TableCell
-                      className={cn(
-                        "font-medium",
-                        d.estado === "vencido" || d.estado === "rojo"
-                          ? "text-red-600"
-                          : "text-slate-700"
-                      )}
-                    >
-                      {diasTexto(d.diasRestantes)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+function Mini({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-3 text-center">
+      <p className={cn("text-2xl font-bold", danger && value > 0 ? "text-red-600" : "text-slate-900")}>
+        {value}
+      </p>
+      <p className="text-xs text-slate-500">{label}</p>
     </div>
   )
 }

@@ -1,0 +1,53 @@
+import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
+
+// Tipos y constantes de neumáticos. Viven fuera del archivo de server actions
+// ("use server" solo puede exportar funciones async; exportar tipos/const desde
+// ahí rompe el build de Turbopack).
+
+// Umbral de profundidad (mm) a partir del cual una cubierta instalada se
+// considera en desgaste crítico (cambio próximo).
+export const PROFUNDIDAD_CRITICA_MM = 3
+
+export type NeumaticoTipo = "nuevo" | "recapado"
+export type NeumaticoEstado = "stock" | "instalado" | "baja"
+
+export interface NeumaticoMedicion {
+  id: string
+  neumatico_id: string
+  fecha: string
+  profundidad_mm: number | null
+  km: number | null
+  presion_psi: number | null
+  nota: string | null
+  created_at: string
+}
+
+export interface Neumatico {
+  id: string
+  numero: string | null
+  tipo: NeumaticoTipo
+  marca: string | null
+  medida: string | null
+  dominio: string | null
+  posicion: string | null
+  eje: EjeNeumatico | null
+  profundidad_inicial_mm: number | null
+  profundidad_actual_mm: number | null
+  km_instalacion: number | null
+  estado: NeumaticoEstado
+  motivo_baja: string | null
+  fecha_ingreso: string
+  fecha_instalacion: string | null
+  fecha_baja: string | null
+  observaciones: string | null
+  created_at: string
+  updated_at: string
+  mediciones?: NeumaticoMedicion[]
+}
+
+export interface NeumaticosResumen {
+  stock: number
+  instalados: number
+  criticos: number
+  bajasMes: number
+}

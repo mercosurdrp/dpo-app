@@ -71,6 +71,9 @@ function defaultsPorTipo(tipo: VehiculoTipo | null): {
   switch (tipo) {
     case "autoelevador":
       return { km: null, horas: 250, meses: 6 }
+    case "acoplado":
+      // El acoplado no tiene motor: service por tiempo (frenos/rodamientos).
+      return { km: null, horas: null, meses: 12 }
     case "camion":
     case "camioneta":
     case "utilitario":
