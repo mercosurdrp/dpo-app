@@ -3,7 +3,9 @@
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { createPlanAccion } from "@/actions/gestion"
+import { getRoturasChofer } from "@/actions/roturas-calle"
 import type { PrioridadPlan } from "@/types/database"
+import type { RoturaConDetalle } from "@/types/roturas"
 
 // ===== DQI — Delivered Quality Index (Calidad de entrega, DPO Entrega 1.4) =====
 // Roturas ocurridas EN LA ENTREGA/RUTA (categoría "ROTURA DISTRIBUCIÓN") ÷ HL
@@ -71,6 +73,8 @@ export interface DqiData {
   target: number | null
   /** Planes de acción del punto 1.4 (todos los periodos). */
   planes: DqiPlan[]
+  /** Roturas reportadas por choferes desde la app en el mes (registro, no recalcula el PPM). */
+  roturas_chofer: RoturaConDetalle[]
 }
 
 export async function getDqi(
@@ -97,9 +101,10 @@ export async function getDqi(
       return { error: "El tablero no devolvió el indicador DQI todavía." }
     }
 
-    // Target + planes del punto 1.4 (viven en dpo-app, no en el tablero).
+    // Target + planes del punto 1.4 (viven en dpo-app, no en el tablero) +
+    // roturas reportadas por choferes desde la app (registro).
     const supabase = await createClient()
-    const [{ data: ind }, { data: planesRaw }] = await Promise.all([
+    const [{ data: ind }, { data: planesRaw }, roturasRes] = await Promise.all([
       supabase
         .from("indicadores")
         .select("meta")
@@ -111,7 +116,9 @@ export async function getDqi(
         .select("id, descripcion, estado, prioridad, notas, fecha_limite, responsable")
         .eq("pregunta_id", PREGUNTA_14_ID)
         .order("created_at", { ascending: false }),
+      getRoturasChofer(year, month),
     ])
+    const roturas_chofer = "data" in roturasRes ? roturasRes.data : []
 
     const target = ind?.meta && ind.meta > 0 ? Number(ind.meta) : null
     const planes: DqiPlan[] = (planesRaw ?? []).map((p) => {
@@ -144,6 +151,7 @@ export async function getDqi(
           },
         target,
         planes,
+        roturas_chofer,
       },
     }
   } catch (e) {

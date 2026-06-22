@@ -22,6 +22,7 @@ import {
   Plus,
   AlertTriangle,
   CheckCircle2,
+  PackageX,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -38,6 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
+import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS } from "@/types/roturas"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const MESES_FULL = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -440,6 +442,79 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
               Sin roturas de distribución registradas en {MESES_FULL[month - 1]} {year}.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Roturas reportadas por choferes desde la app (registro, no recalcula el PPM) */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="mb-3 flex items-center gap-2">
+            <PackageX className="h-4 w-4 text-orange-600" />
+            <h2 className="text-sm font-semibold text-slate-700">
+              Roturas reportadas por choferes · {MESES_FULL[month - 1]} {year}
+            </h2>
+          </div>
+          {data.roturas_chofer?.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-xs text-slate-500">
+                    <th className="px-2 py-2 text-left font-medium">Fecha</th>
+                    <th className="px-2 py-2 text-left font-medium">Patente</th>
+                    <th className="px-2 py-2 text-left font-medium">Chofer</th>
+                    <th className="px-2 py-2 text-left font-medium">SKU rotos</th>
+                    <th className="px-2 py-2 text-left font-medium">Motivo</th>
+                    <th className="px-2 py-2 text-center font-medium">Foto</th>
+                    <th className="px-2 py-2 text-left font-medium">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.roturas_chofer.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 align-top">
+                      <td className="whitespace-nowrap px-2 py-2 text-slate-600">
+                        {r.fecha.split("-").reverse().join("/")}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 font-mono text-slate-700">{r.patente}</td>
+                      <td className="px-2 py-2 text-slate-600">{r.chofer_nombre ?? r.autor_nombre}</td>
+                      <td className="px-2 py-2 text-slate-700">
+                        <ul className="space-y-0.5">
+                          {r.items.map((it) => (
+                            <li key={it.id} className="truncate">
+                              <span className="font-mono text-xs text-slate-400">{it.id_articulo}</span>{" "}
+                              {it.des_articulo} · <strong>{it.cantidad}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="px-2 py-2 text-slate-600">{ROTURA_MOTIVO_LABELS[r.motivo]}</td>
+                      <td className="px-2 py-2 text-center">
+                        {r.adjuntos[0] ? (
+                          <a href={r.adjuntos[0].url} target="_blank" rel="noopener noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={r.adjuntos[0].url}
+                              alt="Foto"
+                              className="mx-auto size-10 rounded object-cover"
+                            />
+                          </a>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-slate-600">{ROTURA_ESTADO_LABELS[r.estado]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Sin roturas reportadas por choferes en {MESES_FULL[month - 1]} {year}.
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-slate-400">
+            Cargadas por los choferes desde la app (Portal del Empleado → Roturas en calle). Es un registro; no recalcula el PPM.
+          </p>
         </CardContent>
       </Card>
 

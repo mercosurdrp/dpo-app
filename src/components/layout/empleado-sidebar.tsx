@@ -49,6 +49,10 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
     { label: "Inicio", href: "/mis-capacitaciones", icon: <GraduationCap className="size-5" /> },
     // Rechazos: solo Pampeana (fuente de datos).
     ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
+    // Roturas en la calle: solo Pampeana (fuente de datos / DQI).
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Roturas en calle", href: "/mis-roturas", icon: <PackageX className="size-5" /> }]),
     { label: "Comunicaciones", href: "/portal/comunicaciones", icon: <Megaphone className="size-5" /> },
     { label: "Servicios", href: "/portal/servicios", icon: <Wrench className="size-5" /> },
     { label: "Reportar", href: "/reportar-seguridad", icon: <ShieldAlert className="size-5" /> },

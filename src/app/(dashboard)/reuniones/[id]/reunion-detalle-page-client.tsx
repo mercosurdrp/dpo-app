@@ -58,6 +58,7 @@ import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialo
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
+import { SeccionRoturasCalle } from "@/components/reuniones/seccion-roturas-calle"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
@@ -1178,6 +1179,16 @@ export function ReunionDetallePageClient({
         <EtapaSeguridad
           fechaReunion={detalle.fecha}
           currentProfileId={currentProfileId}
+          currentRole={currentRole}
+        />
+      )}
+
+      {/* ROTURAS EN LA CALLE — matinal de logística (Pampeana). Igual que
+          accidentes/incidentes: lista las roturas reportadas por choferes y
+          permite desarrollar un plan de acción. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && (
+        <SeccionRoturasCalle
+          fechaReunion={detalle.fecha}
           currentRole={currentRole}
         />
       )}
