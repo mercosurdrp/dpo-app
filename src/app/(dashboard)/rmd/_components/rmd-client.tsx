@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
 import type { RmdPlan } from "@/actions/rmd-planes"
-import { ClientesExplorador } from "./clientes-explorador"
+import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -83,6 +83,8 @@ export function RmdClient({ data, planesIniciales }: Props) {
     foco_chofer?: string
   } | null>(null)
   const [abrirPlanNonce, setAbrirPlanNonce] = useState(0)
+  // Cliente abierto en el modal de detalle desde la vitrina de recuperados.
+  const [recupModal, setRecupModal] = useState<RmdCliente | null>(null)
 
   function planParaCliente(c: RmdCliente) {
     setFocoPlan({
@@ -91,6 +93,11 @@ export function RmdClient({ data, planesIniciales }: Props) {
       foco_chofer: c.chofer ?? undefined,
     })
     setAbrirPlanNonce((n) => n + 1)
+  }
+
+  function abrirDetalleRecuperado(codCliente: number) {
+    const c = clientes.find((x) => x.cod_cliente === codCliente)
+    if (c) setRecupModal(c)
   }
 
   const mesesConDatos = por_mes.filter(
@@ -415,7 +422,8 @@ export function RmdClient({ data, planesIniciales }: Props) {
         <CardContent className="border-t pt-4">
           <p className="mb-3 text-xs text-slate-500">
             Tuvieron una puntuación baja (1-3) y en una entrega posterior
-            volvieron a puntuar 5. Su última puntuación es la máxima.
+            volvieron a puntuar 5. Su última puntuación es la máxima. Clic en un
+            cliente para ver todo su historial de puntuaciones.
           </p>
           {recuperados.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">
@@ -432,7 +440,14 @@ export function RmdClient({ data, planesIniciales }: Props) {
               {recuperados.map((r) => (
                 <div
                   key={r.cod_cliente}
-                  className="grid grid-cols-12 items-start gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 px-2 py-1.5 text-sm"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => abrirDetalleRecuperado(r.cod_cliente)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ")
+                      abrirDetalleRecuperado(r.cod_cliente)
+                  }}
+                  className="grid cursor-pointer grid-cols-12 items-start gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 px-2 py-1.5 text-left text-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50"
                 >
                   <span className="col-span-5 min-w-0">
                     <span className="flex items-center gap-1.5">
@@ -536,6 +551,18 @@ export function RmdClient({ data, planesIniciales }: Props) {
           </p>
         </CardContent>
       </Card>
+
+      {/* Detalle del cliente abierto desde la vitrina de recuperados */}
+      {recupModal && (
+        <ClienteModal
+          cliente={recupModal}
+          onClose={() => setRecupModal(null)}
+          onCrearPlan={(c) => {
+            setRecupModal(null)
+            planParaCliente(c)
+          }}
+        />
+      )}
     </div>
   )
 }

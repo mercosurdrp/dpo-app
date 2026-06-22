@@ -413,7 +413,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   )
 }
 
-function ClienteModal({
+export function ClienteModal({
   cliente,
   onClose,
   onCrearPlan,
