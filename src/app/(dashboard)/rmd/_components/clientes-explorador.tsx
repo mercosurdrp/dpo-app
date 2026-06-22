@@ -10,6 +10,7 @@ import {
   MapPin,
   MessageSquareQuote,
   Target,
+  Truck,
   User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -496,6 +497,7 @@ function ClienteModal({
                   <tr className="border-b text-left text-xs uppercase text-slate-500">
                     <th className="py-1.5 pr-2">Fecha</th>
                     <th className="px-2 py-1.5 text-center">Punt.</th>
+                    <th className="px-2 py-1.5">Entrega</th>
                     <th className="px-2 py-1.5">Motivo</th>
                     <th className="px-2 py-1.5">Comentario</th>
                   </tr>
@@ -516,6 +518,23 @@ function ClienteModal({
                         >
                           {p.puntuacion}
                         </Badge>
+                      </td>
+                      <td className="px-2 py-1.5 text-xs text-slate-600">
+                        {p.vehiculo_entrega ? (
+                          <span className="flex items-start gap-1">
+                            <Truck className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+                            <span>
+                              <span className="block font-medium text-slate-700">
+                                {p.chofer ?? "Chofer no asignado"}
+                              </span>
+                              <span className="block text-[11px] text-slate-400">
+                                {p.vehiculo_entrega}
+                              </span>
+                            </span>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-xs text-slate-600">
                         {p.motivos ?? "—"}

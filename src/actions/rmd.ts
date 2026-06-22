@@ -89,6 +89,10 @@ export interface RmdPunto {
   puntuacion: number
   motivos: string | null
   comentario: string | null
+  /** Patente(s) del camión que entregó (Chess dsFleteroCarga). */
+  vehiculo_entrega: string | null
+  /** Chofer(es) resuelto(s) por la patente (mapeo_empleado_fletero). */
+  chofer: string | null
 }
 
 const ANIO = 2026
@@ -298,6 +302,16 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
   }
 }
 
+interface RmdPuntoRow {
+  fecha_puntuacion: string
+  fecha_entrega: string | null
+  nro_pedido: string | null
+  puntuacion: number
+  motivos: string | null
+  comentario: string | null
+  vehiculo_entrega: string | null
+}
+
 /** Puntuaciones individuales de un cliente (para el modal del explorador). */
 export async function getRmdPuntuacionesCliente(
   codCliente: number,
@@ -308,14 +322,24 @@ export async function getRmdPuntuacionesCliente(
     const { data, error } = await supabase
       .from("nps_rmd_cliente")
       .select(
-        "fecha_puntuacion, fecha_entrega, nro_pedido, puntuacion, motivos, comentario",
+        "fecha_puntuacion, fecha_entrega, nro_pedido, puntuacion, motivos, comentario, vehiculo_entrega",
       )
       .eq("cod_cliente", codCliente)
       .gte("fecha_puntuacion", `${ANIO}-01-01`)
       .lt("fecha_puntuacion", `${ANIO + 1}-01-01`)
       .order("fecha_puntuacion", { ascending: false })
     if (error) return { error: error.message }
-    return { data: (data ?? []) as unknown as RmdPunto[] }
+    const filas = (data ?? []) as unknown as RmdPuntoRow[]
+
+    // Chofer = se resuelve por la patente contra el mapeo que mantiene TML
+    // (patente → empleado). Así, si se corrige el mapeo, el nombre se
+    // actualiza solo sin re-backfillear el RMD.
+    const choferPorPatente = await getChoferPorPatente(supabase)
+    const puntos: RmdPunto[] = filas.map((f) => ({
+      ...f,
+      chofer: resolverChofer(f.vehiculo_entrega, choferPorPatente),
+    }))
+    return { data: puntos }
   } catch (err) {
     return {
       error:
@@ -324,6 +348,53 @@ export async function getRmdPuntuacionesCliente(
           : "Error cargando las puntuaciones del cliente",
     }
   }
+}
+
+/** Mapa patente → nombre de chofer, desde mapeo_empleado_fletero + empleados. */
+async function getChoferPorPatente(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const { data: mapeo } = await supabase
+    .from("mapeo_empleado_fletero")
+    .select("ds_fletero_carga, empleado_id")
+  const filas = (mapeo ?? []) as Array<{
+    ds_fletero_carga: string | null
+    empleado_id: string | null
+  }>
+  const ids = [...new Set(filas.map((f) => f.empleado_id).filter(Boolean))] as string[]
+  if (ids.length === 0) return map
+  const { data: emps } = await supabase
+    .from("empleados")
+    .select("id, nombre")
+    .in("id", ids)
+  const nombrePorId = new Map<string, string>()
+  for (const e of (emps ?? []) as Array<{ id: string; nombre: string | null }>) {
+    if (e.nombre) nombrePorId.set(e.id, e.nombre)
+  }
+  for (const f of filas) {
+    const pat = (f.ds_fletero_carga ?? "").trim()
+    const nom = f.empleado_id ? nombrePorId.get(f.empleado_id) : undefined
+    if (pat && nom) map.set(pat, nom)
+  }
+  return map
+}
+
+/** Resuelve el/los chofer(es) de una patente (o varias unidas con " / "). */
+function resolverChofer(
+  patentes: string | null,
+  choferPorPatente: Map<string, string>,
+): string | null {
+  if (!patentes) return null
+  const nombres = [
+    ...new Set(
+      patentes
+        .split("/")
+        .map((p) => choferPorPatente.get(p.trim()))
+        .filter(Boolean) as string[],
+    ),
+  ]
+  return nombres.length ? nombres.join(" / ") : null
 }
 
 function round1(n: number): number {
