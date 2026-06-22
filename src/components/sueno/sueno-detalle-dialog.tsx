@@ -13,6 +13,8 @@ import { getSuenoDetalle, type SuenoDetalle } from "@/actions/sueno"
 import { RAMA_COLOR, type SuenoNodo } from "@/lib/sueno/arbol-config"
 import { SEMAFORO_COLOR, SEMAFORO_LABEL } from "@/lib/sueno/semaforo"
 import { formatValor } from "./sueno-kpi-card"
+import { esRechazoKpi } from "@/lib/sueno/rechazo-tipos"
+import { SuenoRechazoDetalle } from "./sueno-rechazo-detalle"
 
 const nfAR = new Intl.NumberFormat("es-AR")
 
@@ -161,10 +163,18 @@ export function SuenoDetalleDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
 }) {
+  const esRechazo = nodo != null && esRechazoKpi(nodo.key)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
-        {nodo && <DetalleContent key={nodo.key} nodo={nodo} />}
+      <DialogContent
+        className={`max-h-[88vh] overflow-y-auto ${esRechazo ? "sm:max-w-3xl" : ""}`}
+      >
+        {nodo &&
+          (esRechazo ? (
+            <SuenoRechazoDetalle key={nodo.key} nodo={nodo} />
+          ) : (
+            <DetalleContent key={nodo.key} nodo={nodo} />
+          ))}
       </DialogContent>
     </Dialog>
   )
