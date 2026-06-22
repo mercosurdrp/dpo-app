@@ -289,10 +289,9 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       }
       cur.suma += f.puntuacion
       cur.n += 1
-      if (f.puntuacion <= 3) cur.det += 1
-      // "baja" para el explorador/recuperados = 1-4 (solo el 5 es bueno).
-      // filas asc por fecha → guardamos la baja más reciente.
-      if (f.puntuacion <= 4) {
+      // "baja" = 1-3. filas asc por fecha → guardamos la baja más reciente.
+      if (f.puntuacion <= 3) {
+        cur.det += 1
         cur.ultimaBajaPunt = f.puntuacion
         cur.ultimaBajaFecha = f.fecha_puntuacion
       }

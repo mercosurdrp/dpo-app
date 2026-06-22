@@ -398,7 +398,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
       {/* Explorador de toda la base */}
       <ClientesExplorador clientes={clientes} onCrearPlan={planParaCliente} />
 
-      {/* Clientes recuperados: puntuaron bajo (1-4) y volvieron al máximo (5) */}
+      {/* Clientes recuperados: puntuaron bajo (1-3) y volvieron al máximo (5) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -414,7 +414,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
         </CardHeader>
         <CardContent className="border-t pt-4">
           <p className="mb-3 text-xs text-slate-500">
-            Tuvieron una puntuación baja (1-4) y en una entrega posterior
+            Tuvieron una puntuación baja (1-3) y en una entrega posterior
             volvieron a puntuar 5. Su última puntuación es la máxima.
           </p>
           {recuperados.length === 0 ? (

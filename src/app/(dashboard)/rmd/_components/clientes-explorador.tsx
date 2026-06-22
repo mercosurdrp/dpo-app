@@ -39,7 +39,7 @@ import {
 const TODOS = "__todos__"
 
 type AgruparPor = "ninguno" | "chofer" | "localidad"
-type OrdenarPor = "rmd" | "detractoras" | "puntuaciones"
+type OrdenarPor = "fecha" | "rmd" | "detractoras" | "puntuaciones"
 
 const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -70,10 +70,10 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [fChofer, setFChofer] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
   // Por defecto el explorador arranca enfocado en los clientes cuya ÚLTIMA
-  // puntuación es baja (1-4) — los accionables hoy; el botón permite ver todos.
+  // puntuación es baja (1-3) — los accionables hoy; el botón permite ver todos.
   const [soloDetractoras, setSoloDetractoras] = useState(true)
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
-  const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("rmd")
+  const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("fecha")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
   const [clienteModal, setClienteModal] = useState<RmdCliente | null>(null)
 
@@ -98,9 +98,9 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
       (c) =>
         (fChofer === TODOS || c.chofer === fChofer) &&
         (fLocalidad === TODOS || c.localidad === fLocalidad) &&
-        // "baja puntuación" = su ÚLTIMA puntuación es 1-4 (los que se
+        // "baja puntuación" = su ÚLTIMA puntuación es 1-3 (los que se
         // recuperaron a 5 quedan fuera y aparecen en su propia vitrina)
-        (!soloDetractoras || c.ultima_puntuacion <= 4) &&
+        (!soloDetractoras || c.ultima_puntuacion <= 3) &&
         (!q ||
           c.nombre_cliente.toLowerCase().includes(q) ||
           String(c.cod_cliente).includes(q)),
@@ -110,11 +110,13 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const ordenar = useMemo(
     () => (arr: RmdCliente[]) =>
       [...arr].sort((a, b) =>
-        ordenarPor === "rmd"
-          ? a.rmd - b.rmd || b.detractoras - a.detractoras
-          : ordenarPor === "detractoras"
-            ? b.detractoras - a.detractoras || a.rmd - b.rmd
-            : b.puntuaciones - a.puntuaciones || a.rmd - b.rmd,
+        ordenarPor === "fecha"
+          ? b.ultima_fecha.localeCompare(a.ultima_fecha) || a.rmd - b.rmd
+          : ordenarPor === "rmd"
+            ? a.rmd - b.rmd || b.detractoras - a.detractoras
+            : ordenarPor === "detractoras"
+              ? b.detractoras - a.detractoras || a.rmd - b.rmd
+              : b.puntuaciones - a.puntuaciones || a.rmd - b.rmd,
       ),
     [ordenarPor],
   )
@@ -285,7 +287,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             className="h-8 text-xs"
             onClick={() => setSoloDetractoras((v) => !v)}
           >
-            Baja puntuación (últ. 1-4)
+            Baja puntuación (últ. 1-3)
           </Button>
           {hayFiltros && (
             <Button
@@ -308,6 +310,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="fecha">Fecha (más reciente)</SelectItem>
                 <SelectItem value="rmd">RMD (peor primero)</SelectItem>
                 <SelectItem value="detractoras">Puntuaciones bajas</SelectItem>
                 <SelectItem value="puntuaciones">Más puntuaciones</SelectItem>
