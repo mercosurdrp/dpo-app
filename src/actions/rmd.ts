@@ -91,8 +91,10 @@ export interface RmdPunto {
   comentario: string | null
   /** Patente(s) del camión que entregó (Chess dsFleteroCarga). */
   vehiculo_entrega: string | null
-  /** Chofer(es) resuelto(s) por la patente (mapeo_empleado_fletero). */
+  /** Chofer(es) que entregó. Preferimos el del TML/check de ESE día. */
   chofer: string | null
+  /** true = chofer del TML/check de ese día (exacto); false = chofer asignado al camión (aproximado, no hubo TML ese día). */
+  chofer_exacto: boolean
 }
 
 const ANIO = 2026
@@ -331,14 +333,32 @@ export async function getRmdPuntuacionesCliente(
     if (error) return { error: error.message }
     const filas = (data ?? []) as unknown as RmdPuntoRow[]
 
-    // Chofer = se resuelve por la patente contra el mapeo que mantiene TML
-    // (patente → empleado). Así, si se corrige el mapeo, el nombre se
-    // actualiza solo sin re-backfillear el RMD.
-    const choferPorPatente = await getChoferPorPatente(supabase)
-    const puntos: RmdPunto[] = filas.map((f) => ({
-      ...f,
-      chofer: resolverChofer(f.vehiculo_entrega, choferPorPatente),
-    }))
+    // Un mismo camión lo maneja distinto chofer según el día. Por eso el chofer
+    // se resuelve por (patente + fecha de entrega) contra el TML/check de ESE
+    // día (registros_vehiculos / checklist_vehiculos). Si ese día no hubo TML,
+    // caemos al chofer asignado al camión (mapeo_empleado_fletero), marcándolo
+    // como aproximado.
+    const patentes = [
+      ...new Set(
+        filas
+          .flatMap((f) => (f.vehiculo_entrega ?? "").split("/"))
+          .map((p) => p.trim())
+          .filter(Boolean),
+      ),
+    ]
+    const [choferPorDia, choferAsignado] = await Promise.all([
+      getChoferPorDia(supabase, patentes),
+      getChoferAsignado(supabase),
+    ])
+    const puntos: RmdPunto[] = filas.map((f) => {
+      const r = resolverChofer(
+        f.vehiculo_entrega,
+        f.fecha_entrega,
+        choferPorDia,
+        choferAsignado,
+      )
+      return { ...f, chofer: r.chofer, chofer_exacto: r.exacto }
+    })
     return { data: puntos }
   } catch (err) {
     return {
@@ -350,8 +370,41 @@ export async function getRmdPuntuacionesCliente(
   }
 }
 
-/** Mapa patente → nombre de chofer, desde mapeo_empleado_fletero + empleados. */
-async function getChoferPorPatente(
+/**
+ * Mapa "PATENTE|FECHA" → chofer que hizo el TML/check de ese camión ese día.
+ * Fuentes: registros_vehiculos (TML) y checklist_vehiculos (check diario).
+ * Es la fuente fecha-aware: el chofer real de la entrega, no el asignado fijo.
+ */
+async function getChoferPorDia(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  patentes: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (patentes.length === 0) return map
+  const [reg, chk] = await Promise.all([
+    supabase
+      .from("registros_vehiculos")
+      .select("dominio, fecha, chofer")
+      .in("dominio", patentes),
+    supabase
+      .from("checklist_vehiculos")
+      .select("dominio, fecha, chofer")
+      .in("dominio", patentes),
+  ])
+  type DiaRow = { dominio: string | null; fecha: string | null; chofer: string | null }
+  // El TML (registros_vehiculos) manda; el check completa lo que falte.
+  for (const src of [chk.data, reg.data] as Array<DiaRow[] | null>) {
+    for (const r of src ?? []) {
+      const dom = (r.dominio ?? "").trim()
+      const chofer = (r.chofer ?? "").trim()
+      if (dom && r.fecha && chofer) map.set(`${dom}|${r.fecha}`, chofer)
+    }
+  }
+  return map
+}
+
+/** Mapa patente → chofer asignado al camión (fallback), mapeo_empleado_fletero. */
+async function getChoferAsignado(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>()
@@ -380,21 +433,39 @@ async function getChoferPorPatente(
   return map
 }
 
-/** Resuelve el/los chofer(es) de una patente (o varias unidas con " / "). */
+/**
+ * Resuelve el/los chofer(es) de una entrega. Por cada patente busca primero el
+ * chofer del TML/check de esa fecha (exacto); si no hay, cae al asignado.
+ * exacto = true sólo si TODOS los nombres mostrados salieron del día.
+ */
 function resolverChofer(
   patentes: string | null,
-  choferPorPatente: Map<string, string>,
-): string | null {
-  if (!patentes) return null
-  const nombres = [
-    ...new Set(
-      patentes
-        .split("/")
-        .map((p) => choferPorPatente.get(p.trim()))
-        .filter(Boolean) as string[],
-    ),
-  ]
-  return nombres.length ? nombres.join(" / ") : null
+  fecha: string | null,
+  porDia: Map<string, string>,
+  asignado: Map<string, string>,
+): { chofer: string | null; exacto: boolean } {
+  if (!patentes) return { chofer: null, exacto: false }
+  const nombres = new Set<string>()
+  let todosDelDia = true
+  let huboMatch = false
+  for (const raw of patentes.split("/")) {
+    const pat = raw.trim()
+    if (!pat) continue
+    const delDia = fecha ? porDia.get(`${pat}|${fecha}`) : undefined
+    if (delDia) {
+      nombres.add(delDia)
+      huboMatch = true
+    } else {
+      const asig = asignado.get(pat)
+      if (asig) {
+        nombres.add(asig)
+        huboMatch = true
+        todosDelDia = false
+      }
+    }
+  }
+  if (!huboMatch) return { chofer: null, exacto: false }
+  return { chofer: [...nombres].join(" / "), exacto: todosDelDia }
 }
 
 function round1(n: number): number {

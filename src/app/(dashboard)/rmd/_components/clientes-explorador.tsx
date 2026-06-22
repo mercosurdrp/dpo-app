@@ -526,6 +526,14 @@ function ClienteModal({
                             <span>
                               <span className="block font-medium text-slate-700">
                                 {p.chofer ?? "Chofer no asignado"}
+                                {p.chofer && !p.chofer_exacto && (
+                                  <span
+                                    className="ml-1 font-normal text-slate-400"
+                                    title="Chofer asignado al camión (ese día no hubo TML/check para confirmar quién manejó)"
+                                  >
+                                    (asignado)
+                                  </span>
+                                )}
                               </span>
                               <span className="block text-[11px] text-slate-400">
                                 {p.vehiculo_entrega}
