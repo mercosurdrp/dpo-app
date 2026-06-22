@@ -11,7 +11,6 @@ import {
   MessageSquareQuote,
   Target,
   Truck,
-  User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +38,7 @@ import {
 
 const TODOS = "__todos__"
 
-type AgruparPor = "ninguno" | "promotor" | "localidad"
+type AgruparPor = "ninguno" | "chofer" | "localidad"
 type OrdenarPor = "rmd" | "detractoras" | "puntuaciones"
 
 const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
@@ -68,7 +67,7 @@ interface Props {
 
 export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [busqueda, setBusqueda] = useState("")
-  const [fPromotor, setFPromotor] = useState<string>(TODOS)
+  const [fChofer, setFChofer] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
   // Por defecto el explorador arranca enfocado en los clientes con puntuaciones
   // bajas (1-3), que son los accionables; el botón permite ver todos.
@@ -78,10 +77,10 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
   const [clienteModal, setClienteModal] = useState<RmdCliente | null>(null)
 
-  const promotores = useMemo(
+  const choferes = useMemo(
     () =>
       [
-        ...new Set(clientes.map((c) => c.promotor).filter(Boolean)),
+        ...new Set(clientes.map((c) => c.chofer).filter(Boolean)),
       ].sort() as string[],
     [clientes],
   )
@@ -97,14 +96,14 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
     const q = busqueda.trim().toLowerCase()
     return clientes.filter(
       (c) =>
-        (fPromotor === TODOS || c.promotor === fPromotor) &&
+        (fChofer === TODOS || c.chofer === fChofer) &&
         (fLocalidad === TODOS || c.localidad === fLocalidad) &&
         (!soloDetractoras || c.detractoras > 0) &&
         (!q ||
           c.nombre_cliente.toLowerCase().includes(q) ||
           String(c.cod_cliente).includes(q)),
     )
-  }, [clientes, busqueda, fPromotor, fLocalidad, soloDetractoras])
+  }, [clientes, busqueda, fChofer, fLocalidad, soloDetractoras])
 
   const ordenar = useMemo(
     () => (arr: RmdCliente[]) =>
@@ -125,13 +124,13 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
 
   const hayFiltros =
     !!busqueda.trim() ||
-    fPromotor !== TODOS ||
+    fChofer !== TODOS ||
     fLocalidad !== TODOS ||
     soloDetractoras
 
   function limpiarFiltros() {
     setBusqueda("")
-    setFPromotor(TODOS)
+    setFChofer(TODOS)
     setFLocalidad(TODOS)
     setSoloDetractoras(false)
   }
@@ -145,7 +144,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
       m.set(k, arr)
     }
     for (const c of filtrados) {
-      if (agruparPor === "promotor") push(c.promotor ?? "Sin promotor", c)
+      if (agruparPor === "chofer") push(c.chofer ?? "Sin chofer", c)
       else push(c.localidad ?? "Sin localidad", c)
     }
     return [...m.entries()].sort(
@@ -171,7 +170,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
         <span className="col-span-4">Cliente</span>
         <span className="col-span-1 text-center">RMD</span>
         <span className="col-span-2 text-right">Puntuaciones</span>
-        <span className="col-span-3">Promotor</span>
+        <span className="col-span-3">Chofer</span>
         <span className="col-span-2 text-right">Acción</span>
       </div>
     )
@@ -212,7 +211,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
           )}
         </span>
         <span className="col-span-3 min-w-0 truncate text-xs text-slate-700">
-          {c.promotor ?? "—"}
+          {c.chofer ?? "—"}
         </span>
         <span className="col-span-2 text-right">
           <button
@@ -249,13 +248,13 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
             placeholder="Buscar por nombre o código…"
             className="h-8 w-[220px] text-xs"
           />
-          <Select value={fPromotor} onValueChange={(v) => v && setFPromotor(v)}>
+          <Select value={fChofer} onValueChange={(v) => v && setFChofer(v)}>
             <SelectTrigger className="h-8 w-[170px] text-xs">
-              <SelectValue placeholder="Promotor" />
+              <SelectValue placeholder="Chofer" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={TODOS}>Todos los promotores</SelectItem>
-              {promotores.map((p) => (
+              <SelectItem value={TODOS}>Todos los choferes</SelectItem>
+              {choferes.map((p) => (
                 <SelectItem key={p} value={p}>
                   {p}
                 </SelectItem>
@@ -324,7 +323,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ninguno">Sin agrupar</SelectItem>
-                <SelectItem value="promotor">Promotor</SelectItem>
+                <SelectItem value="chofer">Chofer</SelectItem>
                 <SelectItem value="localidad">Localidad</SelectItem>
               </SelectContent>
             </Select>
@@ -460,10 +459,12 @@ function ClienteModal({
 
         <div className="grid grid-cols-1 gap-2 text-sm text-slate-600 sm:grid-cols-2">
           <div className="flex items-center gap-2">
-            <User className="h-4 w-4 shrink-0 text-slate-400" />
+            <Truck className="h-4 w-4 shrink-0 text-slate-400" />
             <span>
-              <span className="font-medium text-slate-700">Promotor: </span>
-              {cliente.promotor ?? "Sin promotor vigente"}
+              <span className="font-medium text-slate-700">
+                Chofer (últ. entrega):{" "}
+              </span>
+              {cliente.chofer ?? "Sin chofer"}
             </span>
           </div>
           <div className="flex items-center gap-2">

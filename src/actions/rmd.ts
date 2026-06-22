@@ -56,6 +56,8 @@ export interface RmdCliente {
   nombre_cliente: string
   promotor: string | null
   localidad: string | null
+  /** Chofer de la última entrega del cliente (reemplaza al promotor en la UI). */
+  chofer: string | null
   rmd: number
   puntuaciones: number
   detractoras: number
@@ -80,6 +82,8 @@ interface RmdRow {
   fecha_puntuacion: string
   puntuacion: number
   motivos: string | null
+  vehiculo_entrega: string | null
+  fecha_entrega: string | null
 }
 
 export interface RmdPunto {
@@ -111,7 +115,7 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       const { data, error } = await supabase
         .from("nps_rmd_cliente")
         .select(
-          "cod_cliente, nombre_cliente, promotor, localidad, fecha_puntuacion, puntuacion, motivos",
+          "cod_cliente, nombre_cliente, promotor, localidad, fecha_puntuacion, puntuacion, motivos, vehiculo_entrega, fecha_entrega",
         )
         .gte("fecha_puntuacion", `${ANIO}-01-01`)
         .lt("fecha_puntuacion", `${ANIO + 1}-01-01`)
@@ -247,6 +251,9 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         det: number
         ultimaFecha: string
         ultimaPunt: number
+        // patente/fecha de la última entrega con vehículo (para el chofer)
+        ultimaPatente: string | null
+        ultimaFechaEntrega: string | null
       }
     >()
     for (const f of filas) {
@@ -259,6 +266,8 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         det: 0,
         ultimaFecha: f.fecha_puntuacion,
         ultimaPunt: f.puntuacion,
+        ultimaPatente: null,
+        ultimaFechaEntrega: null,
       }
       cur.suma += f.puntuacion
       cur.n += 1
@@ -269,14 +278,41 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       cur.nombre = f.nombre_cliente ?? cur.nombre
       cur.promotor = f.promotor ?? cur.promotor
       cur.localidad = f.localidad ?? cur.localidad
+      // el chofer mostrado es el de la entrega más reciente que tenga patente
+      if (f.vehiculo_entrega) {
+        cur.ultimaPatente = f.vehiculo_entrega
+        cur.ultimaFechaEntrega = f.fecha_entrega
+      }
       porCli.set(f.cod_cliente, cur)
     }
+
+    // Chofer de la última entrega de cada cliente (fecha-aware + regla OJA403).
+    const patentesDash = [
+      ...new Set(
+        filas
+          .flatMap((f) => (f.vehiculo_entrega ?? "").split("/"))
+          .map((p) => p.trim())
+          .filter(Boolean),
+      ),
+    ]
+    const [choferPorDiaD, choferAsignadoD] = await Promise.all([
+      getChoferPorDia(supabase, patentesDash),
+      getChoferAsignado(supabase),
+    ])
+
     const clientes: RmdCliente[] = [...porCli.entries()]
       .map(([cod, c]) => ({
         cod_cliente: cod,
         nombre_cliente: c.nombre ?? `Cliente ${cod}`,
         promotor: c.promotor,
         localidad: c.localidad,
+        chofer: resolverChofer(
+          c.ultimaPatente,
+          c.ultimaFechaEntrega,
+          c.localidad,
+          choferPorDiaD,
+          choferAsignadoD,
+        ).chofer,
         rmd: round2(c.suma / c.n),
         puntuaciones: c.n,
         detractoras: c.det,
@@ -312,6 +348,7 @@ interface RmdPuntoRow {
   motivos: string | null
   comentario: string | null
   vehiculo_entrega: string | null
+  localidad: string | null
 }
 
 /** Puntuaciones individuales de un cliente (para el modal del explorador). */
@@ -324,7 +361,7 @@ export async function getRmdPuntuacionesCliente(
     const { data, error } = await supabase
       .from("nps_rmd_cliente")
       .select(
-        "fecha_puntuacion, fecha_entrega, nro_pedido, puntuacion, motivos, comentario, vehiculo_entrega",
+        "fecha_puntuacion, fecha_entrega, nro_pedido, puntuacion, motivos, comentario, vehiculo_entrega, localidad",
       )
       .eq("cod_cliente", codCliente)
       .gte("fecha_puntuacion", `${ANIO}-01-01`)
@@ -354,6 +391,7 @@ export async function getRmdPuntuacionesCliente(
       const r = resolverChofer(
         f.vehiculo_entrega,
         f.fecha_entrega,
+        f.localidad,
         choferPorDia,
         choferAsignado,
       )
@@ -436,15 +474,18 @@ async function getChoferAsignado(
 /**
  * Resuelve el/los chofer(es) de una entrega. Por cada patente busca primero el
  * chofer del TML/check de esa fecha (exacto); si no hay, cae al asignado.
- * exacto = true sólo si TODOS los nombres mostrados salieron del día.
+ * Regla especial: OJA403 no carga TML; cuando entrega a Pergamino lo maneja
+ * FRIAS ANGEL. exacto = true sólo si TODOS los nombres salieron del día.
  */
 function resolverChofer(
   patentes: string | null,
   fecha: string | null,
+  localidad: string | null,
   porDia: Map<string, string>,
   asignado: Map<string, string>,
 ): { chofer: string | null; exacto: boolean } {
   if (!patentes) return { chofer: null, exacto: false }
+  const esPergamino = (localidad ?? "").toUpperCase().includes("PERGAMINO")
   const nombres = new Set<string>()
   let todosDelDia = true
   let huboMatch = false
@@ -455,13 +496,19 @@ function resolverChofer(
     if (delDia) {
       nombres.add(delDia)
       huboMatch = true
-    } else {
-      const asig = asignado.get(pat)
-      if (asig) {
-        nombres.add(asig)
-        huboMatch = true
-        todosDelDia = false
-      }
+      continue
+    }
+    const asig = asignado.get(pat)
+    if (asig) {
+      nombres.add(asig)
+      huboMatch = true
+      todosDelDia = false
+      continue
+    }
+    if (pat === "OJA403" && esPergamino) {
+      nombres.add("FRIAS ANGEL")
+      huboMatch = true
+      todosDelDia = false
     }
   }
   if (!huboMatch) return { chofer: null, exacto: false }
