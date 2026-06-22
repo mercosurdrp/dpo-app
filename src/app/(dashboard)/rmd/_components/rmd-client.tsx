@@ -432,11 +432,21 @@ export function RmdClient({ data, planesIniciales }: Props) {
               {recuperados.map((r) => (
                 <div
                   key={r.cod_cliente}
-                  className="grid grid-cols-12 items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 px-2 py-1.5 text-sm"
+                  className="grid grid-cols-12 items-start gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 px-2 py-1.5 text-sm"
                 >
                   <span className="col-span-5 min-w-0">
-                    <span className="block truncate font-medium text-slate-800">
-                      {r.nombre_cliente}
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate font-medium text-slate-800">
+                        {r.nombre_cliente}
+                      </span>
+                      {r.tuvo_plan && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-blue-200 bg-blue-100 text-[10px] text-blue-800"
+                        >
+                          Con plan
+                        </Badge>
+                      )}
                     </span>
                     <span className="block truncate text-xs text-slate-400">
                       #{r.cod_cliente} · {r.localidad ?? "—"}
@@ -455,6 +465,11 @@ export function RmdClient({ data, planesIniciales }: Props) {
                     <span className="mt-0.5 block text-[10px] text-slate-400">
                       {FMT_DIA.format(new Date(r.fecha_antes))}
                     </span>
+                    {r.motivo_antes && (
+                      <span className="mt-0.5 block text-[10px] leading-tight text-slate-500">
+                        {r.motivo_antes}
+                      </span>
+                    )}
                   </span>
                   <span className="col-span-2 text-center">
                     <Badge
@@ -466,6 +481,11 @@ export function RmdClient({ data, planesIniciales }: Props) {
                     <span className="mt-0.5 block text-[10px] text-slate-400">
                       {FMT_DIA.format(new Date(r.fecha_ahora))}
                     </span>
+                    {r.motivo_ahora && (
+                      <span className="mt-0.5 block text-[10px] leading-tight text-slate-500">
+                        {r.motivo_ahora}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
