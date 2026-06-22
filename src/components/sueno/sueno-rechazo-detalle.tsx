@@ -40,7 +40,7 @@ import { formatValor } from "./sueno-kpi-card"
 const nfAR = new Intl.NumberFormat("es-AR")
 const nf1 = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 })
 
-type OrdenRanking = "eventos" | "bultos"
+type OrdenRanking = "entregas" | "bultos"
 type FocoPlan = {
   foco_motivo_id?: number
   foco_motivo_ds?: string
@@ -54,7 +54,7 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
   const color = RAMA_COLOR[nodo.rama]
 
   const [mesSel, setMesSel] = useState<number | "all">("all")
-  const [orden, setOrden] = useState<OrdenRanking>("eventos")
+  const [orden, setOrden] = useState<OrdenRanking>("entregas")
 
   const [mensual, setMensual] = useState<SuenoDetalle | null>(null)
   const [pctData, setPctData] = useState<RechazoPctData | null>(null)
@@ -101,14 +101,14 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
   const clientesOrdenados = useMemo(() => {
     const arr = [...clientes]
     arr.sort((a, b) =>
-      orden === "eventos" ? b.eventos - a.eventos || b.bultos - a.bultos
-        : b.bultos - a.bultos || b.eventos - a.eventos,
+      orden === "entregas" ? b.entregas - a.entregas || b.bultos - a.bultos
+        : b.bultos - a.bultos || b.entregas - a.entregas,
     )
     return arr
   }, [clientes, orden])
 
   const maxRank = useMemo(() => {
-    const v = clientesOrdenados.map((c) => (orden === "eventos" ? c.eventos : c.bultos))
+    const v = clientesOrdenados.map((c) => (orden === "entregas" ? c.entregas : c.bultos))
     return Math.max(...v, 1)
   }, [clientesOrdenados, orden])
 
@@ -359,10 +359,10 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
                 size="sm"
                 variant="ghost"
                 className="h-7 gap-1 text-xs"
-                onClick={() => setOrden((o) => (o === "eventos" ? "bultos" : "eventos"))}
+                onClick={() => setOrden((o) => (o === "entregas" ? "bultos" : "entregas"))}
               >
                 <ArrowUpDown className="size-3.5" />
-                Orden: {orden === "eventos" ? "veces" : "bultos"}
+                Orden: {orden === "entregas" ? "entregas" : "bultos"}
               </Button>
             </div>
             {cargandoCli ? (
@@ -378,7 +378,7 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
                     <tr className="border-b text-left text-xs uppercase tracking-wide text-slate-400">
                       <th className="py-1.5 font-medium">#</th>
                       <th className="py-1.5 font-medium">Cliente</th>
-                      <th className="py-1.5 text-right font-medium">Veces</th>
+                      <th className="py-1.5 text-right font-medium" title="Comprobantes de rechazo distintos">Entregas</th>
                       <th className="py-1.5 text-right font-medium">Bultos</th>
                       <th className="w-1/4 py-1.5 font-medium" />
                       <th className="py-1.5" />
@@ -386,12 +386,12 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
                   </thead>
                   <tbody>
                     {clientesOrdenados.map((c, i) => {
-                      const val = orden === "eventos" ? c.eventos : c.bultos
+                      const val = orden === "entregas" ? c.entregas : c.bultos
                       return (
                         <tr key={`${c.idCliente}-${i}`} className="border-b border-slate-100">
                           <td className="py-1.5 text-slate-400 tabular-nums">{i + 1}</td>
                           <td className="max-w-[180px] truncate py-1.5 text-slate-700">{c.nombreCliente}</td>
-                          <td className="py-1.5 text-right font-semibold tabular-nums text-slate-800">{nfAR.format(c.eventos)}</td>
+                          <td className="py-1.5 text-right font-semibold tabular-nums text-slate-800">{nfAR.format(c.entregas)}</td>
                           <td className="py-1.5 text-right tabular-nums text-slate-600">{nf1.format(c.bultos)}</td>
                           <td className="py-1.5 pl-3">
                             <span className="block h-2 rounded-full bg-slate-100">

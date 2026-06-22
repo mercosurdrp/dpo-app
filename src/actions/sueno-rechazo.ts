@@ -103,13 +103,13 @@ export async function getSuenoRechazoClientes(
     const rows = ((data ?? []) as {
       id_cliente: number
       nombre_cliente: string
-      eventos: number
+      entregas: number
       bultos: number
       hl: number
     }[]).map((r) => ({
       idCliente: r.id_cliente,
       nombreCliente: r.nombre_cliente,
-      eventos: Number(r.eventos),
+      entregas: Number(r.entregas),
       bultos: Number(r.bultos),
       hl: Number(r.hl),
     }))

@@ -42,7 +42,8 @@ export interface RechazoPctData {
 export interface RechazoClienteRow {
   idCliente: number
   nombreCliente: string
-  eventos: number
+  /** Entregas rechazadas = comprobantes distintos (serie+nº doc). */
+  entregas: number
   bultos: number
   hl: number
 }

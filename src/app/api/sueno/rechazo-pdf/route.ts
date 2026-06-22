@@ -158,7 +158,7 @@ function buildPDF(
     [
       { header: "#", width: 24, align: "right", get: (r) => String(clientes.indexOf(r) + 1) },
       { header: "Cliente", width: 240, get: (r) => r.nombreCliente },
-      { header: "Veces", width: 60, align: "right", get: (r) => formatInt(r.eventos) },
+      { header: "Entregas", width: 65, align: "right", get: (r) => formatInt(r.entregas) },
       { header: "Bultos", width: 65, align: "right", get: (r) => formatHl(r.bultos) },
       { header: "HL", width: 60, align: "right", get: (r) => formatHl(r.hl) },
     ],
