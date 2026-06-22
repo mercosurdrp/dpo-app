@@ -97,7 +97,7 @@ interface Props {
   planesIniciales: RmdPlan[]
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
-  promotores: string[]
+  choferes: string[]
   /** Foco prellenado al abrir el form desde la tabla de clientes con RMD bajo. */
   focoInicial?: FocoInicial | null
   /** Cambia cada vez que hay que abrir el form con el foco actual. */
@@ -108,7 +108,7 @@ export function PlanesAccionBloque({
   planesIniciales,
   motivos,
   clientes,
-  promotores,
+  choferes,
   focoInicial = null,
   abrirNonce = 0,
 }: Props) {
@@ -255,10 +255,17 @@ export function PlanesAccionBloque({
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                     {(p.foco_motivo ||
                       p.foco_cliente_nombre ||
+                      p.foco_chofer ||
                       p.foco_promotor) && (
                       <span className="flex items-center gap-1">
                         <Target className="h-3.5 w-3.5" />
-                        {[p.foco_motivo, p.foco_cliente_nombre, p.foco_promotor]
+                        {[
+                          p.foco_motivo,
+                          p.foco_cliente_nombre,
+                          p.foco_chofer
+                            ? `Chofer: ${p.foco_chofer}`
+                            : p.foco_promotor,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
@@ -289,7 +296,7 @@ export function PlanesAccionBloque({
         onOpenChange={setFormOpen}
         motivos={motivos}
         clientes={clientes}
-        promotores={promotores}
+        choferes={choferes}
         responsables={responsables}
         planExistente={planEditar}
         focoInicial={planEditar ? null : focoInicial}

@@ -33,6 +33,7 @@ export interface RmdPlan {
   foco_cliente_id: number | null
   foco_cliente_nombre: string | null
   foco_promotor: string | null
+  foco_chofer: string | null
   prioridad: PrioridadRmdPlan
   estado: EstadoRmdPlan
   responsable_id: string | null
@@ -177,6 +178,7 @@ export async function listarPlanesRmd(): Promise<Result<RmdPlan[]>> {
         foco_cliente_id: r.foco_cliente_id ?? null,
         foco_cliente_nombre: r.foco_cliente_nombre ?? null,
         foco_promotor: r.foco_promotor ?? null,
+        foco_chofer: r.foco_chofer ?? null,
         prioridad: (r.prioridad as PrioridadRmdPlan) ?? "media",
         estado: (r.estado as EstadoRmdPlan) ?? "pendiente",
         responsable_id: r.responsable_id ?? null,
@@ -235,6 +237,8 @@ export async function crearPlanRmd(
       String(formData.get("foco_cliente_nombre") ?? "").trim() || null
     const focoPromotor =
       String(formData.get("foco_promotor") ?? "").trim() || null
+    const focoChofer =
+      String(formData.get("foco_chofer") ?? "").trim() || null
     const responsableId =
       String(formData.get("responsable_id") ?? "").trim() || null
     const fechaObjetivo =
@@ -281,6 +285,7 @@ export async function crearPlanRmd(
         foco_cliente_id: focoClienteId,
         foco_cliente_nombre: focoClienteNombre,
         foco_promotor: focoPromotor,
+        foco_chofer: focoChofer,
         responsable_id: responsableId,
         fecha_objetivo: fechaObjetivo,
         created_by: profile.id,
@@ -364,6 +369,9 @@ export async function actualizarPlanRmd(
     if (formData.has("foco_promotor"))
       updates.foco_promotor =
         String(formData.get("foco_promotor") ?? "").trim() || null
+    if (formData.has("foco_chofer"))
+      updates.foco_chofer =
+        String(formData.get("foco_chofer") ?? "").trim() || null
     if (formData.has("responsable_id"))
       updates.responsable_id =
         String(formData.get("responsable_id") ?? "").trim() || null

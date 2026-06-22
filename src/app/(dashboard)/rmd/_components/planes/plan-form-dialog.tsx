@@ -30,14 +30,14 @@ import {
 
 const SIN_MOTIVO = "__sin_motivo__"
 const SIN_CLIENTE = "__sin_cliente__"
-const SIN_PROMOTOR = "__sin_promotor__"
+const SIN_CHOFER = "__sin_chofer__"
 const SIN_RESPONSABLE = "__sin_responsable__"
 
 export interface FocoInicial {
   foco_motivo?: string
   foco_cliente_id?: number
   foco_cliente_nombre?: string
-  foco_promotor?: string
+  foco_chofer?: string
 }
 
 interface Props {
@@ -45,7 +45,7 @@ interface Props {
   onOpenChange: (o: boolean) => void
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
-  promotores: string[]
+  choferes: string[]
   responsables: { id: string; nombre: string }[]
   planExistente?: RmdPlan | null
   focoInicial?: FocoInicial | null
@@ -57,7 +57,7 @@ export function PlanFormDialog({
   onOpenChange,
   motivos,
   clientes,
-  promotores,
+  choferes,
   responsables,
   planExistente = null,
   focoInicial = null,
@@ -71,7 +71,7 @@ export function PlanFormDialog({
   const [prioridad, setPrioridad] = useState<PrioridadRmdPlan>("media")
   const [motivo, setMotivo] = useState<string>(SIN_MOTIVO)
   const [clienteId, setClienteId] = useState<string>(SIN_CLIENTE)
-  const [promotor, setPromotor] = useState<string>(SIN_PROMOTOR)
+  const [chofer, setChofer] = useState<string>(SIN_CHOFER)
   const [responsableId, setResponsableId] = useState<string>(SIN_RESPONSABLE)
   const [fechaObjetivo, setFechaObjetivo] = useState("")
 
@@ -88,7 +88,7 @@ export function PlanFormDialog({
           ? String(planExistente.foco_cliente_id)
           : SIN_CLIENTE,
       )
-      setPromotor(planExistente.foco_promotor ?? SIN_PROMOTOR)
+      setChofer(planExistente.foco_chofer ?? SIN_CHOFER)
       setResponsableId(planExistente.responsable_id ?? SIN_RESPONSABLE)
       setFechaObjetivo(planExistente.fecha_objetivo ?? "")
     } else {
@@ -101,7 +101,7 @@ export function PlanFormDialog({
           ? String(focoInicial.foco_cliente_id)
           : SIN_CLIENTE,
       )
-      setPromotor(focoInicial?.foco_promotor ?? SIN_PROMOTOR)
+      setChofer(focoInicial?.foco_chofer ?? SIN_CHOFER)
       setResponsableId(SIN_RESPONSABLE)
       setFechaObjetivo("")
     }
@@ -128,7 +128,7 @@ export function PlanFormDialog({
       fd.append("foco_cliente_nombre", "")
     }
 
-    fd.append("foco_promotor", promotor !== SIN_PROMOTOR ? promotor : "")
+    fd.append("foco_chofer", chofer !== SIN_CHOFER ? chofer : "")
     fd.append(
       "responsable_id",
       responsableId !== SIN_RESPONSABLE ? responsableId : "",
@@ -264,17 +264,14 @@ export function PlanFormDialog({
             </div>
 
             <div className="space-y-1">
-              <Label>Foco · Promotor</Label>
-              <Select
-                value={promotor}
-                onValueChange={(v) => v && setPromotor(v)}
-              >
+              <Label>Foco · Chofer</Label>
+              <Select value={chofer} onValueChange={(v) => v && setChofer(v)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sin promotor" />
+                  <SelectValue placeholder="Sin chofer" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={SIN_PROMOTOR}>Sin promotor</SelectItem>
-                  {promotores.map((p) => (
+                  <SelectItem value={SIN_CHOFER}>Sin chofer</SelectItem>
+                  {choferes.map((p) => (
                     <SelectItem key={p} value={p}>
                       {p}
                     </SelectItem>

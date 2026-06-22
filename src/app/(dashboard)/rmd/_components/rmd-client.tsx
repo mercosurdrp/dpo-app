@@ -72,15 +72,14 @@ interface Props {
 }
 
 export function RmdClient({ data, planesIniciales }: Props) {
-  const { resumen, por_mes, distribucion, motivos, por_promotor, clientes } =
-    data
+  const { resumen, por_mes, distribucion, motivos, clientes } = data
 
   // Foco prellenado al crear un plan desde la tabla de clientes.
   const [focoPlan, setFocoPlan] = useState<{
     foco_cliente_id?: number
     foco_cliente_nombre?: string
     foco_motivo?: string
-    foco_promotor?: string
+    foco_chofer?: string
   } | null>(null)
   const [abrirPlanNonce, setAbrirPlanNonce] = useState(0)
 
@@ -88,7 +87,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
     setFocoPlan({
       foco_cliente_id: c.cod_cliente,
       foco_cliente_nombre: c.nombre_cliente,
-      foco_promotor: c.promotor ?? undefined,
+      foco_chofer: c.chofer ?? undefined,
     })
     setAbrirPlanNonce((n) => n + 1)
   }
@@ -406,7 +405,9 @@ export function RmdClient({ data, planesIniciales }: Props) {
           cod_cliente: c.cod_cliente,
           nombre_cliente: c.nombre_cliente,
         }))}
-        promotores={por_promotor.map((p) => p.promotor)}
+        choferes={[
+          ...new Set(clientes.map((c) => c.chofer).filter(Boolean)),
+        ].sort() as string[]}
         focoInicial={focoPlan}
         abrirNonce={abrirPlanNonce}
       />
