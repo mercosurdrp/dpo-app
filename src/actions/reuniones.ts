@@ -12,10 +12,13 @@ import {
 } from "@/actions/mantenimiento-edilicio"
 import {
   buildAperturaPickingDelDia,
+  buildAperturaMaquinistasDelDia,
+  buildMaquinistasDespachoSerie,
   buildWarehouseSerieDiaria,
   refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
   type AperturaPickingDelDia,
+  type AperturaMaquinistasDelDia,
   type OperadorApertura,
 } from "@/lib/warehouse/auto-indicadores"
 import {
@@ -4184,6 +4187,28 @@ async function getIndicadoresMesCore(
             "menor",
           ),
         )
+
+        // Productividad de maquinistas (carga de camiones / despacho) en
+        // Pal/HH. Sólo warehouse. Detalle por operario al clickear el día
+        // (ver getAperturaMaquinistasDia + AperturaMaquinistasDetalleDiaDialog).
+        // Se enmascara el día en curso (igual que picking): el despacho de hoy
+        // todavía no está cerrado.
+        const maqDespacho = await buildMaquinistasDespachoSerie(fechas)
+        const maqHastaAyer: Record<string, number | null> = {}
+        for (const f of fechas) {
+          maqHastaAyer[f] = f < fecha ? (maqDespacho[f] ?? null) : null
+        }
+        indicadoresAuto.push(
+          buildSerieRow(
+            "auto_productividad_maquinistas",
+            "Productividad maquinistas",
+            "Pal/HH",
+            maqHastaAyer,
+            "promedio",
+            25,
+            "mayor",
+          ),
+        )
       }
     }
 
@@ -4277,6 +4302,35 @@ export async function getAperturaPickingDia(
         err instanceof Error
           ? err.message
           : "Error obteniendo apertura por operador",
+    }
+  }
+}
+
+/**
+ * Devuelve la apertura por maquinista (despacho / carga de camiones) para una
+ * fecha específica: Pal/HH y Bul/HH por operario. Datos en vivo desde
+ * deposito-esteban (productividad-maquinistas). Read-only (sin overrides).
+ */
+export async function getAperturaMaquinistasDia(
+  reunionId: string,
+  fecha: string,
+): Promise<Result<AperturaMaquinistasDelDia>> {
+  try {
+    await requireAuth()
+
+    if (!reunionId) return { error: "ID de reunión inválido" }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return { error: "Fecha inválida (formato esperado YYYY-MM-DD)" }
+    }
+
+    const data = await buildAperturaMaquinistasDelDia(fecha)
+    return { data }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error obteniendo apertura de maquinistas",
     }
   }
 }

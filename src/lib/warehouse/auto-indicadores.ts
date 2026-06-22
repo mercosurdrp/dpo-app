@@ -282,10 +282,13 @@ export async function buildWarehouseSerieDiaria(
     }
   }
 
-  const snap = await fetchSnapshot()
+  const [snap, pickingPorFecha] = await Promise.all([
+    fetchSnapshot(),
+    fetchPickingBulHhPorFechaOperador(),
+  ])
   const base: WarehouseSerieBase =
     snap && snap.dias
-      ? buildSerieFromSnapshot(fechas, fechaReunion, snap.dias)
+      ? buildSerieFromSnapshot(fechas, fechaReunion, snap.dias, pickingPorFecha)
       : // Fallback: si el snapshot no existe (primera vez, o pusher caído),
         // pegar a las 4 fuentes originales.
         await buildSerieLegacy(fechas, fechaReunion)
@@ -302,6 +305,7 @@ function buildSerieFromSnapshot(
   fechas: string[],
   fechaReunion: string,
   dias: Record<string, SnapshotDia>,
+  pickingPorFecha: Map<string, Map<OperadorApertura, number>>,
 ): WarehouseSerieBase {
   const wqi: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
@@ -324,7 +328,19 @@ function buildSerieFromSnapshot(
     scl[f] = visible ? (dia?.scl ?? null) : null
     // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
     capacidad[f] = dia?.capacidad ?? null
-    productividad[f] = dia?.productividad ?? null
+    // Promedio diario de picking: recomputado para incluir a TODOS los
+    // operadores con dato en productividad-picking. El snapshot pre-cocinado
+    // sólo promedia la lista fija del pusher (Troli/Galvez/Ovejero) y deja
+    // afuera a los que cubren (p.ej. Selenzo) → su productividad no se veía.
+    // Si no hay filas de picking del día, se conserva el promedio del snapshot.
+    const pk = pickingPorFecha.get(f)
+    if (pk && pk.size > 0) {
+      const vals = Array.from(pk.values())
+      productividad[f] =
+        Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+    } else {
+      productividad[f] = dia?.productividad ?? null
+    }
     // Precisión: ocultar el día actual y futuros (aún no se pickeó →
     // no hay errores cargados, el valor sería falso 100%).
     precision[f] = f < fechaReunion ? (dia?.precision ?? null) : null
@@ -349,10 +365,19 @@ export async function buildAperturaPickingDelDia(
   // Conteo de errores por operador (= filas del Sheet). Se enriquece
   // sobre la apertura, que el snapshot expone con bultos errados.
   const erroresPorOpPromise = fetchErroresCountPorOperador(fecha)
-  const snap = await fetchSnapshot()
+  const [snap, pickingPorFecha] = await Promise.all([
+    fetchSnapshot(),
+    fetchPickingBulHhPorFechaOperador(),
+  ])
+  const pickingDelDia = pickingPorFecha.get(fecha) ?? null
   const base =
     snap && snap.dias && snap.dias[fecha]
-      ? buildAperturaFromSnapshot(fecha, snap.dias[fecha], overridesHlHh)
+      ? buildAperturaFromSnapshot(
+          fecha,
+          snap.dias[fecha],
+          overridesHlHh,
+          pickingDelDia,
+        )
       : await buildAperturaLegacy(fecha, overridesHlHh)
   const erroresPorOp = await erroresPorOpPromise
   if (erroresPorOp) {
@@ -383,6 +408,7 @@ function buildAperturaFromSnapshot(
   fecha: string,
   dia: SnapshotDia,
   overridesHlHh: Map<OperadorApertura, number | null>,
+  pickingDelDia: Map<OperadorApertura, number> | null,
 ): AperturaPickingDelDia {
   const filas: OperadorAperturaRow[] = OPERADORES_APERTURA.map((alias) => {
     const op = dia.apertura?.[alias] ?? null
@@ -394,7 +420,14 @@ function buildAperturaFromSnapshot(
         ? Math.round(op.errores)
         : null
     const precision = op?.precision ?? null
-    const bul_hh_auto = op?.bul_hh ?? null
+    // bul/HH del snapshot. Si el operador no está en la lista fija del pusher
+    // (p.ej. Selenzo, que cubre picking) lo completamos desde
+    // productividad-picking para que su productividad aparezca igual.
+    let bul_hh_auto = op?.bul_hh ?? null
+    if (bul_hh_auto === null && pickingDelDia) {
+      const pk = pickingDelDia.get(alias)
+      if (pk != null) bul_hh_auto = pk
+    }
     const manual = overridesHlHh.get(alias) ?? null
     const efectivo = manual !== null ? manual : bul_hh_auto
     return {
@@ -409,12 +442,15 @@ function buildAperturaFromSnapshot(
     }
   })
 
-  // Aplicar overrides manuales al promedio de productividad si los hay.
+  // Promedio de productividad del día: se recomputa sobre los bul/HH efectivos
+  // (incluye a los operadores suplidos desde picking y a los overrides
+  // manuales) siempre que haya datos de picking o algún override. Si no, se
+  // usa el promedio pre-cocinado del snapshot.
   const tieneOverride = Array.from(overridesHlHh.values()).some(
     (v) => v !== null,
   )
   let productividad_promedio_bul_hh = dia.productividad ?? null
-  if (tieneOverride) {
+  if (tieneOverride || (pickingDelDia && pickingDelDia.size > 0)) {
     const efectivos = filas
       .map((f) => f.bul_hh_efectivo)
       .filter((v): v is number => v !== null && Number.isFinite(v))
@@ -545,6 +581,39 @@ interface DepositoProductividad {
   data?: {
     filas?: ProductividadFila[]
   } | null
+}
+
+/**
+ * bul/HH por operador (alias de OPERADORES_APERTURA) por fecha, leído directo
+ * de productividad-picking (la misma fuente WMS que alimenta el snapshot). El
+ * snapshot pre-cocinado sólo arma la apertura para la lista fija del pusher
+ * (Troli/Galvez/Ovejero) y deja afuera a los que cubren picking (p.ej.
+ * Selenzo); con esto completamos su bul/HH tanto en la apertura por operador
+ * como en el promedio diario. El fetch ya está cacheado por URL.
+ */
+async function fetchPickingBulHhPorFechaOperador(): Promise<
+  Map<string, Map<OperadorApertura, number>>
+> {
+  const out = new Map<string, Map<OperadorApertura, number>>()
+  const res = await fetchJsonSafe<DepositoProductividad>(
+    `${DEPOSITO_API_BASE}/api/shared/load?module=productividad-picking`,
+  )
+  for (const fila of res?.data?.filas ?? []) {
+    if (typeof fila.bul_hh !== "number" || !Number.isFinite(fila.bul_hh)) continue
+    if (fila.bul_hh <= 0) continue
+    const alias = OPERADORES_APERTURA.find((a) => matchOperador(fila.operario, a))
+    if (!alias) continue
+    let porOp = out.get(fila.fecha)
+    if (!porOp) {
+      porOp = new Map()
+      out.set(fila.fecha, porOp)
+    }
+    // Si hubiera más de una fila del mismo operador/día (no debería), nos
+    // quedamos con la mayor para no subcontar.
+    const prev = porOp.get(alias)
+    porOp.set(alias, prev != null ? Math.max(prev, fila.bul_hh) : fila.bul_hh)
+  }
+  return out
 }
 
 function fechaOcupacionAIso(raw: string, anioRef: number): string | null {
@@ -887,5 +956,138 @@ function computeAperturaLegacy(
     filas,
     precision_promedio: null,
     productividad_promedio_bul_hh,
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Maquinistas — productividad de DESPACHO (carga de camiones)
+// Fuente: deposito-esteban /api/shared/load?module=productividad-maquinistas
+// (cada fila: fecha, operario, actividad DESPACHO|MAQUINISTA, pal_hh, bul_hh…).
+// Sólo se considera DESPACHO: la actividad MAQUINISTA (reubicación/traslados/
+// ingreso) se dejó de registrar en deposito el 2026-06-19 por meter ruido.
+// Métrica principal: Pal/HH (pallets por hora). Sólo se usa en reunión warehouse.
+// ────────────────────────────────────────────────────────────────────
+
+interface MaquinistaFila {
+  fecha: string
+  operario: string
+  actividad?: string
+  pal_hh?: number
+  bul_hh?: number
+}
+
+interface DepositoMaquinistas {
+  data?: {
+    filas?: MaquinistaFila[]
+  } | null
+}
+
+export interface MaquinistaDespachoRow {
+  operario: string
+  pal_hh: number | null
+  bul_hh: number | null
+}
+
+export interface AperturaMaquinistasDelDia {
+  fecha: string
+  filas: MaquinistaDespachoRow[]
+  /** Promedio de Pal/HH del día (operarios con dato). null si no hay datos. */
+  pal_hh_promedio: number | null
+}
+
+/** Filas de DESPACHO (pal_hh>0) agrupadas por fecha → operario → listas de
+ *  pal_hh y bul_hh (promediadas si hubiera más de una fila del operario/día). */
+async function fetchMaquinistasDespachoPorFecha(): Promise<
+  Map<string, Map<string, { pal: number[]; bul: number[] }>>
+> {
+  const out = new Map<string, Map<string, { pal: number[]; bul: number[] }>>()
+  const res = await fetchJsonSafe<DepositoMaquinistas>(
+    `${DEPOSITO_API_BASE}/api/shared/load?module=productividad-maquinistas`,
+  )
+  for (const fila of res?.data?.filas ?? []) {
+    if ((fila.actividad ?? "").trim().toUpperCase() !== "DESPACHO") continue
+    const pal = Number(fila.pal_hh)
+    if (!Number.isFinite(pal) || pal <= 0) continue
+    const operario = (fila.operario ?? "").trim()
+    if (!operario) continue
+    let porOp = out.get(fila.fecha)
+    if (!porOp) {
+      porOp = new Map()
+      out.set(fila.fecha, porOp)
+    }
+    let acc = porOp.get(operario)
+    if (!acc) {
+      acc = { pal: [], bul: [] }
+      porOp.set(operario, acc)
+    }
+    acc.pal.push(pal)
+    const bul = Number(fila.bul_hh)
+    if (Number.isFinite(bul) && bul > 0) acc.bul.push(bul)
+  }
+  return out
+}
+
+function promedio(xs: number[]): number | null {
+  return xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : null
+}
+
+/** Serie diaria del promedio de Pal/HH de despacho (indicador AUTO de la
+ *  reunión warehouse). El enmascarado del día en curso se hace en el caller. */
+export async function buildMaquinistasDespachoSerie(
+  fechas: string[],
+): Promise<Record<string, number | null>> {
+  const porFecha = await fetchMaquinistasDespachoPorFecha()
+  const out: Record<string, number | null> = {}
+  for (const f of fechas) {
+    const porOp = porFecha.get(f)
+    if (!porOp || porOp.size === 0) {
+      out[f] = null
+      continue
+    }
+    const promediosOp: number[] = []
+    for (const acc of porOp.values()) {
+      const p = promedio(acc.pal)
+      if (p != null) promediosOp.push(p)
+    }
+    out[f] =
+      promediosOp.length > 0
+        ? Math.round(
+            (promediosOp.reduce((a, b) => a + b, 0) / promediosOp.length) * 10,
+          ) / 10
+        : null
+  }
+  return out
+}
+
+/** Apertura por maquinista (despacho) de un día puntual: Pal/HH y Bul/HH por
+ *  operario. Read-only (sin overrides manuales). */
+export async function buildAperturaMaquinistasDelDia(
+  fecha: string,
+): Promise<AperturaMaquinistasDelDia> {
+  const porFecha = await fetchMaquinistasDespachoPorFecha()
+  const porOp = porFecha.get(fecha)
+  const filas: MaquinistaDespachoRow[] = []
+  if (porOp) {
+    for (const [operario, acc] of porOp.entries()) {
+      const pal = promedio(acc.pal)
+      const bul = promedio(acc.bul)
+      filas.push({
+        operario,
+        pal_hh: pal != null ? Math.round(pal) : null,
+        bul_hh: bul != null ? Math.round(bul) : null,
+      })
+    }
+  }
+  filas.sort((a, b) => (b.pal_hh ?? -1) - (a.pal_hh ?? -1))
+  const pals = filas
+    .map((f) => f.pal_hh)
+    .filter((v): v is number => v != null && Number.isFinite(v))
+  return {
+    fecha,
+    filas,
+    pal_hh_promedio:
+      pals.length > 0
+        ? Math.round((pals.reduce((a, b) => a + b, 0) / pals.length) * 10) / 10
+        : null,
   }
 }

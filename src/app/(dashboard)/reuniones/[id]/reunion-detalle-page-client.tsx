@@ -75,6 +75,7 @@ import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-di
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { OcupacionBodegaDetalleDiaDialog } from "@/components/reuniones/ocupacion-bodega-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
+import { AperturaMaquinistasDetalleDiaDialog } from "@/components/reuniones/apertura-maquinistas-detalle-dia-dialog"
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
@@ -858,6 +859,12 @@ export function ReunionDetallePageClient({
   const [aperturaPickingFecha, setAperturaPickingFecha] = useState<string | null>(
     null,
   )
+
+  // Detalle del día al hacer click en la celda Productividad maquinistas
+  // (solo warehouse): abre el sub-cuadro con el despacho por maquinista.
+  const [aperturaMaquinistasFecha, setAperturaMaquinistasFecha] = useState<
+    string | null
+  >(null)
 
   // Detalle del día al hacer click en la celda Ausentismo: lista de personas
   // ausentes / con licencia médica de los sectores Depósito + Distribución.
@@ -1774,6 +1781,8 @@ export function ReunionDetallePageClient({
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking" ||
                             ind.id === "auto_errores_picking"
+                          const esAperturaMaquinistas =
+                            ind.id === "auto_productividad_maquinistas"
                           const esAusentismo = ind.id === "auto_ausentismo"
                           const esOB = ind.id === "auto_ocupacion_bodega"
                           // WQI / Roturas / Faltantes (warehouse): mismo popover de
@@ -1792,6 +1801,7 @@ export function ReunionDetallePageClient({
                               esKm ||
                               esHorasCalle ||
                               esAperturaPicking ||
+                              esAperturaMaquinistas ||
                               esAusentismo ||
                               esOB ||
                               esWqiPerdidas) &&
@@ -1805,6 +1815,8 @@ export function ReunionDetallePageClient({
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
+                            else if (esAperturaMaquinistas)
+                              setAperturaMaquinistasFecha(f)
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
                             else if (esWqiPerdidas) setWqiDetalleFecha(f)
@@ -2019,6 +2031,15 @@ export function ReunionDetallePageClient({
         fecha={aperturaPickingFecha}
         puedeEditar={puedeEditarTablero}
         onChange={refrescar}
+      />
+
+      <AperturaMaquinistasDetalleDiaDialog
+        open={aperturaMaquinistasFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setAperturaMaquinistasFecha(null)
+        }}
+        reunionId={detalle.id}
+        fecha={aperturaMaquinistasFecha}
       />
 
       <AusentismoDetalleDiaDialog
