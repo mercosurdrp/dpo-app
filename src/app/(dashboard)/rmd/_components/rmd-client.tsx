@@ -72,7 +72,8 @@ interface Props {
 }
 
 export function RmdClient({ data, planesIniciales }: Props) {
-  const { resumen, por_mes, distribucion, motivos, clientes } = data
+  const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
+    data
 
   // Foco prellenado al crear un plan desde la tabla de clientes.
   const [focoPlan, setFocoPlan] = useState<{
@@ -396,6 +397,82 @@ export function RmdClient({ data, planesIniciales }: Props) {
 
       {/* Explorador de toda la base */}
       <ClientesExplorador clientes={clientes} onCrearPlan={planParaCliente} />
+
+      {/* Clientes recuperados: puntuaron bajo (1-3) y volvieron a 4-5 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            Clientes que se recuperaron
+            <Badge
+              variant="outline"
+              className="border-emerald-200 bg-emerald-100 text-emerald-800"
+            >
+              {recuperados.length}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="border-t pt-4">
+          <p className="mb-3 text-xs text-slate-500">
+            Tuvieron una puntuación baja (1-3) y en una entrega posterior
+            volvieron a puntuar bien (4-5). Su última puntuación es alta.
+          </p>
+          {recuperados.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Todavía no hay clientes recuperados.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              <div className="grid grid-cols-12 items-center gap-2 px-2 pb-1 text-xs font-medium uppercase text-slate-500">
+                <span className="col-span-5">Cliente</span>
+                <span className="col-span-3">Chofer</span>
+                <span className="col-span-2 text-center">Antes</span>
+                <span className="col-span-2 text-center">Ahora</span>
+              </div>
+              {recuperados.map((r) => (
+                <div
+                  key={r.cod_cliente}
+                  className="grid grid-cols-12 items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 px-2 py-1.5 text-sm"
+                >
+                  <span className="col-span-5 min-w-0">
+                    <span className="block truncate font-medium text-slate-800">
+                      {r.nombre_cliente}
+                    </span>
+                    <span className="block truncate text-xs text-slate-400">
+                      #{r.cod_cliente} · {r.localidad ?? "—"}
+                    </span>
+                  </span>
+                  <span className="col-span-3 min-w-0 truncate text-xs text-slate-700">
+                    {r.chofer ?? "—"}
+                  </span>
+                  <span className="col-span-2 text-center">
+                    <Badge
+                      variant="outline"
+                      className="border-red-200 bg-red-100 text-red-800"
+                    >
+                      {r.punt_antes}
+                    </Badge>
+                    <span className="mt-0.5 block text-[10px] text-slate-400">
+                      {FMT_DIA.format(new Date(r.fecha_antes))}
+                    </span>
+                  </span>
+                  <span className="col-span-2 text-center">
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-200 bg-emerald-100 text-emerald-800"
+                    >
+                      {r.punt_ahora}
+                    </Badge>
+                    <span className="mt-0.5 block text-[10px] text-slate-400">
+                      {FMT_DIA.format(new Date(r.fecha_ahora))}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Planes de acción sobre RMD */}
       <PlanesAccionBloque

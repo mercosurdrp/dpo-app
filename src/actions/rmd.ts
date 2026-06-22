@@ -65,6 +65,18 @@ export interface RmdCliente {
   ultima_puntuacion: number
 }
 
+/** Cliente que puntuó bajo (1-3) y después se recuperó (última 4-5). */
+export interface RmdRecuperado {
+  cod_cliente: number
+  nombre_cliente: string
+  localidad: string | null
+  chofer: string | null
+  punt_antes: number
+  fecha_antes: string
+  punt_ahora: number
+  fecha_ahora: string
+}
+
 export interface RmdDashboardData {
   resumen: RmdResumen
   por_mes: RmdMes[]
@@ -72,6 +84,7 @@ export interface RmdDashboardData {
   motivos: RmdMotivo[]
   por_promotor: RmdPromotor[]
   clientes: RmdCliente[]
+  recuperados: RmdRecuperado[]
 }
 
 interface RmdRow {
@@ -254,6 +267,9 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         // patente/fecha de la última entrega con vehículo (para el chofer)
         ultimaPatente: string | null
         ultimaFechaEntrega: string | null
+        // última puntuación baja (1-3) vista, para detectar recuperación
+        ultimaBajaPunt: number | null
+        ultimaBajaFecha: string | null
       }
     >()
     for (const f of filas) {
@@ -268,10 +284,17 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         ultimaPunt: f.puntuacion,
         ultimaPatente: null,
         ultimaFechaEntrega: null,
+        ultimaBajaPunt: null,
+        ultimaBajaFecha: null,
       }
       cur.suma += f.puntuacion
       cur.n += 1
-      if (f.puntuacion <= 3) cur.det += 1
+      if (f.puntuacion <= 3) {
+        cur.det += 1
+        // filas asc por fecha → guardamos la baja más reciente
+        cur.ultimaBajaPunt = f.puntuacion
+        cur.ultimaBajaFecha = f.fecha_puntuacion
+      }
       // filas vienen ordenadas asc por fecha → la última gana
       cur.ultimaFecha = f.fecha_puntuacion
       cur.ultimaPunt = f.puntuacion
@@ -322,6 +345,25 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       // peores RMD primero, desempate por más detractoras
       .sort((a, b) => a.rmd - b.rmd || b.detractoras - a.detractoras)
 
+    // ---- clientes recuperados: tuvieron una baja (1-3) y su última es alta (4-5) ----
+    const choferCli = new Map(clientes.map((c) => [c.cod_cliente, c.chofer]))
+    const recuperados: RmdRecuperado[] = [...porCli.entries()]
+      .filter(
+        ([, c]) => c.ultimaPunt >= 4 && c.ultimaBajaFecha != null,
+      )
+      .map(([cod, c]) => ({
+        cod_cliente: cod,
+        nombre_cliente: c.nombre ?? `Cliente ${cod}`,
+        localidad: c.localidad,
+        chofer: choferCli.get(cod) ?? null,
+        punt_antes: c.ultimaBajaPunt as number,
+        fecha_antes: c.ultimaBajaFecha as string,
+        punt_ahora: c.ultimaPunt,
+        fecha_ahora: c.ultimaFecha,
+      }))
+      // los que se recuperaron más recientemente primero
+      .sort((a, b) => b.fecha_ahora.localeCompare(a.fecha_ahora))
+
     return {
       data: {
         resumen,
@@ -330,6 +372,7 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         motivos,
         por_promotor,
         clientes,
+        recuperados,
       },
     }
   } catch (err) {
