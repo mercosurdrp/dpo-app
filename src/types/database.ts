@@ -1264,7 +1264,7 @@ export interface MantenimientoPlanOverride {
   created_at: string
 }
 
-export type MantenimientoTipo = "preventivo" | "correctivo"
+export type MantenimientoTipo = "preventivo" | "correctivo" | "proactivo"
 export type MantenimientoEstado = "programado" | "en_taller" | "completado" | "cancelado"
 
 export const MANTENIMIENTO_ESTADO_LABELS: Record<MantenimientoEstado, string> = {
@@ -1335,7 +1335,7 @@ export interface EstadoPlanVehiculo {
 export interface CostosMantenimiento {
   costoMes: number
   costoYTD: number
-  porMes: { mes: string; preventivo: number; correctivo: number }[]
+  porMes: { mes: string; preventivo: number; correctivo: number; proactivo: number }[]
 }
 
 // ===== Matriz SKAP / Certificaciones SOP (R1.1.3) =====

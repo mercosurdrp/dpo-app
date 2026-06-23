@@ -1075,7 +1075,10 @@ export async function getCostosMantenimiento(): Promise<
 
     let costoMes = 0
     let costoYTD = 0
-    const porMesMap = new Map<string, { preventivo: number; correctivo: number }>()
+    const porMesMap = new Map<
+      string,
+      { preventivo: number; correctivo: number; proactivo: number }
+    >()
     for (const m of (data || []) as Array<{
       fecha: string
       tipo: MantenimientoTipo
@@ -1087,7 +1090,8 @@ export async function getCostosMantenimiento(): Promise<
       costoYTD += costo
       if (m.fecha.slice(0, 7) === mesActual) costoMes += costo
       const mes = m.fecha.slice(0, 7)
-      if (!porMesMap.has(mes)) porMesMap.set(mes, { preventivo: 0, correctivo: 0 })
+      if (!porMesMap.has(mes))
+        porMesMap.set(mes, { preventivo: 0, correctivo: 0, proactivo: 0 })
       porMesMap.get(mes)![m.tipo] += costo
     }
 

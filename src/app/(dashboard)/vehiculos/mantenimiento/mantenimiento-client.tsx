@@ -97,6 +97,18 @@ const TIPO_VEHICULO_LABELS: Record<VehiculoTipo, string> = {
   acoplado: "Acoplados",
 }
 
+const TIPO_MANT_LABEL: Record<MantenimientoTipo, string> = {
+  preventivo: "Preventivo",
+  correctivo: "Correctivo",
+  proactivo: "Proactivo",
+}
+
+const TIPO_MANT_BADGE: Record<MantenimientoTipo, string> = {
+  preventivo: "border-sky-200 bg-sky-50 text-sky-700",
+  correctivo: "border-orange-200 bg-orange-50 text-orange-700",
+  proactivo: "border-violet-200 bg-violet-50 text-violet-700",
+}
+
 const ESTADO_MANT_BADGE: Record<MantenimientoEstado, string> = {
   programado: "bg-blue-100 text-blue-700",
   en_taller: "bg-amber-100 text-amber-700",
@@ -242,6 +254,12 @@ export function MantenimientoClient({
     [mantenimientos, fDominio, fTipo, fEstado]
   )
 
+  // Costo total de las órdenes según los filtros aplicados.
+  const costoFiltrado = useMemo(
+    () => mantenimientosFiltrados.reduce((a, m) => a + Number(m.costo || 0), 0),
+    [mantenimientosFiltrados]
+  )
+
   // Órdenes de trabajo abiertas (programadas / en taller) para el tablero.
   const otPendientes = useMemo<OTPendiente[]>(
     () =>
@@ -256,7 +274,7 @@ export function MantenimientoClient({
           motivo:
             m.tareas?.map((t) => t.descripcion).filter(Boolean).join(", ") ||
             m.observaciones ||
-            (m.tipo === "preventivo" ? "Service / preventivo" : "Correctivo"),
+            (m.tipo === "preventivo" ? "Service / preventivo" : TIPO_MANT_LABEL[m.tipo]),
         })),
     [mantenimientos]
   )
@@ -345,16 +363,6 @@ export function MantenimientoClient({
             <p className="text-2xl font-bold text-slate-900">{fmtMoney(costos.costoMes)}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <CircleDollarSign className="size-4 text-slate-400" /> Costo del año
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{fmtMoney(costos.costoYTD)}</p>
-          </CardContent>
-        </Card>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -441,6 +449,7 @@ export function MantenimientoClient({
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="preventivo">Preventivo</SelectItem>
                   <SelectItem value="correctivo">Correctivo</SelectItem>
+                  <SelectItem value="proactivo">Proactivo</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -462,6 +471,14 @@ export function MantenimientoClient({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="ml-auto rounded-lg border bg-slate-50 px-4 py-2 text-right">
+              <p className="text-xs font-medium text-slate-500">
+                Costo total ({mantenimientosFiltrados.length}{" "}
+                {mantenimientosFiltrados.length === 1 ? "orden" : "órdenes"})
+              </p>
+              <p className="text-xl font-bold text-slate-900">{fmtMoney(costoFiltrado)}</p>
             </div>
           </div>
 
@@ -501,15 +518,8 @@ export function MantenimientoClient({
                         <TableCell className="font-medium">{m.dominio}</TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
-                            <Badge
-                              variant="outline"
-                              className={
-                                m.tipo === "correctivo"
-                                  ? "border-orange-200 bg-orange-50 text-orange-700"
-                                  : "border-sky-200 bg-sky-50 text-sky-700"
-                              }
-                            >
-                              {m.tipo === "correctivo" ? "Correctivo" : "Preventivo"}
+                            <Badge variant="outline" className={TIPO_MANT_BADGE[m.tipo]}>
+                              {TIPO_MANT_LABEL[m.tipo]}
                             </Badge>
                             {m.es_service_general && (
                               <Badge
@@ -987,6 +997,7 @@ function NuevoMantenimientoDialog({
                 <SelectContent>
                   <SelectItem value="preventivo">Preventivo</SelectItem>
                   <SelectItem value="correctivo">Correctivo</SelectItem>
+                  <SelectItem value="proactivo">Proactivo</SelectItem>
                 </SelectContent>
               </Select>
             </div>
