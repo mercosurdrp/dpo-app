@@ -14,6 +14,29 @@ import type {
 
 const TIEMPO_RUTA_META_MINUTOS = 480 // 8 horas
 
+// Corte horario (hora local Argentina) que define el tipo de checklist:
+// antes de las 09:00 → liberación (salida del depósito); 09:00 o después →
+// retorno (entrada al depósito). El chofer ya no elige el tipo; se deriva de
+// la hora para que los km (odómetro retorno − liberación), el tiempo en ruta y
+// el estado de la flota se calculen siempre con la clasificación correcta.
+const HORA_CORTE_LIBERACION = 9
+
+/** Hora del día (0-23) en zona horaria de Argentina para una fecha dada. */
+function horaArgentina(d: Date): number {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "numeric",
+    hour12: false,
+    hourCycle: "h23",
+  })
+  return Number(fmt.format(d))
+}
+
+/** Tipo de checklist según la hora local AR del momento de registro. */
+function tipoChecklistPorHora(d: Date): TipoChecklist {
+  return horaArgentina(d) < HORA_CORTE_LIBERACION ? "liberacion" : "retorno"
+}
+
 // ==================== ITEMS ====================
 
 export async function getChecklistItems(): Promise<
@@ -37,7 +60,6 @@ export async function getChecklistItems(): Promise<
 // ==================== CREAR CHECKLIST ====================
 
 interface CreateChecklistInput {
-  tipo: TipoChecklist
   fecha: string
   dominio: string
   chofer: string
@@ -52,6 +74,12 @@ export async function createChecklist(
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
+
+    // El tipo se deriva de la hora del registro (mismo instante que se guarda
+    // en `hora`), no de lo que elija el chofer: antes de las 09:00 AR es salida
+    // (liberación), después es entrada (retorno).
+    const now = new Date()
+    const tipo = tipoChecklistPorHora(now)
 
     // Fetch items to determine criticality
     const { data: items } = await supabase
@@ -75,7 +103,7 @@ export async function createChecklist(
 
     // Calculate tiempo_ruta_minutos for retorno
     let tiempoRutaMinutos: number | null = null
-    if (input.tipo === "retorno") {
+    if (tipo === "retorno") {
       // Find the liberacion checklist for same vehicle + same day
       const { data: liberacion } = await supabase
         .from("checklist_vehiculos")
@@ -89,7 +117,7 @@ export async function createChecklist(
 
       if (liberacion) {
         const horaLib = new Date(liberacion.hora).getTime()
-        const horaRet = Date.now()
+        const horaRet = now.getTime()
         tiempoRutaMinutos = Math.round((horaRet - horaLib) / 60000)
       }
     }
@@ -98,11 +126,11 @@ export async function createChecklist(
     const { data: checklist, error: chkError } = await supabase
       .from("checklist_vehiculos")
       .insert({
-        tipo: input.tipo,
+        tipo,
         fecha: input.fecha,
         dominio: input.dominio.trim().toUpperCase(),
         chofer: input.chofer.trim().toUpperCase(),
-        hora: new Date().toISOString(),
+        hora: now.toISOString(),
         resultado,
         observaciones: input.observaciones?.trim() || null,
         tiempo_ruta_minutos: tiempoRutaMinutos,
@@ -222,6 +250,7 @@ interface UpdateChecklistInput {
   resultado: ResultadoChecklist
   odometro?: number | null
   observaciones?: string | null
+  tipo?: TipoChecklist // corrección manual (superv/admin) del tipo salida/entrada
 }
 
 export async function updateChecklist(
@@ -232,18 +261,49 @@ export async function updateChecklist(
     const supabase = await createClient()
 
     const horaIso = new Date(`${input.fecha}T${input.hora}:00`).toISOString()
+    const dominio = input.dominio.trim().toUpperCase()
+
+    const updateFields: Record<string, unknown> = {
+      fecha: input.fecha,
+      dominio,
+      chofer: input.chofer.trim().toUpperCase(),
+      hora: horaIso,
+      resultado: input.resultado,
+      odometro: input.odometro ?? null,
+      observaciones: input.observaciones?.trim() || null,
+    }
+
+    // Si se corrige el tipo, recalcular el tiempo en ruta para que no quede
+    // incoherente: una liberación no tiene tiempo en ruta; un retorno se mide
+    // contra la liberación del mismo vehículo y día.
+    if (input.tipo) {
+      updateFields.tipo = input.tipo
+      if (input.tipo === "liberacion") {
+        updateFields.tiempo_ruta_minutos = null
+      } else {
+        const { data: liberacion } = await supabase
+          .from("checklist_vehiculos")
+          .select("hora")
+          .eq("tipo", "liberacion")
+          .eq("dominio", dominio)
+          .eq("fecha", input.fecha)
+          .neq("id", input.id)
+          .order("hora", { ascending: false })
+          .limit(1)
+          .single()
+        updateFields.tiempo_ruta_minutos = liberacion
+          ? Math.round(
+              (new Date(horaIso).getTime() -
+                new Date(liberacion.hora).getTime()) /
+                60000,
+            )
+          : null
+      }
+    }
 
     const { data, error } = await supabase
       .from("checklist_vehiculos")
-      .update({
-        fecha: input.fecha,
-        dominio: input.dominio.trim().toUpperCase(),
-        chofer: input.chofer.trim().toUpperCase(),
-        hora: horaIso,
-        resultado: input.resultado,
-        odometro: input.odometro ?? null,
-        observaciones: input.observaciones?.trim() || null,
-      })
+      .update(updateFields)
       .eq("id", input.id)
       .select()
       .single()

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -106,9 +106,23 @@ const opcionesMap: Record<string, { value: string; label: string; color: string 
   ],
 }
 
+// Hora de corte (local) que define el tipo: antes de las 09:00 es salida
+// (liberación), 09:00 o después es entrada (retorno). Debe coincidir con
+// HORA_CORTE_LIBERACION del servidor (que es quien decide en firme).
+const HORA_CORTE_LIBERACION = 9
+
 export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const router = useRouter()
-  const [tipo, setTipo] = useState<TipoChecklist>("liberacion")
+  // El chofer ya no elige el tipo: se deriva de la hora actual. Mantenemos un
+  // reloj en vivo para que el cartel se actualice si cruza las 09:00 con el
+  // form abierto. El servidor recalcula el tipo en firme al registrar.
+  const [ahora, setAhora] = useState<Date>(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setAhora(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  const tipo: TipoChecklist =
+    ahora.getHours() < HORA_CORTE_LIBERACION ? "liberacion" : "retorno"
   const [sectorFiltro, setSectorFiltro] = useState<VehiculoSector | "todos">(
     "todos"
   )
@@ -160,7 +174,6 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
     const hoy = new Date().toISOString().slice(0, 10)
 
     const result = await createChecklist({
-      tipo,
       fecha: hoy,
       dominio,
       chofer,
@@ -179,7 +192,9 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       return
     }
 
-    const label = tipo === "liberacion" ? "liberación" : "retorno"
+    // El tipo lo decide el servidor según la hora; el toast refleja lo guardado.
+    const label =
+      result.data.tipo === "liberacion" ? "salida del depósito" : "entrada al depósito"
     if (result.data.resultado === "rechazado") {
       toast.error(`Checklist de ${label} RECHAZADO — ítems críticos no aprobados`)
     } else {
@@ -199,83 +214,49 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Hero: title + tipo selector */}
+      {/* Hero: title + tipo automático según la hora */}
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
             Checklist de Vehículo
           </h1>
           <p className="text-sm text-muted-foreground">
-            Elegí el tipo de inspección
+            El tipo se define solo según la hora
           </p>
         </div>
 
         <div
-          role="radiogroup"
-          aria-label="Tipo de checklist"
-          className="grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-sm"
+          className={`flex items-center gap-4 rounded-2xl border p-5 shadow-sm sm:gap-5 sm:p-6 ${
+            tipo === "liberacion"
+              ? "border-blue-200 bg-blue-600 text-white"
+              : "border-orange-200 bg-orange-500 text-white"
+          }`}
         >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tipo === "liberacion"}
-            onClick={() => setTipo("liberacion")}
-            className={`group flex items-center gap-3 rounded-xl px-4 py-6 text-left transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 sm:gap-4 sm:px-6 ${
-              tipo === "liberacion"
-                ? "bg-blue-600 text-white shadow-lg ring-2 ring-blue-700"
-                : "bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700"
-            }`}
-          >
-            <LogOut
-              className={`h-8 w-8 shrink-0 sm:h-10 sm:w-10 ${
-                tipo === "liberacion" ? "text-white" : "text-blue-600"
-              }`}
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
-              <div className="text-xl font-bold leading-tight tracking-tight sm:text-3xl">
-                LIBERACIÓN
-              </div>
-              <div
-                className={`text-xs sm:text-sm ${
-                  tipo === "liberacion" ? "text-blue-100" : "text-slate-500"
-                }`}
-              >
-                Salida del depósito
-              </div>
+          {tipo === "liberacion" ? (
+            <LogOut className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+          ) : (
+            <LogIn className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+          )}
+          <div className="min-w-0">
+            <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
+              {tipo === "liberacion" ? "SALIDA DEL DEPÓSITO" : "ENTRADA AL DEPÓSITO"}
             </div>
-          </button>
-
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tipo === "retorno"}
-            onClick={() => setTipo("retorno")}
-            className={`group flex items-center gap-3 rounded-xl px-4 py-6 text-left transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-orange-300 sm:gap-4 sm:px-6 ${
-              tipo === "retorno"
-                ? "bg-orange-500 text-white shadow-lg ring-2 ring-orange-600"
-                : "bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700"
-            }`}
-          >
-            <LogIn
-              className={`h-8 w-8 shrink-0 sm:h-10 sm:w-10 ${
-                tipo === "retorno" ? "text-white" : "text-orange-500"
+            <div
+              className={`mt-1 text-xs sm:text-sm ${
+                tipo === "liberacion" ? "text-blue-100" : "text-orange-100"
               }`}
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
-              <div className="text-xl font-bold leading-tight tracking-tight sm:text-3xl">
-                RETORNO
-              </div>
-              <div
-                className={`text-xs sm:text-sm ${
-                  tipo === "retorno" ? "text-orange-100" : "text-slate-500"
-                }`}
-              >
-                Vuelta del recorrido
-              </div>
+            >
+              Son las{" "}
+              {ahora.toLocaleTimeString("es-AR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              {" — "}
+              {tipo === "liberacion"
+                ? "antes de las 09:00 se registra como salida."
+                : "desde las 09:00 se registra como entrada."}
             </div>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -583,8 +564,8 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             {saving
               ? "Registrando..."
               : hayRechazo
-              ? `Registrar Rechazo de ${tipo === "liberacion" ? "Liberación" : "Retorno"}`
-              : `Registrar ${tipo === "liberacion" ? "Liberación" : "Retorno"}`}
+              ? `Registrar Rechazo de ${tipo === "liberacion" ? "Salida" : "Entrada"}`
+              : `Registrar ${tipo === "liberacion" ? "Salida" : "Entrada"}`}
           </Button>
         </div>
       </div>

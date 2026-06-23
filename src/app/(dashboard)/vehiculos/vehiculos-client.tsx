@@ -31,6 +31,7 @@ import type {
   CatalogoVehiculo,
   KmFlotaResumen,
   AlertaVehiculo,
+  TipoChecklist,
 } from "@/types/database"
 import {
   Truck,
@@ -158,6 +159,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
   const [editDominio, setEditDominio] = useState("")
   const [editChofer, setEditChofer] = useState("")
   const [editResultado, setEditResultado] = useState<"aprobado" | "rechazado">("aprobado")
+  const [editTipo, setEditTipo] = useState<TipoChecklist>("liberacion")
   const [editOdometro, setEditOdometro] = useState("")
   const [editObs, setEditObs] = useState("")
   const [editSaving, setEditSaving] = useState(false)
@@ -232,6 +234,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
     setEditDominio(c.dominio)
     setEditChofer(c.chofer)
     setEditResultado(c.resultado as "aprobado" | "rechazado")
+    setEditTipo(c.tipo)
     setEditOdometro(c.odometro?.toString() || "")
     setEditObs(c.observaciones || "")
   }
@@ -246,6 +249,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
       chofer: editChofer,
       hora: editHora,
       resultado: editResultado,
+      tipo: editTipo,
       odometro: editOdometro ? parseInt(editOdometro) : null,
       observaciones: editObs || null,
     })
@@ -931,6 +935,25 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tipo (salida / entrada)</Label>
+              <Select
+                value={editTipo}
+                onValueChange={(v: string | null) =>
+                  setEditTipo((v as TipoChecklist) ?? "liberacion")
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="liberacion">Salida (liberación)</SelectItem>
+                  <SelectItem value="retorno">Entrada (retorno)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Corregir solo si quedó mal clasificado. Al cambiarlo se recalcula
+                el tiempo en ruta.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
