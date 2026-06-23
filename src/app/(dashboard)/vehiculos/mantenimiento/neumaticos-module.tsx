@@ -24,17 +24,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { CircleDot, Layers, Plus, Ruler, Trash2 } from "lucide-react"
+import { CircleDot, Crosshair, Gauge, Layers, Plus, Ruler, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   asignarNeumatico,
   crearNeumaticosMasivo,
   darDeBajaNeumatico,
+  eliminarAlineacion,
   eliminarNeumatico,
   quitarNeumatico,
+  registrarAlineacion,
   registrarMedicionNeumatico,
 } from "@/actions/neumaticos"
 import {
+  type Alineacion,
   type Neumatico,
   PROFUNDIDAD_CRITICA_MM,
 } from "@/lib/vehiculos/neumaticos-tipos"
@@ -51,6 +54,7 @@ interface UnidadFlota {
 
 interface Props {
   neumaticos: Neumatico[]
+  alineaciones: Alineacion[]
   unidades: UnidadFlota[]
   puedeEditar: boolean
 }
@@ -68,12 +72,40 @@ function colorDesgaste(prof: number | null): string {
   return "bg-emerald-500"
 }
 
-export function NeumaticosModule({ neumaticos, unidades, puedeEditar }: Props) {
+const fmtNum = (n: number | null | undefined) =>
+  n == null ? "—" : new Intl.NumberFormat("es-AR").format(n)
+
+// Última presión registrada de una cubierta (de su historial de mediciones).
+function ultimaPresion(n: Neumatico): number | null {
+  return n.mediciones?.find((m) => m.presion_psi != null)?.presion_psi ?? null
+}
+
+// Estado de la alineación según la próxima fecha programada.
+function estadoAlineacion(proximaFecha: string | null): {
+  label: string
+  clase: string
+} {
+  if (!proximaFecha) return { label: "Sin programar", clase: "bg-slate-100 text-slate-600" }
+  const hoy = new Date().toISOString().slice(0, 10)
+  const en30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  if (proximaFecha < hoy) return { label: "Vencida", clase: "bg-red-100 text-red-700" }
+  if (proximaFecha <= en30) return { label: "Por vencer", clase: "bg-amber-100 text-amber-700" }
+  return { label: "Al día", clase: "bg-emerald-100 text-emerald-700" }
+}
+
+export function NeumaticosModule({
+  neumaticos,
+  alineaciones,
+  unidades,
+  puedeEditar,
+}: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const refresh = () => startTransition(() => router.refresh())
 
   const [cargaOpen, setCargaOpen] = useState(false)
+  const [individualOpen, setIndividualOpen] = useState(false)
+  const [alinOpen, setAlinOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
     pos: PosicionNeumatico
@@ -104,6 +136,24 @@ export function NeumaticosModule({ neumaticos, unidades, puedeEditar }: Props) {
     return m
   }, [instaladasEnUnidad])
 
+  // Cubiertas instaladas ordenadas según el layout del diagrama de la unidad.
+  const instaladasOrden = useMemo(() => {
+    const orden = new Map(layout.map((p, i) => [p.code, i]))
+    return [...instaladasEnUnidad].sort(
+      (a, b) =>
+        (orden.get(a.posicion ?? "") ?? 99) - (orden.get(b.posicion ?? "") ?? 99)
+    )
+  }, [instaladasEnUnidad, layout])
+
+  const alineacionesUnidad = useMemo(
+    () =>
+      alineaciones
+        .filter((a) => a.dominio === unidadSel)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [alineaciones, unidadSel]
+  )
+  const ultimaAlineacion = alineacionesUnidad[0] ?? null
+
   const resumen = useMemo(() => {
     let instalados = 0
     let criticos = 0
@@ -127,7 +177,10 @@ export function NeumaticosModule({ neumaticos, unidades, puedeEditar }: Props) {
       </div>
 
       {puedeEditar && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setIndividualOpen(true)}>
+            <Plus className="mr-1 size-4" /> Carga individual
+          </Button>
           <Button onClick={() => setCargaOpen(true)}>
             <Plus className="mr-1 size-4" /> Carga masiva
           </Button>
@@ -190,6 +243,177 @@ export function NeumaticosModule({ neumaticos, unidades, puedeEditar }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Detalle de cubiertas instaladas en la unidad */}
+      {unidad && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gauge className="size-4 text-slate-500" /> Cubiertas instaladas ·{" "}
+              {unidad.dominio} ({instaladasOrden.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {instaladasOrden.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Esta unidad no tiene cubiertas instaladas.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-slate-500">
+                    <th className="py-2">Pos.</th>
+                    <th>Número</th>
+                    <th>Tipo</th>
+                    <th>Marca</th>
+                    <th>Medida</th>
+                    <th className="text-right">Prof. inic.</th>
+                    <th className="text-right">Prof. act.</th>
+                    <th className="text-right">Presión</th>
+                    <th>Instalación</th>
+                    <th className="text-right">Km inst.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instaladasOrden.map((n) => {
+                    const pres = ultimaPresion(n)
+                    return (
+                      <tr key={n.id} className="border-b last:border-0">
+                        <td className="py-2 font-medium">{n.posicion || "—"}</td>
+                        <td>{n.numero || "—"}</td>
+                        <td>{TIPO_LABEL[n.tipo]}</td>
+                        <td className="text-slate-600">{n.marca || "—"}</td>
+                        <td className="text-slate-600">{n.medida || "—"}</td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {n.profundidad_inicial_mm ?? "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "text-right tabular-nums font-medium",
+                            n.profundidad_actual_mm != null &&
+                              n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM
+                              ? "text-red-600"
+                              : "text-slate-700"
+                          )}
+                        >
+                          {n.profundidad_actual_mm ?? "—"}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {pres != null ? `${pres} psi` : "—"}
+                        </td>
+                        <td className="text-slate-600">{fmtFecha(n.fecha_instalacion)}</td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {fmtNum(n.km_instalacion)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Alineación de la unidad */}
+      {unidad && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Crosshair className="size-4 text-slate-500" /> Alineación · {unidad.dominio}
+            </CardTitle>
+            {puedeEditar && (
+              <Button variant="outline" size="sm" onClick={() => setAlinOpen(true)}>
+                <Plus className="mr-1 size-4" /> Registrar alineación
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {(() => {
+              const est = estadoAlineacion(ultimaAlineacion?.proxima_fecha ?? null)
+              return (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                  <Badge className={cn("border-0", est.clase)}>{est.label}</Badge>
+                  <span className="text-slate-500">
+                    Última:{" "}
+                    <span className="font-medium text-slate-700">
+                      {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
+                    </span>
+                    {ultimaAlineacion?.km != null && (
+                      <span className="text-slate-500">
+                        {" "}
+                        · {fmtNum(ultimaAlineacion.km)} km
+                      </span>
+                    )}
+                  </span>
+                  {ultimaAlineacion?.proxima_fecha && (
+                    <span className="text-slate-500">
+                      Próxima:{" "}
+                      <span className="font-medium text-slate-700">
+                        {fmtFecha(ultimaAlineacion.proxima_fecha)}
+                      </span>
+                      {ultimaAlineacion.proxima_km != null && (
+                        <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
+
+            {alineacionesUnidad.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-slate-500">
+                      <th className="py-2">Fecha</th>
+                      <th className="text-right">Km</th>
+                      <th>Próxima</th>
+                      <th className="text-right">Próx. km</th>
+                      <th>Observaciones</th>
+                      {puedeEditar && <th className="w-10" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alineacionesUnidad.map((a) => (
+                      <tr key={a.id} className="border-b last:border-0">
+                        <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {fmtNum(a.km)}
+                        </td>
+                        <td className="text-slate-600">{fmtFecha(a.proxima_fecha)}</td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {fmtNum(a.proxima_km)}
+                        </td>
+                        <td className="text-slate-600">{a.observaciones || "—"}</td>
+                        {puedeEditar && (
+                          <td className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-slate-400 hover:text-red-600"
+                              onClick={async () => {
+                                const res = await eliminarAlineacion({ id: a.id })
+                                if ("error" in res) toast.error(res.error)
+                                else {
+                                  toast.success("Alineación eliminada")
+                                  refresh()
+                                }
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stock */}
       <Card>
@@ -288,6 +512,22 @@ export function NeumaticosModule({ neumaticos, unidades, puedeEditar }: Props) {
       {cargaOpen && (
         <CargaMasivaDialog onClose={() => setCargaOpen(false)} onDone={refresh} />
       )}
+      {individualOpen && (
+        <CargaIndividualDialog
+          onClose={() => setIndividualOpen(false)}
+          onDone={refresh}
+        />
+      )}
+      {alinOpen && unidad && (
+        <AlineacionDialog
+          dominio={unidad.dominio}
+          onClose={() => setAlinOpen(false)}
+          onDone={() => {
+            setAlinOpen(false)
+            refresh()
+          }}
+        />
+      )}
       {posDialog && unidad && (
         <PosicionDialog
           unidad={unidad}
@@ -366,7 +606,7 @@ function Diagrama({
             key={p.code}
             type="button"
             onClick={() => onPos(p)}
-            title={`${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm)` : " · vacía"}`}
+            title={`${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}`}
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
             className={cn(
               "absolute flex size-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-md text-[10px] font-semibold text-white ring-2 transition-transform hover:scale-110",
@@ -507,6 +747,109 @@ function CargaMasivaDialog({
               />
             </div>
           )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={saving}>
+            {saving ? "Guardando…" : "Cargar al stock"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CargaIndividualDialog({
+  onClose,
+  onDone,
+}: {
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [numero, setNumero] = useState("")
+  const [tipo, setTipo] = useState<"nuevo" | "recapado">("nuevo")
+  const [marca, setMarca] = useState("")
+  const [medida, setMedida] = useState("")
+  const [prof, setProf] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const guardar = async () => {
+    setSaving(true)
+    const res = await crearNeumaticosMasivo({
+      tipo,
+      marca,
+      medida,
+      profundidad_inicial_mm: prof ? Number(prof) : null,
+      numeros: numero.trim() ? [numero.trim()] : undefined,
+      cantidad: numero.trim() ? undefined : 1,
+    })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Cubierta cargada al stock")
+    onDone()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Carga individual de cubierta</DialogTitle>
+          <DialogDescription>
+            Ingresa al stock. Después la asignás a una unidad desde el diagrama.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs text-slate-500">Número / serie</Label>
+            <Input
+              value={numero}
+              onChange={(e) => setNumero(e.target.value)}
+              placeholder="ej. 1234"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Tipo</Label>
+            <Select value={tipo} onValueChange={(v) => setTipo(v as "nuevo" | "recapado")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nuevo">Nuevo</SelectItem>
+                <SelectItem value="recapado">Recapado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Marca</Label>
+            <Input
+              value={marca}
+              onChange={(e) => setMarca(e.target.value)}
+              placeholder="ej. Bridgestone M736"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Medida</Label>
+            <Input
+              value={medida}
+              onChange={(e) => setMedida(e.target.value)}
+              placeholder="ej. 275/80R22.5"
+            />
+          </div>
+          <div className="col-span-2">
+            <Label className="text-xs text-slate-500">Profundidad inicial (mm)</Label>
+            <Input
+              type="number"
+              step="0.1"
+              value={prof}
+              onChange={(e) => setProf(e.target.value)}
+              placeholder="ej. 14"
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -715,6 +1058,105 @@ function PosicionDialog({
             </DialogFooter>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AlineacionDialog({
+  dominio,
+  onClose,
+  onDone,
+}: {
+  dominio: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const [fecha, setFecha] = useState(hoy)
+  const [km, setKm] = useState("")
+  const [proximaFecha, setProximaFecha] = useState("")
+  const [proximaKm, setProximaKm] = useState("")
+  const [observaciones, setObservaciones] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const guardar = async () => {
+    setSaving(true)
+    const res = await registrarAlineacion({
+      dominio,
+      fecha,
+      km: km ? Number(km) : null,
+      proxima_fecha: proximaFecha || null,
+      proxima_km: proximaKm ? Number(proximaKm) : null,
+      observaciones,
+    })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Alineación registrada")
+    onDone()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Registrar alineación · {dominio}</DialogTitle>
+          <DialogDescription>
+            Cargá la alineación realizada y, opcionalmente, la próxima programada.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs text-slate-500">Fecha</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Km</Label>
+            <Input
+              type="number"
+              value={km}
+              onChange={(e) => setKm(e.target.value)}
+              placeholder="ej. 155000"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Próxima alineación (fecha)</Label>
+            <Input
+              type="date"
+              value={proximaFecha}
+              onChange={(e) => setProximaFecha(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Próxima (km)</Label>
+            <Input
+              type="number"
+              value={proximaKm}
+              onChange={(e) => setProximaKm(e.target.value)}
+              placeholder="opcional"
+            />
+          </div>
+          <div className="col-span-2">
+            <Label className="text-xs text-slate-500">Observaciones</Label>
+            <Textarea
+              rows={2}
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="ej. desgaste irregular en eje delantero"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={saving}>
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

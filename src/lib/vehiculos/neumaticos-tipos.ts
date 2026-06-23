@@ -51,3 +51,14 @@ export interface NeumaticosResumen {
   criticos: number
   bajasMes: number
 }
+
+export interface Alineacion {
+  id: string
+  dominio: string
+  fecha: string
+  km: number | null
+  proxima_fecha: string | null
+  proxima_km: number | null
+  observaciones: string | null
+  created_at: string
+}

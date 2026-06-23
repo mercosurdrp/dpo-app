@@ -6,7 +6,7 @@ import {
   getMantenimientos,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
-import { getNeumaticos } from "@/actions/neumaticos"
+import { getNeumaticos, getAlineaciones } from "@/actions/neumaticos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -22,6 +22,7 @@ export default async function MantenimientoPage() {
     tableroRes,
     checklistsRes,
     neumaticosRes,
+    alineacionesRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -30,6 +31,7 @@ export default async function MantenimientoPage() {
     getTableroOperativo(),
     getChecklistsMtto(),
     getNeumaticos(),
+    getAlineaciones(),
     getProfile(),
   ])
 
@@ -80,6 +82,7 @@ export default async function MantenimientoPage() {
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
+  const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -92,6 +95,7 @@ export default async function MantenimientoPage() {
       tablero={tablero}
       checklists={checklists}
       neumaticos={neumaticos}
+      alineaciones={alineaciones}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

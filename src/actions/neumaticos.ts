@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "@/lib/session"
 import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
 import {
   PROFUNDIDAD_CRITICA_MM,
+  type Alineacion,
   type Neumatico,
   type NeumaticoMedicion,
   type NeumaticosResumen,
@@ -281,6 +282,71 @@ export async function eliminarNeumatico(input: {
     const supabase = await createClient()
     const { error } = await supabase
       .from("mantenimiento_neumaticos")
+      .delete()
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== ALINEACIONES ====================
+
+export async function getAlineaciones(): Promise<
+  { data: Alineacion[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_alineaciones")
+      .select("*")
+      .order("fecha", { ascending: false })
+    if (error) return { error: error.message }
+    return { data: (data || []) as Alineacion[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Registra una alineación de una unidad. */
+export async function registrarAlineacion(input: {
+  dominio: string
+  fecha?: string
+  km?: number | null
+  proxima_fecha?: string | null
+  proxima_km?: number | null
+  observaciones?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio) return { error: "Falta la unidad" }
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_alineaciones").insert({
+      dominio: input.dominio.toUpperCase(),
+      fecha: input.fecha ?? new Date().toISOString().slice(0, 10),
+      km: input.km ?? null,
+      proxima_fecha: input.proxima_fecha || null,
+      proxima_km: input.proxima_km ?? null,
+      observaciones: input.observaciones?.trim() || null,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function eliminarAlineacion(input: {
+  id: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_alineaciones")
       .delete()
       .eq("id", input.id)
     if (error) return { error: error.message }

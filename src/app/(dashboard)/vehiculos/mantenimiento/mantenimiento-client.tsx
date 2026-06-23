@@ -85,7 +85,7 @@ import type {
   ChecklistItemNoOk,
   TableroResumen,
 } from "@/actions/mantenimiento-vehiculos"
-import type { Neumatico } from "@/lib/vehiculos/neumaticos-tipos"
+import type { Neumatico, Alineacion } from "@/lib/vehiculos/neumaticos-tipos"
 
 // ==================== Helpers ====================
 
@@ -169,6 +169,7 @@ interface MantenimientoClientProps {
   }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   neumaticos: Neumatico[]
+  alineaciones: Alineacion[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -182,6 +183,7 @@ export function MantenimientoClient({
   tablero,
   checklists,
   neumaticos,
+  alineaciones,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -395,6 +397,7 @@ export function MantenimientoClient({
         <TabsContent value="neumaticos" className="space-y-6">
           <NeumaticosModule
             neumaticos={neumaticos}
+            alineaciones={alineaciones}
             unidades={unidades}
             puedeEditar={puedeEditar}
           />
