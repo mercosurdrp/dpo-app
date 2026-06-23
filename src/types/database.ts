@@ -735,6 +735,8 @@ export interface ChecklistItem {
   orden: number
   active: boolean
   created_at: string
+  // NULL = checklist general (camiones); "autoelevador" = checklist propio de autoelevadores
+  tipo_vehiculo: VehiculoTipo | null
 }
 
 export interface ChecklistVehiculo {

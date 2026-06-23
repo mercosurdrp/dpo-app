@@ -77,11 +77,23 @@ export async function createChecklist(
     const profile = await requireAuth()
     const supabase = await createClient()
 
-    // El tipo se deriva de la hora del registro (mismo instante que se guarda
-    // en `hora`), no de lo que elija el chofer: antes de las 09:00 AR es salida
-    // (liberación), después es entrada (retorno).
     const now = new Date()
-    const tipo = tipoChecklistPorHora(now)
+    const dominioNorm = input.dominio.trim().toUpperCase()
+
+    // Los autoelevadores se chequean una sola vez, al inicio de la jornada (no
+    // tienen checklist de retorno), así que su registro es SIEMPRE liberación sin
+    // importar la hora. Para el resto, el tipo se deriva de la hora del registro
+    // (mismo instante que se guarda en `hora`): antes de las 09:00 AR es salida
+    // (liberación), después es entrada (retorno).
+    const { data: veh } = await supabase
+      .from("catalogo_vehiculos")
+      .select("tipo")
+      .eq("dominio", dominioNorm)
+      .maybeSingle()
+    const esAutoelevador = veh?.tipo === "autoelevador"
+    const tipo: TipoChecklist = esAutoelevador
+      ? "liberacion"
+      : tipoChecklistPorHora(now)
 
     // Fetch items to determine criticality
     const { data: items } = await supabase
@@ -111,7 +123,7 @@ export async function createChecklist(
         .from("checklist_vehiculos")
         .select("hora")
         .eq("tipo", "liberacion")
-        .eq("dominio", input.dominio.trim().toUpperCase())
+        .eq("dominio", dominioNorm)
         .eq("fecha", input.fecha)
         .order("hora", { ascending: false })
         .limit(1)
@@ -130,7 +142,7 @@ export async function createChecklist(
       .insert({
         tipo,
         fecha: input.fecha,
-        dominio: input.dominio.trim().toUpperCase(),
+        dominio: dominioNorm,
         chofer: input.chofer.trim().toUpperCase(),
         hora: now.toISOString(),
         resultado,

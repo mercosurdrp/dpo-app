@@ -131,7 +131,26 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const vehiculosFiltrados = vehiculos.filter((v) =>
     sectorFiltro === "todos" ? true : v.sector === sectorFiltro
   )
+
+  // Vehículo elegido y si es autoelevador. Cambia el set de preguntas y el flujo:
+  // los autoelevadores tienen su propio checklist (tipo_vehiculo = "autoelevador")
+  // y se chequean una sola vez al inicio de la jornada (sin salida/entrada por hora).
+  const vehiculoSel = vehiculos.find((v) => v.dominio === dominio)
+  const esAutoelevador = vehiculoSel?.tipo === "autoelevador"
+
+  // Ítems que aplican al vehículo elegido: los del autoelevador, o los generales
+  // (camiones) cuando tipo_vehiculo es NULL.
+  const itemsAplicables = items.filter((i) =>
+    esAutoelevador ? i.tipo_vehiculo === "autoelevador" : i.tipo_vehiculo == null
+  )
+
+  // Para mostrar/colorear el botón: el autoelevador siempre es "liberación".
+  const tipoVisual: TipoChecklist = esAutoelevador ? "liberacion" : tipo
+
+  // Los choferes habilitados son los de reparto; para autoelevador el operario
+  // (maquinista) puede no estar en esa lista, así que se ofrecen todos.
   const choferesHabilitados = choferes.filter((c) => choferEstaHabilitado(c.nombre))
+  const choferesParaMostrar = esAutoelevador ? choferes : choferesHabilitados
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
   const [observaciones, setObservaciones] = useState("")
@@ -143,7 +162,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   // la duración no depende de la diferencia con el reloj del servidor.
   const [inicioMs] = useState(() => Date.now())
 
-  const groups = groupByCategoria(items)
+  const groups = groupByCategoria(itemsAplicables)
 
   function setRespuesta(itemId: string, valor: string) {
     setRespuestas((prev) => ({ ...prev, [itemId]: valor }))
@@ -154,15 +173,15 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   }
 
   // Check if any critical item is nook/malo
-  const criticosRechazados = items.filter(
+  const criticosRechazados = itemsAplicables.filter(
     (i) => i.critico && (respuestas[i.id] === "nook" || respuestas[i.id] === "malo")
   )
   const hayRechazo = criticosRechazados.length > 0
 
-  // Check completeness
-  const totalItems = items.length
-  const completados = Object.keys(respuestas).length
-  const todosCompletados = completados === totalItems
+  // Check completeness — solo cuentan los ítems que aplican al vehículo elegido
+  const totalItems = itemsAplicables.length
+  const completados = itemsAplicables.filter((i) => respuestas[i.id]).length
+  const todosCompletados = totalItems > 0 && completados === totalItems
 
   async function handleSubmit() {
     if (!dominio || !chofer) {
@@ -185,7 +204,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       observaciones: observaciones || undefined,
       iniciadoEn: new Date(inicioMs).toISOString(),
       duracionSegundos: Math.max(0, Math.round((Date.now() - inicioMs) / 1000)),
-      respuestas: items.map((item) => ({
+      respuestas: itemsAplicables.map((item) => ({
         item_id: item.id,
         valor: respuestas[item.id],
         comentario: comentarios[item.id] || undefined,
@@ -227,43 +246,59 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             Checklist de Vehículo
           </h1>
           <p className="text-sm text-muted-foreground">
-            El tipo se define solo según la hora
+            {esAutoelevador
+              ? "Autoelevador — control de inicio de jornada"
+              : "El tipo se define solo según la hora"}
           </p>
         </div>
 
-        <div
-          className={`flex items-center gap-4 rounded-2xl border p-5 shadow-sm sm:gap-5 sm:p-6 ${
-            tipo === "liberacion"
-              ? "border-blue-200 bg-blue-600 text-white"
-              : "border-orange-200 bg-orange-500 text-white"
-          }`}
-        >
-          {tipo === "liberacion" ? (
-            <LogOut className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
-          ) : (
-            <LogIn className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
-          )}
-          <div className="min-w-0">
-            <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
-              {tipo === "liberacion" ? "SALIDA DEL DEPÓSITO" : "ENTRADA AL DEPÓSITO"}
-            </div>
-            <div
-              className={`mt-1 text-xs sm:text-sm ${
-                tipo === "liberacion" ? "text-blue-100" : "text-orange-100"
-              }`}
-            >
-              Son las{" "}
-              {ahora.toLocaleTimeString("es-AR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-              {" — "}
-              {tipo === "liberacion"
-                ? "antes de las 09:00 se registra como salida."
-                : "desde las 09:00 se registra como entrada."}
+        {esAutoelevador ? (
+          <div className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-600 p-5 text-white shadow-sm sm:gap-5 sm:p-6">
+            <ClipboardCheck className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
+                INICIO DE JORNADA
+              </div>
+              <div className="mt-1 text-xs text-emerald-100 sm:text-sm">
+                El autoelevador se controla una vez al comenzar el día (sin checklist de retorno).
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div
+            className={`flex items-center gap-4 rounded-2xl border p-5 shadow-sm sm:gap-5 sm:p-6 ${
+              tipo === "liberacion"
+                ? "border-blue-200 bg-blue-600 text-white"
+                : "border-orange-200 bg-orange-500 text-white"
+            }`}
+          >
+            {tipo === "liberacion" ? (
+              <LogOut className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+            ) : (
+              <LogIn className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+            )}
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
+                {tipo === "liberacion" ? "SALIDA DEL DEPÓSITO" : "ENTRADA AL DEPÓSITO"}
+              </div>
+              <div
+                className={`mt-1 text-xs sm:text-sm ${
+                  tipo === "liberacion" ? "text-blue-100" : "text-orange-100"
+                }`}
+              >
+                Son las{" "}
+                {ahora.toLocaleTimeString("es-AR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+                {" — "}
+                {tipo === "liberacion"
+                  ? "antes de las 09:00 se registra como salida."
+                  : "desde las 09:00 se registra como entrada."}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Config */}
@@ -294,7 +329,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                   <SelectValue placeholder="Seleccionar chofer..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {choferesHabilitados.map((c) => (
+                  {choferesParaMostrar.map((c) => (
                     <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
                       {c.nombre}
                     </SelectItem>
@@ -304,11 +339,13 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             </div>
 
             <div className="space-y-2 sm:col-span-2 lg:col-span-2">
-              <Label className="text-base font-semibold text-slate-800">Odómetro (km)</Label>
+              <Label className="text-base font-semibold text-slate-800">
+                {esAutoelevador ? "Horómetro (horas)" : "Odómetro (km)"}
+              </Label>
               <Input
                 type="number"
                 inputMode="numeric"
-                placeholder="Ej: 125430"
+                placeholder={esAutoelevador ? "Ej: 1240" : "Ej: 125430"}
                 value={odometro}
                 onChange={(e) => setOdometro(e.target.value)}
                 className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
@@ -555,7 +592,9 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             className={`h-14 w-full text-base font-semibold text-white shadow-md transition-colors sm:w-auto sm:min-w-[260px] sm:text-lg ${
               hayRechazo && todosCompletados
                 ? "bg-red-600 hover:bg-red-700"
-                : tipo === "liberacion"
+                : esAutoelevador
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : tipoVisual === "liberacion"
                 ? "bg-blue-600 hover:bg-blue-700"
                 : "bg-orange-500 hover:bg-orange-600"
             } disabled:opacity-60`}
@@ -570,8 +609,12 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             {saving
               ? "Registrando..."
               : hayRechazo
-              ? `Registrar Rechazo de ${tipo === "liberacion" ? "Salida" : "Entrada"}`
-              : `Registrar ${tipo === "liberacion" ? "Salida" : "Entrada"}`}
+              ? `Registrar Rechazo de ${
+                  esAutoelevador ? "Checklist" : tipoVisual === "liberacion" ? "Salida" : "Entrada"
+                }`
+              : `Registrar ${
+                  esAutoelevador ? "Checklist" : tipoVisual === "liberacion" ? "Salida" : "Entrada"
+                }`}
           </Button>
         </div>
       </div>
