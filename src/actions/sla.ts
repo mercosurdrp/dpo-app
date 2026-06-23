@@ -919,6 +919,16 @@ interface SlaCargaPrecocido {
 
 const ESTADOS_PRECOCIDOS = new Set<string>(["si", "no", "sd", "na"])
 
+// Excepciones manuales puntuales: viajes que el pusher marca "tarde" por la
+// heurística de las 11:00 pero que en realidad se cargaron temprano para salir
+// al día SIGUIENTE (no para el mismo día). Se fuerzan a "a tiempo" y se recalcula
+// el estado del día. No cambia la lógica general; solo corrige casos puntuales.
+//   • 2026-06-22: día atípico, las cargas arrancaron antes de lo habitual; el
+//     viaje 1525 se cargó 10:27 para el reparto del día siguiente.
+const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
+  "2026-06-22": new Set([1525]),
+}
+
 /** Lee el blob pre-cocinado del pusher. `null` si no existe o viene vacío. */
 async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
   try {
@@ -932,7 +942,7 @@ async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
     const dias = new Map<string, SlaCargaDiaPre>()
     for (const [fecha, d] of Object.entries(diasRaw)) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !d || typeof d !== "object") continue
-      const estado = ESTADOS_PRECOCIDOS.has(String(d.estado))
+      let estado = ESTADOS_PRECOCIDOS.has(String(d.estado))
         ? (String(d.estado) as EstadoCumplimiento)
         : "sd"
       const viajes: SlaCargaViajePre[] = Array.isArray(d.viajes)
@@ -946,12 +956,34 @@ async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
       const faltantes: string[] = Array.isArray(d.faltantes)
         ? d.faltantes.map((p: any) => String(p).trim().toUpperCase()).filter(Boolean)
         : []
+      let aTiempo = Number(d.a_tiempo) || 0
+      let tarde = Number(d.tarde) || 0
+      const faltan = Number(d.faltan) || 0
+
+      // Aplica las excepciones manuales: marca esos viajes "a tiempo" y recalcula
+      // los conteos y el estado del día (solo si el día estaba evaluado si/no).
+      const exc = CARGA_EXCEPCIONES_A_TIEMPO[fecha]
+      if (exc && (estado === "si" || estado === "no")) {
+        let cambio = false
+        for (const v of viajes) {
+          if (v.viaje != null && exc.has(v.viaje) && !v.aTiempo) {
+            v.aTiempo = true
+            cambio = true
+          }
+        }
+        if (cambio) {
+          tarde = viajes.filter((v) => !v.aTiempo).length
+          aTiempo = viajes.filter((v) => v.aTiempo).length
+          estado = tarde === 0 && faltan === 0 ? "si" : "no"
+        }
+      }
+
       dias.set(fecha, {
         estado,
         esperados: Number(d.esperados) || 0,
-        aTiempo: Number(d.a_tiempo) || 0,
-        tarde: Number(d.tarde) || 0,
-        faltan: Number(d.faltan) || 0,
+        aTiempo,
+        tarde,
+        faltan,
         viajes,
         faltantes,
         nota: d.nota ? String(d.nota) : null,
