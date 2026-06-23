@@ -25,6 +25,7 @@ import {
   buildMisionesLogisticaSerie,
   type MisionesSucursal,
 } from "@/lib/foxtrot/auto-indicadores-misiones"
+import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
@@ -4207,6 +4208,60 @@ async function getIndicadoresMesCore(
             "menor",
           ),
         )
+      }
+    }
+
+    // 7f. Indicadores AUTO de Foxtrot — Matinal de Distribución de PAMPEANA.
+    //     (En Misiones la matinal ya se resolvió arriba con su propia serie y
+    //     retornó.) Calidad de conducción (click score / adherencia /
+    //     resecuenciado) + operativos de ruta, todo desde foxtrot_routes.
+    //     Drill por día → detalle por patente (cruce con egreso TML).
+    if (!IS_MISIONES && tipo === "matinal-distribucion") {
+      try {
+        const fx = await buildPampeanaFoxtrotSerie(supabase, fechas)
+        // Helper local (buildSerieRow vive en otro bloque y no está en scope acá).
+        const fxRow = (
+          id: string,
+          nombre: string,
+          unidad: string,
+          porFecha: Record<string, number | null>,
+          agregacion: "suma" | "promedio",
+          meta: number | null,
+          mejorSi: "menor" | "mayor" | undefined,
+        ): ReunionIndicadoresMes["indicadores"][number] => {
+          const valoresPorFecha: Record<
+            string,
+            { reunion_id: string; valor: number | null; observacion: string | null } | null
+          > = {}
+          const numericos: number[] = []
+          for (const f of fechas) {
+            const v = porFecha[f] ?? null
+            valoresPorFecha[f] = { reunion_id: "auto", valor: v, observacion: null }
+            if (v !== null && Number.isFinite(v) && f <= fecha) numericos.push(v)
+          }
+          let mtd: number | null = null
+          if (numericos.length > 0) {
+            const sum = numericos.reduce((a, b) => a + b, 0)
+            mtd = agregacion === "suma" ? sum : sum / numericos.length
+          }
+          return {
+            id, nombre, unidad, meta, orden: -1, agregacion,
+            valores: valoresPorFecha, mtd, auto: true, mejor_si: mejorSi,
+          }
+        }
+        indicadoresAuto.push(
+          fxRow("auto_fx_click_score", "Driver Click Score", "%", fx.click_score, "promedio", 90, "mayor"),
+          fxRow("auto_fx_adherencia", "Adherencia a la secuencia", "%", fx.adherencia_secuencia, "promedio", 80, "mayor"),
+          fxRow("auto_fx_resecuenciado", "Rutas con resecuenciado", "%", fx.pct_resecuenciado, "promedio", null, "mayor"),
+          fxRow("auto_fx_pct_finalizadas", "Rutas finalizadas", "%", fx.pct_finalizadas, "promedio", 100, "mayor"),
+          fxRow("auto_fx_entregas_ok", "Entregas exitosas", "%", fx.pct_entregas_exitosas, "promedio", 98, "mayor"),
+          fxRow("auto_fx_tiempo_ruta", "Tiempo en ruta", "min", fx.tiempo_ruta, "promedio", null, "menor"),
+          fxRow("auto_fx_tiempo_pdv", "Tiempo por PDV", "min", fx.tiempo_pdv, "promedio", null, "menor"),
+          fxRow("auto_fx_km", "Km recorridos", "km", fx.km_recorridos, "suma", null, undefined),
+          fxRow("auto_fx_paradas_no_auth", "Paradas no autorizadas", "u.", fx.paradas_no_autorizadas, "suma", null, "menor"),
+        )
+      } catch {
+        // si Foxtrot/DB falla, la matinal sigue con el resto de los indicadores
       }
     }
 

@@ -79,6 +79,8 @@ import { AperturaMaquinistasDetalleDiaDialog } from "@/components/reuniones/aper
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
+import { FoxtrotKpiDetalleDiaDialog } from "@/components/reuniones/foxtrot-kpi-detalle-dia-dialog"
+import type { FoxtrotKpiId } from "@/lib/foxtrot/matinal-kpi-types"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import { WarehousePerdidasDetalleDiaDialog } from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
 import type {
@@ -879,6 +881,13 @@ export function ReunionDetallePageClient({
   // Detalle del día al hacer click en la celda del indicador Km recorridos:
   // km por camión (odómetro de retorno − odómetro de liberación).
   const [kmDetalleFecha, setKmDetalleFecha] = useState<string | null>(null)
+
+  // Detalle del día de un KPI de Foxtrot (matinal Pampeana): valor del día +
+  // desglose por patente (cruce chofer↔egreso TML).
+  const [fxKpiDetalle, setFxKpiDetalle] = useState<{
+    fecha: string
+    kpiId: FoxtrotKpiId
+  } | null>(null)
 
   // Detalle del día al hacer click en la celda del indicador Horas en la
   // calle: horas por camión (hora de retorno − hora de liberación).
@@ -1792,6 +1801,9 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_wqi" ||
                             ind.id === "auto_roturas" ||
                             ind.id === "auto_faltantes"
+                          // KPIs de Foxtrot (matinal Pampeana): drill por día con
+                          // detalle por patente. Todos los id arrancan con auto_fx_.
+                          const esFoxtrotKpi = ind.id.startsWith("auto_fx_")
                           const clickable =
                             (esRechazosPct ||
                               esBultosVendidos ||
@@ -1804,7 +1816,8 @@ export function ReunionDetallePageClient({
                               esAperturaMaquinistas ||
                               esAusentismo ||
                               esOB ||
-                              esWqiPerdidas) &&
+                              esWqiPerdidas ||
+                              esFoxtrotKpi) &&
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
@@ -1820,6 +1833,8 @@ export function ReunionDetallePageClient({
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
                             else if (esWqiPerdidas) setWqiDetalleFecha(f)
+                            else if (esFoxtrotKpi)
+                              setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
                           }
                           const contenido = muestra
                             ? cell?.texto != null
@@ -2064,6 +2079,15 @@ export function ReunionDetallePageClient({
           if (!o) setKmDetalleFecha(null)
         }}
         fecha={kmDetalleFecha}
+      />
+
+      <FoxtrotKpiDetalleDiaDialog
+        open={fxKpiDetalle !== null}
+        onOpenChange={(o) => {
+          if (!o) setFxKpiDetalle(null)
+        }}
+        fecha={fxKpiDetalle?.fecha ?? null}
+        kpiId={fxKpiDetalle?.kpiId ?? null}
       />
 
       <HorasCalleDetalleDiaDialog

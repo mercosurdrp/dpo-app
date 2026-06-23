@@ -10,6 +10,7 @@
  * bajo la clave `tml_actual_departure` (ISO UTC), sin necesidad de DDL.
  */
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { foxtrotDcIds } from "./foxtrot"
 
 const FOXTROT_BASE = "https://apiv1.foxtrotsystems.com"
 // Argentina no aplica horario de verano: offset fijo UTC-3.
@@ -20,13 +21,11 @@ function apiKey(): string {
 }
 
 function dcIds(): string[] {
-  return (process.env.FOXTROT_DC_IDS ?? "eldorado,iguazu")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
+  return foxtrotDcIds()
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const round2 = (n: number): number => Math.round(n * 100) / 100
 
 async function fxJson<T>(
   path: string,
@@ -149,14 +148,51 @@ export async function syncFoxtrotRouteAnalytics(
     // Tiempo por PDV: segundos de paradas autorizadas / clientes visitados.
     const idxAuthSec = header.indexOf("Total Authorized Stops Seconds")
     const idxVisited = header.indexOf("Total Visited Customers Count")
+    // Calidad de conducción (digital route): click score y adherencia a la
+    // secuencia sugerida por el resecuenciado en tiempo real. Vienen 0-1 en el
+    // CSV; los persistimos como porcentaje 0-100.
+    const idxClick = header.indexOf("Driver Click Score")
+    const idxSeqAdh = header.indexOf("Sequence Adherence")
+    const idxSeqEnabled = header.indexOf("Real-time Sequencing Enabled")
+    const idxSeqAdhered = header.indexOf("Total Sequence Adhered Clicks")
+    const idxSeqNotAdhered = header.indexOf("Total Sequence Not Adhered Clicks")
+    const idxSeqForgiven = header.indexOf("Total Sequence Forgiven Clicks")
+    // Operativos de ruta extra (km y paradas no autorizadas).
+    const idxDriven = header.indexOf("Total Driven Meters")
+    const idxPlanned = header.indexOf("Planned Foxtrot Driving Meters")
+    const idxUnauthCnt = header.indexOf("Total Unauthorized Stops Count")
+    const idxUnauthSec = header.indexOf("Total Unauthorized Stops Seconds")
     if (idxRoute < 0 || idxDep < 0) {
       return { ok: false, rutas_actualizadas: 0, rutas_sin_departure: 0, error: "columnas faltantes en CSV" }
+    }
+
+    const numAt = (row: string[], idx: number): number | undefined => {
+      if (idx < 0) return undefined
+      const v = Number(row[idx])
+      return Number.isFinite(v) ? v : undefined
+    }
+    const boolAt = (row: string[], idx: number): boolean | undefined => {
+      if (idx < 0) return undefined
+      const s = (row[idx] ?? "").trim().toLowerCase()
+      if (s === "true" || s === "1" || s === "yes") return true
+      if (s === "false" || s === "0" || s === "no") return false
+      return undefined
     }
 
     type Metrics = {
       departure?: string
       authStopsSec?: number
       visited?: number
+      clickScore?: number
+      seqAdherence?: number
+      seqEnabled?: boolean
+      seqAdhered?: number
+      seqNotAdhered?: number
+      seqForgiven?: number
+      drivenM?: number
+      plannedM?: number
+      unauthCount?: number
+      unauthSec?: number
     }
     const metricsByRoute = new Map<string, Metrics>()
     let sinDeparture = 0
@@ -168,14 +204,22 @@ export async function syncFoxtrotRouteAnalytics(
       const iso = arLocalToIso(row[idxDep])
       if (iso) m.departure = iso
       else sinDeparture++
-      if (idxAuthSec >= 0) {
-        const v = Number(row[idxAuthSec])
-        if (Number.isFinite(v)) m.authStopsSec = v
-      }
-      if (idxVisited >= 0) {
-        const v = Number(row[idxVisited])
-        if (Number.isFinite(v)) m.visited = v
-      }
+      m.authStopsSec = numAt(row, idxAuthSec) ?? m.authStopsSec
+      m.visited = numAt(row, idxVisited) ?? m.visited
+      // 0-1 → porcentaje 0-100
+      const click = numAt(row, idxClick)
+      if (click != null) m.clickScore = round2(click * 100)
+      const seq = numAt(row, idxSeqAdh)
+      if (seq != null) m.seqAdherence = round2(seq * 100)
+      const enabled = boolAt(row, idxSeqEnabled)
+      if (enabled != null) m.seqEnabled = enabled
+      m.seqAdhered = numAt(row, idxSeqAdhered) ?? m.seqAdhered
+      m.seqNotAdhered = numAt(row, idxSeqNotAdhered) ?? m.seqNotAdhered
+      m.seqForgiven = numAt(row, idxSeqForgiven) ?? m.seqForgiven
+      m.drivenM = numAt(row, idxDriven) ?? m.drivenM
+      m.plannedM = numAt(row, idxPlanned) ?? m.plannedM
+      m.unauthCount = numAt(row, idxUnauthCnt) ?? m.unauthCount
+      m.unauthSec = numAt(row, idxUnauthSec) ?? m.unauthSec
       metricsByRoute.set(routeId, m)
     }
     if (metricsByRoute.size === 0) {
@@ -212,7 +256,18 @@ export async function syncFoxtrotRouteAnalytics(
         if (m.departure) extra.tml_actual_departure = m.departure
         if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
         if (m.visited != null) extra.tml_visited_customers = m.visited
-        return {
+        // Calidad de conducción + operativos extra (prefijo fx_*).
+        if (m.clickScore != null) extra.fx_click_score = m.clickScore
+        if (m.seqAdherence != null) extra.fx_seq_adherence = m.seqAdherence
+        if (m.seqEnabled != null) extra.fx_seq_enabled = m.seqEnabled
+        if (m.seqAdhered != null) extra.fx_seq_adhered = m.seqAdhered
+        if (m.seqNotAdhered != null) extra.fx_seq_not_adhered = m.seqNotAdhered
+        if (m.seqForgiven != null) extra.fx_seq_forgiven = m.seqForgiven
+        if (m.drivenM != null) extra.fx_driven_m = m.drivenM
+        if (m.plannedM != null) extra.fx_planned_m = m.plannedM
+        if (m.unauthCount != null) extra.fx_unauth_stops_count = m.unauthCount
+        if (m.unauthSec != null) extra.fx_unauth_stops_seconds = m.unauthSec
+        const row: Record<string, unknown> = {
           route_id: r.route_id,
           dc_id: r.dc_id,
           fecha: r.fecha,
@@ -220,6 +275,10 @@ export async function syncFoxtrotRouteAnalytics(
           driver_name: r.driver_name,
           raw_data: { ...(r.raw_data ?? {}), ...extra },
         }
+        // Columnas dedicadas (ya existen en el esquema; antes iban NULL).
+        if (m.clickScore != null) row.driver_click_score = m.clickScore
+        if (m.seqAdherence != null) row.adherencia_secuencia = m.seqAdherence
+        return row
       })
 
     for (let i = 0; i < updates.length; i += 500) {

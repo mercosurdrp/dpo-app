@@ -1,3 +1,5 @@
+import { IS_MISIONES } from "@/lib/empresa"
+
 const FOXTROT_BASE_URL = "https://apiv1.foxtrotsystems.com"
 const FOXTROT_TIMEOUT_MS = 15000
 
@@ -77,6 +79,20 @@ function getApiKey(): string | null {
   const key = process.env.FOXTROT_API_KEY
   if (!key || key.trim() === "") return null
   return key
+}
+
+/**
+ * DCs (centros de distribución) de Foxtrot que le corresponden a este tenant.
+ * Lee FOXTROT_DC_IDS si está seteada; si no, cae al default por empresa:
+ * Misiones → eldorado,iguazu · Pampeana → pergamino,ramallo.
+ * Centralizado acá para que el sync y el analytics CSV usen la MISMA lista
+ * (antes el analytics defaulteaba a eldorado,iguazu y rompía en Pampeana).
+ */
+export function foxtrotDcIds(): string[] {
+  const env = process.env.FOXTROT_DC_IDS
+  const fromEnv = env?.split(",").map((s) => s.trim()).filter(Boolean)
+  if (fromEnv && fromEnv.length > 0) return fromEnv
+  return IS_MISIONES ? ["eldorado", "iguazu"] : ["pergamino", "ramallo"]
 }
 
 async function sleep(ms: number) {

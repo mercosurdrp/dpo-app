@@ -4,8 +4,8 @@
 // inviable para rangos largos (semana / mes / YTD).
 //
 // Auth: Bearer CRON_SECRET (Vercel lo inyecta automáticamente en sus crons).
-// Tenant: solo corre en Misiones; en Pampeana sale en 200 con noop.
-// Schedule en `vercel.json`.
+// Tenant: corre en AMBOS (Misiones eldorado,iguazu · Pampeana pergamino,ramallo);
+// los DCs los resuelve foxtrotDcIds() en cada deploy. Schedule en `vercel.json`.
 //
 // Backfill manual (tramos cortos — el sync es pesado y secuencial):
 //   curl -H "Authorization: Bearer $CRON_SECRET" \
@@ -15,7 +15,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { syncFoxtrotDay } from "@/lib/foxtrot-sync"
 import { syncFoxtrotRouteAnalytics } from "@/lib/foxtrot-analytics"
-import { IS_MISIONES } from "@/lib/empresa"
 
 const CRON_SECRET = process.env.CRON_SECRET
 // El sync de Foxtrot es pesado (waypoints + deliveries + locations por ruta).
@@ -35,10 +34,6 @@ export async function POST(request: NextRequest) {
 
 async function handle(request: NextRequest) {
   const startedAt = Date.now()
-
-  if (!IS_MISIONES) {
-    return NextResponse.json({ success: true, skipped: "not-misiones" })
-  }
 
   const authHeader = request.headers.get("authorization") ?? ""
   const isAuthorized = !!CRON_SECRET && authHeader === `Bearer ${CRON_SECRET}`

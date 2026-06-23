@@ -10,6 +10,7 @@ import {
   getWaypointDeliveries,
   getDriverLocation,
   isFoxtrotConfigured,
+  foxtrotDcIds,
   type FoxtrotRouteRaw,
   type FoxtrotAttempt,
 } from "./foxtrot"
@@ -97,16 +98,10 @@ export async function syncFoxtrotDay(
       return await finalize(false, errorMessages.join(" | "))
     }
 
-    // Foxtrot devuelve DCs de todo el mundo. Filtramos solo los de
-    // Mercosur Región Pampeana. Configurable por env var si hace falta
-    // agregar otros (ej: eldorado, iguazu, lujan).
-    const configIds = process.env.FOXTROT_DC_IDS
-    const allowedIds = new Set(
-      (configIds?.split(",").map((s) => s.trim()).filter(Boolean)) ?? [
-        "ramallo",
-        "pergamino",
-      ],
-    )
+    // Foxtrot devuelve DCs de todo el mundo. Filtramos solo los del tenant
+    // actual (Pampeana → pergamino,ramallo · Misiones → eldorado,iguazu),
+    // resuelto en foxtrotDcIds() (env FOXTROT_DC_IDS o default por empresa).
+    const allowedIds = new Set(foxtrotDcIds())
     const filteredDcs = dcsRes.data.filter((dc) => allowedIds.has(dc.id))
 
     if (filteredDcs.length === 0) {
