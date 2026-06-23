@@ -69,6 +69,14 @@ const CHOFERES_HABILITADOS_CHECKLIST = [
   "CORDONE LUIS",
 ]
 
+// Maquinistas habilitados para el checklist de autoelevador. No están en el
+// catálogo de choferes (que es de reparto), así que se ofrecen como lista fija.
+const MAQUINISTAS_AUTOELEVADOR = [
+  "PEDRO MARTINEZ",
+  "DIEGO CERBIN",
+  "PABLO SELENZO",
+]
+
 function normalizarNombre(s: string): string {
   return s
     .normalize("NFD")
@@ -147,10 +155,12 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   // Para mostrar/colorear el botón: el autoelevador siempre es "liberación".
   const tipoVisual: TipoChecklist = esAutoelevador ? "liberacion" : tipo
 
-  // Los choferes habilitados son los de reparto; para autoelevador el operario
-  // (maquinista) puede no estar en esa lista, así que se ofrecen todos.
+  // Choferes de reparto (camiones) vs maquinistas (autoelevador): cada flujo
+  // tiene su propia lista habilitada.
   const choferesHabilitados = choferes.filter((c) => choferEstaHabilitado(c.nombre))
-  const choferesParaMostrar = esAutoelevador ? choferes : choferesHabilitados
+  const choferesParaMostrar: { id: string; nombre: string }[] = esAutoelevador
+    ? MAQUINISTAS_AUTOELEVADOR.map((n) => ({ id: n, nombre: n }))
+    : choferesHabilitados
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
   const [observaciones, setObservaciones] = useState("")
