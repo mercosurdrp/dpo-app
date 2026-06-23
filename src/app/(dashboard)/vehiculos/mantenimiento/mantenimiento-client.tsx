@@ -103,6 +103,16 @@ const TIPO_MANT_LABEL: Record<MantenimientoTipo, string> = {
   proactivo: "Proactivo",
 }
 
+const MESES_ABR = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+]
+// "2026-06" -> "jun. 2026"
+const fmtMes = (ym: string) => {
+  const [y, m] = ym.split("-")
+  return `${MESES_ABR[Number(m) - 1] ?? m}. ${y}`
+}
+
 const TIPO_MANT_BADGE: Record<MantenimientoTipo, string> = {
   preventivo: "border-sky-200 bg-sky-50 text-sky-700",
   correctivo: "border-orange-200 bg-orange-50 text-orange-700",
@@ -215,6 +225,7 @@ export function MantenimientoClient({
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
   const [fEstado, setFEstado] = useState("todos")
+  const [fMes, setFMes] = useState("todos")
 
   const refresh = () => startTransition(() => router.refresh())
 
@@ -243,15 +254,24 @@ export function MantenimientoClient({
     return { vencidas, proximas }
   }, [estados])
 
+  // Meses con órdenes registradas (para el selector), más reciente primero.
+  const mesesDisponibles = useMemo(
+    () =>
+      Array.from(new Set(mantenimientos.map((m) => m.fecha.slice(0, 7))))
+        .sort((a, b) => b.localeCompare(a)),
+    [mantenimientos]
+  )
+
   const mantenimientosFiltrados = useMemo(
     () =>
       mantenimientos.filter(
         (m) =>
           (fDominio === "todos" || m.dominio === fDominio) &&
           (fTipo === "todos" || m.tipo === fTipo) &&
-          (fEstado === "todos" || m.estado === fEstado)
+          (fEstado === "todos" || m.estado === fEstado) &&
+          (fMes === "todos" || m.fecha.slice(0, 7) === fMes)
       ),
-    [mantenimientos, fDominio, fTipo, fEstado]
+    [mantenimientos, fDominio, fTipo, fEstado, fMes]
   )
 
   // Costo total de las órdenes según los filtros aplicados.
@@ -467,6 +487,22 @@ export function MantenimientoClient({
                   {(Object.keys(MANTENIMIENTO_ESTADO_LABELS) as MantenimientoEstado[]).map((k) => (
                     <SelectItem key={k} value={k}>
                       {MANTENIMIENTO_ESTADO_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Mes</Label>
+              <Select value={fMes} onValueChange={(v: string | null) => setFMes(v ?? "todos")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos los meses</SelectItem>
+                  {mesesDisponibles.map((ym) => (
+                    <SelectItem key={ym} value={ym}>
+                      {fmtMes(ym)}
                     </SelectItem>
                   ))}
                 </SelectContent>
