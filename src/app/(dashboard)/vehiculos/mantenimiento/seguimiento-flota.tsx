@@ -59,7 +59,9 @@ interface Props {
   puedeEditar: boolean
 }
 
-type Estado = "PMC" | "PMP" | "IND" | "DRT" | "DSP"
+// LIB = día no laboral (ningún camión de la flota ruteó ese día): disponible pero
+// NO cuenta para la utilización (no era un día de trabajo).
+type Estado = "PMC" | "PMP" | "IND" | "DRT" | "DSP" | "LIB"
 
 interface FilaDisp {
   dominio: string
@@ -69,6 +71,7 @@ interface FilaDisp {
   ind: number
   drt: number
   dsp: number
+  lib: number
   parado: number
   disponibles: number
   pctDisp: number | null
@@ -88,9 +91,10 @@ export function SeguimientoFlota({
   const refresh = () => startTransition(() => router.refresh())
   const [vista, setVista] = useState<"mes" | "dia">("mes")
 
-  // Unidades de ruta (excluyo autoelevadores, que se miden distinto).
+  // Unidades de ruta: excluyo autoelevadores (se miden distinto) y acoplados
+  // (no rutean solos, van remolcados).
   const flota = useMemo(
-    () => unidades.filter((u) => u.tipo !== "autoelevador"),
+    () => unidades.filter((u) => u.tipo !== "autoelevador" && u.tipo !== "acoplado"),
     [unidades]
   )
 
@@ -141,13 +145,23 @@ export function SeguimientoFlota({
       inds.set(i.dominio, arr)
     }
 
+    // Días laborales = días con al menos un camión de la flota ruteado.
+    // Los demás (domingos/feriados sin ruteo) NO cuentan para la utilización.
+    const laboral = new Set<number>()
+    for (let d = 1; d <= diasPeriodo; d++) {
+      const fecha = `${mesSel}-${pad(d)}`
+      for (const u of flota) {
+        if (ruteoSet.has(`${u.dominio}|${fecha}`)) { laboral.add(d); break }
+      }
+    }
+
     const filas: FilaDisp[] = flota.map((u) => {
       const porDia = new Map<number, Estado>()
       const ps = paradas.get(u.dominio) ?? []
       const is = inds.get(u.dominio) ?? []
       for (let d = 1; d <= diasPeriodo; d++) {
         const fecha = `${mesSel}-${pad(d)}`
-        // Prioridad: correctivo > preventivo > indisponible > (ruteó? DRT : DSP)
+        // Prioridad: correctivo > preventivo > indisponible > ruteó(DRT) > disponible
         let est: Estado | null = null
         for (const p of ps) {
           if (fecha >= p.desde && fecha <= p.hasta) {
@@ -155,30 +169,34 @@ export function SeguimientoFlota({
             est = "PMP"
           }
         }
-        if (est !== "PMC") {
-          if (est == null) {
-            for (const i of is) {
-              if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
-            }
+        if (est == null) {
+          for (const i of is) {
+            if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
           }
         }
-        if (est == null) est = ruteoSet.has(`${u.dominio}|${fecha}`) ? "DRT" : "DSP"
+        if (est == null) {
+          if (ruteoSet.has(`${u.dominio}|${fecha}`)) est = "DRT"
+          else est = laboral.has(d) ? "DSP" : "LIB" // LIB = día no laboral
+        }
         porDia.set(d, est)
       }
-      let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0
+      let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0
       for (const e of porDia.values()) {
         if (e === "PMC") pmc++
         else if (e === "PMP") pmp++
         else if (e === "IND") ind++
         else if (e === "DRT") drt++
-        else dsp++
+        else if (e === "DSP") dsp++
+        else lib++
       }
       const parado = pmc + pmp + ind
-      const disponibles = drt + dsp
+      const disponibles = drt + dsp + lib
       const pctDisp = diasPeriodo > 0 ? (disponibles / diasPeriodo) * 100 : null
-      const pctUtil = disponibles > 0 ? (drt / disponibles) * 100 : null
+      // Utilización: solo sobre días laborales disponibles (DRT + DSP), sin contar LIB.
+      const baseUtil = drt + dsp
+      const pctUtil = baseUtil > 0 ? (drt / baseUtil) * 100 : null
       return {
-        dominio: u.dominio, diasPeriodo, pmc, pmp, ind, drt, dsp,
+        dominio: u.dominio, diasPeriodo, pmc, pmp, ind, drt, dsp, lib,
         parado, disponibles, pctDisp, pctUtil, porDia,
       }
     })
@@ -187,12 +205,16 @@ export function SeguimientoFlota({
     const flotaDisp = conDisp.length
       ? conDisp.reduce((a, f) => a + (f.pctDisp ?? 0), 0) / conDisp.length
       : null
-    const totDisponibles = filas.reduce((a, f) => a + f.disponibles, 0)
-    const totDrt = filas.reduce((a, f) => a + f.drt, 0)
-    const flotaUtil = totDisponibles > 0 ? (totDrt / totDisponibles) * 100 : null
+    // Utilización de flota: solo sobre unidades EN SERVICIO en el período (las que
+    // rutearon al menos un día). Las de reserva con 0 ruteos no diluyen el número.
+    const enServicio = filas.filter((f) => f.drt > 0)
+    const totBaseUtil = enServicio.reduce((a, f) => a + f.drt + f.dsp, 0)
+    const totDrt = enServicio.reduce((a, f) => a + f.drt, 0)
+    const flotaUtil = totBaseUtil > 0 ? (totDrt / totBaseUtil) * 100 : null
+    const diasLaborales = laboral.size
     const camionesConParada = filas.filter((f) => f.parado > 0).length
 
-    return { diasDelMes, diasPeriodo, filas, flotaDisp, flotaUtil, camionesConParada }
+    return { diasDelMes, diasPeriodo, diasLaborales, filas, flotaDisp, flotaUtil, camionesConParada }
   }, [mesSel, mantenimientos, indisponibilidades, flota, ruteoSet])
 
   const colorPct = (pct: number | null, target = TARGET_DISP) =>
@@ -215,7 +237,9 @@ export function SeguimientoFlota({
             ? "bg-slate-500"
             : est === "DRT"
               ? "bg-emerald-500"
-              : "bg-sky-300"
+              : est === "DSP"
+                ? "bg-sky-300"
+                : "border border-dashed border-slate-300 bg-white" // LIB (no laboral)
 
   const indDelMes = useMemo(
     () =>
@@ -261,7 +285,7 @@ export function SeguimientoFlota({
             {calc.flotaDisp == null ? "—" : `${calc.flotaDisp.toFixed(1)}%`}
           </span>
         </KpiCard>
-        <KpiCard label="Utilización de flota" sub="De los días disponibles, % que ruteó">
+        <KpiCard label="Utilización de flota" sub="Ruteados ÷ días laborales disp. (unidades en servicio)">
           <span className={cn("text-2xl font-bold", colorPct(calc.flotaUtil, 0))}>
             {calc.flotaUtil == null ? "—" : `${calc.flotaUtil.toFixed(1)}%`}
           </span>
@@ -269,8 +293,8 @@ export function SeguimientoFlota({
         <KpiCard label="Camiones con paradas" sub={`de ${calc.filas.length} unidades`}>
           <span className="text-2xl font-bold text-slate-900">{calc.camionesConParada}</span>
         </KpiCard>
-        <KpiCard label="Días del período" sub={`de ${calc.diasDelMes} del mes`}>
-          <span className="text-2xl font-bold text-slate-900">{calc.diasPeriodo}</span>
+        <KpiCard label="Días laborales" sub={`de ${calc.diasPeriodo} del período`}>
+          <span className="text-2xl font-bold text-slate-900">{calc.diasLaborales}</span>
         </KpiCard>
       </div>
 
@@ -346,7 +370,8 @@ export function SeguimientoFlota({
                             : est === "PMP" ? "parado (preventivo)"
                               : est === "IND" ? "indisponible"
                                 : est === "DRT" ? "disponible y ruteó"
-                                  : "disponible sin uso"
+                                  : est === "DSP" ? "disponible sin uso"
+                                    : "día no laboral"
                       return (
                         <td key={d} className="p-px">
                           <div className={cn("h-5 w-6 rounded-sm", claseDia(est, fuera))}
@@ -401,6 +426,7 @@ function Leyendas() {
       <Leyenda clase="bg-red-500" txt="Parado correctivo (PMC)" />
       <Leyenda clase="bg-amber-400" txt="Parado preventivo (PMP)" />
       <Leyenda clase="bg-slate-500" txt="Indisponible (IND)" />
+      <Leyenda clase="border border-dashed border-slate-300 bg-white" txt="Día no laboral (no cuenta utilización)" />
       <Leyenda clase="bg-slate-100" txt="Fuera del período" />
     </div>
   )
