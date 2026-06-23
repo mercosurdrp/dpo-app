@@ -24,6 +24,7 @@ import {
   CalendarRange,
   ExternalLink,
   Truck,
+  Network,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
 import type { BloqueIndicadores } from "@/actions/indicadores"
@@ -164,6 +165,39 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
                 Abrir simulador
                 <ExternalLink className="h-4 w-4" />
               </a>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Acceso a Clusterización de Clientes (4.2), pilar Planeamiento — solo Pampeana */}
+      {!IS_MISIONES && pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <Network className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Clusterización de Clientes (4.2)
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    4 clústeres por ingresos × crecimiento + RMD y drop size por PDV
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/clusterizacion"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
             </div>
           </CardContent>
         </Card>

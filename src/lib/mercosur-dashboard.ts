@@ -237,3 +237,132 @@ export async function consultarAvanceEmpresa(
     client.release()
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ventas por cliente (PDV) en dos períodos comparables — insumo de la
+// clusterización del Pilar Planeamiento (pregunta 4.2 "Plan de agrupación de
+// clientes"). Devuelve ingresos del período actual y del anterior (mismo largo)
+// por id_cliente, más bultos y días de compra del período actual (proxy de
+// frecuencia / drop size para aproximar el costo de servir cada PDV).
+//
+// Fuente: tabla `comprobantes` (ventas Chess, ya neta de devoluciones vía
+// subtotal_neto; anulado='NO'). El corte se ancla al MAX(fecha) de la tabla
+// para que sea estable aunque el sync venga atrasado.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface VentasClienteRow {
+  id_cliente: number
+  nombre: string | null
+  localidad: string | null
+  promotor: string | null
+  segmento: string | null
+  ingresos_actual: number
+  ingresos_anterior: number
+  bultos_actual: number
+  dias_actual: number
+}
+
+export interface PeriodoComparado {
+  /** Largo de cada período, en días. */
+  dias_periodo: number
+  /** Período actual: [actual_desde, actual_hasta] (inclusive). */
+  actual_desde: string
+  actual_hasta: string
+  /** Período anterior: [anterior_desde, actual_desde). */
+  anterior_desde: string
+}
+
+export interface VentasPorClienteResultado {
+  periodo: PeriodoComparado
+  clientes: VentasClienteRow[]
+}
+
+export async function consultarVentasPorCliente(
+  diasPeriodo = 90,
+): Promise<VentasPorClienteResultado> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    // Ancla = última fecha cargada en comprobantes.
+    const maxRes = await client.query<{ maxf: string }>(
+      "SELECT to_char(max(fecha), 'YYYY-MM-DD') AS maxf FROM comprobantes",
+    )
+    const maxF = maxRes.rows[0]?.maxf
+    if (!maxF) {
+      return {
+        periodo: {
+          dias_periodo: diasPeriodo,
+          actual_desde: "",
+          actual_hasta: "",
+          anterior_desde: "",
+        },
+        clientes: [],
+      }
+    }
+
+    const [y, m, d] = maxF.split("-").map((s) => parseInt(s, 10))
+    const hasta = new Date(Date.UTC(y, m - 1, d)) // inclusive
+    const actualDesdeD = new Date(hasta)
+    actualDesdeD.setUTCDate(actualDesdeD.getUTCDate() - (diasPeriodo - 1))
+    const anteriorDesdeD = new Date(actualDesdeD)
+    anteriorDesdeD.setUTCDate(anteriorDesdeD.getUTCDate() - diasPeriodo)
+    const hastaExclD = new Date(hasta)
+    hastaExclD.setUTCDate(hastaExclD.getUTCDate() + 1) // límite superior exclusivo
+
+    const actualDesde = ymd(actualDesdeD)
+    const anteriorDesde = ymd(anteriorDesdeD)
+    const hastaExcl = ymd(hastaExclD)
+
+    const res = await client.query<{
+      id_cliente: number
+      nombre: string | null
+      localidad: string | null
+      promotor: string | null
+      segmento: string | null
+      ingresos_actual: string
+      ingresos_anterior: string
+      bultos_actual: string
+      dias_actual: string
+    }>(
+      `SELECT
+         id_cliente,
+         max(nombre_cliente)   AS nombre,
+         max(ds_localidad)     AS localidad,
+         max(ds_vendedor)      AS promotor,
+         max(ds_segmento_mkt)  AS segmento,
+         sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END)                 AS ingresos_actual,
+         sum(CASE WHEN fecha >= $2 AND fecha < $1 THEN subtotal_neto ELSE 0 END)  AS ingresos_anterior,
+         sum(CASE WHEN fecha >= $1 THEN cantidades_total ELSE 0 END)              AS bultos_actual,
+         count(DISTINCT CASE WHEN fecha >= $1 THEN fecha::date END)               AS dias_actual
+       FROM comprobantes
+       WHERE fecha >= $2 AND fecha < $3 AND anulado = 'NO' AND id_cliente IS NOT NULL
+       GROUP BY id_cliente
+       HAVING sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END) > 0`,
+      [actualDesde, anteriorDesde, hastaExcl],
+    )
+
+    const clientes: VentasClienteRow[] = res.rows.map((r) => ({
+      id_cliente: r.id_cliente,
+      nombre: r.nombre,
+      localidad: r.localidad,
+      promotor: r.promotor,
+      segmento: r.segmento,
+      ingresos_actual: Number(r.ingresos_actual) || 0,
+      ingresos_anterior: Number(r.ingresos_anterior) || 0,
+      bultos_actual: Number(r.bultos_actual) || 0,
+      dias_actual: Number(r.dias_actual) || 0,
+    }))
+
+    return {
+      periodo: {
+        dias_periodo: diasPeriodo,
+        actual_desde: actualDesde,
+        actual_hasta: maxF,
+        anterior_desde: anteriorDesde,
+      },
+      clientes,
+    }
+  } finally {
+    client.release()
+  }
+}
