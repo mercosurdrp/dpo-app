@@ -28,7 +28,7 @@ import {
   CLUSTER_LABELS,
   type ClusterId,
   type ClusterizacionData,
-} from "@/actions/clusterizacion"
+} from "@/actions/clusterizacion-tipos"
 
 interface Props {
   data: ClusterizacionData
