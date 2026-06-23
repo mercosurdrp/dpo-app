@@ -68,7 +68,7 @@ import {
   SeccionSla,
   SLA_CODIGOS_REUNION_OPERATIVA,
 } from "@/components/reuniones/seccion-sla"
-import { SeccionTlp } from "@/components/reuniones/seccion-tlp"
+import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -856,6 +856,7 @@ export function ReunionDetallePageClient({
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
+  const [tlpDetalleFecha, setTlpDetalleFecha] = useState<string | null>(null)
   // Detalle del día al hacer click en la celda Productividad de picking:
   // abre el sub-cuadro con los 3 operadores Troli/Galvez/Ovejero. La fila
   // Precisión de picking NO abre este detalle (es un valor global del día).
@@ -1795,6 +1796,7 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_productividad_maquinistas"
                           const esAusentismo = ind.id === "auto_ausentismo"
                           const esOB = ind.id === "auto_ocupacion_bodega"
+                          const esTlp = ind.id === "auto_tlp"
                           // WQI / Roturas / Faltantes (warehouse): mismo popover de
                           // detalle del día (bultos vendidos + pérdidas). Explica el
                           // "WQI = 0" (día sin roturas o sin venta cargada todavía).
@@ -1817,6 +1819,7 @@ export function ReunionDetallePageClient({
                               esAperturaMaquinistas ||
                               esAusentismo ||
                               esOB ||
+                              esTlp ||
                               esWqiPerdidas ||
                               esFoxtrotKpi) &&
                             muestra
@@ -1833,6 +1836,7 @@ export function ReunionDetallePageClient({
                               setAperturaMaquinistasFecha(f)
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
+                            else if (esTlp) setTlpDetalleFecha(f)
                             else if (esWqiPerdidas) setWqiDetalleFecha(f)
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
@@ -1951,11 +1955,6 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* TLP — Productividad de mano de obra de transporte (CEq/hora-hombre),
-          total y por ciudad. Solo Pampeana. */}
-      {!IS_MISIONES && detalle.tipo === "logistica" && (
-        <SeccionTlp fechaReunion={detalle.fecha} />
-      )}
 
       {/* Subdialogs */}
       <ActividadFormDialog
@@ -2042,6 +2041,14 @@ export function ReunionDetallePageClient({
           if (!o) setObDetalleFecha(null)
         }}
         fecha={obDetalleFecha}
+      />
+
+      <TlpDetalleDiaDialog
+        open={tlpDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setTlpDetalleFecha(null)
+        }}
+        fecha={tlpDetalleFecha}
       />
 
       <AperturaPickingDetalleDiaDialog

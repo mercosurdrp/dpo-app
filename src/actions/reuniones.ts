@@ -2809,6 +2809,7 @@ async function getIndicadoresMesCore(
     }
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       NOMBRES_AUTO.add("fte")
+      if (!IS_MISIONES) NOMBRES_AUTO.add("tlp")
     }
     const configs = ((configRaw ?? []) as ReunionIndicadorConfig[]).filter(
       (c) => !NOMBRES_AUTO.has(c.nombre.trim().toLowerCase()),
@@ -3291,6 +3292,91 @@ async function getIndicadoresMesCore(
           agregacion: "promedio",
           valores: valoresOB,
           mtd: mtdOB,
+          auto: true,
+          mejor_si: "mayor",
+        })
+      }
+    }
+
+    // 7d-ter. Indicador AUTO "TLP" (Transport Labor Productivity) — solo
+    //   Logística/Matinal Distribución de Pampeana. Cajas equivalentes
+    //   entregadas ÷ horas-hombre en ruta. Por viaje (patente+fecha): CEq de
+    //   ocupacion_bodega_diaria, horas de checklist retorno, FTE de
+    //   registros_vehiculos egreso (1 chofer + ayudantes; fallback 2). Valor
+    //   diario = Σceq_dia / Σ(horas×FTE)_dia; MTD = ratio de acumulados (NO
+    //   promedio de diarios). Unidad CEq/h · mejor_si=mayor. Detalle por
+    //   patente/ciudad al hacer clic (getTlpDetalleDia).
+    if ((tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES) {
+      const normPat = (s: string | null | undefined) => (s ?? "").trim().toUpperCase()
+      const [obT, retT, egrT] = await Promise.all([
+        supabase.from("ocupacion_bodega_diaria")
+          .select("patente, fecha, ceq_total")
+          .gte("fecha", fechaDesde).lte("fecha", fechaHasta).gt("ceq_total", 0),
+        supabase.from("checklist_vehiculos")
+          .select("dominio, fecha, tiempo_ruta_minutos")
+          .eq("tipo", "retorno").not("tiempo_ruta_minutos", "is", null)
+          .gte("fecha", fechaDesde).lte("fecha", fechaHasta),
+        supabase.from("registros_vehiculos")
+          .select("dominio, fecha, ayudante1, ayudante2")
+          .eq("tipo", "egreso")
+          .gte("fecha", fechaDesde).lte("fecha", fechaHasta),
+      ])
+      if (!obT.error && !retT.error && !egrT.error) {
+        const ceqViaje: Record<string, number> = {}
+        for (const r of (obT.data ?? []) as Array<{ patente: string; fecha: string; ceq_total: number | null }>) {
+          const v = Number(r.ceq_total ?? 0)
+          if (!(v > 0)) continue
+          const k = `${normPat(r.patente)}|${r.fecha}`
+          ceqViaje[k] = (ceqViaje[k] ?? 0) + v
+        }
+        const tiempoViaje: Record<string, number> = {}
+        for (const r of (retT.data ?? []) as Array<{ dominio: string; fecha: string; tiempo_ruta_minutos: number | null }>) {
+          const m = Number(r.tiempo_ruta_minutos ?? 0)
+          if (!(m > 0)) continue
+          const k = `${normPat(r.dominio)}|${r.fecha}`
+          tiempoViaje[k] = Math.max(tiempoViaje[k] ?? 0, m)
+        }
+        const fteViaje: Record<string, number> = {}
+        for (const r of (egrT.data ?? []) as Array<{ dominio: string; fecha: string; ayudante1: string | null; ayudante2: string | null }>) {
+          const f = 1 + ((r.ayudante1 ?? "").trim() ? 1 : 0) + ((r.ayudante2 ?? "").trim() ? 1 : 0)
+          const k = `${normPat(r.dominio)}|${r.fecha}`
+          fteViaje[k] = Math.max(fteViaje[k] ?? 0, f)
+        }
+        const ceqFecha: Record<string, number> = {}
+        const hhFecha: Record<string, number> = {}
+        for (const k of Object.keys(ceqViaje)) {
+          const min = tiempoViaje[k]
+          if (!min) continue // sin tiempo en ruta no entra al denominador
+          const ff = k.split("|")[1]
+          const fte = fteViaje[k] ?? 2
+          ceqFecha[ff] = (ceqFecha[ff] ?? 0) + ceqViaje[k]
+          hhFecha[ff] = (hhFecha[ff] ?? 0) + (min / 60) * fte
+        }
+        const valoresTlp: Record<string, { reunion_id: string; valor: number | null; observacion: string | null } | null> = {}
+        let ceqMtd = 0
+        let hhMtd = 0
+        for (const ff of fechas) {
+          const hh = hhFecha[ff] ?? 0
+          if (hh <= 0) {
+            valoresTlp[ff] = null
+            continue
+          }
+          valoresTlp[ff] = { reunion_id: "", valor: Math.round((ceqFecha[ff] / hh) * 100) / 100, observacion: null }
+          if (ff <= fecha) {
+            ceqMtd += ceqFecha[ff]
+            hhMtd += hh
+          }
+        }
+        const mtdTlp = hhMtd > 0 ? Math.round((ceqMtd / hhMtd) * 100) / 100 : null
+        indicadoresAuto.push({
+          id: "auto_tlp",
+          nombre: "TLP",
+          unidad: "CEq/h",
+          meta: null,
+          orden: -1,
+          agregacion: "promedio",
+          valores: valoresTlp,
+          mtd: mtdTlp,
           auto: true,
           mejor_si: "mayor",
         })
