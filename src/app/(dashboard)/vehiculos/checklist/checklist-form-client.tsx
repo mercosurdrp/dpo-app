@@ -138,6 +138,10 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const [respuestas, setRespuestas] = useState<Record<string, string>>({})
   const [comentarios, setComentarios] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  // Marca de inicio del llenado (cuando el chofer abre el form). Se usa para
+  // medir cuánto tarda en completar el checklist. Mismo reloj que el envío, así
+  // la duración no depende de la diferencia con el reloj del servidor.
+  const [inicioMs] = useState(() => Date.now())
 
   const groups = groupByCategoria(items)
 
@@ -179,6 +183,8 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       chofer,
       odometro: odometro ? parseInt(odometro) : undefined,
       observaciones: observaciones || undefined,
+      iniciadoEn: new Date(inicioMs).toISOString(),
+      duracionSegundos: Math.max(0, Math.round((Date.now() - inicioMs) / 1000)),
       respuestas: items.map((item) => ({
         item_id: item.id,
         valor: respuestas[item.id],

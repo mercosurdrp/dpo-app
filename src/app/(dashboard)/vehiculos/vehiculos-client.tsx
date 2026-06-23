@@ -133,6 +133,18 @@ function formatTiempoRuta(minutos: number) {
   return `${hh}h ${mm.toString().padStart(2, "0")}m`
 }
 
+/** Duración de llenado del checklist (segundos) → texto corto legible. */
+function formatDuracion(seg: number | null) {
+  if (seg == null) return "—"
+  if (seg < 60) return `${seg}s`
+  const m = Math.floor(seg / 60)
+  const s = seg % 60
+  if (m < 60) return `${m}m ${s.toString().padStart(2, "0")}s`
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return `${h}h ${mm.toString().padStart(2, "0")}m`
+}
+
 function TiempoRutaBadge({ minutos }: { minutos: number }) {
   const text = formatTiempoRuta(minutos)
   if (minutos <= 480) return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">{text}</Badge>
@@ -716,6 +728,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                         <TableHead>Chofer</TableHead>
                         <TableHead>Resultado</TableHead>
                         <TableHead className="text-right">T. Ruta</TableHead>
+                        <TableHead className="text-right">Duración</TableHead>
                         <TableHead className="text-right w-28">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -749,6 +762,9 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                             {c.tiempo_ruta_minutos != null ? (
                               <TiempoRutaBadge minutos={c.tiempo_ruta_minutos} />
                             ) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm tabular-nums">
+                            {formatDuracion(c.duracion_segundos)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">

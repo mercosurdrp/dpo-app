@@ -65,6 +65,8 @@ interface CreateChecklistInput {
   chofer: string
   odometro?: number
   observaciones?: string
+  iniciadoEn?: string // ISO del momento en que se abrió el form
+  duracionSegundos?: number // duración de llenado medida en el cliente
   respuestas: { item_id: string; valor: string; comentario?: string }[]
 }
 
@@ -135,6 +137,8 @@ export async function createChecklist(
         observaciones: input.observaciones?.trim() || null,
         tiempo_ruta_minutos: tiempoRutaMinutos,
         odometro: input.odometro || null,
+        iniciado_en: input.iniciadoEn || null,
+        duracion_segundos: input.duracionSegundos ?? null,
         created_by: profile.id,
       })
       .select()

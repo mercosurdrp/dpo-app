@@ -748,6 +748,8 @@ export interface ChecklistVehiculo {
   observaciones: string | null
   tiempo_ruta_minutos: number | null
   odometro: number | null
+  iniciado_en: string | null // TIMESTAMPTZ — inicio de llenado del form
+  duracion_segundos: number | null // segundos que tardó en completarse
   created_by: string | null
   created_at: string
 }
