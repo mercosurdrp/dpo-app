@@ -29,16 +29,18 @@ interface CiudadAgg {
   viajes: number
   ceq: number
   horas_hombre: number
+  personas: number // Σ FTE de los viajes que computaron (con tiempo en ruta)
   tlp: number | null
 }
 
 function agruparPorCiudad(viajes: TlpViajeDetalle[]): CiudadAgg[] {
   const m = new Map<string, CiudadAgg>()
   for (const v of viajes) {
-    const a = m.get(v.ciudad) ?? { ciudad: v.ciudad, viajes: 0, ceq: 0, horas_hombre: 0, tlp: null }
+    const a = m.get(v.ciudad) ?? { ciudad: v.ciudad, viajes: 0, ceq: 0, horas_hombre: 0, personas: 0, tlp: null }
     a.viajes += 1
     a.ceq += v.ceq
     a.horas_hombre += v.horas_hombre
+    if (v.horas_hombre > 0) a.personas += v.fte
     m.set(v.ciudad, a)
   }
   const out = [...m.values()].map((a) => ({
@@ -114,7 +116,7 @@ export function TlpDetalleDiaDialog({
                       <TableHead>Ciudad</TableHead>
                       <TableHead className="text-right">Viajes</TableHead>
                       <TableHead className="text-right">CEq</TableHead>
-                      <TableHead className="text-right">Hs-hombre</TableHead>
+                      <TableHead className="text-right">Hs-hombre (pers.)</TableHead>
                       <TableHead className="text-right">TLP</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -124,7 +126,12 @@ export function TlpDetalleDiaDialog({
                         <TableCell className="font-medium">{c.ciudad}</TableCell>
                         <TableCell className="text-right tabular-nums">{c.viajes}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmt(c.ceq, 0)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{fmt(c.horas_hombre, 1)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {fmt(c.horas_hombre, 1)}
+                          {c.personas > 0 && (
+                            <span className="text-muted-foreground"> ({c.personas})</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">{fmt(c.tlp)}</TableCell>
                       </TableRow>
                     ))}
