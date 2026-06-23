@@ -49,6 +49,8 @@ const fmtFecha = (f: string | null) =>
 interface UnidadFlota {
   dominio: string
   tipo: VehiculoTipo | null
+  modelo?: string | null
+  anio?: number | null
 }
 
 interface Props {
@@ -65,6 +67,8 @@ type Estado = "PMC" | "PMP" | "IND" | "DRT" | "DSP" | "LIB"
 
 interface FilaDisp {
   dominio: string
+  modelo: string | null
+  anio: number | null
   diasPeriodo: number
   pmc: number
   pmp: number
@@ -196,7 +200,8 @@ export function SeguimientoFlota({
       const baseUtil = drt + dsp
       const pctUtil = baseUtil > 0 ? (drt / baseUtil) * 100 : null
       return {
-        dominio: u.dominio, diasPeriodo, pmc, pmp, ind, drt, dsp, lib,
+        dominio: u.dominio, modelo: u.modelo ?? null, anio: u.anio ?? null,
+        diasPeriodo, pmc, pmp, ind, drt, dsp, lib,
         parado, disponibles, pctDisp, pctUtil, porDia,
       }
     })
@@ -225,6 +230,16 @@ export function SeguimientoFlota({
         : pct >= 90
           ? "text-amber-600"
           : "text-red-600"
+
+  // Pastilla de color para el % (disponibilidad).
+  const pillDisp = (pct: number | null) =>
+    pct == null
+      ? "bg-slate-100 text-slate-400"
+      : pct >= TARGET_DISP
+        ? "bg-emerald-100 text-emerald-700"
+        : pct >= 90
+          ? "bg-amber-100 text-amber-700"
+          : "bg-red-100 text-red-700"
 
   const claseDia = (est: Estado | undefined, fueraPeriodo: boolean) =>
     fueraPeriodo
@@ -306,30 +321,44 @@ export function SeguimientoFlota({
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-slate-500">
-                  <th className="py-2">Unidad</th>
-                  <th className="text-right">Días</th>
-                  <th className="text-right">Correctivo</th>
-                  <th className="text-right">Preventivo</th>
-                  <th className="text-right">Indisp.</th>
-                  <th className="text-right">Ruteó</th>
-                  <th className="text-right">% Disp.</th>
-                  <th className="text-right">% Util.</th>
+                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="rounded-l-md px-3 py-2">Unidad</th>
+                  <th className="px-2">Modelo</th>
+                  <th className="px-2 text-center">Año</th>
+                  <th className="px-2 text-right">Días</th>
+                  <th className="px-2 text-right text-red-600">Correctivo</th>
+                  <th className="px-2 text-right text-amber-600">Preventivo</th>
+                  <th className="px-2 text-right">Indisp.</th>
+                  <th className="px-2 text-right text-emerald-700">Ruteó</th>
+                  <th className="px-2 text-right">% Disp.</th>
+                  <th className="rounded-r-md px-3 text-right">% Util.</th>
                 </tr>
               </thead>
               <tbody>
-                {calc.filas.map((f) => (
-                  <tr key={f.dominio} className="border-b last:border-0">
-                    <td className="py-2 font-medium">{f.dominio}</td>
-                    <td className="text-right tabular-nums text-slate-600">{f.diasPeriodo}</td>
-                    <td className="text-right tabular-nums text-red-600">{f.pmc || "—"}</td>
-                    <td className="text-right tabular-nums text-amber-600">{f.pmp || "—"}</td>
-                    <td className="text-right tabular-nums text-slate-600">{f.ind || "—"}</td>
-                    <td className="text-right tabular-nums text-emerald-700">{f.drt || "—"}</td>
-                    <td className={cn("text-right font-semibold tabular-nums", colorPct(f.pctDisp))}>
-                      {f.pctDisp == null ? "—" : `${f.pctDisp.toFixed(1)}%`}
+                {calc.filas.map((f, i) => (
+                  <tr
+                    key={f.dominio}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                  >
+                    <td className="px-3 py-2 font-semibold text-slate-800">{f.dominio}</td>
+                    <td className="px-2 text-slate-600">{f.modelo || "—"}</td>
+                    <td className="px-2 text-center tabular-nums text-slate-600">{f.anio ?? "—"}</td>
+                    <td className="px-2 text-right tabular-nums text-slate-500">{f.diasPeriodo}</td>
+                    <td className="px-2 text-right tabular-nums text-red-600">{f.pmc || "—"}</td>
+                    <td className="px-2 text-right tabular-nums text-amber-600">{f.pmp || "—"}</td>
+                    <td className="px-2 text-right tabular-nums text-slate-500">{f.ind || "—"}</td>
+                    <td className="px-2 text-right tabular-nums text-emerald-700">{f.drt || "—"}</td>
+                    <td className="px-2 text-right">
+                      <span
+                        className={cn(
+                          "inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+                          pillDisp(f.pctDisp)
+                        )}
+                      >
+                        {f.pctDisp == null ? "—" : `${f.pctDisp.toFixed(1)}%`}
+                      </span>
                     </td>
-                    <td className="text-right tabular-nums text-slate-700">
+                    <td className="px-3 text-right font-medium tabular-nums text-slate-700">
                       {f.pctUtil == null ? "—" : `${f.pctUtil.toFixed(0)}%`}
                     </td>
                   </tr>
@@ -358,8 +387,16 @@ export function SeguimientoFlota({
               <tbody>
                 {calc.filas.map((f) => (
                   <tr key={f.dominio}>
-                    <td className="sticky left-0 bg-white px-2 py-0.5 font-medium whitespace-nowrap">
+                    <td
+                      className="sticky left-0 bg-white px-2 py-0.5 font-medium whitespace-nowrap"
+                      title={[f.modelo, f.anio].filter(Boolean).join(" · ")}
+                    >
                       {f.dominio}
+                      {(f.modelo || f.anio) && (
+                        <span className="ml-1 font-normal text-slate-400">
+                          {f.modelo ?? ""}{f.anio ? ` ${f.anio}` : ""}
+                        </span>
+                      )}
                     </td>
                     {Array.from({ length: calc.diasDelMes }, (_, i) => i + 1).map((d) => {
                       const est = f.porDia.get(d)

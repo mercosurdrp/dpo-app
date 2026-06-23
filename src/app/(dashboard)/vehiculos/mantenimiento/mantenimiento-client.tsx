@@ -325,7 +325,13 @@ export function MantenimientoClient({
   }, [neumaticos])
 
   const unidades = useMemo(
-    () => estados.map((e) => ({ dominio: e.vehiculo.dominio, tipo: e.vehiculo.tipo })),
+    () =>
+      estados.map((e) => ({
+        dominio: e.vehiculo.dominio,
+        tipo: e.vehiculo.tipo,
+        modelo: e.vehiculo.modelo,
+        anio: e.vehiculo.anio,
+      })),
     [estados]
   )
 

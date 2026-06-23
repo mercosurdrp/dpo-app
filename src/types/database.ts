@@ -367,6 +367,8 @@ export interface CatalogoVehiculo {
   id: string
   dominio: string
   descripcion: string | null
+  modelo: string | null
+  anio: number | null
   sector: VehiculoSector
   tipo: VehiculoTipo | null
   active: boolean
