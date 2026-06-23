@@ -68,6 +68,7 @@ import {
   SeccionSla,
   SLA_CODIGOS_REUNION_OPERATIVA,
 } from "@/components/reuniones/seccion-sla"
+import { SeccionTlp } from "@/components/reuniones/seccion-tlp"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -1948,6 +1949,12 @@ export function ReunionDetallePageClient({
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
         />
+      )}
+
+      {/* TLP — Productividad de mano de obra de transporte (CEq/hora-hombre),
+          total y por ciudad. Solo Pampeana. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && (
+        <SeccionTlp fechaReunion={detalle.fecha} />
       )}
 
       {/* Subdialogs */}

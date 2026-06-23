@@ -126,6 +126,7 @@ export async function syncChessArticulos(
 interface VentaLinea {
   idDocumento?: string
   dsFleteroCarga?: string | null
+  dsLocalidad?: string | null
   idArticulo?: number
   cantidadesTotal?: number | null
   unimedtotal?: number | null
@@ -172,8 +173,10 @@ export async function recalcOcupacionBodegaDia(
   // 2) Bajar /ventas del día
   const lineas = await fetchVentasDia(creds, sessionId, fecha)
 
-  // 3) Agregar por patente
+  // 3) Agregar por patente — y, en paralelo, por (patente, localidad) para el TLP
+  //    por ciudad (la localidad se pierde en la agregación por patente).
   const agg = new Map<string, { ceq: number; bultos: number; hl: number; lineas: number; skus: Set<number> }>()
+  const aggLoc = new Map<string, { patente: string; localidad: string; ceq: number; bultos: number; hl: number; lineas: number }>()
   let skipNoBp = 0
   for (const v of lineas) {
     if (v.idDocumento !== "FCVTA") continue
@@ -184,14 +187,24 @@ export async function recalcOcupacionBodegaDia(
     const bultos = Math.abs(Number(v.cantidadesTotal) || 0)
     if (bultos === 0) continue
     const ceq = (120 / bpa) * bultos
+    const hl = Math.abs(Number(v.unimedtotal) || 0)
     const patente = (v.dsFleteroCarga as string).trim().toUpperCase()
     const slot = agg.get(patente) ?? { ceq: 0, bultos: 0, hl: 0, lineas: 0, skus: new Set<number>() }
     slot.ceq += ceq
     slot.bultos += bultos
-    slot.hl += Math.abs(Number(v.unimedtotal) || 0)
+    slot.hl += hl
     slot.lineas += 1
     slot.skus.add(idArt)
     agg.set(patente, slot)
+
+    const localidad = (v.dsLocalidad ?? "").trim().toUpperCase() || "SIN ESPECIFICAR"
+    const lkey = `${patente}|${localidad}`
+    const lslot = aggLoc.get(lkey) ?? { patente, localidad, ceq: 0, bultos: 0, hl: 0, lineas: 0 }
+    lslot.ceq += ceq
+    lslot.bultos += bultos
+    lslot.hl += hl
+    lslot.lineas += 1
+    aggLoc.set(lkey, lslot)
   }
 
   // 4) Upsert en ocupacion_bodega_diaria
@@ -211,6 +224,24 @@ export async function recalcOcupacionBodegaDia(
   if (rows.length > 0) {
     const { error } = await supabase.from("ocupacion_bodega_diaria").upsert(rows, { onConflict: "fecha,patente" })
     if (error) console.error(`[OB] upsert ob_diaria ${fecha}: ${error.message}`)
+  }
+
+  // 5) Upsert CEq por (patente, localidad) para el TLP por ciudad
+  const locRows = [...aggLoc.values()].map((d) => ({
+    fecha,
+    patente: d.patente,
+    localidad: d.localidad,
+    ceq_total: Math.round(d.ceq * 100) / 100,
+    bultos_total: Math.round(d.bultos * 100) / 100,
+    hl_total: Math.round(d.hl * 10000) / 10000,
+    lineas: d.lineas,
+    updated_at: new Date().toISOString(),
+  }))
+  if (locRows.length > 0) {
+    const { error } = await supabase
+      .from("ocupacion_bodega_localidad_diaria")
+      .upsert(locRows, { onConflict: "fecha,patente,localidad" })
+    if (error) console.error(`[OB] upsert ob_localidad ${fecha}: ${error.message}`)
   }
 
   return { fecha, viajes: rows.length, ceqTotal, lineas: lineas.length, skipNoBp }
