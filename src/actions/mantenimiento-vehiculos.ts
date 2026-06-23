@@ -504,6 +504,8 @@ interface CreateMantenimientoInput {
   observaciones?: string
   es_service_general?: boolean
   evidencia_urls?: string[] | null
+  fuera_servicio_desde?: string | null
+  fuera_servicio_hasta?: string | null
   tareas: MantenimientoTareaInput[]
 }
 
@@ -572,6 +574,8 @@ export async function createMantenimiento(
         observaciones: input.observaciones?.trim() || null,
         es_service_general: input.es_service_general ?? false,
         evidencia_urls: input.evidencia_urls ?? null,
+        fuera_servicio_desde: input.fuera_servicio_desde || null,
+        fuera_servicio_hasta: input.fuera_servicio_hasta || null,
         created_by: profile.id,
       })
       .select()
@@ -612,6 +616,8 @@ interface UpdateMantenimientoInput {
   observaciones?: string
   es_service_general?: boolean
   evidencia_urls?: string[] | null
+  fuera_servicio_desde?: string | null
+  fuera_servicio_hasta?: string | null
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
 }
@@ -638,6 +644,10 @@ export async function updateMantenimiento(
     if (input.es_service_general !== undefined)
       patch.es_service_general = input.es_service_general
     if (input.evidencia_urls !== undefined) patch.evidencia_urls = input.evidencia_urls
+    if (input.fuera_servicio_desde !== undefined)
+      patch.fuera_servicio_desde = input.fuera_servicio_desde || null
+    if (input.fuera_servicio_hasta !== undefined)
+      patch.fuera_servicio_hasta = input.fuera_servicio_hasta || null
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")

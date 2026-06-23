@@ -1296,6 +1296,9 @@ export interface MantenimientoRealizado {
   numero_factura: string | null
   observaciones: string | null
   evidencia_urls: string[] | null
+  /** Período fuera de servicio (para disponibilidad de flota). NULL = no sacó la unidad de ruta. */
+  fuera_servicio_desde: string | null
+  fuera_servicio_hasta: string | null
   /** true = service general/rodado: ancla el contador del próximo service. */
   es_service_general: boolean
   created_by: string | null

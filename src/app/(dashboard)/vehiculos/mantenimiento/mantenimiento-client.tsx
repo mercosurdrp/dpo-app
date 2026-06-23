@@ -75,6 +75,7 @@ import {
 import { TableroOperativo, type OTPendiente } from "./tablero-operativo"
 import { ChecklistsMtto } from "./checklists-mtto"
 import { NeumaticosModule } from "./neumaticos-module"
+import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import type {
   DocumentoVencimiento,
@@ -391,6 +392,7 @@ export function MantenimientoClient({
           <TabsTrigger value="checklists">Check lists</TabsTrigger>
           <TabsTrigger value="piramide">Pirámide de defectos</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
+          <TabsTrigger value="seguimiento">Seguimiento de flota</TabsTrigger>
           <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
@@ -419,6 +421,11 @@ export function MantenimientoClient({
             itemsNoOk={checklists.itemsNoOk}
             mantenimientos={mantenimientos}
           />
+        </TabsContent>
+
+        {/* ============ TAB: Seguimiento de flota ============ */}
+        <TabsContent value="seguimiento" className="space-y-6">
+          <SeguimientoFlota mantenimientos={mantenimientos} unidades={unidades} />
         </TabsContent>
 
         {/* ============ TAB: Neumáticos ============ */}
@@ -915,6 +922,8 @@ function NuevoMantenimientoDialog({
   const [factura, setFactura] = useState("")
   const [obs, setObs] = useState("")
   const [esServiceGeneral, setEsServiceGeneral] = useState(false)
+  const [fueraDesde, setFueraDesde] = useState("")
+  const [fueraHasta, setFueraHasta] = useState("")
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
   )
@@ -978,6 +987,8 @@ function NuevoMantenimientoDialog({
       observaciones: obs,
       es_service_general: esServiceGeneral,
       evidencia_urls: urls.length ? urls : null,
+      fuera_servicio_desde: fueraDesde || null,
+      fuera_servicio_hasta: fueraHasta || null,
       tareas,
     })
     setSaving(false)
@@ -1105,6 +1116,35 @@ function NuevoMantenimientoDialog({
               </span>
             </span>
           </label>
+
+          <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
+            <p className="text-sm font-medium text-amber-800">
+              Fuera de servicio (opcional)
+            </p>
+            <p className="mb-2 text-xs text-amber-700">
+              Si esta orden sacó al camión de circulación, indicá el período. Esos días
+              cuentan como parado en la disponibilidad de flota. Si no lo sacó de ruta, dejalo
+              vacío.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-600">Desde</Label>
+                <Input
+                  type="date"
+                  value={fueraDesde}
+                  onChange={(e) => setFueraDesde(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-600">Hasta</Label>
+                <Input
+                  type="date"
+                  value={fueraHasta}
+                  onChange={(e) => setFueraHasta(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
 
           {dominio && (
             <div>
@@ -1250,6 +1290,8 @@ function EditarMantenimientoDialog({
   const [factura, setFactura] = useState(m.numero_factura ?? "")
   const [obs, setObs] = useState(m.observaciones ?? "")
   const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
+  const [fueraDesde, setFueraDesde] = useState(m.fuera_servicio_desde ?? "")
+  const [fueraHasta, setFueraHasta] = useState(m.fuera_servicio_hasta ?? "")
   const [urlsExistentes, setUrlsExistentes] = useState<string[]>(m.evidencia_urls ?? [])
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
@@ -1274,6 +1316,8 @@ function EditarMantenimientoDialog({
       observaciones: obs,
       es_service_general: esServiceGeneral,
       evidencia_urls: evidencia,
+      fuera_servicio_desde: fueraDesde || null,
+      fuera_servicio_hasta: fueraHasta || null,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1356,6 +1400,32 @@ function EditarMantenimientoDialog({
               </span>
             </span>
           </label>
+
+          <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50/60 p-3">
+            <p className="text-sm font-medium text-amber-800">Fuera de servicio (opcional)</p>
+            <p className="mb-2 text-xs text-amber-700">
+              Período en que el camión estuvo parado por esta orden. Cuenta en la
+              disponibilidad de flota. Vacío = no salió de ruta.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-600">Desde</Label>
+                <Input
+                  type="date"
+                  value={fueraDesde}
+                  onChange={(e) => setFueraDesde(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-600">Hasta</Label>
+                <Input
+                  type="date"
+                  value={fueraHasta}
+                  onChange={(e) => setFueraHasta(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
 
           <div className="col-span-2">
             {urlsExistentes.length > 0 && (
