@@ -3987,9 +3987,10 @@ async function getIndicadoresMesCore(
         }
       }
 
-      // Logística: WQI y Productividad de picking + Precisión, errores totales
-      // del día con drill por operador, Roturas/Faltantes en HL (celdas
-      // diarias, MTD acumulado) y Ausentismo.
+      // Logística: WQI (con drill al detalle de roturas/faltantes/$ del día) y
+      // Productividad de picking + Precisión, errores totales del día con drill
+      // por operador, y Ausentismo. Roturas y Faltantes ya no van como filas
+      // propias: su detalle vive en el popover del WQI.
       if (tipo === "logistica") {
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
@@ -4098,24 +4099,6 @@ async function getIndicadoresMesCore(
             null,
             "menor",
           ),
-          buildDiarioConMtdRow(
-            "auto_roturas",
-            "Roturas",
-            "HL",
-            serie.roturas_dia,
-            serie.roturas,
-            serie.targets.roturas,
-            "menor",
-          ),
-          buildDiarioConMtdRow(
-            "auto_faltantes",
-            "Faltantes",
-            "HL",
-            serie.faltantes_dia,
-            serie.faltantes,
-            serie.targets.faltantes,
-            "menor",
-          ),
           buildSerieRow(
             "auto_ausentismo",
             "Ausentismo",
@@ -4126,6 +4109,10 @@ async function getIndicadoresMesCore(
             "menor",
           ),
         )
+        // Roturas y Faltantes ya no se muestran como filas propias en la
+        // reunión de logística (pedido del usuario): la calidad se sigue por
+        // WQI, y el detalle de roturas/faltantes/$ del día se ve haciendo
+        // click en la celda de WQI (popover "Ventas y pérdidas del día").
       }
 
       // Solo warehouse (rol de depósito): por pedido, sólo Productividad,
