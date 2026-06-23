@@ -80,22 +80,18 @@ export function NuevaRoturaDialog({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [fecha, setFecha] = useState(todayISO())
-  const [hora, setHora] = useState("")
   const [patenteSel, setPatenteSel] = useState("")
   const [patenteOtra, setPatenteOtra] = useState("")
   const [motivo, setMotivo] = useState<RoturaMotivo>("manipulacion")
-  const [localidad, setLocalidad] = useState("")
   const [observaciones, setObservaciones] = useState("")
   const [lineas, setLineas] = useState<LineaSku[]>([{ sku: null, cantidad: "" }])
   const [files, setFiles] = useState<File[]>([])
 
   function reset() {
     setFecha(todayISO())
-    setHora("")
     setPatenteSel("")
     setPatenteOtra("")
     setMotivo("manipulacion")
-    setLocalidad("")
     setObservaciones("")
     setLineas([{ sku: null, cantidad: "" }])
     setFiles([])
@@ -166,10 +162,10 @@ export function NuevaRoturaDialog({
         const res = await createRotura(
           {
             fecha,
-            hora: hora || null,
+            hora: null,
             patente,
             motivo,
-            localidad: localidad || null,
+            localidad: null,
             observaciones: observaciones || null,
             items,
           },
@@ -214,15 +210,11 @@ export function NuevaRoturaDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Fecha / Hora / Patente */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* Fecha / Patente */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label>Fecha *</Label>
               <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </div>
-            <div>
-              <Label>Hora</Label>
-              <Input type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
             </div>
             <div>
               <Label>Patente *</Label>
@@ -253,31 +245,21 @@ export function NuevaRoturaDialog({
             </div>
           )}
 
-          {/* Motivo / Localidad */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <Label>Motivo *</Label>
-              <Select value={motivo} onValueChange={(v) => setMotivo(v as RoturaMotivo)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOTIVOS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {ROTURA_MOTIVO_LABELS[m]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Localidad</Label>
-              <Input
-                value={localidad}
-                onChange={(e) => setLocalidad(e.target.value)}
-                placeholder="Dónde ocurrió"
-              />
-            </div>
+          {/* Motivo */}
+          <div>
+            <Label>Motivo *</Label>
+            <Select value={motivo} onValueChange={(v) => setMotivo(v as RoturaMotivo)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MOTIVOS.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {ROTURA_MOTIVO_LABELS[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Líneas de SKU */}
@@ -353,7 +335,6 @@ export function NuevaRoturaDialog({
                 type="file"
                 multiple
                 accept="image/*"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => handleFilesPick(e.target.files)}
               />
