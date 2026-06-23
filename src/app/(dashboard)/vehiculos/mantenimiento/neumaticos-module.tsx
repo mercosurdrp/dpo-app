@@ -261,7 +261,7 @@ export function NeumaticosModule({
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-slate-500">
+                  <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                     <th className="py-2">Pos.</th>
                     <th>Número</th>
                     <th>Tipo</th>
@@ -275,10 +275,13 @@ export function NeumaticosModule({
                   </tr>
                 </thead>
                 <tbody>
-                  {instaladasOrden.map((n) => {
+                  {instaladasOrden.map((n, i) => {
                     const pres = ultimaPresion(n)
                     return (
-                      <tr key={n.id} className="border-b last:border-0">
+                      <tr
+                        key={n.id}
+                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                      >
                         <td className="py-2 font-medium">{n.posicion || "—"}</td>
                         <td>{n.numero || "—"}</td>
                         <td>{TIPO_LABEL[n.tipo]}</td>
@@ -365,7 +368,7 @@ export function NeumaticosModule({
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-slate-500">
+                    <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="py-2">Fecha</th>
                       <th className="text-right">Km</th>
                       <th>Próxima</th>
@@ -375,8 +378,11 @@ export function NeumaticosModule({
                     </tr>
                   </thead>
                   <tbody>
-                    {alineacionesUnidad.map((a) => (
-                      <tr key={a.id} className="border-b last:border-0">
+                    {alineacionesUnidad.map((a, i) => (
+                      <tr
+                        key={a.id}
+                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                      >
                         <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
                         <td className="text-right tabular-nums text-slate-600">
                           {fmtNum(a.km)}
@@ -428,7 +434,7 @@ export function NeumaticosModule({
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-slate-500">
+                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <th className="py-2">Número</th>
                   <th>Tipo</th>
                   <th>Marca</th>
@@ -439,8 +445,11 @@ export function NeumaticosModule({
                 </tr>
               </thead>
               <tbody>
-                {stock.map((n) => (
-                  <tr key={n.id} className="border-b last:border-0">
+                {stock.map((n, i) => (
+                  <tr
+                    key={n.id}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                  >
                     <td className="py-2 font-medium">{n.numero || "—"}</td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-slate-600">{n.marca || "—"}</td>
@@ -485,7 +494,7 @@ export function NeumaticosModule({
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-slate-500">
+                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <th className="py-2">Número</th>
                   <th>Tipo</th>
                   <th>Medida</th>
@@ -494,8 +503,11 @@ export function NeumaticosModule({
                 </tr>
               </thead>
               <tbody>
-                {bajas.map((n) => (
-                  <tr key={n.id} className="border-b last:border-0">
+                {bajas.map((n, i) => (
+                  <tr
+                    key={n.id}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                  >
                     <td className="py-2 font-medium">{n.numero || "—"}</td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-slate-600">{n.medida || "—"}</td>

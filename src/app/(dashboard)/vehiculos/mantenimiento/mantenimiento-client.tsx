@@ -573,8 +573,8 @@ export function MantenimientoClient({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mantenimientosFiltrados.map((m) => (
-                      <TableRow key={m.id}>
+                    {mantenimientosFiltrados.map((m, i) => (
+                      <TableRow key={m.id} className={cn(i % 2 === 1 && "bg-slate-50/60")}>
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
                         <TableCell className="font-medium">{m.dominio}</TableCell>
                         <TableCell>
