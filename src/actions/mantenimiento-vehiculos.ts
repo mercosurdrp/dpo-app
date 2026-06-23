@@ -12,7 +12,9 @@ import {
 import { startOfYear, today, daysBetween } from "@/lib/vehiculos/lecturas"
 import type {
   CostosMantenimiento,
+  DiaRuteo,
   EstadoPlanVehiculo,
+  FlotaIndisponibilidad,
   MantenimientoCategoria,
   MantenimientoEstado,
   MantenimientoPlanOverride,
@@ -1116,6 +1118,87 @@ export async function getCostosMantenimiento(): Promise<
         porMes,
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== SEGUIMIENTO DE FLOTA ====================
+
+/** Días en que cada unidad ruteó (para utilización), desde una fecha. */
+export async function getDiasRuteo(
+  desde: string
+): Promise<{ data: DiaRuteo[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("vista_dias_ruteo")
+      .select("dominio, fecha")
+      .gte("fecha", desde)
+    if (error) return { error: error.message }
+    return { data: (data || []) as DiaRuteo[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function getIndisponibilidades(): Promise<
+  { data: FlotaIndisponibilidad[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("flota_indisponibilidad")
+      .select("*")
+      .order("fecha_desde", { ascending: false })
+    if (error) return { error: error.message }
+    return { data: (data || []) as FlotaIndisponibilidad[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function registrarIndisponibilidad(input: {
+  dominio: string
+  fecha_desde: string
+  fecha_hasta: string
+  motivo?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio || !input.fecha_desde || !input.fecha_hasta)
+      return { error: "Faltan datos (unidad y fechas)" }
+    if (input.fecha_hasta < input.fecha_desde)
+      return { error: "La fecha hasta no puede ser anterior a la desde" }
+    const supabase = await createClient()
+    const { error } = await supabase.from("flota_indisponibilidad").insert({
+      dominio: input.dominio.toUpperCase(),
+      fecha_desde: input.fecha_desde,
+      fecha_hasta: input.fecha_hasta,
+      motivo: input.motivo?.trim() || null,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function eliminarIndisponibilidad(input: {
+  id: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("flota_indisponibilidad")
+      .delete()
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

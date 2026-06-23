@@ -1341,6 +1341,22 @@ export interface CostosMantenimiento {
   porMes: { mes: string; preventivo: number; correctivo: number; proactivo: number }[]
 }
 
+/** Indisponibilidad de flota por causa NO de mantenimiento (estado IND). */
+export interface FlotaIndisponibilidad {
+  id: string
+  dominio: string
+  fecha_desde: string
+  fecha_hasta: string
+  motivo: string | null
+  created_at: string
+}
+
+/** Día en que una unidad efectivamente ruteó (para utilización / DRT). */
+export interface DiaRuteo {
+  dominio: string
+  fecha: string
+}
+
 // ===== Matriz SKAP / Certificaciones SOP (R1.1.3) =====
 export interface SopCertificacion {
   id: string

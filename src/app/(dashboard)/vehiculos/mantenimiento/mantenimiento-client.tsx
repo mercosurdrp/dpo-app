@@ -59,7 +59,9 @@ import {
 } from "@/actions/mantenimiento-vehiculos"
 import type {
   CostosMantenimiento,
+  DiaRuteo,
   EstadoPlanVehiculo,
+  FlotaIndisponibilidad,
   MantenimientoCategoria,
   MantenimientoEstado,
   MantenimientoPlanOverride,
@@ -193,6 +195,8 @@ interface MantenimientoClientProps {
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   neumaticos: Neumatico[]
   alineaciones: Alineacion[]
+  diasRuteo: DiaRuteo[]
+  indisponibilidades: FlotaIndisponibilidad[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -207,6 +211,8 @@ export function MantenimientoClient({
   checklists,
   neumaticos,
   alineaciones,
+  diasRuteo,
+  indisponibilidades,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -425,7 +431,13 @@ export function MantenimientoClient({
 
         {/* ============ TAB: Seguimiento de flota ============ */}
         <TabsContent value="seguimiento" className="space-y-6">
-          <SeguimientoFlota mantenimientos={mantenimientos} unidades={unidades} />
+          <SeguimientoFlota
+            mantenimientos={mantenimientos}
+            unidades={unidades}
+            diasRuteo={diasRuteo}
+            indisponibilidades={indisponibilidades}
+            puedeEditar={puedeEditar}
+          />
         </TabsContent>
 
         {/* ============ TAB: Neumáticos ============ */}

@@ -2,7 +2,9 @@ import { redirect } from "next/navigation"
 import {
   getChecklistsMtto,
   getCostosMantenimiento,
+  getDiasRuteo,
   getEstadoPlanFlota,
+  getIndisponibilidades,
   getMantenimientos,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
@@ -10,6 +12,13 @@ import { getNeumaticos, getAlineaciones } from "@/actions/neumaticos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
+
+// Ventana de días ruteados a traer (~13 meses) para la utilización de flota.
+function ventanaRuteoDesde() {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 13)
+  return d.toISOString().slice(0, 10)
+}
 
 export default async function MantenimientoPage() {
   // Módulo solo Pampeana (la flota de Misiones se gestiona en Cloudfleet).
@@ -23,6 +32,8 @@ export default async function MantenimientoPage() {
     checklistsRes,
     neumaticosRes,
     alineacionesRes,
+    diasRuteoRes,
+    indispRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -32,6 +43,8 @@ export default async function MantenimientoPage() {
     getChecklistsMtto(),
     getNeumaticos(),
     getAlineaciones(),
+    getDiasRuteo(ventanaRuteoDesde()),
+    getIndisponibilidades(),
     getProfile(),
   ])
 
@@ -83,6 +96,8 @@ export default async function MantenimientoPage() {
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
   const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
+  const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
+  const indisponibilidades = "data" in indispRes ? indispRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -96,6 +111,8 @@ export default async function MantenimientoPage() {
       checklists={checklists}
       neumaticos={neumaticos}
       alineaciones={alineaciones}
+      diasRuteo={diasRuteo}
+      indisponibilidades={indisponibilidades}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />
