@@ -81,6 +81,7 @@ interface ChessVenta {
   cantidadesRechazo: number
   cantidadesTotal: number
   unidadesSolicitadas: number
+  esCombo: string | null   // "SI" = línea encabezado del combo (no es mercadería física)
   idCliente: number
   nombreCliente: string
   idVendedor: number
@@ -258,6 +259,7 @@ export async function syncRechazosForDate(
   const entregadosPorFletero = new Map<string, number>()
   for (const v of ventas) {
     if (v.anulado === "SI") continue
+    if (v.esCombo === "SI") continue
     if (!isPatenteValida(v.dsFleteroCarga)) continue
     entregadosPorFletero.set(
       v.dsFleteroCarga,
@@ -368,8 +370,15 @@ export async function syncRechazosForDate(
   }
 
   // ---- upsert ventas_diarias (solo FCVTA + patente válida) ----
+  // Se excluye la línea ENCABEZADO del combo (esCombo="SI", SKU 900xxx): no es
+  // mercadería física, sus productos ya vienen como líneas componentes
+  // (esCombo="NO", idCombo→header). Contarla inflaba bultos/HL (1 por combo).
   const ventasFCVTA = ventas.filter(
-    (v) => v.idDocumento === "FCVTA" && v.anulado !== "SI" && isPatenteValida(v.dsFleteroCarga)
+    (v) =>
+      v.idDocumento === "FCVTA" &&
+      v.anulado !== "SI" &&
+      v.esCombo !== "SI" &&
+      isPatenteValida(v.dsFleteroCarga)
   )
   type Agg = { bultos: number; unidades: number; hl: number; planillas: Set<string> }
   const agg = new Map<string, Agg>()
