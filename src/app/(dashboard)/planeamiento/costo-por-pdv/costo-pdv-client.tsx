@@ -23,6 +23,7 @@ import {
   Settings2,
   ChevronUp,
   ChevronDown,
+  Info,
 } from "lucide-react"
 import {
   getCostoPorPdv,
@@ -319,6 +320,42 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
           alerta={kpis.criticos > 0}
         />
       </div>
+
+      {/* Criterio de cálculo — a tener en cuenta */}
+      <Card className="border-l-4 border-l-amber-400 bg-amber-50/40">
+        <CardContent className="pt-6">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-amber-900 marker:content-['']">
+              <Info className="h-4 w-4 text-amber-600" />
+              Cómo se calcula y qué tener en cuenta
+              <ChevronDown className="ml-auto h-4 w-4 text-amber-600 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 space-y-2 text-sm text-slate-700">
+              <p>
+                El costo logístico de cada PDV <strong>no se mide individualmente</strong>: es un{" "}
+                <strong>reparto</strong> del costo del mes (Distribución + Almacén) entre todos los clientes, según
+                cuánto mueven.
+              </p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li><strong>Almacén</strong> → se reparte por <strong>bultos</strong>.</li>
+                <li>
+                  <strong>Distribución</strong> → 65% por <strong>bultos</strong> (rodaje) + 35% por{" "}
+                  <strong>entregas</strong> (parada).
+                </li>
+                <li>
+                  El <strong>10% más caro</strong> se ordena por <strong>costo/HL</strong>: marca sobre todo a los que
+                  hacen <strong>muchas entregas por litro</strong> (compran poco y seguido).
+                </li>
+              </ul>
+              <p className="rounded-md bg-amber-100/70 p-2 text-amber-900">
+                ⚠️ <strong>A tener en cuenta:</strong> un PDV con <strong>muchos bultos y pocos HL</strong> (mix de
+                productos con pocos litros, POP, secos, o HL mal informado) puede saltar al tope del ranking por
+                costo/HL sin ser realmente caro de servir. Antes de accionar, mirá también sus bultos y entregas.
+              </p>
+            </div>
+          </details>
+        </CardContent>
+      </Card>
 
       {/* Distribución por banda */}
       <Card>
