@@ -42,21 +42,50 @@ const fmtMoney = (n: number) =>
 const fmtNum = (n: number, d = 0) =>
   new Intl.NumberFormat("es-AR", { maximumFractionDigits: d }).format(n || 0)
 
-// Bandas de costo logístico sobre la venta del PDV (cost-to-serve).
+// Bandas de EFICIENCIA logística por PDV, según su costo por HL (cost-to-serve unitario).
+// La clasificación es por PERCENTIL del costo/HL dentro del mes; un cliente es "caro de
+// servir" cuando mover cada litro hacia él cuesta más, no porque compre mucho. Los PDV de
+// volumen muy bajo van a una banda aparte: su costo/HL se infla por el componente fijo de
+// "parada" sobre pocos litros y no es representativo.
 const BANDAS = [
-  { key: "ok", label: "≤ 8%", min: -Infinity, max: 8, color: "#16a34a", bg: "bg-green-50", text: "text-green-700" },
-  { key: "media", label: "8–12%", min: 8, max: 12, color: "#ca8a04", bg: "bg-amber-50", text: "text-amber-700" },
-  { key: "alta", label: "12–20%", min: 12, max: 20, color: "#ea580c", bg: "bg-orange-50", text: "text-orange-700" },
-  { key: "critica", label: "> 20%", min: 20, max: Infinity, color: "#dc2626", bg: "bg-red-50", text: "text-red-700" },
+  { key: "eficiente", label: "Eficiente", hint: "50% más barato/HL", color: "#16a34a", bg: "bg-green-50", text: "text-green-700" },
+  { key: "medio", label: "Medio", hint: "p50–p80", color: "#ca8a04", bg: "bg-amber-50", text: "text-amber-700" },
+  { key: "alto", label: "Alto", hint: "p80–p90 (20% peor)", color: "#ea580c", bg: "bg-orange-50", text: "text-orange-700" },
+  { key: "caro", label: "Caro de servir", hint: "top 10% costo/HL", color: "#dc2626", bg: "bg-red-50", text: "text-red-700" },
+  { key: "bajo", label: "Bajo volumen", hint: "HL no representativo", color: "#64748b", bg: "bg-slate-100", text: "text-slate-600" },
 ] as const
 
-function bandaDe(pct: number) {
-  return BANDAS.find((b) => pct >= b.min && pct < b.max) ?? BANDAS[0]
+/** Interpolación lineal de percentil sobre un array YA ordenado ascendente. */
+function quantile(sorted: number[], q: number) {
+  if (sorted.length === 0) return 0
+  if (sorted.length === 1) return sorted[0]
+  const pos = (sorted.length - 1) * q
+  const base = Math.floor(pos)
+  const rest = pos - base
+  const next = sorted[base + 1]
+  return next !== undefined ? sorted[base] + rest * (next - sorted[base]) : sorted[base]
+}
+
+/** Umbrales de clasificación por costo/HL calculados sobre el mes en curso. */
+interface Cortes {
+  floorHl: number
+  p50: number
+  p80: number
+  p90: number
+}
+
+/** Banda de un PDV según su costo/HL contra los cortes del mes. */
+function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
+  if (f.hl <= 0 || f.hl < c.floorHl) return BANDAS[4] // bajo volumen (no representativo)
+  if (f.costo_x_hl >= c.p90) return BANDAS[3] // caro de servir
+  if (f.costo_x_hl >= c.p80) return BANDAS[2] // alto
+  if (f.costo_x_hl >= c.p50) return BANDAS[1] // medio
+  return BANDAS[0] // eficiente
 }
 
 type SortKey = keyof Pick<
   CostoPorPdvRow,
-  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "venta_neta" | "costo_total" | "costo_x_bulto" | "pct_venta"
+  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "hl" | "venta_neta" | "costo_total" | "costo_x_hl" | "pct_venta"
 >
 
 interface Props {
@@ -75,7 +104,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
   const [q, setQ] = useState("")
   const [bandaFiltro, setBandaFiltro] = useState<string | null>(null)
   const [ciudadFiltro, setCiudadFiltro] = useState<string | null>(null)
-  const [sortKey, setSortKey] = useState<SortKey>("costo_total")
+  const [sortKey, setSortKey] = useState<SortKey>("costo_x_hl")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [panelOpen, setPanelOpen] = useState(false)
 
@@ -92,12 +121,26 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
     })
   }
 
+  // Cortes de percentil de costo/HL del mes. Se dejan aparte los PDV de volumen muy bajo
+  // (HL por debajo del percentil 10) antes de calcular los percentiles de costo/HL, para
+  // que el ranking de "caros" no quede dominado por clientes de volumen ínfimo.
+  const cortes = useMemo<Cortes>(() => {
+    const conHl = filas.filter((f) => f.hl > 0)
+    const hlSorted = conHl.map((f) => f.hl).sort((a, b) => a - b)
+    const floorHl = quantile(hlSorted, 0.1)
+    const chl = conHl
+      .filter((f) => f.hl >= floorHl)
+      .map((f) => f.costo_x_hl)
+      .sort((a, b) => a - b)
+    return { floorHl, p50: quantile(chl, 0.5), p80: quantile(chl, 0.8), p90: quantile(chl, 0.9) }
+  }, [filas])
+
   // KPIs del mes
   const kpis = useMemo(() => {
     const costoTotal = filas.reduce((s, f) => s + f.costo_total, 0)
     const venta = filas.reduce((s, f) => s + f.venta_neta, 0)
     const bultos = filas.reduce((s, f) => s + f.bultos, 0)
-    const criticos = filas.filter((f) => f.pct_venta > 20).length
+    const criticos = filas.filter((f) => clasificar(f, cortes).key === "caro").length
     return {
       costoTotal,
       venta,
@@ -107,31 +150,32 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       criticos,
       pdv: filas.length,
     }
-  }, [filas])
+  }, [filas, cortes])
 
   // Conteo por banda
   const porBanda = useMemo(() => {
     const m = new Map<string, { pdv: number; venta: number; costo: number }>()
     for (const b of BANDAS) m.set(b.key, { pdv: 0, venta: 0, costo: 0 })
     for (const f of filas) {
-      const b = bandaDe(f.pct_venta)
+      const b = clasificar(f, cortes)
       const acc = m.get(b.key)!
       acc.pdv++
       acc.venta += f.venta_neta
       acc.costo += f.costo_total
     }
     return m
-  }, [filas])
+  }, [filas, cortes])
 
   // Resumen por ciudad (ordenado por costo desc)
   const porCiudad = useMemo(() => {
-    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number }>()
+    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number }>()
     for (const f of filas) {
-      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0 }
+      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0 }
       acc.pdv++
       acc.venta += f.venta_neta
       acc.costo += f.costo_total
       acc.bultos += f.bultos
+      acc.hl += f.hl
       m.set(f.ciudad, acc)
     }
     return [...m.entries()].sort((a, b) => b[1].costo - a[1].costo)
@@ -146,7 +190,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         (f) => f.nombre_cliente.toLowerCase().includes(t) || String(f.id_cliente).includes(t),
       )
     }
-    if (bandaFiltro) arr = arr.filter((f) => bandaDe(f.pct_venta).key === bandaFiltro)
+    if (bandaFiltro) arr = arr.filter((f) => clasificar(f, cortes).key === bandaFiltro)
     if (ciudadFiltro) arr = arr.filter((f) => f.ciudad === ciudadFiltro)
     const dir = sortDir === "asc" ? 1 : -1
     arr = [...arr].sort((a, b) => {
@@ -157,7 +201,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       return ((va as number) - (vb as number)) * dir
     })
     return arr
-  }, [filas, q, bandaFiltro, ciudadFiltro, sortKey, sortDir])
+  }, [filas, q, bandaFiltro, ciudadFiltro, sortKey, sortDir, cortes])
 
   const LIMITE = 150
   const visibles = filasVista.slice(0, LIMITE)
@@ -193,7 +237,8 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Costo por Punto de Venta</h1>
           <p className="text-sm text-muted-foreground">
-            Cost-to-serve logístico — reparte Distribución + Almacén entre cada PDV por volumen y entregas
+            Cost-to-serve logístico — reparte Distribución + Almacén entre cada PDV por volumen y entregas.
+            Los PDV se clasifican por <strong>costo/HL</strong> (lo caro de servir cada litro), no por su costo total.
           </p>
         </div>
         {canEdit && (
@@ -263,9 +308,9 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         <Kpi titulo="Costo / Venta" valor={`${fmtNum(kpis.pct, 1)}%`} sub={`Venta neta ${fmtMoney(kpis.venta)}`} icon={<Percent className="h-5 w-5 text-slate-600" />} />
         <Kpi titulo="Costo x bulto" valor={fmtMoney(kpis.xBulto)} sub={`${fmtNum(kpis.bultos)} bultos`} icon={<Package className="h-5 w-5 text-slate-600" />} />
         <Kpi
-          titulo="PDV caros (> 20%)"
+          titulo="PDV caros de servir"
           valor={fmtNum(kpis.criticos)}
-          sub="Costo logístico > 20% de su venta"
+          sub={`Top 10% peor costo/HL (≥ ${fmtMoney(cortes.p90)}/HL)`}
           icon={<AlertTriangle className="h-5 w-5 text-red-500" />}
           alerta={kpis.criticos > 0}
         />
@@ -274,10 +319,10 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       {/* Distribución por banda */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Distribución de PDV por costo/venta</CardTitle>
+          <CardTitle className="text-base">Distribución de PDV por costo/HL (eficiencia de servir)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {BANDAS.map((b) => {
               const d = porBanda.get(b.key)!
               const activo = bandaFiltro === b.key
@@ -295,6 +340,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                     <span className={`text-sm font-semibold ${b.text}`}>{b.label}</span>
                     <span className={`text-lg font-bold ${b.text}`}>{fmtNum(d.pdv)}</span>
                   </div>
+                  <p className={`text-[10px] uppercase tracking-wide ${b.text} opacity-70`}>{b.hint}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Venta {fmtMoney(d.venta)} · Costo {fmtMoney(d.costo)}
                   </p>
@@ -328,6 +374,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                   <TableHead className="text-right">Venta neta</TableHead>
                   <TableHead className="text-right">Costo logístico</TableHead>
                   <TableHead className="text-right">Costo/Venta</TableHead>
+                  <TableHead className="text-right">$/HL</TableHead>
                   <TableHead className="text-right">$/bulto</TableHead>
                 </TableRow>
               </TableHeader>
@@ -346,6 +393,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.venta)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.costo)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.hl ? d.costo / d.hl : 0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
                     </TableRow>
                   )
@@ -397,15 +445,16 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <ThSort k="ciudad">Ciudad</ThSort>
                       <ThSort k="bultos" right>Bultos</ThSort>
                       <ThSort k="comprobantes" right>Entregas</ThSort>
+                      <ThSort k="hl" right>HL</ThSort>
                       <ThSort k="venta_neta" right>Venta neta</ThSort>
                       <ThSort k="costo_total" right>Costo logístico</ThSort>
-                      <ThSort k="costo_x_bulto" right>$/bulto</ThSort>
+                      <ThSort k="costo_x_hl" right>$/HL</ThSort>
                       <ThSort k="pct_venta" right>Costo/Venta</ThSort>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visibles.map((f) => {
-                      const b = bandaDe(f.pct_venta)
+                      const b = clasificar(f, cortes)
                       return (
                         <TableRow key={f.id_cliente}>
                           <TableCell className="font-medium">
@@ -415,12 +464,13 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                           <TableCell className="text-sm text-muted-foreground">{f.ciudad}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.bultos)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.comprobantes)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmtNum(f.hl, 1)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtMoney(f.venta_neta)}</TableCell>
                           <TableCell className="text-right tabular-nums font-medium">{fmtMoney(f.costo_total)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{fmtMoney(f.costo_x_bulto)}</TableCell>
                           <TableCell className="text-right">
-                            <Badge className={`${b.bg} ${b.text} hover:${b.bg}`}>{fmtNum(f.pct_venta, 1)}%</Badge>
+                            <Badge className={`${b.bg} ${b.text} hover:${b.bg}`} title={b.label}>{fmtMoney(f.costo_x_hl)}</Badge>
                           </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{fmtNum(f.pct_venta, 1)}%</TableCell>
                         </TableRow>
                       )
                     })}
