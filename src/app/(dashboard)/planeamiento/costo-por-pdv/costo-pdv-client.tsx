@@ -56,7 +56,7 @@ function bandaDe(pct: number) {
 
 type SortKey = keyof Pick<
   CostoPorPdvRow,
-  "nombre_cliente" | "bultos" | "comprobantes" | "venta_neta" | "costo_total" | "costo_x_bulto" | "pct_venta"
+  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "venta_neta" | "costo_total" | "costo_x_bulto" | "pct_venta"
 >
 
 interface Props {
@@ -74,6 +74,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
   const [q, setQ] = useState("")
   const [bandaFiltro, setBandaFiltro] = useState<string | null>(null)
+  const [ciudadFiltro, setCiudadFiltro] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>("costo_total")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [panelOpen, setPanelOpen] = useState(false)
@@ -122,6 +123,20 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
     return m
   }, [filas])
 
+  // Resumen por ciudad (ordenado por costo desc)
+  const porCiudad = useMemo(() => {
+    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number }>()
+    for (const f of filas) {
+      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0 }
+      acc.pdv++
+      acc.venta += f.venta_neta
+      acc.costo += f.costo_total
+      acc.bultos += f.bultos
+      m.set(f.ciudad, acc)
+    }
+    return [...m.entries()].sort((a, b) => b[1].costo - a[1].costo)
+  }, [filas])
+
   // Filas filtradas + ordenadas
   const filasVista = useMemo(() => {
     let arr = filas
@@ -132,6 +147,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       )
     }
     if (bandaFiltro) arr = arr.filter((f) => bandaDe(f.pct_venta).key === bandaFiltro)
+    if (ciudadFiltro) arr = arr.filter((f) => f.ciudad === ciudadFiltro)
     const dir = sortDir === "asc" ? 1 : -1
     arr = [...arr].sort((a, b) => {
       const va = a[sortKey]
@@ -141,7 +157,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       return ((va as number) - (vb as number)) * dir
     })
     return arr
-  }, [filas, q, bandaFiltro, sortKey, sortDir])
+  }, [filas, q, bandaFiltro, ciudadFiltro, sortKey, sortDir])
 
   const LIMITE = 150
   const visibles = filasVista.slice(0, LIMITE)
@@ -297,6 +313,61 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         </CardContent>
       </Card>
 
+      {/* Resumen por ciudad */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Costo por ciudad</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ciudad</TableHead>
+                  <TableHead className="text-right">PDV</TableHead>
+                  <TableHead className="text-right">Venta neta</TableHead>
+                  <TableHead className="text-right">Costo logístico</TableHead>
+                  <TableHead className="text-right">Costo/Venta</TableHead>
+                  <TableHead className="text-right">$/bulto</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {porCiudad.map(([ciudad, d]) => {
+                  const activo = ciudadFiltro === ciudad
+                  const pct = d.venta ? (100 * d.costo) / d.venta : 0
+                  return (
+                    <TableRow
+                      key={ciudad}
+                      onClick={() => setCiudadFiltro(activo ? null : ciudad)}
+                      className={`cursor-pointer ${activo ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                    >
+                      <TableCell className="font-medium">{ciudad}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtNum(d.pdv)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtMoney(d.venta)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.costo)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {ciudadFiltro ? (
+              <>
+                Filtrando por <strong>{ciudadFiltro}</strong> — el detalle de abajo muestra el top de esa ciudad.{" "}
+                <button type="button" className="underline" onClick={() => setCiudadFiltro(null)}>
+                  Quitar filtro
+                </button>
+              </>
+            ) : (
+              "Clic en una ciudad para filtrar el detalle y ver su top de PDV (ordenado por costo)."
+            )}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Tabla por PDV */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -323,6 +394,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                   <TableHeader>
                     <TableRow>
                       <ThSort k="nombre_cliente">Cliente</ThSort>
+                      <ThSort k="ciudad">Ciudad</ThSort>
                       <ThSort k="bultos" right>Bultos</ThSort>
                       <ThSort k="comprobantes" right>Entregas</ThSort>
                       <ThSort k="venta_neta" right>Venta neta</ThSort>
@@ -340,6 +412,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                             {f.nombre_cliente}
                             <span className="ml-1 text-xs text-muted-foreground">#{f.id_cliente}</span>
                           </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{f.ciudad}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.bultos)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.comprobantes)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtMoney(f.venta_neta)}</TableCell>

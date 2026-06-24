@@ -8,6 +8,7 @@ import { getProfile } from "@/lib/session"
 export interface CostoPorPdvRow {
   id_cliente: number
   nombre_cliente: string
+  ciudad: string
   bultos: number
   comprobantes: number
   hl: number
@@ -65,6 +66,7 @@ export async function getCostoPorPdv(
     data: (data ?? []).map((r: Record<string, unknown>) => ({
       id_cliente: Number(r.id_cliente),
       nombre_cliente: (r.nombre_cliente as string) ?? "",
+      ciudad: (r.ciudad as string) ?? "(sin ciudad)",
       bultos: Number(r.bultos),
       comprobantes: Number(r.comprobantes),
       hl: Number(r.hl),
