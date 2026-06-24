@@ -48,10 +48,8 @@ const fmtNum = (n: number, d = 0) =>
 // volumen muy bajo van a una banda aparte: su costo/HL se infla por el componente fijo de
 // "parada" sobre pocos litros y no es representativo.
 const BANDAS = [
-  { key: "eficiente", label: "Eficiente", hint: "50% más barato/HL", color: "#16a34a", bg: "bg-green-50", text: "text-green-700" },
-  { key: "medio", label: "Medio", hint: "p50–p80", color: "#ca8a04", bg: "bg-amber-50", text: "text-amber-700" },
-  { key: "alto", label: "Alto", hint: "p80–p90 (20% peor)", color: "#ea580c", bg: "bg-orange-50", text: "text-orange-700" },
-  { key: "caro", label: "Caro de servir", hint: "top 10% costo/HL", color: "#dc2626", bg: "bg-red-50", text: "text-red-700" },
+  { key: "caro", label: "10% más caro", hint: "top 10% costo/HL", color: "#dc2626", bg: "bg-red-50", text: "text-red-700" },
+  { key: "resto", label: "Resto", hint: "costo/HL normal", color: "#16a34a", bg: "bg-green-50", text: "text-green-700" },
   { key: "bajo", label: "Bajo volumen", hint: "HL no representativo", color: "#64748b", bg: "bg-slate-100", text: "text-slate-600" },
 ] as const
 
@@ -66,21 +64,17 @@ function quantile(sorted: number[], q: number) {
   return next !== undefined ? sorted[base] + rest * (next - sorted[base]) : sorted[base]
 }
 
-/** Umbrales de clasificación por costo/HL calculados sobre el mes en curso. */
+/** Umbrales del ranking de costo/HL del mes. */
 interface Cortes {
-  floorHl: number
-  p50: number
-  p80: number
-  p90: number
+  floorHl: number // piso de HL: por debajo, el PDV no entra al ranking (volumen no representativo)
+  p90: number // costo/HL a partir del cual un PDV es del 10% más caro
 }
 
-/** Banda de un PDV según su costo/HL contra los cortes del mes. */
+/** Banda de un PDV: 10% más caro, resto, o bajo volumen (fuera del ranking). */
 function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
-  if (f.hl <= 0 || f.hl < c.floorHl) return BANDAS[4] // bajo volumen (no representativo)
-  if (f.costo_x_hl >= c.p90) return BANDAS[3] // caro de servir
-  if (f.costo_x_hl >= c.p80) return BANDAS[2] // alto
-  if (f.costo_x_hl >= c.p50) return BANDAS[1] // medio
-  return BANDAS[0] // eficiente
+  if (f.hl <= 0 || f.hl < c.floorHl) return BANDAS[2] // bajo volumen (no representativo)
+  if (f.costo_x_hl >= c.p90) return BANDAS[0] // 10% más caro por costo/HL
+  return BANDAS[1] // resto
 }
 
 type SortKey = keyof Pick<
@@ -132,8 +126,18 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       .filter((f) => f.hl >= floorHl)
       .map((f) => f.costo_x_hl)
       .sort((a, b) => a - b)
-    return { floorHl, p50: quantile(chl, 0.5), p80: quantile(chl, 0.8), p90: quantile(chl, 0.9) }
+    return { floorHl, p90: quantile(chl, 0.9) }
   }, [filas])
+
+  // Ranking por costo/HL (1 = el más caro de servir), solo sobre PDV representativos.
+  const rankByHl = useMemo(() => {
+    const m = new Map<number, number>()
+    filas
+      .filter((f) => clasificar(f, cortes).key !== "bajo")
+      .sort((a, b) => b.costo_x_hl - a.costo_x_hl)
+      .forEach((f, i) => m.set(f.id_cliente, i + 1))
+    return m
+  }, [filas, cortes])
 
   // KPIs del mes
   const kpis = useMemo(() => {
@@ -319,10 +323,10 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       {/* Distribución por banda */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Distribución de PDV por costo/HL (eficiencia de servir)</CardTitle>
+          <CardTitle className="text-base">PDV por costo/HL — el 10% más caro de servir</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-3">
             {BANDAS.map((b) => {
               const d = porBanda.get(b.key)!
               const activo = bandaFiltro === b.key
@@ -441,6 +445,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="text-right">#</TableHead>
                       <ThSort k="nombre_cliente">Cliente</ThSort>
                       <ThSort k="ciudad">Ciudad</ThSort>
                       <ThSort k="bultos" right>Bultos</ThSort>
@@ -455,8 +460,10 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                   <TableBody>
                     {visibles.map((f) => {
                       const b = clasificar(f, cortes)
+                      const puesto = rankByHl.get(f.id_cliente)
                       return (
                         <TableRow key={f.id_cliente}>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{puesto ?? "—"}</TableCell>
                           <TableCell className="font-medium">
                             {f.nombre_cliente}
                             <span className="ml-1 text-xs text-muted-foreground">#{f.id_cliente}</span>

@@ -57,13 +57,17 @@ export async function getCostoPorPdv(
   mes: number,
 ): Promise<{ data: CostoPorPdvRow[] } | { error: string }> {
   const supabase = await createClient()
-  const { data, error } = await supabase.rpc("get_costo_por_pdv", {
+  // Usamos la variante _json (devuelve un único jsonb con TODOS los PDV) para que
+  // PostgREST no trunque la respuesta a 1000 filas: con el corte se perdían los PDV
+  // más chicos y tanto el costo total como los percentiles de costo/HL daban mal.
+  const { data, error } = await supabase.rpc("get_costo_por_pdv_json", {
     p_anio: anio,
     p_mes: mes,
   })
   if (error) return { error: error.message }
+  const filas = Array.isArray(data) ? (data as Record<string, unknown>[]) : []
   return {
-    data: (data ?? []).map((r: Record<string, unknown>) => ({
+    data: filas.map((r: Record<string, unknown>) => ({
       id_cliente: Number(r.id_cliente),
       nombre_cliente: (r.nombre_cliente as string) ?? "",
       ciudad: (r.ciudad as string) ?? "(sin ciudad)",
