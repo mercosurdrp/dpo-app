@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { renovarRequisito } from "@/actions/requisitos-legales"
+import { IS_MISIONES } from "@/lib/empresa"
 import type { RequisitoLegalConResponsable } from "@/types/database"
 
 interface Props {
@@ -77,7 +78,9 @@ export function RenovarDialog({ open, onOpenChange, requisito, onSaved }: Props)
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="archivo_r">Foto / archivo — frente *</Label>
+            <Label htmlFor="archivo_r">
+              {IS_MISIONES ? "Archivo de la renovación *" : "Foto / archivo — frente *"}
+            </Label>
             <Input
               id="archivo_r"
               name="archivo"
@@ -90,18 +93,20 @@ export function RenovarDialog({ open, onOpenChange, requisito, onSaved }: Props)
             </p>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="archivo_2_r">Foto / archivo — dorso</Label>
-            <Input
-              id="archivo_2_r"
-              name="archivo_2"
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-            />
-            <p className="text-xs text-muted-foreground">
-              Opcional. Si lo subís, reemplaza el dorso anterior.
-            </p>
-          </div>
+          {!IS_MISIONES && (
+            <div className="space-y-1.5">
+              <Label htmlFor="archivo_2_r">Foto / archivo — dorso</Label>
+              <Input
+                id="archivo_2_r"
+                name="archivo_2"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional. Si lo subís, reemplaza el dorso anterior.
+              </p>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

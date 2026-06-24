@@ -24,6 +24,7 @@ import {
   crearRequisito,
   actualizarRequisito,
 } from "@/actions/requisitos-legales"
+import { IS_MISIONES } from "@/lib/empresa"
 import type {
   Profile,
   RequisitoLegalCategoria,
@@ -203,9 +204,11 @@ export function RequisitoFormDialog({
             </Select>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={IS_MISIONES ? "space-y-1.5" : "grid gap-3 sm:grid-cols-2"}>
             <div className="space-y-1.5">
-              <Label htmlFor="archivo">Foto / archivo — frente</Label>
+              <Label htmlFor="archivo">
+                {IS_MISIONES ? "Foto / archivo" : "Foto / archivo — frente"}
+              </Label>
               <Input
                 id="archivo"
                 name="archivo"
@@ -220,22 +223,24 @@ export function RequisitoFormDialog({
                   : "Opcional (PDF o imagen)."}
               </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="archivo_2">Foto / archivo — dorso</Label>
-              <Input
-                id="archivo_2"
-                name="archivo_2"
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-              />
-              <p className="text-xs text-muted-foreground">
-                {editing
-                  ? requisito?.archivo_nombre_2
-                    ? `Actual: ${requisito.archivo_nombre_2}. Subí uno para reemplazarlo.`
-                    : "Opcional (ej. dorso del carnet)."
-                  : "Opcional (ej. dorso del carnet)."}
-              </p>
-            </div>
+            {!IS_MISIONES && (
+              <div className="space-y-1.5">
+                <Label htmlFor="archivo_2">Foto / archivo — dorso</Label>
+                <Input
+                  id="archivo_2"
+                  name="archivo_2"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {editing
+                    ? requisito?.archivo_nombre_2
+                      ? `Actual: ${requisito.archivo_nombre_2}. Subí uno para reemplazarlo.`
+                      : "Opcional (ej. dorso del carnet)."
+                    : "Opcional (ej. dorso del carnet)."}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
