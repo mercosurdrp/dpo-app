@@ -96,6 +96,22 @@ export async function getPlanesUnificados(opts?: {
     const hoyISO = new Date().toISOString().slice(0, 10)
     const soloMios = opts?.responsableId ?? null
 
+    // El tablero general muestra SÓLO los planes cuyo responsable es un
+    // administrador (decisión Leonardo 2026-06-24): los planes de los
+    // operarios/empleados se gestionan en sus módulos, acá interesa el
+    // seguimiento de los responsables. La vista personal (soloMios) no
+    // aplica este filtro: ahí ya se pide un responsable puntual.
+    const adminIds = new Set<string>()
+    if (!soloMios) {
+      const { data: admins } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "admin")
+      for (const a of (admins ?? []) as Array<{ id: string }>) {
+        adminIds.add(a.id)
+      }
+    }
+
     const items: PlanUnificado[] = []
     // Acumulamos los profile_id a resolver al final, en un solo query.
     const profileIds = new Set<string>()
@@ -298,6 +314,13 @@ export async function getPlanesUnificados(opts?: {
       }
     }
 
+    // En el tablero general, dejar sólo los planes de responsables admin.
+    // (roturas_calle_planes tiene responsable de texto libre / sin profile,
+    // por lo que queda fuera de esta vista.)
+    const visibles = soloMios
+      ? items
+      : items.filter((it) => it.responsable_id && adminIds.has(it.responsable_id))
+
     // ---- Resolver nombres de responsables en un solo query ----
     if (profileIds.size > 0) {
       const { data: profiles } = await supabase
@@ -309,7 +332,7 @@ export async function getPlanesUnificados(opts?: {
       for (const p of (profiles ?? []) as Array<{ id: string; nombre: string }>) {
         nameById.set(p.id, p.nombre)
       }
-      for (const it of items) {
+      for (const it of visibles) {
         if (it.responsable_id) {
           it.responsable_nombre = nameById.get(it.responsable_id) ?? "—"
         }
@@ -318,7 +341,7 @@ export async function getPlanesUnificados(opts?: {
 
     // ---- Orden global: vencidos primero, luego por fecha límite asc (NULLS last),
     //      cerradas al final ----
-    items.sort((a, b) => {
+    visibles.sort((a, b) => {
       const aDone = a.estado_unificado === "cerrada"
       const bDone = b.estado_unificado === "cerrada"
       if (aDone !== bDone) return aDone ? 1 : -1
@@ -332,7 +355,7 @@ export async function getPlanesUnificados(opts?: {
       return b.created_at.localeCompare(a.created_at)
     })
 
-    return { data: items }
+    return { data: visibles }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando planes unificados",
