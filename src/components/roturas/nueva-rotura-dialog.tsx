@@ -24,16 +24,18 @@ import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { createRotura } from "@/actions/roturas-calle"
-import { SkuCombobox } from "@/components/roturas/sku-combobox"
 import {
   ROTURA_MOTIVO_LABELS,
+  ROTURA_TIPO_LABELS,
   type RoturaMotivo,
-  type RoturaSkuOption,
+  type RoturaTipo,
 } from "@/types/roturas"
 
 const BUCKET = "roturas-calle"
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const OTRA_PATENTE = "__otra__"
+
+const TIPOS: RoturaTipo[] = ["rotura", "faltante"]
 
 const MOTIVOS: RoturaMotivo[] = [
   "manipulacion",
@@ -45,7 +47,8 @@ const MOTIVOS: RoturaMotivo[] = [
 ]
 
 interface LineaSku {
-  sku: RoturaSkuOption | null
+  codigo: string
+  descripcion: string
   cantidad: string
 }
 
@@ -68,12 +71,10 @@ export function NuevaRoturaDialog({
   open,
   onOpenChange,
   patentes,
-  skus,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   patentes: string[]
-  skus: RoturaSkuOption[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -82,18 +83,20 @@ export function NuevaRoturaDialog({
   const [fecha, setFecha] = useState(todayISO())
   const [patenteSel, setPatenteSel] = useState("")
   const [patenteOtra, setPatenteOtra] = useState("")
+  const [tipo, setTipo] = useState<RoturaTipo>("rotura")
   const [motivo, setMotivo] = useState<RoturaMotivo>("manipulacion")
   const [observaciones, setObservaciones] = useState("")
-  const [lineas, setLineas] = useState<LineaSku[]>([{ sku: null, cantidad: "" }])
+  const [lineas, setLineas] = useState<LineaSku[]>([{ codigo: "", descripcion: "", cantidad: "" }])
   const [files, setFiles] = useState<File[]>([])
 
   function reset() {
     setFecha(todayISO())
     setPatenteSel("")
     setPatenteOtra("")
+    setTipo("rotura")
     setMotivo("manipulacion")
     setObservaciones("")
-    setLineas([{ sku: null, cantidad: "" }])
+    setLineas([{ codigo: "", descripcion: "", cantidad: "" }])
     setFiles([])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
@@ -102,7 +105,7 @@ export function NuevaRoturaDialog({
     setLineas((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   }
   function addLinea() {
-    setLineas((prev) => [...prev, { sku: null, cantidad: "" }])
+    setLineas((prev) => [...prev, { codigo: "", descripcion: "", cantidad: "" }])
   }
   function removeLinea(idx: number) {
     setLineas((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)))
@@ -149,13 +152,17 @@ export function NuevaRoturaDialog({
     if (!fecha) return toast.error("Seleccioná la fecha")
     if (!patente) return toast.error("Seleccioná o escribí la patente")
     const items = lineas
-      .filter((l) => l.sku && Number(l.cantidad) > 0)
-      .map((l) => ({
-        id_articulo: l.sku!.id_articulo,
-        des_articulo: l.sku!.des_articulo,
-        cantidad: Number(l.cantidad),
-      }))
-    if (items.length === 0) return toast.error("Agregá al menos un SKU con cantidad")
+      .filter((l) => (l.codigo.trim() || l.descripcion.trim()) && Number(l.cantidad) > 0)
+      .map((l) => {
+        const codigoNum = Number(l.codigo.trim())
+        return {
+          id_articulo: l.codigo.trim() && Number.isFinite(codigoNum) ? codigoNum : null,
+          des_articulo: l.descripcion.trim() || null,
+          cantidad: Number(l.cantidad),
+        }
+      })
+    if (items.length === 0)
+      return toast.error("Agregá al menos un SKU (código o descripción) con cantidad")
 
     startTransition(async () => {
       try {
@@ -164,6 +171,7 @@ export function NuevaRoturaDialog({
             fecha,
             hora: null,
             patente,
+            tipo,
             motivo,
             localidad: null,
             observaciones: observaciones || null,
@@ -192,12 +200,12 @@ export function NuevaRoturaDialog({
             return
           }
         }
-        toast.success("Rotura reportada")
+        toast.success(tipo === "faltante" ? "Faltante reportado" : "Rotura reportada")
         reset()
         onOpenChange(false)
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error al reportar la rotura")
+        toast.error(err instanceof Error ? err.message : "Error al reportar")
       }
     })
   }
@@ -206,7 +214,7 @@ export function NuevaRoturaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Reportar rotura en la calle</DialogTitle>
+          <DialogTitle>Reportar rotura o faltante en distribución</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -245,34 +253,62 @@ export function NuevaRoturaDialog({
             </div>
           )}
 
-          {/* Motivo */}
-          <div>
-            <Label>Motivo *</Label>
-            <Select value={motivo} onValueChange={(v) => setMotivo(v as RoturaMotivo)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MOTIVOS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {ROTURA_MOTIVO_LABELS[m]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Tipo / Motivo */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Tipo *</Label>
+              <Select value={tipo} onValueChange={(v) => setTipo(v as RoturaTipo)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIPOS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {ROTURA_TIPO_LABELS[t]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Motivo *</Label>
+              <Select value={motivo} onValueChange={(v) => setMotivo(v as RoturaMotivo)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOTIVOS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {ROTURA_MOTIVO_LABELS[m]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Líneas de SKU */}
+          {/* Líneas de SKU (carga manual) */}
           <div className="space-y-2">
-            <Label>SKU rotos *</Label>
+            <Label>SKU {tipo === "faltante" ? "faltantes" : "rotos"} *</Label>
+            <p className="text-xs text-muted-foreground">
+              Escribí el código y/o el nombre del producto. El código es opcional.
+            </p>
             <div className="space-y-2">
               {lineas.map((linea, idx) => (
                 <div key={idx} className="flex items-start gap-2">
-                  <div className="flex-1">
-                    <SkuCombobox
-                      options={skus}
-                      value={linea.sku}
-                      onSelect={(sku) => setLinea(idx, { sku })}
+                  <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={linea.codigo}
+                      onChange={(e) => setLinea(idx, { codigo: e.target.value })}
+                      placeholder="Código (opcional)"
+                      inputMode="numeric"
+                      className="sm:w-32"
+                    />
+                    <Input
+                      value={linea.descripcion}
+                      onChange={(e) => setLinea(idx, { descripcion: e.target.value })}
+                      placeholder="Producto / descripción"
+                      className="flex-1"
                     />
                   </div>
                   <Input
@@ -374,7 +410,7 @@ export function NuevaRoturaDialog({
               Cancelar
             </Button>
             <Button onClick={handleSubmit} disabled={isPending}>
-              {isPending ? "Reportando…" : "Reportar rotura"}
+              {isPending ? "Reportando…" : "Reportar"}
             </Button>
           </div>
         </div>

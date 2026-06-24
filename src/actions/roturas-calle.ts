@@ -46,6 +46,9 @@ export async function createRotura(
 
     if (!input.fecha) return { error: "La fecha es obligatoria." }
     if (!input.patente?.trim()) return { error: "La patente es obligatoria." }
+    if (input.tipo !== "rotura" && input.tipo !== "faltante") {
+      return { error: "Elegí si es rotura o faltante en distribución." }
+    }
     if (!input.motivo) return { error: "El motivo es obligatorio." }
     const items = (input.items ?? []).filter(
       (it) => (it.id_articulo != null || it.des_articulo?.trim()) && Number(it.cantidad) > 0
@@ -64,6 +67,7 @@ export async function createRotura(
         hora: input.hora || null,
         patente: input.patente.trim().toUpperCase(),
         chofer_nombre: choferNombre,
+        tipo: input.tipo,
         motivo: input.motivo,
         observaciones: input.observaciones?.trim() || null,
         localidad: input.localidad?.trim() || null,

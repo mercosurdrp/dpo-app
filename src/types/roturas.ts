@@ -2,6 +2,13 @@
 // Archivo sin "use server": seguro para exportar tipos y constantes
 // (exportar tipos desde un archivo "use server" rompe el build de Turbopack).
 
+export type RoturaTipo = "rotura" | "faltante"
+
+export const ROTURA_TIPO_LABELS: Record<RoturaTipo, string> = {
+  rotura: "Rotura en distribución",
+  faltante: "Faltante en distribución",
+}
+
 export type RoturaMotivo =
   | "manipulacion"
   | "transporte"
@@ -71,6 +78,7 @@ export interface Rotura {
   hora: string | null
   patente: string
   chofer_nombre: string | null
+  tipo: RoturaTipo
   motivo: RoturaMotivo
   observaciones: string | null
   localidad: string | null
@@ -84,6 +92,7 @@ export interface RoturaInput {
   fecha: string
   hora?: string | null
   patente: string
+  tipo: RoturaTipo
   motivo: RoturaMotivo
   observaciones?: string | null
   localidad?: string | null

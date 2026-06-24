@@ -39,7 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
-import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS } from "@/types/roturas"
+import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS, ROTURA_TIPO_LABELS } from "@/types/roturas"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const MESES_FULL = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -462,7 +462,8 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
                     <th className="px-2 py-2 text-left font-medium">Fecha</th>
                     <th className="px-2 py-2 text-left font-medium">Patente</th>
                     <th className="px-2 py-2 text-left font-medium">Chofer</th>
-                    <th className="px-2 py-2 text-left font-medium">SKU rotos</th>
+                    <th className="px-2 py-2 text-left font-medium">Tipo</th>
+                    <th className="px-2 py-2 text-left font-medium">SKU</th>
                     <th className="px-2 py-2 text-left font-medium">Motivo</th>
                     <th className="px-2 py-2 text-center font-medium">Foto</th>
                     <th className="px-2 py-2 text-left font-medium">Estado</th>
@@ -476,6 +477,7 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 font-mono text-slate-700">{r.patente}</td>
                       <td className="px-2 py-2 text-slate-600">{r.chofer_nombre ?? r.autor_nombre}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-slate-600">{ROTURA_TIPO_LABELS[r.tipo]}</td>
                       <td className="px-2 py-2 text-slate-700">
                         <ul className="space-y-0.5">
                           {r.items.map((it) => (

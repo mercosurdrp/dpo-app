@@ -21,6 +21,7 @@ import {
 } from "@/actions/roturas-calle"
 import {
   ROTURA_MOTIVO_LABELS,
+  ROTURA_TIPO_LABELS,
   type RoturaConPlan,
 } from "@/types/roturas"
 import type { UserRole } from "@/types/database"
@@ -179,6 +180,15 @@ function RoturaItem({
     <li className="rounded-md border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="font-mono">{rotura.patente}</Badge>
+        <Badge
+          className={
+            rotura.tipo === "faltante"
+              ? "bg-violet-100 text-violet-800"
+              : "bg-orange-100 text-orange-800"
+          }
+        >
+          {ROTURA_TIPO_LABELS[rotura.tipo]}
+        </Badge>
         <Badge variant="secondary">{ROTURA_MOTIVO_LABELS[rotura.motivo]}</Badge>
         {rotura.hora && (
           <span className="text-xs text-muted-foreground">{rotura.hora.slice(0, 5)}</span>

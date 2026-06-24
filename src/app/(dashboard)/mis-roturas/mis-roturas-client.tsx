@@ -17,15 +17,21 @@ import { deleteRotura } from "@/actions/roturas-calle"
 import {
   ROTURA_MOTIVO_LABELS,
   ROTURA_ESTADO_LABELS,
+  ROTURA_TIPO_LABELS,
   type RoturaConDetalle,
   type RoturaEstado,
-  type RoturaSkuOption,
+  type RoturaTipo,
 } from "@/types/roturas"
 
 const ESTADO_COLOR: Record<RoturaEstado, string> = {
   reportada: "bg-amber-100 text-amber-800",
   en_revision: "bg-blue-100 text-blue-800",
   cerrada: "bg-emerald-100 text-emerald-800",
+}
+
+const TIPO_COLOR: Record<RoturaTipo, string> = {
+  rotura: "bg-orange-100 text-orange-800",
+  faltante: "bg-violet-100 text-violet-800",
 }
 
 function fmtFecha(f: string): string {
@@ -35,11 +41,9 @@ function fmtFecha(f: string): string {
 
 export function MisRoturasClient({
   patentes,
-  skus,
   roturas,
 }: {
   patentes: string[]
-  skus: RoturaSkuOption[]
   roturas: RoturaConDetalle[]
 }) {
   const router = useRouter()
@@ -67,22 +71,22 @@ export function MisRoturasClient({
             <PackageX className="size-6 text-orange-600" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Roturas en la calle</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Roturas y faltantes en distribución</h1>
             <p className="text-sm text-muted-foreground">
-              Reportá los productos que se rompieron durante el reparto.
+              Reportá los productos que se rompieron o faltaron durante el reparto.
             </p>
           </div>
         </div>
         <Button onClick={() => setOpen(true)} className="gap-2">
           <Plus className="size-4" />
-          Reportar rotura
+          Reportar
         </Button>
       </div>
 
       {roturas.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            Todavía no reportaste ninguna rotura. Tocá <strong>Reportar rotura</strong> para cargar la primera.
+            Todavía no reportaste ninguna rotura ni faltante. Tocá <strong>Reportar</strong> para cargar el primero.
           </CardContent>
         </Card>
       ) : (
@@ -94,6 +98,7 @@ export function MisRoturasClient({
                   <CardTitle className="text-base">{fmtFecha(r.fecha)}</CardTitle>
                   {r.hora && <span className="text-sm text-muted-foreground">{r.hora.slice(0, 5)}</span>}
                   <Badge variant="outline" className="font-mono">{r.patente}</Badge>
+                  <Badge className={TIPO_COLOR[r.tipo]}>{ROTURA_TIPO_LABELS[r.tipo]}</Badge>
                   <Badge variant="secondary">{ROTURA_MOTIVO_LABELS[r.motivo]}</Badge>
                   <Badge className={ESTADO_COLOR[r.estado]}>{ROTURA_ESTADO_LABELS[r.estado]}</Badge>
                 </div>
@@ -154,7 +159,7 @@ export function MisRoturasClient({
         </div>
       )}
 
-      <NuevaRoturaDialog open={open} onOpenChange={setOpen} patentes={patentes} skus={skus} />
+      <NuevaRoturaDialog open={open} onOpenChange={setOpen} patentes={patentes} />
     </div>
   )
 }
