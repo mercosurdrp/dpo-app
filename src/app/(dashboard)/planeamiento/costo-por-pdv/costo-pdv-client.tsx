@@ -80,7 +80,7 @@ function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
 
 type SortKey = keyof Pick<
   CostoPorPdvRow,
-  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "hl" | "venta_neta" | "costo_total" | "costo_x_hl" | "pct_venta"
+  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "hl" | "venta_neta" | "costo_total" | "costo_x_hl" | "pct_venta" | "pct_rechazo"
 >
 
 interface Props {
@@ -352,6 +352,11 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                 productos con pocos litros, POP, secos, o HL mal informado) puede saltar al tope del ranking por
                 costo/HL sin ser realmente caro de servir. Antes de accionar, mirá también sus bultos y entregas.
               </p>
+              <p>
+                La columna <strong>% Rech.</strong> es informativa (no entra al costo): bultos rechazados ÷ lo que se
+                intentó entregar (vendidos + rechazados), con los bultos rechazados entre paréntesis. Un PDV que
+                rechaza seguido es, en la práctica, más caro de servir (viaje y parada que se hicieron igual).
+              </p>
             </div>
           </details>
         </CardContent>
@@ -492,6 +497,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <ThSort k="costo_total" right>Costo logístico</ThSort>
                       <ThSort k="costo_x_hl" right>$/HL</ThSort>
                       <ThSort k="pct_venta" right>Costo/Venta</ThSort>
+                      <ThSort k="pct_rechazo" right>% Rech.</ThSort>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -515,6 +521,16 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                             <Badge className={`${b.bg} ${b.text} hover:${b.bg}`} title={b.label}>{fmtMoney(f.costo_x_hl)}</Badge>
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">{fmtNum(f.pct_venta, 1)}%</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {f.pct_rechazo > 0 ? (
+                              <span className={f.pct_rechazo >= 10 ? "font-medium text-red-600" : "text-muted-foreground"}>
+                                {fmtNum(f.pct_rechazo, 1)}%
+                                <span className="ml-1 text-xs text-muted-foreground">({fmtNum(f.bultos_rechazados, 1)})</span>
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       )
                     })}

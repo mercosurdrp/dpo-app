@@ -19,6 +19,9 @@ export interface CostoPorPdvRow {
   costo_x_bulto: number
   costo_x_hl: number
   pct_venta: number
+  bultos_rechazados: number
+  eventos_rechazo: number
+  pct_rechazo: number
 }
 
 /** Costo mensual cargado por sector (input del modelo). */
@@ -81,6 +84,9 @@ export async function getCostoPorPdv(
       costo_x_bulto: Number(r.costo_x_bulto),
       costo_x_hl: Number(r.costo_x_hl),
       pct_venta: Number(r.pct_venta),
+      bultos_rechazados: Number(r.bultos_rechazados ?? 0),
+      eventos_rechazo: Number(r.eventos_rechazo ?? 0),
+      pct_rechazo: Number(r.pct_rechazo ?? 0),
     })),
   }
 }
