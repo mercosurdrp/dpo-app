@@ -77,7 +77,7 @@ export function RenovarDialog({ open, onOpenChange, requisito, onSaved }: Props)
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="archivo_r">Archivo de la renovación *</Label>
+            <Label htmlFor="archivo_r">Foto / archivo — frente *</Label>
             <Input
               id="archivo_r"
               name="archivo"
@@ -87,6 +87,19 @@ export function RenovarDialog({ open, onOpenChange, requisito, onSaved }: Props)
             />
             <p className="text-xs text-muted-foreground">
               El archivo anterior se reemplaza.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="archivo_2_r">Foto / archivo — dorso</Label>
+            <Input
+              id="archivo_2_r"
+              name="archivo_2"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+            />
+            <p className="text-xs text-muted-foreground">
+              Opcional. Si lo subís, reemplaza el dorso anterior.
             </p>
           </div>
 

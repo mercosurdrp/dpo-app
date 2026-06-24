@@ -2649,6 +2649,8 @@ export interface RequisitoLegal {
   responsable_id: string | null
   archivo_url: string | null
   archivo_nombre: string | null
+  archivo_url_2: string | null
+  archivo_nombre_2: string | null
   observaciones: string | null
   created_by: string | null
   created_at: string

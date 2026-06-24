@@ -80,8 +80,6 @@ function columnaPrincipalLabel(tipo: TipoIdentificadorRequisito): string {
       return "Persona"
     case "ubicacion":
       return "Ubicación"
-    case "proveedor":
-      return "Proveedor"
     default:
       return "Requisito"
   }
@@ -128,7 +126,7 @@ interface CategoriaTablaProps {
   onEditar: (r: RequisitoLegalConResponsable) => void
   onRenovar: (r: RequisitoLegalConResponsable) => void
   onEliminar: (r: RequisitoLegalConResponsable) => void
-  onAbrirArchivo: (r: RequisitoLegalConResponsable) => void
+  onAbrirArchivo: (archivoUrl: string) => void
 }
 
 function CategoriaTabla({
@@ -300,15 +298,27 @@ function CategoriaTabla({
                       variant="outline"
                       size="sm"
                       disabled={!r.archivo_url}
-                      onClick={() => onAbrirArchivo(r)}
+                      onClick={() => r.archivo_url && onAbrirArchivo(r.archivo_url)}
                       title={
                         r.archivo_url
-                          ? `Ver ${r.archivo_nombre ?? "archivo"}`
-                          : "Sin archivo"
+                          ? `Ver frente (${r.archivo_nombre ?? "archivo"})`
+                          : "Sin archivo (frente)"
                       }
                     >
                       <FileDown className="size-3.5" />
                     </Button>
+                    {r.archivo_url_2 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onAbrirArchivo(r.archivo_url_2!)}
+                        title={`Ver dorso (${r.archivo_nombre_2 ?? "archivo"})`}
+                      >
+                        <FileDown className="size-3.5" />
+                        <span className="ml-0.5 text-[10px] font-semibold">2</span>
+                      </Button>
+                    )}
                     {puedeEditar && (
                       <>
                         <Button
@@ -408,9 +418,8 @@ export function RequisitosLegalesClient({
     router.refresh()
   }
 
-  async function abrirArchivo(r: RequisitoLegalConResponsable) {
-    if (!r.archivo_url) return
-    const result = await getSignedUrl(r.archivo_url)
+  async function abrirArchivo(archivoUrl: string) {
+    const result = await getSignedUrl(archivoUrl)
     if ("error" in result) {
       alert(`Error abriendo archivo: ${result.error}`)
       return

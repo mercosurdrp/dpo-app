@@ -54,6 +54,32 @@ function slugify(input: string): string {
     .slice(0, 60)
 }
 
+/**
+ * Sube un archivo al bucket y devuelve el path. `tag` distingue ranura/versión
+ * (ej. "v1" frente, "v1-dorso" dorso) para que dos archivos del mismo item no
+ * colisionen de path. Lanza si falla la subida.
+ */
+async function subirArchivoRequisito(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  categoriaId: string,
+  requisitoId: string,
+  file: File,
+  tag: string,
+): Promise<string> {
+  const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const path = `${categoriaId}/${requisitoId}/${tag}-${cleanName}`
+  const arrayBuffer = await file.arrayBuffer()
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, arrayBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    })
+  if (error) throw new Error(`Subiendo archivo: ${error.message}`)
+  return path
+}
+
 // =============================================
 // Lectura
 // =============================================
@@ -108,6 +134,8 @@ export async function listRequisitos(): Promise<
         responsable_id: r.responsable_id,
         archivo_url: r.archivo_url,
         archivo_nombre: r.archivo_nombre,
+        archivo_url_2: r.archivo_url_2,
+        archivo_nombre_2: r.archivo_nombre_2,
         observaciones: r.observaciones,
         created_by: r.created_by,
         created_at: r.created_at,
@@ -191,7 +219,7 @@ export async function crearCategoria(
 
     if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
     if (
-      !["ninguno", "vehiculo", "persona", "ubicacion", "proveedor"].includes(
+      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
         tipo_identificador,
       )
     ) {
@@ -267,7 +295,7 @@ export async function actualizarCategoria(
 
     if (!nombre) return { error: "El nombre de la tarjeta es obligatorio" }
     if (
-      !["ninguno", "vehiculo", "persona", "ubicacion", "proveedor"].includes(
+      !["ninguno", "vehiculo", "persona", "ubicacion"].includes(
         tipo_identificador,
       )
     ) {
@@ -381,33 +409,45 @@ export async function crearRequisito(
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
     const file = formData.get("archivo") as File | null
+    const file2 = formData.get("archivo_2") as File | null
 
     if (!categoria_id) return { error: "La categoría es obligatoria" }
     if (!nombre) return { error: "El nombre del requisito es obligatorio" }
     if (!fecha_vencimiento) return { error: "La fecha de vencimiento es obligatoria" }
 
+    const requisitoId = crypto.randomUUID()
     let archivo_url: string | null = null
     let archivo_nombre: string | null = null
+    let archivo_url_2: string | null = null
+    let archivo_nombre_2: string | null = null
+    const subidos: string[] = []
 
-    if (file && file instanceof File && file.size > 0) {
-      const requisitoId = crypto.randomUUID()
-      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-      const path = `${categoria_id}/${requisitoId}/v1-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
-      archivo_url = path
-      archivo_nombre = file.name
+    try {
+      if (file && file instanceof File && file.size > 0) {
+        archivo_url = await subirArchivoRequisito(
+          supabase, categoria_id, requisitoId, file, "v1",
+        )
+        archivo_nombre = file.name
+        subidos.push(archivo_url)
+      }
+      if (file2 && file2 instanceof File && file2.size > 0) {
+        archivo_url_2 = await subirArchivoRequisito(
+          supabase, categoria_id, requisitoId, file2, "v1-dorso",
+        )
+        archivo_nombre_2 = file2.name
+        subidos.push(archivo_url_2)
+      }
+    } catch (err) {
+      if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
+      return {
+        error: err instanceof Error ? err.message : "Error subiendo archivo",
+      }
     }
 
     const { data, error } = await supabase
       .from("requisitos_legales")
       .insert({
+        id: requisitoId,
         categoria_id,
         nombre,
         fecha_emision,
@@ -415,6 +455,8 @@ export async function crearRequisito(
         responsable_id,
         archivo_url,
         archivo_nombre,
+        archivo_url_2,
+        archivo_nombre_2,
         observaciones,
         created_by: profile.id,
       })
@@ -422,9 +464,7 @@ export async function crearRequisito(
       .single()
 
     if (error) {
-      if (archivo_url) {
-        await supabase.storage.from(BUCKET).remove([archivo_url])
-      }
+      if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
       return { error: error.message }
     }
 
@@ -452,24 +492,73 @@ export async function actualizarRequisito(
       String(formData.get("responsable_id") ?? "").trim() || null
     const observaciones =
       String(formData.get("observaciones") ?? "").trim() || null
+    const file = formData.get("archivo") as File | null
+    const file2 = formData.get("archivo_2") as File | null
 
     if (!nombre) return { error: "El nombre del requisito es obligatorio" }
     if (!fecha_vencimiento) return { error: "La fecha de vencimiento es obligatoria" }
 
+    const tieneArchivo1 = !!(file && file instanceof File && file.size > 0)
+    const tieneArchivo2 = !!(file2 && file2 instanceof File && file2.size > 0)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const update: Record<string, any> = {
+      nombre,
+      fecha_emision,
+      fecha_vencimiento,
+      responsable_id,
+      observaciones,
+    }
+
+    const subidos: string[] = []
+    const aBorrar: string[] = []
+
+    if (tieneArchivo1 || tieneArchivo2) {
+      const { data: actual, error: errActual } = await supabase
+        .from("requisitos_legales")
+        .select("categoria_id, archivo_url, archivo_url_2")
+        .eq("id", id)
+        .single()
+      if (errActual) return { error: errActual.message }
+
+      try {
+        if (tieneArchivo1) {
+          update.archivo_url = await subirArchivoRequisito(
+            supabase, actual.categoria_id, id, file!, `e${Date.now()}`,
+          )
+          update.archivo_nombre = file!.name
+          subidos.push(update.archivo_url)
+          if (actual.archivo_url) aBorrar.push(actual.archivo_url)
+        }
+        if (tieneArchivo2) {
+          update.archivo_url_2 = await subirArchivoRequisito(
+            supabase, actual.categoria_id, id, file2!, `e${Date.now()}-dorso`,
+          )
+          update.archivo_nombre_2 = file2!.name
+          subidos.push(update.archivo_url_2)
+          if (actual.archivo_url_2) aBorrar.push(actual.archivo_url_2)
+        }
+      } catch (err) {
+        if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
+        return {
+          error: err instanceof Error ? err.message : "Error subiendo archivo",
+        }
+      }
+    }
+
     const { data, error } = await supabase
       .from("requisitos_legales")
-      .update({
-        nombre,
-        fecha_emision,
-        fecha_vencimiento,
-        responsable_id,
-        observaciones,
-      })
+      .update(update)
       .eq("id", id)
       .select("*")
       .single()
 
-    if (error) return { error: error.message }
+    if (error) {
+      if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
+      return { error: error.message }
+    }
+
+    if (aBorrar.length) await supabase.storage.from(BUCKET).remove(aBorrar)
 
     revalidatePath(REVALIDATE_PATH)
     return { data: data as RequisitoLegal }
@@ -495,51 +584,63 @@ export async function renovarRequisito(
     const fecha_emision = String(formData.get("fecha_emision") ?? "").trim()
     const fecha_vencimiento = String(formData.get("fecha_vencimiento") ?? "").trim()
     const file = formData.get("archivo") as File | null
+    const file2 = formData.get("archivo_2") as File | null
 
     if (!fecha_emision) return { error: "La fecha de emisión es obligatoria" }
     if (!fecha_vencimiento) return { error: "La fecha de vencimiento es obligatoria" }
     if (!file || !(file instanceof File) || file.size === 0) {
-      return { error: "Subí el archivo de la renovación" }
+      return { error: "Subí el archivo de la renovación (frente)" }
     }
+    const tieneArchivo2 = !!(file2 && file2 instanceof File && file2.size > 0)
 
     const { data: actual, error: errActual } = await supabase
       .from("requisitos_legales")
-      .select("archivo_url, categoria_id")
+      .select("archivo_url, archivo_url_2, categoria_id")
       .eq("id", id)
       .single()
     if (errActual) return { error: errActual.message }
 
-    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-    const newPath = `${actual.categoria_id}/${id}/v${Date.now()}-${cleanName}`
-    const arrayBuffer = await file.arrayBuffer()
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(newPath, arrayBuffer, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      })
-    if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const update: Record<string, any> = { fecha_emision, fecha_vencimiento }
+    const subidos: string[] = []
+    const aBorrar: string[] = []
+
+    try {
+      update.archivo_url = await subirArchivoRequisito(
+        supabase, actual.categoria_id, id, file, `v${Date.now()}`,
+      )
+      update.archivo_nombre = file.name
+      subidos.push(update.archivo_url)
+      if (actual.archivo_url) aBorrar.push(actual.archivo_url)
+
+      if (tieneArchivo2) {
+        update.archivo_url_2 = await subirArchivoRequisito(
+          supabase, actual.categoria_id, id, file2!, `v${Date.now()}-dorso`,
+        )
+        update.archivo_nombre_2 = file2!.name
+        subidos.push(update.archivo_url_2)
+        if (actual.archivo_url_2) aBorrar.push(actual.archivo_url_2)
+      }
+    } catch (err) {
+      if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
+      return {
+        error: err instanceof Error ? err.message : "Error subiendo archivo",
+      }
+    }
 
     const { data, error } = await supabase
       .from("requisitos_legales")
-      .update({
-        fecha_emision,
-        fecha_vencimiento,
-        archivo_url: newPath,
-        archivo_nombre: file.name,
-      })
+      .update(update)
       .eq("id", id)
       .select("*")
       .single()
 
     if (error) {
-      await supabase.storage.from(BUCKET).remove([newPath])
+      if (subidos.length) await supabase.storage.from(BUCKET).remove(subidos)
       return { error: error.message }
     }
 
-    if (actual?.archivo_url) {
-      await supabase.storage.from(BUCKET).remove([actual.archivo_url])
-    }
+    if (aBorrar.length) await supabase.storage.from(BUCKET).remove(aBorrar)
 
     revalidatePath(REVALIDATE_PATH)
     return { data: data as RequisitoLegal }
@@ -559,7 +660,7 @@ export async function eliminarRequisito(
 
     const { data: actual } = await supabase
       .from("requisitos_legales")
-      .select("archivo_url")
+      .select("archivo_url, archivo_url_2")
       .eq("id", id)
       .single()
 
@@ -570,8 +671,11 @@ export async function eliminarRequisito(
 
     if (error) return { error: error.message }
 
-    if (actual?.archivo_url) {
-      await supabase.storage.from(BUCKET).remove([actual.archivo_url])
+    const aBorrar = [actual?.archivo_url, actual?.archivo_url_2].filter(
+      Boolean,
+    ) as string[]
+    if (aBorrar.length) {
+      await supabase.storage.from(BUCKET).remove(aBorrar)
     }
 
     revalidatePath(REVALIDATE_PATH)

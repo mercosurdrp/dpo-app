@@ -49,8 +49,6 @@ function nombreLabel(tipo: TipoIdentificadorRequisito | undefined): string {
       return "Persona"
     case "ubicacion":
       return "Ubicación"
-    case "proveedor":
-      return "Proveedor"
     default:
       return "Requisito"
   }
@@ -64,8 +62,6 @@ function nombrePlaceholder(tipo: TipoIdentificadorRequisito | undefined): string
       return "Ej. Juan Pérez"
     case "ubicacion":
       return "Ej. NAVE 1 - Puerta adelante"
-    case "proveedor":
-      return "Ej. Neumáticos XYZ S.A."
     default:
       return "Ej. Habilitación Municipal Ramallo"
   }
@@ -207,9 +203,9 @@ export function RequisitoFormDialog({
             </Select>
           </div>
 
-          {!editing && (
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="archivo">Archivo (PDF, imagen, etc.)</Label>
+              <Label htmlFor="archivo">Foto / archivo — frente</Label>
               <Input
                 id="archivo"
                 name="archivo"
@@ -217,10 +213,30 @@ export function RequisitoFormDialog({
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
               <p className="text-xs text-muted-foreground">
-                Opcional. Podés adjuntarlo después al renovar.
+                {editing
+                  ? requisito?.archivo_nombre
+                    ? `Actual: ${requisito.archivo_nombre}. Subí uno para reemplazarlo.`
+                    : "Opcional. Sin archivo cargado."
+                  : "Opcional (PDF o imagen)."}
               </p>
             </div>
-          )}
+            <div className="space-y-1.5">
+              <Label htmlFor="archivo_2">Foto / archivo — dorso</Label>
+              <Input
+                id="archivo_2"
+                name="archivo_2"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              />
+              <p className="text-xs text-muted-foreground">
+                {editing
+                  ? requisito?.archivo_nombre_2
+                    ? `Actual: ${requisito.archivo_nombre_2}. Subí uno para reemplazarlo.`
+                    : "Opcional (ej. dorso del carnet)."
+                  : "Opcional (ej. dorso del carnet)."}
+              </p>
+            </div>
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="observaciones">Observaciones</Label>
