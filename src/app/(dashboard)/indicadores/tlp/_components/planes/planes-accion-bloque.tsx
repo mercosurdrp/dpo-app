@@ -138,6 +138,12 @@ export function PlanesAccionBloque({
             <Select
               value={filtroEstado}
               onValueChange={(v) => v && setFiltroEstado(v)}
+              items={{
+                [TODOS]: "Todos los estados",
+                pendiente: "Pendiente",
+                en_progreso: "En progreso",
+                completado: "Completado",
+              }}
             >
               <SelectTrigger className="h-8 w-[150px] text-xs">
                 <SelectValue />

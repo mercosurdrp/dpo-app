@@ -155,6 +155,7 @@ export function PlanFormDialog({
               <Select
                 value={prioridad}
                 onValueChange={(v) => v && setPrioridad(v as PrioridadTlpPlan)}
+                items={{ alta: "Alta", media: "Media", baja: "Baja" }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -172,6 +173,10 @@ export function PlanFormDialog({
               <Select
                 value={responsableId}
                 onValueChange={(v) => v && setResponsableId(v)}
+                items={{
+                  [SIN_RESPONSABLE]: "Sin responsable",
+                  ...Object.fromEntries(responsables.map((r) => [r.id, r.nombre])),
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sin responsable" />
@@ -191,7 +196,14 @@ export function PlanFormDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Foco · Ciudad</Label>
-              <Select value={ciudad} onValueChange={(v) => v && setCiudad(v)}>
+              <Select
+                value={ciudad}
+                onValueChange={(v) => v && setCiudad(v)}
+                items={{
+                  [SIN_CIUDAD]: "Sin ciudad (general)",
+                  ...Object.fromEntries(ciudades.map((c) => [c, c])),
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sin ciudad" />
                 </SelectTrigger>
@@ -208,7 +220,14 @@ export function PlanFormDialog({
 
             <div className="space-y-1">
               <Label>Foco · Camión (patente)</Label>
-              <Select value={patente} onValueChange={(v) => v && setPatente(v)}>
+              <Select
+                value={patente}
+                onValueChange={(v) => v && setPatente(v)}
+                items={{
+                  [SIN_PATENTE]: "Sin camión (general)",
+                  ...Object.fromEntries(patentes.map((p) => [p, p])),
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sin camión" />
                 </SelectTrigger>
