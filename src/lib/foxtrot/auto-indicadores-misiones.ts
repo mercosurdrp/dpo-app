@@ -438,10 +438,22 @@ export async function buildMisionesLogisticaSerie(
         series.rutas_distribucion[hoy] = activasHoy
         // Concurrencia acotada (la API de Foxtrot no tolera cientos en paralelo).
         await runWithConcurrency(tasks, 8)
-        // La foto en vivo reemplaza lo que hubiera de hoy en DB (sync parcial).
+        // Merge POR RUTA: la foto en vivo (rutas que ya salieron) pisa SOLO
+        // esas rutas; las rutas de hoy que todavía no arrancaron conservan su
+        // carga PLANIFICADA de la DB (la deja el sync de la 1 AM). Antes se
+        // borraba TODO lo de hoy y quedaba solo lo ya salido → a la mañana el
+        // total de bultos/HL/CEq aparecía incompleto (solo los camiones que ya
+        // habían salido) y crecía durante el día. Con el merge, desde temprano
+        // se ve el plan completo del día y se va refinando a medida que salen.
         if (liveManifest.length > 0) {
+          const rutasLive = new Set(liveManifest.map((m) => m.routeId))
           for (let i = manifest.length - 1; i >= 0; i--) {
-            if (manifest[i].fecha === hoy) manifest.splice(i, 1)
+            if (
+              manifest[i].fecha === hoy &&
+              rutasLive.has(manifest[i].routeId)
+            ) {
+              manifest.splice(i, 1)
+            }
           }
           manifest.push(...liveManifest)
         }

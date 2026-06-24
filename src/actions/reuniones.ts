@@ -4192,24 +4192,97 @@ async function getIndicadoresMesCore(
             "auto_errores_deposito", "Errores de picking", "errores", ms.errores, "suma", null, "menor",
           )
 
+          // RMD (Rate My Delivery) AUTO desde el Power BI de Quilmes. El cron
+          // diario deja en nps_rmd_cliente una fila por puntuación de cliente.
+          // El valor del día = promedio de puntuación agrupado por FECHA DE
+          // PUNTUACIÓN (mismo criterio que el gráfico "RMD por Dia" de Quilmes,
+          // que agrupa por fecha de puntuación, no de entrega). Reemplaza la
+          // carga manual del indicador "RMD".
+          const rmdPorFecha: Record<string, number | null> = {}
+          let rmdSumMtd = 0
+          let rmdNMtd = 0
+          {
+            // Agregación POR DÍA en la base (función rmd_serie_dia): junio puede
+            // tener >1771 puntuaciones y traer las filas crudas chocaba contra
+            // el tope de 1000 filas de PostgREST (cortaba el mes ~día 12). El
+            // RPC devuelve una fila por día (~30), sin tope.
+            const { data: rmdAgg } = await supabase.rpc("rmd_serie_dia", {
+              p_desde: fechas[0],
+              p_hasta: fechas[fechas.length - 1],
+            })
+            const agg = new Map<string, { sum: number; n: number }>()
+            for (const r of (rmdAgg ?? []) as Array<{
+              fecha: string | null
+              n: number | null
+              suma: number | null
+            }>) {
+              const f = r.fecha
+              const n = r.n == null ? 0 : Number(r.n)
+              const suma = r.suma == null ? 0 : Number(r.suma)
+              if (!f || !Number.isFinite(n) || n <= 0) continue
+              agg.set(f, { sum: suma, n })
+            }
+            for (const f of fechas) {
+              const a = agg.get(f)
+              // Solo días con datos hasta la fecha de la reunión (inclusive). El
+              // día en curso suele estar vacío: el cliente puntúa 1-2 días
+              // después de la entrega.
+              if (a && a.n > 0 && f <= fecha) {
+                rmdPorFecha[f] = a.sum / a.n
+                rmdSumMtd += a.sum
+                rmdNMtd += a.n
+              } else {
+                rmdPorFecha[f] = null
+              }
+            }
+          }
+          // Objetivo EDITABLE: adopta la meta/polaridad de la fila de config
+          // "RMD" si existe (se edita desde el tablero vía setIndicadorTarget,
+          // que escribe en reuniones_indicadores_config por nombre). Default
+          // 4.8 (mayor es mejor) cuando no hay config. Si el usuario borra el
+          // objetivo, la config queda con meta=null y se respeta (sin semáforo).
+          const rmdCfg = indicadores.find(
+            (i) => i.nombre.trim().toLowerCase() === "rmd",
+          )
+          const rmdMeta = rmdCfg ? rmdCfg.meta : 4.8
+          const rmdMejor: "menor" | "mayor" =
+            (rmdCfg as { mejor_si?: "menor" | "mayor" } | undefined)?.mejor_si ??
+            "mayor"
+          const rmdRow = buildSerieRow(
+            "auto_rmd",
+            "RMD",
+            "pts",
+            rmdPorFecha,
+            "promedio",
+            rmdMeta,
+            rmdMejor,
+          )
+          // MTD = promedio PONDERADO por cantidad de puntuaciones (lo que
+          // reporta Quilmes), no el promedio simple de los días.
+          rmdRow.mtd = rmdNMtd > 0 ? rmdSumMtd / rmdNMtd : null
+
           // Matinal Distribución (Misiones): set acotado pedido por operación
-          // — solo Bultos totales, TML, Tiempo por PDV, Rechazo y Horas en
-          // ruta (auto Foxtrot) + los indicadores manuales configurados (ej.
-          // RMD). No arrastra LTI/TRI/Ausentismo ni el resto del set completo
-          // de la reunión de Logística.
+          // — solo Bultos totales, TML, Tiempo por PDV, Rechazo, Horas en
+          // ruta (auto Foxtrot) y RMD (auto Power BI Quilmes). No arrastra
+          // LTI/TRI/Ausentismo ni el resto del set completo de Logística.
           if (tipo === "matinal-distribucion" || tipo === "logistica-ventas") {
             // Logística-Ventas (semanal): no usa TML. Matinal sí lo muestra.
             const filasAuto =
               tipo === "logistica-ventas"
-                ? [bultosRow, tiempoPdvRow, rechazoRow, horasRutaRow]
-                : [bultosRow, tmlRow, tiempoPdvRow, rechazoRow, horasRutaRow]
+                ? [bultosRow, tiempoPdvRow, rechazoRow, horasRutaRow, rmdRow]
+                : [bultosRow, tmlRow, tiempoPdvRow, rechazoRow, horasRutaRow, rmdRow]
+            // El RMD pasó a ser AUTO: descartar cualquier fila manual "RMD"
+            // configurada para no duplicarla.
+            const manualesSinRmd = indicadores.filter(
+              (i) => i.nombre.trim().toLowerCase() !== "rmd",
+            )
             return {
               data: {
                 anio,
                 mes,
                 fechas,
                 reuniones_por_fecha: reunionesPorFecha,
-                indicadores: [...filasAuto, ...indicadores],
+                indicadores: [...filasAuto, ...manualesSinRmd],
               },
             }
           }

@@ -11,6 +11,7 @@ import {
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
+  AlertTriangle,
   ArrowLeft,
   BarChart3,
   Calendar,
@@ -66,6 +67,7 @@ import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { TorCountdown } from "@/components/reuniones/tor-countdown"
 import { TorBookActas } from "@/components/reuniones/tor-book-actas"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
+import { RmdDetalleDiaDialog } from "@/components/reuniones/rmd-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { OcupacionBodegaDetalleDiaDialog } from "@/components/reuniones/ocupacion-bodega-detalle-dia-dialog"
@@ -233,6 +235,42 @@ function esFinDeSemana(iso: string): boolean {
 
 function formatearValor(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
+}
+
+// Días entre dos fechas ISO (YYYY-MM-DD), en UTC para evitar saltos de TZ.
+function diasEntreISO(aIso: string, bIso: string): number {
+  const a = Date.UTC(
+    +aIso.slice(0, 4),
+    +aIso.slice(5, 7) - 1,
+    +aIso.slice(8, 10),
+  )
+  const b = Date.UTC(
+    +bIso.slice(0, 4),
+    +bIso.slice(5, 7) - 1,
+    +bIso.slice(8, 10),
+  )
+  return Math.round((a - b) / 86_400_000)
+}
+
+// Cuántos días hace (respecto a refIso = fecha de la reunión) que no entra una
+// puntuación nueva de RMD. Se usa para alertar que el sync del Power BI de
+// Quilmes se frenó (típicamente: token vencido). Si no hay ningún dato cargado
+// en el mes, mide desde el inicio del mes (mesInicioIso). Null = no calculable.
+function rmdDiasSinDatos(
+  valores: Record<string, IndicadorMesCellData | null>,
+  refIso: string,
+  mesInicioIso: string,
+): number | null {
+  let ultima: string | null = null
+  for (const [f, cell] of Object.entries(valores)) {
+    const v = cell?.valor
+    if (v != null && Number.isFinite(v) && f <= refIso) {
+      if (!ultima || f > ultima) ultima = f
+    }
+  }
+  const base = ultima ?? mesInicioIso
+  if (!base || !refIso) return null
+  return diasEntreISO(refIso, base)
 }
 
 // Color condicional de una celda del tablero según el objetivo (meta) y la
@@ -1141,6 +1179,8 @@ export function ReunionDetallePageClient({
   const [rechazosDetalleFecha, setRechazosDetalleFecha] = useState<string | null>(
     null,
   )
+  // Detalle del día al hacer click en celda RMD (auto Power BI Quilmes)
+  const [rmdDetalleFecha, setRmdDetalleFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda Bultos vendidos
   const [ventasBultosFecha, setVentasBultosFecha] = useState<string | null>(
     null,
@@ -2120,7 +2160,28 @@ export function ReunionDetallePageClient({
                   {indicadoresMes.indicadores.map((ind) => (
                     <tr key={ind.id} className="border-b last:border-0">
                       <td className="sticky left-0 w-[160px] min-w-[160px] max-w-[160px] truncate bg-white px-2 py-2 align-middle text-sm font-medium text-slate-900" title={ind.nombre}>
-                        {ind.nombre}
+                        {(() => {
+                          if (ind.id !== "auto_rmd") return ind.nombre
+                          const dias = rmdDiasSinDatos(
+                            ind.valores,
+                            detalle.fecha,
+                            indicadoresMes.fechas[0],
+                          )
+                          const desactualizado = dias != null && dias > 3
+                          return (
+                            <span className="flex items-center gap-1">
+                              <span className="truncate">{ind.nombre}</span>
+                              {desactualizado && (
+                                <span
+                                  title={`RMD sin actualizar hace ${dias} día${dias === 1 ? "" : "s"}. Probablemente venció el token del Power BI de Quilmes (login leomedin@ab-inbev.com) — avisar para renovarlo y que el indicador vuelva a cargar solo.`}
+                                  className="flex shrink-0 items-center"
+                                >
+                                  <AlertTriangle className="size-3.5 text-amber-500" />
+                                </span>
+                              )}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="sticky left-[160px] w-[60px] min-w-[60px] max-w-[60px] bg-white px-2 py-2 align-middle text-xs text-muted-foreground">
                         {ind.unidad ?? "—"}
@@ -2281,6 +2342,7 @@ export function ReunionDetallePageClient({
                                 : "bg-amber-50 font-semibold text-amber-700"
                           }
                           const esRechazosPct = ind.id === "auto_rechazos_pct"
+                          const esRmd = ind.id === "auto_rmd"
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
@@ -2310,6 +2372,7 @@ export function ReunionDetallePageClient({
                           const esSif = sifTipo !== null
                           const clickable =
                             (esRechazosPct ||
+                              esRmd ||
                               esBultosVendidos ||
                               esHlVendidos ||
                               esTml ||
@@ -2324,6 +2387,7 @@ export function ReunionDetallePageClient({
                             muestra
                           const onCellClick = () => {
                             if (esRechazosPct) setRechazosDetalleFecha(f)
+                            else if (esRmd) setRmdDetalleFecha(f)
                             else if (esBultosVendidos) setVentasBultosFecha(f)
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
@@ -2484,6 +2548,14 @@ export function ReunionDetallePageClient({
           if (!o) setRechazosDetalleFecha(null)
         }}
         fecha={rechazosDetalleFecha}
+      />
+
+      <RmdDetalleDiaDialog
+        open={rmdDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setRmdDetalleFecha(null)
+        }}
+        fecha={rmdDetalleFecha}
       />
 
       <VentasDetalleDiaDialog
