@@ -4,10 +4,8 @@ import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { format } from "date-fns"
 import {
   ArrowLeft,
-  AlertCircle,
   CheckCircle2,
   Loader2,
   Pencil,
@@ -25,11 +23,18 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
-  ESTADO_PLAN_COLORS,
-  ESTADO_PLAN_LABELS,
-  PRIORIDAD_COLORS,
-  PRIORIDAD_LABELS,
-} from "@/lib/constants"
+  MONO,
+  ESTADO_UI,
+  PRIORIDAD_UI,
+  Pill,
+  CategoriaChip,
+  CodigoChip,
+  UrgenciaChip,
+  Avatar,
+  Progreso,
+  urgencia,
+  fmtFechaCorta,
+} from "../_ui"
 import {
   asociarPuntoManual,
   searchPuntosManual,
@@ -46,14 +51,8 @@ import type {
 
 // ==================== FICHA (cabecera consolidada) ====================
 
-function iniciales(nombre: string): string {
-  return nombre
-    .split(/\s+/)
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
+function Label({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{children}</p>
 }
 
 function ResponsablesResumen({
@@ -62,23 +61,20 @@ function ResponsablesResumen({
   responsables: PlanResponsableConProfile[]
 }) {
   if (responsables.length === 0) {
-    return <span className="text-slate-400">Sin responsable asignado</span>
+    return <span className="text-sm text-slate-400">Sin responsable asignado</span>
   }
   const principal =
-    responsables.find((r) => r.rol === "responsable_principal") ??
-    responsables[0]
+    responsables.find((r) => r.rol === "responsable_principal") ?? responsables[0]
   const otros = responsables.length - 1
   return (
     <div className="flex items-center gap-2">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-700">
-        {iniciales(principal.profile_nombre)}
-      </span>
-      <span className="font-medium text-slate-800">
-        {principal.profile_nombre}
-      </span>
-      {otros > 0 && (
-        <span className="text-xs text-muted-foreground">+{otros}</span>
-      )}
+      <Avatar name={principal.profile_nombre} size={30} />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-slate-800">{principal.profile_nombre}</p>
+        <p className="text-[11px] text-slate-400">
+          {otros > 0 ? `Responsable principal · +${otros} coresp.` : "Responsable principal"}
+        </p>
+      </div>
     </div>
   )
 }
@@ -92,136 +88,71 @@ function FichaCard({
   canEditar: boolean
   onEditar: () => void
 }) {
-  const overdue =
-    plan.fecha_limite &&
-    plan.estado !== "completado" &&
-    new Date(plan.fecha_limite) < new Date()
-  const progresoColor =
-    plan.progreso >= 67 ? "#22C55E" : plan.progreso >= 34 ? "#F59E0B" : "#EF4444"
+  const cerrada = plan.estado === "completado"
+  const urg = urgencia(plan.fecha_limite, cerrada, plan.prioridad)
 
   return (
-    <Card>
+    <Card className="relative overflow-hidden pt-1">
+      <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: urg.stripe }} />
       <CardContent className="space-y-4 pt-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Pill ui={ESTADO_UI[plan.estado]} dot />
+              <Pill ui={PRIORIDAD_UI[plan.prioridad]} />
               {plan.pregunta_id ? (
-                <>
-                  <span
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                    style={{ backgroundColor: plan.pilar_color || "#64748B" }}
-                  >
-                    {plan.pilar_nombre}
-                  </span>
-                  <span>/</span>
-                  <span>{plan.bloque_nombre}</span>
-                  <span>/</span>
-                  <Link
-                    href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`}
-                    className="hover:underline"
-                  >
-                    {plan.pregunta_numero}
-                  </Link>
-                </>
+                <Link href={`/pilares/${plan.pilar_id}/pregunta/${plan.pregunta_id}`} className="hover:opacity-80">
+                  <CodigoChip>Punto {plan.pregunta_numero}</CodigoChip>
+                </Link>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                  Tarea directa · sin punto del manual
-                </span>
+                <CategoriaChip>Tarea directa</CategoriaChip>
               )}
+              <CategoriaChip>{plan.pilar_nombre}</CategoriaChip>
             </div>
-            <h1 className="mt-1 text-lg font-bold leading-snug text-slate-900">
+            <h1 className="text-[23px] font-bold leading-snug text-slate-900">
               {plan.titulo || plan.descripcion}
             </h1>
+            {plan.titulo && plan.descripcion && (
+              <p className="max-w-2xl whitespace-pre-line text-sm text-slate-600">{plan.descripcion}</p>
+            )}
+            {plan.pregunta_texto && plan.tipo !== "directa" && (
+              <p className="max-w-2xl text-sm text-slate-400">{plan.pregunta_texto}</p>
+            )}
           </div>
           {canEditar && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onEditar}
-              className="shrink-0"
-            >
+            <Button variant="outline" size="sm" onClick={onEditar} className="shrink-0">
               <Pencil className="mr-1.5 h-3.5 w-3.5" />
               Editar
             </Button>
           )}
         </div>
 
-        {plan.titulo && plan.descripcion && (
-          <p className="whitespace-pre-line text-sm text-slate-600">
-            {plan.descripcion}
-          </p>
-        )}
-        {plan.pregunta_texto && plan.tipo !== "directa" && (
-          <p className="text-sm text-muted-foreground">{plan.pregunta_texto}</p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium text-white"
-            style={{ backgroundColor: ESTADO_PLAN_COLORS[plan.estado] }}
-          >
-            {ESTADO_PLAN_LABELS[plan.estado]}
-          </span>
-          <span
-            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium text-white"
-            style={{ backgroundColor: PRIORIDAD_COLORS[plan.prioridad] }}
-          >
-            {PRIORIDAD_LABELS[plan.prioridad]}
-          </span>
-        </div>
-
-        <div className="grid gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <p className="text-xs text-muted-foreground">Responsable</p>
-            <div className="mt-1">
+        <div className="grid gap-3 rounded-xl border border-slate-100 sm:grid-cols-3">
+          <div className="p-3 sm:border-r sm:border-slate-100">
+            <Label>Responsable</Label>
+            <div className="mt-1.5">
               <ResponsablesResumen responsables={plan.responsables ?? []} />
             </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Fechas</p>
-            <p
-              className={`mt-1 font-medium ${
-                overdue ? "text-red-600" : "text-slate-800"
-              }`}
-            >
-              {plan.fecha_inicio
-                ? format(new Date(plan.fecha_inicio), "dd/MM/yyyy")
-                : "—"}
-              {" · vence "}
-              {plan.fecha_limite
-                ? format(new Date(plan.fecha_limite), "dd/MM/yyyy")
-                : "—"}
-              {overdue && (
-                <AlertCircle className="ml-1 inline h-3.5 w-3.5 text-red-500" />
-              )}
-            </p>
+          <div className="p-3 sm:border-r sm:border-slate-100">
+            <Label>Fecha límite</Label>
+            <div className="mt-1.5 flex flex-col items-start gap-1">
+              <span style={{ ...MONO, color: urg.vencido ? "#B91C1C" : urg.porVencer ? "#B45309" : "#0F172A" }} className="text-base font-medium">
+                {fmtFechaCorta(plan.fecha_limite)}
+              </span>
+              <UrgenciaChip chip={urg.chip} />
+            </div>
           </div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Progreso</p>
-            <span className="text-sm font-bold" style={{ color: progresoColor }}>
-              {plan.progreso}%
-            </span>
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${plan.progreso}%`,
-                backgroundColor: progresoColor,
-              }}
-            />
+          <div className="p-3">
+            <Label>Progreso</Label>
+            <div className="mt-2"><Progreso value={plan.progreso} cerrada={cerrada} width={120} /></div>
           </div>
         </div>
 
         {plan.notas && (
           <div>
-            <p className="text-xs text-muted-foreground">Notas</p>
-            <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
-              {plan.notas}
-            </p>
+            <Label>Notas</Label>
+            <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{plan.notas}</p>
           </div>
         )}
       </CardContent>

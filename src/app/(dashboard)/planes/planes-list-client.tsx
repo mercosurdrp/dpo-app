@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useTransition, type CSSProperties } from "react"
+import { useState, useMemo, useTransition, useEffect, type CSSProperties } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -153,6 +153,11 @@ export function PlanesListClient({
   const [sortKey, setSortKey] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const [isPending, startTransition] = useTransition()
+
+  // En celular, abrir en Tarjetas (la tabla es para pantallas anchas).
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) setListMode("cards")
+  }, [])
 
   const enriquecidos = useMemo(() => planes.map(enriquecer), [planes])
 
