@@ -175,6 +175,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                     <TableHead className="text-right">% target</TableHead>
                     <TableHead className="text-right">Bultos</TableHead>
                     <TableHead className="text-right">HL</TableHead>
+                    <TableHead className="text-right">Peso (kg)</TableHead>
                     <TableHead className="text-right">Líneas</TableHead>
                     <TableHead className="text-right">SKUs</TableHead>
                   </TableRow>
@@ -182,7 +183,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                 <TableBody>
                   {data.viajes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-6">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-6">
                         Sin viajes registrados este día
                       </TableCell>
                     </TableRow>
@@ -202,6 +203,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.bultos_total, 1)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.hl_total, 1)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{v.peso_total > 0 ? fmtN(v.peso_total, 0) : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{v.lineas}</TableCell>
                         <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{v.skus_distintos}</TableCell>
                       </TableRow>

@@ -13,6 +13,7 @@ export interface ViajeDelDia {
   ceq_total: number
   bultos_total: number
   hl_total: number
+  peso_total: number   // kg de la carga (Σ peso_bulto × bultos)
   lineas: number
   skus_distintos: number
   ob_pct: number
@@ -41,7 +42,7 @@ export async function getOcupacionBodegaResumenDia(
     const sb = await createClient()
     const { data, error } = await sb
       .from("ocupacion_bodega_diaria")
-      .select("patente, ceq_total, bultos_total, hl_total, lineas, skus_distintos, ob_pct_target")
+      .select("patente, ceq_total, bultos_total, hl_total, peso_total, lineas, skus_distintos, ob_pct_target")
       .eq("fecha", fecha)
       .gt("ceq_total", 0)
       .order("ceq_total", { ascending: false })
@@ -51,6 +52,7 @@ export async function getOcupacionBodegaResumenDia(
       ceq_total: number
       bultos_total: number
       hl_total: number
+      peso_total: number | null
       lineas: number
       skus_distintos: number
       ob_pct_target: number
@@ -69,6 +71,7 @@ export async function getOcupacionBodegaResumenDia(
       ceq_total: Number(r.ceq_total),
       bultos_total: Number(r.bultos_total),
       hl_total: Number(r.hl_total),
+      peso_total: Number(r.peso_total ?? 0),
       lineas: r.lineas,
       skus_distintos: r.skus_distintos,
       ob_pct: Number(r.ob_pct_target),

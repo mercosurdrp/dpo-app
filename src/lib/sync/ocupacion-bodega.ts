@@ -149,15 +149,16 @@ export async function recalcOcupacionBodegaDia(
   sessionId: string,
   fecha: string,
 ): Promise<{ fecha: string; viajes: number; ceqTotal: number; lineas: number; skipNoBp: number }> {
-  // 1) Cargar maestro (idArticulo → bultos_pallet) desde la tabla local.
-  //    PostgREST tope a 1000 filas: paginamos con .range() hasta agotar.
+  // 1) Cargar maestro (idArticulo → bultos_pallet y peso_bulto) desde la tabla
+  //    local. PostgREST tope a 1000 filas: paginamos con .range() hasta agotar.
   const bp = new Map<number, number>()
+  const pesoBulto = new Map<number, number>()
   const PAGE = 1000
   let from = 0
   while (true) {
     const { data: rows, error: errM } = await supabase
       .from("chess_articulos")
-      .select("id_articulo, bultos_pallet")
+      .select("id_articulo, bultos_pallet, peso_bulto")
       .not("bultos_pallet", "is", null)
       .order("id_articulo", { ascending: true })
       .range(from, from + PAGE - 1)
@@ -165,6 +166,7 @@ export async function recalcOcupacionBodegaDia(
     if (!rows || rows.length === 0) break
     for (const r of rows) {
       if (r.bultos_pallet && r.bultos_pallet > 0) bp.set(r.id_articulo, r.bultos_pallet)
+      if (r.peso_bulto && r.peso_bulto > 0) pesoBulto.set(r.id_articulo, r.peso_bulto)
     }
     if (rows.length < PAGE) break
     from += PAGE
@@ -175,7 +177,7 @@ export async function recalcOcupacionBodegaDia(
 
   // 3) Agregar por patente — y, en paralelo, por (patente, localidad) para el TLP
   //    por ciudad (la localidad se pierde en la agregación por patente).
-  const agg = new Map<string, { ceq: number; bultos: number; hl: number; lineas: number; skus: Set<number> }>()
+  const agg = new Map<string, { ceq: number; bultos: number; hl: number; peso: number; lineas: number; skus: Set<number> }>()
   const aggLoc = new Map<string, { patente: string; localidad: string; ceq: number; bultos: number; hl: number; lineas: number }>()
   let skipNoBp = 0
   for (const v of lineas) {
@@ -188,11 +190,13 @@ export async function recalcOcupacionBodegaDia(
     if (bultos === 0) continue
     const ceq = (120 / bpa) * bultos
     const hl = Math.abs(Number(v.unimedtotal) || 0)
+    const peso = (pesoBulto.get(idArt) ?? 0) * bultos
     const patente = (v.dsFleteroCarga as string).trim().toUpperCase()
-    const slot = agg.get(patente) ?? { ceq: 0, bultos: 0, hl: 0, lineas: 0, skus: new Set<number>() }
+    const slot = agg.get(patente) ?? { ceq: 0, bultos: 0, hl: 0, peso: 0, lineas: 0, skus: new Set<number>() }
     slot.ceq += ceq
     slot.bultos += bultos
     slot.hl += hl
+    slot.peso += peso
     slot.lineas += 1
     slot.skus.add(idArt)
     agg.set(patente, slot)
@@ -217,6 +221,7 @@ export async function recalcOcupacionBodegaDia(
       ceq_total: Math.round(d.ceq * 100) / 100,
       bultos_total: Math.round(d.bultos * 100) / 100,
       hl_total: Math.round(d.hl * 10000) / 10000,
+      peso_total: Math.round(d.peso * 100) / 100,
       lineas: d.lineas,
       skus_distintos: d.skus.size,
     }
