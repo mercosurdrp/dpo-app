@@ -27,7 +27,7 @@ import type {
 } from "@/actions/planes-unificados"
 
 const ORIGENES: { value: PlanOrigen; label: string; color: string }[] = [
-  { value: "plan_accion", label: "Plan de acción", color: "#64748B" },
+  { value: "plan_accion", label: "Auditoría", color: "#64748B" },
   { value: "nps", label: "NPS", color: "#8B5CF6" },
   { value: "rechazos", label: "Rechazos", color: "#EF4444" },
   { value: "owd", label: "OWD", color: "#0EA5E9" },

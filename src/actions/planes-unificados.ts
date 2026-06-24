@@ -85,6 +85,61 @@ function normPrioridad(p: string | null | undefined): PrioridadUnif {
 }
 
 /**
+ * Resuelve el nombre del pilar (pregunta → bloque → pilar) para cada plan de
+ * auditoría, así el chip indica de qué módulo/área es. Hace 3 queries en lote.
+ */
+async function resolvePilarPorPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planRows: Array<{ id: string; pregunta_id: string | null }>
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  const preguntaIds = Array.from(
+    new Set(planRows.map((p) => p.pregunta_id).filter((x): x is string => !!x))
+  )
+  if (preguntaIds.length === 0) return result
+
+  const { data: preguntas } = await supabase
+    .from("preguntas")
+    .select("id, bloque_id")
+    .in("id", preguntaIds)
+  const bloqueByPregunta = new Map<string, string>()
+  for (const q of (preguntas ?? []) as Array<{ id: string; bloque_id: string }>) {
+    bloqueByPregunta.set(q.id, q.bloque_id)
+  }
+
+  const bloqueIds = Array.from(new Set(bloqueByPregunta.values()))
+  if (bloqueIds.length === 0) return result
+  const { data: bloques } = await supabase
+    .from("bloques")
+    .select("id, pilar_id")
+    .in("id", bloqueIds)
+  const pilarByBloque = new Map<string, string>()
+  for (const b of (bloques ?? []) as Array<{ id: string; pilar_id: string }>) {
+    pilarByBloque.set(b.id, b.pilar_id)
+  }
+
+  const pilarIds = Array.from(new Set(pilarByBloque.values()))
+  if (pilarIds.length === 0) return result
+  const { data: pilares } = await supabase
+    .from("pilares")
+    .select("id, nombre")
+    .in("id", pilarIds)
+  const nombreByPilar = new Map<string, string>()
+  for (const pil of (pilares ?? []) as Array<{ id: string; nombre: string }>) {
+    nombreByPilar.set(pil.id, pil.nombre)
+  }
+
+  for (const p of planRows) {
+    if (!p.pregunta_id) continue
+    const bloqueId = bloqueByPregunta.get(p.pregunta_id)
+    const pilarId = bloqueId ? pilarByBloque.get(bloqueId) : undefined
+    const nombre = pilarId ? nombreByPilar.get(pilarId) : undefined
+    if (nombre) result.set(p.id, nombre)
+  }
+  return result
+}
+
+/**
  * Lee todos los planes de todos los módulos y los normaliza.
  * @param opts.responsableId  si se pasa, devuelve sólo los planes de esa
  *                            persona (vista personal). Si no, devuelve todos
@@ -118,13 +173,16 @@ export async function getPlanesUnificados(opts?: {
     // Acumulamos los profile_id a resolver al final, en un solo query.
     const profileIds = new Set<string>()
 
-    // ---- 1) planes_accion (responsable principal vía plan_responsables) ----
+    // ---- 1) planes_accion: SÓLO auditorías ----
+    // Las tareas directas (tipo='directa') que los auxiliares cargan a los
+    // operarios NO son planes de acción: van a "Mis Tareas", no a este tablero.
     {
       const { data: rows, error } = await supabase
         .from("planes_accion")
         .select(
-          "id, titulo, descripcion, estado, prioridad, fecha_limite, created_at"
+          "id, titulo, descripcion, estado, prioridad, fecha_limite, created_at, pregunta_id"
         )
+        .neq("tipo", "directa")
         .order("created_at", { ascending: false })
       if (error) return { error: error.message }
 
@@ -136,6 +194,7 @@ export async function getPlanesUnificados(opts?: {
         prioridad: string | null
         fecha_limite: string | null
         created_at: string
+        pregunta_id: string | null
       }>
 
       // Responsable principal de cada plan
@@ -158,14 +217,19 @@ export async function getPlanesUnificados(opts?: {
         }
       }
 
+      // Pilar de origen (pregunta → bloque → pilar) para etiquetar de qué
+      // módulo/área es cada auditoría.
+      const pilarByPlan = await resolvePilarPorPlan(supabase, planRows)
+
       for (const p of planRows) {
         const respId = principalByPlan.get(p.id) ?? null
         if (soloMios && respId !== soloMios) continue
         if (respId) profileIds.add(respId)
         const estado = mapEstado(p.estado)
+        const pilar = pilarByPlan.get(p.id)
         items.push({
           origen: "plan_accion",
-          origen_label: ORIGEN_LABEL.plan_accion,
+          origen_label: pilar ? `Auditoría · ${pilar}` : "Auditoría",
           id: p.id,
           titulo: p.titulo || p.descripcion,
           descripcion: p.descripcion,

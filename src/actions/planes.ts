@@ -235,9 +235,12 @@ export async function getPlanesList(): Promise<
   try {
     const supabase = await createClient()
 
+    // Sólo auditorías: las tareas directas (cargadas a operarios) viven en
+    // "Mis Tareas", no en el listado de planes de acción.
     const { data: planes, error } = await supabase
       .from("planes_accion")
       .select("*")
+      .neq("tipo", "directa")
       .order("created_at", { ascending: false })
 
     if (error) return { error: error.message }
@@ -248,36 +251,51 @@ export async function getPlanesList(): Promise<
       plan_id: string
       profile_id: string
       rol: PlanResponsableRol
-      profile: { id: string; nombre: string } | null
+      profile: { id: string; nombre: string; role: UserRole } | null
     }
     const { data: prRaw } = planIdsAll.length
       ? await supabase
           .from("plan_responsables")
           .select(
-            "plan_id, profile_id, rol, profile:profiles!plan_responsables_profile_id_fkey(id, nombre)"
+            "plan_id, profile_id, rol, profile:profiles!plan_responsables_profile_id_fkey(id, nombre, role)"
           )
           .in("plan_id", planIdsAll)
       : { data: [] as PRRow[] }
+    // Para cada plan guardamos: responsable principal (si lo hay), el primer
+    // responsable visto como fallback, y la cuenta de coresponsables. El
+    // "representante" (principal, o el fallback) define si el plan es de un
+    // administrador.
+    type RepProfile = { nombre: string; role: UserRole }
     const prByPlan = new Map<
       string,
-      { principal: string | null; coresponsables: number }
+      { principal: RepProfile | null; fallback: RepProfile | null; coresponsables: number }
     >()
     for (const r of (prRaw ?? []) as unknown as PRRow[]) {
       const cur = prByPlan.get(r.plan_id) ?? {
         principal: null,
+        fallback: null,
         coresponsables: 0,
       }
+      const prof: RepProfile | null = r.profile
+        ? { nombre: r.profile.nombre, role: r.profile.role }
+        : null
       if (r.rol === "responsable_principal") {
-        cur.principal = r.profile?.nombre ?? null
+        cur.principal = prof
       } else {
         cur.coresponsables += 1
       }
+      if (!cur.fallback && prof) cur.fallback = prof
       prByPlan.set(r.plan_id, cur)
     }
 
     const items: PlanAccionListItem[] = []
 
     for (const plan of (planes ?? []) as PlanAccion[]) {
+      const pr = prByPlan.get(plan.id)
+      const rep = pr?.principal ?? pr?.fallback ?? null
+      // Sólo planes de acción cuyo responsable es administrador.
+      if (rep?.role !== "admin") continue
+
       // Get pregunta info (puede ser null si la tarea es directa sin punto)
       const pregunta = plan.pregunta_id
         ? (
@@ -325,7 +343,6 @@ export async function getPlanesList(): Promise<
         .select("id", { count: "exact", head: true })
         .eq("plan_id", plan.id)
 
-      const pr = prByPlan.get(plan.id)
       items.push({
         ...plan,
         pregunta_numero: pregunta?.numero ?? "",
@@ -334,7 +351,7 @@ export async function getPlanesList(): Promise<
         pilar_color,
         comentarios_count: comentariosCount ?? 0,
         evidencias_count: evidenciasCount ?? 0,
-        responsable_principal_nombre: pr?.principal ?? null,
+        responsable_principal_nombre: rep?.nombre ?? null,
         coresponsables_count: pr?.coresponsables ?? 0,
       })
     }
