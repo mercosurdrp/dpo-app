@@ -24,11 +24,21 @@ export interface TlpFila {
   tlp: number | null // CEq por hora-hombre
 }
 
+export interface TlpPatenteFila {
+  patente: string
+  ceq: number
+  horas_ruta: number
+  horas_hombre: number
+  viajes: number
+  tlp: number | null
+}
+
 export interface TlpResumen {
   desde: string
   hasta: string
   total: TlpFila
   por_ciudad: TlpFila[]
+  por_patente: TlpPatenteFila[]
   viajes_con_ceq: number
   viajes_sin_tiempo: number // tienen CEq pero no checklist de retorno → excluidos
   viajes_fte_fallback: number // usaron FTE=2 por falta de registro de egreso
@@ -50,7 +60,9 @@ function nuevaFila(ciudad: string): TlpFila {
   return { ciudad, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null }
 }
 
-function cerrarTlp(f: TlpFila): TlpFila {
+function cerrarTlp<
+  T extends { ceq: number; horas_ruta: number; horas_hombre: number; tlp: number | null },
+>(f: T): T {
   return {
     ...f,
     ceq: Math.round(f.ceq),
@@ -154,6 +166,7 @@ export async function getTlpMes(
 
     const total = nuevaFila("Total")
     const porCiudad = new Map<string, TlpFila>()
+    const porPatente = new Map<string, TlpPatenteFila>()
     let viajesSinTiempo = 0
     let viajesFteFallback = 0
 
@@ -184,9 +197,23 @@ export async function getTlpMes(
         f.horas_hombre += horasHombre
         f.viajes += 1
       }
+
+      // Acumulado por camión (patente del viaje).
+      const patente = key.split("|")[0]
+      const fp = porPatente.get(patente) ?? {
+        patente, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null,
+      }
+      fp.ceq += v.ceqTotal
+      fp.horas_ruta += horasRuta
+      fp.horas_hombre += horasHombre
+      fp.viajes += 1
+      porPatente.set(patente, fp)
     }
 
     const filas = [...porCiudad.values()]
+      .map(cerrarTlp)
+      .sort((a, b) => b.ceq - a.ceq)
+    const filasPatente = [...porPatente.values()]
       .map(cerrarTlp)
       .sort((a, b) => b.ceq - a.ceq)
 
@@ -196,6 +223,7 @@ export async function getTlpMes(
         hasta,
         total: cerrarTlp(total),
         por_ciudad: filas,
+        por_patente: filasPatente,
         viajes_con_ceq: viajes.size,
         viajes_sin_tiempo: viajesSinTiempo,
         viajes_fte_fallback: viajesFteFallback,

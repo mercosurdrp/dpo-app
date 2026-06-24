@@ -7,6 +7,7 @@ import {
   BarChart3,
   Activity,
   Clock,
+  Gauge,
   Shield,
   Users,
   Settings,
@@ -259,6 +260,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Retorno al CD → fichaje de salida — Pilar Entrega 1.3
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
+          {!IS_MISIONES && (
+            <Link href="/indicadores/tlp">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-emerald-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200 transition-colors">
+                    <Gauge className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      TLP · Productividad de Transporte
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      CEq por hora-hombre · por ciudad y camión — Pilar Entrega 1.3
                     </p>
                   </div>
                 </CardContent>

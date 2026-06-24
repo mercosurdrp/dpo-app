@@ -25,6 +25,7 @@ export type PlanOrigen =
   | "owd"
   | "roturas"
   | "s5"
+  | "tlp"
 
 export type EstadoUnificado = "no_comenzada" | "en_curso" | "cerrada"
 
@@ -51,6 +52,7 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   owd: "OWD",
   roturas: "Roturas en calle",
   s5: "5S",
+  tlp: "TLP",
 }
 
 /** Mapea los distintos vocabularios de estado a uno solo de 3 valores. */
@@ -188,6 +190,7 @@ export async function getPlanesUnificados(opts?: {
       { origen: "nps", tabla: "nps_planes", href: "/nps" },
       { origen: "rechazos", tabla: "rechazos_planes", href: "/indicadores/rechazos" },
       { origen: "owd", tabla: "owd_planes", href: "/owd" },
+      { origen: "tlp", tabla: "tlp_planes", href: "/indicadores/tlp" },
     ]
 
     for (const cfg of comunes) {
