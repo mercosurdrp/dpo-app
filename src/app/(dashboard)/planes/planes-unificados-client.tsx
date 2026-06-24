@@ -33,6 +33,10 @@ const ORIGENES: { value: PlanOrigen; label: string; color: string }[] = [
   { value: "owd", label: "OWD", color: "#0EA5E9" },
   { value: "roturas", label: "Roturas en calle", color: "#F59E0B" },
   { value: "s5", label: "5S", color: "#10B981" },
+  { value: "tlp", label: "TLP", color: "#0D9488" },
+  { value: "reunion", label: "Reunión", color: "#6366F1" },
+  { value: "presupuesto", label: "Presupuesto", color: "#A16207" },
+  { value: "riesgo", label: "Riesgo externo", color: "#BE123C" },
 ]
 const ORIGEN_COLOR: Record<PlanOrigen, string> = Object.fromEntries(
   ORIGENES.map((o) => [o.value, o.color])

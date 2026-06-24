@@ -26,6 +26,9 @@ export type PlanOrigen =
   | "roturas"
   | "s5"
   | "tlp"
+  | "reunion"
+  | "presupuesto"
+  | "riesgo"
 
 export type EstadoUnificado = "no_comenzada" | "en_curso" | "cerrada"
 
@@ -53,12 +56,28 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   roturas: "Roturas en calle",
   s5: "5S",
   tlp: "TLP",
+  reunion: "Reunión",
+  presupuesto: "Presupuesto",
+  riesgo: "Riesgo externo",
+}
+
+// Secciones del action log de reuniones → etiqueta legible para el chip.
+const SECCION_REUNION_LABEL: Record<string, string> = {
+  acciones_comerciales: "Acciones comerciales",
+  avance_venta: "Avance de venta",
+  frescura: "Frescura",
+  nps: "NPS",
+  rechazos: "Rechazos",
+  sla: "SLA",
+  sobrestock: "Sobrestock",
 }
 
 /** Mapea los distintos vocabularios de estado a uno solo de 3 valores. */
 function mapEstado(e: string | null | undefined): EstadoUnificado {
   switch (e) {
     case "completado":
+    case "completada":
+    case "concluido":
     case "cerrada":
       return "cerrada"
     case "en_progreso":
@@ -376,6 +395,141 @@ export async function getPlanesUnificados(opts?: {
           responsable_id: null,
           responsable_nombre: r.responsable?.trim() || null,
           href: "/mis-roturas",
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    // ---- 7) reuniones_actividades (action log de las reuniones) ----
+    {
+      let q = supabase
+        .from("reuniones_actividades")
+        .select(
+          "id, descripcion, estado, prioridad, responsable_id, fecha_compromiso, seccion, reunion_id, destino, created_at"
+        )
+        .order("created_at", { ascending: false })
+      if (soloMios) q = q.eq("responsable_id", soloMios)
+
+      const { data: rows, error } = await q
+      if (error) return { error: `reuniones_actividades: ${error.message}` }
+
+      for (const r of (rows ?? []) as Array<{
+        id: string
+        descripcion: string
+        estado: string
+        prioridad: string | null
+        responsable_id: string | null
+        fecha_compromiso: string | null
+        seccion: string | null
+        reunion_id: string | null
+        destino: string | null
+        created_at: string
+      }>) {
+        // Las actividades derivadas a 5S ya se ven vía s5_acciones: evitamos
+        // el doble conteo y las omitimos de este origen.
+        if (r.destino === "5s_flota" || r.destino === "5s_almacen") continue
+        if (r.responsable_id) profileIds.add(r.responsable_id)
+        const estado = mapEstado(r.estado)
+        const seccionLabel = r.seccion
+          ? SECCION_REUNION_LABEL[r.seccion] ?? r.seccion
+          : null
+        items.push({
+          origen: "reunion",
+          origen_label: seccionLabel ? `Reunión · ${seccionLabel}` : "Reunión",
+          id: r.id,
+          titulo: r.descripcion,
+          descripcion: r.descripcion,
+          estado_unificado: estado,
+          fecha_limite: r.fecha_compromiso,
+          is_overdue: calcOverdue(r.fecha_compromiso, estado, hoyISO),
+          prioridad: normPrioridad(r.prioridad),
+          responsable_id: r.responsable_id,
+          responsable_nombre: null,
+          href: r.reunion_id ? `/reuniones/${r.reunion_id}` : "/reuniones",
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    // ---- 8) presupuestos_tareas ----
+    {
+      let q = supabase
+        .from("presupuestos_tareas")
+        .select(
+          "id, descripcion, rubro, estado, responsable_id, fecha_limite, created_at"
+        )
+        .order("created_at", { ascending: false })
+      if (soloMios) q = q.eq("responsable_id", soloMios)
+
+      const { data: rows, error } = await q
+      if (error) return { error: `presupuestos_tareas: ${error.message}` }
+
+      for (const r of (rows ?? []) as Array<{
+        id: string
+        descripcion: string | null
+        rubro: string | null
+        estado: string
+        responsable_id: string | null
+        fecha_limite: string | null
+        created_at: string
+      }>) {
+        if (r.responsable_id) profileIds.add(r.responsable_id)
+        const estado = mapEstado(r.estado)
+        items.push({
+          origen: "presupuesto",
+          origen_label: ORIGEN_LABEL.presupuesto,
+          id: r.id,
+          titulo: r.descripcion || r.rubro || "Tarea de presupuesto",
+          descripcion: r.descripcion,
+          estado_unificado: estado,
+          fecha_limite: r.fecha_limite,
+          is_overdue: calcOverdue(r.fecha_limite, estado, hoyISO),
+          prioridad: null,
+          responsable_id: r.responsable_id,
+          responsable_nombre: null,
+          href: "/presupuesto",
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    // ---- 9) riesgos_externos_acciones ----
+    {
+      let q = supabase
+        .from("riesgos_externos_acciones")
+        .select(
+          "id, tarea_pendiente, observaciones, estado, responsable_id, fecha_compromiso, created_at"
+        )
+        .order("created_at", { ascending: false })
+      if (soloMios) q = q.eq("responsable_id", soloMios)
+
+      const { data: rows, error } = await q
+      if (error) return { error: `riesgos_externos_acciones: ${error.message}` }
+
+      for (const r of (rows ?? []) as Array<{
+        id: string
+        tarea_pendiente: string | null
+        observaciones: string | null
+        estado: string
+        responsable_id: string | null
+        fecha_compromiso: string | null
+        created_at: string
+      }>) {
+        if (r.responsable_id) profileIds.add(r.responsable_id)
+        const estado = mapEstado(r.estado)
+        items.push({
+          origen: "riesgo",
+          origen_label: ORIGEN_LABEL.riesgo,
+          id: r.id,
+          titulo: r.tarea_pendiente || r.observaciones || "Acción de riesgo externo",
+          descripcion: r.observaciones,
+          estado_unificado: estado,
+          fecha_limite: r.fecha_compromiso,
+          is_overdue: calcOverdue(r.fecha_compromiso, estado, hoyISO),
+          prioridad: null,
+          responsable_id: r.responsable_id,
+          responsable_nombre: null,
+          href: "/riesgos-externos",
           created_at: r.created_at,
         })
       }
