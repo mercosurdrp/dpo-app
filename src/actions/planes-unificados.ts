@@ -560,21 +560,8 @@ export async function getPlanesUnificados(opts?: {
       }
     }
 
-    // ---- Orden global: vencidos primero, luego por fecha límite asc (NULLS last),
-    //      cerradas al final ----
-    visibles.sort((a, b) => {
-      const aDone = a.estado_unificado === "cerrada"
-      const bDone = b.estado_unificado === "cerrada"
-      if (aDone !== bDone) return aDone ? 1 : -1
-      if (a.is_overdue !== b.is_overdue) return a.is_overdue ? -1 : 1
-      if (a.fecha_limite && !b.fecha_limite) return -1
-      if (!a.fecha_limite && b.fecha_limite) return 1
-      if (a.fecha_limite && b.fecha_limite) {
-        const cmp = a.fecha_limite.localeCompare(b.fecha_limite)
-        if (cmp !== 0) return cmp
-      }
-      return b.created_at.localeCompare(a.created_at)
-    })
+    // ---- Orden: por fecha de creación, lo más reciente arriba ----
+    visibles.sort((a, b) => b.created_at.localeCompare(a.created_at))
 
     return { data: visibles }
   } catch (err) {
