@@ -1,11 +1,18 @@
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Inter, IBM_Plex_Mono } from "next/font/google"
 import { Toaster } from "sonner"
 import { EMPRESA_NOMBRE } from "@/lib/empresa"
 import "./globals.css"
 
 const inter = Inter({
   variable: "--font-sans",
+  subsets: ["latin"],
+})
+
+// Mono tipo "control panel / auditoría" para números, fechas, %, IDs (usado en /planes).
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  weight: ["500", "600"],
   subsets: ["latin"],
 })
 
@@ -20,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${inter.variable} h-full antialiased`}>
+    <html lang="es" className={`${inter.variable} ${plexMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
         {children}
         <Toaster richColors position="top-right" />
