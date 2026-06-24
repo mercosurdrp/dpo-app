@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { IS_MISIONES } from "@/lib/empresa"
 import { revalidatePath } from "next/cache"
 import type {
   PlanAccion,
@@ -235,13 +236,14 @@ export async function getPlanesList(): Promise<
   try {
     const supabase = await createClient()
 
-    // Sólo auditorías: las tareas directas (cargadas a operarios) viven en
-    // "Mis Tareas", no en el listado de planes de acción.
-    const { data: planes, error } = await supabase
-      .from("planes_accion")
-      .select("*")
-      .neq("tipo", "directa")
-      .order("created_at", { ascending: false })
+    // Pampeana: sólo auditorías (las tareas directas cargadas a operarios viven
+    // en "Mis Tareas", no en el listado). Misiones: comportamiento original
+    // (no se toca nada de Misiones).
+    let planesQuery = supabase.from("planes_accion").select("*")
+    if (!IS_MISIONES) planesQuery = planesQuery.neq("tipo", "directa")
+    const { data: planes, error } = await planesQuery.order("created_at", {
+      ascending: false,
+    })
 
     if (error) return { error: error.message }
 
@@ -293,8 +295,9 @@ export async function getPlanesList(): Promise<
     for (const plan of (planes ?? []) as PlanAccion[]) {
       const pr = prByPlan.get(plan.id)
       const rep = pr?.principal ?? pr?.fallback ?? null
-      // Sólo planes de acción cuyo responsable es administrador.
-      if (rep?.role !== "admin") continue
+      // Pampeana: sólo planes cuyo responsable es administrador. Misiones: sin
+      // este filtro (no se toca Misiones).
+      if (!IS_MISIONES && rep?.role !== "admin") continue
 
       // Get pregunta info (puede ser null si la tarea es directa sin punto)
       const pregunta = plan.pregunta_id
