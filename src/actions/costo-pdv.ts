@@ -1,0 +1,116 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+import { getProfile } from "@/lib/session"
+
+/** Una fila del cálculo de costo logístico por PDV (devuelto por la RPC). */
+export interface CostoPorPdvRow {
+  id_cliente: number
+  nombre_cliente: string
+  bultos: number
+  comprobantes: number
+  hl: number
+  venta_neta: number
+  costo_almacen: number
+  costo_distrib: number
+  costo_total: number
+  costo_x_bulto: number
+  costo_x_hl: number
+  pct_venta: number
+}
+
+/** Costo mensual cargado por sector (input del modelo). */
+export interface CostoMensual {
+  anio: number
+  mes: number
+  distribucion: number
+  almacen: number
+  w_rodaje: number
+  updated_at: string
+}
+
+const ROLES_EDITORES = ["admin", "supervisor", "admin_rrhh"]
+
+/** Meses cargados (con costos), ordenados del más reciente al más viejo. */
+export async function getCostosMensuales(): Promise<CostoMensual[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("costo_logistico_mensual")
+    .select("anio, mes, distribucion, almacen, w_rodaje, updated_at")
+    .order("anio", { ascending: false })
+    .order("mes", { ascending: false })
+  return (data ?? []).map((r) => ({
+    anio: r.anio,
+    mes: r.mes,
+    distribucion: Number(r.distribucion),
+    almacen: Number(r.almacen),
+    w_rodaje: Number(r.w_rodaje),
+    updated_at: r.updated_at,
+  }))
+}
+
+/** Costo logístico por PDV para un (año, mes), vía la función SQL. */
+export async function getCostoPorPdv(
+  anio: number,
+  mes: number,
+): Promise<{ data: CostoPorPdvRow[] } | { error: string }> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc("get_costo_por_pdv", {
+    p_anio: anio,
+    p_mes: mes,
+  })
+  if (error) return { error: error.message }
+  return {
+    data: (data ?? []).map((r: Record<string, unknown>) => ({
+      id_cliente: Number(r.id_cliente),
+      nombre_cliente: (r.nombre_cliente as string) ?? "",
+      bultos: Number(r.bultos),
+      comprobantes: Number(r.comprobantes),
+      hl: Number(r.hl),
+      venta_neta: Number(r.venta_neta),
+      costo_almacen: Number(r.costo_almacen),
+      costo_distrib: Number(r.costo_distrib),
+      costo_total: Number(r.costo_total),
+      costo_x_bulto: Number(r.costo_x_bulto),
+      costo_x_hl: Number(r.costo_x_hl),
+      pct_venta: Number(r.pct_venta),
+    })),
+  }
+}
+
+/** Alta/edición de los costos mensuales (solo roles de gestión). */
+export async function guardarCostoMensual(input: {
+  anio: number
+  mes: number
+  distribucion: number
+  almacen: number
+  w_rodaje: number
+}): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile || !ROLES_EDITORES.includes(profile.role)) {
+    return { error: "No tenés permiso para editar costos." }
+  }
+  if (input.mes < 1 || input.mes > 12) return { error: "Mes inválido." }
+  if (input.w_rodaje < 0 || input.w_rodaje > 1)
+    return { error: "El peso de rodaje debe estar entre 0 y 1." }
+  if (input.distribucion < 0 || input.almacen < 0)
+    return { error: "Los costos no pueden ser negativos." }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from("costo_logistico_mensual").upsert(
+    {
+      anio: input.anio,
+      mes: input.mes,
+      distribucion: input.distribucion,
+      almacen: input.almacen,
+      w_rodaje: input.w_rodaje,
+      updated_at: new Date().toISOString(),
+      updated_by: profile.id,
+    },
+    { onConflict: "anio,mes" },
+  )
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/costo-por-pdv")
+  return { ok: true }
+}

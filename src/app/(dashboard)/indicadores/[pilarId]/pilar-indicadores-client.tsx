@@ -25,6 +25,7 @@ import {
   ExternalLink,
   Truck,
   Network,
+  Wallet,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
 import type { BloqueIndicadores } from "@/actions/indicadores"
@@ -255,6 +256,37 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
               </div>
               <Link
                 href="/planeamiento/dimensionamiento"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Acceso a Costo por Punto de Venta (cost-to-serve), pilar Planeamiento — solo Pampeana */}
+      {pilar.nombre === "Planeamiento" && !IS_MISIONES && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <Wallet className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Costo por Punto de Venta</p>
+                  <p className="text-sm text-muted-foreground">
+                    Cost-to-serve logístico por PDV · reparto Distribución + Almacén · costo/venta y PDV caros
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/costo-por-pdv"
                 className={buttonVariants({ size: "lg" })}
                 style={{ backgroundColor: pilar.color, color: "#fff" }}
               >
