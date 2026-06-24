@@ -218,13 +218,13 @@ function PuntoManualSection({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <ShieldCheck className="h-4 w-4" />
+          <ShieldCheck className="h-4 w-4 text-blue-600" />
           Punto del manual
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {plan.pregunta_id ? (
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium text-white"

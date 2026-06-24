@@ -580,7 +580,7 @@ export function AvancesSection({
                 const h = item.h
                 return (
                   <li key={item.key} className="flex items-center gap-3 text-xs">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-100">
                       <History className="h-4 w-4" />
                     </span>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -615,7 +615,7 @@ export function AvancesSection({
               const r = item.r
               return (
                 <li key={item.key} className="flex items-start gap-3 text-xs">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-500">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600 ring-1 ring-violet-100">
                     <CalendarClock className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
