@@ -1,6 +1,8 @@
 import { getPlanesList } from "@/actions/planes"
+import { getPlanesUnificados } from "@/actions/planes-unificados"
 import { createClient } from "@/lib/supabase/server"
-import { PlanesListClient } from "./planes-list-client"
+import { IS_MISIONES } from "@/lib/empresa"
+import { PlanesTabsClient } from "./planes-tabs-client"
 
 export default async function PlanesPage() {
   const result = await getPlanesList()
@@ -23,5 +25,18 @@ export default async function PlanesPage() {
 
   const admins = (adminsRaw ?? []) as Array<{ id: string; nombre: string }>
 
-  return <PlanesListClient planes={result.data} admins={admins} />
+  // Tablero unificado (todos los módulos): sólo Pampeana por ahora.
+  let unificados = null
+  if (!IS_MISIONES) {
+    const uni = await getPlanesUnificados()
+    if (!("error" in uni)) unificados = uni.data
+  }
+
+  return (
+    <PlanesTabsClient
+      planes={result.data}
+      admins={admins}
+      unificados={unificados}
+    />
+  )
 }
