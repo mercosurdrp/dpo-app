@@ -261,7 +261,7 @@ export async function syncRechazosForDate(
     if (!isPatenteValida(v.dsFleteroCarga)) continue
     entregadosPorFletero.set(
       v.dsFleteroCarga,
-      (entregadosPorFletero.get(v.dsFleteroCarga) ?? 0) + Math.abs(Number(v.unidadesSolicitadas) || 0),
+      (entregadosPorFletero.get(v.dsFleteroCarga) ?? 0) + Math.abs(Number(v.cantidadesTotal) || 0),
     )
   }
 
@@ -387,14 +387,17 @@ export async function syncRechazosForDate(
   const aggFleteroSku = new Map<string, AggFleteroSku>()
   for (const v of ventasFCVTA) {
     const a = agg.get(v.dsFleteroCarga) ?? { bultos: 0, unidades: 0, hl: 0, planillas: new Set<string>() }
-    a.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
-    a.unidades += Math.abs(Number(v.cantidadesTotal) || 0)
+    // En Chess Pampeana: cantidadesTotal = BULTOS (puede ser fraccional, p.ej. 0.5 = medio
+    // bulto). unidadesSolicitadas = unidades sueltas (0 cuando se vende el bulto entero).
+    // total_bultos debe ser cantidadesTotal; total_unidades, las sueltas.
+    a.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
+    a.unidades += Math.abs(Number(v.unidadesSolicitadas) || 0)
     a.hl += Math.abs(Number(v.unimedtotal) || 0)
     if (v.planillaCarga) a.planillas.add(v.planillaCarga)
     agg.set(v.dsFleteroCarga, a)
 
     const s = aggSku.get(v.idArticulo) ?? { ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0 }
-    s.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+    s.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
     s.hl += Math.abs(Number(v.unimedtotal) || 0)
     aggSku.set(v.idArticulo, s)
 
@@ -403,7 +406,7 @@ export async function syncRechazosForDate(
       fletero: v.dsFleteroCarga, idArt: v.idArticulo,
       ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0,
     }
-    fs.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+    fs.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
     fs.hl += Math.abs(Number(v.unimedtotal) || 0)
     aggFleteroSku.set(fsk, fs)
 
@@ -414,7 +417,7 @@ export async function syncRechazosForDate(
         nombre: v.nombreCliente ?? null,
         bultos: 0, hl: 0, neto: 0, comprobantes: new Set<string>(),
       }
-      c.bultos += Math.abs(Number(v.unidadesSolicitadas) || 0)
+      c.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
       c.hl += Math.abs(Number(v.unimedtotal) || 0)
       c.neto += Math.abs(Number(v.subtotalNeto) || 0)
       c.comprobantes.add(`${v.serie}-${v.nrodoc}`)
