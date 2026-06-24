@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Package } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,9 @@ import {
 import { cn } from "@/lib/utils"
 import {
   getVentasResumenDia,
+  getVentasCamionSkuDia,
   type VentasResumenDia,
+  type CamionSkuDetalle,
 } from "@/actions/ventas-resumen-dia"
 
 type Metrica = "bultos" | "hl"
@@ -56,6 +58,12 @@ export function VentasDetalleDiaDialog({
   const [origenAbierto, setOrigenAbierto] = useState<"chess" | "gestion" | null>(null)
   const [filtroCliente, setFiltroCliente] = useState("")
   const [verTodosClientes, setVerTodosClientes] = useState(false)
+  // Camión seleccionado para ver su detalle por SKU en un modal.
+  const [camionSel, setCamionSel] = useState<{
+    patente: string
+    label: string
+    chofer: string | null
+  } | null>(null)
 
   useEffect(() => {
     if (!open || !fecha) {
@@ -64,6 +72,7 @@ export function VentasDetalleDiaDialog({
       setOrigenAbierto(null)
       setFiltroCliente("")
       setVerTodosClientes(false)
+      setCamionSel(null)
       return
     }
     let cancelado = false
@@ -103,6 +112,7 @@ export function VentasDetalleDiaDialog({
     : []
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1100px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1100px]">
         <DialogHeader>
@@ -238,6 +248,9 @@ export function VentasDetalleDiaDialog({
                             <div>
                               <h4 className="mb-1 mt-2 text-xs font-semibold text-slate-700">
                                 Por camión ({o.patentes.length})
+                                <span className="ml-2 font-normal text-muted-foreground">
+                                  tocá un camión para ver sus SKU
+                                </span>
                               </h4>
                               {o.patentes.length === 0 ? (
                                 <p className="py-2 text-center text-xs text-muted-foreground">
@@ -261,11 +274,22 @@ export function VentasDetalleDiaDialog({
                                     {o.patentes.map((p, i) => {
                                       const pPct =
                                         valor > 0 ? (valorPrimario(p) / valor) * 100 : 0
+                                      const label = p.patente.replace(/^GESTION-/, "Rep. ")
                                       return (
-                                        <TableRow key={p.patente}>
+                                        <TableRow
+                                          key={p.patente}
+                                          onClick={() =>
+                                            setCamionSel({ patente: p.patente, label, chofer: p.chofer_nombre })
+                                          }
+                                          className="cursor-pointer transition-colors hover:bg-sky-50"
+                                          title="Ver detalle por SKU de este camión"
+                                        >
                                           <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                                           <TableCell className="font-mono text-xs">
-                                            {p.patente.replace(/^GESTION-/, "Rep. ")}
+                                            <span className="inline-flex items-center gap-1 text-sky-700 underline-offset-2 hover:underline">
+                                              <Package className="size-3" />
+                                              {label}
+                                            </span>
                                           </TableCell>
                                           <TableCell>
                                             {p.chofer_nombre?.replace(/ \(Gestión\)$/, "") ?? (
@@ -458,7 +482,7 @@ export function VentasDetalleDiaDialog({
 
             <Section
               title="Por patente"
-              subtitle={`${patentes.length} patente${patentes.length === 1 ? "" : "s"} con venta`}
+              subtitle={`${patentes.length} patente${patentes.length === 1 ? "" : "s"} con venta · tocá una para ver sus SKU`}
             >
               <Table>
                 <TableHeader>
@@ -485,13 +509,24 @@ export function VentasDetalleDiaDialog({
                   {patentes.map((p, i) => {
                     const pct =
                       totalPrimario > 0 ? (valorPrimario(p) / totalPrimario) * 100 : 0
+                    const label = p.patente.replace(/^GESTION-/, "Rep. ")
                     return (
-                      <TableRow key={p.patente}>
+                      <TableRow
+                        key={p.patente}
+                        onClick={() =>
+                          setCamionSel({ patente: p.patente, label, chofer: p.chofer_nombre })
+                        }
+                        className="cursor-pointer transition-colors hover:bg-sky-50"
+                        title="Ver detalle por SKU de este camión"
+                      >
                         <TableCell className="text-muted-foreground">
                           {i + 1}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {p.patente.replace(/^GESTION-/, "Rep. ")}
+                          <span className="inline-flex items-center gap-1 text-sky-700 underline-offset-2 hover:underline">
+                            <Package className="size-3" />
+                            {label}
+                          </span>
                         </TableCell>
                         <TableCell>
                           {p.chofer_nombre ?? (
@@ -523,6 +558,154 @@ export function VentasDetalleDiaDialog({
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    <CamionSkuModal
+      fecha={fecha}
+      camion={camionSel}
+      metrica={metrica}
+      onClose={() => setCamionSel(null)}
+    />
+    </>
+  )
+}
+
+function CamionSkuModal({
+  fecha,
+  camion,
+  metrica,
+  onClose,
+}: {
+  fecha: string | null
+  camion: { patente: string; label: string; chofer: string | null } | null
+  metrica: Metrica
+  onClose: () => void
+}) {
+  const [data, setData] = useState<CamionSkuDetalle | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!camion || !fecha) {
+      setData(null)
+      setError(null)
+      return
+    }
+    let cancelado = false
+    setLoading(true)
+    setError(null)
+    void getVentasCamionSkuDia(fecha, camion.patente).then((res) => {
+      if (cancelado) return
+      if ("error" in res) {
+        setError(res.error)
+        setData(null)
+      } else {
+        setData(res.data)
+      }
+      setLoading(false)
+    })
+    return () => {
+      cancelado = true
+    }
+  }, [camion, fecha])
+
+  const esHl = metrica === "hl"
+  const rows = data?.rows ?? []
+
+  return (
+    <Dialog open={!!camion} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] w-[95vw] max-w-[760px] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            <Package className="size-4 text-sky-700" />
+            Detalle por SKU · {camion?.label ?? ""}
+          </DialogTitle>
+          <DialogDescription>
+            {camion?.chofer
+              ? `Chofer: ${camion.chofer.replace(/ \(Gestión\)$/, "")} · `
+              : ""}
+            {fecha ? formatFechaLarga(fecha) : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading && (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="mr-2 size-4 animate-spin" /> Cargando SKU…
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && data && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span className="rounded-md border border-slate-200 px-2 py-1">
+                <strong>{fmtBultos(data.total_bultos)}</strong> bultos
+              </span>
+              <span className="rounded-md border border-slate-200 px-2 py-1">
+                <strong>{fmtHl(data.total_hl)}</strong> HL
+              </span>
+              <span className="rounded-md border border-slate-200 px-2 py-1">
+                <strong>{rows.length}</strong> SKU
+              </span>
+            </div>
+
+            {rows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Sin detalle por SKU para este camión en el día.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead className="w-24">Cód. SKU</TableHead>
+                    <TableHead>Artículo</TableHead>
+                    <TableHead className="w-24 text-right">Bultos</TableHead>
+                    <TableHead className="w-24 text-right">HL</TableHead>
+                    <TableHead className="w-20 text-right">% camión</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((s, i) => {
+                    const base = esHl ? data.total_hl : data.total_bultos
+                    const val = esHl ? s.hl : s.bultos
+                    const pct = base > 0 ? (val / base) * 100 : 0
+                    return (
+                      <TableRow key={s.id_articulo}>
+                        <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                        <TableCell className="font-mono text-xs tabular-nums">
+                          {s.id_articulo}
+                        </TableCell>
+                        <TableCell>{s.ds_articulo}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {fmtBultos(s.bultos)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {fmtHl(s.hl)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {pct.toFixed(1)}%
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end border-t pt-4">
+          <Button variant="outline" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   )
