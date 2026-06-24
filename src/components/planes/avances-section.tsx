@@ -339,9 +339,15 @@ export function AvancesSection({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-sm">
-          <span className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Respuestas ({timeline.length})
+          <span className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+            <MessageSquare className="h-4 w-4 text-slate-400" />
+            Avances y respuestas
+            <span
+              className="rounded-full bg-slate-100 px-1.5 text-xs text-slate-500"
+              style={{ fontFamily: "var(--font-plex-mono), ui-monospace, monospace" }}
+            >
+              {timeline.length}
+            </span>
           </span>
           {puedeIntervenir && !planCerrado && (
             <span className="flex items-center gap-2">
@@ -408,7 +414,7 @@ export function AvancesSection({
               : ""}
           </p>
         ) : (
-          <ol className="space-y-4">
+          <ol className="relative isolate space-y-4 before:absolute before:bottom-3 before:left-[18px] before:top-3 before:-z-10 before:w-px before:bg-slate-200">
             {timeline.map((item) => {
               if (item.type === "avance") {
                 const a = item.a
