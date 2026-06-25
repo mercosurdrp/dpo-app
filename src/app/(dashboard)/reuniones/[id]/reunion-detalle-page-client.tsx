@@ -1298,7 +1298,7 @@ export function ReunionDetallePageClient({
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
-          verMasHref={IS_MISIONES ? undefined : "/nps"}
+          verMasHref={IS_MISIONES ? undefined : "/rmd"}
           verMasLabel="Ver RMD completo"
         />
       )}
