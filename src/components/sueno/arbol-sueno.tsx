@@ -1,8 +1,17 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Loader2,
+  RadarIcon,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -238,6 +247,24 @@ export function ArbolSueno({
           </div>
         )}
       </Card>
+
+      {/* Acceso al Radar de Rechazos de Mañana (cuelga de OTIF → Rechazo) */}
+      <Link
+        href="/sueno/radar-rechazos"
+        className="mt-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 transition-colors hover:bg-amber-100"
+      >
+        <RadarIcon className="size-5 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-amber-900">
+            Radar de Rechazos de Mañana
+          </p>
+          <p className="text-xs text-amber-800/80">
+            Clientes a avisar hoy (cerrado / sin dinero) para evitar el rechazo del
+            día siguiente.
+          </p>
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-amber-600" />
+      </Link>
 
       <SuenoDetalleDialog
         nodo={detalleNodo}

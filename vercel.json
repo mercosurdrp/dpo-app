@@ -36,6 +36,10 @@
     {
       "path": "/api/planeamiento/periodos-criticos/volumen/cron-sync",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/radar-rechazos/cron",
+      "schedule": "30 12 * * *"
     }
   ]
 }
