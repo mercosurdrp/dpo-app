@@ -164,6 +164,55 @@ export async function subirSeccionFotos(
   }
 }
 
+// Sube una imagen YA GENERADA en el server (p. ej. la captura automática del
+// día de RMD/NPS) al mismo bucket/galería que las fotos manuales.
+export async function subirImagenGenerada(
+  reunionId: string,
+  seccion: string,
+  nombreArchivo: string,
+  descripcion: string | null,
+  bytes: Uint8Array,
+  contentType = "image/png",
+): Promise<Result<{ id: string }>> {
+  try {
+    const profile = await requireEditorReuniones()
+    const supabase = await createClient()
+
+    const sec = cleanSeccion(seccion)
+    const reunion_id = reunionId.trim()
+    if (!reunion_id) return { error: "La reunión es obligatoria" }
+    if (!sec) return { error: "La sección es obligatoria" }
+
+    const path = `seccion-fotos/${sec}/${reunion_id}/${Date.now()}-${cleanName(nombreArchivo)}`
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, bytes, { contentType, upsert: false })
+    if (upErr) return { error: `Subiendo la captura: ${upErr.message}` }
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .insert({
+        reunion_id,
+        seccion: sec,
+        foto_path: path,
+        foto_nombre: nombreArchivo,
+        descripcion,
+        creado_por: profile.id,
+      })
+      .select("id")
+      .single()
+    if (error || !data) {
+      await supabase.storage.from(BUCKET).remove([path])
+      return { error: error?.message ?? "No se pudo guardar la captura" }
+    }
+    return { data: { id: (data as { id: string }).id } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error subiendo la captura",
+    }
+  }
+}
+
 export async function eliminarSeccionFoto(id: string): Promise<Result<true>> {
   try {
     await requireEditorReuniones()

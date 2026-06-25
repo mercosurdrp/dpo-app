@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Camera,
   X,
   type LucideIcon,
 } from "lucide-react"
@@ -24,6 +25,7 @@ import {
   eliminarSeccionFoto,
   type SeccionFoto,
 } from "@/actions/reuniones-seccion-fotos"
+import { capturarEvidenciaDia } from "@/actions/reuniones-evidencia-dia"
 import { ActionLogSeccion } from "./action-log-seccion"
 import type { ReunionActividadConResponsable, TipoReunion } from "@/types/database"
 
@@ -64,6 +66,7 @@ export function SeccionGaleriaFotos({
   onActividadesChanged,
   verMasHref,
   verMasLabel,
+  capturaDia,
 }: {
   reunionId: string
   reunionTipo?: TipoReunion
@@ -82,6 +85,9 @@ export function SeccionGaleriaFotos({
   /** Si se pasa, muestra un botón en el header que enlaza a esa ruta. */
   verMasHref?: string
   verMasLabel?: string
+  /** Si se pasa, muestra el botón "Capturar del día" que genera una imagen-resumen
+   *  con los KPIs reales del dashboard (RMD/NPS) y la guarda como evidencia. */
+  capturaDia?: { seccion: "rmd" | "nps"; fecha: string }
 }) {
   const t = TEMAS[tema]
   const [items, setItems] = useState<SeccionFoto[] | null>(null)
@@ -148,6 +154,23 @@ export function SeccionGaleriaFotos({
     })
   }
 
+  function onCapturarDia() {
+    if (!capturaDia) return
+    startPend(async () => {
+      const res = await capturarEvidenciaDia(
+        reunionId,
+        capturaDia.seccion,
+        capturaDia.fecha,
+      )
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Captura del día guardada como evidencia")
+      setReload((k) => k + 1)
+    })
+  }
+
   function borrar(id: string) {
     if (!confirm("¿Eliminar esta foto?")) return
     startPend(async () => {
@@ -198,6 +221,22 @@ export function SeccionGaleriaFotos({
               <ExternalLink className="mr-1 size-3.5" />
               {verMasLabel ?? "Ver más"}
             </Link>
+          )}
+          {puedeEditar && capturaDia && (
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={onCapturarDia}
+              disabled={pendiente}
+              title="Genera una imagen con los KPIs del día y la guarda como evidencia"
+            >
+              {pendiente ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <Camera className="mr-1 size-3.5" />
+              )}
+              Capturar del día
+            </Button>
           )}
           {puedeEditar && (
             <>

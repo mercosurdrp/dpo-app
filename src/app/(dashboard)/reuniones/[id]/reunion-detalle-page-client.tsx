@@ -1300,6 +1300,9 @@ export function ReunionDetallePageClient({
           onActividadesChanged={refrescar}
           verMasHref={IS_MISIONES ? undefined : "/rmd"}
           verMasLabel="Ver RMD completo"
+          capturaDia={
+            IS_MISIONES ? undefined : { seccion: "rmd", fecha: detalle.fecha }
+          }
         />
       )}
 
@@ -1318,6 +1321,9 @@ export function ReunionDetallePageClient({
           onActividadesChanged={refrescar}
           verMasHref={IS_MISIONES ? undefined : "/nps"}
           verMasLabel="Ver NPS completo"
+          capturaDia={
+            IS_MISIONES ? undefined : { seccion: "nps", fecha: detalle.fecha }
+          }
         />
       )}
 
