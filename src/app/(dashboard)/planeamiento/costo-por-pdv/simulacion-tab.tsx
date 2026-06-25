@@ -37,6 +37,7 @@ interface FilaCiudad {
   pdv: number
   viajes: number
   hl: number
+  venta: number
   almacen: number
   distancia: number
   distribucion: number
@@ -59,9 +60,10 @@ function agregarPorCiudad(filas: CostoPorPdvRow[], km: Record<string, number>): 
   for (const f of filas) {
     const acc =
       m.get(f.ciudad) ??
-      { ciudad: f.ciudad, pdv: 0, viajes: 0, hl: 0, almacen: 0, distancia: 0, distribucion: 0, total: 0 }
+      { ciudad: f.ciudad, pdv: 0, viajes: 0, hl: 0, venta: 0, almacen: 0, distancia: 0, distribucion: 0, total: 0 }
     acc.pdv++
     acc.hl += f.hl
+    acc.venta += f.venta_neta
     acc.almacen += f.costo_almacen
     acc.distancia += f.costo_distancia
     acc.distribucion += f.costo_distrib
@@ -226,6 +228,7 @@ export function SimulacionTab({ sel, filasReales }: Props) {
                     <TableHead className="text-right">Distancia</TableHead>
                     <TableHead className="text-right">Distribución</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Costo/Venta</TableHead>
                     <TableHead className="text-right">$/HL sim</TableHead>
                     <TableHead className="text-right">$/HL real (CD Ramallo)</TableHead>
                     <TableHead className="text-right">Δ $/HL</TableHead>
@@ -247,6 +250,7 @@ export function SimulacionTab({ sel, filasReales }: Props) {
                         <TableCell className="text-right tabular-nums">{fmtMoney(c.distancia)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtMoney(c.distribucion)}</TableCell>
                         <TableCell className="text-right tabular-nums font-medium">{fmtMoney(c.total)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{fmtNum(c.venta ? (100 * c.total) / c.venta : 0, 1)}%</TableCell>
                         <TableCell className="text-right tabular-nums font-medium">{fmtMoney(c.costo_x_hl)}</TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">{fmtMoney(real)}</TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -284,6 +288,12 @@ export function SimulacionTab({ sel, filasReales }: Props) {
                       {fmtMoney(ciudadesSim.reduce((s, c) => s + c.distribucion, 0))}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{fmtMoney(totalSim)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {(() => {
+                        const ventaSim = ciudadesSim.reduce((s, c) => s + c.venta, 0)
+                        return `${fmtNum(ventaSim ? (100 * totalSim) / ventaSim : 0, 1)}%`
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {fmtMoney(hlSim ? totalSim / hlSim : 0)}
                     </TableCell>
