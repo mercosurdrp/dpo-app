@@ -83,10 +83,12 @@ function clasificar(f: CostoPorPdvRow, c: Cortes): (typeof BANDAS)[number] {
   return BANDAS[1] // resto
 }
 
-type SortKey = keyof Pick<
-  CostoPorPdvRow,
-  "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "hl" | "venta_neta" | "costo_total" | "costo_x_hl" | "pct_venta" | "pct_rechazo"
->
+type SortKey =
+  | keyof Pick<
+      CostoPorPdvRow,
+      "nombre_cliente" | "ciudad" | "bultos" | "comprobantes" | "hl" | "venta_neta" | "costo_total" | "costo_x_hl" | "pct_venta" | "pct_rechazo"
+    >
+  | "dropsize" // derivado: bultos / entregas
 
 interface Props {
   costos: CostoMensual[]
@@ -188,14 +190,15 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
   // Resumen por ciudad (ordenado por costo desc)
   const porCiudad = useMemo(() => {
-    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number }>()
+    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number; entregas: number }>()
     for (const f of filas) {
-      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0 }
+      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0, entregas: 0 }
       acc.pdv++
       acc.venta += f.venta_neta
       acc.costo += f.costo_total
       acc.bultos += f.bultos
       acc.hl += f.hl
+      acc.entregas += f.comprobantes
       m.set(f.ciudad, acc)
     }
     return [...m.entries()].sort((a, b) => b[1].costo - a[1].costo)
@@ -213,9 +216,11 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
     if (bandaFiltro) arr = arr.filter((f) => clasificar(f, cortes).key === bandaFiltro)
     if (ciudadFiltro) arr = arr.filter((f) => f.ciudad === ciudadFiltro)
     const dir = sortDir === "asc" ? 1 : -1
+    const dropsize = (f: CostoPorPdvRow) => (f.comprobantes ? f.bultos / f.comprobantes : 0)
     arr = [...arr].sort((a, b) => {
-      const va = a[sortKey]
-      const vb = b[sortKey]
+      if (sortKey === "dropsize") return (dropsize(a) - dropsize(b)) * dir
+      const va = a[sortKey as keyof CostoPorPdvRow]
+      const vb = b[sortKey as keyof CostoPorPdvRow]
       if (typeof va === "string" || typeof vb === "string")
         return String(va).localeCompare(String(vb)) * dir
       return ((va as number) - (vb as number)) * dir
@@ -479,6 +484,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                   <TableHead className="text-right">Costo/Venta</TableHead>
                   <TableHead className="text-right">$/HL</TableHead>
                   <TableHead className="text-right">$/bulto</TableHead>
+                  <TableHead className="text-right">Drop size</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -501,6 +507,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.hl ? d.costo / d.hl : 0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtNum(d.entregas ? d.bultos / d.entregas : 0, 1)}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -552,6 +559,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <ThSort k="ciudad">Ciudad</ThSort>
                       <ThSort k="bultos" right>Bultos</ThSort>
                       <ThSort k="comprobantes" right>Entregas</ThSort>
+                      <ThSort k="dropsize" right>Drop size</ThSort>
                       <ThSort k="hl" right>HL</ThSort>
                       <ThSort k="venta_neta" right>Venta neta</ThSort>
                       <ThSort k="costo_total" right>Costo logístico</ThSort>
@@ -574,6 +582,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                           <TableCell className="text-sm text-muted-foreground">{f.ciudad}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.bultos)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.comprobantes)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmtNum(f.comprobantes ? f.bultos / f.comprobantes : 0, 1)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.hl, 1)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtMoney(f.venta_neta)}</TableCell>
                           <TableCell className="text-right tabular-nums font-medium">
