@@ -61,6 +61,10 @@ const fmtDec = new Intl.NumberFormat("es-AR", {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 })
+const fmtDec2 = new Intl.NumberFormat("es-AR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
 function fmtCorto(n: number) {
   if (n >= 1e6) return `${(n / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 1 })}M`
   if (n >= 1e3) return `${Math.round(n / 1e3)}K`
@@ -85,6 +89,27 @@ function normSucursal(s: string | null) {
   if (/^iguaz/i.test(s)) return "Iguazú"
   if (/^eldorado/i.test(s)) return "Eldorado"
   return s
+}
+
+// Horas de uso de los autoelevadores = último horómetro − primer horómetro del
+// período, POR MÁQUINA (y se suma el rango de cada una). El horímetro es un
+// valor absoluto, así que el rango da las horas reales del mes sin depender de
+// `hourmeterTraveled` (el delta por carga de Cloudfleet), que llega corrupto en
+// algunas cargas y, sumado, inflaba enero/abril/junio.
+function horasPorHorimetro(entradas: Entrada[]) {
+  const rangos = new Map<string, { min: number; max: number }>()
+  for (const e of entradas) {
+    if (e.horimetro == null) continue
+    const r = rangos.get(e.patente)
+    if (!r) rangos.set(e.patente, { min: e.horimetro, max: e.horimetro })
+    else {
+      r.min = Math.min(r.min, e.horimetro)
+      r.max = Math.max(r.max, e.horimetro)
+    }
+  }
+  let total = 0
+  for (const r of rangos.values()) total += r.max - r.min
+  return total
 }
 
 const METRICAS = [
@@ -131,7 +156,7 @@ interface SerieCol {
   cargas: number
 }
 
-type OrdenCol = "patente" | "cargas" | "litros" | "km" | "kmxl" | "costo" | "costoKm"
+type OrdenCol = "patente" | "cargas" | "litros" | "km" | "l100" | "lkm" | "costo" | "costoKm"
 
 export function CombustibleFlotaClient() {
   const [data, setData] = useState<CombustibleData | null>(null)
@@ -238,24 +263,28 @@ export function CombustibleFlotaClient() {
   }, [camiones, autoelevadores])
 
   const resumen = useMemo(() => {
-    let litros = 0, costo = 0, km = 0, horas = 0
+    let litros = 0, costo = 0, km = 0
     for (const e of entradasGrupo) {
       litros += e.litros || 0
       costo += e.costo || 0
       km += e.km || 0
-      horas += e.horas || 0
     }
+    // Autoelevadores: horas reales por horímetro (no la suma de deltas).
+    const horas = grupo === "autoelevadores" ? horasPorHorimetro(entradasGrupo) : 0
     return {
       litros,
       costo,
       km,
       horas,
       kmxl: litros > 0 && km > 0 ? km / litros : null,
+      // Rendimiento de camiones: litros cada 100 km y litros por km.
+      l100: km > 0 ? (litros / km) * 100 : null,
+      lkm: km > 0 ? litros / km : null,
       lph: horas > 0 ? litros / horas : null,
       costoLitro: litros > 0 ? costo / litros : null,
       cargas: entradasGrupo.length,
     }
-  }, [entradasGrupo])
+  }, [entradasGrupo, grupo])
 
   // Consumo por camión.
   const porCamion = useMemo(() => {
@@ -273,6 +302,8 @@ export function CombustibleFlotaClient() {
     const arr = [...m.values()].map((g) => ({
       ...g,
       kmxl: g.litros > 0 && g.km > 0 ? g.km / g.litros : null,
+      l100: g.km > 0 ? (g.litros / g.km) * 100 : null,
+      lkm: g.km > 0 ? g.litros / g.km : null,
       costoKm: g.km > 0 ? g.costo / g.km : null,
     }))
     const { col, desc } = ordenCamion
@@ -298,32 +329,52 @@ export function CombustibleFlotaClient() {
       g.km += e.km || 0
     }
     return [...m.values()]
-      .map((g) => ({ ...g, kmxl: g.litros > 0 && g.km > 0 ? g.km / g.litros : null }))
+      .map((g) => ({
+        ...g,
+        kmxl: g.litros > 0 && g.km > 0 ? g.km / g.litros : null,
+        l100: g.km > 0 ? (g.litros / g.km) * 100 : null,
+        lkm: g.km > 0 ? g.litros / g.km : null,
+      }))
       .sort((a, b) => b.litros - a.litros)
   }, [entradasGrupo])
 
   // Autoelevadores: consumo en litros y horas → litros por hora.
   const porAutoelevador = useMemo(() => {
-    const m = new Map<string, { patente: string; cargas: number; litros: number; horas: number; costo: number; horimetro: number | null }>()
+    const m = new Map<string, { patente: string; cargas: number; litros: number; costo: number; horimetroMin: number | null; horimetroMax: number | null }>()
     for (const e of autoelevadores) {
       if (!m.has(e.patente))
-        m.set(e.patente, { patente: e.patente, cargas: 0, litros: 0, horas: 0, costo: 0, horimetro: null })
+        m.set(e.patente, { patente: e.patente, cargas: 0, litros: 0, costo: 0, horimetroMin: null, horimetroMax: null })
       const g = m.get(e.patente)!
       g.cargas += 1
       g.litros += e.litros || 0
-      g.horas += e.horas || 0
       g.costo += e.costo || 0
-      if (e.horimetro != null) g.horimetro = Math.max(g.horimetro || 0, e.horimetro)
+      if (e.horimetro != null) {
+        g.horimetroMin = g.horimetroMin == null ? e.horimetro : Math.min(g.horimetroMin, e.horimetro)
+        g.horimetroMax = g.horimetroMax == null ? e.horimetro : Math.max(g.horimetroMax, e.horimetro)
+      }
     }
     return [...m.values()]
-      .map((g) => ({ ...g, lph: g.horas > 0 ? g.litros / g.horas : null }))
+      .map((g) => {
+        // Horas del período = último horómetro − primer horómetro de la máquina.
+        const horas =
+          g.horimetroMin != null && g.horimetroMax != null ? g.horimetroMax - g.horimetroMin : 0
+        return {
+          patente: g.patente,
+          cargas: g.cargas,
+          litros: g.litros,
+          costo: g.costo,
+          horas,
+          horimetro: g.horimetroMax,
+          lph: horas > 0 ? g.litros / horas : null,
+        }
+      })
       .sort((a, b) => b.litros - a.litros)
   }, [autoelevadores])
 
   // Serie del gráfico: por mes (o por día si hay mes elegido), del grupo elegido.
   const serieCol = useMemo(() => {
     const porDia = mes !== "__all__"
-    const m = new Map<string, SerieCol>()
+    const m = new Map<string, SerieCol & { _ent: Entrada[] }>()
     for (const e of entradasGrupo) {
       if (!e.fecha) continue
       const clave = porDia ? e.fecha : e.fecha.slice(0, 7)
@@ -331,17 +382,22 @@ export function CombustibleFlotaClient() {
         m.set(clave, {
           clave,
           label: porDia ? `${clave.slice(8, 10)}/${clave.slice(5, 7)}` : etiquetaMesCorto(clave),
-          litros: 0, costo: 0, km: 0, horas: 0, cargas: 0,
+          litros: 0, costo: 0, km: 0, horas: 0, cargas: 0, _ent: [],
         })
       const g = m.get(clave)!
       g.litros += e.litros || 0
       g.costo += e.costo || 0
       g.km += e.km || 0
-      g.horas += e.horas || 0
       g.cargas += 1
+      g._ent.push(e)
     }
-    return { arr: [...m.values()].sort((a, b) => a.clave.localeCompare(b.clave)), porDia }
-  }, [entradasGrupo, mes])
+    // Horas de autoelevadores por horímetro dentro de cada barra (mes o día).
+    const arr = [...m.values()].map(({ _ent, ...g }) => ({
+      ...g,
+      horas: grupo === "autoelevadores" ? horasPorHorimetro(_ent) : 0,
+    }))
+    return { arr: arr.sort((a, b) => a.clave.localeCompare(b.clave)), porDia }
+  }, [entradasGrupo, mes, grupo])
 
   // Consumo por UNIDAD (una barra por camión / autoelevador) del grupo elegido,
   // ordenado de mayor a menor según la métrica (litros o costo).
@@ -541,12 +597,14 @@ export function CombustibleFlotaClient() {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <p className="text-sm text-muted-foreground">Km por litro</p>
+                    <p className="text-sm text-muted-foreground">Litros / 100 km</p>
                     <p className="text-3xl font-bold" style={{ color: CAMION_COLOR }}>
-                      {resumen.kmxl != null ? fmtDec.format(resumen.kmxl) : "—"}{" "}
-                      <span className="text-base font-normal text-muted-foreground">km/L</span>
+                      {resumen.l100 != null ? fmtDec.format(resumen.l100) : "—"}{" "}
+                      <span className="text-base font-normal text-muted-foreground">L/100km</span>
                     </p>
-                    <p className="text-xs text-muted-foreground">flota completa</p>
+                    <p className="text-xs text-muted-foreground">
+                      {resumen.lkm != null ? `${fmtDec2.format(resumen.lkm)} L/km` : "rendimiento"} · flota completa
+                    </p>
                   </CardContent>
                 </Card>
               </>
@@ -719,7 +777,8 @@ export function CombustibleFlotaClient() {
                             <ThSort num onClick={() => ordenar("cargas")}>Cargas{flecha("cargas")}</ThSort>
                             <ThSort num onClick={() => ordenar("litros")}>Litros{flecha("litros")}</ThSort>
                             <ThSort num onClick={() => ordenar("km")}>Km{flecha("km")}</ThSort>
-                            <ThSort num onClick={() => ordenar("kmxl")}>Km/L{flecha("kmxl")}</ThSort>
+                            <ThSort num onClick={() => ordenar("l100")}>L/100km{flecha("l100")}</ThSort>
+                            <ThSort num onClick={() => ordenar("lkm")}>L/km{flecha("lkm")}</ThSort>
                             <ThSort num onClick={() => ordenar("costo")}>Costo{flecha("costo")}</ThSort>
                             <ThSort num onClick={() => ordenar("costoKm")}>$/Km{flecha("costoKm")}</ThSort>
                           </TableRow>
@@ -743,7 +802,8 @@ export function CombustibleFlotaClient() {
                               <TableCell className="text-right">{c.cargas}</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.litros)} L</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.km)}</TableCell>
-                              <TableCell className="text-right font-semibold">{c.kmxl != null ? fmtDec.format(c.kmxl) : "—"}</TableCell>
+                              <TableCell className="text-right font-semibold">{c.l100 != null ? fmtDec.format(c.l100) : "—"}</TableCell>
+                              <TableCell className="text-right">{c.lkm != null ? fmtDec2.format(c.lkm) : "—"}</TableCell>
                               <TableCell className="text-right">{fmtPlata.format(c.costo)}</TableCell>
                               <TableCell className="text-right">{c.costoKm != null ? fmtPlata.format(c.costoKm) : "—"}</TableCell>
                             </TableRow>
@@ -773,7 +833,8 @@ export function CombustibleFlotaClient() {
                             <TableHead className="text-right">Cargas</TableHead>
                             <TableHead className="text-right">Litros</TableHead>
                             <TableHead className="text-right">Km</TableHead>
-                            <TableHead className="text-right">Km/L</TableHead>
+                            <TableHead className="text-right">L/100km</TableHead>
+                            <TableHead className="text-right">L/km</TableHead>
                             <TableHead className="text-right">Costo</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -784,7 +845,8 @@ export function CombustibleFlotaClient() {
                               <TableCell className="text-right">{c.cargas}</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.litros)} L</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.km)}</TableCell>
-                              <TableCell className="text-right font-semibold">{c.kmxl != null ? fmtDec.format(c.kmxl) : "—"}</TableCell>
+                              <TableCell className="text-right font-semibold">{c.l100 != null ? fmtDec.format(c.l100) : "—"}</TableCell>
+                              <TableCell className="text-right">{c.lkm != null ? fmtDec2.format(c.lkm) : "—"}</TableCell>
                               <TableCell className="text-right">{fmtPlata.format(c.costo)}</TableCell>
                             </TableRow>
                           ))}
