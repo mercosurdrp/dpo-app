@@ -1382,6 +1382,7 @@ export interface MantenimientoGasto {
   id: string
   tipo: GastoTipo
   fecha: string
+  fecha_carga: string | null
   mes_imputacion: string
   proveedor: string | null
   rubro: string | null

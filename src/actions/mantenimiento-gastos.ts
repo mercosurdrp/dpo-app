@@ -73,6 +73,7 @@ function buildHtml(gasto: MantenimientoGasto): string {
       ${row("Proveedor", gasto.proveedor)}
       ${row("Rubro", gasto.rubro)}
       ${row("Fecha comprobante", gasto.fecha)}
+      ${row("Fecha de carga", gasto.fecha_carga)}
       ${row("Mes de imputación", gasto.mes_imputacion)}
       ${row("N° comprobante", gasto.numero_comprobante)}
       ${row("Medio de pago", gasto.medio_pago ? GASTO_MEDIO_PAGO_LABELS[gasto.medio_pago] : null)}
@@ -131,6 +132,7 @@ export async function createGasto(
     if (!fecha) return { error: "La fecha es obligatoria" }
 
     const mes_imputacion = String(formData.get("mes_imputacion") || fecha.slice(0, 7))
+    const fecha_carga = String(formData.get("fecha_carga") || "") || null
     const montoRaw = String(formData.get("monto") || "").replace(",", ".")
     const monto = Number(montoRaw)
     if (!isFinite(monto) || monto <= 0) return { error: "Ingresá un monto válido" }
@@ -171,6 +173,7 @@ export async function createGasto(
       .insert({
         tipo,
         fecha,
+        fecha_carga,
         mes_imputacion,
         proveedor: str("proveedor"),
         rubro: str("rubro"),
