@@ -190,15 +190,20 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
   // Resumen por ciudad (ordenado por costo desc)
   const porCiudad = useMemo(() => {
-    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number; entregas: number }>()
+    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number; entregas: number; sumaDrops: number; pdvDrop: number }>()
     for (const f of filas) {
-      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0, entregas: 0 }
+      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0, entregas: 0, sumaDrops: 0, pdvDrop: 0 }
       acc.pdv++
       acc.venta += f.venta_neta
       acc.costo += f.costo_total
       acc.bultos += f.bultos
       acc.hl += f.hl
       acc.entregas += f.comprobantes
+      // drop size de la ciudad = promedio simple del drop size de cada PDV
+      if (f.comprobantes > 0) {
+        acc.sumaDrops += f.bultos / f.comprobantes
+        acc.pdvDrop++
+      }
       m.set(f.ciudad, acc)
     }
     return [...m.entries()].sort((a, b) => b[1].costo - a[1].costo)
@@ -507,7 +512,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.hl ? d.costo / d.hl : 0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmtNum(d.entregas ? d.bultos / d.entregas : 0, 1)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtNum(d.pdvDrop ? d.sumaDrops / d.pdvDrop : 0, 1)}</TableCell>
                     </TableRow>
                   )
                 })}
