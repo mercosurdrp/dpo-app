@@ -8,7 +8,12 @@ import {
   getMantenimientos,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
-import { getNeumaticos, getAlineaciones } from "@/actions/neumaticos"
+import {
+  getNeumaticos,
+  getAlineaciones,
+  getKmFlota,
+  getRotaciones,
+} from "@/actions/neumaticos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -32,6 +37,8 @@ export default async function MantenimientoPage() {
     checklistsRes,
     neumaticosRes,
     alineacionesRes,
+    kmFlotaRes,
+    rotacionesRes,
     diasRuteoRes,
     indispRes,
     profile,
@@ -43,6 +50,8 @@ export default async function MantenimientoPage() {
     getChecklistsMtto(),
     getNeumaticos(),
     getAlineaciones(),
+    getKmFlota(),
+    getRotaciones(),
     getDiasRuteo(ventanaRuteoDesde()),
     getIndisponibilidades(),
     getProfile(),
@@ -96,6 +105,8 @@ export default async function MantenimientoPage() {
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
   const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
+  const kmFlota = kmFlotaRes.data
+  const rotaciones = "data" in rotacionesRes ? rotacionesRes.data : []
   const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
   const indisponibilidades = "data" in indispRes ? indispRes.data : []
   const role = profile?.role ?? "viewer"
@@ -111,6 +122,8 @@ export default async function MantenimientoPage() {
       checklists={checklists}
       neumaticos={neumaticos}
       alineaciones={alineaciones}
+      kmFlota={kmFlota}
+      rotaciones={rotaciones}
       diasRuteo={diasRuteo}
       indisponibilidades={indisponibilidades}
       puedeEditar={role === "admin" || role === "supervisor"}

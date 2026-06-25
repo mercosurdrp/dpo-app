@@ -91,7 +91,8 @@ import type {
   ChecklistItemNoOk,
   TableroResumen,
 } from "@/actions/mantenimiento-vehiculos"
-import type { Neumatico, Alineacion } from "@/lib/vehiculos/neumaticos-tipos"
+import type { Neumatico, Alineacion, Rotacion } from "@/lib/vehiculos/neumaticos-tipos"
+import type { KmFlotaUnidad } from "@/actions/neumaticos"
 
 // ==================== Helpers ====================
 
@@ -273,6 +274,8 @@ interface MantenimientoClientProps {
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   neumaticos: Neumatico[]
   alineaciones: Alineacion[]
+  kmFlota: Record<string, KmFlotaUnidad>
+  rotaciones: Rotacion[]
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
   puedeEditar: boolean
@@ -289,6 +292,8 @@ export function MantenimientoClient({
   checklists,
   neumaticos,
   alineaciones,
+  kmFlota,
+  rotaciones,
   diasRuteo,
   indisponibilidades,
   puedeEditar,
@@ -530,6 +535,8 @@ export function MantenimientoClient({
           <NeumaticosModule
             neumaticos={neumaticos}
             alineaciones={alineaciones}
+            kmFlota={kmFlota}
+            rotaciones={rotaciones}
             unidades={unidades}
             puedeEditar={puedeEditar}
           />
@@ -1023,7 +1030,9 @@ function NuevoMantenimientoDialog({
   const [factura, setFactura] = useState("")
   const [obs, setObs] = useState("")
   const [esServiceGeneral, setEsServiceGeneral] = useState(false)
-  const [fueraDesde, setFueraDesde] = useState("")
+  // Por defecto la orden nueva deja la unidad NO disponible (fuera de servicio
+  // desde hoy). Si no la saca de ruta, se vacía la fecha "Desde".
+  const [fueraDesde, setFueraDesde] = useState(hoyISO())
   const [fueraHasta, setFueraHasta] = useState("")
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
@@ -1220,12 +1229,12 @@ function NuevoMantenimientoDialog({
 
           <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
             <p className="text-sm font-medium text-amber-800">
-              Fuera de servicio (opcional)
+              Fuera de servicio
             </p>
             <p className="mb-2 text-xs text-amber-700">
-              Si esta orden sacó al camión de circulación, indicá el período. Esos días
-              cuentan como parado en la disponibilidad de flota. Si no lo sacó de ruta, dejalo
-              vacío.
+              Por defecto la unidad queda <strong>NO disponible</strong> (fuera de servicio
+              desde hoy) y esos días cuentan como parado en la disponibilidad de flota. Si esta
+              orden <strong>no</strong> la saca de ruta, vaciá la fecha &quot;Desde&quot;.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>

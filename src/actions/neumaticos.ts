@@ -4,6 +4,13 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
 import {
+  fetchLecturas,
+  kmActualPorDominio,
+  daysBetween,
+  addDays,
+  today,
+} from "@/lib/vehiculos/lecturas"
+import {
   PROFUNDIDAD_CRITICA_MM,
   type Alineacion,
   type Neumatico,
@@ -11,7 +18,14 @@ import {
   type NeumaticosResumen,
   type NeumaticoTipo,
   type NeumaticoEstado,
+  type Rotacion,
 } from "@/lib/vehiculos/neumaticos-tipos"
+
+export interface KmFlotaUnidad {
+  kmActual: number | null
+  kmDia: number | null
+  fecha: string | null
+}
 
 // ==================== LECTURA ====================
 
@@ -141,6 +155,7 @@ export async function asignarNeumatico(input: {
   posicion: string
   eje: EjeNeumatico | null
   km_instalacion?: number | null
+  vida_util_km?: number | null
   fecha_instalacion?: string
 }): Promise<{ success: true } | { error: string }> {
   try {
@@ -166,6 +181,7 @@ export async function asignarNeumatico(input: {
         posicion: input.posicion,
         eje: input.eje,
         km_instalacion: input.km_instalacion ?? null,
+        vida_util_km: input.vida_util_km ?? null,
         estado: "instalado",
         fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
         fecha_baja: null,
@@ -350,6 +366,180 @@ export async function eliminarAlineacion(input: {
       .delete()
       .eq("id", input.id)
     if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== KM ACTUAL / TASA POR UNIDAD ====================
+
+/**
+ * Km actual y tasa de km/día por unidad, a partir de las lecturas diarias
+ * (registros + checklists + combustible). Sirve para estimar la vida útil de
+ * los neumáticos y la próxima rotación, y se actualiza solo con la carga diaria.
+ */
+export async function getKmFlota(): Promise<{
+  data: Record<string, KmFlotaUnidad>
+}> {
+  try {
+    await requireAuth()
+    // Ventana de ~120 días para medir la tasa km/día.
+    const desde = addDays(today(), -120)
+    const lecturas = await fetchLecturas({ fechaDesde: desde })
+    const kmActualMap = kmActualPorDominio(lecturas)
+
+    // Tasa km/día: por dominio, primera y última lectura "limpia" (creciente).
+    const porDominio = new Map<string, { fecha: string; hora: string; odometro: number }[]>()
+    for (const l of lecturas) {
+      if (!porDominio.has(l.dominio)) porDominio.set(l.dominio, [])
+      porDominio.get(l.dominio)!.push({ fecha: l.fecha, hora: l.hora, odometro: l.odometro })
+    }
+
+    const out: Record<string, KmFlotaUnidad> = {}
+    for (const [dominio, arr] of porDominio) {
+      arr.sort((a, b) => (a.fecha !== b.fecha ? (a.fecha < b.fecha ? -1 : 1) : a.hora < b.hora ? -1 : 1))
+      // secuencia creciente limpia
+      let max = -Infinity
+      let primero: { fecha: string; odometro: number } | null = null
+      let ultimo: { fecha: string; odometro: number } | null = null
+      for (const l of arr) {
+        if (l.odometro >= max) {
+          max = l.odometro
+          if (!primero) primero = { fecha: l.fecha, odometro: l.odometro }
+          ultimo = { fecha: l.fecha, odometro: l.odometro }
+        }
+      }
+      let kmDia: number | null = null
+      if (primero && ultimo) {
+        const dias = daysBetween(primero.fecha, ultimo.fecha)
+        if (dias > 0) {
+          const tasa = (ultimo.odometro - primero.odometro) / dias
+          // descartar tasas absurdas (errores de carga)
+          if (tasa > 0 && tasa <= 1500) kmDia = Math.round(tasa)
+        }
+      }
+      const actual = kmActualMap.get(dominio)
+      out[dominio] = {
+        kmActual: actual?.odometro ?? null,
+        kmDia,
+        fecha: actual?.fecha ?? null,
+      }
+    }
+    return { data: out }
+  } catch {
+    return { data: {} }
+  }
+}
+
+// ==================== ROTACIONES ====================
+
+export async function getRotaciones(): Promise<
+  { data: Rotacion[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_rotaciones")
+      .select("*")
+      .order("fecha", { ascending: false })
+    if (error) return { error: error.message }
+    return { data: (data || []) as Rotacion[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function registrarRotacion(input: {
+  dominio: string
+  fecha?: string
+  km?: number | null
+  proxima_fecha?: string | null
+  proxima_km?: number | null
+  observaciones?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio) return { error: "Falta la unidad" }
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_rotaciones").insert({
+      dominio: input.dominio.toUpperCase(),
+      fecha: input.fecha ?? new Date().toISOString().slice(0, 10),
+      km: input.km ?? null,
+      proxima_fecha: input.proxima_fecha || null,
+      proxima_km: input.proxima_km ?? null,
+      observaciones: input.observaciones?.trim() || null,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function eliminarRotacion(input: {
+  id: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_rotaciones")
+      .delete()
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== GENERAR OT DE NEUMÁTICOS ====================
+
+/**
+ * Crea una orden de trabajo (mantenimiento) PROGRAMADA anticipada para
+ * neumáticos (cambio o rotación), sin sacar la unidad de servicio todavía.
+ */
+export async function generarOrdenNeumaticos(input: {
+  dominio: string
+  descripcion: string
+  km?: number | null
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio) return { error: "Falta la unidad" }
+    if (!input.descripcion?.trim()) return { error: "Falta la descripción de la tarea" }
+    const supabase = await createClient()
+
+    const { data: ot, error } = await supabase
+      .from("mantenimiento_realizados")
+      .insert({
+        dominio: input.dominio.toUpperCase(),
+        fecha: new Date().toISOString().slice(0, 10),
+        tipo: "preventivo",
+        estado: "programado",
+        odometro: input.km ?? null,
+        observaciones: "Generada desde Neumáticos",
+        created_by: profile.id,
+      })
+      .select("id")
+      .single()
+    if (error) return { error: error.message }
+
+    const { error: tareaErr } = await supabase
+      .from("mantenimiento_realizado_tareas")
+      .insert({
+        mantenimiento_id: ot.id,
+        tarea_id: null,
+        descripcion: input.descripcion.trim(),
+        costo: null,
+      })
+    if (tareaErr) {
+      await supabase.from("mantenimiento_realizados").delete().eq("id", ot.id)
+      return { error: tareaErr.message }
+    }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

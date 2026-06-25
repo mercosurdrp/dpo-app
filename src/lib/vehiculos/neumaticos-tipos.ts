@@ -34,6 +34,9 @@ export interface Neumatico {
   profundidad_inicial_mm: number | null
   profundidad_actual_mm: number | null
   km_instalacion: number | null
+  /** Objetivo de km de vida útil (estimar el próximo cambio). NULL = usar el
+   *  default por tipo (nuevo/recapado). */
+  vida_util_km: number | null
   estado: NeumaticoEstado
   motivo_baja: string | null
   fecha_ingreso: string
@@ -53,6 +56,17 @@ export interface NeumaticosResumen {
 }
 
 export interface Alineacion {
+  id: string
+  dominio: string
+  fecha: string
+  km: number | null
+  proxima_fecha: string | null
+  proxima_km: number | null
+  observaciones: string | null
+  created_at: string
+}
+
+export interface Rotacion {
   id: string
   dominio: string
   fecha: string

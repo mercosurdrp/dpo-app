@@ -24,7 +24,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { CircleDot, Crosshair, Gauge, Layers, Plus, Ruler, Trash2 } from "lucide-react"
+import {
+  ArrowRight,
+  CircleDot,
+  ClipboardPlus,
+  Crosshair,
+  Gauge,
+  Layers,
+  Plus,
+  RotateCw,
+  Ruler,
+  Trash2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   asignarNeumatico,
@@ -32,19 +43,33 @@ import {
   darDeBajaNeumatico,
   eliminarAlineacion,
   eliminarNeumatico,
+  generarOrdenNeumaticos,
   quitarNeumatico,
   registrarAlineacion,
   registrarMedicionNeumatico,
+  registrarRotacion,
+  eliminarRotacion,
+  type KmFlotaUnidad,
 } from "@/actions/neumaticos"
 import {
   type Alineacion,
   type Neumatico,
+  type Rotacion,
   PROFUNDIDAD_CRITICA_MM,
 } from "@/lib/vehiculos/neumaticos-tipos"
 import {
   layoutDeTipo,
   type PosicionNeumatico,
 } from "@/lib/vehiculos/neumaticos-layout"
+import {
+  vidaNeumatico,
+  rotacionEstado,
+  rotacionSugerida,
+  VIDA_BADGE,
+  VIDA_UTIL_DEFAULT_KM,
+  ROTACION_KM,
+  type VidaNeumatico,
+} from "@/lib/vehiculos/vida-neumaticos"
 import type { VehiculoTipo } from "@/types/database"
 
 interface UnidadFlota {
@@ -55,6 +80,8 @@ interface UnidadFlota {
 interface Props {
   neumaticos: Neumatico[]
   alineaciones: Alineacion[]
+  kmFlota: Record<string, KmFlotaUnidad>
+  rotaciones: Rotacion[]
   unidades: UnidadFlota[]
   puedeEditar: boolean
 }
@@ -96,6 +123,8 @@ function estadoAlineacion(proximaFecha: string | null): {
 export function NeumaticosModule({
   neumaticos,
   alineaciones,
+  kmFlota,
+  rotaciones,
   unidades,
   puedeEditar,
 }: Props) {
@@ -153,6 +182,48 @@ export function NeumaticosModule({
     [alineaciones, unidadSel]
   )
   const ultimaAlineacion = alineacionesUnidad[0] ?? null
+
+  // Km actual / tasa de la unidad (de las lecturas diarias) para la vida útil.
+  const kmUnidad = kmFlota[unidadSel] ?? { kmActual: null, kmDia: null, fecha: null }
+
+  // Vida útil estimada por cubierta instalada en la unidad.
+  const vidaPorId = useMemo(() => {
+    const m = new Map<string, VidaNeumatico>()
+    for (const n of instaladasEnUnidad)
+      m.set(n.id, vidaNeumatico(n, kmUnidad.kmActual, kmUnidad.kmDia))
+    return m
+  }, [instaladasEnUnidad, kmUnidad.kmActual, kmUnidad.kmDia])
+
+  const vidaResumenUnidad = useMemo(() => {
+    let cambiar = 0
+    let proximo = 0
+    for (const v of vidaPorId.values()) {
+      if (v.estado === "cambiar") cambiar++
+      else if (v.estado === "proximo") proximo++
+    }
+    return { cambiar, proximo }
+  }, [vidaPorId])
+
+  // Rotaciones de la unidad + estado de la próxima rotación.
+  const rotacionesUnidad = useMemo(
+    () =>
+      rotaciones
+        .filter((r) => r.dominio === unidadSel)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [rotaciones, unidadSel]
+  )
+  const ultimaRotacion = rotacionesUnidad[0] ?? null
+  // Km base para contar la próxima rotación: última rotación, o el km de
+  // instalación más reciente de las cubiertas instaladas, o el km actual.
+  const baseRotacionKm = useMemo(() => {
+    if (ultimaRotacion?.km != null) return ultimaRotacion.km
+    const kmsInst = instaladasEnUnidad
+      .map((n) => n.km_instalacion)
+      .filter((k): k is number => k != null)
+    if (kmsInst.length > 0) return Math.max(...kmsInst)
+    return kmUnidad.kmActual
+  }, [ultimaRotacion, instaladasEnUnidad, kmUnidad.kmActual])
+  const rotEstado = rotacionEstado(baseRotacionKm, kmUnidad.kmActual, kmUnidad.kmDia)
 
   const resumen = useMemo(() => {
     let instalados = 0
@@ -248,9 +319,25 @@ export function NeumaticosModule({
       {unidad && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <Gauge className="size-4 text-slate-500" /> Cubiertas instaladas ·{" "}
               {unidad.dominio} ({instaladasOrden.length})
+              {kmUnidad.kmActual != null && (
+                <span className="text-xs font-normal text-slate-400">
+                  · {fmtNum(kmUnidad.kmActual)} km actual
+                  {kmUnidad.kmDia ? ` · ~${fmtNum(kmUnidad.kmDia)} km/día` : ""}
+                </span>
+              )}
+              {vidaResumenUnidad.cambiar > 0 && (
+                <Badge variant="outline" className={cn("text-xs", VIDA_BADGE.cambiar.clase)}>
+                  {vidaResumenUnidad.cambiar} a cambiar
+                </Badge>
+              )}
+              {vidaResumenUnidad.proximo > 0 && (
+                <Badge variant="outline" className={cn("text-xs", VIDA_BADGE.proximo.clase)}>
+                  {vidaResumenUnidad.proximo} próx.
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
@@ -272,11 +359,16 @@ export function NeumaticosModule({
                     <th className="text-right">Presión</th>
                     <th>Instalación</th>
                     <th className="text-right">Km inst.</th>
+                    <th className="text-right">Recorridos</th>
+                    <th className="text-right">Restante (est.)</th>
+                    <th className="text-right">Días (est.)</th>
+                    <th>Vida útil</th>
                   </tr>
                 </thead>
                 <tbody>
                   {instaladasOrden.map((n, i) => {
                     const pres = ultimaPresion(n)
+                    const v = vidaPorId.get(n.id)
                     return (
                       <tr
                         key={n.id}
@@ -307,6 +399,32 @@ export function NeumaticosModule({
                         <td className="text-slate-600">{fmtFecha(n.fecha_instalacion)}</td>
                         <td className="text-right tabular-nums text-slate-600">
                           {fmtNum(n.km_instalacion)}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {v?.kmRodados != null ? `${fmtNum(v.kmRodados)} km` : "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "text-right tabular-nums",
+                            v && v.kmRestante != null && v.kmRestante <= 0
+                              ? "font-medium text-red-600"
+                              : "text-slate-700"
+                          )}
+                        >
+                          {v?.kmRestante != null ? `${fmtNum(v.kmRestante)} km` : "—"}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {v?.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
+                        </td>
+                        <td>
+                          {v && (
+                            <Badge
+                              variant="outline"
+                              className={cn("text-xs", VIDA_BADGE[v.estado].clase)}
+                            >
+                              {VIDA_BADGE[v.estado].label}
+                            </Badge>
+                          )}
                         </td>
                       </tr>
                     )
@@ -419,6 +537,21 @@ export function NeumaticosModule({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Rotación de neumáticos */}
+      {unidad && (
+        <RotacionCard
+          unidad={unidad}
+          layout={layout}
+          porPosicion={porPosicion}
+          rotEstado={rotEstado}
+          ultimaRotacion={ultimaRotacion}
+          rotaciones={rotacionesUnidad}
+          kmActual={kmUnidad.kmActual}
+          puedeEditar={puedeEditar}
+          onRefresh={refresh}
+        />
       )}
 
       {/* Stock */}
@@ -546,6 +679,8 @@ export function NeumaticosModule({
           pos={posDialog.pos}
           actual={posDialog.actual}
           stock={stock}
+          kmActual={kmUnidad.kmActual}
+          vida={posDialog.actual ? (vidaPorId.get(posDialog.actual.id) ?? null) : null}
           onClose={() => setPosDialog(null)}
           onDone={() => {
             setPosDialog(null)
@@ -881,6 +1016,8 @@ function PosicionDialog({
   pos,
   actual,
   stock,
+  kmActual,
+  vida,
   onClose,
   onDone,
 }: {
@@ -888,19 +1025,25 @@ function PosicionDialog({
   pos: PosicionNeumatico
   actual: Neumatico | null
   stock: Neumatico[]
+  kmActual: number | null
+  vida: VidaNeumatico | null
   onClose: () => void
   onDone: () => void
 }) {
   const [saving, setSaving] = useState(false)
-  // Asignación (posición vacía)
+  // Asignación (posición vacía) — km de instalación prefijado con el km actual.
   const [stockSel, setStockSel] = useState("")
-  const [kmInst, setKmInst] = useState("")
+  const [kmInst, setKmInst] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
+  const [vidaUtil, setVidaUtil] = useState("")
   // Medición (posición ocupada)
   const [profMed, setProfMed] = useState("")
-  const [kmMed, setKmMed] = useState("")
+  const [kmMed, setKmMed] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
   const [presion, setPresion] = useState("")
   // Baja
   const [motivoBaja, setMotivoBaja] = useState("")
+
+  const stockTire = stock.find((s) => s.id === stockSel) ?? null
+  const vidaDefault = stockTire ? VIDA_UTIL_DEFAULT_KM[stockTire.tipo] : null
 
   const wrap = async (fn: () => Promise<{ success: true } | { error: string }>, ok: string) => {
     setSaving(true)
@@ -951,10 +1094,26 @@ function PosicionDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs text-slate-500">Km de instalación (opcional)</Label>
-              <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-500">Km de instalación</Label>
+                <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-500">Vida útil objetivo (km)</Label>
+                <Input
+                  type="number"
+                  value={vidaUtil}
+                  onChange={(e) => setVidaUtil(e.target.value)}
+                  placeholder={vidaDefault != null ? `${vidaDefault} (default)` : "—"}
+                />
+              </div>
             </div>
+            <p className="text-[11px] text-slate-400">
+              Desde el km de instalación se estima cuánto falta para el cambio. Si dejás la vida
+              útil vacía, usa el default por tipo (nuevo {VIDA_UTIL_DEFAULT_KM.nuevo} / recapado{" "}
+              {VIDA_UTIL_DEFAULT_KM.recapado} km).
+            </p>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
                 Cancelar
@@ -970,6 +1129,7 @@ function PosicionDialog({
                         posicion: pos.code,
                         eje: pos.eje,
                         km_instalacion: kmInst ? Number(kmInst) : null,
+                        vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
                       }),
                     "Cubierta instalada"
                   )
@@ -983,10 +1143,25 @@ function PosicionDialog({
           // ----- Cubierta instalada: medir / quitar / baja -----
           <div className="space-y-4">
             <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Ruler className="size-4 text-slate-400" />
                 Profundidad actual: <span className="font-semibold">{actual.profundidad_actual_mm ?? "—"} mm</span>
+                {vida && (
+                  <Badge variant="outline" className={cn("text-xs", VIDA_BADGE[vida.estado].clase)}>
+                    {VIDA_BADGE[vida.estado].label}
+                  </Badge>
+                )}
               </div>
+              {vida && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Vida útil objetivo {fmtNum(vida.vidaKm)} km ·{" "}
+                  {vida.kmRodados != null ? `recorridos ${fmtNum(vida.kmRodados)} km · ` : ""}
+                  {vida.kmRestante != null
+                    ? `restante ~${fmtNum(vida.kmRestante)} km`
+                    : "sin km para estimar"}
+                  {vida.diasRestantes != null ? ` · ~${fmtNum(vida.diasRestantes)} días` : ""}
+                </p>
+              )}
               {actual.mediciones && actual.mediciones.length > 0 && (
                 <p className="mt-1 text-xs text-slate-400">
                   Últimas mediciones:{" "}
@@ -1056,6 +1231,26 @@ function PosicionDialog({
               </Button>
             </div>
 
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1"
+              disabled={saving}
+              onClick={() =>
+                wrap(
+                  () =>
+                    generarOrdenNeumaticos({
+                      dominio: unidad.dominio,
+                      descripcion: `Cambio de neumático posición ${pos.label}${actual.numero ? ` (N° ${actual.numero})` : ""}`,
+                      km: kmActual,
+                    }),
+                  "OT de cambio generada (programada)"
+                )
+              }
+            >
+              <ClipboardPlus className="size-4" /> Generar OT de cambio
+            </Button>
+
             <DialogFooter className="sm:justify-between">
               <Button
                 variant="outline"
@@ -1070,6 +1265,314 @@ function PosicionDialog({
             </DialogFooter>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const ROT_BADGE: Record<string, { label: string; clase: string }> = {
+  ok: { label: "Al día", clase: "bg-emerald-100 text-emerald-700" },
+  proximo: { label: "Próxima", clase: "bg-amber-100 text-amber-700" },
+  vencido: { label: "Vencida", clase: "bg-red-100 text-red-700" },
+  sin_datos: { label: "Sin datos", clase: "bg-slate-100 text-slate-600" },
+}
+
+function RotacionCard({
+  unidad,
+  layout,
+  porPosicion,
+  rotEstado,
+  ultimaRotacion,
+  rotaciones,
+  kmActual,
+  puedeEditar,
+  onRefresh,
+}: {
+  unidad: UnidadFlota
+  layout: PosicionNeumatico[]
+  porPosicion: Map<string, Neumatico>
+  rotEstado: ReturnType<typeof rotacionEstado>
+  ultimaRotacion: Rotacion | null
+  rotaciones: Rotacion[]
+  kmActual: number | null
+  puedeEditar: boolean
+  onRefresh: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const sugerida = rotacionSugerida(unidad.tipo)
+  const badge = ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
+
+  const generarOT = async () => {
+    setSaving(true)
+    const res = await generarOrdenNeumaticos({
+      dominio: unidad.dominio,
+      descripcion: "Rotación de neumáticos",
+      km: kmActual,
+    })
+    setSaving(false)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success("OT de rotación generada (programada)")
+      onRefresh()
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <RotateCw className="size-4 text-slate-500" /> Rotación de neumáticos · {unidad.dominio}
+        </CardTitle>
+        {puedeEditar && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              <Plus className="mr-1 size-4" /> Registrar rotación
+            </Button>
+            <Button size="sm" disabled={saving} onClick={generarOT}>
+              <ClipboardPlus className="mr-1 size-4" /> Generar OT
+            </Button>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Contador de próxima rotación */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <Badge className={cn("border-0", badge.clase)}>{badge.label}</Badge>
+          <span className="text-slate-500">
+            Cada <span className="font-medium text-slate-700">{fmtNum(ROTACION_KM)} km</span>
+          </span>
+          <span className="text-slate-500">
+            Última:{" "}
+            <span className="font-medium text-slate-700">
+              {ultimaRotacion ? fmtFecha(ultimaRotacion.fecha) : "sin registro"}
+            </span>
+            {ultimaRotacion?.km != null && <span> · {fmtNum(ultimaRotacion.km)} km</span>}
+          </span>
+          <span className="text-slate-500">
+            Próxima:{" "}
+            <span className="font-medium text-slate-700">
+              {rotEstado.proximaKm != null ? `${fmtNum(rotEstado.proximaKm)} km` : "—"}
+            </span>
+            {rotEstado.kmRestante != null && (
+              <span
+                className={cn(
+                  rotEstado.kmRestante <= 0 ? "text-red-600" : "text-slate-500"
+                )}
+              >
+                {" "}
+                ({rotEstado.kmRestante <= 0 ? "vencida" : `faltan ${fmtNum(rotEstado.kmRestante)} km`}
+                {rotEstado.diasRestantes != null && rotEstado.kmRestante > 0
+                  ? ` · ~${fmtNum(rotEstado.diasRestantes)} días`
+                  : ""}
+                )
+              </span>
+            )}
+          </span>
+        </div>
+
+        {/* Diagrama de rotación sugerida */}
+        {Object.keys(sugerida).length > 0 ? (
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            <RotacionDiagrama layout={layout} porPosicion={porPosicion} sugerida={sugerida} />
+            <div className="space-y-1 text-xs text-slate-500">
+              <p className="font-medium text-slate-600">Rotación sugerida</p>
+              {layout
+                .filter((p) => sugerida[p.code])
+                .map((p) => (
+                  <p key={p.code} className="flex items-center gap-1">
+                    <span className="font-medium text-slate-700">{p.label}</span>
+                    <ArrowRight className="size-3 text-slate-400" />
+                    <span className="font-medium text-slate-700">{sugerida[p.code]}</span>
+                  </p>
+                ))}
+              <p className="pt-1 text-slate-400">
+                Sugerencia para emparejar el desgaste. Ajustala según el estado real de cada
+                cubierta.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">
+            No hay un patrón de rotación sugerido para este tipo de unidad.
+          </p>
+        )}
+
+        {/* Historial */}
+        {rotaciones.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="py-2">Fecha</th>
+                  <th className="text-right">Km</th>
+                  <th>Observaciones</th>
+                  {puedeEditar && <th className="w-10" />}
+                </tr>
+              </thead>
+              <tbody>
+                {rotaciones.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                  >
+                    <td className="py-2 font-medium">{fmtFecha(r.fecha)}</td>
+                    <td className="text-right tabular-nums text-slate-600">{fmtNum(r.km)}</td>
+                    <td className="text-slate-600">{r.observaciones || "—"}</td>
+                    {puedeEditar && (
+                      <td className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-slate-400 hover:text-red-600"
+                          onClick={async () => {
+                            const res = await eliminarRotacion({ id: r.id })
+                            if ("error" in res) toast.error(res.error)
+                            else {
+                              toast.success("Rotación eliminada")
+                              onRefresh()
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+
+      {open && (
+        <RegistrarRotacionDialog
+          dominio={unidad.dominio}
+          kmActual={kmActual}
+          onClose={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false)
+            onRefresh()
+          }}
+        />
+      )}
+    </Card>
+  )
+}
+
+function RotacionDiagrama({
+  layout,
+  porPosicion,
+  sugerida,
+}: {
+  layout: PosicionNeumatico[]
+  porPosicion: Map<string, Neumatico>
+  sugerida: Record<string, string>
+}) {
+  return (
+    <div className="relative aspect-[3/4] w-52 shrink-0">
+      <div className="absolute inset-x-6 inset-y-2 rounded-2xl border-2 border-slate-300 bg-slate-50" />
+      <div className="absolute inset-x-12 top-3 h-8 rounded-lg border-2 border-slate-300 bg-white" />
+      {layout.map((p) => {
+        const n = porPosicion.get(p.code)
+        const dest = sugerida[p.code]
+        return (
+          <div
+            key={p.code}
+            style={{ left: `${p.x}%`, top: `${p.y}%` }}
+            title={`${p.label}${n ? ` · ${n.numero || "s/n"}` : " · vacía"}${dest ? ` → ${dest}` : ""}`}
+            className={cn(
+              "absolute flex size-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-md border-2 text-[10px] font-semibold",
+              n
+                ? "border-slate-300 bg-white text-slate-700"
+                : "border-dashed border-slate-300 bg-white text-slate-400"
+            )}
+          >
+            <span>{p.label}</span>
+            {dest && (
+              <span className="flex items-center text-[8px] font-normal text-sky-600">
+                →{dest}
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function RegistrarRotacionDialog({
+  dominio,
+  kmActual,
+  onClose,
+  onDone,
+}: {
+  dominio: string
+  kmActual: number | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const [fecha, setFecha] = useState(hoy)
+  const [km, setKm] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
+  const [observaciones, setObservaciones] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const guardar = async () => {
+    setSaving(true)
+    const res = await registrarRotacion({
+      dominio,
+      fecha,
+      km: km ? Number(km) : null,
+      observaciones,
+    })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Rotación registrada")
+    onDone()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Registrar rotación · {dominio}</DialogTitle>
+          <DialogDescription>
+            Queda como última rotación; desde su km se cuenta la próxima (cada{" "}
+            {fmtNum(ROTACION_KM)} km).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs text-slate-500">Fecha</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Km</Label>
+            <Input type="number" value={km} onChange={(e) => setKm(e.target.value)} />
+          </div>
+          <div className="col-span-2">
+            <Label className="text-xs text-slate-500">Observaciones</Label>
+            <Textarea
+              rows={2}
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="ej. se cruzaron las traseras"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={saving}>
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
