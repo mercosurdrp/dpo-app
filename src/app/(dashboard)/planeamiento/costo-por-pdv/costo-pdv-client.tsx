@@ -36,6 +36,7 @@ import {
   type CostoPorPdvRow,
   type KmCiudad,
 } from "@/actions/costo-pdv"
+import { SimulacionTab } from "./simulacion-tab"
 
 const MESES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -115,6 +116,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
   const [sortKey, setSortKey] = useState<SortKey>("costo_x_hl")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [panelOpen, setPanelOpen] = useState(false)
+  const [tab, setTab] = useState<"detalle" | "simulacion">("detalle")
 
   const costoMes = useMemo(
     () => costos.find((c) => sel && c.anio === sel.anio && c.mes === sel.mes) ?? null,
@@ -266,6 +268,31 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         )}
       </div>
 
+      {/* Selector de solapa: Detalle (modelo real) / Simulación */}
+      <div className="flex gap-1 border-b">
+        {([
+          { k: "detalle", label: "Detalle" },
+          { k: "simulacion", label: "Simulación" },
+        ] as const).map((t) => (
+          <button
+            key={t.k}
+            type="button"
+            onClick={() => setTab(t.k)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              tab === t.k
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-muted-foreground hover:text-slate-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "simulacion" ? (
+        <SimulacionTab sel={sel} filasReales={filas} />
+      ) : (
+        <>
       {/* Selector de mes */}
       {costos.length === 0 ? (
         <Card>
@@ -600,6 +627,8 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   )
 }

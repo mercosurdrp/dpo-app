@@ -134,6 +134,51 @@ export async function getCostoPorPdv(
   }
 }
 
+/**
+ * SIMULACIÓN: costo logístico por PDV recalculando el modelo con un centro de
+ * distribución y distancias (km por ciudad) ALTERNATIVOS, sin tocar la tabla
+ * costo_km_ciudad ni los datos reales. Usa la RPC get_costo_por_pdv_sim, idéntica
+ * a get_costo_por_pdv salvo que los km salen del parámetro p_km.
+ *
+ * @param km mapa ciudad -> km de ruta desde el CD simulado (ej. {"San Nicolás":8,...}).
+ */
+export async function getCostoPorPdvSim(
+  anio: number,
+  mes: number,
+  km: Record<string, number>,
+): Promise<{ data: CostoPorPdvRow[] } | { error: string }> {
+  const supabase = await createClient()
+  // Variante _json (jsonb con TODOS los PDV) para que PostgREST no trunque a 1000 filas.
+  const { data, error } = await supabase.rpc("get_costo_por_pdv_sim_json", {
+    p_anio: anio,
+    p_mes: mes,
+    p_km: km,
+  })
+  if (error) return { error: error.message }
+  const filas = Array.isArray(data) ? (data as Record<string, unknown>[]) : []
+  return {
+    data: filas.map((r: Record<string, unknown>) => ({
+      id_cliente: Number(r.id_cliente),
+      nombre_cliente: (r.nombre_cliente as string) ?? "",
+      ciudad: (r.ciudad as string) ?? "(sin ciudad)",
+      bultos: Number(r.bultos),
+      comprobantes: Number(r.comprobantes),
+      hl: Number(r.hl),
+      venta_neta: Number(r.venta_neta),
+      costo_almacen: Number(r.costo_almacen),
+      costo_distrib: Number(r.costo_distrib),
+      costo_distancia: Number(r.costo_distancia ?? 0),
+      costo_total: Number(r.costo_total),
+      costo_x_bulto: Number(r.costo_x_bulto),
+      costo_x_hl: Number(r.costo_x_hl),
+      pct_venta: Number(r.pct_venta),
+      bultos_rechazados: Number(r.bultos_rechazados ?? 0),
+      eventos_rechazo: Number(r.eventos_rechazo ?? 0),
+      pct_rechazo: Number(r.pct_rechazo ?? 0),
+    })),
+  }
+}
+
 /** Alta/edición de los costos mensuales (solo roles de gestión). */
 export async function guardarCostoMensual(input: {
   anio: number
