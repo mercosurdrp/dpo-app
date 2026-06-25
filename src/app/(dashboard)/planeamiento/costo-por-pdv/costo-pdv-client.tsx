@@ -199,8 +199,9 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       acc.bultos += f.bultos
       acc.hl += f.hl
       acc.entregas += f.comprobantes
-      // drop size de la ciudad = promedio simple del drop size de cada PDV
-      if (f.comprobantes > 0) {
+      // drop size de la ciudad = promedio del drop de cada PDV, excluyendo a los
+      // mayoristas (>= 50 bultos en el mes) que inflarían el promedio.
+      if (f.comprobantes > 0 && f.bultos < 50) {
         acc.sumaDrops += f.bultos / f.comprobantes
         acc.pdvDrop++
       }
@@ -530,6 +531,11 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
             ) : (
               "Clic en una ciudad para filtrar el detalle y ver su top de PDV (ordenado por costo)."
             )}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            <strong>Drop size</strong> (bultos por entrega) = promedio del drop de cada PDV de la ciudad,
+            <strong> excluyendo a los mayoristas</strong> (≥ 50 bultos en el mes) para que no inflen el valor del
+            minorista típico.
           </p>
         </CardContent>
       </Card>
