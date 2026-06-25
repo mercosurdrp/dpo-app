@@ -190,24 +190,26 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
   // Resumen por ciudad (ordenado por costo desc)
   const porCiudad = useMemo(() => {
-    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number; entregas: number; sumaDrops: number; pdvDrop: number }>()
+    const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number; entregas: number; drops: number[] }>()
     for (const f of filas) {
-      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0, entregas: 0, sumaDrops: 0, pdvDrop: 0 }
+      const acc = m.get(f.ciudad) ?? { pdv: 0, venta: 0, costo: 0, bultos: 0, hl: 0, entregas: 0, drops: [] }
       acc.pdv++
       acc.venta += f.venta_neta
       acc.costo += f.costo_total
       acc.bultos += f.bultos
       acc.hl += f.hl
       acc.entregas += f.comprobantes
-      // drop size de la ciudad = promedio del drop de cada PDV, excluyendo a los
-      // mayoristas (>= 50 bultos en el mes) que inflarían el promedio.
-      if (f.comprobantes > 0 && f.bultos < 50) {
-        acc.sumaDrops += f.bultos / f.comprobantes
-        acc.pdvDrop++
-      }
+      if (f.comprobantes > 0) acc.drops.push(f.bultos / f.comprobantes)
       m.set(f.ciudad, acc)
     }
-    return [...m.entries()].sort((a, b) => b[1].costo - a[1].costo)
+    // drop size de la ciudad = MEDIANA del drop de sus PDV (robusta a los mayoristas,
+    // sin excluir a nadie: el outlier no mueve el valor del medio).
+    return [...m.entries()]
+      .map(([ciudad, d]) => {
+        const sorted = [...d.drops].sort((a, b) => a - b)
+        return [ciudad, { ...d, dropMediana: quantile(sorted, 0.5) }] as const
+      })
+      .sort((a, b) => b[1].costo - a[1].costo)
   }, [filas])
 
   // Filas filtradas + ordenadas
@@ -513,7 +515,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.hl ? d.costo / d.hl : 0)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmtNum(d.pdvDrop ? d.sumaDrops / d.pdvDrop : 0, 1)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtNum(d.dropMediana, 1)}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -533,9 +535,8 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
             )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            <strong>Drop size</strong> (bultos por entrega) = promedio del drop de cada PDV de la ciudad,
-            <strong> excluyendo a los mayoristas</strong> (≥ 50 bultos en el mes) para que no inflen el valor del
-            minorista típico.
+            <strong>Drop size</strong> (bultos por entrega) = <strong>mediana</strong> del drop de los PDV de la
+            ciudad: el valor del PDV del medio, que no se ve afectado por los mayoristas (refleja al cliente típico).
           </p>
         </CardContent>
       </Card>
