@@ -324,7 +324,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       {costoMes && (
         <p className="text-xs text-muted-foreground">
           Costos del mes — Distribución {fmtMoney(costoMes.distribucion)} · Almacén {fmtMoney(costoMes.almacen)} ·
-          split rodaje/parada {Math.round(costoMes.w_rodaje * 100)}/{Math.round((1 - costoMes.w_rodaje) * 100)}
+          Km flota {costoMes.km_totales != null ? `${fmtNum(costoMes.km_totales)} (cargado)` : "automático (combustible)"}
         </p>
       )}
 
@@ -650,6 +650,7 @@ function PanelCarga({
   const [distribucion, setDistribucion] = useState(costoMes?.distribucion ?? 0)
   const [almacen, setAlmacen] = useState(costoMes?.almacen ?? 0)
   const [wRodaje, setWRodaje] = useState(costoMes?.w_rodaje ?? 0.65)
+  const [kmTotales, setKmTotales] = useState<number | null>(costoMes?.km_totales ?? null)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -662,12 +663,13 @@ function PanelCarga({
     setDistribucion(costoMes?.distribucion ?? 0)
     setAlmacen(costoMes?.almacen ?? 0)
     setWRodaje(costoMes?.w_rodaje ?? 0.65)
+    setKmTotales(costoMes?.km_totales ?? null)
   }, [sel, costoMes])
 
   async function guardar() {
     setSaving(true)
     setMsg(null)
-    const res = await guardarCostoMensual({ anio, mes, distribucion, almacen, w_rodaje: wRodaje })
+    const res = await guardarCostoMensual({ anio, mes, distribucion, almacen, w_rodaje: wRodaje, km_totales: kmTotales })
     setSaving(false)
     if ("error" in res) {
       setMsg(res.error)
@@ -683,7 +685,7 @@ function PanelCarga({
         <CardTitle className="text-base">Cargar / editar costos mensuales</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">Año</Label>
             <Input type="number" value={anio} onChange={(e) => setAnio(Number(e.target.value))} />
@@ -708,11 +710,22 @@ function PanelCarga({
             <Label className="text-xs text-muted-foreground">Almacén ($)</Label>
             <Input type="number" value={almacen} onChange={(e) => setAlmacen(Number(e.target.value))} />
           </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">Km del mes</Label>
+            <Input
+              type="number"
+              placeholder="auto"
+              value={kmTotales ?? ""}
+              onChange={(e) => setKmTotales(e.target.value === "" ? null : Number(e.target.value))}
+            />
+          </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           De la <strong>Distribución</strong> se descuenta primero el costo de <strong>llegar a las ciudades</strong>{" "}
-          (km × viajes reales × $/km, con el $/km = Distribución ÷ km de la flota del mes); lo que queda se reparte por
-          bultos. <strong>Almacén</strong> se reparte 100% por bultos.
+          (km × viajes reales × $/km, con el $/km = Distribución ÷ <strong>km del mes</strong>); lo que queda se reparte por
+          bultos. <strong>Almacén</strong> se reparte 100% por bultos.{" "}
+          <strong>Km del mes</strong>: dejalo vacío para tomarlo automático del registro de combustible; cargalo a mano
+          para los meses sin combustible (ene–abr ya vienen estimados como km/día de mayo × días con reparto).
         </p>
         <div className="mt-4 flex items-center gap-3">
           <Button onClick={guardar} disabled={saving}>

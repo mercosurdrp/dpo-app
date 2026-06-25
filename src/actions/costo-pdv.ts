@@ -32,6 +32,8 @@ export interface CostoMensual {
   distribucion: number
   almacen: number
   w_rodaje: number
+  /** Km totales de la flota en el mes. Si es null, se calcula automático de registro_combustible. */
+  km_totales: number | null
   updated_at: string
 }
 
@@ -48,7 +50,7 @@ export async function getCostosMensuales(): Promise<CostoMensual[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from("costo_logistico_mensual")
-    .select("anio, mes, distribucion, almacen, w_rodaje, updated_at")
+    .select("anio, mes, distribucion, almacen, w_rodaje, km_totales, updated_at")
     .order("anio", { ascending: false })
     .order("mes", { ascending: false })
   return (data ?? []).map((r) => ({
@@ -57,6 +59,7 @@ export async function getCostosMensuales(): Promise<CostoMensual[]> {
     distribucion: Number(r.distribucion),
     almacen: Number(r.almacen),
     w_rodaje: Number(r.w_rodaje),
+    km_totales: r.km_totales != null ? Number(r.km_totales) : null,
     updated_at: r.updated_at,
   }))
 }
@@ -138,6 +141,7 @@ export async function guardarCostoMensual(input: {
   distribucion: number
   almacen: number
   w_rodaje: number
+  km_totales: number | null
 }): Promise<{ ok: true } | { error: string }> {
   const profile = await getProfile()
   if (!profile || !ROLES_EDITORES.includes(profile.role)) {
@@ -148,6 +152,8 @@ export async function guardarCostoMensual(input: {
     return { error: "El peso de rodaje debe estar entre 0 y 1." }
   if (input.distribucion < 0 || input.almacen < 0)
     return { error: "Los costos no pueden ser negativos." }
+  if (input.km_totales != null && input.km_totales < 0)
+    return { error: "El kilometraje no puede ser negativo." }
 
   const supabase = await createClient()
   const { error } = await supabase.from("costo_logistico_mensual").upsert(
@@ -157,6 +163,7 @@ export async function guardarCostoMensual(input: {
       distribucion: input.distribucion,
       almacen: input.almacen,
       w_rodaje: input.w_rodaje,
+      km_totales: input.km_totales,
       updated_at: new Date().toISOString(),
       updated_by: profile.id,
     },
