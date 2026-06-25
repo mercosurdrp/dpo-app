@@ -248,7 +248,7 @@ export function ArbolSueno({
         )}
       </Card>
 
-      {/* Acceso al Radar de Rechazos de Mañana (cuelga de OTIF → Rechazo) */}
+      {/* Acceso al Radar de Rechazos de Pasado Mañana (cuelga de OTIF → Rechazo) */}
       <Link
         href="/sueno/radar-rechazos"
         className="mt-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 transition-colors hover:bg-amber-100"
@@ -256,11 +256,11 @@ export function ArbolSueno({
         <RadarIcon className="size-5 shrink-0 text-amber-600" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-amber-900">
-            Radar de Rechazos de Mañana
+            Radar de Rechazos · Pasado Mañana
           </p>
           <p className="text-xs text-amber-800/80">
-            Clientes a avisar hoy (cerrado / sin dinero) para evitar el rechazo del
-            día siguiente.
+            Clientes a avisar hoy (cerrado / sin dinero) para evitar el rechazo en
+            la entrega de pasado mañana.
           </p>
         </div>
         <ChevronRight className="size-5 shrink-0 text-amber-600" />

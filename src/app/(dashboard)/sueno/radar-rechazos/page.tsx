@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 
 /**
  * Radar de Rechazos del Día Siguiente — cuelga del nodo OTIF del Árbol del Sueño.
- * Lista los clientes que se entregan mañana y tienen historial de rechazo por
+ * Lista los clientes que se entregan pasado mañana y tienen historial de rechazo por
  * CERRADO / SIN DINERO, para que ventas avise y evite el rechazo. Solo Pampeana.
  */
 export default async function RadarRechazosPage() {

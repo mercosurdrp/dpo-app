@@ -3,7 +3,7 @@
  * Clona el patrón de `src/app/api/sueno/rechazo-pdf/route.ts` reusando los
  * helpers de `../../rechazos/_pdf-helpers`.
  *
- * Lista los clientes a entregar mañana con MÁS de `umbral` rechazos por SIN
+ * Lista los clientes a entregar pasado mañana con MÁS de `umbral` rechazos por SIN
  * DINERO en el año calendario, agrupados por promotor.
  *
  * GET /api/radar-rechazos/pdf?umbral=7
@@ -136,8 +136,8 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
   const cards: KPICard[] = [
     { label: "Clientes críticos", value: formatInt(criticos.length), sub: `de ${formatInt(data.total_en_riesgo)} en riesgo`, color: COLOR_ACCENT },
     { label: "Promotores", value: formatInt(promotores), sub: "a coordinar" },
-    { label: "Bultos en juego", value: formatInt(totBultos), sub: "del pedido de mañana" },
-    { label: "Monto en juego", value: formatMoneyFull(totMonto), sub: "del pedido de mañana" },
+    { label: "Bultos en juego", value: formatInt(totBultos), sub: "del pedido (en 2 días)" },
+    { label: "Monto en juego", value: formatMoneyFull(totMonto), sub: "del pedido (en 2 días)" },
   ]
   drawKPIs(doc, cards)
 
@@ -146,7 +146,7 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
     .font("Helvetica")
     .fontSize(8.5)
     .text(
-      `Criterio: clientes a entregar mañana con más de ${umbral} rechazos por SIN DINERO en ${anio}. ` +
+      `Criterio: clientes a entregar pasado mañana con más de ${umbral} rechazos por SIN DINERO en ${anio}. ` +
         `Avisarles hoy para coordinar el pago y evitar el rechazo. ` +
         `Las columnas "S/Dinero" (sin dinero) y "Cerr." (cerrado) cuentan los rechazos del año ${anio}.`,
       doc.page.margins.left,

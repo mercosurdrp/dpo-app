@@ -3,7 +3,7 @@
  *
  * Sin autenticación (decisión de negocio): cualquiera con el link obtiene el
  * JSON de la última foto del radar. Pensado para que otra app arme planes de
- * acción sobre los clientes en riesgo / críticos de la entrega de mañana.
+ * acción sobre los clientes en riesgo / críticos de la entrega de pasado mañana.
  *
  * GET /api/radar-rechazos/feed?modo=criticos|todos&umbral=7
  *   modo=criticos (default) → solo clientes con MÁS de `umbral` rechazos por

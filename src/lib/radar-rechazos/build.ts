@@ -67,12 +67,16 @@ export function hoyART(): string {
   return `${y}-${m}-${d}`
 }
 
-/** YYYY-MM-DD de "mañana" en horario Argentina. */
-export function mananaART(): string {
+/**
+ * YYYY-MM-DD de la fecha OBJETIVO del radar en horario Argentina: PASADO MAÑANA
+ * (día +2). Se mira la entrega de dentro de 2 días para que Ventas tenga un día
+ * extra de margen para avisar al cliente y coordinar el pago.
+ */
+export function fechaObjetivoART(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
     year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date(Date.now() + 24 * 60 * 60 * 1000))
+  }).formatToParts(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000))
   const y = parts.find((p) => p.type === "year")!.value
   const m = parts.find((p) => p.type === "month")!.value
   const d = parts.find((p) => p.type === "day")!.value
@@ -190,13 +194,13 @@ async function loadClientesCache(
 }
 
 /**
- * Arma el radar de rechazos para `fecha` (default: mañana ART).
+ * Arma el radar de rechazos para `fecha` (default: pasado mañana / día +2 ART).
  * Devuelve solo los clientes en riesgo, ordenados por riesgo_total desc.
  */
 export async function buildRadarRechazos(
   supabase: SupabaseClient,
   creds: ChessCredentials,
-  fecha: string = mananaART(),
+  fecha: string = fechaObjetivoART(),
 ): Promise<RadarSnapshot> {
   const hoy = hoyART()
 

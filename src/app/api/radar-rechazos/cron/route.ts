@@ -2,9 +2,10 @@
  * Cron del Radar de Rechazos del Día Siguiente.
  *
  * Corre ~09:30 AR (post-ruteo): arma la foto de los clientes que se entregan
- * MAÑANA y tienen historial de rechazo por CERRADO / SIN DINERO, y la congela
- * en `radar_rechazos_snapshot` + `radar_rechazos_cliente`. Ventas la trabaja en
- * su matinal para avisar al cliente y evitar el rechazo.
+ * PASADO MAÑANA (día +2) y tienen historial de rechazo por CERRADO / SIN DINERO,
+ * y la congela en `radar_rechazos_snapshot` + `radar_rechazos_cliente`. Ventas la
+ * trabaja en su matinal para avisar al cliente y evitar el rechazo (con un día
+ * extra de margen).
  *
  * Auth (igual que /api/rechazos/sync):
  *   cron          = Vercel cron (Bearer CRON_SECRET + UA vercel-cron)
@@ -12,13 +13,13 @@
  *   manual-session= botón "Regenerar" en la UI (sesión admin/supervisor)
  *
  * Health-check rápido con ?ping=1. Permite ?fecha=YYYY-MM-DD para re-armar una
- * fecha puntual (default: mañana ART).
+ * fecha puntual (default: pasado mañana / día +2 ART).
  */
 import { NextRequest, NextResponse } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import { buildRadarRechazos, mananaART } from "@/lib/radar-rechazos/build"
+import { buildRadarRechazos, fechaObjetivoART } from "@/lib/radar-rechazos/build"
 import { persistRadarSnapshot } from "@/lib/radar-rechazos/persist"
 
 export const maxDuration = 120
@@ -77,7 +78,7 @@ async function run(request: NextRequest) {
     : "manual-session"
 
   try {
-    const fecha = request.nextUrl.searchParams.get("fecha")?.trim() || mananaART()
+    const fecha = request.nextUrl.searchParams.get("fecha")?.trim() || fechaObjetivoART()
     const supabase = createAdminClient()
     const snap = await buildRadarRechazos(
       supabase,

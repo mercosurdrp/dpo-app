@@ -142,12 +142,12 @@ export function RadarClient({
           <RadarIcon className="mt-1 size-6 shrink-0 text-amber-500" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">
-              Radar de Rechazos de Mañana
+              Radar de Rechazos · Pasado Mañana
             </h1>
             <p className="text-sm text-muted-foreground">
-              Clientes que se entregan mañana con historial de rechazo por{" "}
-              <strong>cerrado</strong> o <strong>sin dinero</strong>. Avisales hoy
-              para evitar el rechazo.
+              Clientes que se entregan <strong>pasado mañana</strong> (en 2 días)
+              con historial de rechazo por <strong>cerrado</strong> o{" "}
+              <strong>sin dinero</strong>. Avisales hoy para evitar el rechazo.
             </p>
           </div>
         </div>
