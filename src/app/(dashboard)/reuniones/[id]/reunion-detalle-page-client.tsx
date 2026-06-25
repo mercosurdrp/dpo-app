@@ -1208,10 +1208,9 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ROTURAS EN LA CALLE — matinal de logística (Pampeana). Igual que
-          accidentes/incidentes: lista las roturas reportadas por choferes y
-          permite desarrollar un plan de acción. */}
-      {!IS_MISIONES && detalle.tipo === "logistica" && (
+      {/* ROTURAS EN LA CALLE — reunión Matinal Distribución (Pampeana). Lista las
+          roturas reportadas por choferes y permite desarrollar un plan de acción. */}
+      {!IS_MISIONES && detalle.tipo === "matinal-distribucion" && (
         <SeccionRoturasCalle
           fechaReunion={detalle.fecha}
           currentRole={currentRole}
