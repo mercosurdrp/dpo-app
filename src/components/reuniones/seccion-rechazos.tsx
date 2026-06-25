@@ -398,11 +398,15 @@ export function SeccionRechazos({
             </div>
 
             {/* Comparación contra la reunión Ventas-Logística anterior */}
-            {comparacion && comparacion.anterior_tasa != null && (
+            {comparacion && (
               <ComparacionLinea
-                actual={tasa}
-                anterior={comparacion.anterior_tasa}
                 fechaAnterior={comparacion.anterior_fecha}
+                tasaActual={tasa}
+                tasaAnterior={comparacion.anterior_tasa}
+                hlActual={kpis.hl_rechazados}
+                hlAnterior={comparacion.anterior_hl_rechazados}
+                bultosActual={kpis.bultos_rechazados}
+                bultosAnterior={comparacion.anterior_bultos_rechazados}
               />
             )}
 
@@ -581,39 +585,108 @@ export function SeccionRechazos({
 }
 
 function ComparacionLinea({
+  fechaAnterior,
+  tasaActual,
+  tasaAnterior,
+  hlActual,
+  hlAnterior,
+  bultosActual,
+  bultosAnterior,
+}: {
+  fechaAnterior: string
+  tasaActual: number | null
+  tasaAnterior: number | null
+  hlActual: number
+  hlAnterior: number
+  bultosActual: number
+  bultosAnterior: number
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm">
+      <div className="text-xs font-medium text-muted-foreground">
+        vs. reunión anterior ({fmtFechaCorta(fechaAnterior)})
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <MetricaComparada
+          label="% de rechazo (HL)"
+          actual={tasaActual}
+          anterior={tasaAnterior}
+          fmt={(v) => `${v.toFixed(2)}%`}
+          deltaModo="pp"
+        />
+        <MetricaComparada
+          label="HL rechazados"
+          actual={hlActual}
+          anterior={hlAnterior}
+          fmt={formatHl}
+          deltaModo="pct"
+        />
+        <MetricaComparada
+          label="Bultos rechazados"
+          actual={bultosActual}
+          anterior={bultosAnterior}
+          fmt={formatInt}
+          deltaModo="pct"
+        />
+      </div>
+    </div>
+  )
+}
+
+function MetricaComparada({
+  label,
   actual,
   anterior,
-  fechaAnterior,
+  fmt,
+  deltaModo,
 }: {
+  label: string
   actual: number | null
-  anterior: number
-  fechaAnterior: string
+  anterior: number | null
+  fmt: (v: number) => string
+  // "pp" = diferencia en puntos porcentuales (para tasas); "pct" = variación %.
+  deltaModo: "pp" | "pct"
 }) {
   // Menos rechazo = mejor.
-  const delta = actual == null ? null : actual - anterior
-  const mejora = delta != null && delta <= 0
+  const hayDatos = actual != null && anterior != null
+  const diff = hayDatos ? actual - anterior : null
+  const mejora = diff != null && diff <= 0
+  let deltaTxt: string | null = null
+  if (diff != null) {
+    if (deltaModo === "pp") {
+      deltaTxt = `${diff > 0 ? "+" : ""}${diff.toFixed(2)} pp`
+    } else if (anterior && anterior !== 0) {
+      const pct = (diff / Math.abs(anterior)) * 100
+      deltaTxt = `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`
+    } else if (diff !== 0) {
+      deltaTxt = "—"
+    }
+  }
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
-      <span className="text-muted-foreground">
-        vs. reunión anterior ({fmtFechaCorta(fechaAnterior)}):
-      </span>
-      <span className="font-semibold tabular-nums">{anterior.toFixed(2)}%</span>
-      <span className="text-muted-foreground">→</span>
-      <span className="font-semibold tabular-nums">
-        {actual == null ? "—" : `${actual.toFixed(2)}%`}
-      </span>
-      {delta != null && (
-        <Badge
-          variant="outline"
-          className={cn(
-            "tabular-nums",
-            mejora ? "text-emerald-700" : "text-red-700",
-          )}
-        >
-          {delta > 0 ? "+" : ""}
-          {delta.toFixed(2)} pp {mejora ? "▼ mejora" : "▲ empeora"}
-        </Badge>
-      )}
+    <div className="rounded-md border border-slate-100 bg-slate-50/60 px-2.5 py-1.5">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <span className="tabular-nums text-muted-foreground">
+          {anterior == null ? "—" : fmt(anterior)}
+        </span>
+        <span className="text-muted-foreground">→</span>
+        <span className="font-semibold tabular-nums">
+          {actual == null ? "—" : fmt(actual)}
+        </span>
+        {deltaTxt && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "tabular-nums",
+              mejora ? "text-emerald-700" : "text-red-700",
+            )}
+          >
+            {deltaTxt} {mejora ? "▼" : "▲"}
+          </Badge>
+        )}
+      </div>
     </div>
   )
 }
