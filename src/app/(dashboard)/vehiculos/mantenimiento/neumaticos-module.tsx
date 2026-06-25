@@ -108,16 +108,29 @@ function ultimaPresion(n: Neumatico): number | null {
 }
 
 // Estado de la alineación según la próxima fecha programada.
-function estadoAlineacion(proximaFecha: string | null): {
-  label: string
-  clase: string
-} {
-  if (!proximaFecha) return { label: "Sin programar", clase: "bg-slate-100 text-slate-600" }
+// Estado de alineación considerando fecha Y km (vence lo que ocurra primero).
+function estadoAlineacionConKm(
+  ultima: Alineacion | null,
+  kmActual: number | null
+): { label: string; clase: string; faltanKm: number | null } {
+  const faltanKm =
+    ultima?.proxima_km != null && kmActual != null
+      ? Math.round(ultima.proxima_km - kmActual)
+      : null
+  if (!ultima || (!ultima.proxima_fecha && ultima.proxima_km == null)) {
+    return { label: "Sin programar", clase: "bg-slate-100 text-slate-600", faltanKm }
+  }
   const hoy = new Date().toISOString().slice(0, 10)
   const en30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-  if (proximaFecha < hoy) return { label: "Vencida", clase: "bg-red-100 text-red-700" }
-  if (proximaFecha <= en30) return { label: "Por vencer", clase: "bg-amber-100 text-amber-700" }
-  return { label: "Al día", clase: "bg-emerald-100 text-emerald-700" }
+  const vencidaFecha = ultima.proxima_fecha != null && ultima.proxima_fecha < hoy
+  const vencidaKm = faltanKm != null && faltanKm <= 0
+  if (vencidaFecha || vencidaKm)
+    return { label: "Vencida", clase: "bg-red-100 text-red-700", faltanKm }
+  const porFecha = ultima.proxima_fecha != null && ultima.proxima_fecha <= en30
+  const porKm = faltanKm != null && faltanKm <= 2000
+  if (porFecha || porKm)
+    return { label: "Por vencer", clase: "bg-amber-100 text-amber-700", faltanKm }
+  return { label: "Al día", clase: "bg-emerald-100 text-emerald-700", faltanKm }
 }
 
 export function NeumaticosModule({
@@ -134,7 +147,6 @@ export function NeumaticosModule({
 
   const [cargaOpen, setCargaOpen] = useState(false)
   const [individualOpen, setIndividualOpen] = useState(false)
-  const [alinOpen, setAlinOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
     pos: PosicionNeumatico
@@ -246,6 +258,18 @@ export function NeumaticosModule({
         <ResumenCard label="Desgaste crítico" value={resumen.criticos} tono="danger" />
         <ResumenCard label="Bajas (total)" value={resumen.bajas} tono="muted" />
       </div>
+
+      {/* Plan de neumáticos de toda la flota */}
+      <PlanFlotaNeumaticos
+        neumaticos={neumaticos}
+        kmFlota={kmFlota}
+        rotaciones={rotaciones}
+        alineaciones={alineaciones}
+        unidades={unidades}
+        puedeEditar={puedeEditar}
+        onRefresh={refresh}
+        onVerUnidad={(d) => setUnidadSel(d)}
+      />
 
       {puedeEditar && (
         <div className="flex justify-end gap-2">
@@ -436,110 +460,7 @@ export function NeumaticosModule({
         </Card>
       )}
 
-      {/* Alineación de la unidad */}
-      {unidad && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Crosshair className="size-4 text-slate-500" /> Alineación · {unidad.dominio}
-            </CardTitle>
-            {puedeEditar && (
-              <Button variant="outline" size="sm" onClick={() => setAlinOpen(true)}>
-                <Plus className="mr-1 size-4" /> Registrar alineación
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(() => {
-              const est = estadoAlineacion(ultimaAlineacion?.proxima_fecha ?? null)
-              return (
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                  <Badge className={cn("border-0", est.clase)}>{est.label}</Badge>
-                  <span className="text-slate-500">
-                    Última:{" "}
-                    <span className="font-medium text-slate-700">
-                      {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
-                    </span>
-                    {ultimaAlineacion?.km != null && (
-                      <span className="text-slate-500">
-                        {" "}
-                        · {fmtNum(ultimaAlineacion.km)} km
-                      </span>
-                    )}
-                  </span>
-                  {ultimaAlineacion?.proxima_fecha && (
-                    <span className="text-slate-500">
-                      Próxima:{" "}
-                      <span className="font-medium text-slate-700">
-                        {fmtFecha(ultimaAlineacion.proxima_fecha)}
-                      </span>
-                      {ultimaAlineacion.proxima_km != null && (
-                        <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
-                      )}
-                    </span>
-                  )}
-                </div>
-              )
-            })()}
-
-            {alineacionesUnidad.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
-                      <th className="py-2">Fecha</th>
-                      <th className="text-right">Km</th>
-                      <th>Próxima</th>
-                      <th className="text-right">Próx. km</th>
-                      <th>Observaciones</th>
-                      {puedeEditar && <th className="w-10" />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alineacionesUnidad.map((a, i) => (
-                      <tr
-                        key={a.id}
-                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
-                      >
-                        <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
-                        <td className="text-right tabular-nums text-slate-600">
-                          {fmtNum(a.km)}
-                        </td>
-                        <td className="text-slate-600">{fmtFecha(a.proxima_fecha)}</td>
-                        <td className="text-right tabular-nums text-slate-600">
-                          {fmtNum(a.proxima_km)}
-                        </td>
-                        <td className="text-slate-600">{a.observaciones || "—"}</td>
-                        {puedeEditar && (
-                          <td className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 text-slate-400 hover:text-red-600"
-                              onClick={async () => {
-                                const res = await eliminarAlineacion({ id: a.id })
-                                if ("error" in res) toast.error(res.error)
-                                else {
-                                  toast.success("Alineación eliminada")
-                                  refresh()
-                                }
-                              }}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Rotación de neumáticos */}
+      {/* Rotación + alineación de neumáticos (unificado) */}
       {unidad && (
         <RotacionCard
           unidad={unidad}
@@ -548,6 +469,8 @@ export function NeumaticosModule({
           rotEstado={rotEstado}
           ultimaRotacion={ultimaRotacion}
           rotaciones={rotacionesUnidad}
+          alineaciones={alineacionesUnidad}
+          ultimaAlineacion={ultimaAlineacion}
           kmActual={kmUnidad.kmActual}
           puedeEditar={puedeEditar}
           onRefresh={refresh}
@@ -663,16 +586,6 @@ export function NeumaticosModule({
           onDone={refresh}
         />
       )}
-      {alinOpen && unidad && (
-        <AlineacionDialog
-          dominio={unidad.dominio}
-          onClose={() => setAlinOpen(false)}
-          onDone={() => {
-            setAlinOpen(false)
-            refresh()
-          }}
-        />
-      )}
       {posDialog && unidad && (
         <PosicionDialog
           unidad={unidad}
@@ -693,6 +606,255 @@ export function NeumaticosModule({
 }
 
 // ==================== Subcomponentes ====================
+
+// Panel transversal: qué neumáticos cambiar y qué rotaciones/alineaciones
+// vencen, en TODA la flota, con el km diario. Desde acá se generan OTs.
+function PlanFlotaNeumaticos({
+  neumaticos,
+  kmFlota,
+  rotaciones,
+  alineaciones,
+  unidades,
+  puedeEditar,
+  onRefresh,
+  onVerUnidad,
+}: {
+  neumaticos: Neumatico[]
+  kmFlota: Record<string, KmFlotaUnidad>
+  rotaciones: Rotacion[]
+  alineaciones: Alineacion[]
+  unidades: UnidadFlota[]
+  puedeEditar: boolean
+  onRefresh: () => void
+  onVerUnidad: (dominio: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const gen = async (dominio: string, descripcion: string) => {
+    setBusy(true)
+    const res = await generarOrdenNeumaticos({
+      dominio,
+      descripcion,
+      km: kmFlota[dominio]?.kmActual ?? null,
+    })
+    setBusy(false)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success("OT generada (programada)")
+      onRefresh()
+    }
+  }
+
+  // Cubiertas a cambiar / próximas en toda la flota.
+  const revisar = useMemo(() => {
+    return neumaticos
+      .filter((n) => n.estado === "instalado" && n.dominio)
+      .map((n) => {
+        const km = kmFlota[n.dominio!]
+        return { n, v: vidaNeumatico(n, km?.kmActual ?? null, km?.kmDia ?? null) }
+      })
+      .filter((x) => x.v.estado === "cambiar" || x.v.estado === "proximo")
+      .sort((a, b) => {
+        const rank = (e: string) => (e === "cambiar" ? 0 : 1)
+        if (rank(a.v.estado) !== rank(b.v.estado)) return rank(a.v.estado) - rank(b.v.estado)
+        return (a.v.kmRestante ?? Infinity) - (b.v.kmRestante ?? Infinity)
+      })
+  }, [neumaticos, kmFlota])
+
+  // Rotaciones y alineaciones a vencer por unidad.
+  const pendientes = useMemo(() => {
+    const instPorDom = new Map<string, Neumatico[]>()
+    for (const n of neumaticos) {
+      if (n.estado === "instalado" && n.dominio) {
+        const arr = instPorDom.get(n.dominio) ?? []
+        arr.push(n)
+        instPorDom.set(n.dominio, arr)
+      }
+    }
+    const ultRotPorDom = new Map<string, Rotacion>()
+    for (const r of rotaciones) {
+      const prev = ultRotPorDom.get(r.dominio)
+      if (!prev || r.fecha > prev.fecha) ultRotPorDom.set(r.dominio, r)
+    }
+    const ultAlinPorDom = new Map<string, Alineacion>()
+    for (const a of alineaciones) {
+      const prev = ultAlinPorDom.get(a.dominio)
+      if (!prev || a.fecha > prev.fecha) ultAlinPorDom.set(a.dominio, a)
+    }
+
+    const filas: {
+      dominio: string
+      rot: ReturnType<typeof rotacionEstado> | null
+      alin: ReturnType<typeof estadoAlineacionConKm> | null
+    }[] = []
+    for (const u of unidades) {
+      const km = kmFlota[u.dominio]
+      const ultRot = ultRotPorDom.get(u.dominio) ?? null
+      const inst = instPorDom.get(u.dominio) ?? []
+      const kmsInst = inst.map((n) => n.km_instalacion).filter((k): k is number => k != null)
+      const base = ultRot?.km ?? (kmsInst.length ? Math.max(...kmsInst) : (km?.kmActual ?? null))
+      const rot = rotacionEstado(base, km?.kmActual ?? null, km?.kmDia ?? null)
+      const alin = estadoAlineacionConKm(ultAlinPorDom.get(u.dominio) ?? null, km?.kmActual ?? null)
+      const rotPend = rot.estado === "proximo" || rot.estado === "vencido"
+      const alinPend = alin.label === "Vencida" || alin.label === "Por vencer"
+      if (rotPend || alinPend) {
+        filas.push({ dominio: u.dominio, rot: rotPend ? rot : null, alin: alinPend ? alin : null })
+      }
+    }
+    return filas
+  }, [neumaticos, rotaciones, alineaciones, unidades, kmFlota])
+
+  const todoOk = revisar.length === 0 && pendientes.length === 0
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Gauge className="size-4 text-slate-500" /> Plan de neumáticos — toda la flota
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {todoOk ? (
+          <p className="text-sm text-emerald-600">
+            ✔ Sin cubiertas a cambiar ni rotaciones/alineaciones pendientes con el km cargado.
+          </p>
+        ) : (
+          <>
+            {revisar.length > 0 && (
+              <div className="overflow-x-auto">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Cubiertas a cambiar / próximas ({revisar.length})
+                </p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <th className="py-2">Unidad</th>
+                      <th>Pos.</th>
+                      <th>N°</th>
+                      <th>Estado</th>
+                      <th className="text-right">Restante</th>
+                      <th className="text-right">Días</th>
+                      {puedeEditar && <th />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {revisar.map(({ n, v }, i) => (
+                      <tr
+                        key={n.id}
+                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                      >
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            className="font-medium text-sky-700 hover:underline"
+                            onClick={() => onVerUnidad(n.dominio!)}
+                          >
+                            {n.dominio}
+                          </button>
+                        </td>
+                        <td>{n.posicion || "—"}</td>
+                        <td className="text-slate-600">{n.numero || "—"}</td>
+                        <td>
+                          <Badge variant="outline" className={cn("text-xs", VIDA_BADGE[v.estado].clase)}>
+                            {VIDA_BADGE[v.estado].label}
+                          </Badge>
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {v.kmRestante != null ? `${fmtNum(v.kmRestante)} km` : "—"}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {v.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
+                        </td>
+                        {puedeEditar && (
+                          <td className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 text-xs"
+                              disabled={busy}
+                              onClick={() =>
+                                gen(
+                                  n.dominio!,
+                                  `Cambio de neumático posición ${n.posicion || "?"}${n.numero ? ` (N° ${n.numero})` : ""}`
+                                )
+                              }
+                            >
+                              <ClipboardPlus className="size-3.5" /> OT
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {pendientes.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Rotación / alineación a vencer ({pendientes.length})
+                </p>
+                {pendientes.map((p) => (
+                  <div
+                    key={p.dominio}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-slate-50/60 px-3 py-2 text-sm"
+                  >
+                    <button
+                      type="button"
+                      className="font-medium text-sky-700 hover:underline"
+                      onClick={() => onVerUnidad(p.dominio)}
+                    >
+                      {p.dominio}
+                    </button>
+                    {p.rot && (
+                      <span className="flex items-center gap-1 text-slate-600">
+                        <RotateCw className="size-3.5 text-slate-400" /> Rotación{" "}
+                        {p.rot.kmRestante != null && p.rot.kmRestante <= 0
+                          ? "vencida"
+                          : p.rot.kmRestante != null
+                            ? `en ${fmtNum(p.rot.kmRestante)} km`
+                            : ""}
+                        {puedeEditar && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 gap-1 px-2 text-xs text-sky-700"
+                            disabled={busy}
+                            onClick={() => gen(p.dominio, "Rotación de neumáticos")}
+                          >
+                            <ClipboardPlus className="size-3.5" /> OT
+                          </Button>
+                        )}
+                      </span>
+                    )}
+                    {p.alin && (
+                      <span className="flex items-center gap-1 text-slate-600">
+                        <Crosshair className="size-3.5 text-slate-400" /> Alineación{" "}
+                        {p.alin.label.toLowerCase()}
+                        {puedeEditar && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 gap-1 px-2 text-xs text-sky-700"
+                            disabled={busy}
+                            onClick={() => gen(p.dominio, "Alineación de neumáticos")}
+                          >
+                            <ClipboardPlus className="size-3.5" /> OT
+                          </Button>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 function ResumenCard({
   label,
@@ -1284,6 +1446,8 @@ function RotacionCard({
   rotEstado,
   ultimaRotacion,
   rotaciones,
+  alineaciones,
+  ultimaAlineacion,
   kmActual,
   puedeEditar,
   onRefresh,
@@ -1294,14 +1458,18 @@ function RotacionCard({
   rotEstado: ReturnType<typeof rotacionEstado>
   ultimaRotacion: Rotacion | null
   rotaciones: Rotacion[]
+  alineaciones: Alineacion[]
+  ultimaAlineacion: Alineacion | null
   kmActual: number | null
   puedeEditar: boolean
   onRefresh: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [alinOpen, setAlinOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const sugerida = rotacionSugerida(unidad.tipo)
   const badge = ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
+  const alin = estadoAlineacionConKm(ultimaAlineacion, kmActual)
 
   const generarOT = async () => {
     setSaving(true)
@@ -1318,11 +1486,26 @@ function RotacionCard({
     }
   }
 
+  const generarOTAlin = async () => {
+    setSaving(true)
+    const res = await generarOrdenNeumaticos({
+      dominio: unidad.dominio,
+      descripcion: "Alineación de neumáticos",
+      km: kmActual,
+    })
+    setSaving(false)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success("OT de alineación generada (programada)")
+      onRefresh()
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <RotateCw className="size-4 text-slate-500" /> Rotación de neumáticos · {unidad.dominio}
+          <RotateCw className="size-4 text-slate-500" /> Rotación y alineación · {unidad.dominio}
         </CardTitle>
         {puedeEditar && (
           <div className="flex gap-2">
@@ -1330,7 +1513,7 @@ function RotacionCard({
               <Plus className="mr-1 size-4" /> Registrar rotación
             </Button>
             <Button size="sm" disabled={saving} onClick={generarOT}>
-              <ClipboardPlus className="mr-1 size-4" /> Generar OT
+              <ClipboardPlus className="mr-1 size-4" /> OT rotación
             </Button>
           </div>
         )}
@@ -1444,6 +1627,105 @@ function RotacionCard({
             </table>
           </div>
         )}
+
+        {/* ---- Alineación ---- */}
+        <div className="border-t pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+            <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <Crosshair className="size-4 text-slate-500" /> Alineación
+            </p>
+            {puedeEditar && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setAlinOpen(true)}>
+                  <Plus className="mr-1 size-4" /> Registrar alineación
+                </Button>
+                <Button size="sm" disabled={saving} onClick={generarOTAlin}>
+                  <ClipboardPlus className="mr-1 size-4" /> OT alineación
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <Badge className={cn("border-0", alin.clase)}>{alin.label}</Badge>
+            <span className="text-slate-500">
+              Última:{" "}
+              <span className="font-medium text-slate-700">
+                {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
+              </span>
+              {ultimaAlineacion?.km != null && <span> · {fmtNum(ultimaAlineacion.km)} km</span>}
+            </span>
+            {(ultimaAlineacion?.proxima_fecha || ultimaAlineacion?.proxima_km != null) && (
+              <span className="text-slate-500">
+                Próxima:{" "}
+                <span className="font-medium text-slate-700">
+                  {fmtFecha(ultimaAlineacion?.proxima_fecha ?? null)}
+                </span>
+                {ultimaAlineacion?.proxima_km != null && (
+                  <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
+                )}
+                {alin.faltanKm != null && (
+                  <span className={cn(alin.faltanKm <= 0 ? "text-red-600" : "text-slate-500")}>
+                    {" "}
+                    ({alin.faltanKm <= 0 ? "vencida" : `faltan ${fmtNum(alin.faltanKm)} km`})
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+
+          {alineaciones.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="py-2">Fecha</th>
+                    <th className="text-right">Km</th>
+                    <th>Próxima</th>
+                    <th className="text-right">Próx. km</th>
+                    <th>Observaciones</th>
+                    {puedeEditar && <th className="w-10" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {alineaciones.map((a, i) => (
+                    <tr
+                      key={a.id}
+                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                    >
+                      <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
+                      <td className="text-right tabular-nums text-slate-600">{fmtNum(a.km)}</td>
+                      <td className="text-slate-600">{fmtFecha(a.proxima_fecha)}</td>
+                      <td className="text-right tabular-nums text-slate-600">
+                        {fmtNum(a.proxima_km)}
+                      </td>
+                      <td className="text-slate-600">{a.observaciones || "—"}</td>
+                      {puedeEditar && (
+                        <td className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-slate-400 hover:text-red-600"
+                            onClick={async () => {
+                              const res = await eliminarAlineacion({ id: a.id })
+                              if ("error" in res) toast.error(res.error)
+                              else {
+                                toast.success("Alineación eliminada")
+                                onRefresh()
+                              }
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </CardContent>
 
       {open && (
@@ -1453,6 +1735,16 @@ function RotacionCard({
           onClose={() => setOpen(false)}
           onDone={() => {
             setOpen(false)
+            onRefresh()
+          }}
+        />
+      )}
+      {alinOpen && (
+        <AlineacionDialog
+          dominio={unidad.dominio}
+          onClose={() => setAlinOpen(false)}
+          onDone={() => {
+            setAlinOpen(false)
             onRefresh()
           }}
         />
