@@ -34,6 +34,12 @@ export interface CostoMensual {
   updated_at: string
 }
 
+/** Distancia (km de ruta) desde el centro de distribución a cada ciudad. */
+export interface KmCiudad {
+  ciudad: string
+  km: number
+}
+
 const ROLES_EDITORES = ["admin", "supervisor", "admin_rrhh"]
 
 /** Meses cargados (con costos), ordenados del más reciente al más viejo. */
@@ -52,6 +58,38 @@ export async function getCostosMensuales(): Promise<CostoMensual[]> {
     w_rodaje: Number(r.w_rodaje),
     updated_at: r.updated_at,
   }))
+}
+
+/** Distancias por ciudad (km de ruta desde el CD), ordenadas de la más lejana a la más cercana. */
+export async function getKmCiudades(): Promise<KmCiudad[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("costo_km_ciudad")
+    .select("ciudad, km")
+    .order("km", { ascending: false })
+  return (data ?? []).map((r) => ({ ciudad: r.ciudad, km: Number(r.km) }))
+}
+
+/** Alta/edición de la distancia de una ciudad (solo roles de gestión). */
+export async function guardarKmCiudad(
+  ciudad: string,
+  km: number,
+): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile || !ROLES_EDITORES.includes(profile.role)) {
+    return { error: "No tenés permiso para editar las distancias." }
+  }
+  if (!ciudad.trim()) return { error: "Ciudad inválida." }
+  if (km < 0 || !Number.isFinite(km)) return { error: "La distancia no puede ser negativa." }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from("costo_km_ciudad").upsert(
+    { ciudad, km, updated_at: new Date().toISOString() },
+    { onConflict: "ciudad" },
+  )
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/costo-por-pdv")
+  return { ok: true }
 }
 
 /** Costo logístico por PDV para un (año, mes), vía la función SQL. */

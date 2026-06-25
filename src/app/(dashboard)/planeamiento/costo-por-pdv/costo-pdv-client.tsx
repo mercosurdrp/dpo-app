@@ -29,8 +29,11 @@ import {
   getCostoPorPdv,
   getCostosMensuales,
   guardarCostoMensual,
+  getKmCiudades,
+  guardarKmCiudad,
   type CostoMensual,
   type CostoPorPdvRow,
+  type KmCiudad,
 } from "@/actions/costo-pdv"
 
 const MESES = [
@@ -87,14 +90,23 @@ interface Props {
   costos: CostoMensual[]
   mesInicial: { anio: number; mes: number } | null
   filasIniciales: CostoPorPdvRow[]
+  kmCiudades: KmCiudad[]
   canEdit: boolean
 }
 
-export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales, canEdit }: Props) {
+export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales, kmCiudades: kmInit, canEdit }: Props) {
   const [costos, setCostos] = useState<CostoMensual[]>(costosInit)
   const [sel, setSel] = useState(mesInicial)
   const [filas, setFilas] = useState<CostoPorPdvRow[]>(filasIniciales)
+  const [kmCiudades, setKmCiudades] = useState<KmCiudad[]>(kmInit)
   const [isPending, startTransition] = useTransition()
+
+  // Lookup ciudad -> km, para mostrar la distancia en el resumen por ciudad.
+  const kmPorCiudad = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const k of kmCiudades) m.set(k.ciudad, k.km)
+    return m
+  }, [kmCiudades])
 
   const [q, setQ] = useState("")
   const [bandaFiltro, setBandaFiltro] = useState<string | null>(null)
@@ -242,7 +254,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Costo por Punto de Venta</h1>
           <p className="text-sm text-muted-foreground">
-            Cost-to-serve logístico — reparte Distribución + Almacén entre cada PDV por volumen y entregas.
+            Cost-to-serve logístico — reparte Distribución + Almacén entre cada PDV por volumen, distancia y entregas.
             Los PDV se clasifican por <strong>costo/HL</strong> (lo caro de servir cada litro), no por su costo total.
           </p>
         </div>
@@ -287,6 +299,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         <PanelCarga
           sel={sel}
           costoMes={costoMes}
+          kmCiudades={kmCiudades}
           onSaved={async (anio, mes) => {
             const nuevos = await getCostosMensuales()
             setCostos(nuevos)
@@ -295,6 +308,13 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
               setFilas("data" in res ? res.data : [])
             } else {
               cambiarMes(anio, mes)
+            }
+          }}
+          onKmSaved={async () => {
+            setKmCiudades(await getKmCiudades())
+            if (sel) {
+              const res = await getCostoPorPdv(sel.anio, sel.mes)
+              setFilas("data" in res ? res.data : [])
             }
           }}
         />
@@ -339,12 +359,17 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
               <ul className="list-disc space-y-1 pl-5">
                 <li><strong>Almacén</strong> → se reparte por <strong>bultos</strong>.</li>
                 <li>
-                  <strong>Distribución</strong> → 65% por <strong>bultos</strong> (rodaje) + 35% por{" "}
-                  <strong>entregas</strong> (parada).
+                  <strong>Distribución</strong> → 65% por <strong>bultos × km de la ciudad</strong> (rodaje/viaje:
+                  un bulto que viaja más lejos cuesta más) + 35% por <strong>entregas</strong> (parada).
                 </li>
                 <li>
-                  El <strong>10% más caro</strong> se ordena por <strong>costo/HL</strong>: marca sobre todo a los que
-                  hacen <strong>muchas entregas por litro</strong> (compran poco y seguido).
+                  La <strong>distancia</strong> sale de los km de ruta desde el centro de distribución (Ramallo) a
+                  cada ciudad. El costo de llegar a una ciudad se reparte entre los bultos de todos sus clientes
+                  (más clientes en la zona → menos costo de viaje por cada uno).
+                </li>
+                <li>
+                  El <strong>10% más caro</strong> se ordena por <strong>costo/HL</strong>: marca a los que están
+                  <strong> lejos</strong> y/o hacen <strong>muchas entregas por litro</strong> (compran poco y seguido).
                 </li>
               </ul>
               <p className="rounded-md bg-amber-100/70 p-2 text-amber-900">
@@ -416,6 +441,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
               <TableHeader>
                 <TableRow>
                   <TableHead>Ciudad</TableHead>
+                  <TableHead className="text-right">km (CD)</TableHead>
                   <TableHead className="text-right">PDV</TableHead>
                   <TableHead className="text-right">Venta neta</TableHead>
                   <TableHead className="text-right">Costo logístico</TableHead>
@@ -435,6 +461,9 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                       className={`cursor-pointer ${activo ? "bg-slate-100" : "hover:bg-slate-50"}`}
                     >
                       <TableCell className="font-medium">{ciudad}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {kmPorCiudad.has(ciudad) ? `${fmtNum(kmPorCiudad.get(ciudad)!)} km` : "—"}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{fmtNum(d.pdv)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(d.venta)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.costo)}</TableCell>
@@ -569,11 +598,13 @@ function Kpi({
 }
 
 function PanelCarga({
-  sel, costoMes, onSaved,
+  sel, costoMes, kmCiudades, onSaved, onKmSaved,
 }: {
   sel: { anio: number; mes: number } | null
   costoMes: CostoMensual | null
+  kmCiudades: KmCiudad[]
   onSaved: (anio: number, mes: number) => void | Promise<void>
+  onKmSaved: () => void | Promise<void>
 }) {
   const [anio, setAnio] = useState(sel?.anio ?? new Date().getFullYear())
   const [mes, setMes] = useState(sel?.mes ?? new Date().getMonth() + 1)
@@ -644,8 +675,8 @@ function PanelCarga({
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Rodaje = parte de Distribución que se reparte por volumen (bultos); el resto ({Math.round((1 - wRodaje) * 100)}%)
-          se reparte por entregas. Almacén se reparte 100% por bultos.
+          Rodaje = parte de Distribución que se reparte por <strong>volumen × distancia</strong> (bultos × km de la
+          ciudad); el resto ({Math.round((1 - wRodaje) * 100)}%) se reparte por entregas. Almacén se reparte 100% por bultos.
         </p>
         <div className="mt-4 flex items-center gap-3">
           <Button onClick={guardar} disabled={saving}>
@@ -653,7 +684,75 @@ function PanelCarga({
           </Button>
           {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
         </div>
+
+        <PanelKm kmCiudades={kmCiudades} onKmSaved={onKmSaved} />
       </CardContent>
     </Card>
+  )
+}
+
+/** Edición de la distancia (km de ruta) desde el CD a cada ciudad. */
+function PanelKm({
+  kmCiudades, onKmSaved,
+}: {
+  kmCiudades: KmCiudad[]
+  onKmSaved: () => void | Promise<void>
+}) {
+  const [draft, setDraft] = useState<Record<string, number>>({})
+  const [savingCity, setSavingCity] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  // Sincronizo el borrador cuando cambian los km de arriba.
+  useEffect(() => {
+    setDraft(Object.fromEntries(kmCiudades.map((k) => [k.ciudad, k.km])))
+  }, [kmCiudades])
+
+  async function guardar(ciudad: string) {
+    setSavingCity(ciudad)
+    setMsg(null)
+    const res = await guardarKmCiudad(ciudad, Number(draft[ciudad] ?? 0))
+    setSavingCity(null)
+    if ("error" in res) {
+      setMsg(res.error)
+      return
+    }
+    setMsg(`${ciudad} guardado ✓`)
+    await onKmSaved()
+  }
+
+  if (kmCiudades.length === 0) return null
+
+  return (
+    <div className="mt-6 border-t pt-4">
+      <p className="text-sm font-semibold text-slate-900">Distancias por ciudad (km desde el CD)</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Km de ruta desde el centro de distribución (Ramallo) a cada ciudad. Cambian cómo se reparte el rodaje:
+        más lejos = más caro de servir por litro. El costo total del mes no se altera.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {kmCiudades.map((k) => (
+          <div key={k.ciudad} className="flex items-end gap-2">
+            <div className="flex flex-1 flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">{k.ciudad}</Label>
+              <Input
+                type="number"
+                min="0"
+                value={draft[k.ciudad] ?? k.km}
+                onChange={(e) => setDraft((d) => ({ ...d, [k.ciudad]: Number(e.target.value) }))}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => guardar(k.ciudad)}
+              disabled={savingCity === k.ciudad || Number(draft[k.ciudad]) === k.km}
+            >
+              {savingCity === k.ciudad ? "…" : "OK"}
+            </Button>
+          </div>
+        ))}
+      </div>
+      {msg && <p className="mt-2 text-sm text-muted-foreground">{msg}</p>}
+    </div>
   )
 }

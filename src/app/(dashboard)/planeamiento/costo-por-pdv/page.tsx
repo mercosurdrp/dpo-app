@@ -6,6 +6,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import {
   getCostosMensuales,
   getCostoPorPdv,
+  getKmCiudades,
   type CostoPorPdvRow,
 } from "@/actions/costo-pdv"
 import { CostoPdvClient } from "./costo-pdv-client"
@@ -19,7 +20,7 @@ export default async function CostoPorPdvPage() {
   const profile = await requireAuth()
   const canEdit = ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
 
-  const costos = await getCostosMensuales()
+  const [costos, kmCiudades] = await Promise.all([getCostosMensuales(), getKmCiudades()])
   const ultimo = costos[0] ?? null
 
   let filasIniciales: CostoPorPdvRow[] = []
@@ -40,6 +41,7 @@ export default async function CostoPorPdvPage() {
         costos={costos}
         mesInicial={ultimo ? { anio: ultimo.anio, mes: ultimo.mes } : null}
         filasIniciales={filasIniciales}
+        kmCiudades={kmCiudades}
         canEdit={canEdit}
       />
     </div>
