@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Download,
+  FileText,
   Loader2,
   Phone,
   RadarIcon,
@@ -18,6 +19,10 @@ import { Input } from "@/components/ui/input"
 import type { RadarClienteView, RadarView } from "@/actions/radar-rechazos"
 
 type MotivoFiltro = "todos" | "cerrado" | "sin_dinero"
+
+// Umbral de "cliente crítico" para el PDF de Ventas: más de N rechazos por sin
+// dinero en el año calendario. (El cálculo real vive en getRadarCriticos.)
+const UMBRAL_CRITICO = 7
 
 const nf = new Intl.NumberFormat("es-AR")
 const nfMoney = new Intl.NumberFormat("es-AR", {
@@ -149,6 +154,17 @@ export function RadarClient({
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportarCsv} disabled={!data}>
             <Download className="size-4" /> CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              window.open(`/api/radar-rechazos/pdf?umbral=${UMBRAL_CRITICO}`, "_blank")
+            }
+            disabled={!data}
+            title={`PDF para Ventas: clientes con más de ${UMBRAL_CRITICO} sin dinero en el año`}
+          >
+            <FileText className="size-4" /> PDF críticos
           </Button>
           {puedeRegenerar && (
             <Button size="sm" onClick={regenerar} disabled={regenerando}>
