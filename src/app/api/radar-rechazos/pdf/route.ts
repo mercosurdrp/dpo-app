@@ -14,7 +14,6 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { requireAuth } from "@/lib/session"
 import {
   getRadarCriticos,
-  UMBRAL_CRITICO_DEFAULT,
   type RadarCriticoRow,
   type RadarCriticosData,
 } from "@/actions/radar-rechazos"
@@ -36,6 +35,9 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+// Umbral por defecto de "cliente crítico": más de N sin dinero en el año.
+const UMBRAL_DEFAULT = 7
+
 export async function GET(req: NextRequest) {
   if (IS_MISIONES) {
     return NextResponse.json({ error: "not-pampeana" }, { status: 404 })
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   const umbralRaw = Number(req.nextUrl.searchParams.get("umbral"))
   const umbral =
-    Number.isInteger(umbralRaw) && umbralRaw >= 0 ? umbralRaw : UMBRAL_CRITICO_DEFAULT
+    Number.isInteger(umbralRaw) && umbralRaw >= 0 ? umbralRaw : UMBRAL_DEFAULT
 
   const res = await getRadarCriticos(umbral)
   if ("error" in res) {

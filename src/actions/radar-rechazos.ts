@@ -86,8 +86,6 @@ export async function getRadarRechazos(): Promise<
 // Clientes CRÍTICOS para el PDF de Ventas
 // ─────────────────────────────────────────────────────────────────────────
 
-export const UMBRAL_CRITICO_DEFAULT = 7
-
 export interface RadarCriticoRow {
   id_cliente: number | null
   nombre_cliente: string | null
@@ -119,7 +117,7 @@ const ID_SIN_DINERO = 6
  * promotor y, dentro, por cantidad de sin dinero desc. Para el PDF de Ventas.
  */
 export async function getRadarCriticos(
-  umbral: number = UMBRAL_CRITICO_DEFAULT,
+  umbral: number = 7,
 ): Promise<{ data: RadarCriticosData | null } | { error: string }> {
   try {
     await requireAuth()
