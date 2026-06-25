@@ -685,6 +685,52 @@ export async function updateMantenimiento(
   }
 }
 
+/**
+ * Marca si una orden de trabajo saca (o no) la unidad de circulación, para la
+ * disponibilidad de flota. ON → setea `fuera_servicio_desde` (reusa el que ya
+ * tenga o, si no, la fecha de la OT) y deja el "hasta" como esté (NULL = sigue
+ * fuera de servicio mientras la OT esté abierta). OFF → limpia el período, así
+ * la OT deja de descontar disponibilidad. Atajo para no entrar al diálogo de
+ * edición; las fechas finas se siguen pudiendo ajustar ahí.
+ */
+export async function setOrdenFueraServicio(
+  id: string,
+  saca: boolean
+): Promise<{ data: MantenimientoRealizado } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const { data: actual, error: e0 } = await supabase
+      .from("mantenimiento_realizados")
+      .select("fecha, fuera_servicio_desde, fuera_servicio_hasta")
+      .eq("id", id)
+      .single()
+    if (e0) return { error: e0.message }
+
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (saca) {
+      patch.fuera_servicio_desde =
+        (actual.fuera_servicio_desde as string | null) || (actual.fecha as string)
+      patch.fuera_servicio_hasta = (actual.fuera_servicio_hasta as string | null) ?? null
+    } else {
+      patch.fuera_servicio_desde = null
+      patch.fuera_servicio_hasta = null
+    }
+
+    const { data, error } = await supabase
+      .from("mantenimiento_realizados")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single()
+    if (error) return { error: error.message }
+    return { data: data as MantenimientoRealizado }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 export async function deleteMantenimiento(
   id: string
 ): Promise<{ success: true } | { error: string }> {

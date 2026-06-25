@@ -36,12 +36,14 @@ import {
 } from "@/components/ui/select"
 import {
   AlertTriangle,
+  Ban,
   CalendarClock,
   CircleDollarSign,
   Paperclip,
   Plus,
   Pencil,
   Trash2,
+  Truck,
   Wrench,
   X,
 } from "lucide-react"
@@ -52,6 +54,7 @@ import {
   createPlanTarea,
   deleteMantenimiento,
   deletePlanOverride,
+  setOrdenFueraServicio,
   subirFacturasMantenimiento,
   updateMantenimiento,
   updatePlanTarea,
@@ -177,6 +180,79 @@ function nombreArchivoDeUrl(url: string): string {
   } catch {
     return "archivo"
   }
+}
+
+// Celda/toggle de disponibilidad: marca si la OT saca la unidad de circulación
+// (afecta la disponibilidad de flota vía fuera_servicio_desde/hasta).
+function DisponibilidadCell({
+  m,
+  puedeEditar,
+  onChanged,
+}: {
+  m: MantenimientoRealizado
+  puedeEditar: boolean
+  onChanged: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const saca = !!m.fuera_servicio_desde
+  const fmtD = (f: string | null) =>
+    f ? f.slice(0, 10).split("-").reverse().join("/") : ""
+
+  function toggle() {
+    startTransition(async () => {
+      const res = await setOrdenFueraServicio(m.id, !saca)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(
+        !saca
+          ? "La orden saca la unidad de circulación"
+          : "La orden ya no afecta la disponibilidad"
+      )
+      onChanged()
+    })
+  }
+
+  if (!puedeEditar) {
+    return saca ? (
+      <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700">
+        <Ban className="size-3" /> Fuera de servicio
+      </Badge>
+    ) : (
+      <span className="text-slate-300">—</span>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={pending}
+        title={
+          saca
+            ? "Esta OT saca la unidad de circulación (descuenta disponibilidad). Click para que NO la saque."
+            : "Esta OT no afecta la disponibilidad. Click para marcar la unidad fuera de servicio."
+        }
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs transition-colors disabled:opacity-50",
+          saca
+            ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+            : "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+        )}
+      >
+        {saca ? <Ban className="size-3" /> : <Truck className="size-3" />}
+        {saca ? "Saca unidad" : "No la saca"}
+      </button>
+      {saca && m.fuera_servicio_desde && (
+        <span className="text-[11px] text-slate-400">
+          {fmtD(m.fuera_servicio_desde)}
+          {m.fuera_servicio_hasta ? ` → ${fmtD(m.fuera_servicio_hasta)}` : " → sigue"}
+        </span>
+      )}
+    </div>
+  )
 }
 
 // ==================== Componente principal ====================
@@ -570,6 +646,7 @@ export function MantenimientoClient({
                       <TableHead className="text-right">Km/Hs</TableHead>
                       <TableHead>Taller</TableHead>
                       <TableHead className="text-right">Costo</TableHead>
+                      <TableHead>Disponibilidad</TableHead>
                       {puedeEditar && <TableHead className="w-20" />}
                     </TableRow>
                   </TableHeader>
@@ -635,6 +712,9 @@ export function MantenimientoClient({
                         <TableCell className="text-slate-600">{m.taller || "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <DisponibilidadCell m={m} puedeEditar={puedeEditar} onChanged={refresh} />
                         </TableCell>
                         {puedeEditar && (
                           <TableCell>
