@@ -25,6 +25,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   LabelList,
   ResponsiveContainer,
   Tooltip,
@@ -37,6 +38,9 @@ import { PlanesAccionFlota } from "../_components/planes-accion-flota"
 const CAMION_COLOR = "#1D4ED8" // azul (gas oil)
 const AUTO_COLOR = "#0D9488" // teal (nafta)
 const COSTO_COLOR = "#9D174D"
+const DESVIO_COLOR = "#DC2626" // rojo: consumo de camiones por encima del umbral
+// Desvío de consumo de camiones: por encima de este rendimiento se marca en rojo.
+const UMBRAL_L100 = 32
 
 // Flota vigente (16 camiones) — misma lista que la pestaña Mantenimiento.
 // Fuente: FLOTA QUILMES ACTUALIZADA AL 31-05-2026.xlsx.
@@ -409,6 +413,15 @@ export function CombustibleFlotaClient() {
     return [...arr].sort((a, b) => (b[metrica] as number) - (a[metrica] as number))
   }, [grupo, porCamion, porAutoelevador, metrica])
 
+  // Consumo por chofer/operario para el gráfico (ranking según la métrica elegida).
+  const consumoPorChoferGrafico = useMemo(
+    () =>
+      [...porChofer]
+        .map((c) => ({ label: c.chofer, litros: c.litros, costo: c.costo, cargas: c.cargas, km: c.km, l100: c.l100 }))
+        .sort((a, b) => (b[metrica] as number) - (a[metrica] as number)),
+    [porChofer, metrica]
+  )
+
   const grupoDef = GRUPOS.find((g) => g.key === grupo)!
   const met = METRICAS.find((x) => x.key === metrica)!
   const periodoTexto =
@@ -756,6 +769,79 @@ export function CombustibleFlotaClient() {
             </CardContent>
           </Card>
 
+          {/* Gráfico de consumo POR CHOFER (una barra por chofer / operario) */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 font-semibold text-slate-900">
+                  👤 {met.label} por {grupo === "camiones" ? "chofer" : "operario"} · {periodoTexto}
+                  {sucursal !== "__all__" ? ` · ${sucursal}` : ""}
+                </h2>
+                <div className="flex gap-2">
+                  {METRICAS.map((mt) => (
+                    <Button
+                      key={mt.key}
+                      size="sm"
+                      variant={metrica === mt.key ? "default" : "outline"}
+                      onClick={() => setMetrica(mt.key)}
+                    >
+                      {mt.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Ranking de {grupo === "camiones" ? "choferes" : "operarios"} por {met.label.toLowerCase()} en el período (de mayor a menor).
+                {grupo === "camiones" && (
+                  <>
+                    {" "}En <span className="font-semibold" style={{ color: DESVIO_COLOR }}>rojo</span>, choferes con consumo
+                    por encima de {UMBRAL_L100} L/100km.
+                  </>
+                )}
+              </p>
+              {consumoPorChoferGrafico.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
+              ) : (
+                <div className="w-full" style={{ height: Math.max(220, consumoPorChoferGrafico.length * 34) }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      layout="vertical"
+                      data={consumoPorChoferGrafico}
+                      margin={{ top: 4, right: 64, bottom: 4, left: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        tickFormatter={(v) => met.fmt(v as number)}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis type="category" dataKey="label" width={150} tick={{ fontSize: 11 }} />
+                      <Tooltip cursor={{ fill: "#F1F5F9" }} content={<ChoferTooltip grupo={grupo} />} />
+                      <Bar dataKey={metrica} name={met.label} radius={[0, 3, 3, 0]}>
+                        {consumoPorChoferGrafico.map((d, i) => (
+                          <Cell
+                            key={i}
+                            fill={
+                              grupo === "camiones" && d.l100 != null && d.l100 > UMBRAL_L100
+                                ? DESVIO_COLOR
+                                : grupoDef.color
+                            }
+                          />
+                        ))}
+                        <LabelList
+                          dataKey={metrica}
+                          position="right"
+                          formatter={(v: unknown) => met.fmt(Number(v))}
+                          style={{ fontSize: 11, fill: "#475569" }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {grupo === "camiones" ? (
             <>
               {/* Consumo por camión */}
@@ -845,7 +931,13 @@ export function CombustibleFlotaClient() {
                               <TableCell className="text-right">{c.cargas}</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.litros)} L</TableCell>
                               <TableCell className="text-right">{fmtNum.format(c.km)}</TableCell>
-                              <TableCell className="text-right font-semibold">{c.l100 != null ? fmtDec.format(c.l100) : "—"}</TableCell>
+                              <TableCell
+                                className="text-right font-semibold"
+                                style={c.l100 != null && c.l100 > UMBRAL_L100 ? { color: DESVIO_COLOR } : undefined}
+                              >
+                                {c.l100 != null ? fmtDec.format(c.l100) : "—"}
+                                {c.l100 != null && c.l100 > UMBRAL_L100 ? " ⚠️" : ""}
+                              </TableCell>
                               <TableCell className="text-right">{c.lkm != null ? fmtDec2.format(c.lkm) : "—"}</TableCell>
                               <TableCell className="text-right">{fmtPlata.format(c.costo)}</TableCell>
                             </TableRow>
@@ -1015,6 +1107,36 @@ function UnidadTooltip({
       ) : (
         <p className="text-muted-foreground">Horas: {fmtNum.format(d.horas)} hs</p>
       )}
+      <p className="text-muted-foreground">Cargas: {d.cargas}</p>
+    </div>
+  )
+}
+
+function ChoferTooltip({
+  active,
+  payload,
+  grupo,
+}: {
+  active?: boolean
+  payload?: Array<{ payload: { label: string; litros: number; costo: number; cargas: number; km: number; l100: number | null } }>
+  grupo: GrupoKey
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  const desvio = grupo === "camiones" && d.l100 != null && d.l100 > UMBRAL_L100
+  return (
+    <div className="max-w-[240px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-md">
+      <p className="font-semibold text-slate-900">👤 {d.label}</p>
+      <p className="text-muted-foreground">Litros: {fmtNum.format(d.litros)} L</p>
+      <p className="text-muted-foreground">Costo: {fmtPlata.format(d.costo)}</p>
+      {grupo === "camiones" && d.km > 0 ? (
+        <p className="text-muted-foreground">Km: {fmtNum.format(d.km)} km</p>
+      ) : null}
+      {grupo === "camiones" && d.l100 != null ? (
+        <p style={desvio ? { color: DESVIO_COLOR, fontWeight: 600 } : undefined} className={desvio ? "" : "text-muted-foreground"}>
+          L/100km: {fmtDec.format(d.l100)}{desvio ? ` ⚠️ supera ${UMBRAL_L100}` : ""}
+        </p>
+      ) : null}
       <p className="text-muted-foreground">Cargas: {d.cargas}</p>
     </div>
   )
