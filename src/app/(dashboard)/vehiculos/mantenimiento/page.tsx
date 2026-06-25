@@ -14,6 +14,7 @@ import {
   getKmFlota,
   getRotaciones,
 } from "@/actions/neumaticos"
+import { getGastos } from "@/actions/mantenimiento-gastos"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -41,6 +42,7 @@ export default async function MantenimientoPage() {
     rotacionesRes,
     diasRuteoRes,
     indispRes,
+    gastosRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -54,6 +56,7 @@ export default async function MantenimientoPage() {
     getRotaciones(),
     getDiasRuteo(ventanaRuteoDesde()),
     getIndisponibilidades(),
+    getGastos({ limit: 500 }),
     getProfile(),
   ])
 
@@ -109,6 +112,7 @@ export default async function MantenimientoPage() {
   const rotaciones = "data" in rotacionesRes ? rotacionesRes.data : []
   const diasRuteo = "data" in diasRuteoRes ? diasRuteoRes.data : []
   const indisponibilidades = "data" in indispRes ? indispRes.data : []
+  const gastos = "data" in gastosRes ? gastosRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -126,6 +130,7 @@ export default async function MantenimientoPage() {
       rotaciones={rotaciones}
       diasRuteo={diasRuteo}
       indisponibilidades={indisponibilidades}
+      gastos={gastos}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

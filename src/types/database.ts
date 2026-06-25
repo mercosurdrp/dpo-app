@@ -1346,6 +1346,63 @@ export interface CostosMantenimiento {
   porMes: { mes: string; preventivo: number; correctivo: number; proactivo: number }[]
 }
 
+// ===== Libro de gastos de flota / mantenimiento (facturas, boletas, caja chica) =====
+export type GastoTipo = "factura" | "boleta" | "caja_chica"
+export type GastoMedioPago = "efectivo" | "transferencia" | "tarjeta" | "cuenta_corriente"
+export type GastoEstadoPago = "pendiente" | "pagado"
+export type GastoEstadoImputacion = "pendiente" | "imputado"
+
+export const GASTO_TIPO_LABELS: Record<GastoTipo, string> = {
+  factura: "Factura",
+  boleta: "Boleta",
+  caja_chica: "Caja chica",
+}
+
+export const GASTO_MEDIO_PAGO_LABELS: Record<GastoMedioPago, string> = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  tarjeta: "Tarjeta",
+  cuenta_corriente: "Cuenta corriente",
+}
+
+/** Rubros sugeridos (el campo es texto libre, esto solo alimenta el selector). */
+export const GASTO_RUBROS = [
+  "Repuestos",
+  "Combustible",
+  "Taller / mano de obra",
+  "Neumáticos",
+  "Lubricantes",
+  "Peajes",
+  "Seguros / patentes",
+  "Librería / insumos",
+  "Varios",
+] as const
+
+export interface MantenimientoGasto {
+  id: string
+  tipo: GastoTipo
+  fecha: string
+  mes_imputacion: string
+  proveedor: string | null
+  rubro: string | null
+  monto: number
+  medio_pago: GastoMedioPago | null
+  numero_comprobante: string | null
+  cuenta_contable: string | null
+  centro_costo: string | null
+  dominio: string | null
+  estado_pago: GastoEstadoPago
+  estado_imputacion: GastoEstadoImputacion
+  mail_enviado: boolean
+  mail_enviado_at: string | null
+  mail_error: string | null
+  adjunto_urls: string[]
+  observaciones: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** Indisponibilidad de flota por causa NO de mantenimiento (estado IND). */
 export interface FlotaIndisponibilidad {
   id: string

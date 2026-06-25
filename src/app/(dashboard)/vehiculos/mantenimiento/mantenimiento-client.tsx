@@ -68,6 +68,7 @@ import type {
   MantenimientoCategoria,
   MantenimientoEstado,
   MantenimientoPlanOverride,
+  MantenimientoGasto,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
   MantenimientoTipo,
@@ -82,6 +83,7 @@ import { ChecklistsMtto } from "./checklists-mtto"
 import { NeumaticosModule } from "./neumaticos-module"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
+import { GastosTab } from "./gastos-tab"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -278,6 +280,7 @@ interface MantenimientoClientProps {
   rotaciones: Rotacion[]
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
+  gastos: MantenimientoGasto[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -296,6 +299,7 @@ export function MantenimientoClient({
   rotaciones,
   diasRuteo,
   indisponibilidades,
+  gastos,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -489,6 +493,7 @@ export function MantenimientoClient({
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           <TabsTrigger value="seguimiento">Seguimiento de flota</TabsTrigger>
           <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
+          <TabsTrigger value="gastos">Gastos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
 
@@ -756,6 +761,15 @@ export function MantenimientoClient({
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ============ TAB: Gastos (facturas / boletas / caja chica) ============ */}
+        <TabsContent value="gastos" className="space-y-4">
+          <GastosTab
+            gastos={gastos}
+            dominios={estados.map((e) => e.vehiculo.dominio)}
+            puedeEditar={puedeEditar}
+          />
         </TabsContent>
 
         {/* ============ TAB: Plantillas ============ */}
