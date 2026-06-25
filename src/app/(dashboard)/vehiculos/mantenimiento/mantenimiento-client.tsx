@@ -207,8 +207,8 @@ function DisponibilidadCell({
       }
       toast.success(
         !saca
-          ? "La orden saca la unidad de circulación"
-          : "La orden ya no afecta la disponibilidad"
+          ? "Unidad marcada como NO disponible"
+          : "Unidad marcada como disponible"
       )
       onChanged()
     })
@@ -217,10 +217,12 @@ function DisponibilidadCell({
   if (!puedeEditar) {
     return saca ? (
       <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700">
-        <Ban className="size-3" /> Fuera de servicio
+        <Ban className="size-3" /> No disponible
       </Badge>
     ) : (
-      <span className="text-slate-300">—</span>
+      <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+        <Truck className="size-3" /> Disponible
+      </Badge>
     )
   }
 
@@ -232,18 +234,18 @@ function DisponibilidadCell({
         disabled={pending}
         title={
           saca
-            ? "Esta OT saca la unidad de circulación (descuenta disponibilidad). Click para que NO la saque."
-            : "Esta OT no afecta la disponibilidad. Click para marcar la unidad fuera de servicio."
+            ? "Esta OT tiene la unidad NO disponible (descuenta disponibilidad de flota). Click para marcarla disponible."
+            : "La unidad está disponible. Click para marcarla NO disponible por esta OT."
         }
         className={cn(
           "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs transition-colors disabled:opacity-50",
           saca
             ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-            : "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
         )}
       >
         {saca ? <Ban className="size-3" /> : <Truck className="size-3" />}
-        {saca ? "Saca unidad" : "No la saca"}
+        {saca ? "No disponible" : "Disponible"}
       </button>
       {saca && m.fuera_servicio_desde && (
         <span className="text-[11px] text-slate-400">
