@@ -1,7 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { PackageX, Loader2, Maximize2, ChevronRight } from "lucide-react"
+import {
+  PackageX,
+  Loader2,
+  Maximize2,
+  ChevronRight,
+  Pin,
+  PinOff,
+} from "lucide-react"
 import {
   Card,
   CardContent,
@@ -34,6 +41,13 @@ import {
   getRechazosClientesPorMotivo,
   type RechazoClienteMotivo,
 } from "@/actions/rechazos-clientes-motivo"
+import {
+  getRechazosSnapshotData,
+  fijarRechazosSnapshot,
+  borrarRechazosSnapshot,
+  type RechazosSnapshot,
+  type RechazosComparacion,
+} from "@/actions/reuniones-rechazos-snapshot"
 import { RechazosDetalleDiaDialog } from "./rechazos-detalle-dia-dialog"
 import { ActionLogSeccion } from "./action-log-seccion"
 import type { ReunionActividadConResponsable } from "@/types/database"
@@ -50,12 +64,36 @@ interface ResponsableOpt {
   email: string
 }
 
+// KPIs y motivos unificados, vengan de la foto fijada o de la consulta en vivo.
+interface VistaKpis {
+  tasa: number | null
+  tasa_bultos: number | null
+  hl_rechazados: number
+  ventas_total_hl: number
+  bultos_rechazados: number
+  ventas_total_bultos: number
+  eventos: number
+  patentes_con_rechazo: number
+}
+interface VistaMotivo {
+  id_rechazo: number
+  ds_rechazo: string
+  categoria: string
+  hl: number
+  bultos: number
+  eventos: number
+}
+
 /**
  * Sección "Rechazos" de la Reunión Ventas-Logística.
  * Trae datos reales del día (tabla rechazos): % de rechazo, bultos rechazados
  * y desglose por motivos. La fecha arranca en la fecha de la reunión y se puede
  * filtrar a una fecha anterior. "Ver detalle completo" abre el drill-down
  * (clientes / productos / patentes) reutilizando el diálogo existente.
+ *
+ * Además permite "fijar" (congelar) el rango filtrado como foto de la reunión:
+ * se guardan los KPIs y la tabla de motivos para que al reabrir la reunión se
+ * vea siempre lo que se discutió, con comparación contra la reunión anterior.
  * Incluye su propio Action Log acotado a la sección.
  */
 export function SeccionRechazos({
@@ -80,6 +118,12 @@ export function SeccionRechazos({
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
+  // Foto fijada de la reunión + comparación contra la reunión anterior.
+  const [snapshot, setSnapshot] = useState<RechazosSnapshot | null>(null)
+  const [comparacion, setComparacion] = useState<RechazosComparacion | null>(null)
+  const [snapInit, setSnapInit] = useState(false)
+  const [fijando, setFijando] = useState(false)
+
   // Drill-down de clientes por motivo
   const [motivoSel, setMotivoSel] = useState<{ id: number; ds: string } | null>(null)
   const [clientes, setClientes] = useState<RechazoClienteMotivo[] | null>(null)
@@ -99,6 +143,28 @@ export function SeccionRechazos({
     })
   }
 
+  // Carga la foto fijada al abrir la reunión y posiciona el filtro en su rango.
+  useEffect(() => {
+    let cancel = false
+    void getRechazosSnapshotData(reunionId).then((res) => {
+      if (cancel) return
+      if (!("error" in res)) {
+        const snap = res.data.snapshot
+        setSnapshot(snap)
+        setComparacion(res.data.comparacion)
+        if (snap?.desde) {
+          setDesde(snap.desde)
+          setHasta(snap.hasta ?? snap.desde)
+        }
+      }
+      setSnapInit(true)
+    })
+    return () => {
+      cancel = true
+    }
+  }, [reunionId])
+
+  // Datos en vivo del rango actual (se usan cuando NO se está viendo la foto).
   useEffect(() => {
     let cancel = false
     setLoading(true)
@@ -121,10 +187,37 @@ export function SeccionRechazos({
     }
   }, [desde, hasta])
 
-  const tasa = data?.kpis.tasa ?? null
+  // ¿El rango actual coincide con el de la foto fijada? Si sí, mostramos la foto.
+  const viendoFijado =
+    !!snapshot &&
+    desde === snapshot.desde &&
+    hasta === (snapshot.hasta ?? snapshot.desde)
+
+  // KPIs y motivos a renderizar: de la foto si la estamos viendo, si no en vivo.
+  const kpis: VistaKpis | null = viendoFijado
+    ? {
+        tasa: snapshot.tasa,
+        tasa_bultos: snapshot.tasa_bultos,
+        hl_rechazados: snapshot.hl_rechazados,
+        ventas_total_hl: snapshot.ventas_total_hl,
+        bultos_rechazados: snapshot.bultos_rechazados,
+        ventas_total_bultos: snapshot.ventas_total_bultos,
+        eventos: snapshot.eventos,
+        patentes_con_rechazo: snapshot.patentes_con_rechazo,
+      }
+    : (data?.kpis ?? null)
+  const motivos: VistaMotivo[] = viendoFijado
+    ? snapshot.motivos
+    : (data?.top_motivos ?? [])
+
+  const tasa = kpis?.tasa ?? null
   const cumple = tasa != null && tasa <= META_TASA
   const esRango = desde !== hasta
   const esOtroPeriodo = desde !== fechaReunion || hasta !== fechaReunion
+
+  // Mostrar loading mientras no terminó la carga inicial de la foto, o mientras
+  // se consulta en vivo (salvo que ya estemos mostrando la foto fijada).
+  const cargando = !snapInit || (!viendoFijado && loading)
 
   // Handlers que mantienen desde <= hasta.
   function onDesde(v: string) {
@@ -138,13 +231,49 @@ export function SeccionRechazos({
     if (nv < desde) setDesde(nv)
   }
 
+  async function onFijar() {
+    setFijando(true)
+    setError(null)
+    const res = await fijarRechazosSnapshot(reunionId, desde, hasta)
+    setFijando(false)
+    if ("error" in res) {
+      setError(res.error)
+      return
+    }
+    setSnapshot(res.data)
+  }
+
+  async function onQuitar() {
+    if (!snapshot) return
+    setFijando(true)
+    setError(null)
+    const res = await borrarRechazosSnapshot(reunionId)
+    setFijando(false)
+    if ("error" in res) {
+      setError(res.error)
+      return
+    }
+    setSnapshot(null)
+  }
+
+  const fijarLabel = viendoFijado ? "Re-fijar" : "Fijar este rango"
+
   return (
     <Card className="border-amber-200 bg-amber-50/30">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
         <CardTitle className="flex items-center gap-2 text-lg font-bold text-amber-900">
           <PackageX className="size-5 text-amber-600" />
           Rechazos
-          {esRango ? (
+          {viendoFijado ? (
+            <Badge className="gap-1 bg-emerald-600 text-[10px] font-normal hover:bg-emerald-600">
+              <Pin className="size-3" />
+              Fijado {fmtFechaCorta(snapshot.updated_at)}
+            </Badge>
+          ) : snapshot ? (
+            <Badge variant="outline" className="text-[10px] font-normal text-amber-700">
+              sin fijar · vista en vivo
+            </Badge>
+          ) : esRango ? (
             <Badge variant="outline" className="text-[10px] font-normal">
               rango
             </Badge>
@@ -180,11 +309,40 @@ export function SeccionRechazos({
             onChange={(e) => onHasta(e.target.value)}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
+          {puedeEditar && (
+            <>
+              <Button
+                size="sm"
+                onClick={onFijar}
+                disabled={fijando || cargando}
+                className="bg-amber-600 hover:bg-amber-700"
+                title="Congelar el rango filtrado como foto de esta reunión"
+              >
+                {fijando ? (
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
+                ) : (
+                  <Pin className="mr-1.5 size-4" />
+                )}
+                {fijarLabel}
+              </Button>
+              {snapshot && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onQuitar}
+                  disabled={fijando}
+                  title="Quitar la foto fijada (volver a vista en vivo)"
+                >
+                  <PinOff className="size-4" />
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {loading && (
+        {cargando && (
           <div className="flex items-center justify-center py-10 text-muted-foreground">
             <Loader2 className="mr-2 size-4 animate-spin" />
             Cargando rechazos…
@@ -197,7 +355,7 @@ export function SeccionRechazos({
           </div>
         )}
 
-        {!loading && !error && data && (
+        {!cargando && !error && kpis && (
           <>
             {/* KPIs principales: % de rechazo + bultos rechazados */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -215,29 +373,38 @@ export function SeccionRechazos({
                   tasa == null
                     ? "sin ventas en el período"
                     : `${cumple ? "cumple" : "supera"} meta ${META_TASA}%` +
-                      (data.kpis.tasa_bultos == null
+                      (kpis.tasa_bultos == null
                         ? ""
-                        : ` · bultos ${data.kpis.tasa_bultos.toFixed(2)}%`)
+                        : ` · bultos ${kpis.tasa_bultos.toFixed(2)}%`)
                 }
               />
               <KpiCard
                 label="Bultos rechazados"
-                value={formatInt(data.kpis.bultos_rechazados)}
-                sub={`${formatInt(data.kpis.ventas_total_bultos)} bultos entregados`}
+                value={formatInt(kpis.bultos_rechazados)}
+                sub={`${formatInt(kpis.ventas_total_bultos)} bultos entregados`}
               />
               <KpiCard
                 label="HL rechazados"
-                value={formatHl(data.kpis.hl_rechazados)}
-                sub={`${formatInt(data.kpis.eventos)} eventos · ${formatInt(
-                  data.kpis.patentes_con_rechazo,
+                value={formatHl(kpis.hl_rechazados)}
+                sub={`${formatInt(kpis.eventos)} eventos · ${formatInt(
+                  kpis.patentes_con_rechazo,
                 )} patentes`}
               />
               <KpiCard
                 label="HL entregados"
-                value={formatHl(data.kpis.ventas_total_hl)}
+                value={formatHl(kpis.ventas_total_hl)}
                 sub={esRango ? "total del período" : "total del día"}
               />
             </div>
+
+            {/* Comparación contra la reunión Ventas-Logística anterior */}
+            {comparacion && comparacion.anterior_tasa != null && (
+              <ComparacionLinea
+                actual={tasa}
+                anterior={comparacion.anterior_tasa}
+                fechaAnterior={comparacion.anterior_fecha}
+              />
+            )}
 
             {/* Por motivos */}
             <div>
@@ -246,7 +413,7 @@ export function SeccionRechazos({
                   Rechazos por motivo
                 </h3>
                 <span className="text-xs text-muted-foreground">
-                  Top {data.top_motivos.length}
+                  Top {motivos.length}
                 </span>
               </div>
               <div className="rounded-md border border-slate-200 bg-white">
@@ -262,7 +429,7 @@ export function SeccionRechazos({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.top_motivos.length === 0 && (
+                    {motivos.length === 0 && (
                       <TableRow>
                         <TableCell
                           colSpan={6}
@@ -272,7 +439,7 @@ export function SeccionRechazos({
                         </TableCell>
                       </TableRow>
                     )}
-                    {data.top_motivos.map((m, i) => (
+                    {motivos.map((m, i) => (
                       <TableRow
                         key={m.id_rechazo}
                         className="cursor-pointer hover:bg-amber-50/60"
@@ -413,6 +580,44 @@ export function SeccionRechazos({
   )
 }
 
+function ComparacionLinea({
+  actual,
+  anterior,
+  fechaAnterior,
+}: {
+  actual: number | null
+  anterior: number
+  fechaAnterior: string
+}) {
+  // Menos rechazo = mejor.
+  const delta = actual == null ? null : actual - anterior
+  const mejora = delta != null && delta <= 0
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+      <span className="text-muted-foreground">
+        vs. reunión anterior ({fmtFechaCorta(fechaAnterior)}):
+      </span>
+      <span className="font-semibold tabular-nums">{anterior.toFixed(2)}%</span>
+      <span className="text-muted-foreground">→</span>
+      <span className="font-semibold tabular-nums">
+        {actual == null ? "—" : `${actual.toFixed(2)}%`}
+      </span>
+      {delta != null && (
+        <Badge
+          variant="outline"
+          className={cn(
+            "tabular-nums",
+            mejora ? "text-emerald-700" : "text-red-700",
+          )}
+        >
+          {delta > 0 ? "+" : ""}
+          {delta.toFixed(2)} pp {mejora ? "▼ mejora" : "▲ empeora"}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
 function KpiCard({
   label,
   value,
@@ -446,6 +651,14 @@ function KpiCard({
 
 function formatInt(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n)
+}
+
+function fmtFechaCorta(iso: string): string {
+  // Acepta 'YYYY-MM-DD' o ISO con hora; devuelve dd/mm.
+  const d = iso?.slice(0, 10)
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return ""
+  const [, m, day] = d.split("-")
+  return `${day}/${m}`
 }
 
 function prettyCategoria(c: string): string {
