@@ -569,6 +569,12 @@ export async function createObservacion(
     const evaluables = totalOk + totalNook
     const pct = evaluables === 0 ? 0 : Math.round((totalOk / evaluables) * 10000) / 100
 
+    // Duración opcional (minutos) que tardó el observado en hacer la tarea (ej: checklist vehicular)
+    const duracionRaw = str("duracionMinutos")
+    const duracionNum = duracionRaw ? Number(duracionRaw) : NaN
+    const duracionMinutos =
+      Number.isFinite(duracionNum) && duracionNum >= 0 ? Math.round(duracionNum) : null
+
     const { data: obs, error: errObs } = await supabase
       .from("owd_observaciones")
       .insert({
@@ -583,6 +589,7 @@ export async function createObservacion(
         total_nook: totalNook,
         total_na: totalNa,
         pct_cumplimiento: pct,
+        duracion_minutos: duracionMinutos,
         accion_correctiva: str("accionCorrectiva") || null,
         observaciones: str("observaciones") || null,
         created_by: profile.id,

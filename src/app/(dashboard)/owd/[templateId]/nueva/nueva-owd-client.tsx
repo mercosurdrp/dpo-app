@@ -146,6 +146,7 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
   const [empleado, setEmpleado] = useState("")
   const [rol, setRol] = useState<string>("Chofer")
   const [dominio, setDominio] = useState<string>("")
+  const [duracionMin, setDuracionMin] = useState<string>("")
   const [accionCorrectiva, setAccionCorrectiva] = useState("")
   const [obsGeneral, setObsGeneral] = useState("")
 
@@ -192,6 +193,7 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     fd.append("empleadoObservado", empleado)
     fd.append("rolEmpleado", rol)
     fd.append("dominio", dominio)
+    fd.append("duracionMinutos", duracionMin)
     fd.append("accionCorrectiva", accionCorrectiva)
     fd.append("observaciones", obsGeneral)
     fd.append(
@@ -305,20 +307,36 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
               </Select>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Dominio (opcional)</Label>
-            <Select value={dominio} onValueChange={(v: string | null) => setDominio(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sin seleccionar" />
-              </SelectTrigger>
-              <SelectContent>
-                {vehiculos.map((v) => (
-                  <SelectItem key={v.id} value={v.dominio}>
-                    {v.dominio}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Dominio (opcional)</Label>
+              <Select value={dominio} onValueChange={(v: string | null) => setDominio(v ?? "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehiculos.map((v) => (
+                    <SelectItem key={v.id} value={v.dominio}>
+                      {v.dominio}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Duración (min, opcional)</Label>
+              <Input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                placeholder="Ej: 8"
+                value={duracionMin}
+                onChange={(e) => setDuracionMin(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Minutos que tardó el empleado en completar la tarea (ej: el checklist).
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

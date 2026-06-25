@@ -151,6 +151,12 @@ export function DetalleOwdClient({ templateId, observacion, respuestas, items, f
             <p className="font-mono font-medium">{observacion.dominio || "—"}</p>
           </div>
           <div>
+            <p className="text-xs text-muted-foreground">Duración</p>
+            <p className="font-medium">
+              {observacion.duracion_minutos != null ? `${observacion.duracion_minutos} min` : "—"}
+            </p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground">% Cumplimiento</p>
             <p
               className={`text-2xl font-bold ${

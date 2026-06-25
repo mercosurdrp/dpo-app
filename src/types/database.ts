@@ -862,6 +862,7 @@ export interface OwdObservacion {
   total_nook: number
   total_na: number
   pct_cumplimiento: number
+  duracion_minutos: number | null
   accion_correctiva: string | null
   observaciones: string | null
   created_by: string | null
