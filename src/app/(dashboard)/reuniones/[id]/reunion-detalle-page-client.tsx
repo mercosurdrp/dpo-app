@@ -58,6 +58,7 @@ import { ActividadFormDialog } from "@/components/reuniones/actividad-form-dialo
 import { ConfigurarIndicadoresDialog } from "@/components/reuniones/configurar-indicadores-dialog"
 import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad-dialog"
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
+import { ContadorReunion } from "@/components/reuniones/contador-reunion"
 import { SeccionRoturasCalle } from "@/components/reuniones/seccion-roturas-calle"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
@@ -1191,6 +1192,12 @@ export function ReunionDetallePageClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Contador de 30 min para acotar la duración de la reunión de Logística
+          (solo Pampeana). Local en el navegador. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && (
+        <ContadorReunion minutos={30} />
+      )}
 
       {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones) */}
       {detalle.tipo !== "logistica-ventas" && (
