@@ -424,6 +424,7 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+            puedeEditar={puedeEditar}
           />
         </TabsContent>
 

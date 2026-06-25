@@ -701,6 +701,21 @@ export async function deleteMantenimiento(
 
 // ==================== CHECK LISTS (vista mantenimiento) ====================
 
+export type ChecklistPlanTipo = "correctivo" | "preventivo" | "proactivo"
+export type ChecklistPlanEstado = "pendiente" | "en_proceso" | "resuelto"
+
+export interface ChecklistPlanAccion {
+  id: string
+  respuestaId: string
+  tipo: ChecklistPlanTipo
+  estado: ChecklistPlanEstado
+  descripcion: string
+  fotoUrl: string | null
+  fotoPath: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface ChecklistItemNoOk {
   id: string
   checklistId: string
@@ -713,6 +728,7 @@ export interface ChecklistItemNoOk {
   valor: string // nook | regular | malo
   critico: boolean
   comentario: string | null
+  plan: ChecklistPlanAccion | null
 }
 
 export interface ChecklistComentario {
@@ -764,7 +780,7 @@ export async function getChecklistsMtto(): Promise<
       item: { nombre: string; categoria: string; critico: boolean } | null
       cv: { fecha: string; dominio: string; chofer: string | null; tipo: string } | null
     }
-    const itemsNoOk: ChecklistItemNoOk[] = ((respRes.data || []) as unknown as RespRow[])
+    const itemsBase = ((respRes.data || []) as unknown as RespRow[])
       .filter((r) => r.cv && r.item)
       .map((r) => ({
         id: r.id,
@@ -779,6 +795,46 @@ export async function getChecklistsMtto(): Promise<
         critico: r.item!.critico,
         comentario: r.comentario?.trim() || null,
       }))
+
+    // Planes de acción cargados para esos ítems observados.
+    const respuestaIds = itemsBase.map((i) => i.id)
+    const planesById = new Map<string, ChecklistPlanAccion>()
+    if (respuestaIds.length > 0) {
+      const { data: planesData, error: planesErr } = await supabase
+        .from("checklist_planes_accion")
+        .select(
+          "id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at"
+        )
+        .in("respuesta_id", respuestaIds)
+      if (planesErr) throw new Error(planesErr.message)
+      type PlanRow = {
+        id: string
+        respuesta_id: string
+        tipo: ChecklistPlanTipo
+        estado: ChecklistPlanEstado
+        descripcion: string
+        foto_url: string | null
+        foto_path: string | null
+        created_at: string
+        updated_at: string
+      }
+      for (const p of (planesData || []) as PlanRow[]) {
+        planesById.set(p.respuesta_id, {
+          id: p.id,
+          respuestaId: p.respuesta_id,
+          tipo: p.tipo,
+          estado: p.estado,
+          descripcion: p.descripcion,
+          fotoUrl: p.foto_url,
+          fotoPath: p.foto_path,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+        })
+      }
+    }
+
+    const itemsNoOk: ChecklistItemNoOk[] = itemsBase
+      .map((i) => ({ ...i, plan: planesById.get(i.id) ?? null }))
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))
 
     type CvRow = {
@@ -804,6 +860,143 @@ export async function getChecklistsMtto(): Promise<
       }))
 
     return { data: { itemsNoOk, comentarios } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+const PLANES_CHECK_BUCKET = "mantenimiento-evidencias"
+const TIPOS_PLAN_CHECK = new Set(["correctivo", "preventivo", "proactivo"])
+const ESTADOS_PLAN_CHECK = new Set(["pendiente", "en_proceso", "resuelto"])
+
+/**
+ * Crea o actualiza el plan de acción de un ítem observado del checklist
+ * (1 plan por respuesta). Recibe FormData con: respuesta_id, tipo, estado,
+ * descripcion, foto (File opcional) y eliminar_foto ("1" para borrar la actual).
+ */
+export async function upsertPlanChecklist(
+  formData: FormData
+): Promise<{ data: ChecklistPlanAccion } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const respuestaId = String(formData.get("respuesta_id") || "").trim()
+    const tipo = String(formData.get("tipo") || "").trim()
+    const estado = String(formData.get("estado") || "resuelto").trim()
+    const descripcion = String(formData.get("descripcion") || "").trim()
+    if (!respuestaId) return { error: "Falta el ítem del checklist" }
+    if (!TIPOS_PLAN_CHECK.has(tipo)) return { error: "Tipo inválido (correctivo / preventivo / proactivo)" }
+    if (!ESTADOS_PLAN_CHECK.has(estado)) return { error: "Estado inválido" }
+    if (!descripcion) return { error: "Escribí qué se trabajó / reparó" }
+
+    // Plan existente (para conservar foto / created_by si corresponde).
+    const { data: existing } = await supabase
+      .from("checklist_planes_accion")
+      .select("id, foto_url, foto_path")
+      .eq("respuesta_id", respuestaId)
+      .maybeSingle()
+
+    let fotoUrl: string | null = (existing?.foto_url as string | null) ?? null
+    let fotoPath: string | null = (existing?.foto_path as string | null) ?? null
+
+    const eliminarFoto = String(formData.get("eliminar_foto") || "") === "1"
+    const file = formData.get("foto")
+    const tieneFotoNueva = file instanceof File && file.size > 0
+
+    if ((eliminarFoto || tieneFotoNueva) && fotoPath) {
+      // Borrar la foto anterior del storage antes de reemplazarla/quitarla.
+      await supabase.storage.from(PLANES_CHECK_BUCKET).remove([fotoPath])
+      fotoUrl = null
+      fotoPath = null
+    }
+
+    if (tieneFotoNueva) {
+      const f = file as File
+      const clean = f.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = `planes-check/${respuestaId}/${Date.now()}-${clean}`
+      const ab = await f.arrayBuffer()
+      const { error: upErr } = await supabase.storage
+        .from(PLANES_CHECK_BUCKET)
+        .upload(path, ab, {
+          contentType: f.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (upErr) return { error: `Subiendo foto: ${upErr.message}` }
+      const { data: pub } = supabase.storage.from(PLANES_CHECK_BUCKET).getPublicUrl(path)
+      fotoUrl = pub.publicUrl
+      fotoPath = path
+    }
+
+    const payload = {
+      respuesta_id: respuestaId,
+      tipo,
+      estado,
+      descripcion,
+      foto_url: fotoUrl,
+      foto_path: fotoPath,
+      updated_at: new Date().toISOString(),
+    }
+
+    let row
+    if (existing) {
+      const { data, error } = await supabase
+        .from("checklist_planes_accion")
+        .update(payload)
+        .eq("id", existing.id)
+        .select("id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at")
+        .single()
+      if (error) return { error: error.message }
+      row = data
+    } else {
+      const { data, error } = await supabase
+        .from("checklist_planes_accion")
+        .insert({ ...payload, created_by: profile.id })
+        .select("id, respuesta_id, tipo, estado, descripcion, foto_url, foto_path, created_at, updated_at")
+        .single()
+      if (error) return { error: error.message }
+      row = data
+    }
+
+    return {
+      data: {
+        id: row.id,
+        respuestaId: row.respuesta_id,
+        tipo: row.tipo,
+        estado: row.estado,
+        descripcion: row.descripcion,
+        fotoUrl: row.foto_url,
+        fotoPath: row.foto_path,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Elimina el plan de acción de un ítem del checklist (y su foto). */
+export async function eliminarPlanChecklist(
+  respuestaId: string
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { data: existing } = await supabase
+      .from("checklist_planes_accion")
+      .select("foto_path")
+      .eq("respuesta_id", respuestaId)
+      .maybeSingle()
+    if (existing?.foto_path) {
+      await supabase.storage.from(PLANES_CHECK_BUCKET).remove([existing.foto_path as string])
+    }
+    const { error } = await supabase
+      .from("checklist_planes_accion")
+      .delete()
+      .eq("respuesta_id", respuestaId)
+    if (error) return { error: error.message }
+    return { ok: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
