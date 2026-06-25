@@ -15,6 +15,7 @@ export interface CostoPorPdvRow {
   venta_neta: number
   costo_almacen: number
   costo_distrib: number
+  costo_distancia: number
   costo_total: number
   costo_x_bulto: number
   costo_x_hl: number
@@ -118,6 +119,7 @@ export async function getCostoPorPdv(
       venta_neta: Number(r.venta_neta),
       costo_almacen: Number(r.costo_almacen),
       costo_distrib: Number(r.costo_distrib),
+      costo_distancia: Number(r.costo_distancia ?? 0),
       costo_total: Number(r.costo_total),
       costo_x_bulto: Number(r.costo_x_bulto),
       costo_x_hl: Number(r.costo_x_hl),

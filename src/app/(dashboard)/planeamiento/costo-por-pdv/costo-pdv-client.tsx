@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Wallet,
   Percent,
@@ -545,7 +546,29 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                           <TableCell className="text-right tabular-nums">{fmtNum(f.comprobantes)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(f.hl, 1)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtMoney(f.venta_neta)}</TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">{fmtMoney(f.costo_total)}</TableCell>
+                          <TableCell className="text-right tabular-nums font-medium">
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <span className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2">
+                                    {fmtMoney(f.costo_total)}
+                                  </span>
+                                }
+                              />
+                              <TooltipContent className="w-60 items-stretch">
+                                <div className="flex w-full flex-col text-left">
+                                  <p className="mb-1 font-semibold">Composición del costo logístico</p>
+                                  <DesgloseLinea label="Almacén (depósito)" valor={f.costo_almacen} total={f.costo_total} />
+                                  <DesgloseLinea label="Distribución · entregas" valor={f.costo_distrib - f.costo_distancia} total={f.costo_total} />
+                                  <DesgloseLinea label={`Distancia (${f.ciudad})`} valor={f.costo_distancia} total={f.costo_total} />
+                                  <div className="mt-1 flex justify-between border-t border-white/20 pt-1 font-semibold">
+                                    <span>Total</span>
+                                    <span className="tabular-nums">{fmtMoney(f.costo_total)}</span>
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
                           <TableCell className="text-right">
                             <Badge className={`${b.bg} ${b.text} hover:${b.bg}`} title={b.label}>{fmtMoney(f.costo_x_hl)}</Badge>
                           </TableCell>
@@ -574,6 +597,19 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/** Una línea del tooltip de composición del costo: etiqueta, monto y % del total. */
+function DesgloseLinea({ label, valor, total }: { label: string; valor: number; total: number }) {
+  const pct = total ? (100 * valor) / total : 0
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-0.5">
+      <span className="opacity-75">{label}</span>
+      <span className="tabular-nums">
+        {fmtMoney(valor)} <span className="text-[10px] opacity-60">{fmtNum(pct, 0)}%</span>
+      </span>
     </div>
   )
 }
