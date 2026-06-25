@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, IBM_Plex_Mono } from "next/font/google"
 import { Toaster } from "sonner"
 import { EMPRESA_NOMBRE } from "@/lib/empresa"
+import { PasteImageToFileInput } from "@/components/paste-image-to-file-input"
 import "./globals.css"
 
 const inter = Inter({
@@ -30,6 +31,7 @@ export default function RootLayout({
     <html lang="es" className={`${inter.variable} ${plexMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
         {children}
+        <PasteImageToFileInput />
         <Toaster richColors position="top-right" />
       </body>
     </html>
