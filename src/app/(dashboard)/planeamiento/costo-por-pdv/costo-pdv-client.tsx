@@ -354,23 +354,26 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
             <div className="mt-3 space-y-2 text-sm text-slate-700">
               <p>
                 El costo logístico de cada PDV <strong>no se mide individualmente</strong>: es un{" "}
-                <strong>reparto</strong> del costo del mes (Distribución + Almacén) entre todos los clientes, según
-                cuánto mueven.
+                <strong>reparto</strong> del costo del mes (Distribución + Almacén) entre todos los clientes. El
+                modelo tiene <strong>3 componentes</strong>, todos anclados en datos reales (sin porcentajes inventados):
               </p>
               <ul className="list-disc space-y-1 pl-5">
-                <li><strong>Almacén</strong> → se reparte por <strong>bultos</strong>.</li>
+                <li><strong>Almacén</strong> → por <strong>bultos</strong> (depósito).</li>
                 <li>
-                  <strong>Distribución</strong> → 65% por <strong>bultos × km de la ciudad</strong> (rodaje/viaje:
-                  un bulto que viaja más lejos cuesta más) + 35% por <strong>entregas</strong> (parada).
+                  <strong>Distancia (llegar a la ciudad)</strong> → el costo de viajar a cada ciudad ={" "}
+                  <strong>km × 2 (ida y vuelta) × viajes reales</strong> del mes, valuado al{" "}
+                  <strong>$/km</strong> de la flota (Distribución ÷ km totales recorridos). Dentro de la ciudad se
+                  reparte <strong>por entregas</strong>: el que hago venir más veces, paga más del viaje.
                 </li>
                 <li>
-                  La <strong>distancia</strong> sale de los km de ruta desde el centro de distribución (Ramallo) a
-                  cada ciudad. El costo de llegar a una ciudad se reparte entre los bultos de todos sus clientes
-                  (más clientes en la zona → menos costo de viaje por cada uno).
+                  <strong>Distribución (reparto)</strong> → lo que queda de la Distribución después de sacar el
+                  costo de llegar a las ciudades; se reparte por <strong>bultos</strong> (es el costo de moverse{" "}
+                  <em>dentro</em> de la ciudad).
                 </li>
                 <li>
-                  El <strong>10% más caro</strong> se ordena por <strong>costo/HL</strong>: marca a los que están
-                  <strong> lejos</strong> y/o hacen <strong>muchas entregas por litro</strong> (compran poco y seguido).
+                  El <strong>10% más caro</strong> se ordena por <strong>costo/HL</strong>: marca a los que están{" "}
+                  <strong>lejos</strong>, en ciudades con <strong>muchos viajes</strong>, y/o con <strong>poco
+                  volumen</strong> por entrega.
                 </li>
               </ul>
               <p className="rounded-md bg-amber-100/70 p-2 text-amber-900">
@@ -559,8 +562,8 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                                 <div className="flex w-full flex-col text-left">
                                   <p className="mb-1 font-semibold">Composición del costo logístico</p>
                                   <DesgloseLinea label="Almacén (depósito)" valor={f.costo_almacen} total={f.costo_total} />
-                                  <DesgloseLinea label="Distribución · entregas" valor={f.costo_distrib - f.costo_distancia} total={f.costo_total} />
-                                  <DesgloseLinea label={`Distancia (${f.ciudad})`} valor={f.costo_distancia} total={f.costo_total} />
+                                  <DesgloseLinea label={`Distancia · llegar a ${f.ciudad}`} valor={f.costo_distancia} total={f.costo_total} />
+                                  <DesgloseLinea label="Distribución (reparto)" valor={f.costo_distrib} total={f.costo_total} />
                                   <div className="mt-1 flex justify-between border-t border-white/20 pt-1 font-semibold">
                                     <span>Total</span>
                                     <span className="tabular-nums">{fmtMoney(f.costo_total)}</span>
@@ -680,7 +683,7 @@ function PanelCarga({
         <CardTitle className="text-base">Cargar / editar costos mensuales</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">Año</Label>
             <Input type="number" value={anio} onChange={(e) => setAnio(Number(e.target.value))} />
@@ -705,14 +708,11 @@ function PanelCarga({
             <Label className="text-xs text-muted-foreground">Almacén ($)</Label>
             <Input type="number" value={almacen} onChange={(e) => setAlmacen(Number(e.target.value))} />
           </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs text-muted-foreground">Rodaje (0–1)</Label>
-            <Input type="number" step="0.05" min="0" max="1" value={wRodaje} onChange={(e) => setWRodaje(Number(e.target.value))} />
-          </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Rodaje = parte de Distribución que se reparte por <strong>volumen × distancia</strong> (bultos × km de la
-          ciudad); el resto ({Math.round((1 - wRodaje) * 100)}%) se reparte por entregas. Almacén se reparte 100% por bultos.
+          De la <strong>Distribución</strong> se descuenta primero el costo de <strong>llegar a las ciudades</strong>{" "}
+          (km × viajes reales × $/km, con el $/km = Distribución ÷ km de la flota del mes); lo que queda se reparte por
+          bultos. <strong>Almacén</strong> se reparte 100% por bultos.
         </p>
         <div className="mt-4 flex items-center gap-3">
           <Button onClick={guardar} disabled={saving}>
