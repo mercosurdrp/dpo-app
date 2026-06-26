@@ -134,6 +134,87 @@ export async function getCostoPorPdv(
   }
 }
 
+/** Resumen de un mes dentro del acumulado YTD. */
+export interface CostoYtdMes {
+  anio: number
+  mes: number
+  costo_total: number
+  venta_neta: number
+  bultos: number
+  hl: number
+  pdv: number
+}
+
+/**
+ * ACUMULADO (YTD): suma el costo logístico por PDV de TODOS los meses cargados de
+ * un año. Cada PDV se acumula sumando bultos/HL/venta/costos de cada mes; los
+ * derivados ($/HL, $/bulto, % venta, % rechazo) se recalculan sobre el total para
+ * que sigan siendo coherentes (no se promedian). Devuelve además el resumen por mes
+ * para mostrar la evolución.
+ */
+export async function getCostoPorPdvYtd(
+  anio: number,
+): Promise<{ data: CostoPorPdvRow[]; meses: CostoYtdMes[] } | { error: string }> {
+  const supabase = await createClient()
+  const { data: mesesData, error: eMeses } = await supabase
+    .from("costo_logistico_mensual")
+    .select("mes")
+    .eq("anio", anio)
+    .order("mes", { ascending: true })
+  if (eMeses) return { error: eMeses.message }
+  const meses = (mesesData ?? []).map((r) => Number(r.mes))
+  if (meses.length === 0) return { data: [], meses: [] }
+
+  // Un mes por RPC, en paralelo (Promise.all preserva el orden de `meses`).
+  const resultados = await Promise.all(meses.map((m) => getCostoPorPdv(anio, m)))
+
+  const acc = new Map<number, CostoPorPdvRow>()
+  const resumen: CostoYtdMes[] = []
+  meses.forEach((mes, i) => {
+    const res = resultados[i]
+    if ("error" in res) return
+    let cTot = 0, venta = 0, bultos = 0, hl = 0
+    for (const f of res.data) {
+      cTot += f.costo_total
+      venta += f.venta_neta
+      bultos += f.bultos
+      hl += f.hl
+      const cur = acc.get(f.id_cliente)
+      if (!cur) {
+        acc.set(f.id_cliente, { ...f })
+      } else {
+        cur.bultos += f.bultos
+        cur.comprobantes += f.comprobantes
+        cur.hl += f.hl
+        cur.venta_neta += f.venta_neta
+        cur.costo_almacen += f.costo_almacen
+        cur.costo_distrib += f.costo_distrib
+        cur.costo_distancia += f.costo_distancia
+        cur.costo_total += f.costo_total
+        cur.bultos_rechazados += f.bultos_rechazados
+        cur.eventos_rechazo += f.eventos_rechazo
+        // Me quedo con la ciudad/nombre informados (por si un mes vino sin ciudad).
+        if ((!cur.ciudad || cur.ciudad === "(sin ciudad)") && f.ciudad) cur.ciudad = f.ciudad
+        if (!cur.nombre_cliente && f.nombre_cliente) cur.nombre_cliente = f.nombre_cliente
+      }
+    }
+    resumen.push({ anio, mes, costo_total: cTot, venta_neta: venta, bultos, hl, pdv: res.data.length })
+  })
+
+  // Recalcular los derivados sobre los totales acumulados.
+  const filas = [...acc.values()].map((f) => ({
+    ...f,
+    costo_x_bulto: f.bultos ? f.costo_total / f.bultos : 0,
+    costo_x_hl: f.hl ? f.costo_total / f.hl : 0,
+    pct_venta: f.venta_neta ? (100 * f.costo_total) / f.venta_neta : 0,
+    pct_rechazo:
+      f.bultos + f.bultos_rechazados
+        ? (100 * f.bultos_rechazados) / (f.bultos + f.bultos_rechazados)
+        : 0,
+  }))
+  return { data: filas, meses: resumen }
+}
+
 /**
  * SIMULACIÓN: costo logístico por PDV recalculando el modelo con un centro de
  * distribución y distancias (km por ciudad) ALTERNATIVOS, sin tocar la tabla

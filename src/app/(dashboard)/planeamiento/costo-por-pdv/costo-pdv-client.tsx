@@ -37,6 +37,7 @@ import {
   type KmCiudad,
 } from "@/actions/costo-pdv"
 import { SimulacionTab } from "./simulacion-tab"
+import { AcumuladoTab } from "./acumulado-tab"
 
 const MESES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -118,7 +119,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
   const [sortKey, setSortKey] = useState<SortKey>("costo_x_hl")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [panelOpen, setPanelOpen] = useState(false)
-  const [tab, setTab] = useState<"detalle" | "simulacion">("detalle")
+  const [tab, setTab] = useState<"detalle" | "acumulado" | "simulacion">("detalle")
 
   const costoMes = useMemo(
     () => costos.find((c) => sel && c.anio === sel.anio && c.mes === sel.mes) ?? null,
@@ -292,6 +293,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       <div className="flex gap-1 border-b">
         {([
           { k: "detalle", label: "Detalle" },
+          { k: "acumulado", label: "Acumulado (YTD)" },
           { k: "simulacion", label: "Simulación" },
         ] as const).map((t) => (
           <button
@@ -311,6 +313,8 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
       {tab === "simulacion" ? (
         <SimulacionTab sel={sel} filasReales={filas} />
+      ) : tab === "acumulado" ? (
+        <AcumuladoTab costos={costos} kmCiudades={kmCiudades} anioInicial={sel?.anio ?? null} />
       ) : (
         <>
       {/* Selector de mes */}
