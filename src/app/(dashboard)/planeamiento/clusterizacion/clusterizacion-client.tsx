@@ -191,11 +191,13 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
               promedio últimos 6 meses por cliente (cruce R4.2.2 con OTIF/RMD
               pendiente de OTIF por PDV). El{" "}
               <strong>drop size</strong> (bultos/visita) es un{" "}
-              <em>proxy del costo de servir</em> que pide el manual — el costo
-              logístico real por PDV aún no está disponible. El flag{" "}
-              <strong className="text-red-600">No pasa</strong> marca a los clientes con{" "}
-              <strong>≥ 1,7% de rechazo</strong> en la ventana: siguen en su cluster, pero quedan señalados
-              como problema de entrega.
+              <em>proxy del costo de servir</em>. El <strong>Estado de servicio</strong> es un eje de calidad
+              superpuesto al cluster económico:{" "}
+              <strong className="text-red-600">No pasa</strong> = rechaza reiteradamente (≥ 2 entregas
+              rechazadas);{" "}
+              <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis) o RMD bajo
+              (&lt; 4,5); <strong className="text-emerald-600">Sano</strong> = el resto. El cliente{" "}
+              <strong>no cambia de cluster</strong>; solo queda señalado.
             </p>
           </div>
         </CardContent>
@@ -271,9 +273,11 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>No pasan (rechazo)</span>
-                      <span className={`font-medium ${(r?.no_pasan ?? 0) > 0 ? "text-red-600" : ""}`}>
-                        {fmtNum(r?.no_pasan ?? 0)}
+                      <span>Salud (no pasa/atenc.)</span>
+                      <span className="font-medium">
+                        <span className="text-red-600">{fmtNum(r?.no_pasan ?? 0)}</span>
+                        {" / "}
+                        <span className="text-amber-600">{fmtNum(r?.en_atencion ?? 0)}</span>
                       </span>
                     </div>
                   </div>
@@ -320,7 +324,7 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                   <TableHead className="text-right">Crec.</TableHead>
                   <TableHead className="text-right">Drop size</TableHead>
                   <TableHead className="text-right">RMD</TableHead>
-                  <TableHead className="text-right">Rechazo</TableHead>
+                  <TableHead className="text-right">Estado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -371,14 +375,28 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-right text-sm">
-                        {c.no_pasa ? (
-                          <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
-                            No pasa · {fmtNum(c.rechazo_pct, 1)}%
-                          </Badge>
-                        ) : c.rechazo_pct > 0 ? (
-                          <span className="text-muted-foreground">{fmtNum(c.rechazo_pct, 1)}%</span>
+                        {c.estado === "no_pasa" ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
+                              No pasa
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              {fmtNum(c.rechazos_eventos)} rech.
+                            </span>
+                          </div>
+                        ) : c.estado === "atencion" ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                              Atención
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              {[c.drop_bajo ? "drop bajo" : null, c.rmd_bajo ? "RMD bajo" : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </div>
                         ) : (
-                          "—"
+                          <span className="text-xs text-emerald-600">Sano</span>
                         )}
                       </TableCell>
                     </TableRow>

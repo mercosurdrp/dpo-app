@@ -16,8 +16,11 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA =
   "La clusterización de clientes solo está disponible en Pampeana."
 
-// Un cliente "no pasa" su cluster si su % de rechazo en la ventana supera esto.
-const UMBRAL_RECHAZO_PCT = 1.7
+// Estado de salud de servicio (superpuesto al cluster económico):
+// "no pasa" si rechaza reiteradamente; "atención" si es caro/flojo de servir.
+const RECHAZO_EVENTOS_NO_PASA = 2 // entregas rechazadas en la ventana
+const DROP_BAJO = 3 // bultos por visita por debajo de esto = caro de servir
+const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
 
 function mediana(valores: number[]): number {
   if (valores.length === 0) return 0
@@ -72,9 +75,9 @@ async function getRmdPorCliente(
 async function getRechazoPorCliente(
   desde: string,
   hasta: string,
-): Promise<Map<number, number>> {
+): Promise<Map<number, { bultos: number; eventos: number }>> {
   const supabase = await createClient()
-  const acc = new Map<number, number>()
+  const acc = new Map<number, { bultos: number; eventos: number }>()
   const PAGE = 1000
   let from = 0
   while (true) {
@@ -87,7 +90,10 @@ async function getRechazoPorCliente(
     if (error) break // rechazo es opcional: si falla, seguimos sin él
     if (!data || data.length === 0) break
     for (const r of data as { id_cliente: number; bultos_rechazados: number | null }[]) {
-      acc.set(r.id_cliente, (acc.get(r.id_cliente) ?? 0) + Number(r.bultos_rechazados ?? 0))
+      const prev = acc.get(r.id_cliente) ?? { bultos: 0, eventos: 0 }
+      prev.bultos += Number(r.bultos_rechazados ?? 0)
+      prev.eventos += 1 // cada fila = una entrega rechazada
+      acc.set(r.id_cliente, prev)
     }
     if (data.length < PAGE) break
     from += PAGE
@@ -143,7 +149,7 @@ export async function getClusterizacion(
   const rechazoMap =
     periodo.actual_desde && periodo.actual_hasta
       ? await getRechazoPorCliente(periodo.actual_desde, periodo.actual_hasta)
-      : new Map<number, number>()
+      : new Map<number, { bultos: number; eventos: number }>()
 
   // Umbral de ingresos = mediana de los ingresos del período actual.
   const umbral = mediana(rows.map((r) => r.ingresos_actual))
@@ -158,9 +164,21 @@ export async function getClusterizacion(
     const ingresoAlto = r.ingresos_actual >= umbral
     const drop_size = r.dias_actual > 0 ? r.bultos_actual / r.dias_actual : 0
     const rmd = rmdMap.get(r.id_cliente)
-    const rechazos_bultos = rechazoMap.get(r.id_cliente) ?? 0
+    const rmd_prom = rmd ? rmd.suma / rmd.n : null
+    const rech = rechazoMap.get(r.id_cliente)
+    const rechazos_bultos = rech?.bultos ?? 0
+    const rechazos_eventos = rech?.eventos ?? 0
     const baseRech = r.bultos_actual + rechazos_bultos
     const rechazo_pct = baseRech > 0 ? (100 * rechazos_bultos) / baseRech : 0
+    // Estado de salud: rechazo reiterado manda; si no, drop/RMD bajo = atención.
+    const drop_bajo = r.dias_actual > 0 && drop_size < DROP_BAJO
+    const rmd_bajo = rmd_prom != null && rmd_prom < RMD_BAJO
+    const estado: "no_pasa" | "atencion" | "sano" =
+      rechazos_eventos >= RECHAZO_EVENTOS_NO_PASA
+        ? "no_pasa"
+        : drop_bajo || rmd_bajo
+          ? "atencion"
+          : "sano"
     return {
       id_cliente: r.id_cliente,
       nombre: r.nombre,
@@ -174,11 +192,14 @@ export async function getClusterizacion(
       bultos_actual: r.bultos_actual,
       dias_actual: r.dias_actual,
       drop_size,
-      rmd_prom: rmd ? rmd.suma / rmd.n : null,
+      rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
       rechazos_bultos,
+      rechazos_eventos,
       rechazo_pct,
-      no_pasa: rechazo_pct >= UMBRAL_RECHAZO_PCT,
+      drop_bajo,
+      rmd_bajo,
+      estado,
     }
   })
 
@@ -217,7 +238,9 @@ export async function getClusterizacion(
           : 0,
       rmd_prom,
       rmd_n,
-      no_pasan: grupo.filter((c) => c.no_pasa).length,
+      no_pasan: grupo.filter((c) => c.estado === "no_pasa").length,
+      en_atencion: grupo.filter((c) => c.estado === "atencion").length,
+      sanos: grupo.filter((c) => c.estado === "sano").length,
     }
   })
 

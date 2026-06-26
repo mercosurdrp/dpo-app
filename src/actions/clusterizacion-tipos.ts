@@ -35,10 +35,21 @@ export interface ClienteClusterizado {
   rmd_n: number
   /** Bultos rechazados del cliente en la ventana. */
   rechazos_bultos: number
+  /** Entregas con rechazo en la ventana (cada fila de `rechazos` = una entrega). */
+  rechazos_eventos: number
   /** % de rechazo = bultos rechazados / (vendidos + rechazados) × 100. */
   rechazo_pct: number
-  /** "No pasa": rechazo_pct ≥ umbral (1,7%). Flag superpuesto, NO cambia el cluster. */
-  no_pasa: boolean
+  /** Señal de salud: drop size por debajo del piso (caro de servir). */
+  drop_bajo: boolean
+  /** Señal de salud: RMD promedio por debajo del piso (mal servicio percibido). */
+  rmd_bajo: boolean
+  /**
+   * Estado de servicio (salud), superpuesto al cluster:
+   * - "no_pasa": rechaza reiteradamente (≥ 2 entregas rechazadas).
+   * - "atencion": no rechaza reiterado pero tiene drop bajo o RMD bajo.
+   * - "sano": ninguna señal.
+   */
+  estado: "no_pasa" | "atencion" | "sano"
 }
 
 export interface ClusterResumen {
@@ -50,8 +61,10 @@ export interface ClusterResumen {
   drop_size_prom: number
   rmd_prom: number | null
   rmd_n: number
-  /** Clientes del cluster que "no pasan" por rechazo reiterado (≥ 1,7%). */
+  /** Clientes del cluster por estado de salud de servicio. */
   no_pasan: number
+  en_atencion: number
+  sanos: number
 }
 
 export interface ClusterizacionData {
