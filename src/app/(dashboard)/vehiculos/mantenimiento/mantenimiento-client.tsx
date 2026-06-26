@@ -452,42 +452,6 @@ export function MantenimientoClient({
         )}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <AlertTriangle className="size-4 text-red-500" /> Tareas vencidas
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={cn("text-2xl font-bold", kpis.vencidas > 0 ? "text-red-600" : "text-slate-900")}>
-              {kpis.vencidas}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <CalendarClock className="size-4 text-amber-500" /> Próximas a vencer
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{kpis.proximas}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <CircleDollarSign className="size-4 text-emerald-600" /> Costo del mes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{fmtMoney(costos.costoMes)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
@@ -502,6 +466,42 @@ export function MantenimientoClient({
 
         {/* ============ TAB: Tablero operativo ============ */}
         <TabsContent value="tablero" className="space-y-6">
+          {/* KPIs (solo en el tablero operativo) */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                  <AlertTriangle className="size-4 text-red-500" /> Tareas vencidas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={cn("text-2xl font-bold", kpis.vencidas > 0 ? "text-red-600" : "text-slate-900")}>
+                  {kpis.vencidas}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                  <CalendarClock className="size-4 text-amber-500" /> Próximas a vencer
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-slate-900">{kpis.proximas}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                  <CircleDollarSign className="size-4 text-emerald-600" /> Costo del mes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-slate-900">{fmtMoney(costos.costoMes)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <TableroOperativo
             programacion={tablero.programacion}
             otPendientes={otPendientes}
