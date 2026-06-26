@@ -2977,6 +2977,7 @@ export type TipoReunion =
   | "logistica-ventas"
   | "matinal-distribucion"
   | "warehouse"
+  | "presupuesto"
 
 export type EstadoReunionCompromiso = "pendiente" | "en_progreso" | "completado"
 

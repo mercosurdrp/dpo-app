@@ -12,6 +12,8 @@ import { LogisticaTab } from "@/components/reuniones/logistica-tab"
 import { LogisticaVentasTab } from "@/components/reuniones/logistica-ventas-tab"
 import { MatinalDistribucionTab } from "@/components/reuniones/matinal-distribucion-tab"
 import { WarehouseTab } from "@/components/reuniones/warehouse-tab"
+import { PresupuestoTab } from "@/components/reuniones/presupuesto-tab"
+import { IS_MISIONES } from "@/lib/empresa"
 
 export function ReunionesClient() {
   const [tab, setTab] = useState<string>("logistica")
@@ -44,6 +46,11 @@ export function ReunionesClient() {
           <TabsTrigger value="warehouse" className="flex-none">
             Warehouse
           </TabsTrigger>
+          {!IS_MISIONES && (
+            <TabsTrigger value="presupuesto" className="flex-none">
+              Presupuesto
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="logistica" className="mt-4">
@@ -58,6 +65,11 @@ export function ReunionesClient() {
         <TabsContent value="warehouse" className="mt-4">
           <WarehouseTab />
         </TabsContent>
+        {!IS_MISIONES && (
+          <TabsContent value="presupuesto" className="mt-4">
+            <PresupuestoTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

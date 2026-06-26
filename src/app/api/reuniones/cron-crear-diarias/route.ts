@@ -8,6 +8,29 @@ interface ReunionTipoConfigRow {
   tipo: string
   nombre: string
   dias_semana: number[]
+  regla_especial: string | null
+}
+
+/**
+ * Fechas objetivo de las reuniones de Presupuesto para el mes de `iso`
+ * (regla_especial = 'quincena_2'):
+ *   1) Primer día hábil a partir del 16 (si el 16 cae sáb/dom → lunes).
+ *   2) Una semana después de esa primera reunión (+7 días; al conservar el
+ *      día de semana de un hábil, sigue siendo hábil).
+ * Devuelve ["YYYY-MM-DD", "YYYY-MM-DD"].
+ */
+function presupuestoTargets(iso: string): string[] {
+  const [y, m] = iso.split("-").map(Number)
+  // El 16 del mes (índice de mes 0-based) en UTC para evitar corrimientos.
+  const d16 = new Date(Date.UTC(y, m - 1, 16))
+  const dow = d16.getUTCDay() // 0 = dom, 6 = sáb
+  const offset = dow === 6 ? 2 : dow === 0 ? 1 : 0
+  const primera = new Date(Date.UTC(y, m - 1, 16 + offset))
+  const segunda = new Date(primera)
+  segunda.setUTCDate(segunda.getUTCDate() + 7)
+  const fmt = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+  return [fmt(primera), fmt(segunda)]
 }
 
 /**
@@ -42,7 +65,7 @@ export async function GET(req: Request) {
   // Cargar todos los tipos
   const { data: tiposRaw, error: errTipos } = await supabase
     .from("reuniones_tipos_config")
-    .select("tipo, nombre, dias_semana")
+    .select("tipo, nombre, dias_semana, regla_especial")
 
   if (errTipos) {
     return NextResponse.json({ error: errTipos.message }, { status: 500 })
@@ -54,7 +77,17 @@ export async function GET(req: Request) {
   const skipped: { tipo: string; motivo: string }[] = []
 
   for (const t of tipos) {
-    if (!Array.isArray(t.dias_semana) || !t.dias_semana.includes(weekday)) {
+    // Tipos con regla especial de fecha (ej: Presupuesto) no usan días de
+    // semana: se crean solo en sus fechas objetivo del mes.
+    if (t.regla_especial === "quincena_2") {
+      if (!presupuestoTargets(hoyIso).includes(hoyIso)) {
+        skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
+        continue
+      }
+    } else if (
+      !Array.isArray(t.dias_semana) ||
+      !t.dias_semana.includes(weekday)
+    ) {
       skipped.push({ tipo: t.tipo, motivo: "dia_no_habilitado" })
       continue
     }

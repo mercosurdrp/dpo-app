@@ -96,6 +96,10 @@ const DESTINOS_POR_TIPO: Record<
     // No se muestra el selector; default 'simple'.
     { value: "simple", label: "Simple" },
   ],
+  presupuesto: [
+    // Reunión de presupuesto: compromisos simples (default).
+    { value: "simple", label: "Simple" },
+  ],
 }
 
 export function ActividadFormDialog({

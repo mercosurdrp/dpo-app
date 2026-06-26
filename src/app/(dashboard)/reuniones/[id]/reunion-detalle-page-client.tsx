@@ -167,6 +167,7 @@ const TIPO_LABELS: Record<TipoReunion, string> = {
   "logistica-ventas": "Logística + Ventas",
   "matinal-distribucion": "Matinal Distribución",
   warehouse: "Warehouse",
+  presupuesto: "Presupuesto",
 }
 
 function formatFechaLarga(iso: string | null): string {
