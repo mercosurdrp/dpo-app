@@ -274,15 +274,28 @@ export function kmActualRobustoPorDominio(
 
     const ancla = anclas.get(dom) ?? null
     let best: { odometro: number; fecha: string } | null = null
+    // Última lectura ACEPTADA (arranca en el ancla del service si existe), para
+    // detectar saltos imposibles de una lectura a la siguiente.
+    let prev: { odometro: number; fecha: string } | null = ancla
+      ? { odometro: ancla.odometro, fecha: ancla.fecha }
+      : null
 
     for (const l of arr) {
       if (ancla != null) {
         if (l.fecha < ancla.fecha) continue // anterior al service
         if (l.odometro < ancla.odometro) continue // por debajo del km del service
         const dias = Math.max(1, daysBetween(ancla.fecha, l.fecha))
-        if ((l.odometro - ancla.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue // outlier
+        if ((l.odometro - ancla.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue // outlier vs service
+      }
+      // Salto imposible respecto de la última lectura aceptada: típico tipeo de
+      // un dígito de más (p. ej. 136.084 → 186.084 en un día). Se descarta para
+      // que un error de carga no dispare un "service vencido" falso.
+      if (prev != null && l.odometro >= prev.odometro) {
+        const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
+        if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
       }
       best = { odometro: l.odometro, fecha: l.fecha } // la más reciente plausible gana
+      prev = best
     }
 
     if (best != null) result.set(dom, best)
