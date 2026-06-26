@@ -3983,6 +3983,25 @@ async function getIndicadoresMesCore(
         }
       }
 
+      // Precisión de picking: nunca reportar 100%. Aunque el redondeo a 2
+      // decimales llegue a 100,00 (p. ej. 99,996%), siempre hubo algún error,
+      // así que se topea en 99,9% para no mostrar una precisión "perfecta"
+      // que queda desprolija. Se aplica sobre la serie cruda, de modo que
+      // tanto las celdas diarias como el MTD (promedio) queden por debajo de
+      // 100. Pedido de negocio.
+      function capPrecision(
+        porFecha: Record<string, number | null>,
+      ): Record<string, number | null> {
+        const out: Record<string, number | null> = {}
+        for (const [f, v] of Object.entries(porFecha)) {
+          out[f] =
+            v != null && Number.isFinite(v) && Math.round(v * 100) / 100 >= 100
+              ? 99.9
+              : v
+        }
+        return out
+      }
+
       // Métricas acumuladas día por día (MTD progresivo: cada celda ya tiene
       // el valor acumulado desde el 1° hasta ese día). El MTD del indicador
       // es el valor en la fecha de la reunión (el último acumulado conocido).
@@ -4221,7 +4240,7 @@ async function getIndicadoresMesCore(
             "auto_precision_picking",
             "Precision picking",
             "%",
-            serie.precision,
+            capPrecision(serie.precision),
             "promedio",
             99.8,
             "mayor",
@@ -4307,7 +4326,7 @@ async function getIndicadoresMesCore(
             "auto_precision_picking",
             "Precision picking",
             "%",
-            serie.precision,
+            capPrecision(serie.precision),
             "promedio",
             99.8,
             "mayor",
