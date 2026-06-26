@@ -421,12 +421,11 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Localidad</TableHead>
                       <TableHead>Cluster</TableHead>
+                      <TableHead>Estado / Salud</TableHead>
                       <TableHead className="text-right">Facturación YTD</TableHead>
                       <TableHead className="text-right">Crec.</TableHead>
                       <TableHead className="text-right">Drop size</TableHead>
                       <TableHead className="text-right">RMD</TableHead>
-                      <TableHead className="text-right">Estado</TableHead>
-                      <TableHead className="text-right">Salud</TableHead>
                       <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -435,16 +434,18 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                       const meta = CLUSTER_META[c.cluster]
                       return (
                         <TableRow key={c.id_cliente}>
-                          <TableCell>
-                            <div className="font-medium text-slate-900">
+                          <TableCell className="max-w-[170px]">
+                            <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
                               {c.nombre ?? `Cliente ${c.id_cliente}`}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="truncate text-xs text-muted-foreground">
                               #{c.id_cliente}
                               {c.promotor ? ` · ${c.promotor}` : ""}
                             </div>
                           </TableCell>
-                          <TableCell className="text-sm text-slate-600">{c.localidad ?? "—"}</TableCell>
+                          <TableCell className="max-w-[100px] truncate text-sm text-slate-600" title={c.localidad ?? undefined}>
+                            {c.localidad ?? "—"}
+                          </TableCell>
                           <TableCell>
                             <Badge
                               variant="secondary"
@@ -452,6 +453,29 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                             >
                               {CLUSTER_LABELS[c.cluster]}
                             </Badge>
+                          </TableCell>
+                          {/* Estado / Salud combinados (siempre visibles) */}
+                          <TableCell>
+                            <div className="flex flex-col gap-0.5">
+                              {c.estado === "no_pasa" ? (
+                                <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100">
+                                  No pasa
+                                  <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)} rech.</span>
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-emerald-600">Pasa</span>
+                              )}
+                              {c.salud === "atencion" ? (
+                                <Badge variant="secondary" className="w-fit bg-amber-100 text-amber-700 hover:bg-amber-100">
+                                  Atención
+                                  <span className="ml-1 text-[10px] opacity-70">
+                                    {[c.drop_bajo ? "drop" : null, c.rmd_bajo ? "RMD" : null].filter(Boolean).join("·")}
+                                  </span>
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-emerald-600">Sano</span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
                           <TableCell className="text-right">
@@ -468,34 +492,6 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                               "—"
                             )}
                           </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {c.estado === "no_pasa" ? (
-                              <div className="flex flex-col items-end gap-0.5">
-                                <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
-                                  No pasa
-                                </Badge>
-                                <span className="text-[10px] text-muted-foreground">{fmtNum(c.rechazos_culpa)} rech.</span>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-emerald-600">Pasa</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {c.salud === "atencion" ? (
-                              <div className="flex flex-col items-end gap-0.5">
-                                <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100">
-                                  Atención
-                                </Badge>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {[c.drop_bajo ? "drop bajo" : null, c.rmd_bajo ? "RMD bajo" : null]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-emerald-600">Sano</span>
-                            )}
-                          </TableCell>
                           <TableCell className="text-right">
                             <Button variant="outline" size="sm" onClick={() => setPlanCliente(c)}>
                               <ClipboardList className="h-4 w-4" /> Plan
@@ -506,7 +502,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                     })}
                     {visibles.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                           Sin clientes para los filtros aplicados.
                         </TableCell>
                       </TableRow>
