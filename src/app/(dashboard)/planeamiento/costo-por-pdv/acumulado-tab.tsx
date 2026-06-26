@@ -30,9 +30,9 @@ const fmtNum = (n: number, d = 0) =>
 
 // Mismas bandas de eficiencia que la solapa Detalle, pero sobre el acumulado del año.
 const BANDAS = [
-  { key: "caro", label: "10% más caro", hint: "top 10% costo/HL", bg: "bg-red-50", text: "text-red-700" },
-  { key: "resto", label: "Resto", hint: "costo/HL normal", bg: "bg-green-50", text: "text-green-700" },
-  { key: "bajo", label: "Bajo volumen", hint: "HL no representativo", bg: "bg-slate-100", text: "text-slate-600" },
+  { key: "caro", label: "10% más caro", hint: "top 10% costo/HL", color: "#dc2626", bg: "bg-red-50", text: "text-red-700" },
+  { key: "resto", label: "Resto", hint: "costo/HL normal", color: "#16a34a", bg: "bg-green-50", text: "text-green-700" },
+  { key: "bajo", label: "Bajo volumen", hint: "HL no representativo", color: "#64748b", bg: "bg-slate-100", text: "text-slate-600" },
 ] as const
 
 function quantile(sorted: number[], q: number) {
@@ -80,6 +80,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
   const [isPending, startTransition] = useTransition()
 
   const [q, setQ] = useState("")
+  const [bandaFiltro, setBandaFiltro] = useState<string | null>(null)
   const [ciudadFiltro, setCiudadFiltro] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>("costo_x_hl")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
@@ -133,6 +134,19 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
     }
   }, [filas, cortes])
 
+  // Conteo por banda (10% más caro / resto / bajo volumen) sobre el acumulado.
+  const porBanda = useMemo(() => {
+    const m = new Map<string, { pdv: number; venta: number; costo: number }>()
+    for (const b of BANDAS) m.set(b.key, { pdv: 0, venta: 0, costo: 0 })
+    for (const f of filas) {
+      const acc = m.get(clasificar(f, cortes).key)!
+      acc.pdv++
+      acc.venta += f.venta_neta
+      acc.costo += f.costo_total
+    }
+    return m
+  }, [filas, cortes])
+
   // Resumen por ciudad acumulado (ordenado por costo desc).
   const porCiudad = useMemo(() => {
     const m = new Map<string, { pdv: number; venta: number; costo: number; bultos: number; hl: number }>()
@@ -156,6 +170,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
         (f) => f.nombre_cliente.toLowerCase().includes(t) || String(f.id_cliente).includes(t),
       )
     }
+    if (bandaFiltro) arr = arr.filter((f) => clasificar(f, cortes).key === bandaFiltro)
     if (ciudadFiltro) arr = arr.filter((f) => f.ciudad === ciudadFiltro)
     const dir = sortDir === "asc" ? 1 : -1
     arr = [...arr].sort((a, b) => {
@@ -166,7 +181,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
       return ((va as number) - (vb as number)) * dir
     })
     return arr
-  }, [filas, q, ciudadFiltro, sortKey, sortDir])
+  }, [filas, q, bandaFiltro, ciudadFiltro, sortKey, sortDir, cortes])
 
   const LIMITE = 150
   const visibles = filasVista.slice(0, LIMITE)
@@ -275,6 +290,49 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
               alerta={kpis.criticos > 0}
             />
           </div>
+
+          {/* Distribución por banda (clickeable) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">PDV por costo/HL del año — el 10% más caro de servir</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {BANDAS.map((b) => {
+                  const d = porBanda.get(b.key)!
+                  const activo = bandaFiltro === b.key
+                  return (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => setBandaFiltro(activo ? null : b.key)}
+                      className={`rounded-lg border p-3 text-left transition-all ${b.bg} ${
+                        activo ? "ring-2 ring-offset-1" : "hover:brightness-95"
+                      }`}
+                      style={activo ? { ["--tw-ring-color" as string]: b.color } : undefined}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-semibold ${b.text}`}>{b.label}</span>
+                        <span className={`text-lg font-bold ${b.text}`}>{fmtNum(d.pdv)}</span>
+                      </div>
+                      <p className={`text-[10px] uppercase tracking-wide ${b.text} opacity-70`}>{b.hint}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Venta {fmtMoney(d.venta)} · Costo {fmtMoney(d.costo)}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+              {bandaFiltro && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Filtrando por banda {BANDAS.find((b) => b.key === bandaFiltro)?.label}.{" "}
+                  <button type="button" className="underline" onClick={() => setBandaFiltro(null)}>
+                    Quitar filtro
+                  </button>
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Evolución mes a mes */}
           <Card>
