@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Wallet,
   Percent,
@@ -270,6 +270,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
   }
 
   return (
+    <TooltipProvider delay={150}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -674,6 +675,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
         </>
       )}
     </div>
+    </TooltipProvider>
   )
 }
 
