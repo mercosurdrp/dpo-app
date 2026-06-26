@@ -74,7 +74,7 @@ async function getRmdPorCliente(
  */
 interface RechazoAcum {
   total: number
-  /** Entregas rechazadas POR CULPA DEL CLIENTE, evento por evento. */
+  /** Entregas (comprobantes) rechazadas POR CULPA DEL CLIENTE, una por entrega. */
   eventos: { fecha: string; motivo: string; bultos: number }[]
 }
 
@@ -83,29 +83,47 @@ async function getRechazoPorCliente(
   hasta: string,
 ): Promise<Map<number, RechazoAcum>> {
   const supabase = await createClient()
-  const acc = new Map<number, RechazoAcum>()
+  // 🚨 `rechazos` tiene UNA FILA POR LÍNEA DE PRODUCTO. Una entrega rechazada =
+  // un comprobante (serie + nrodoc), que puede tener muchas líneas. Primero junto
+  // las líneas por entrega; recién después contamos entregas.
+  type Entrega = { id_cliente: number; fecha: string; bultos: number; motivos: Map<string, number> }
+  const entregas = new Map<string, Entrega>()
   const PAGE = 1000
   let from = 0
   while (true) {
     const { data, error } = await supabase
       .from("rechazos")
-      .select("id_cliente, fecha, ds_rechazo, bultos_rechazados")
+      .select("id_cliente, fecha, serie, nrodoc, ds_rechazo, bultos_rechazados")
       .gte("fecha", desde)
       .lte("fecha", hasta)
       .range(from, from + PAGE - 1)
     if (error) break // rechazo es opcional: si falla, seguimos sin él
     if (!data || data.length === 0) break
-    for (const r of data as { id_cliente: number; fecha: string; ds_rechazo: string | null; bultos_rechazados: number | null }[]) {
-      const prev = acc.get(r.id_cliente) ?? { total: 0, eventos: [] }
-      prev.total += 1 // cada fila = una entrega rechazada
+    for (const r of data as {
+      id_cliente: number; fecha: string; serie: number | null; nrodoc: number | null
+      ds_rechazo: string | null; bultos_rechazados: number | null
+    }[]) {
+      const key = `${r.id_cliente}|${r.serie ?? "?"}|${r.nrodoc ?? "?"}`
+      const e = entregas.get(key) ?? { id_cliente: r.id_cliente, fecha: r.fecha, bultos: 0, motivos: new Map() }
+      e.bultos += Number(r.bultos_rechazados ?? 0)
       const motivo = (r.ds_rechazo ?? "").trim().toUpperCase()
-      if (MOTIVOS_CULPA_CLIENTE.has(motivo)) {
-        prev.eventos.push({ fecha: r.fecha, motivo, bultos: Number(r.bultos_rechazados ?? 0) })
-      }
-      acc.set(r.id_cliente, prev)
+      e.motivos.set(motivo, (e.motivos.get(motivo) ?? 0) + 1)
+      entregas.set(key, e)
     }
     if (data.length < PAGE) break
     from += PAGE
+  }
+  // Cada entrega = 1 evento; su motivo es el predominante de sus líneas.
+  const acc = new Map<number, RechazoAcum>()
+  for (const e of entregas.values()) {
+    const prev = acc.get(e.id_cliente) ?? { total: 0, eventos: [] }
+    prev.total += 1
+    let motivo = "", max = 0
+    for (const [m, c] of e.motivos) if (c > max) { max = c; motivo = m }
+    if (MOTIVOS_CULPA_CLIENTE.has(motivo)) {
+      prev.eventos.push({ fecha: e.fecha, motivo, bultos: e.bultos })
+    }
+    acc.set(e.id_cliente, prev)
   }
   return acc
 }
