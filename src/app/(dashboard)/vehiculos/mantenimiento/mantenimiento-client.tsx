@@ -313,6 +313,7 @@ export function MantenimientoClient({
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [nuevoPrefill, setNuevoPrefill] = useState<{ dominio?: string; tareaId?: string }>({})
   const [editMant, setEditMant] = useState<MantenimientoRealizado | null>(null)
+  const [verMant, setVerMant] = useState<MantenimientoRealizado | null>(null)
   const [deleteMantId, setDeleteMantId] = useState<string | null>(null)
   const [tareaEdit, setTareaEdit] = useState<MantenimientoPlanTarea | null>(null)
   const [nuevaTareaOpen, setNuevaTareaOpen] = useState(false)
@@ -669,7 +670,14 @@ export function MantenimientoClient({
                   </TableHeader>
                   <TableBody>
                     {mantenimientosFiltrados.map((m, i) => (
-                      <TableRow key={m.id} className={cn(i % 2 === 1 && "bg-slate-50/60")}>
+                      <TableRow
+                        key={m.id}
+                        onClick={() => setVerMant(m)}
+                        className={cn(
+                          "cursor-pointer hover:bg-sky-50",
+                          i % 2 === 1 && "bg-slate-50/60"
+                        )}
+                      >
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
                         <TableCell className="font-medium">{m.dominio}</TableCell>
                         <TableCell>
@@ -711,6 +719,7 @@ export function MantenimientoClient({
                                   href={url}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
                                   className="inline-flex items-center gap-0.5 text-xs text-sky-600 hover:underline"
                                 >
                                   <Paperclip className="size-3" /> Factura{i > 0 ? ` ${i + 1}` : ""}
@@ -730,11 +739,11 @@ export function MantenimientoClient({
                         <TableCell className="text-right tabular-nums">
                           {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <DisponibilidadCell m={m} puedeEditar={puedeEditar} onChanged={refresh} />
                         </TableCell>
                         {puedeEditar && (
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-1">
                               <Button
                                 variant="ghost"
@@ -941,6 +950,20 @@ export function MantenimientoClient({
           onSaved={() => {
             setNuevoOpen(false)
             refresh()
+          }}
+        />
+      )}
+
+      {verMant && (
+        <DetalleOrdenDialog
+          mantenimiento={verMant}
+          tareasById={tareasById}
+          puedeEditar={puedeEditar}
+          onClose={() => setVerMant(null)}
+          onEditar={() => {
+            const m = verMant
+            setVerMant(null)
+            setEditMant(m)
           }}
         />
       )}
@@ -1394,6 +1417,189 @@ function FacturasInput({
         </div>
       )}
     </div>
+  )
+}
+
+// ==================== Dialog: ver orden de trabajo ====================
+
+function DetalleOrdenDialog({
+  mantenimiento: m,
+  tareasById,
+  puedeEditar,
+  onClose,
+  onEditar,
+}: {
+  mantenimiento: MantenimientoRealizado
+  tareasById: Map<string, MantenimientoPlanTarea>
+  puedeEditar: boolean
+  onClose: () => void
+  onEditar: () => void
+}) {
+  const tareas = m.tareas || []
+  const fueraServicio = !!m.fuera_servicio_desde
+  const facturas = m.evidencia_urls ?? []
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            <Wrench className="size-4 text-slate-400" />
+            Orden de trabajo · {m.dominio}
+          </DialogTitle>
+          <DialogDescription>
+            {fmtFecha(m.fecha)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 text-sm">
+          {/* Estado / tipo */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={TIPO_MANT_BADGE[m.tipo]}>
+              {TIPO_MANT_LABEL[m.tipo]}
+            </Badge>
+            <Badge variant="outline" className={ESTADO_MANT_BADGE[m.estado]}>
+              {MANTENIMIENTO_ESTADO_LABELS[m.estado]}
+            </Badge>
+            {m.es_service_general && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700"
+              >
+                <Wrench className="size-3" /> Service general
+              </Badge>
+            )}
+            {fueraServicio ? (
+              <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-700">
+                <Ban className="size-3" /> No disponible
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700"
+              >
+                <Truck className="size-3" /> Disponible
+              </Badge>
+            )}
+          </div>
+
+          {/* Datos */}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Dominio</dt>
+              <dd className="font-medium text-slate-900">{m.dominio}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Fecha</dt>
+              <dd className="text-slate-900">{fmtFecha(m.fecha)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Km / Horas</dt>
+              <dd className="tabular-nums text-slate-900">
+                {m.odometro != null
+                  ? `${fmtNum(m.odometro)} km`
+                  : m.horometro != null
+                    ? `${fmtNum(Number(m.horometro))} hs`
+                    : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Taller</dt>
+              <dd className="text-slate-900">{m.taller || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Costo</dt>
+              <dd className="tabular-nums text-slate-900">
+                {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">N° de factura</dt>
+              <dd className="text-slate-900">{m.numero_factura || "—"}</dd>
+            </div>
+            {fueraServicio && (
+              <div className="col-span-2">
+                <dt className="text-xs font-medium text-slate-500">Fuera de servicio</dt>
+                <dd className="text-slate-900">
+                  {fmtFecha(m.fuera_servicio_desde)}
+                  {m.fuera_servicio_hasta
+                    ? ` → ${fmtFecha(m.fuera_servicio_hasta)}`
+                    : " → sigue"}
+                </dd>
+              </div>
+            )}
+          </dl>
+
+          {/* Tareas */}
+          <div>
+            <p className="mb-1 text-xs font-medium text-slate-500">
+              Tareas ({tareas.length})
+            </p>
+            {tareas.length === 0 ? (
+              <p className="text-slate-400">Sin tareas registradas.</p>
+            ) : (
+              <ul className="space-y-1">
+                {tareas.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
+                  >
+                    <span className="text-slate-700">
+                      {t.tarea_id
+                        ? tareasById.get(t.tarea_id)?.nombre ?? "Tarea"
+                        : t.descripcion || "Tarea"}
+                    </span>
+                    {t.costo != null && (
+                      <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                        {fmtMoney(Number(t.costo))}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Observaciones */}
+          {m.observaciones && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-500">Observaciones</p>
+              <p className="whitespace-pre-wrap text-slate-700">{m.observaciones}</p>
+            </div>
+          )}
+
+          {/* Facturas / adjuntos */}
+          {facturas.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-500">Adjuntos</p>
+              <div className="flex flex-wrap gap-2">
+                {facturas.map((url) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-xs text-sky-600 hover:bg-sky-50"
+                  >
+                    <Paperclip className="size-3" />
+                    {nombreArchivoDeUrl(url)}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          {puedeEditar && (
+            <Button variant="outline" onClick={onEditar}>
+              <Pencil className="mr-1 size-3.5" /> Editar
+            </Button>
+          )}
+          <Button onClick={onClose}>Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
