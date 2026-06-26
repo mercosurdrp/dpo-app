@@ -44,25 +44,25 @@ const CLUSTER_META: Record<
     color: "#059669",
     bg: "bg-emerald-50",
     icon: <Trophy className="h-5 w-5" />,
-    desc: "Alto ingreso · creciendo",
+    desc: "Alta facturación · creciendo",
   },
   en_crecimiento: {
     color: "#2563EB",
     bg: "bg-blue-50",
     icon: <Sprout className="h-5 w-5" />,
-    desc: "Bajo ingreso · creciendo",
+    desc: "Baja facturación · creciendo",
   },
   basico: {
     color: "#D97706",
     bg: "bg-amber-50",
     icon: <Box className="h-5 w-5" />,
-    desc: "Alto ingreso · sin crecer",
+    desc: "Alta facturación · sin crecer",
   },
   ventas_bajas: {
     color: "#DC2626",
     bg: "bg-red-50",
     icon: <ArrowDownRight className="h-5 w-5" />,
-    desc: "Bajo ingreso · sin crecer",
+    desc: "Baja facturación · sin crecer",
   },
 }
 
@@ -178,21 +178,24 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
           <div className="space-y-1">
             <p>
-              4 clústeres por el cruce <strong>ingresos × crecimiento</strong>{" "}
+              4 clústeres por el cruce <strong>facturación × crecimiento</strong>{" "}
               (R4.2.1). Período actual{" "}
               <strong>{periodo.actual_desde}</strong> →{" "}
               <strong>{periodo.actual_hasta}</strong> vs. anterior desde{" "}
               <strong>{periodo.anterior_desde}</strong> ({periodo.dias_periodo}{" "}
-              días cada uno). Umbral de ingreso alto/bajo = mediana ={" "}
+              días cada uno). Umbral de facturación alta/baja = mediana ={" "}
               <strong>{fmtMoneda(umbral_ingresos)}</strong>.
             </p>
             <p className="text-xs text-muted-foreground">
-              Fuentes: ingresos y crecimiento de ventas Chess (netas); RMD
+              Fuentes: facturación y crecimiento de ventas Chess (netas); RMD
               promedio últimos 6 meses por cliente (cruce R4.2.2 con OTIF/RMD
               pendiente de OTIF por PDV). El{" "}
               <strong>drop size</strong> (bultos/visita) es un{" "}
               <em>proxy del costo de servir</em> que pide el manual — el costo
-              logístico real por PDV aún no está disponible.
+              logístico real por PDV aún no está disponible. El flag{" "}
+              <strong className="text-red-600">No pasa</strong> marca a los clientes con{" "}
+              <strong>≥ 1,7% de rechazo</strong> en la ventana: siguen en su cluster, pero quedan señalados
+              como problema de entrega.
             </p>
           </div>
         </CardContent>
@@ -248,7 +251,7 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>% ingresos</span>
+                      <span>% facturación</span>
                       <span className="font-medium">
                         {fmtPct(r?.pct_ingresos ?? 0)}
                       </span>
@@ -265,6 +268,12 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                         {r?.rmd_prom != null
                           ? `${fmtNum(r.rmd_prom, 2)} ★`
                           : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>No pasan (rechazo)</span>
+                      <span className={`font-medium ${(r?.no_pasan ?? 0) > 0 ? "text-red-600" : ""}`}>
+                        {fmtNum(r?.no_pasan ?? 0)}
                       </span>
                     </div>
                   </div>
@@ -307,10 +316,11 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Localidad</TableHead>
                   <TableHead>Cluster</TableHead>
-                  <TableHead className="text-right">Ingresos</TableHead>
+                  <TableHead className="text-right">Facturación</TableHead>
                   <TableHead className="text-right">Crec.</TableHead>
                   <TableHead className="text-right">Drop size</TableHead>
                   <TableHead className="text-right">RMD</TableHead>
+                  <TableHead className="text-right">Rechazo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -360,13 +370,24 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                           "—"
                         )}
                       </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {c.no_pasa ? (
+                          <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
+                            No pasa · {fmtNum(c.rechazo_pct, 1)}%
+                          </Badge>
+                        ) : c.rechazo_pct > 0 ? (
+                          <span className="text-muted-foreground">{fmtNum(c.rechazo_pct, 1)}%</span>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                     </TableRow>
                   )
                 })}
                 {visibles.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="py-8 text-center text-muted-foreground"
                     >
                       Sin clientes para los filtros aplicados.
@@ -378,7 +399,7 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
           </div>
           {filtrados.length > MAX_FILAS && (
             <p className="mt-3 text-xs text-muted-foreground">
-              Mostrando los {MAX_FILAS} de mayor ingreso de {fmtNum(filtrados.length)}.
+              Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(filtrados.length)}.
               Refiná con la búsqueda o el filtro de cluster.
             </p>
           )}

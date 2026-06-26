@@ -33,6 +33,12 @@ export interface ClienteClusterizado {
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number
+  /** Bultos rechazados del cliente en la ventana. */
+  rechazos_bultos: number
+  /** % de rechazo = bultos rechazados / (vendidos + rechazados) × 100. */
+  rechazo_pct: number
+  /** "No pasa": rechazo_pct ≥ umbral (1,7%). Flag superpuesto, NO cambia el cluster. */
+  no_pasa: boolean
 }
 
 export interface ClusterResumen {
@@ -44,6 +50,8 @@ export interface ClusterResumen {
   drop_size_prom: number
   rmd_prom: number | null
   rmd_n: number
+  /** Clientes del cluster que "no pasan" por rechazo reiterado (≥ 1,7%). */
+  no_pasan: number
 }
 
 export interface ClusterizacionData {

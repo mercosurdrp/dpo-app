@@ -16,6 +16,9 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA =
   "La clusterización de clientes solo está disponible en Pampeana."
 
+// Un cliente "no pasa" su cluster si su % de rechazo en la ventana supera esto.
+const UMBRAL_RECHAZO_PCT = 1.7
+
 function mediana(valores: number[]): number {
   if (valores.length === 0) return 0
   const orden = [...valores].sort((a, b) => a - b)
@@ -55,6 +58,36 @@ async function getRmdPorCliente(
       prev.suma += r.puntuacion
       prev.n += 1
       acc.set(r.cod_cliente, prev)
+    }
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return acc
+}
+
+/**
+ * Bultos rechazados por cliente en la ventana [desde, hasta] (tabla `rechazos`,
+ * id_cliente Chess). Sirve para el % de rechazo y el flag "no pasa".
+ */
+async function getRechazoPorCliente(
+  desde: string,
+  hasta: string,
+): Promise<Map<number, number>> {
+  const supabase = await createClient()
+  const acc = new Map<number, number>()
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from("rechazos")
+      .select("id_cliente, bultos_rechazados")
+      .gte("fecha", desde)
+      .lte("fecha", hasta)
+      .range(from, from + PAGE - 1)
+    if (error) break // rechazo es opcional: si falla, seguimos sin él
+    if (!data || data.length === 0) break
+    for (const r of data as { id_cliente: number; bultos_rechazados: number | null }[]) {
+      acc.set(r.id_cliente, (acc.get(r.id_cliente) ?? 0) + Number(r.bultos_rechazados ?? 0))
     }
     if (data.length < PAGE) break
     from += PAGE
@@ -106,6 +139,12 @@ export async function getClusterizacion(
     : ""
   const rmdMap = rmdDesde ? await getRmdPorCliente(rmdDesde) : new Map()
 
+  // Rechazos en la MISMA ventana de ventas (para el % de rechazo y el "no pasa").
+  const rechazoMap =
+    periodo.actual_desde && periodo.actual_hasta
+      ? await getRechazoPorCliente(periodo.actual_desde, periodo.actual_hasta)
+      : new Map<number, number>()
+
   // Umbral de ingresos = mediana de los ingresos del período actual.
   const umbral = mediana(rows.map((r) => r.ingresos_actual))
 
@@ -119,6 +158,9 @@ export async function getClusterizacion(
     const ingresoAlto = r.ingresos_actual >= umbral
     const drop_size = r.dias_actual > 0 ? r.bultos_actual / r.dias_actual : 0
     const rmd = rmdMap.get(r.id_cliente)
+    const rechazos_bultos = rechazoMap.get(r.id_cliente) ?? 0
+    const baseRech = r.bultos_actual + rechazos_bultos
+    const rechazo_pct = baseRech > 0 ? (100 * rechazos_bultos) / baseRech : 0
     return {
       id_cliente: r.id_cliente,
       nombre: r.nombre,
@@ -134,6 +176,9 @@ export async function getClusterizacion(
       drop_size,
       rmd_prom: rmd ? rmd.suma / rmd.n : null,
       rmd_n: rmd ? rmd.n : 0,
+      rechazos_bultos,
+      rechazo_pct,
+      no_pasa: rechazo_pct >= UMBRAL_RECHAZO_PCT,
     }
   })
 
@@ -172,6 +217,7 @@ export async function getClusterizacion(
           : 0,
       rmd_prom,
       rmd_n,
+      no_pasan: grupo.filter((c) => c.no_pasa).length,
     }
   })
 
