@@ -1365,6 +1365,13 @@ export const GASTO_MEDIO_PAGO_LABELS: Record<GastoMedioPago, string> = {
   cuenta_corriente: "Cuenta corriente",
 }
 
+/** A qué tipo de mantenimiento corresponde el gasto. NULL = "no corresponde". */
+export const GASTO_TIPO_MANTENIMIENTO_LABELS: Record<MantenimientoTipo, string> = {
+  preventivo: "Preventivo",
+  correctivo: "Correctivo",
+  proactivo: "Proactivo",
+}
+
 /** Rubros sugeridos (el campo es texto libre, esto solo alimenta el selector). */
 export const GASTO_RUBROS = [
   "Repuestos",
@@ -1386,6 +1393,7 @@ export interface MantenimientoGasto {
   mes_imputacion: string
   proveedor: string | null
   rubro: string | null
+  tipo_mantenimiento: MantenimientoTipo | null
   monto: number
   medio_pago: GastoMedioPago | null
   numero_comprobante: string | null
@@ -1402,6 +1410,14 @@ export interface MantenimientoGasto {
   created_by: string | null
   created_at: string
   updated_at: string
+}
+
+/** Proveedor del catálogo de gastos de mantenimiento (reutilizable entre cargas). */
+export interface MantenimientoProveedor {
+  id: string
+  nombre: string
+  activo: boolean
+  created_at: string
 }
 
 /** Indisponibilidad de flota por causa NO de mantenimiento (estado IND). */

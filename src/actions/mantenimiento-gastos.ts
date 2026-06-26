@@ -12,7 +12,11 @@ import {
   type GastoMedioPago,
   type GastoTipo,
   type MantenimientoGasto,
+  type MantenimientoProveedor,
+  type MantenimientoTipo,
 } from "@/types/database"
+
+const TIPOS_MANT: MantenimientoTipo[] = ["preventivo", "correctivo", "proactivo"]
 
 const PATH = "/vehiculos/mantenimiento"
 const BUCKET = "gastos-mantenimiento"
@@ -72,6 +76,12 @@ function buildHtml(gasto: MantenimientoGasto): string {
       ${row("Monto", fmtMoney(gasto.monto))}
       ${row("Proveedor", gasto.proveedor)}
       ${row("Rubro", gasto.rubro)}
+      ${row(
+        "Tipo de mantenimiento",
+        gasto.tipo_mantenimiento
+          ? gasto.tipo_mantenimiento.charAt(0).toUpperCase() + gasto.tipo_mantenimiento.slice(1)
+          : "No corresponde"
+      )}
       ${row("Fecha comprobante", gasto.fecha)}
       ${row("Fecha de carga", gasto.fecha_carga)}
       ${row("Mes de imputación", gasto.mes_imputacion)}
@@ -144,6 +154,12 @@ export async function createGasto(
     const medioRaw = str("medio_pago")
     const medio_pago = (medioRaw as GastoMedioPago | null) ?? null
 
+    const tipoMantRaw = str("tipo_mantenimiento")
+    const tipo_mantenimiento =
+      tipoMantRaw && TIPOS_MANT.includes(tipoMantRaw as MantenimientoTipo)
+        ? (tipoMantRaw as MantenimientoTipo)
+        : null
+
     // Subida de adjuntos (foto/PDF del comprobante).
     const files = formData.getAll("adjuntos").filter((f): f is File => f instanceof File && f.size > 0)
     const adjunto_urls: string[] = []
@@ -177,6 +193,7 @@ export async function createGasto(
         mes_imputacion,
         proveedor: str("proveedor"),
         rubro: str("rubro"),
+        tipo_mantenimiento,
         monto,
         medio_pago,
         numero_comprobante: str("numero_comprobante"),
@@ -313,6 +330,58 @@ export async function deleteGasto(id: string): Promise<{ ok: true } | { error: s
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
     revalidatePath(PATH)
     return { ok: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== CATÁLOGO DE PROVEEDORES ====================
+
+export async function getProveedores(): Promise<
+  { data: MantenimientoProveedor[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_proveedores")
+      .select("id, nombre, activo, created_at")
+      .eq("activo", true)
+      .order("nombre", { ascending: true })
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as MantenimientoProveedor[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Alta de proveedor desde el form de gasto (botón "+"). Reutiliza si ya existe. */
+export async function createProveedor(
+  nombre: string
+): Promise<{ data: MantenimientoProveedor } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const limpio = nombre.trim()
+    if (!limpio) return { error: "Ingresá el nombre del proveedor" }
+    const supabase = await createClient()
+
+    // Si ya existe (case-insensitive), devolverlo en lugar de duplicar.
+    const { data: existente } = await supabase
+      .from("mantenimiento_proveedores")
+      .select("id, nombre, activo, created_at")
+      .ilike("nombre", limpio)
+      .limit(1)
+      .maybeSingle()
+    if (existente) return { data: existente as MantenimientoProveedor }
+
+    const { data, error } = await supabase
+      .from("mantenimiento_proveedores")
+      .insert({ nombre: limpio })
+      .select("id, nombre, activo, created_at")
+      .single()
+    if (error || !data) return { error: error?.message ?? "No se pudo crear el proveedor" }
+    revalidatePath(PATH)
+    return { data: data as MantenimientoProveedor }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

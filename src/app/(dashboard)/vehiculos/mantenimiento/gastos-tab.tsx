@@ -14,6 +14,9 @@ import {
   Receipt,
   FileText,
   Wallet,
+  Check,
+  X,
+  Wrench,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -47,6 +50,7 @@ import {
 } from "@/components/ui/select"
 import {
   createGasto,
+  createProveedor,
   deleteGasto,
   reenviarMailGasto,
   updateGastoEstado,
@@ -54,9 +58,12 @@ import {
 import {
   GASTO_MEDIO_PAGO_LABELS,
   GASTO_TIPO_LABELS,
+  GASTO_TIPO_MANTENIMIENTO_LABELS,
   type GastoMedioPago,
   type GastoTipo,
   type MantenimientoGasto,
+  type MantenimientoProveedor,
+  type MantenimientoTipo,
 } from "@/types/database"
 
 const fmtMoney = (v: number) =>
@@ -105,15 +112,19 @@ function hoyISO() {
 
 export function GastosTab({
   gastos,
+  proveedores,
   dominios,
   puedeEditar,
 }: {
   gastos: MantenimientoGasto[]
+  proveedores: MantenimientoProveedor[]
   dominios: string[]
   puedeEditar: boolean
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+  // Catálogo local: se actualiza al alta de un proveedor desde el "+" sin recargar.
+  const [provList, setProvList] = useState<MantenimientoProveedor[]>(proveedores)
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [fMes, setFMes] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
@@ -317,6 +328,12 @@ export function GastosTab({
                           {g.dominio && g.numero_comprobante ? " · " : ""}
                           {g.numero_comprobante ? `N° ${g.numero_comprobante}` : ""}
                         </div>
+                        {g.tipo_mantenimiento && (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            <Wrench className="size-3" />
+                            {GASTO_TIPO_MANTENIMIENTO_LABELS[g.tipo_mantenimiento]}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                         {fmtMoney(Number(g.monto))}
@@ -415,6 +432,14 @@ export function GastosTab({
       {nuevoOpen && (
         <NuevoGastoDialog
           dominios={dominios}
+          proveedores={provList}
+          onProveedorCreado={(p) =>
+            setProvList((prev) =>
+              prev.some((x) => x.id === p.id)
+                ? prev
+                : [...prev, p].sort((a, b) => a.nombre.localeCompare(b.nombre))
+            )
+          }
           onClose={() => setNuevoOpen(false)}
           onSaved={(mailOk) => {
             setNuevoOpen(false)
@@ -560,10 +585,14 @@ function ImputarPanel({
 
 function NuevoGastoDialog({
   dominios,
+  proveedores,
+  onProveedorCreado,
   onClose,
   onSaved,
 }: {
   dominios: string[]
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   onClose: () => void
   onSaved: (mailOk: boolean) => void
 }) {
@@ -573,6 +602,7 @@ function NuevoGastoDialog({
   const [mes, setMes] = useState(hoyISO().slice(0, 7))
   const [monto, setMonto] = useState("")
   const [proveedor, setProveedor] = useState("")
+  const [tipoMant, setTipoMant] = useState<MantenimientoTipo | "">("")
   const [medioPago, setMedioPago] = useState<GastoMedioPago | "">("")
   const [nroComp, setNroComp] = useState("")
   const [ctaContable, setCtaContable] = useState("")
@@ -596,6 +626,7 @@ function NuevoGastoDialog({
     fd.set("mes_imputacion", mes)
     fd.set("monto", monto)
     fd.set("proveedor", proveedor)
+    fd.set("tipo_mantenimiento", tipoMant)
     fd.set("medio_pago", medioPago)
     fd.set("numero_comprobante", nroComp)
     fd.set("cuenta_contable", ctaContable)
@@ -691,11 +722,33 @@ function NuevoGastoDialog({
           </div>
           <div className="col-span-2">
             <Label>Proveedor</Label>
-            <Input
+            <ProveedorPicker
+              proveedores={proveedores}
               value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
-              placeholder="Nombre del proveedor"
+              onChange={setProveedor}
+              onCreado={onProveedorCreado}
             />
+          </div>
+          <div className="col-span-2">
+            <Label>Tipo de mantenimiento</Label>
+            <Select
+              value={tipoMant || "__none"}
+              onValueChange={(v) =>
+                setTipoMant(!v || v === "__none" ? "" : (v as MantenimientoTipo))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">No corresponde</SelectItem>
+                {(Object.keys(GASTO_TIPO_MANTENIMIENTO_LABELS) as MantenimientoTipo[]).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {GASTO_TIPO_MANTENIMIENTO_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>N° comprobante</Label>
@@ -758,5 +811,114 @@ function NuevoGastoDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ==================== Selector de proveedor con alta rápida ("+") ====================
+
+function ProveedorPicker({
+  proveedores,
+  value,
+  onChange,
+  onCreado,
+}: {
+  proveedores: MantenimientoProveedor[]
+  value: string
+  onChange: (nombre: string) => void
+  onCreado: (p: MantenimientoProveedor) => void
+}) {
+  const [agregando, setAgregando] = useState(false)
+  const [nuevo, setNuevo] = useState("")
+  const [guardando, setGuardando] = useState(false)
+
+  const confirmar = async () => {
+    const nombre = nuevo.trim()
+    if (!nombre) {
+      toast.error("Ingresá el nombre del proveedor")
+      return
+    }
+    setGuardando(true)
+    const res = await createProveedor(nombre)
+    setGuardando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    onCreado(res.data)
+    onChange(res.data.nombre)
+    setNuevo("")
+    setAgregando(false)
+    toast.success("Proveedor agregado")
+  }
+
+  if (agregando) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          autoFocus
+          value={nuevo}
+          onChange={(e) => setNuevo(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              confirmar()
+            }
+            if (e.key === "Escape") setAgregando(false)
+          }}
+          placeholder="Nombre del nuevo proveedor"
+          disabled={guardando}
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant="default"
+          title="Guardar proveedor"
+          disabled={guardando}
+          onClick={confirmar}
+        >
+          <Check className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          title="Cancelar"
+          disabled={guardando}
+          onClick={() => {
+            setAgregando(false)
+            setNuevo("")
+          }}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Select value={value || "__none"} onValueChange={(v) => onChange(!v || v === "__none" ? "" : v)}>
+        <SelectTrigger className="flex-1">
+          <SelectValue placeholder="Elegí un proveedor" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none">—</SelectItem>
+          {proveedores.map((p) => (
+            <SelectItem key={p.id} value={p.nombre}>
+              {p.nombre}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        title="Agregar nuevo proveedor"
+        onClick={() => setAgregando(true)}
+      >
+        <Plus className="size-4" />
+      </Button>
+    </div>
   )
 }

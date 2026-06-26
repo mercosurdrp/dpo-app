@@ -69,6 +69,7 @@ import type {
   MantenimientoEstado,
   MantenimientoPlanOverride,
   MantenimientoGasto,
+  MantenimientoProveedor,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
   MantenimientoTipo,
@@ -281,6 +282,7 @@ interface MantenimientoClientProps {
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
   gastos: MantenimientoGasto[]
+  proveedores: MantenimientoProveedor[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -300,6 +302,7 @@ export function MantenimientoClient({
   diasRuteo,
   indisponibilidades,
   gastos,
+  proveedores,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -767,6 +770,7 @@ export function MantenimientoClient({
         <TabsContent value="gastos" className="space-y-4">
           <GastosTab
             gastos={gastos}
+            proveedores={proveedores}
             dominios={estados.map((e) => e.vehiculo.dominio)}
             puedeEditar={puedeEditar}
           />
