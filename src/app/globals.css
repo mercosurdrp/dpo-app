@@ -151,3 +151,11 @@
     border-radius: 9999px;
   }
 }
+
+/* Oculta la barra nativa (la tabla scrollea igual, sincronizada con la de arriba). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -116,13 +116,55 @@ const PLAN_ESTADO_BADGE: Record<ChecklistPlanEstado, string> = {
 /**
  * Contenedor con scroll horizontal cuya BARRA queda ARRIBA (no abajo), para
  * poder desplazar la tabla al costado sin tener que bajar hasta la última fila.
- * Truco: se voltea el contenedor con rotateX(180deg) — así la barra nativa
- * aparece arriba — y se contra-voltea el contenido para que se vea normal.
+ * Se renderiza una barra real arriba (siempre visible) sincronizada con la tabla,
+ * y se oculta la barra nativa de abajo.
  */
 function ScrollX({ children }: { children: ReactNode }) {
+  const topRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [ancho, setAncho] = useState(0)
+  const [hayOverflow, setHayOverflow] = useState(false)
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const medir = () => {
+      setAncho(el.scrollWidth)
+      setHayOverflow(el.scrollWidth > el.clientWidth + 1)
+    }
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    window.addEventListener("resize", medir)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", medir)
+    }
+  }, [children])
+
+  const desdeArriba = () => {
+    if (topRef.current && bodyRef.current) bodyRef.current.scrollLeft = topRef.current.scrollLeft
+  }
+  const desdeTabla = () => {
+    if (topRef.current && bodyRef.current) topRef.current.scrollLeft = bodyRef.current.scrollLeft
+  }
+
   return (
-    <div className="scrollbar-x-visible overflow-x-auto [transform:rotateX(180deg)]">
-      <div className="[transform:rotateX(180deg)]">{children}</div>
+    <div>
+      {/* Barra de scroll ARRIBA (siempre visible mientras la tabla desborde). */}
+      <div
+        ref={topRef}
+        onScroll={desdeArriba}
+        className="scrollbar-x-visible overflow-x-scroll overflow-y-hidden"
+        style={{ height: hayOverflow ? 12 : 0 }}
+        aria-hidden
+      >
+        <div style={{ width: ancho, height: 1 }} />
+      </div>
+      {/* La tabla: scrollea pero sin barra propia (sincronizada con la de arriba). */}
+      <div ref={bodyRef} onScroll={desdeTabla} className="overflow-x-auto scrollbar-none">
+        {children}
+      </div>
     </div>
   )
 }
