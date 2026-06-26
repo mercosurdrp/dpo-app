@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Table,
   TableBody,
@@ -421,7 +422,8 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Localidad</TableHead>
                       <TableHead>Cluster</TableHead>
-                      <TableHead>Estado / Salud</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Salud</TableHead>
                       <TableHead className="text-right">Facturación YTD</TableHead>
                       <TableHead className="text-right">Crec.</TableHead>
                       <TableHead className="text-right">Drop size</TableHead>
@@ -454,28 +456,55 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                               {CLUSTER_LABELS[c.cluster]}
                             </Badge>
                           </TableCell>
-                          {/* Estado / Salud combinados (siempre visibles) */}
+                          {/* Estado */}
                           <TableCell>
-                            <div className="flex flex-col gap-0.5">
-                              {c.estado === "no_pasa" ? (
-                                <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100">
-                                  No pasa
-                                  <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)} rech.</span>
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-emerald-600">Pasa</span>
-                              )}
-                              {c.salud === "atencion" ? (
-                                <Badge variant="secondary" className="w-fit bg-amber-100 text-amber-700 hover:bg-amber-100">
-                                  Atención
-                                  <span className="ml-1 text-[10px] opacity-70">
-                                    {[c.drop_bajo ? "drop" : null, c.rmd_bajo ? "RMD" : null].filter(Boolean).join("·")}
-                                  </span>
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-emerald-600">Sano</span>
-                              )}
-                            </div>
+                            {c.estado === "no_pasa" ? (
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <span className="cursor-help">
+                                      <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100">
+                                        No pasa
+                                        <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)} rech.</span>
+                                      </Badge>
+                                    </span>
+                                  }
+                                />
+                                <TooltipContent className="w-60 items-stretch">
+                                  <div className="flex w-full flex-col text-left">
+                                    <p className="mb-1 font-semibold">Rechazos del cliente (últimos 45 días)</p>
+                                    {c.rechazos_detalle.map((d) => (
+                                      <div key={d.motivo} className="flex justify-between gap-3 py-0.5">
+                                        <span className="opacity-80">{d.motivo}</span>
+                                        <span className="tabular-nums">
+                                          {fmtNum(d.eventos)} ent · {fmtNum(d.bultos, 1)} blt
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {c.rechazos_total > c.rechazos_culpa && (
+                                      <p className="mt-1 border-t border-white/20 pt-1 text-[10px] opacity-70">
+                                        + {fmtNum(c.rechazos_total - c.rechazos_culpa)} rechazo(s) por otros motivos (no cuentan para “no pasa”)
+                                      </p>
+                                    )}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <span className="text-xs text-emerald-600">Pasa</span>
+                            )}
+                          </TableCell>
+                          {/* Salud */}
+                          <TableCell>
+                            {c.salud === "atencion" ? (
+                              <Badge variant="secondary" className="w-fit bg-amber-100 text-amber-700 hover:bg-amber-100">
+                                Atención
+                                <span className="ml-1 text-[10px] opacity-70">
+                                  {[c.drop_bajo ? "drop" : null, c.rmd_bajo ? "RMD" : null].filter(Boolean).join("·")}
+                                </span>
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-emerald-600">Sano</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
                           <TableCell className="text-right">
@@ -502,7 +531,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                     })}
                     {visibles.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                           Sin clientes para los filtros aplicados.
                         </TableCell>
                       </TableRow>

@@ -39,6 +39,8 @@ export interface ClienteClusterizado {
   rechazos_culpa: number
   /** Entregas rechazadas por cualquier motivo, últimos 45 días. */
   rechazos_total: number
+  /** Detalle de los rechazos por culpa del cliente (motivo → entregas y bultos), 45 días. */
+  rechazos_detalle: { motivo: string; eventos: number; bultos: number }[]
   /**
    * ESTADO (responsabilidad del cliente): "no_pasa" si rechazó ≥ 1 entrega por su
    * culpa (sin dinero / cerrado / sin envases) en los últimos 45 días. Los rechazos

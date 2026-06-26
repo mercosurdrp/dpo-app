@@ -72,28 +72,39 @@ async function getRmdPorCliente(
  * Entregas rechazadas por cliente en la ventana [desde, hasta], separando las
  * que son por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases) del total.
  */
+interface RechazoAcum {
+  culpa: number
+  total: number
+  motivos: Record<string, { eventos: number; bultos: number }>
+}
+
 async function getRechazoPorCliente(
   desde: string,
   hasta: string,
-): Promise<Map<number, { culpa: number; total: number }>> {
+): Promise<Map<number, RechazoAcum>> {
   const supabase = await createClient()
-  const acc = new Map<number, { culpa: number; total: number }>()
+  const acc = new Map<number, RechazoAcum>()
   const PAGE = 1000
   let from = 0
   while (true) {
     const { data, error } = await supabase
       .from("rechazos")
-      .select("id_cliente, ds_rechazo")
+      .select("id_cliente, ds_rechazo, bultos_rechazados")
       .gte("fecha", desde)
       .lte("fecha", hasta)
       .range(from, from + PAGE - 1)
     if (error) break // rechazo es opcional: si falla, seguimos sin él
     if (!data || data.length === 0) break
-    for (const r of data as { id_cliente: number; ds_rechazo: string | null }[]) {
-      const prev = acc.get(r.id_cliente) ?? { culpa: 0, total: 0 }
+    for (const r of data as { id_cliente: number; ds_rechazo: string | null; bultos_rechazados: number | null }[]) {
+      const prev = acc.get(r.id_cliente) ?? { culpa: 0, total: 0, motivos: {} }
       prev.total += 1 // cada fila = una entrega rechazada
-      if (MOTIVOS_CULPA_CLIENTE.has((r.ds_rechazo ?? "").trim().toUpperCase())) {
+      const motivo = (r.ds_rechazo ?? "").trim().toUpperCase()
+      if (MOTIVOS_CULPA_CLIENTE.has(motivo)) {
         prev.culpa += 1
+        const m = prev.motivos[motivo] ?? { eventos: 0, bultos: 0 }
+        m.eventos += 1
+        m.bultos += Number(r.bultos_rechazados ?? 0)
+        prev.motivos[motivo] = m
       }
       acc.set(r.id_cliente, prev)
     }
@@ -165,7 +176,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   const rechazoMap =
     periodo.drop_desde && periodo.ytd_hasta
       ? await getRechazoPorCliente(periodo.drop_desde, periodo.ytd_hasta)
-      : new Map<number, { culpa: number; total: number }>()
+      : new Map<number, RechazoAcum>()
 
   // Supervisor por promotor (para el filtro del explorador).
   const supMap = periodo.ytd_hasta
@@ -188,6 +199,11 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     const rech = rechazoMap.get(r.id_cliente)
     const rechazos_culpa = rech?.culpa ?? 0
     const rechazos_total = rech?.total ?? 0
+    const rechazos_detalle = rech
+      ? Object.entries(rech.motivos)
+          .map(([motivo, v]) => ({ motivo, eventos: v.eventos, bultos: v.bultos }))
+          .sort((a, b) => b.eventos - a.eventos)
+      : []
     // ESTADO: rechazó al menos una vez por su culpa.
     const estado: "pasa" | "no_pasa" = rechazos_culpa >= 1 ? "no_pasa" : "pasa"
     // SALUD: drop bajo o RMD bajo.
@@ -212,6 +228,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       rmd_n: rmd ? rmd.n : 0,
       rechazos_culpa,
       rechazos_total,
+      rechazos_detalle,
       estado,
       drop_bajo,
       rmd_bajo,
