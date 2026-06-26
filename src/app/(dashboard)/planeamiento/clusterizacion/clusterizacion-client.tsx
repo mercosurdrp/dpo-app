@@ -104,6 +104,12 @@ const fmtNum = (n: number, dec = 0) =>
     minimumFractionDigits: dec,
   }).format(n)
 
+/** "2026-06-25" → "25/06" */
+const fmtFechaCorta = (f: string) => {
+  const p = f.split("-")
+  return p.length === 3 ? `${p[2]}/${p[1]}` : f
+}
+
 const ESTADO_PLAN: Record<string, { label: string; cls: string }> = {
   pendiente: { label: "Pendiente", cls: "bg-slate-100 text-slate-700" },
   en_proceso: { label: "En proceso", cls: "bg-blue-100 text-blue-700" },
@@ -473,14 +479,15 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                                 <TooltipContent className="w-60 items-stretch">
                                   <div className="flex w-full flex-col text-left">
                                     <p className="mb-1 font-semibold">Rechazos del cliente (últimos 45 días)</p>
-                                    {c.rechazos_detalle.map((d) => (
-                                      <div key={d.motivo} className="flex justify-between gap-3 py-0.5">
-                                        <span className="opacity-80">{d.motivo}</span>
-                                        <span className="tabular-nums">
-                                          {fmtNum(d.eventos)} ent · {fmtNum(d.bultos, 1)} blt
-                                        </span>
+                                    {c.rechazos_detalle.slice(0, 12).map((d, i) => (
+                                      <div key={i} className="flex justify-between gap-3 py-0.5">
+                                        <span className="opacity-80">{fmtFechaCorta(d.fecha)} · {d.motivo}</span>
+                                        <span className="tabular-nums">{fmtNum(d.bultos, 1)} blt</span>
                                       </div>
                                     ))}
+                                    {c.rechazos_detalle.length > 12 && (
+                                      <p className="text-[10px] opacity-60">+ {c.rechazos_detalle.length - 12} más…</p>
+                                    )}
                                     {c.rechazos_total > c.rechazos_culpa && (
                                       <p className="mt-1 border-t border-white/20 pt-1 text-[10px] opacity-70">
                                         + {fmtNum(c.rechazos_total - c.rechazos_culpa)} rechazo(s) por otros motivos (no cuentan para “no pasa”)

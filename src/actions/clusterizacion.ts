@@ -73,9 +73,9 @@ async function getRmdPorCliente(
  * que son por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases) del total.
  */
 interface RechazoAcum {
-  culpa: number
   total: number
-  motivos: Record<string, { eventos: number; bultos: number }>
+  /** Entregas rechazadas POR CULPA DEL CLIENTE, evento por evento. */
+  eventos: { fecha: string; motivo: string; bultos: number }[]
 }
 
 async function getRechazoPorCliente(
@@ -89,22 +89,18 @@ async function getRechazoPorCliente(
   while (true) {
     const { data, error } = await supabase
       .from("rechazos")
-      .select("id_cliente, ds_rechazo, bultos_rechazados")
+      .select("id_cliente, fecha, ds_rechazo, bultos_rechazados")
       .gte("fecha", desde)
       .lte("fecha", hasta)
       .range(from, from + PAGE - 1)
     if (error) break // rechazo es opcional: si falla, seguimos sin él
     if (!data || data.length === 0) break
-    for (const r of data as { id_cliente: number; ds_rechazo: string | null; bultos_rechazados: number | null }[]) {
-      const prev = acc.get(r.id_cliente) ?? { culpa: 0, total: 0, motivos: {} }
+    for (const r of data as { id_cliente: number; fecha: string; ds_rechazo: string | null; bultos_rechazados: number | null }[]) {
+      const prev = acc.get(r.id_cliente) ?? { total: 0, eventos: [] }
       prev.total += 1 // cada fila = una entrega rechazada
       const motivo = (r.ds_rechazo ?? "").trim().toUpperCase()
       if (MOTIVOS_CULPA_CLIENTE.has(motivo)) {
-        prev.culpa += 1
-        const m = prev.motivos[motivo] ?? { eventos: 0, bultos: 0 }
-        m.eventos += 1
-        m.bultos += Number(r.bultos_rechazados ?? 0)
-        prev.motivos[motivo] = m
+        prev.eventos.push({ fecha: r.fecha, motivo, bultos: Number(r.bultos_rechazados ?? 0) })
       }
       acc.set(r.id_cliente, prev)
     }
@@ -197,12 +193,10 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const rech = rechazoMap.get(r.id_cliente)
-    const rechazos_culpa = rech?.culpa ?? 0
+    const rechazos_culpa = rech?.eventos.length ?? 0
     const rechazos_total = rech?.total ?? 0
     const rechazos_detalle = rech
-      ? Object.entries(rech.motivos)
-          .map(([motivo, v]) => ({ motivo, eventos: v.eventos, bultos: v.bultos }))
-          .sort((a, b) => b.eventos - a.eventos)
+      ? [...rech.eventos].sort((a, b) => b.fecha.localeCompare(a.fecha))
       : []
     // ESTADO: rechazó al menos una vez por su culpa.
     const estado: "pasa" | "no_pasa" = rechazos_culpa >= 1 ? "no_pasa" : "pasa"
