@@ -107,7 +107,7 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
               <th className="py-1.5 text-right font-medium">Valor</th>
               <th className="w-1/3 py-1.5 font-medium" />
               <th className="py-1.5 text-right font-medium">
-                {hayBultos ? "Bultos rech." : ""}
+                {hayBultos ? (detalle?.detalleLabel ?? "Bultos rech.") : ""}
               </th>
             </tr>
           </thead>

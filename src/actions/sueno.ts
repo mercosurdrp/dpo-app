@@ -9,6 +9,11 @@ import {
   type SuenoNodo,
 } from "@/lib/sueno/arbol-config"
 import { estadoSemaforo } from "@/lib/sueno/semaforo"
+import {
+  KPI_EXTERNOS,
+  esKpiExterno,
+  resolverValoresExternos,
+} from "@/lib/sueno/externos"
 
 interface ValorRow {
   kpi_key: string
@@ -47,10 +52,18 @@ export async function getSuenoArbol(
     const byKey = new Map<string, ValorRow>()
     for (const r of (data ?? []) as ValorRow[]) byKey.set(r.kpi_key, r)
 
+    // KPIs externos (fuente en deposito-esteban): traen su valor anual en vivo.
+    // Si el depósito no responde, se cae al valor persistido en la tabla.
+    const externos = await resolverValoresExternos(year)
+
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
       const row = byKey.get(cfg.key)
       const meta = row?.meta ?? cfg.metaDefault
-      const valorYtd = row?.valor_ytd ?? null
+      const externoVal = externos.get(cfg.key)
+      const valorYtd =
+        externoVal !== undefined && externoVal !== null
+          ? externoVal
+          : (row?.valor_ytd ?? null)
       const gatillo = row?.gatillo ?? null
       const mejorSi = row?.mejor_si ?? cfg.mejorSi
       return {
@@ -101,6 +114,8 @@ export interface SuenoDetalle {
   fuente: "auto" | "manual"
   explicacion: string
   meses: SuenoDetalleMes[]
+  /** Encabezado de la columna "detalle" (default: "Bultos rech."). */
+  detalleLabel?: string
 }
 
 /** Detalle mensual de un KPI (para el modal que explica el número). */
@@ -113,6 +128,33 @@ export async function getSuenoDetalle(
     const year = anio ?? anioActual()
     const cfg = ARBOL_SUENO.find((n) => n.key === kpiKey)
     if (!cfg) return { error: "KPI desconocido" }
+
+    // KPI externo (deposito-esteban): detalle mensual desde la API del depósito.
+    if (esKpiExterno(kpiKey)) {
+      const ext = KPI_EXTERNOS[kpiKey]
+      const resumen = await ext.resumen(year)
+      const meses: SuenoDetalleMes[] = (resumen?.meses ?? [])
+        .filter((m) => m.valor !== null)
+        .map((m) => ({
+          mes: m.mes,
+          etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+          valor: Number(m.valor ?? 0),
+          detalle: m.registros,
+        }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: resumen ? "auto" : "manual",
+          explicacion: resumen
+            ? ext.explicacion
+            : "No se pudo leer la productividad del depósito en este momento.",
+          meses,
+          detalleLabel: "Registros",
+        },
+      }
+    }
 
     const explicacion = EXPLICACION[kpiKey]
     if (!explicacion) {
