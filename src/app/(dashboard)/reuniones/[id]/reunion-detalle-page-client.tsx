@@ -1194,9 +1194,10 @@ export function ReunionDetallePageClient({
       </Card>
 
       {/* Contador de 30 min para acotar la duración de la reunión de Logística
-          (solo Pampeana). Local en el navegador. */}
+          (solo Pampeana). Persiste en el navegador por reunión: si salís y
+          volvés, sigue corriendo. */}
       {!IS_MISIONES && detalle.tipo === "logistica" && (
-        <ContadorReunion minutos={30} />
+        <ContadorReunion minutos={30} storageKey={detalle.id} />
       )}
 
       {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones) */}

@@ -8,22 +8,85 @@ import { cn } from "@/lib/utils"
 
 /**
  * Contador (cuenta regresiva) para acotar la duración de la reunión.
- * Local en el navegador: no persiste ni se sincroniza entre participantes.
+ * Persiste en el navegador (localStorage) por reunión: si salís y volvés,
+ * sigue corriendo. Guarda un instante de fin absoluto, así descuenta también
+ * el tiempo que la reunión estuvo fuera de pantalla. No se sincroniza entre
+ * participantes (cada navegador tiene su propio contador).
  * Arranca con "Iniciar", se puede Pausar y Reiniciar. Avisa al llegar a 0.
  */
+
+const STORAGE_PREFIX = "contador-reunion:"
+
+type EstadoPersistido = {
+  corriendo: boolean
+  /** Instante (epoch ms) en que llega a 0. Solo válido si corriendo=true. */
+  finEn: number | null
+  /** Segundos restantes cuando está pausado/detenido. */
+  restante: number
+}
+
 export function ContadorReunion({
   minutos = 30,
   titulo = "Tiempo de la reunión",
+  storageKey,
 }: {
   minutos?: number
   titulo?: string
+  /** Identificador para persistir el estado por reunión (p. ej. el id). */
+  storageKey?: string
 }) {
   const totalSeg = Math.max(1, Math.round(minutos * 60))
   const [restante, setRestante] = useState(totalSeg)
   const [corriendo, setCorriendo] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const finEnRef = useRef<number | null>(null)
 
   const terminado = restante <= 0
+
+  const persistir = useCallback(
+    (estado: EstadoPersistido) => {
+      if (!storageKey || typeof window === "undefined") return
+      try {
+        window.localStorage.setItem(
+          STORAGE_PREFIX + storageKey,
+          JSON.stringify(estado),
+        )
+      } catch {
+        // ignorar: localStorage puede no estar disponible
+      }
+    },
+    [storageKey],
+  )
+
+  // Rehidratar desde localStorage al montar (y al cambiar de reunión).
+  // Se hace en efecto (no en el estado inicial) para no romper el SSR/hidratación.
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined") return
+    try {
+      const raw = window.localStorage.getItem(STORAGE_PREFIX + storageKey)
+      if (!raw) return
+      const p = JSON.parse(raw) as EstadoPersistido
+      if (p.corriendo && typeof p.finEn === "number") {
+        const rest = Math.max(0, Math.round((p.finEn - Date.now()) / 1000))
+        if (rest > 0) {
+          finEnRef.current = p.finEn
+          setRestante(rest)
+          setCorriendo(true)
+        } else {
+          // Se cumplió el tiempo mientras estaba fuera de pantalla.
+          finEnRef.current = null
+          setRestante(0)
+          setCorriendo(false)
+        }
+      } else if (typeof p.restante === "number") {
+        finEnRef.current = null
+        setRestante(p.restante)
+        setCorriendo(false)
+      }
+    } catch {
+      // ignorar: estado corrupto, se arranca limpio
+    }
+  }, [storageKey])
 
   const beep = useCallback(() => {
     try {
@@ -50,31 +113,48 @@ export function ContadorReunion({
     }
   }, [])
 
+  // Tick: recalcula el restante contra el reloj (robusto a throttling de
+  // pestañas en segundo plano y a salir/entrar de la reunión).
   useEffect(() => {
     if (!corriendo) return
     intervalRef.current = setInterval(() => {
-      setRestante((s) => {
-        if (s <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current)
-          setCorriendo(false)
-          beep()
-          return 0
-        }
-        return s - 1
-      })
+      const finEn = finEnRef.current
+      if (finEn == null) return
+      const rest = Math.max(0, Math.round((finEn - Date.now()) / 1000))
+      setRestante(rest)
+      if (rest <= 0) {
+        if (intervalRef.current) clearInterval(intervalRef.current)
+        finEnRef.current = null
+        setCorriendo(false)
+        persistir({ corriendo: false, finEn: null, restante: 0 })
+        beep()
+      }
     }, 1000)
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [corriendo, beep])
+  }, [corriendo, beep, persistir])
 
   function iniciarPausar() {
     if (terminado) return
-    setCorriendo((c) => !c)
+    if (corriendo) {
+      // Pausar: fijamos el restante actual.
+      finEnRef.current = null
+      setCorriendo(false)
+      persistir({ corriendo: false, finEn: null, restante })
+    } else {
+      // Iniciar/Reanudar: anclamos un instante de fin absoluto.
+      const finEn = Date.now() + restante * 1000
+      finEnRef.current = finEn
+      setCorriendo(true)
+      persistir({ corriendo: true, finEn, restante })
+    }
   }
   function reiniciar() {
+    finEnRef.current = null
     setCorriendo(false)
     setRestante(totalSeg)
+    persistir({ corriendo: false, finEn: null, restante: totalSeg })
   }
 
   const mm = String(Math.floor(restante / 60)).padStart(2, "0")
