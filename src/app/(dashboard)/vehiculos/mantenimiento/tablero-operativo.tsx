@@ -143,7 +143,7 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, onNav
                       p.proximaFecha == null
                         ? "—"
                         : `${fmtFecha(p.proximaFecha)}${
-                            p.motivo === "km" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""
+                            p.motivo !== "tiempo" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""
                           }`
                     return (
                       <TableRow
@@ -283,7 +283,7 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, onNav
                 const proximoTxt =
                   p.proximaFecha == null
                     ? "—"
-                    : `${fmtFecha(p.proximaFecha)}${p.motivo === "km" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""}`
+                    : `${fmtFecha(p.proximaFecha)}${p.motivo !== "tiempo" && p.proximoKm != null ? ` · ${fmtNum(p.proximoKm)} ${u}` : ""}`
                 return (
                   <TableRow
                     key={p.dominio}

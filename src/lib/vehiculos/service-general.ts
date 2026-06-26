@@ -55,7 +55,7 @@ export interface ServiceGeneralUnidad {
   proximaFecha: string | null // col F
   diasRestantes: number | null // col G
   // Texto auxiliar para mostrar qué eje manda
-  motivo: "km" | "tiempo" | null
+  motivo: "km" | "horas" | "tiempo" | null
 }
 
 const UMBRAL_ROJO = 10
@@ -70,7 +70,8 @@ function defaultsPorTipo(tipo: VehiculoTipo | null): {
 } {
   switch (tipo) {
     case "autoelevador":
-      return { km: null, horas: 250, meses: 6 }
+      // Service de autoelevadores cada 200 hs de uso (o 6 meses por tiempo).
+      return { km: null, horas: 200, meses: 6 }
     case "acoplado":
       // El acoplado no tiene motor: service por tiempo (frenos/rodamientos).
       return { km: null, horas: null, meses: 12 }
@@ -118,6 +119,8 @@ export function computeServiceGeneral(params: {
   ultimos: Map<string, UltimoPreventivo>
   kmActuales: Map<string, { odometro: number; fecha: string }>
   configs: Map<string, ConfigUnidad>
+  // Tasa de uso medida (km/día o hs/día) por dominio, a partir de las lecturas.
+  tasaUso?: Map<string, { tasa: number }>
   hoy?: string
 }): ServiceGeneralUnidad[] {
   const hoy = params.hoy ?? today()
@@ -159,15 +162,11 @@ export function computeServiceGeneral(params: {
       motivo: null,
     }
 
-    if (!ultimo) {
-      out.push(base)
-      continue
-    }
-
     // --- Criterio columna G de la planilla -------------------------------
     // Proyección por km: tasa medida (servicio→registro) → fecha próximo service.
     if (
       mide === "km" &&
+      ultimo &&
       frecKm != null &&
       ultimo.odometro != null &&
       kmAct != null &&
@@ -192,12 +191,47 @@ export function computeServiceGeneral(params: {
       }
     }
 
-    // Fallback temporal: sin tasa medible (autoelevadores sin lectura de horas,
-    // o unidades sin recorrido desde el service). Vence a los `frecMeses`.
+    // Proyección por HORAS (autoelevadores). Toma el horómetro de los checks
+    // (guardado en `odometro`) y proyecta el próximo service por uso. Funciona
+    // aunque la unidad NO tenga ningún service registrado: en ese caso el
+    // próximo service es el siguiente múltiplo de la frecuencia en horas por
+    // encima de las horas actuales (p. ej. a las 250 hs). `proximoKm` y
+    // `kmRestante` se reutilizan para almacenar el valor en horas.
+    if (mide === "horas" && frecHoras != null && kmAct != null) {
+      const horasActual = kmAct
+      const horasService = ultimo?.horometro ?? null
+      base.proximoKm =
+        horasService != null
+          ? horasService + frecHoras
+          : (Math.floor(horasActual / frecHoras) + 1) * frecHoras
+      base.kmRestante = base.proximoKm - horasActual
+
+      // tasa de uso (hs/día) medida desde los propios checks; fallback a config.
+      const resumen = params.tasaUso?.get(v.dominio) ?? null
+      let tasa: number | null = null
+      if (resumen && resumen.tasa > 0) tasa = resumen.tasa
+      else if (cfg?.km_dia && cfg.km_dia > 0) tasa = cfg.km_dia
+
+      if (tasa != null && tasa > 0 && fechaReg != null) {
+        base.kmDia = Math.round(tasa * 10) / 10
+        const horasRestantes = Math.max(0, base.proximoKm - horasActual)
+        base.proximaFecha = addDays(fechaReg, Math.round(horasRestantes / tasa))
+        base.diasRestantes = daysBetween(hoy, base.proximaFecha)
+        base.motivo = "horas"
+      }
+    }
+
+    // Fallback temporal: sin tasa medible (sin recorrido/uso desde el service).
+    // Vence a los `frecMeses` desde el último service; si la unidad nunca tuvo
+    // service (típico en autoelevadores recién cargados) se cuenta desde el
+    // último registro de horómetro para no dejarla en "Sin datos".
     if (base.diasRestantes == null && frecMeses != null) {
-      base.proximaFecha = addMonths(ultimo.fecha, frecMeses)
-      base.diasRestantes = daysBetween(hoy, base.proximaFecha)
-      base.motivo = "tiempo"
+      const baseFecha = ultimo?.fecha ?? (mide === "horas" ? fechaReg : null)
+      if (baseFecha != null) {
+        base.proximaFecha = addMonths(baseFecha, frecMeses)
+        base.diasRestantes = daysBetween(hoy, base.proximaFecha)
+        base.motivo = "tiempo"
+      }
     }
 
     if (base.diasRestantes != null) base.estado = estadoPorDias(base.diasRestantes)
@@ -254,6 +288,33 @@ export function kmActualRobustoPorDominio(
     if (best != null) result.set(dom, best)
   }
   return result
+}
+
+/**
+ * Tasa de uso medida por dominio (unidad/día) = (lectura más reciente − lectura
+ * más antigua) / días entre ambas. Para autoelevadores las lecturas son horas
+ * (guardadas en `odometro`), así que devuelve hs/día. Se ignora si no hay al
+ * menos dos lecturas con avance positivo.
+ */
+export function tasaUsoPorDominio(lecturas: Lectura[]): Map<string, { tasa: number }> {
+  const porDom = new Map<string, Lectura[]>()
+  for (const l of lecturas) {
+    if (!porDom.has(l.dominio)) porDom.set(l.dominio, [])
+    porDom.get(l.dominio)!.push(l)
+  }
+  const out = new Map<string, { tasa: number }>()
+  for (const [dom, arr] of porDom) {
+    arr.sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
+      return a.hora < b.hora ? -1 : 1
+    })
+    const primera = arr[0]
+    const ultima = arr[arr.length - 1]
+    const dias = daysBetween(primera.fecha, ultima.fecha)
+    const delta = ultima.odometro - primera.odometro
+    if (dias > 0 && delta > 0) out.set(dom, { tasa: delta / dias })
+  }
+  return out
 }
 
 /** Carga datos y computa el service general de la flota activa. */
@@ -323,6 +384,7 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
     if (u.odometro != null) anclas.set(dom, { fecha: u.fecha, odometro: u.odometro })
   }
   const kmActuales = kmActualRobustoPorDominio(lecturas, anclas)
+  const tasaUso = tasaUsoPorDominio(lecturas)
 
-  return computeServiceGeneral({ vehiculos, ultimos, kmActuales, configs })
+  return computeServiceGeneral({ vehiculos, ultimos, kmActuales, configs, tasaUso })
 }
