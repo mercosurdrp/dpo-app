@@ -57,7 +57,8 @@ function recalcular(
   const hl = Math.max(0, base.hl * (1 + delta.vol / 100))
   // delta.otif positivo = MÁS rechazo = peor. Va en puntos porcentuales.
   const pct_rechazo = clamp(base.pct_rechazo + delta.otif / 100, 0, 1)
-  const otif_estimado = 1 - pct_rechazo
+  // OTIF ahora ES la tasa de rechazo (no su complemento).
+  const otif_estimado = pct_rechazo
   const pct_ausentismo = clamp(base.pct_ausentismo + delta.aus / 100, 0, 1)
   const clientes_dia = Math.max(0, Math.round(base.clientes_dia * (1 + delta.cli / 100)))
 
@@ -71,7 +72,7 @@ function recalcular(
   // Triggers Mercosur (lo que define crítico)
   const trigger_vol = hl >= umbrales.vol_pico
   const trigger_cli = clientes_dia > umbrales.clientes
-  const trigger_otif = hl > 0 && otif_estimado < umbrales.otif_min
+  const trigger_otif = hl > 0 && otif_estimado > umbrales.otif_min
   const trigger_aus = pct_ausentismo >= umbrales.ausentismo_max
   const codigo =
     (trigger_otif ? "P" : "") +

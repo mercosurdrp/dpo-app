@@ -158,7 +158,7 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
         <NumField label="Vol ALTO (HL)" value={vol_alto} onChange={setVA} step={100} min={0} max={20000} />
         <NumField label="Vol MEDIO (HL)" value={vol_medio} onChange={setVM} step={100} min={0} max={20000} />
         <NumField label="Clientes" value={clientes} onChange={setCli} step={10} min={0} max={2000} integer />
-        <NumField label="OTIF min" value={otif_min} onChange={setOtif} step={0.01} min={0} max={1} suffix="(0–1)" />
+        <NumField label="Rechazo máx" value={otif_min} onChange={setOtif} step={0.01} min={0} max={1} suffix="(0–1)" />
         <NumField label="Ausentismo max" value={aus_max} onChange={setAus} step={0.005} min={0} max={1} suffix="(0–1)" />
         <NumField label="Min triggers" value={min_trig} onChange={setMinTrig} step={1} min={1} max={4} integer suffix="(1–4)" />
         <div className="flex items-end">

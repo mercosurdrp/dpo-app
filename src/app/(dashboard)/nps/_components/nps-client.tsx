@@ -324,10 +324,11 @@ export function NpsClient({ data, planesIniciales }: Props) {
             </div>
             <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-500">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              RMD = Rate My Delivery (Power BI Quilmes). OTIF interno = 1 −
-              bultos rechazados ÷ bultos entregados (tabla de rechazos propia).
-              Quilmes no publica OTIF a nivel distribuidor, por eso se usa el
-              indicador interno de nivel de servicio para explicar brechas.
+              RMD = Rate My Delivery (Power BI Quilmes). OTIF interno =
+              bultos rechazados ÷ bultos entregados (tabla de rechazos propia),
+              o sea la tasa de rechazo (menor es mejor). Quilmes no publica OTIF
+              a nivel distribuidor, por eso se usa este indicador interno para
+              explicar brechas.
             </p>
           </CardContent>
         </Card>

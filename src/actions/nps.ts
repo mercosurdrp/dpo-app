@@ -27,7 +27,7 @@ export interface NpsMes {
   pasivos: number
   detractores: number
   rmd: number | null
-  otif_interno: number | null // 1 - bultos_rechazados/bultos_entregados (def. 109)
+  otif_interno: number | null // bultos_rechazados/bultos_entregados (tasa de rechazo, menor mejor)
 }
 
 export interface NpsSubdriver {

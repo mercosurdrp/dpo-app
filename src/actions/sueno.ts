@@ -78,9 +78,9 @@ const MES_LABEL = [
 ]
 
 const EXPLICACION: Record<string, string> = {
-  otif: "OTIF = 1 − (bultos rechazados ÷ bultos entregados). Detalle mensual del % logrado y los bultos rechazados de cada mes.",
+  otif: "OTIF = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle mensual con los bultos rechazados de cada mes.",
   rechazo: "Rechazo = bultos rechazados ÷ bultos entregados (%). Por mes, con los bultos rechazados.",
-  in_full: "In-Full = % de bultos entregados completos (100 − % de rechazo). Detalle por mes.",
+  in_full: "In-Full = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle por mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
   sin_dinero: "Rechazos por motivo «Sin dinero», por mes (cantidad y bultos).",
