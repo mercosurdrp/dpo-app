@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -45,6 +45,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  eliminarItemChecklist,
   eliminarPlanChecklist,
   upsertPlanChecklist,
   type ChecklistComentario,
@@ -112,6 +113,54 @@ const PLAN_ESTADO_BADGE: Record<ChecklistPlanEstado, string> = {
   resuelto: "border-emerald-200 bg-emerald-50 text-emerald-700",
 }
 
+/**
+ * Contenedor con scroll horizontal y una BARRA DE SCROLL ARRIBA sincronizada con
+ * la de abajo, para poder desplazar la tabla al costado sin tener que bajar
+ * hasta la última fila.
+ */
+function ScrollX({ children }: { children: ReactNode }) {
+  const topRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [ancho, setAncho] = useState(0)
+
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const medir = () => setAncho(el.scrollWidth)
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    window.addEventListener("resize", medir)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", medir)
+    }
+  }, [children])
+
+  const sincronizar = (origen: "top" | "body") => {
+    const t = topRef.current
+    const b = bodyRef.current
+    if (!t || !b) return
+    if (origen === "top") b.scrollLeft = t.scrollLeft
+    else t.scrollLeft = b.scrollLeft
+  }
+
+  return (
+    <div>
+      <div
+        ref={topRef}
+        onScroll={() => sincronizar("top")}
+        className="overflow-x-auto overflow-y-hidden"
+      >
+        <div style={{ width: ancho, height: 1 }} />
+      </div>
+      <div ref={bodyRef} onScroll={() => sincronizar("body")} className="overflow-x-auto">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
@@ -119,9 +168,28 @@ interface Props {
 }
 
 export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
+  const router = useRouter()
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
   const [planItem, setPlanItem] = useState<ChecklistItemNoOk | null>(null)
+  const [delItem, setDelItem] = useState<ChecklistItemNoOk | null>(null)
+  const [delError, setDelError] = useState<string | null>(null)
+  const [pendingDel, startDel] = useTransition()
+
+  function confirmarBorrado() {
+    if (!delItem) return
+    setDelError(null)
+    const id = delItem.id
+    startDel(async () => {
+      const res = await eliminarItemChecklist(id)
+      if ("error" in res) {
+        setDelError(res.error)
+        return
+      }
+      setDelItem(null)
+      router.refresh()
+    })
+  }
 
   const dominios = useMemo(() => {
     const s = new Set<string>()
@@ -246,7 +314,7 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
             <AlertTriangle className="size-4 text-slate-500" /> Ítems observados (no OK)
           </CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent>
           {items.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-center">
               <ClipboardCheck className="size-8 text-emerald-300" />
@@ -255,53 +323,72 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Unidad</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Ítem</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Chofer</TableHead>
-                  <TableHead>Comentario</TableHead>
-                  <TableHead>Plan de acción</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((i) => (
-                  <TableRow key={i.id}>
-                    <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
-                    <TableCell className="font-medium">{i.dominio}</TableCell>
-                    <TableCell>
-                      <TipoBadge tipo={i.tipo} />
-                    </TableCell>
-                    <TableCell className="text-slate-600">{i.categoria}</TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-1.5">
-                        {i.item}
-                        {i.critico && (
-                          <span title="Ítem crítico">
-                            <ShieldAlert className="size-3.5 text-red-500" />
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <ValorBadge valor={i.valor} />
-                    </TableCell>
-                    <TableCell className="text-slate-600">{i.chofer || "—"}</TableCell>
-                    <TableCell className="max-w-72 text-slate-600">
-                      {i.comentario || <span className="text-slate-300">—</span>}
-                    </TableCell>
-                    <TableCell className="min-w-44">
-                      <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => setPlanItem(i)} />
-                    </TableCell>
+            <ScrollX>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead>Ítem</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Chofer</TableHead>
+                    <TableHead>Comentario</TableHead>
+                    <TableHead>Plan de acción</TableHead>
+                    {puedeEditar && <TableHead className="text-right">Eliminar</TableHead>}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.map((i) => (
+                    <TableRow key={i.id}>
+                      <TableCell className="whitespace-nowrap">{fmtFecha(i.fecha)}</TableCell>
+                      <TableCell className="font-medium">{i.dominio}</TableCell>
+                      <TableCell>
+                        <TipoBadge tipo={i.tipo} />
+                      </TableCell>
+                      <TableCell className="text-slate-600">{i.categoria}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1.5">
+                          {i.item}
+                          {i.critico && (
+                            <span title="Ítem crítico">
+                              <ShieldAlert className="size-3.5 text-red-500" />
+                            </span>
+                          )}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <ValorBadge valor={i.valor} />
+                      </TableCell>
+                      <TableCell className="text-slate-600">{i.chofer || "—"}</TableCell>
+                      <TableCell className="max-w-72 text-slate-600">
+                        {i.comentario || <span className="text-slate-300">—</span>}
+                      </TableCell>
+                      <TableCell className="min-w-44">
+                        <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => setPlanItem(i)} />
+                      </TableCell>
+                      {puedeEditar && (
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                            title="Eliminar esta observación"
+                            onClick={() => {
+                              setDelError(null)
+                              setDelItem(i)
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollX>
           )}
         </CardContent>
       </Card>
@@ -313,12 +400,13 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
             <MessageSquareText className="size-4 text-slate-500" /> Comentarios y observaciones
           </CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent>
           {coments.length === 0 ? (
             <p className="py-6 text-sm text-slate-500">
               Sin comentarios cargados en los checklists del período.
             </p>
           ) : (
+            <ScrollX>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -343,6 +431,7 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
                 ))}
               </TableBody>
             </Table>
+            </ScrollX>
           )}
         </CardContent>
       </Card>
@@ -353,6 +442,39 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
           onClose={() => setPlanItem(null)}
         />
       )}
+
+      <Dialog open={!!delItem} onOpenChange={(o: boolean) => !o && !pendingDel && setDelItem(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar observación</DialogTitle>
+            <DialogDescription>
+              {delItem && (
+                <>
+                  {delItem.dominio} · {delItem.item} · {fmtFecha(delItem.fecha)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            Se quita esta observación No OK del listado{delItem?.plan ? " junto con su plan de acción" : ""}. Esta acción no se puede deshacer.
+          </p>
+          {delError && <p className="text-sm text-red-600">{delError}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDelItem(null)} disabled={pendingDel}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="gap-1 bg-red-600 text-white hover:bg-red-700"
+              onClick={confirmarBorrado}
+              disabled={pendingDel}
+            >
+              {pendingDel && <Loader2 className="size-4 animate-spin" />}
+              <Trash2 className="size-4" /> Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

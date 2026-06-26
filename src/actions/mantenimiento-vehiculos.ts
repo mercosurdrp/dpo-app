@@ -1048,6 +1048,43 @@ export async function eliminarPlanChecklist(
   }
 }
 
+/**
+ * Elimina por completo una observación No OK del listado: borra primero su plan
+ * de acción (y la foto asociada) y luego la respuesta del checklist. Destructivo
+ * sobre el dato del check → solo admin/supervisor.
+ */
+export async function eliminarItemChecklist(
+  respuestaId: string
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    // 1) plan de acción + foto (si tiene)
+    const { data: plan } = await supabase
+      .from("checklist_planes_accion")
+      .select("foto_path")
+      .eq("respuesta_id", respuestaId)
+      .maybeSingle()
+    if (plan?.foto_path) {
+      await supabase.storage.from(PLANES_CHECK_BUCKET).remove([plan.foto_path as string])
+    }
+    const { error: planErr } = await supabase
+      .from("checklist_planes_accion")
+      .delete()
+      .eq("respuesta_id", respuestaId)
+    if (planErr) return { error: planErr.message }
+    // 2) la respuesta observada del checklist
+    const { error } = await supabase
+      .from("checklist_respuestas")
+      .delete()
+      .eq("id", respuestaId)
+    if (error) return { error: error.message }
+    return { ok: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ==================== GESTIÓN / CARGA (novedades, llantas, repuestos, OC) ====
 
 export interface Novedad {
