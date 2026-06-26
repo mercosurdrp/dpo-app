@@ -58,7 +58,13 @@ function formatNum(n: number | null, digits = 0): string {
 
 function formatPctFrac(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—"
-  return `${(n * 100).toLocaleString("es-AR", {
+  // Precisión: nunca mostrar 100%. Aunque el redondeo a 2 decimales llegue
+  // a 100,00 (p. ej. 99,996%), siempre hubo algún error, así que se topea
+  // en 99,9% para no mostrar una precisión "perfecta". Igual criterio que el
+  // tablero (capPrecision en actions/reuniones.ts).
+  let pct = n * 100
+  if (Math.round(pct * 100) / 100 >= 100) pct = 99.9
+  return `${pct.toLocaleString("es-AR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}%`
