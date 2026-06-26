@@ -162,11 +162,17 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
     const costoTotal = filas.reduce((s, f) => s + f.costo_total, 0)
     const venta = filas.reduce((s, f) => s + f.venta_neta, 0)
     const bultos = filas.reduce((s, f) => s + f.bultos, 0)
+    const almacen = filas.reduce((s, f) => s + f.costo_almacen, 0)
+    const distancia = filas.reduce((s, f) => s + f.costo_distancia, 0)
+    const distrib = filas.reduce((s, f) => s + f.costo_distrib, 0)
     const criticos = filas.filter((f) => clasificar(f, cortes).key === "caro").length
     return {
       costoTotal,
       venta,
       bultos,
+      almacen,
+      distancia,
+      distrib,
       pct: venta ? (100 * costoTotal) / venta : 0,
       xBulto: bultos ? costoTotal / bultos : 0,
       criticos,
@@ -370,7 +376,24 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
 
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi titulo="Costo logístico" valor={fmtMoney(kpis.costoTotal)} sub={`${fmtNum(kpis.pdv)} PDV`} icon={<Wallet className="h-5 w-5 text-slate-600" />} />
+        <Kpi
+          titulo="Costo logístico"
+          valor={fmtMoney(kpis.costoTotal)}
+          sub={`${fmtNum(kpis.pdv)} PDV`}
+          icon={<Wallet className="h-5 w-5 text-slate-600" />}
+          tooltip={
+            <div className="flex w-full flex-col text-left">
+              <p className="mb-1 font-semibold">Composición del costo del mes</p>
+              <DesgloseLinea label="Almacén (depósito)" valor={kpis.almacen} total={kpis.costoTotal} />
+              <DesgloseLinea label="Distancia (llegar a las ciudades)" valor={kpis.distancia} total={kpis.costoTotal} />
+              <DesgloseLinea label="Distribución (reparto en ciudad)" valor={kpis.distrib} total={kpis.costoTotal} />
+              <div className="mt-1 flex justify-between border-t border-white/20 pt-1 font-semibold">
+                <span>Total</span>
+                <span className="tabular-nums">{fmtMoney(kpis.costoTotal)}</span>
+              </div>
+            </div>
+          }
+        />
         <Kpi titulo="Costo / Venta" valor={`${fmtNum(kpis.pct, 1)}%`} sub={`Venta neta ${fmtMoney(kpis.venta)}`} icon={<Percent className="h-5 w-5 text-slate-600" />} />
         <Kpi titulo="Costo x bulto" valor={fmtMoney(kpis.xBulto)} sub={`${fmtNum(kpis.bultos)} bultos`} icon={<Package className="h-5 w-5 text-slate-600" />} />
         <Kpi
@@ -668,15 +691,27 @@ function DesgloseLinea({ label, valor, total }: { label: string; valor: number; 
 }
 
 function Kpi({
-  titulo, valor, sub, icon, alerta,
-}: { titulo: string; valor: string; sub: string; icon: React.ReactNode; alerta?: boolean }) {
+  titulo, valor, sub, icon, alerta, tooltip,
+}: { titulo: string; valor: string; sub: string; icon: React.ReactNode; alerta?: boolean; tooltip?: React.ReactNode }) {
+  const valorEl = (
+    <p className={`text-3xl font-bold ${alerta ? "text-red-600" : "text-slate-900"} ${tooltip ? "cursor-help underline decoration-dotted decoration-slate-300 underline-offset-4" : ""}`}>
+      {valor}
+    </p>
+  )
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">{titulo}</p>
-            <p className={`text-3xl font-bold ${alerta ? "text-red-600" : "text-slate-900"}`}>{valor}</p>
+            {tooltip ? (
+              <Tooltip>
+                <TooltipTrigger render={valorEl} />
+                <TooltipContent className="w-64 items-stretch">{tooltip}</TooltipContent>
+              </Tooltip>
+            ) : (
+              valorEl
+            )}
           </div>
           <div className={`rounded-full p-3 ${alerta ? "bg-red-100" : "bg-slate-100"}`}>{icon}</div>
         </div>
