@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react"
+import { useMemo, useState, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -114,49 +114,15 @@ const PLAN_ESTADO_BADGE: Record<ChecklistPlanEstado, string> = {
 }
 
 /**
- * Contenedor con scroll horizontal y una BARRA DE SCROLL ARRIBA sincronizada con
- * la de abajo, para poder desplazar la tabla al costado sin tener que bajar
- * hasta la última fila.
+ * Contenedor con scroll horizontal cuya BARRA queda ARRIBA (no abajo), para
+ * poder desplazar la tabla al costado sin tener que bajar hasta la última fila.
+ * Truco: se voltea el contenedor con rotateX(180deg) — así la barra nativa
+ * aparece arriba — y se contra-voltea el contenido para que se vea normal.
  */
 function ScrollX({ children }: { children: ReactNode }) {
-  const topRef = useRef<HTMLDivElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const [ancho, setAncho] = useState(0)
-
-  useEffect(() => {
-    const el = bodyRef.current
-    if (!el) return
-    const medir = () => setAncho(el.scrollWidth)
-    medir()
-    const ro = new ResizeObserver(medir)
-    ro.observe(el)
-    window.addEventListener("resize", medir)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener("resize", medir)
-    }
-  }, [children])
-
-  const sincronizar = (origen: "top" | "body") => {
-    const t = topRef.current
-    const b = bodyRef.current
-    if (!t || !b) return
-    if (origen === "top") b.scrollLeft = t.scrollLeft
-    else t.scrollLeft = b.scrollLeft
-  }
-
   return (
-    <div>
-      <div
-        ref={topRef}
-        onScroll={() => sincronizar("top")}
-        className="overflow-x-auto overflow-y-hidden"
-      >
-        <div style={{ width: ancho, height: 1 }} />
-      </div>
-      <div ref={bodyRef} onScroll={() => sincronizar("body")} className="overflow-x-auto">
-        {children}
-      </div>
+    <div className="overflow-x-auto [transform:rotateX(180deg)]">
+      <div className="[transform:rotateX(180deg)]">{children}</div>
     </div>
   )
 }
