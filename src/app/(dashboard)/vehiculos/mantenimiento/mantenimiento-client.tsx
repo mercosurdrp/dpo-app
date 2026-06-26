@@ -1530,43 +1530,44 @@ function DetalleOrdenDialog({
             )}
           </dl>
 
-          {/* Tareas */}
+          {/* Trabajo realizado: tareas cargadas y/o el detalle escrito en observaciones */}
           <div>
             <p className="mb-1 text-xs font-medium text-slate-500">
-              Tareas ({tareas.length})
+              Trabajo realizado en la unidad
             </p>
-            {tareas.length === 0 ? (
-              <p className="text-slate-400">Sin tareas registradas.</p>
+            {tareas.length === 0 && !m.observaciones ? (
+              <p className="text-slate-400">Sin detalle del trabajo cargado.</p>
             ) : (
-              <ul className="space-y-1">
-                {tareas.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
-                  >
-                    <span className="text-slate-700">
-                      {t.tarea_id
-                        ? tareasById.get(t.tarea_id)?.nombre ?? "Tarea"
-                        : t.descripcion || "Tarea"}
-                    </span>
-                    {t.costo != null && (
-                      <span className="shrink-0 tabular-nums text-xs text-slate-500">
-                        {fmtMoney(Number(t.costo))}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-2">
+                {tareas.length > 0 && (
+                  <ul className="space-y-1">
+                    {tareas.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
+                      >
+                        <span className="text-slate-700">
+                          {t.tarea_id
+                            ? tareasById.get(t.tarea_id)?.nombre ?? "Tarea"
+                            : t.descripcion || "Tarea"}
+                        </span>
+                        {t.costo != null && (
+                          <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                            {fmtMoney(Number(t.costo))}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {m.observaciones && (
+                  <p className="whitespace-pre-wrap rounded-md border bg-slate-50 px-2.5 py-1.5 text-slate-700">
+                    {m.observaciones}
+                  </p>
+                )}
+              </div>
             )}
           </div>
-
-          {/* Observaciones */}
-          {m.observaciones && (
-            <div>
-              <p className="mb-1 text-xs font-medium text-slate-500">Observaciones</p>
-              <p className="whitespace-pre-wrap text-slate-700">{m.observaciones}</p>
-            </div>
-          )}
 
           {/* Facturas / adjuntos */}
           {facturas.length > 0 && (
