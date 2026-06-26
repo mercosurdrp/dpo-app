@@ -121,7 +121,7 @@ const PLAN_ESTADO_BADGE: Record<ChecklistPlanEstado, string> = {
  */
 function ScrollX({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto [transform:rotateX(180deg)]">
+    <div className="scrollbar-x-visible overflow-x-auto [transform:rotateX(180deg)]">
       <div className="[transform:rotateX(180deg)]">{children}</div>
     </div>
   )
