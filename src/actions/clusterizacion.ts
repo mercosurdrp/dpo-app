@@ -103,6 +103,28 @@ async function getRechazoPorCliente(
   return acc
 }
 
+/**
+ * Mapeo promotor → supervisor de venta, derivado de `rechazos` (que trae el par
+ * ds_vendedor/ds_supervisor). El mapeo es 1:1, así que con la primera aparición
+ * alcanza. Se usa para poder filtrar el explorador por supervisor.
+ */
+async function getSupervisorPorPromotor(desde: string): Promise<Map<string, string>> {
+  const supabase = await createClient()
+  const m = new Map<string, string>()
+  const { data } = await supabase
+    .from("rechazos")
+    .select("ds_vendedor, ds_supervisor")
+    .gte("fecha", desde)
+    .not("ds_vendedor", "is", null)
+    .not("ds_supervisor", "is", null)
+    .limit(10000)
+  for (const r of (data ?? []) as { ds_vendedor: string; ds_supervisor: string }[]) {
+    const k = r.ds_vendedor.trim().toUpperCase()
+    if (!m.has(k)) m.set(k, r.ds_supervisor)
+  }
+  return m
+}
+
 /** Resta `meses` a una fecha YYYY-MM-DD y devuelve YYYY-MM-DD. */
 function restarMeses(fechaYmd: string, meses: number): string {
   const [y, m, d] = fechaYmd.split("-").map((s) => parseInt(s, 10))
@@ -145,6 +167,11 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       ? await getRechazoPorCliente(periodo.drop_desde, periodo.ytd_hasta)
       : new Map<number, { culpa: number; total: number }>()
 
+  // Supervisor por promotor (para el filtro del explorador).
+  const supMap = periodo.ytd_hasta
+    ? await getSupervisorPorPromotor(restarMeses(periodo.ytd_hasta, 6))
+    : new Map<string, string>()
+
   // Umbral de facturación = mediana de la facturación YTD.
   const umbral = mediana(conDrop.map((r) => r.facturacion_ytd))
 
@@ -172,6 +199,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       nombre: r.nombre,
       localidad: r.localidad,
       promotor: r.promotor,
+      supervisor: r.promotor ? supMap.get(r.promotor.trim().toUpperCase()) ?? null : null,
       segmento: r.segmento,
       cluster: clasificar(ingresoAlto, crecePositivo),
       ingresos_actual: r.facturacion_ytd,

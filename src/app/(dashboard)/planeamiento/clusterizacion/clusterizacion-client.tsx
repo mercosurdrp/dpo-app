@@ -106,18 +106,71 @@ function CrecimientoBadge({ pct }: { pct: number | null }) {
   )
 }
 
+function SelectFiltro({
+  label, value, onChange, opciones,
+}: { label: string; value: string; onChange: (v: string) => void; opciones: string[] }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+      >
+        <option value="todos">Todos</option>
+        {opciones.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 const MAX_FILAS = 300
+
+const MOSTRADOR = "VTA. MOSTRADOR"
 
 export function ClusterizacionClient({ data }: Props) {
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
+  const [fLocalidad, setFLocalidad] = useState("todos")
+  const [fPromotor, setFPromotor] = useState("todos")
+  const [fSupervisor, setFSupervisor] = useState("todos")
+  const [fEstado, setFEstado] = useState<"todos" | "pasa" | "no_pasa">("todos")
+  const [fSalud, setFSalud] = useState<"todos" | "sano" | "atencion">("todos")
+  // El mostrador NO viene por defecto: hay que tildarlo a propósito.
+  const [incluirMostrador, setIncluirMostrador] = useState(false)
 
   const { periodo, umbral_ingresos, resumen, clientes } = data
+
+  // Opciones de los filtros (valores distintos presentes en la cartera).
+  const opciones = useMemo(() => {
+    const loc = new Set<string>(), prom = new Set<string>(), sup = new Set<string>()
+    for (const c of clientes) {
+      if (c.localidad) loc.add(c.localidad)
+      if (c.promotor) prom.add(c.promotor)
+      if (c.supervisor) sup.add(c.supervisor)
+    }
+    const ord = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b))
+    return { localidades: ord(loc), promotores: ord(prom), supervisores: ord(sup) }
+  }, [clientes])
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     return clientes
       .filter((c) => filtroCluster === "todos" || c.cluster === filtroCluster)
+      .filter((c) => fLocalidad === "todos" || c.localidad === fLocalidad)
+      .filter((c) => fPromotor === "todos" || c.promotor === fPromotor)
+      .filter((c) => fSupervisor === "todos" || c.supervisor === fSupervisor)
+      .filter((c) => fEstado === "todos" || c.estado === fEstado)
+      .filter((c) => fSalud === "todos" || c.salud === fSalud)
+      // Mostrador destildado por defecto: se excluye salvo que lo incluyas o lo elijas explícito.
+      .filter(
+        (c) =>
+          incluirMostrador ||
+          fPromotor === MOSTRADOR ||
+          (c.promotor ?? "").trim().toUpperCase() !== MOSTRADOR,
+      )
       .filter(
         (c) =>
           q === "" ||
@@ -127,7 +180,7 @@ export function ClusterizacionClient({ data }: Props) {
           (c.promotor ?? "").toLowerCase().includes(q),
       )
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [clientes, filtroCluster, busqueda])
+  }, [clientes, filtroCluster, busqueda, fLocalidad, fPromotor, fSupervisor, fEstado, fSalud, incluirMostrador])
 
   const visibles = filtrados.slice(0, MAX_FILAS)
   const resumenById = (cl: ClusterId) => resumen.find((r) => r.cluster === cl)
@@ -264,6 +317,50 @@ export function ClusterizacionClient({ data }: Props) {
           )
         })}
       </div>
+
+      {/* Filtros (explorador) */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <SelectFiltro label="Localidad" value={fLocalidad} onChange={setFLocalidad} opciones={opciones.localidades} />
+            <SelectFiltro label="Promotor" value={fPromotor} onChange={setFPromotor} opciones={opciones.promotores} />
+            <SelectFiltro label="Supervisor" value={fSupervisor} onChange={setFSupervisor} opciones={opciones.supervisores} />
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Estado</label>
+              <select
+                value={fEstado}
+                onChange={(e) => setFEstado(e.target.value as "todos" | "pasa" | "no_pasa")}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="pasa">Pasa</option>
+                <option value="no_pasa">No pasa</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Salud</label>
+              <select
+                value={fSalud}
+                onChange={(e) => setFSalud(e.target.value as "todos" | "sano" | "atencion")}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="sano">Sano</option>
+                <option value="atencion">Atención</option>
+              </select>
+            </div>
+            <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={incluirMostrador}
+                onChange={(e) => setIncluirMostrador(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Incluir VTA. MOSTRADOR
+            </label>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tabla de clientes */}
       <Card>

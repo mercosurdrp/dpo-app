@@ -20,6 +20,8 @@ export interface ClienteClusterizado {
   nombre: string | null
   localidad: string | null
   promotor: string | null
+  /** Supervisor de venta (derivado del promotor). */
+  supervisor: string | null
   segmento: string | null
   cluster: ClusterId
   ingresos_actual: number
