@@ -75,36 +75,61 @@ export async function fetchLecturas(filters?: {
 }): Promise<Lectura[]> {
   const supabase = await createClient()
 
-  let qReg = supabase
-    .from("registros_vehiculos")
-    .select("dominio, fecha, hora, odometro, tipo, chofer")
-    .not("odometro", "is", null)
-  let qChk = supabase
-    .from("checklist_vehiculos")
-    .select("dominio, fecha, hora, odometro, tipo, chofer")
-    .not("odometro", "is", null)
-  let qCom = supabase
-    .from("registro_combustible")
-    .select("dominio, fecha, odometro, chofer")
-    .not("odometro", "is", null)
+  // PostgREST topea cada request en 1000 filas. Sin paginar se pierden
+  // SILENCIOSAMENTE las lecturas más nuevas (p. ej. los checks recientes de los
+  // autoelevadores), dejando el "último registro" y la proyección de service
+  // congelados. Paginamos por `fecha` ascendente hasta agotar la tabla.
+  const PAGE = 1000
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const aplicarFiltros = (q: any) => {
+    if (filters?.dominio) q = q.eq("dominio", filters.dominio)
+    if (filters?.fechaDesde) q = q.gte("fecha", filters.fechaDesde)
+    if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
+    return q
+  }
+  async function fetchTodo<T>(
+    tabla: string,
+    columnas: string
+  ): Promise<T[]> {
+    const out: T[] = []
+    for (let desde = 0; ; desde += PAGE) {
+      const { data, error } = await aplicarFiltros(
+        supabase.from(tabla).select(columnas).not("odometro", "is", null)
+      )
+        .order("fecha", { ascending: true })
+        .range(desde, desde + PAGE - 1)
+      if (error) throw new Error(error.message)
+      const filas = (data || []) as T[]
+      out.push(...filas)
+      if (filas.length < PAGE) break
+    }
+    return out
+  }
 
-  if (filters?.dominio) {
-    qReg = qReg.eq("dominio", filters.dominio)
-    qChk = qChk.eq("dominio", filters.dominio)
-    qCom = qCom.eq("dominio", filters.dominio)
-  }
-  if (filters?.fechaDesde) {
-    qReg = qReg.gte("fecha", filters.fechaDesde)
-    qChk = qChk.gte("fecha", filters.fechaDesde)
-    qCom = qCom.gte("fecha", filters.fechaDesde)
-  }
-  if (filters?.fechaHasta) {
-    qReg = qReg.lte("fecha", filters.fechaHasta)
-    qChk = qChk.lte("fecha", filters.fechaHasta)
-    qCom = qCom.lte("fecha", filters.fechaHasta)
-  }
-
-  const [reg, chk, com] = await Promise.all([qReg, qChk, qCom])
+  const [reg, chk, com] = await Promise.all([
+    fetchTodo<{
+      dominio: string
+      fecha: string
+      hora: string
+      odometro: number | null
+      tipo: string | null
+      chofer: string | null
+    }>("registros_vehiculos", "dominio, fecha, hora, odometro, tipo, chofer"),
+    fetchTodo<{
+      dominio: string
+      fecha: string
+      hora: string
+      odometro: number | null
+      tipo: string | null
+      chofer: string | null
+    }>("checklist_vehiculos", "dominio, fecha, hora, odometro, tipo, chofer"),
+    fetchTodo<{
+      dominio: string
+      fecha: string
+      odometro: number | null
+      chofer: string | null
+    }>("registro_combustible", "dominio, fecha, odometro, chofer"),
+  ]).then(([r, c, k]) => [{ data: r }, { data: c }, { data: k }] as const)
 
   const lecturas: Lectura[] = []
 
