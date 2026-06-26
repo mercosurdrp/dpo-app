@@ -7,10 +7,10 @@ import type { Snapshot, RechazoVisita } from "@/lib/foxtrot-snapshot/types"
 
 const REFRESH_MS = 60_000
 const DC_COLORS: Record<string, string> = {
-  iguazu: "#2dd4bf",
-  eldorado: "#f59e0b",
-  ramallo: "#3b82f6",
-  pergamino: "#8b5cf6",
+  iguazu: "#0d9488",
+  eldorado: "#d97706",
+  ramallo: "#2563eb",
+  pergamino: "#7c3aed",
 }
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "custom"
@@ -59,7 +59,7 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
         [-25.5, -54.5],
         8,
       )
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
         maxZoom: 19,
         subdomains: "abcd",
       }).addTo(m)
@@ -329,11 +329,11 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
         ? `<span style="color:#b45309;font-weight:600">Última posición</span>`
         : `<span style="color:#15803d;font-weight:600">En vivo</span>`
       const html = `<svg viewBox="0 0 32 32" width="25" height="25" xmlns="http://www.w3.org/2000/svg">
-        <rect x="1.5" y="9.5" width="17" height="13" rx="1.5" fill="#e879f9" stroke="#fff" stroke-width="1.5"/>
-        <path d="M18.5 13.5 L23 13.5 L29.5 18 L29.5 22.5 L18.5 22.5 Z" fill="#e879f9" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
-        <rect x="20" y="14.5" width="4.5" height="3" fill="#0b1020" rx=".5"/>
-        <circle cx="7" cy="25" r="2.8" fill="#0b1020" stroke="#fff" stroke-width="1.2"/>
-        <circle cx="24" cy="25" r="2.8" fill="#0b1020" stroke="#fff" stroke-width="1.2"/>
+        <rect x="1.5" y="9.5" width="17" height="13" rx="1.5" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+        <path d="M18.5 13.5 L23 13.5 L29.5 18 L29.5 22.5 L18.5 22.5 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+        <rect x="20" y="14.5" width="4.5" height="3" fill="#1e293b" rx=".5"/>
+        <circle cx="7" cy="25" r="2.8" fill="#1e293b" stroke="#fff" stroke-width="1.2"/>
+        <circle cx="24" cy="25" r="2.8" fill="#1e293b" stroke="#fff" stroke-width="1.2"/>
         <circle cx="7" cy="25" r=".8" fill="#fff"/>
         <circle cx="24" cy="25" r=".8" fill="#fff"/>
       </svg>`
@@ -403,14 +403,14 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
           grid: { top: 10, right: 40, bottom: 30, left: 140 },
           xAxis: {
             type: "value",
-            axisLabel: { color: "#8892b8", fontSize: 10 },
-            splitLine: { lineStyle: { color: "#2a3358" } },
+            axisLabel: { color: "#64748b", fontSize: 11 },
+            splitLine: { lineStyle: { color: "#eef2f6" } },
           },
           yAxis: {
             type: "category",
             data: sliced.map((d) => d.name),
             axisLabel: {
-              color: "#e6ebff",
+              color: "#334155",
               fontSize: 11,
               width: 130,
               overflow: "truncate",
@@ -419,9 +419,10 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
           },
           tooltip: {
             trigger: "axis",
-            backgroundColor: "#151b33",
-            borderColor: "#2a3358",
-            textStyle: { color: "#e6ebff" },
+            backgroundColor: "#ffffff",
+            borderColor: "#e2e8f0",
+            textStyle: { color: "#0f172a" },
+            extraCssText: "box-shadow:0 8px 24px rgba(15,23,42,.12);border-radius:8px;",
           },
           series: [
             {
@@ -430,7 +431,7 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
               label: {
                 show: true,
                 position: "right",
-                color: "#e6ebff",
+                color: "#475569",
                 fontSize: 11,
                 formatter: (p: { value: number }) =>
                   p.value === 0 && opts.zeroColor ? "✓ 0" : p.value,
@@ -445,24 +446,24 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
     barChart(
       "chart-motivo",
       data.rechazos_por_motivo.map((d) => ({ name: d.motivo, value: d.cantidad })),
-      "#ef4444",
+      "#dc2626",
     )
     barChart(
       "chart-chofer",
       data.rechazos_por_chofer.map((d) => ({ name: d.chofer, value: d.cantidad })),
-      "#f59e0b",
-      { limit: 25, zeroColor: "#22c55e" },
+      "#d97706",
+      { limit: 25, zeroColor: "#16a34a" },
     )
     barChart(
       "chart-sku",
       data.rechazos_por_sku.map((d) => ({ name: d.sku, value: d.bultos })),
-      "#8b5cf6",
+      "#7c3aed",
     )
     barChart(
       "chart-repases",
       (data.repases_por_chofer || []).map((d) => ({ name: d.chofer, value: d.cantidad })),
-      "#f472b6",
-      { limit: 25, zeroColor: "#22c55e" },
+      "#db2777",
+      { limit: 25, zeroColor: "#16a34a" },
     )
 
     const histC = initChart("chart-hist")
@@ -473,24 +474,25 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
           xAxis: {
             type: "category",
             data: data.service_time_hist.labels,
-            axisLabel: { color: "#8892b8", fontSize: 10 },
+            axisLabel: { color: "#64748b", fontSize: 11 },
           },
           yAxis: {
             type: "value",
-            axisLabel: { color: "#8892b8", fontSize: 10 },
-            splitLine: { lineStyle: { color: "#2a3358" } },
+            axisLabel: { color: "#64748b", fontSize: 11 },
+            splitLine: { lineStyle: { color: "#eef2f6" } },
           },
           tooltip: {
             trigger: "axis",
-            backgroundColor: "#151b33",
-            borderColor: "#2a3358",
-            textStyle: { color: "#e6ebff" },
+            backgroundColor: "#ffffff",
+            borderColor: "#e2e8f0",
+            textStyle: { color: "#0f172a" },
+            extraCssText: "box-shadow:0 8px 24px rgba(15,23,42,.12);border-radius:8px;",
           },
           series: [
             {
               type: "bar",
               data: data.service_time_hist.values,
-              itemStyle: { color: "#2dd4bf", borderRadius: [3, 3, 0, 0] },
+              itemStyle: { color: "#0d9488", borderRadius: [3, 3, 0, 0] },
             },
           ],
         },
@@ -501,7 +503,7 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
     const fr = data.rechazos_franja_horaria
     const franjaC = initChart("chart-franja")
     if (franjaC && fr) {
-      const palette = ["#ef4444", "#f59e0b", "#8b5cf6", "#2dd4bf", "#3b82f6", "#64748b"]
+      const palette = ["#dc2626", "#d97706", "#7c3aed", "#0d9488", "#2563eb", "#64748b"]
       const series = fr.series.map((s, i) => ({
         name: s.motivo,
         type: "bar",
@@ -521,16 +523,17 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
           grid: { top: 40, right: 20, bottom: 60, left: 50 },
           legend: {
             bottom: 0,
-            textStyle: { color: "#e6ebff", fontSize: 11 },
+            textStyle: { color: "#475569", fontSize: 11 },
             itemWidth: 12,
             itemHeight: 10,
           },
           tooltip: {
             trigger: "axis",
             axisPointer: { type: "shadow" },
-            backgroundColor: "#151b33",
-            borderColor: "#2a3358",
-            textStyle: { color: "#e6ebff" },
+            backgroundColor: "#ffffff",
+            borderColor: "#e2e8f0",
+            textStyle: { color: "#0f172a" },
+            extraCssText: "box-shadow:0 8px 24px rgba(15,23,42,.12);border-radius:8px;",
             formatter: (params: { dataIndex: number; marker: string; seriesName: string; value: number }[]) => {
               if (!params.length) return ""
               const idx = params[0].dataIndex
@@ -544,20 +547,20 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
                     `<div style="display:flex;justify-content:space-between;gap:14px"><span>${p.marker}${p.seriesName}</span><b>${p.value}</b></div>`,
                 )
                 .join("")
-              return `<div style="font-size:12px"><div style="font-weight:600;margin-bottom:4px">${lbl} hs · ${tot} bultos · ${cli} cliente${cli === 1 ? "" : "s"}</div>${rows || '<div style="color:#8892b8">sin rechazos</div>'}</div>`
+              return `<div style="font-size:12px"><div style="font-weight:600;margin-bottom:4px">${lbl} hs · ${tot} bultos · ${cli} cliente${cli === 1 ? "" : "s"}</div>${rows || '<div style="color:#94a3b8">sin rechazos</div>'}</div>`
             },
           },
           xAxis: {
             type: "category",
             data: fr.labels,
-            axisLabel: { color: "#8892b8", fontSize: 10 },
+            axisLabel: { color: "#64748b", fontSize: 11 },
           },
           yAxis: {
             type: "value",
             name: "Bultos",
-            nameTextStyle: { color: "#8892b8", fontSize: 10 },
-            axisLabel: { color: "#8892b8", fontSize: 10 },
-            splitLine: { lineStyle: { color: "#2a3358" } },
+            nameTextStyle: { color: "#64748b", fontSize: 10 },
+            axisLabel: { color: "#64748b", fontSize: 11 },
+            splitLine: { lineStyle: { color: "#eef2f6" } },
           },
           series,
         },
@@ -689,7 +692,7 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
         <button className="refresh" onClick={fetchSnapshot} title="Refrescar">
           ⟳ Refrescar
         </button>
-        <div id="gen">
+        <div id="gen" className={error ? "error" : ""}>
           {error ? `⚠ ${error}` : genAt ? `Actualizado ${genAt}` : ""}
         </div>
       </header>
@@ -1128,12 +1131,12 @@ export function FoxtrotTrackingClient({ isAdmin: _isAdmin }: Props) {
                                 <tbody>
                                   {r.items.map((it, j) => (
                                     <tr key={j}>
-                                      <td style={{ color: "#e6ebff" }}>{it.producto}</td>
+                                      <td style={{ color: "#334155" }}>{it.producto}</td>
                                       <td style={{ textAlign: "right", color: "var(--accent-2)" }}>
                                         {fmtN(it.cantidad)}
                                       </td>
                                       <td style={{ color: "var(--muted)" }}>{it.motivo}</td>
-                                      <td style={{ color: "#888", fontSize: 10 }}>{it.notas ?? ""}</td>
+                                      <td style={{ color: "#94a3b8", fontSize: 10 }}>{it.notas ?? ""}</td>
                                     </tr>
                                   ))}
                                 </tbody>
