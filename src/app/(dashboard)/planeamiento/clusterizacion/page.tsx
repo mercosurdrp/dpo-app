@@ -2,6 +2,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { redirect } from "next/navigation"
 import { getClusterizacion } from "@/actions/clusterizacion"
+import { getPlanesCluster } from "@/actions/clusterizacion-planes"
 import { IS_MISIONES } from "@/lib/empresa"
 import { ClusterizacionClient } from "./clusterizacion-client"
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic"
 export default async function ClusterizacionPage() {
   if (IS_MISIONES) redirect("/indicadores")
 
-  const res = await getClusterizacion()
+  const [res, planes] = await Promise.all([getClusterizacion(), getPlanesCluster()])
 
   return (
     <div className="space-y-4">
@@ -29,7 +30,7 @@ export default async function ClusterizacionPage() {
           <p className="mt-2 text-red-500">Error: {res.error}</p>
         </div>
       ) : (
-        <ClusterizacionClient data={res.data} />
+        <ClusterizacionClient data={res.data} planesIniciales={planes} />
       )}
     </div>
   )

@@ -29,6 +29,7 @@ export type PlanOrigen =
   | "reunion"
   | "presupuesto"
   | "riesgo"
+  | "clusterizacion"
 
 export type EstadoUnificado = "no_comenzada" | "en_curso" | "cerrada"
 
@@ -59,6 +60,7 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   reunion: "Reunión",
   presupuesto: "Presupuesto",
   riesgo: "Riesgo externo",
+  clusterizacion: "Clusterización",
 }
 
 // Secciones del action log de reuniones → etiqueta legible para el chip.
@@ -535,12 +537,51 @@ export async function getPlanesUnificados(opts?: {
       }
     }
 
-    // En el tablero general, dejar sólo los planes de responsables admin.
-    // (roturas_calle_planes tiene responsable de texto libre / sin profile,
-    // por lo que queda fuera de esta vista.)
+    // ---- cluster_planes (Clusterización 4.2; responsable de texto libre) ----
+    {
+      const { data: rows, error } = await supabase
+        .from("cluster_planes")
+        .select("id, descripcion, estado, responsable, fecha_limite, created_at, nombre_cliente")
+        .order("created_at", { ascending: false })
+      if (error) return { error: `cluster_planes: ${error.message}` }
+      for (const r of (rows ?? []) as Array<{
+        id: string
+        descripcion: string
+        estado: string
+        responsable: string | null
+        fecha_limite: string | null
+        created_at: string
+        nombre_cliente: string | null
+      }>) {
+        const estado: EstadoUnificado =
+          r.estado === "hecho" ? "cerrada" : r.estado === "en_proceso" ? "en_curso" : "no_comenzada"
+        items.push({
+          origen: "clusterizacion",
+          origen_label: ORIGEN_LABEL.clusterizacion,
+          id: r.id,
+          titulo: r.nombre_cliente ? `Cliente: ${r.nombre_cliente}` : r.descripcion,
+          descripcion: r.descripcion,
+          estado_unificado: estado,
+          fecha_limite: r.fecha_limite,
+          is_overdue: calcOverdue(r.fecha_limite, estado, hoyISO),
+          prioridad: null,
+          responsable_id: null,
+          responsable_nombre: r.responsable ?? null,
+          href: "/planeamiento/clusterizacion",
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    // En el tablero general, dejar sólo los planes de responsables admin, MÁS
+    // los de clusterización (responsable de texto libre, pero se quieren ver).
     const visibles = soloMios
       ? items
-      : items.filter((it) => it.responsable_id && adminIds.has(it.responsable_id))
+      : items.filter(
+          (it) =>
+            it.origen === "clusterizacion" ||
+            (it.responsable_id && adminIds.has(it.responsable_id)),
+        )
 
     // ---- Resolver nombres de responsables en un solo query ----
     if (profileIds.size > 0) {
