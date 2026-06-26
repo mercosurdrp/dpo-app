@@ -161,8 +161,14 @@ function ScrollX({ children }: { children: ReactNode }) {
       >
         <div style={{ width: ancho, height: 1 }} />
       </div>
-      {/* La tabla: scrollea pero sin barra propia (sincronizada con la de arriba). */}
-      <div ref={bodyRef} onScroll={desdeTabla} className="overflow-x-auto scrollbar-none">
+      {/* La tabla: scrollea acá (no en el wrapper interno del <Table> de shadcn,
+          que neutralizamos con [&>div]:overflow-x-visible) y sin barra propia,
+          sincronizada con la de arriba. */}
+      <div
+        ref={bodyRef}
+        onScroll={desdeTabla}
+        className="overflow-x-auto scrollbar-none [&>div]:overflow-x-visible"
+      >
         {children}
       </div>
     </div>
