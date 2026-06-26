@@ -1,6 +1,6 @@
 "use server"
 
-import { consultarVentasPorCliente } from "@/lib/mercosur-dashboard"
+import { consultarClusterClientes } from "@/lib/mercosur-dashboard"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -16,9 +16,11 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA =
   "La clusterización de clientes solo está disponible en Pampeana."
 
-// Estado de salud de servicio (superpuesto al cluster económico):
-// "no pasa" si rechaza reiteradamente; "atención" si es caro/flojo de servir.
-const RECHAZO_EVENTOS_NO_PASA = 2 // entregas rechazadas en la ventana
+// ESTADO (pasa/no pasa): solo cuentan los rechazos por CAUSA DEL CLIENTE.
+// El resto de motivos (error de preventa, distribución, sin stock, etc.) son
+// fallas internas y NO hacen "no pasa".
+const MOTIVOS_CULPA_CLIENTE = new Set(["SIN DINERO", "CERRADO", "SIN ENVASES"])
+// SALUD (sano/atención): caro o flojo de servir.
 const DROP_BAJO = 3 // bultos por visita por debajo de esto = caro de servir
 const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
 
@@ -37,8 +39,7 @@ function clasificar(ingresoAlto: boolean, crecePositivo: boolean): ClusterId {
 }
 
 /**
- * Trae las calificaciones RMD por cliente desde la base de dpo-app y devuelve
- * el promedio y la cantidad por cod_cliente en la ventana indicada.
+ * Calificaciones RMD por cliente (promedio y cantidad) desde la ventana indicada.
  */
 async function getRmdPorCliente(
   desde: string,
@@ -47,7 +48,6 @@ async function getRmdPorCliente(
   const acc = new Map<number, { suma: number; n: number }>()
   const PAGE = 1000
   let from = 0
-  // PostgREST trunca a 1000 filas; paginar hasta agotar.
   while (true) {
     const { data, error } = await supabase
       .from("nps_rmd_cliente")
@@ -69,30 +69,32 @@ async function getRmdPorCliente(
 }
 
 /**
- * Bultos rechazados por cliente en la ventana [desde, hasta] (tabla `rechazos`,
- * id_cliente Chess). Sirve para el % de rechazo y el flag "no pasa".
+ * Entregas rechazadas por cliente en la ventana [desde, hasta], separando las
+ * que son por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases) del total.
  */
 async function getRechazoPorCliente(
   desde: string,
   hasta: string,
-): Promise<Map<number, { bultos: number; eventos: number }>> {
+): Promise<Map<number, { culpa: number; total: number }>> {
   const supabase = await createClient()
-  const acc = new Map<number, { bultos: number; eventos: number }>()
+  const acc = new Map<number, { culpa: number; total: number }>()
   const PAGE = 1000
   let from = 0
   while (true) {
     const { data, error } = await supabase
       .from("rechazos")
-      .select("id_cliente, bultos_rechazados")
+      .select("id_cliente, ds_rechazo")
       .gte("fecha", desde)
       .lte("fecha", hasta)
       .range(from, from + PAGE - 1)
     if (error) break // rechazo es opcional: si falla, seguimos sin él
     if (!data || data.length === 0) break
-    for (const r of data as { id_cliente: number; bultos_rechazados: number | null }[]) {
-      const prev = acc.get(r.id_cliente) ?? { bultos: 0, eventos: 0 }
-      prev.bultos += Number(r.bultos_rechazados ?? 0)
-      prev.eventos += 1 // cada fila = una entrega rechazada
+    for (const r of data as { id_cliente: number; ds_rechazo: string | null }[]) {
+      const prev = acc.get(r.id_cliente) ?? { culpa: 0, total: 0 }
+      prev.total += 1 // cada fila = una entrega rechazada
+      if (MOTIVOS_CULPA_CLIENTE.has((r.ds_rechazo ?? "").trim().toUpperCase())) {
+        prev.culpa += 1
+      }
       acc.set(r.id_cliente, prev)
     }
     if (data.length < PAGE) break
@@ -108,15 +110,13 @@ function restarMeses(fechaYmd: string, meses: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
 }
 
-export async function getClusterizacion(
-  diasPeriodo = 90,
-): Promise<Result<ClusterizacionData>> {
+export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
 
   let ventas
   try {
-    ventas = await consultarVentasPorCliente(diasPeriodo)
+    ventas = await consultarClusterClientes()
   } catch (e) {
     return {
       error:
@@ -127,58 +127,46 @@ export async function getClusterizacion(
   }
 
   const { periodo, clientes: rows } = ventas
-  if (rows.length === 0) {
-    return {
-      data: {
-        periodo,
-        umbral_ingresos: 0,
-        resumen: [],
-        clientes: [],
-      },
-    }
+  // Ocultamos a los que no compraron en los últimos 45 días (drop size 0): no
+  // son representativos para el análisis de servicio reciente.
+  const conDrop = rows.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
+  if (conDrop.length === 0) {
+    return { data: { periodo, umbral_ingresos: 0, resumen: [], clientes: [] } }
   }
 
-  // RMD de los últimos 6 meses (ventana más amplia que las ventas para tener
-  // muestra suficiente por cliente).
-  const rmdDesde = periodo.actual_hasta
-    ? restarMeses(periodo.actual_hasta, 6)
-    : ""
+  // RMD de los últimos 6 meses (muestra suficiente por cliente).
+  const rmdDesde = periodo.ytd_hasta ? restarMeses(periodo.ytd_hasta, 6) : ""
   const rmdMap = rmdDesde ? await getRmdPorCliente(rmdDesde) : new Map()
 
-  // Rechazos en la MISMA ventana de ventas (para el % de rechazo y el "no pasa").
+  // Rechazos de los últimos 45 días [drop_desde, ytd_hasta] (foto reciente):
+  // un rechazo de enero no debe condenar al cliente en junio.
   const rechazoMap =
-    periodo.actual_desde && periodo.actual_hasta
-      ? await getRechazoPorCliente(periodo.actual_desde, periodo.actual_hasta)
-      : new Map<number, { bultos: number; eventos: number }>()
+    periodo.drop_desde && periodo.ytd_hasta
+      ? await getRechazoPorCliente(periodo.drop_desde, periodo.ytd_hasta)
+      : new Map<number, { culpa: number; total: number }>()
 
-  // Umbral de ingresos = mediana de los ingresos del período actual.
-  const umbral = mediana(rows.map((r) => r.ingresos_actual))
+  // Umbral de facturación = mediana de la facturación YTD.
+  const umbral = mediana(conDrop.map((r) => r.facturacion_ytd))
 
-  const clientes: ClienteClusterizado[] = rows.map((r) => {
+  const clientes: ClienteClusterizado[] = conDrop.map((r) => {
     const crecimiento_pct =
-      r.ingresos_anterior > 0
-        ? (r.ingresos_actual - r.ingresos_anterior) / r.ingresos_anterior
-        : null // sin venta previa → cliente nuevo
-    // Nuevo (sin venta previa) o crecimiento >= 0 cuenta como "crece".
+      r.facturacion_ytd_prev > 0
+        ? (r.facturacion_ytd - r.facturacion_ytd_prev) / r.facturacion_ytd_prev
+        : null // sin venta el año anterior → cliente nuevo
     const crecePositivo = crecimiento_pct === null || crecimiento_pct >= 0
-    const ingresoAlto = r.ingresos_actual >= umbral
-    const drop_size = r.dias_actual > 0 ? r.bultos_actual / r.dias_actual : 0
+    const ingresoAlto = r.facturacion_ytd >= umbral
+    const drop_size = r.dias_45d > 0 ? r.bultos_45d / r.dias_45d : 0
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const rech = rechazoMap.get(r.id_cliente)
-    const rechazos_bultos = rech?.bultos ?? 0
-    const rechazos_eventos = rech?.eventos ?? 0
-    const baseRech = r.bultos_actual + rechazos_bultos
-    const rechazo_pct = baseRech > 0 ? (100 * rechazos_bultos) / baseRech : 0
-    // Estado de salud: rechazo reiterado manda; si no, drop/RMD bajo = atención.
-    const drop_bajo = r.dias_actual > 0 && drop_size < DROP_BAJO
+    const rechazos_culpa = rech?.culpa ?? 0
+    const rechazos_total = rech?.total ?? 0
+    // ESTADO: rechazó al menos una vez por su culpa.
+    const estado: "pasa" | "no_pasa" = rechazos_culpa >= 1 ? "no_pasa" : "pasa"
+    // SALUD: drop bajo o RMD bajo.
+    const drop_bajo = drop_size < DROP_BAJO
     const rmd_bajo = rmd_prom != null && rmd_prom < RMD_BAJO
-    const estado: "no_pasa" | "atencion" | "sano" =
-      rechazos_eventos >= RECHAZO_EVENTOS_NO_PASA
-        ? "no_pasa"
-        : drop_bajo || rmd_bajo
-          ? "atencion"
-          : "sano"
+    const salud: "sano" | "atencion" = drop_bajo || rmd_bajo ? "atencion" : "sano"
     return {
       id_cliente: r.id_cliente,
       nombre: r.nombre,
@@ -186,34 +174,26 @@ export async function getClusterizacion(
       promotor: r.promotor,
       segmento: r.segmento,
       cluster: clasificar(ingresoAlto, crecePositivo),
-      ingresos_actual: r.ingresos_actual,
-      ingresos_anterior: r.ingresos_anterior,
+      ingresos_actual: r.facturacion_ytd,
+      ingresos_anterior: r.facturacion_ytd_prev,
       crecimiento_pct,
-      bultos_actual: r.bultos_actual,
-      dias_actual: r.dias_actual,
+      bultos_actual: r.bultos_45d,
+      dias_actual: r.dias_45d,
       drop_size,
       rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
-      rechazos_bultos,
-      rechazos_eventos,
-      rechazo_pct,
+      rechazos_culpa,
+      rechazos_total,
+      estado,
       drop_bajo,
       rmd_bajo,
-      estado,
+      salud,
     }
   })
 
   // Resumen por cluster.
-  const ingresosTotalGlobal = clientes.reduce(
-    (s, c) => s + c.ingresos_actual,
-    0,
-  )
-  const orden: ClusterId[] = [
-    "ganador",
-    "en_crecimiento",
-    "basico",
-    "ventas_bajas",
-  ]
+  const facturacionTotalGlobal = clientes.reduce((s, c) => s + c.ingresos_actual, 0)
+  const orden: ClusterId[] = ["ganador", "en_crecimiento", "basico", "ventas_bajas"]
   const resumen: ClusterResumen[] = orden.map((cl) => {
     const grupo = clientes.filter((c) => c.cluster === cl)
     const ingresos_total = grupo.reduce((s, c) => s + c.ingresos_actual, 0)
@@ -222,8 +202,7 @@ export async function getClusterizacion(
     const rmd_n = conRmd.reduce((s, c) => s + c.rmd_n, 0)
     const rmd_prom =
       conRmd.length > 0
-        ? conRmd.reduce((s, c) => s + (c.rmd_prom as number) * c.rmd_n, 0) /
-          (rmd_n || 1)
+        ? conRmd.reduce((s, c) => s + (c.rmd_prom as number) * c.rmd_n, 0) / (rmd_n || 1)
         : null
     return {
       cluster: cl,
@@ -231,7 +210,7 @@ export async function getClusterizacion(
       ingresos_total,
       pct_clientes: clientes.length > 0 ? grupo.length / clientes.length : 0,
       pct_ingresos:
-        ingresosTotalGlobal > 0 ? ingresos_total / ingresosTotalGlobal : 0,
+        facturacionTotalGlobal > 0 ? ingresos_total / facturacionTotalGlobal : 0,
       drop_size_prom:
         dropSizes.length > 0
           ? dropSizes.reduce((s, v) => s + v, 0) / dropSizes.length
@@ -239,17 +218,12 @@ export async function getClusterizacion(
       rmd_prom,
       rmd_n,
       no_pasan: grupo.filter((c) => c.estado === "no_pasa").length,
-      en_atencion: grupo.filter((c) => c.estado === "atencion").length,
-      sanos: grupo.filter((c) => c.estado === "sano").length,
+      en_atencion: grupo.filter((c) => c.salud === "atencion").length,
+      sanos: grupo.filter((c) => c.salud === "sano").length,
     }
   })
 
   return {
-    data: {
-      periodo,
-      umbral_ingresos: umbral,
-      resumen,
-      clientes,
-    },
+    data: { periodo, umbral_ingresos: umbral, resumen, clientes },
   }
 }

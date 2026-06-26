@@ -1,7 +1,6 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -32,7 +31,6 @@ import {
 
 interface Props {
   data: ClusterizacionData
-  diasPeriodo: number
 }
 
 // Estética por cluster (color + ícono + descripción del cuadrante).
@@ -65,8 +63,6 @@ const CLUSTER_META: Record<
     desc: "Baja facturación · sin crecer",
   },
 }
-
-const PERIODOS = [30, 60, 90, 180]
 
 const fmtMoneda = (n: number) =>
   new Intl.NumberFormat("es-AR", {
@@ -112,8 +108,7 @@ function CrecimientoBadge({ pct }: { pct: number | null }) {
 
 const MAX_FILAS = 300
 
-export function ClusterizacionClient({ data, diasPeriodo }: Props) {
-  const router = useRouter()
+export function ClusterizacionClient({ data }: Props) {
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
 
@@ -154,22 +149,10 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
             </p>
           </div>
         </div>
-        {/* Selector de período */}
-        <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
-          {PERIODOS.map((d) => (
-            <button
-              key={d}
-              onClick={() => router.push(`/planeamiento/clusterizacion?dias=${d}`)}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                d === diasPeriodo
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              {d}d
-            </button>
-          ))}
-        </div>
+        {/* Encuadre YTD (acumulado del año) */}
+        <Badge variant="secondary" className="bg-indigo-100 text-indigo-700">
+          Encuadre YTD · {periodo.ytd_desde} → {periodo.ytd_hasta}
+        </Badge>
       </div>
 
       {/* Metodología / estado de fuentes */}
@@ -179,25 +162,19 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
           <div className="space-y-1">
             <p>
               4 clústeres por el cruce <strong>facturación × crecimiento</strong>{" "}
-              (R4.2.1). Período actual{" "}
-              <strong>{periodo.actual_desde}</strong> →{" "}
-              <strong>{periodo.actual_hasta}</strong> vs. anterior desde{" "}
-              <strong>{periodo.anterior_desde}</strong> ({periodo.dias_periodo}{" "}
-              días cada uno). Umbral de facturación alta/baja = mediana ={" "}
-              <strong>{fmtMoneda(umbral_ingresos)}</strong>.
+              en modo <strong>YTD</strong>: acumulado <strong>{periodo.ytd_desde} → {periodo.ytd_hasta}</strong>{" "}
+              vs. el mismo tramo del año anterior (<strong>{periodo.ytd_prev_desde} → {periodo.ytd_prev_hasta}</strong>).
+              Umbral de facturación alta/baja = mediana = <strong>{fmtMoneda(umbral_ingresos)}</strong>.
             </p>
             <p className="text-xs text-muted-foreground">
-              Fuentes: facturación y crecimiento de ventas Chess (netas); RMD
-              promedio últimos 6 meses por cliente (cruce R4.2.2 con OTIF/RMD
-              pendiente de OTIF por PDV). El{" "}
-              <strong>drop size</strong> (bultos/visita) es un{" "}
-              <em>proxy del costo de servir</em>. El <strong>Estado de servicio</strong> es un eje de calidad
-              superpuesto al cluster económico:{" "}
-              <strong className="text-red-600">No pasa</strong> = rechaza reiteradamente (≥ 2 entregas
-              rechazadas);{" "}
-              <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis) o RMD bajo
-              (&lt; 4,5); <strong className="text-emerald-600">Sano</strong> = el resto. El cliente{" "}
-              <strong>no cambia de cluster</strong>; solo queda señalado.
+              <strong>Estado</strong> (responsabilidad del cliente):{" "}
+              <strong className="text-red-600">No pasa</strong> = rechazó ≥ 1 entrega por su culpa
+              (sin dinero / cerrado / sin envases) en los <strong>últimos 45 días</strong>; los rechazos por
+              error interno (preventa, distribución, stock…) no cuentan.{" "}
+              <strong>Salud</strong> (costo de servir):{" "}
+              <strong className="text-amber-600">Atención</strong> = drop bajo (&lt; 3 b/vis, últimos 45 días)
+              o RMD bajo (&lt; 4,5, últimos 6 meses); si no, <strong className="text-emerald-600">Sano</strong>.
+              Se ocultan los clientes sin compras en los últimos 45 días (drop 0).
             </p>
           </div>
         </CardContent>
@@ -272,8 +249,8 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                           : "—"}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Salud (no pasa/atenc.)</span>
+                    <div className="flex justify-between border-t pt-1">
+                      <span>No pasa / Atención</span>
                       <span className="font-medium">
                         <span className="text-red-600">{fmtNum(r?.no_pasan ?? 0)}</span>
                         {" / "}
@@ -320,11 +297,12 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Localidad</TableHead>
                   <TableHead>Cluster</TableHead>
-                  <TableHead className="text-right">Facturación</TableHead>
+                  <TableHead className="text-right">Facturación YTD</TableHead>
                   <TableHead className="text-right">Crec.</TableHead>
                   <TableHead className="text-right">Drop size</TableHead>
                   <TableHead className="text-right">RMD</TableHead>
                   <TableHead className="text-right">Estado</TableHead>
+                  <TableHead className="text-right">Salud</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -374,6 +352,7 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                           "—"
                         )}
                       </TableCell>
+                      {/* ESTADO: pasa / no pasa (responsabilidad del cliente) */}
                       <TableCell className="text-right text-sm">
                         {c.estado === "no_pasa" ? (
                           <div className="flex flex-col items-end gap-0.5">
@@ -381,10 +360,16 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                               No pasa
                             </Badge>
                             <span className="text-[10px] text-muted-foreground">
-                              {fmtNum(c.rechazos_eventos)} rech.
+                              {fmtNum(c.rechazos_culpa)} rech.
                             </span>
                           </div>
-                        ) : c.estado === "atencion" ? (
+                        ) : (
+                          <span className="text-xs text-emerald-600">Pasa</span>
+                        )}
+                      </TableCell>
+                      {/* SALUD: sano / atención (costo de servir) */}
+                      <TableCell className="text-right text-sm">
+                        {c.salud === "atencion" ? (
                           <div className="flex flex-col items-end gap-0.5">
                             <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100">
                               Atención
@@ -405,7 +390,7 @@ export function ClusterizacionClient({ data, diasPeriodo }: Props) {
                 {visibles.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
                       className="py-8 text-center text-muted-foreground"
                     >
                       Sin clientes para los filtros aplicados.

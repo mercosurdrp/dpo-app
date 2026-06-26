@@ -366,3 +366,114 @@ export async function consultarVentasPorCliente(
     client.release()
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clusterización (Planeamiento 4.2): el ENCUADRE (facturación + crecimiento) es
+// YTD —acumulado del año vs el mismo tramo del año anterior—, mientras que el
+// DROP SIZE mira solo los últimos 45 días (foto reciente). El rechazo (estado)
+// también se evalúa a 45 días, pero eso lo resuelve la capa de Supabase.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ClusterClienteRow {
+  id_cliente: number
+  nombre: string | null
+  localidad: string | null
+  promotor: string | null
+  segmento: string | null
+  /** Facturación neta acumulada del año en curso (YTD). */
+  facturacion_ytd: number
+  /** Facturación neta del mismo tramo del año anterior (YTD-1). */
+  facturacion_ytd_prev: number
+  /** Bultos de los últimos 45 días (para el drop size). */
+  bultos_45d: number
+  /** Días con visita en los últimos 45 días. */
+  dias_45d: number
+}
+
+export interface ClusterPeriodo {
+  ytd_desde: string
+  ytd_hasta: string
+  ytd_prev_desde: string
+  ytd_prev_hasta: string
+  drop_desde: string
+}
+
+export interface ClusterVentasResultado {
+  periodo: ClusterPeriodo
+  clientes: ClusterClienteRow[]
+}
+
+const DROP_DIAS = 45
+
+export async function consultarClusterClientes(): Promise<ClusterVentasResultado> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    const maxRes = await client.query<{ maxf: string }>(
+      "SELECT to_char(max(fecha), 'YYYY-MM-DD') AS maxf FROM comprobantes",
+    )
+    const maxF = maxRes.rows[0]?.maxf
+    if (!maxF) {
+      return {
+        periodo: { ytd_desde: "", ytd_hasta: "", ytd_prev_desde: "", ytd_prev_hasta: "", drop_desde: "" },
+        clientes: [],
+      }
+    }
+
+    const [y, m, d] = maxF.split("-").map((s) => parseInt(s, 10))
+    const ancla = new Date(Date.UTC(y, m - 1, d)) // inclusive
+    const ytdDesde = `${y}-01-01`
+    const ytdPrevDesde = `${y - 1}-01-01`
+    const ytdPrevHasta = ymd(new Date(Date.UTC(y - 1, m - 1, d))) // mismo día/mes, año anterior
+    const dropDesdeD = new Date(ancla)
+    dropDesdeD.setUTCDate(dropDesdeD.getUTCDate() - (DROP_DIAS - 1))
+    const dropDesde = ymd(dropDesdeD)
+
+    const res = await client.query<{
+      id_cliente: number
+      nombre: string | null
+      localidad: string | null
+      promotor: string | null
+      segmento: string | null
+      facturacion_ytd: string
+      facturacion_ytd_prev: string
+      bultos_45d: string
+      dias_45d: string
+    }>(
+      `SELECT
+         id_cliente,
+         max(nombre_cliente)   AS nombre,
+         max(ds_localidad)     AS localidad,
+         max(ds_vendedor)      AS promotor,
+         max(ds_segmento_mkt)  AS segmento,
+         sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END)                  AS facturacion_ytd,
+         sum(CASE WHEN fecha >= $2 AND fecha <= $3 THEN subtotal_neto ELSE 0 END)  AS facturacion_ytd_prev,
+         sum(CASE WHEN fecha >= $4 THEN cantidades_total ELSE 0 END)               AS bultos_45d,
+         count(DISTINCT CASE WHEN fecha >= $4 THEN fecha::date END)                AS dias_45d
+       FROM comprobantes
+       WHERE fecha >= $2 AND fecha <= $5 AND anulado = 'NO' AND id_cliente IS NOT NULL
+       GROUP BY id_cliente
+       HAVING sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END) > 0`,
+      [ytdDesde, ytdPrevDesde, ytdPrevHasta, dropDesde, maxF],
+    )
+
+    const clientes: ClusterClienteRow[] = res.rows.map((r) => ({
+      id_cliente: r.id_cliente,
+      nombre: r.nombre,
+      localidad: r.localidad,
+      promotor: r.promotor,
+      segmento: r.segmento,
+      facturacion_ytd: Number(r.facturacion_ytd) || 0,
+      facturacion_ytd_prev: Number(r.facturacion_ytd_prev) || 0,
+      bultos_45d: Number(r.bultos_45d) || 0,
+      dias_45d: Number(r.dias_45d) || 0,
+    }))
+
+    return {
+      periodo: { ytd_desde: ytdDesde, ytd_hasta: maxF, ytd_prev_desde: ytdPrevDesde, ytd_prev_hasta: ytdPrevHasta, drop_desde: dropDesde },
+      clientes,
+    }
+  } finally {
+    client.release()
+  }
+}

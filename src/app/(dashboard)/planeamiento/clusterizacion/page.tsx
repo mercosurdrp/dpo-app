@@ -7,20 +7,10 @@ import { ClusterizacionClient } from "./clusterizacion-client"
 
 export const dynamic = "force-dynamic"
 
-interface Props {
-  searchParams: Promise<{ dias?: string }>
-}
-
-const DIAS_VALIDOS = new Set([30, 60, 90, 180])
-
-export default async function ClusterizacionPage({ searchParams }: Props) {
+export default async function ClusterizacionPage() {
   if (IS_MISIONES) redirect("/indicadores")
 
-  const { dias } = await searchParams
-  const parsed = dias ? parseInt(dias, 10) : 90
-  const diasPeriodo = DIAS_VALIDOS.has(parsed) ? parsed : 90
-
-  const res = await getClusterizacion(diasPeriodo)
+  const res = await getClusterizacion()
 
   return (
     <div className="space-y-4">
@@ -39,7 +29,7 @@ export default async function ClusterizacionPage({ searchParams }: Props) {
           <p className="mt-2 text-red-500">Error: {res.error}</p>
         </div>
       ) : (
-        <ClusterizacionClient data={res.data} diasPeriodo={diasPeriodo} />
+        <ClusterizacionClient data={res.data} />
       )}
     </div>
   )

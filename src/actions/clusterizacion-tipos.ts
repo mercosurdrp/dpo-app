@@ -2,7 +2,7 @@
 // Viven fuera de `clusterizacion.ts` porque ese archivo es "use server" y un
 // módulo "use server" solo puede exportar funciones async (exportar un objeto
 // como CLUSTER_LABELS rompe el build de Turbopack).
-import type { PeriodoComparado } from "@/lib/mercosur-dashboard"
+import type { ClusterPeriodo } from "@/lib/mercosur-dashboard"
 
 // Los 4 clústeres del manual DPO (Planeamiento 4.2), definidos por el cruce
 // 2×2 de ingresos (alto/bajo) × crecimiento (positivo/negativo).
@@ -33,23 +33,22 @@ export interface ClienteClusterizado {
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number
-  /** Bultos rechazados del cliente en la ventana. */
-  rechazos_bultos: number
-  /** Entregas con rechazo en la ventana (cada fila de `rechazos` = una entrega). */
-  rechazos_eventos: number
-  /** % de rechazo = bultos rechazados / (vendidos + rechazados) × 100. */
-  rechazo_pct: number
-  /** Señal de salud: drop size por debajo del piso (caro de servir). */
+  /** Entregas rechazadas por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases), últimos 45 días. */
+  rechazos_culpa: number
+  /** Entregas rechazadas por cualquier motivo, últimos 45 días. */
+  rechazos_total: number
+  /**
+   * ESTADO (responsabilidad del cliente): "no_pasa" si rechazó ≥ 1 entrega por su
+   * culpa (sin dinero / cerrado / sin envases) en los últimos 45 días. Los rechazos
+   * por error interno (preventa, distribución, etc.) NO cuentan.
+   */
+  estado: "pasa" | "no_pasa"
+  /** Señal de salud: drop size (45 días) por debajo del piso (caro de servir). */
   drop_bajo: boolean
   /** Señal de salud: RMD promedio por debajo del piso (mal servicio percibido). */
   rmd_bajo: boolean
-  /**
-   * Estado de servicio (salud), superpuesto al cluster:
-   * - "no_pasa": rechaza reiteradamente (≥ 2 entregas rechazadas).
-   * - "atencion": no rechaza reiterado pero tiene drop bajo o RMD bajo.
-   * - "sano": ninguna señal.
-   */
-  estado: "no_pasa" | "atencion" | "sano"
+  /** SALUD de servicio: "atencion" si drop bajo o RMD bajo; "sano" si ninguna. */
+  salud: "sano" | "atencion"
 }
 
 export interface ClusterResumen {
@@ -68,8 +67,8 @@ export interface ClusterResumen {
 }
 
 export interface ClusterizacionData {
-  periodo: PeriodoComparado
-  /** Umbral de ingresos (mediana) que separa "alto" de "bajo". */
+  periodo: ClusterPeriodo
+  /** Umbral de facturación YTD (mediana) que separa "alto" de "bajo". */
   umbral_ingresos: number
   resumen: ClusterResumen[]
   clientes: ClienteClusterizado[]
