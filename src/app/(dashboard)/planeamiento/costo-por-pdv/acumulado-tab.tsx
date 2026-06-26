@@ -80,6 +80,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
   const [isPending, startTransition] = useTransition()
 
   const [q, setQ] = useState("")
+  const [ciudadFiltro, setCiudadFiltro] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>("costo_x_hl")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
@@ -155,6 +156,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
         (f) => f.nombre_cliente.toLowerCase().includes(t) || String(f.id_cliente).includes(t),
       )
     }
+    if (ciudadFiltro) arr = arr.filter((f) => f.ciudad === ciudadFiltro)
     const dir = sortDir === "asc" ? 1 : -1
     arr = [...arr].sort((a, b) => {
       const va = a[sortKey]
@@ -164,7 +166,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
       return ((va as number) - (vb as number)) * dir
     })
     return arr
-  }, [filas, q, sortKey, sortDir])
+  }, [filas, q, ciudadFiltro, sortKey, sortDir])
 
   const LIMITE = 150
   const visibles = filasVista.slice(0, LIMITE)
@@ -353,8 +355,13 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
                   <TableBody>
                     {porCiudad.map(([ciudad, d]) => {
                       const pct = d.venta ? (100 * d.costo) / d.venta : 0
+                      const activo = ciudadFiltro === ciudad
                       return (
-                        <TableRow key={ciudad}>
+                        <TableRow
+                          key={ciudad}
+                          onClick={() => setCiudadFiltro(activo ? null : ciudad)}
+                          className={`cursor-pointer ${activo ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                        >
                           <TableCell className="font-medium">{ciudad}</TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">
                             {kmPorCiudad.has(ciudad) ? `${fmtNum(kmPorCiudad.get(ciudad)!)} km` : "—"}
@@ -371,6 +378,18 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
                   </TableBody>
                 </Table>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {ciudadFiltro ? (
+                  <>
+                    Filtrando por <strong>{ciudadFiltro}</strong> — el detalle de abajo muestra los PDV de esa ciudad.{" "}
+                    <button type="button" className="underline" onClick={() => setCiudadFiltro(null)}>
+                      Quitar filtro
+                    </button>
+                  </>
+                ) : (
+                  "Clic en una ciudad para filtrar el detalle por PDV de abajo."
+                )}
+              </p>
             </CardContent>
           </Card>
 
