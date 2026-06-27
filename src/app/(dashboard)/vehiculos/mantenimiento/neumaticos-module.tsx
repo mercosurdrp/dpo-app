@@ -225,16 +225,13 @@ export function NeumaticosModule({
     [rotaciones, unidadSel]
   )
   const ultimaRotacion = rotacionesUnidad[0] ?? null
-  // Km base para contar la próxima rotación: última rotación, o el km de
-  // instalación más reciente de las cubiertas instaladas, o el km actual.
+  // Km base para contar la próxima rotación: SOLO desde la última rotación
+  // registrada. Si no hay ninguna, la rotación queda "sin datos" (no se infiere
+  // del km de instalación) y empieza a contar recién cuando se registra la
+  // primera rotación.
   const baseRotacionKm = useMemo(() => {
-    if (ultimaRotacion?.km != null) return ultimaRotacion.km
-    const kmsInst = instaladasEnUnidad
-      .map((n) => n.km_instalacion)
-      .filter((k): k is number => k != null)
-    if (kmsInst.length > 0) return Math.max(...kmsInst)
-    return kmUnidad.kmActual
-  }, [ultimaRotacion, instaladasEnUnidad, kmUnidad.kmActual])
+    return ultimaRotacion?.km ?? null
+  }, [ultimaRotacion])
   const rotEstado = rotacionEstado(baseRotacionKm, kmUnidad.kmActual, kmUnidad.kmDia)
 
   const resumen = useMemo(() => {
