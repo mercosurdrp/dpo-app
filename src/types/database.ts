@@ -1288,6 +1288,15 @@ export interface MantenimientoRealizadoTarea {
   created_at: string
 }
 
+export interface MantenimientoRealizadoRepuesto {
+  id: string
+  mantenimiento_id: string
+  descripcion: string
+  cantidad: number
+  costo_unitario: number | null
+  created_at: string
+}
+
 export interface MantenimientoRealizado {
   id: string
   dominio: string
@@ -1299,6 +1308,12 @@ export interface MantenimientoRealizado {
   taller: string | null
   costo: number | null
   numero_factura: string | null
+  /** Nº de orden de trabajo propio (ej. "1471"), distinto de la factura. */
+  numero_ot: string | null
+  /** Horas de mano de obra de la OT. */
+  horas_mano_obra: number | null
+  /** Costo de la mano de obra de la OT. */
+  costo_mano_obra: number | null
   observaciones: string | null
   evidencia_urls: string[] | null
   /** Período fuera de servicio (para disponibilidad de flota). NULL = no sacó la unidad de ruta. */
@@ -1310,6 +1325,7 @@ export interface MantenimientoRealizado {
   created_at: string
   updated_at: string
   tareas?: MantenimientoRealizadoTarea[]
+  repuestos?: MantenimientoRealizadoRepuesto[]
 }
 
 export type EstadoTareaMantenimiento = "ok" | "proximo" | "vencido" | "sin_datos"

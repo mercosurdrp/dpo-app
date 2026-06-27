@@ -1069,6 +1069,10 @@ function NuevoMantenimientoDialog({
   const [taller, setTaller] = useState("")
   const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
+  const [numeroOt, setNumeroOt] = useState("")
+  const [horasMO, setHorasMO] = useState("")
+  const [costoMO, setCostoMO] = useState("")
+  const [repuestos, setRepuestos] = useState<RepuestoForm[]>([])
   const [obs, setObs] = useState("")
   const [esServiceGeneral, setEsServiceGeneral] = useState(false)
   // Por defecto la orden nueva deja la unidad NO disponible (fuera de servicio
@@ -1135,12 +1139,16 @@ function NuevoMantenimientoDialog({
       taller,
       costo: parseNum(costo),
       numero_factura: factura,
+      numero_ot: numeroOt,
+      horas_mano_obra: parseNum(horasMO),
+      costo_mano_obra: parseNum(costoMO),
       observaciones: obs,
       es_service_general: esServiceGeneral,
       evidencia_urls: urls.length ? urls : null,
       fuera_servicio_desde: fueraDesde || null,
       fuera_servicio_hasta: fueraHasta || null,
       tareas,
+      repuestos: repuestosPayload(repuestos),
     })
     setSaving(false)
     if ("error" in res) {
@@ -1242,14 +1250,37 @@ function NuevoMantenimientoDialog({
               <Input value={taller} onChange={(e) => setTaller(e.target.value)} />
             </div>
             <div>
-              <Label>Costo total ($)</Label>
-              <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
+              <Label>N° de OT</Label>
+              <Input
+                value={numeroOt}
+                onChange={(e) => setNumeroOt(e.target.value)}
+                placeholder="Orden de trabajo"
+              />
             </div>
             <div>
               <Label>N° factura</Label>
               <Input value={factura} onChange={(e) => setFactura(e.target.value)} />
             </div>
+            <div>
+              <Label>Costo total ($)</Label>
+              <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
+            </div>
           </div>
+
+          {/* Repuestos + mano de obra (OT estructurada) */}
+          <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
+          <ManoDeObraFields
+            horas={horasMO}
+            setHoras={setHorasMO}
+            costo={costoMO}
+            setCosto={setCostoMO}
+          />
+          <CostoSugerido
+            repuestos={repuestos}
+            costoManoObra={costoMO}
+            costoTotal={costo}
+            setCostoTotal={setCosto}
+          />
 
           <label className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
             <Checkbox
@@ -1420,6 +1451,177 @@ function FacturasInput({
   )
 }
 
+// ===== Campos estructurados de OT: repuestos + mano de obra =====
+
+interface RepuestoForm {
+  descripcion: string
+  cantidad: string
+  costoUnitario: string
+}
+
+function nuevoRepuesto(): RepuestoForm {
+  return { descripcion: "", cantidad: "1", costoUnitario: "" }
+}
+
+// Subtotal de repuestos = Σ (cantidad × costo unitario) de las filas con datos.
+function subtotalRepuestos(reps: RepuestoForm[]): number {
+  return reps.reduce((a, r) => {
+    const cant = parseFloat(r.cantidad) || 0
+    const cu = parseFloat(r.costoUnitario) || 0
+    return a + cant * cu
+  }, 0)
+}
+
+// Convierte los repuestos cargados de la BD al formato editable del formulario.
+function repuestosDesde(m: MantenimientoRealizado): RepuestoForm[] {
+  return (m.repuestos ?? []).map((r) => ({
+    descripcion: r.descripcion,
+    cantidad: r.cantidad != null ? String(r.cantidad) : "1",
+    costoUnitario: r.costo_unitario != null ? String(r.costo_unitario) : "",
+  }))
+}
+
+// Mapea las filas del formulario al payload de la action (descarta vacías).
+function repuestosPayload(reps: RepuestoForm[]) {
+  return reps
+    .filter((r) => r.descripcion.trim())
+    .map((r) => ({
+      descripcion: r.descripcion.trim(),
+      cantidad: parseFloat(r.cantidad) || 1,
+      costoUnitario: r.costoUnitario.trim() ? parseFloat(r.costoUnitario) : null,
+    }))
+}
+
+// Editor de la lista de repuestos (descripción + cantidad + costo unitario).
+function RepuestosEditor({
+  repuestos,
+  setRepuestos,
+}: {
+  repuestos: RepuestoForm[]
+  setRepuestos: (r: RepuestoForm[]) => void
+}) {
+  const update = (i: number, patch: Partial<RepuestoForm>) =>
+    setRepuestos(repuestos.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const remove = (i: number) => setRepuestos(repuestos.filter((_, j) => j !== i))
+  return (
+    <div>
+      <Label>Repuestos</Label>
+      {repuestos.length > 0 && (
+        <div className="mt-1.5 space-y-2">
+          {repuestos.map((r, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={r.descripcion}
+                onChange={(e) => update(i, { descripcion: e.target.value })}
+                placeholder="Repuesto"
+                className="flex-1"
+              />
+              <Input
+                type="number"
+                value={r.cantidad}
+                onChange={(e) => update(i, { cantidad: e.target.value })}
+                placeholder="Cant."
+                className="w-16"
+              />
+              <Input
+                type="number"
+                value={r.costoUnitario}
+                onChange={(e) => update(i, { costoUnitario: e.target.value })}
+                placeholder="$ c/u"
+                className="w-24"
+              />
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="shrink-0 text-slate-400 hover:text-red-500"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={() => setRepuestos([...repuestos, nuevoRepuesto()])}
+      >
+        <Plus className="mr-1 size-4" /> Agregar repuesto
+      </Button>
+      {subtotalRepuestos(repuestos) > 0 && (
+        <p className="mt-1.5 text-xs text-slate-500">
+          Subtotal repuestos: {fmtMoney(subtotalRepuestos(repuestos))}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Bloque "mano de obra" (horas + costo) reutilizado en alta y edición.
+function ManoDeObraFields({
+  horas,
+  setHoras,
+  costo,
+  setCosto,
+}: {
+  horas: string
+  setHoras: (v: string) => void
+  costo: string
+  setCosto: (v: string) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <Label>Mano de obra (hs)</Label>
+        <Input
+          type="number"
+          value={horas}
+          onChange={(e) => setHoras(e.target.value)}
+          placeholder="Horas"
+        />
+      </div>
+      <div>
+        <Label>Costo mano de obra ($)</Label>
+        <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
+      </div>
+    </div>
+  )
+}
+
+// Línea "costo sugerido" (repuestos + mano de obra) con botón para volcarlo al
+// costo total, así el reporte de costos no subcontabiliza.
+function CostoSugerido({
+  repuestos,
+  costoManoObra,
+  costoTotal,
+  setCostoTotal,
+}: {
+  repuestos: RepuestoForm[]
+  costoManoObra: string
+  costoTotal: string
+  setCostoTotal: (v: string) => void
+}) {
+  const sugerido = subtotalRepuestos(repuestos) + (parseFloat(costoManoObra) || 0)
+  if (sugerido <= 0) return null
+  const yaCoincide = (parseFloat(costoTotal) || 0) === sugerido
+  return (
+    <p className="text-xs text-slate-500">
+      Repuestos + mano de obra = <span className="font-medium">{fmtMoney(sugerido)}</span>
+      {!yaCoincide && (
+        <button
+          type="button"
+          onClick={() => setCostoTotal(String(sugerido))}
+          className="ml-2 font-medium text-sky-600 hover:underline"
+        >
+          usar como costo total
+        </button>
+      )}
+    </p>
+  )
+}
+
 // ==================== Dialog: ver orden de trabajo ====================
 
 function DetalleOrdenDialog({
@@ -1517,6 +1719,10 @@ function DetalleOrdenDialog({
               <dt className="text-xs font-medium text-slate-500">N° de factura</dt>
               <dd className="text-slate-900">{m.numero_factura || "—"}</dd>
             </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-500">N° de OT</dt>
+              <dd className="text-slate-900">{m.numero_ot || "—"}</dd>
+            </div>
             {fueraServicio && (
               <div className="col-span-2">
                 <dt className="text-xs font-medium text-slate-500">Fuera de servicio</dt>
@@ -1568,6 +1774,53 @@ function DetalleOrdenDialog({
               </div>
             )}
           </div>
+
+          {/* Repuestos */}
+          {(m.repuestos?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-500">Repuestos</p>
+              <ul className="space-y-1">
+                {m.repuestos!.map((r) => {
+                  const sub = r.costo_unitario != null ? Number(r.costo_unitario) * Number(r.cantidad) : null
+                  return (
+                    <li
+                      key={r.id}
+                      className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
+                    >
+                      <span className="text-slate-700">
+                        {r.descripcion}
+                        {Number(r.cantidad) !== 1 && (
+                          <span className="text-slate-400"> ×{fmtNum(Number(r.cantidad))}</span>
+                        )}
+                      </span>
+                      {sub != null && (
+                        <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                          {fmtMoney(sub)}
+                        </span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* Mano de obra */}
+          {(m.horas_mano_obra != null || m.costo_mano_obra != null) && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-500">Mano de obra</p>
+              <div className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5">
+                <span className="text-slate-700">
+                  {m.horas_mano_obra != null ? `${fmtNum(Number(m.horas_mano_obra))} hs` : "—"}
+                </span>
+                {m.costo_mano_obra != null && (
+                  <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                    {fmtMoney(Number(m.costo_mano_obra))}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Facturas / adjuntos */}
           {facturas.length > 0 && (
@@ -1623,6 +1876,10 @@ function EditarMantenimientoDialog({
   const [taller, setTaller] = useState(m.taller ?? "")
   const [costo, setCosto] = useState(m.costo != null ? String(m.costo) : "")
   const [factura, setFactura] = useState(m.numero_factura ?? "")
+  const [numeroOt, setNumeroOt] = useState(m.numero_ot ?? "")
+  const [horasMO, setHorasMO] = useState(m.horas_mano_obra != null ? String(m.horas_mano_obra) : "")
+  const [costoMO, setCostoMO] = useState(m.costo_mano_obra != null ? String(m.costo_mano_obra) : "")
+  const [repuestos, setRepuestos] = useState<RepuestoForm[]>(() => repuestosDesde(m))
   const [obs, setObs] = useState(m.observaciones ?? "")
   const [esServiceGeneral, setEsServiceGeneral] = useState(m.es_service_general)
   const [fueraDesde, setFueraDesde] = useState(m.fuera_servicio_desde ?? "")
@@ -1648,11 +1905,15 @@ function EditarMantenimientoDialog({
       taller,
       costo: parseNum(costo),
       numero_factura: factura,
+      numero_ot: numeroOt,
+      horas_mano_obra: parseNum(horasMO),
+      costo_mano_obra: parseNum(costoMO),
       observaciones: obs,
       es_service_general: esServiceGeneral,
       evidencia_urls: evidencia,
       fuera_servicio_desde: fueraDesde || null,
       fuera_servicio_hasta: fueraHasta || null,
+      repuestos: repuestosPayload(repuestos),
     })
     setSaving(false)
     if ("error" in res) {
@@ -1717,6 +1978,29 @@ function EditarMantenimientoDialog({
           <div>
             <Label>N° factura</Label>
             <Input value={factura} onChange={(e) => setFactura(e.target.value)} />
+          </div>
+          <div>
+            <Label>N° de OT</Label>
+            <Input
+              value={numeroOt}
+              onChange={(e) => setNumeroOt(e.target.value)}
+              placeholder="Orden de trabajo"
+            />
+          </div>
+          <div className="col-span-2 space-y-3">
+            <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
+            <ManoDeObraFields
+              horas={horasMO}
+              setHoras={setHorasMO}
+              costo={costoMO}
+              setCosto={setCostoMO}
+            />
+            <CostoSugerido
+              repuestos={repuestos}
+              costoManoObra={costoMO}
+              costoTotal={costo}
+              setCostoTotal={setCosto}
+            />
           </div>
           <div className="col-span-2">
             <Label>Observaciones</Label>

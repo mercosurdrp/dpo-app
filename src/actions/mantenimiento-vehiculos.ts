@@ -468,7 +468,9 @@ export async function getMantenimientos(
 
     let query = supabase
       .from("mantenimiento_realizados")
-      .select("*, tareas:mantenimiento_realizado_tareas(*)")
+      .select(
+        "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*)"
+      )
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
 
@@ -493,6 +495,12 @@ interface MantenimientoTareaInput {
   costo?: number
 }
 
+interface MantenimientoRepuestoInput {
+  descripcion: string
+  cantidad?: number
+  costoUnitario?: number | null
+}
+
 interface CreateMantenimientoInput {
   dominio: string
   fecha: string
@@ -503,12 +511,16 @@ interface CreateMantenimientoInput {
   taller?: string
   costo?: number | null
   numero_factura?: string
+  numero_ot?: string
+  horas_mano_obra?: number | null
+  costo_mano_obra?: number | null
   observaciones?: string
   es_service_general?: boolean
   evidencia_urls?: string[] | null
   fuera_servicio_desde?: string | null
   fuera_servicio_hasta?: string | null
   tareas: MantenimientoTareaInput[]
+  repuestos?: MantenimientoRepuestoInput[]
 }
 
 const FACTURAS_BUCKET = "mantenimiento-evidencias"
@@ -573,6 +585,9 @@ export async function createMantenimiento(
         taller: input.taller?.trim() || null,
         costo: input.costo ?? null,
         numero_factura: input.numero_factura?.trim() || null,
+        numero_ot: input.numero_ot?.trim() || null,
+        horas_mano_obra: input.horas_mano_obra ?? null,
+        costo_mano_obra: input.costo_mano_obra ?? null,
         observaciones: input.observaciones?.trim() || null,
         es_service_general: input.es_service_general ?? false,
         evidencia_urls: input.evidencia_urls ?? null,
@@ -599,6 +614,22 @@ export async function createMantenimiento(
       return { error: tareasError.message }
     }
 
+    const repuestos = (input.repuestos ?? []).filter((r) => r.descripcion?.trim())
+    if (repuestos.length > 0) {
+      const { error: repError } = await supabase.from("mantenimiento_realizado_repuestos").insert(
+        repuestos.map((r) => ({
+          mantenimiento_id: mantenimiento.id,
+          descripcion: r.descripcion.trim(),
+          cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
+          costo_unitario: r.costoUnitario ?? null,
+        }))
+      )
+      if (repError) {
+        await supabase.from("mantenimiento_realizados").delete().eq("id", mantenimiento.id)
+        return { error: repError.message }
+      }
+    }
+
     return { data: mantenimiento }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -615,6 +646,9 @@ interface UpdateMantenimientoInput {
   taller?: string
   costo?: number | null
   numero_factura?: string
+  numero_ot?: string
+  horas_mano_obra?: number | null
+  costo_mano_obra?: number | null
   observaciones?: string
   es_service_general?: boolean
   evidencia_urls?: string[] | null
@@ -622,6 +656,8 @@ interface UpdateMantenimientoInput {
   fuera_servicio_hasta?: string | null
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
+  /** Si se pasa, reemplaza el detalle completo de repuestos. */
+  repuestos?: MantenimientoRepuestoInput[]
 }
 
 export async function updateMantenimiento(
@@ -641,6 +677,9 @@ export async function updateMantenimiento(
     if (input.costo !== undefined) patch.costo = input.costo
     if (input.numero_factura !== undefined)
       patch.numero_factura = input.numero_factura?.trim() || null
+    if (input.numero_ot !== undefined) patch.numero_ot = input.numero_ot?.trim() || null
+    if (input.horas_mano_obra !== undefined) patch.horas_mano_obra = input.horas_mano_obra
+    if (input.costo_mano_obra !== undefined) patch.costo_mano_obra = input.costo_mano_obra
     if (input.observaciones !== undefined)
       patch.observaciones = input.observaciones?.trim() || null
     if (input.es_service_general !== undefined)
@@ -677,6 +716,28 @@ export async function updateMantenimiento(
         }))
       )
       if (insError) return { error: insError.message }
+    }
+
+    if (input.repuestos) {
+      const { error: delRepError } = await supabase
+        .from("mantenimiento_realizado_repuestos")
+        .delete()
+        .eq("mantenimiento_id", input.id)
+      if (delRepError) return { error: delRepError.message }
+      const repuestos = input.repuestos.filter((r) => r.descripcion?.trim())
+      if (repuestos.length > 0) {
+        const { error: insRepError } = await supabase
+          .from("mantenimiento_realizado_repuestos")
+          .insert(
+            repuestos.map((r) => ({
+              mantenimiento_id: input.id,
+              descripcion: r.descripcion.trim(),
+              cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
+              costo_unitario: r.costoUnitario ?? null,
+            }))
+          )
+        if (insRepError) return { error: insRepError.message }
+      }
     }
 
     return { data: data as MantenimientoRealizado }
