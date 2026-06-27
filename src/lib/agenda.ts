@@ -14,17 +14,23 @@ export type CategoriaAgenda =
   | "visita"
   | "otro"
 
+export type Recurrencia = "ninguna" | "diaria" | "semanal" | "mensual"
+
 export interface AgendaEvento {
   id: string
   titulo: string
   descripcion: string | null
-  fecha: string // "YYYY-MM-DD"
+  fecha: string // "YYYY-MM-DD" — en una instancia recurrente es la fecha de la ocurrencia
   todo_el_dia: boolean
   hora_inicio: string | null // "HH:MM"
   hora_fin: string | null
   categoria: CategoriaAgenda
   responsable: string | null
   ubicacion: string | null
+  recurrencia: Recurrencia
+  recurrencia_hasta: string | null
+  /** Fecha del evento "maestro" (= fecha si no es recurrente). La usa el form al editar la serie. */
+  fecha_base?: string
   creado_por: string | null
   created_at: string
   updated_at: string
@@ -41,6 +47,8 @@ export interface AgendaEventoInput {
   categoria: CategoriaAgenda
   responsable?: string | null
   ubicacion?: string | null
+  recurrencia: Recurrencia
+  recurrencia_hasta?: string | null
 }
 
 interface CategoriaMeta {
@@ -100,6 +108,17 @@ export const CATEGORIAS_ORDEN: CategoriaAgenda[] = [
   "visita",
   "otro",
 ]
+
+export const RECURRENCIAS: { value: Recurrencia; label: string }[] = [
+  { value: "ninguna", label: "No se repite" },
+  { value: "diaria", label: "Todos los días" },
+  { value: "semanal", label: "Cada semana" },
+  { value: "mensual", label: "Cada mes" },
+]
+
+export function labelRecurrencia(r: string): string {
+  return RECURRENCIAS.find((x) => x.value === r)?.label ?? "No se repite"
+}
 
 export function metaCategoria(c: string): CategoriaMeta {
   return CATEGORIAS[(c as CategoriaAgenda)] ?? CATEGORIAS.otro

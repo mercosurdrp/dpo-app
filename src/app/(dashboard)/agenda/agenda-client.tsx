@@ -20,6 +20,7 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Repeat,
   Trash2,
   User,
 } from "lucide-react"
@@ -51,11 +52,14 @@ import { cn } from "@/lib/utils"
 import {
   CATEGORIAS,
   CATEGORIAS_ORDEN,
+  RECURRENCIAS,
+  labelRecurrencia,
   metaCategoria,
   hhmm,
   type AgendaEvento,
   type AgendaEventoInput,
   type CategoriaAgenda,
+  type Recurrencia,
 } from "@/lib/agenda"
 import {
   actualizarEvento,
@@ -80,6 +84,8 @@ interface FormState {
   responsable: string
   ubicacion: string
   descripcion: string
+  recurrencia: Recurrencia
+  recurrencia_hasta: string
 }
 
 const FILTRO_TODAS = "todas"
@@ -101,12 +107,14 @@ function formVacio(fecha: string): FormState {
     titulo: "",
     categoria: "reunion",
     fecha,
-    todo_el_dia: true,
-    hora_inicio: "",
-    hora_fin: "",
+    todo_el_dia: false,
+    hora_inicio: "09:00",
+    hora_fin: "10:00",
     responsable: "",
     ubicacion: "",
     descripcion: "",
+    recurrencia: "ninguna",
+    recurrencia_hasta: "",
   }
 }
 
@@ -208,13 +216,16 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
       id: ev.id,
       titulo: ev.titulo,
       categoria: ev.categoria,
-      fecha: ev.fecha,
+      // En instancias recurrentes editamos la serie → fecha del maestro.
+      fecha: ev.fecha_base ?? ev.fecha,
       todo_el_dia: ev.todo_el_dia,
       hora_inicio: hhmm(ev.hora_inicio) ?? "",
       hora_fin: hhmm(ev.hora_fin) ?? "",
       responsable: ev.responsable ?? "",
       ubicacion: ev.ubicacion ?? "",
       descripcion: ev.descripcion ?? "",
+      recurrencia: ev.recurrencia,
+      recurrencia_hasta: ev.recurrencia_hasta ?? "",
     })
     setDialogOpen(true)
   }
@@ -234,6 +245,8 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
       categoria: form.categoria,
       responsable: form.responsable,
       ubicacion: form.ubicacion,
+      recurrencia: form.recurrencia,
+      recurrencia_hasta: form.recurrencia_hasta || null,
     }
 
     setGuardando(true)
@@ -254,7 +267,11 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
 
   async function borrar() {
     if (!form.id) return
-    if (!window.confirm("¿Eliminar este evento? Esta acción no se puede deshacer.")) return
+    const msg =
+      form.recurrencia !== "ninguna"
+        ? "¿Eliminar TODA la serie de eventos repetidos? Esta acción no se puede deshacer."
+        : "¿Eliminar este evento? Esta acción no se puede deshacer."
+    if (!window.confirm(msg)) return
     setEliminando(true)
     const res = await eliminarEvento(form.id)
     setEliminando(false)
@@ -387,7 +404,7 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
                           const horario = rangoHorario(ev)
                           return (
                             <button
-                              key={ev.id}
+                              key={`${ev.id}-${ev.fecha}`}
                               type="button"
                               onClick={() => abrirEditar(ev.id)}
                               className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50"
@@ -414,6 +431,12 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
                                     <Clock className="size-3" />
                                     {horario ?? "Todo el día"}
                                   </span>
+                                  {ev.recurrencia !== "ninguna" && (
+                                    <span className="flex items-center gap-1">
+                                      <Repeat className="size-3" />
+                                      {labelRecurrencia(ev.recurrencia)}
+                                    </span>
+                                  )}
                                   {ev.responsable && (
                                     <span className="flex items-center gap-1">
                                       <User className="size-3" />
@@ -504,40 +527,92 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={form.todo_el_dia}
-                onCheckedChange={(checked) =>
-                  setForm((f) => ({ ...f, todo_el_dia: checked === true }))
-                }
-              />
-              Todo el día
-            </label>
-
-            {!form.todo_el_dia && (
+            {/* Horario: siempre visible; se deshabilita si es "todo el día". */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Horario</Label>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={form.todo_el_dia}
+                    onCheckedChange={(checked) =>
+                      setForm((f) => ({ ...f, todo_el_dia: checked === true }))
+                    }
+                  />
+                  Todo el día
+                </label>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="ag-ini">Hora inicio</Label>
+                  <Label htmlFor="ag-ini" className="text-xs text-muted-foreground">
+                    Hora inicio
+                  </Label>
                   <Input
                     id="ag-ini"
                     type="time"
                     value={form.hora_inicio}
+                    disabled={form.todo_el_dia}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, hora_inicio: e.target.value }))
                     }
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="ag-fin">Hora fin</Label>
+                  <Label htmlFor="ag-fin" className="text-xs text-muted-foreground">
+                    Hora fin
+                  </Label>
                   <Input
                     id="ag-fin"
                     type="time"
                     value={form.hora_fin}
+                    disabled={form.todo_el_dia}
                     onChange={(e) => setForm((f) => ({ ...f, hora_fin: e.target.value }))}
                   />
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Repetición */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <Repeat className="size-3.5" /> Repetición
+                </Label>
+                <Select
+                  value={form.recurrencia}
+                  onValueChange={(v) =>
+                    v && setForm((f) => ({ ...f, recurrencia: v as Recurrencia }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RECURRENCIAS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.recurrencia !== "ninguna" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="ag-rec-hasta">Repetir hasta</Label>
+                  <Input
+                    id="ag-rec-hasta"
+                    type="date"
+                    value={form.recurrencia_hasta}
+                    min={form.fecha}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, recurrencia_hasta: e.target.value }))
+                    }
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Dejá vacío para repetir sin fecha de fin.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -586,7 +661,7 @@ export function AgendaClient({ mesInicialISO, eventosIniciales }: Props) {
                 ) : (
                   <Trash2 className="size-4" />
                 )}
-                Eliminar
+                {form.recurrencia !== "ninguna" ? "Eliminar serie" : "Eliminar"}
               </Button>
             ) : (
               <span />
