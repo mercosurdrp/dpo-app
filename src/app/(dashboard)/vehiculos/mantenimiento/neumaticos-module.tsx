@@ -661,8 +661,8 @@ function Diagrama({
           >
             <span>{p.label}</span>
             {n && (
-              <span className="text-[8px] font-normal opacity-90">
-                {n.profundidad_actual_mm ?? "?"}
+              <span className="max-w-full truncate px-0.5 text-[8px] font-normal leading-tight opacity-90">
+                {n.numero || "s/n"}
               </span>
             )}
           </button>
