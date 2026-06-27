@@ -1321,6 +1321,10 @@ export interface MantenimientoRealizado {
   fuera_servicio_hasta: string | null
   /** true = service general/rodado: ancla el contador del próximo service. */
   es_service_general: boolean
+  /** Origen del registro: cargado a mano o traído del sync de Cloudfleet. */
+  origen: "manual" | "cloudfleet"
+  /** Nº de OT en Cloudfleet (clave del upsert del sync). NULL en las manuales. */
+  cloudfleet_number: number | null
   created_by: string | null
   created_at: string
   updated_at: string

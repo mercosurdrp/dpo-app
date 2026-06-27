@@ -34,6 +34,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cloudfleet/work-orders-sync",
+      "schedule": "40 5 * * *"
+    },
+    {
       "path": "/api/planeamiento/periodos-criticos/volumen/cron-sync",
       "schedule": "0 9 * * *"
     },

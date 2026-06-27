@@ -39,6 +39,7 @@ import {
   Ban,
   CalendarClock,
   CircleDollarSign,
+  Cloud,
   Paperclip,
   Plus,
   Pencil,
@@ -679,7 +680,17 @@ export function MantenimientoClient({
                         )}
                       >
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
-                        <TableCell className="font-medium">{m.dominio}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {m.dominio}
+                            {m.origen === "cloudfleet" && (
+                              <Cloud
+                                className="size-3.5 shrink-0 text-sky-400"
+                                aria-label={`OT Cloudfleet #${m.cloudfleet_number ?? ""}`}
+                              />
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <Badge variant="outline" className={TIPO_MANT_BADGE[m.tipo]}>
@@ -1669,6 +1680,14 @@ function DetalleOrdenDialog({
                 className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700"
               >
                 <Wrench className="size-3" /> Service general
+              </Badge>
+            )}
+            {m.origen === "cloudfleet" && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-sky-200 bg-sky-50 text-sky-700"
+              >
+                <Cloud className="size-3" /> Cloudfleet
               </Badge>
             )}
             {fueraServicio ? (

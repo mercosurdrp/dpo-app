@@ -83,3 +83,111 @@ export async function fetchChecklists(
   }
   return out
 }
+
+// ===================== Órdenes de trabajo (OT) =====================
+// Endpoint `work-orders/` (con guion). La LISTA filtra por rango de `startDate`
+// (params `startDateFrom`/`startDateTo`) y pagina de a 50. El DETALLE por número
+// (`work-orders/{number}/`) agrega `labors[]` (mano de obra) y `parts[]`
+// (repuestos) ítem por ítem.
+
+const CF_HEADERS = () => ({
+  Authorization: `Bearer ${apiKey()}`,
+  "Content-Type": "application/json; charset=utf-8",
+  "User-Agent": BROWSER_UA,
+  Accept: "application/json",
+})
+
+interface CfNamed {
+  id?: number
+  name?: string | null
+  code?: string | null
+}
+
+export interface CloudfleetWorkOrder {
+  number: number
+  vehicleCode: string | null
+  workshopDate: string | null
+  startDate: string | null
+  estimatedFinishDate: string | null
+  finalCompletionDate?: string | null
+  status: string | null // closed | opened | onTechnicalCompletion | voided
+  odometer: number | null
+  hourmeter: number | null
+  vendor: { id?: number; name?: string | null; businessId?: string | null } | null
+  reason: string | null
+  detectedIssue: string | null
+  comments: string | null
+  type: string | null // Programado | No programado | Diagnostico o revisión
+  affectsMaintenanceSchedule: boolean | null
+  affectsVehicleAvailability: boolean | null
+  totalCostLabors: number | null
+  totalCostParts: number | null
+  totalCost: number | null
+}
+
+export interface CloudfleetLabor {
+  id: number
+  name: string | null
+  qty: number | null
+  unitCost: number | null
+  totalCost: number | null
+  maintenanceType?: CfNamed | null
+  system?: CfNamed | null
+  subsystem?: CfNamed | null
+  comment?: string | null
+}
+
+export interface CloudfleetPart {
+  id: number
+  laborId?: number | null
+  name: string | null
+  qty: number | null
+  unitCost: number | null
+  totalCost: number | null
+  comment?: string | null
+}
+
+export interface CloudfleetWorkOrderDetail extends CloudfleetWorkOrder {
+  labors: CloudfleetLabor[] | null
+  parts: CloudfleetPart[] | null
+}
+
+/** Lista todas las OT cuyo `startDate` cae en [desde, hasta] (YYYY-MM-DD). */
+export async function fetchWorkOrders(
+  desde: string,
+  hasta: string,
+): Promise<CloudfleetWorkOrder[]> {
+  const hastaExclusivo = diaSiguiente(hasta)
+  const out: CloudfleetWorkOrder[] = []
+  for (let page = 1; page <= 200; page++) {
+    const url =
+      `${BASE_URL}/work-orders/?startDateFrom=${desde}` +
+      `&startDateTo=${hastaExclusivo}&page=${page}`
+    const res = await fetch(url, { headers: CF_HEADERS(), cache: "no-store" })
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      if (res.status === 404) break // sin OT en el rango
+      throw new Error(`Cloudfleet work-orders ${res.status}: ${body.slice(0, 200)}`)
+    }
+    const chunk = (await res.json()) as CloudfleetWorkOrder[]
+    if (!Array.isArray(chunk) || chunk.length === 0) break
+    out.push(...chunk)
+    if (chunk.length < 50) break
+  }
+  return out
+}
+
+/** Detalle de una OT con su desglose de mano de obra (`labors`) y repuestos (`parts`). */
+export async function fetchWorkOrderDetail(
+  number: number,
+): Promise<CloudfleetWorkOrderDetail> {
+  const res = await fetch(`${BASE_URL}/work-orders/${number}/`, {
+    headers: CF_HEADERS(),
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`Cloudfleet work-order ${number} ${res.status}: ${body.slice(0, 200)}`)
+  }
+  return (await res.json()) as CloudfleetWorkOrderDetail
+}
