@@ -91,6 +91,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
             {navItems
               .filter((item) => {
                 if (item.pampeanaOnly && IS_MISIONES) return false
+                if (item.misionesOnly && !IS_MISIONES) return false
                 if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
                 return (
                   !(item.hideForEmpleado && role === "empleado") &&

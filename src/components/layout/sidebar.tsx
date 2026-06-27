@@ -28,6 +28,7 @@ import {
   Menu,
   LogOut,
   CalendarRange,
+  CalendarDays,
   UserCog,
   Briefcase,
   ClockAlert,
@@ -57,6 +58,8 @@ export interface NavItem {
   hideForEmpleado?: boolean
   /** Solo se muestra en el tenant Pampeana (se oculta si IS_MISIONES). */
   pampeanaOnly?: boolean
+  /** Solo se muestra en el tenant Misiones (se oculta si !IS_MISIONES). */
+  misionesOnly?: boolean
   /**
    * Si está presente, sólo se muestra a estos roles. Tiene prioridad sobre
    * adminOnly y hideForEmpleado.
@@ -221,6 +224,13 @@ export const navItems: NavItem[] = [
     label: "Reuniones",
     href: "/reuniones",
     icon: <Presentation className="size-5" />,
+  },
+  {
+    label: "Agenda",
+    href: "/agenda",
+    icon: <CalendarDays className="size-5" />,
+    misionesOnly: true,
+    roles: ["admin", "supervisor"],
   },
   {
     label: "Reportes de Seguridad",
@@ -473,6 +483,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             .filter((item) => {
               if (!matchQ(item.label)) return false
               if (item.pampeanaOnly && IS_MISIONES) return false
+              if (item.misionesOnly && !IS_MISIONES) return false
               if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
               return (
                 !(item.hideForEmpleado && role === "empleado") &&
