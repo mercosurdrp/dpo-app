@@ -240,6 +240,17 @@ function formatearValor(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
 }
 
+// Indicadores de almacén que usan semáforo de 3 zonas en las celdas diarias
+// (verde mejor que target · amarillo entre target y gatillo · rojo peor que
+// gatillo). El resto de indicadores conserva su coloreo histórico de 2 zonas.
+const SEMAFORO_3_ZONAS_ALMACEN = new Set([
+  "auto_wqi",
+  "auto_wnp",
+  "auto_productividad_picking",
+  "auto_errores_picking",
+  "auto_ausentismo",
+])
+
 function EstadoActividadBadge({
   estado,
 }: {
@@ -1786,6 +1797,48 @@ export function ReunionDetallePageClient({
                           // en gris neutro y no en rojo.
                           if ((esLtiTri || esErroresPicking) && valor === 0) {
                             colorClass = "text-slate-300"
+                          }
+                          // Indicadores de almacén (WQI, WNP, Productividad,
+                          // Errores, Ausentismo): semáforo de 3 zonas. Verde si
+                          // está mejor que el target, amarillo entre target y
+                          // gatillo, rojo SOLO si está peor que el gatillo. Sin
+                          // target/gatillo definidos queda neutro (el formato
+                          // ya está armado para cuando se carguen los umbrales).
+                          if (SEMAFORO_3_ZONAS_ALMACEN.has(ind.id)) {
+                            if (
+                              ind.mejor_si &&
+                              ind.meta != null &&
+                              valor != null
+                            ) {
+                              const mejorQueTarget =
+                                ind.mejor_si === "menor"
+                                  ? valor <= ind.meta
+                                  : valor >= ind.meta
+                              if (mejorQueTarget) {
+                                colorClass =
+                                  "bg-emerald-50 font-semibold text-emerald-700"
+                              } else if (ind.gatillo != null) {
+                                const peorQueGatillo =
+                                  ind.mejor_si === "menor"
+                                    ? valor > ind.gatillo
+                                    : valor < ind.gatillo
+                                colorClass = peorQueGatillo
+                                  ? "bg-red-50 font-semibold text-red-700"
+                                  : "bg-amber-50 font-semibold text-amber-700"
+                              } else {
+                                // Sin gatillo no hay zona roja: no cumplir el
+                                // target queda en amarillo.
+                                colorClass =
+                                  "bg-amber-50 font-semibold text-amber-700"
+                              }
+                            } else if (
+                              !((esLtiTri || esErroresPicking) && valor === 0)
+                            ) {
+                              // Sin umbrales usables: neutro (no se pinta rojo
+                              // sólo por tener valor). El 0 de errores conserva
+                              // su gris muted ya resuelto arriba.
+                              colorClass = "font-medium text-slate-700"
+                            }
                           }
                           // Checklist "X/Y": verde si todas aprobadas, ámbar
                           // si hubo algún rechazo en las liberaciones del día.

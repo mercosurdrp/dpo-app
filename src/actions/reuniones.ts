@@ -2608,21 +2608,27 @@ export async function getIndicadoresMes(
     if (!tipo) return base
     const { data: cfg, error } = await supabase
       .from("reuniones_indicadores_config")
-      .select("nombre, gatillo, mejor_si")
+      .select("nombre, gatillo, mejor_si, meta")
       .eq("tipo", tipo)
     if (error || !cfg) return base
     const porNombre = new Map<
       string,
-      { gatillo: number | null; mejor_si: "mayor" | "menor" | null }
+      {
+        gatillo: number | null
+        mejor_si: "mayor" | "menor" | null
+        meta: number | null
+      }
     >()
     for (const c of cfg as Array<{
       nombre: string
       gatillo: number | null
       mejor_si: "mayor" | "menor" | null
+      meta: number | null
     }>) {
       porNombre.set(c.nombre.trim().toLowerCase(), {
         gatillo: c.gatillo ?? null,
         mejor_si: c.mejor_si ?? null,
+        meta: c.meta ?? null,
       })
     }
     const indicadores = base.data.indicadores.map((ind) => {
@@ -2631,6 +2637,11 @@ export async function getIndicadoresMes(
       return {
         ...ind,
         gatillo: c.gatillo,
+        // La meta del código (filas auto con target dinámico, ej. WQI) tiene
+        // prioridad; cuando el código no define meta (ej. Errores/Ausentismo)
+        // se toma la de la config, para que el semáforo de 3 zonas sea
+        // configurable desde el diálogo de indicadores.
+        meta: ind.meta ?? c.meta ?? null,
         // La polaridad del código (filas auto) tiene prioridad; para las
         // manuales viene de la config.
         mejor_si: ind.mejor_si ?? c.mejor_si ?? undefined,
@@ -3994,8 +4005,15 @@ async function getIndicadoresMesCore(
       ): Record<string, number | null> {
         const out: Record<string, number | null> = {}
         for (const [f, v] of Object.entries(porFecha)) {
+          // Solo topear cuando el valor REAL es < 100 (hubo al menos un
+          // error) pero el redondeo a 2 decimales lo empujaría a 100,00.
+          // Un día con 0 errores da exactamente 100,0 (no es < 100) y debe
+          // mostrarse 100. Pedido de negocio.
           out[f] =
-            v != null && Number.isFinite(v) && Math.round(v * 100) / 100 >= 100
+            v != null &&
+            Number.isFinite(v) &&
+            v < 100 &&
+            Math.round(v * 100) / 100 >= 100
               ? 99.9
               : v
         }
