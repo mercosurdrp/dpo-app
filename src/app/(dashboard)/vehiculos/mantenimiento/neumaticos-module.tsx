@@ -294,6 +294,7 @@ export function NeumaticosModule({
               <Diagrama
                 layout={layout}
                 porPosicion={porPosicion}
+                tipo={unidad?.tipo ?? null}
                 onPos={(pos) =>
                   puedeEditar &&
                   setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
@@ -628,24 +629,126 @@ function Leyenda({ color, txt }: { color: string; txt: string }) {
   )
 }
 
+// Silueta de la unidad vista desde arriba: cuerpo/chasis, cabina (frente) y los
+// ejes (longitudinal + transversales por cada fila de ruedas del layout).
+function SiluetaUnidad({
+  layout,
+  tipo,
+}: {
+  layout: PosicionNeumatico[]
+  tipo: VehiculoTipo | null
+}) {
+  const ys = [...new Set(layout.map((p) => p.y))].sort((a, b) => a - b)
+  const conCabina = tipo !== "acoplado"
+  const top = ys[0] ?? 10
+  const bottom = ys[ys.length - 1] ?? 90
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {/* Cuerpo / chasis */}
+      <div className="absolute inset-x-[18%] inset-y-[3%] rounded-[1.4rem] border border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100 shadow-inner" />
+      {/* Cabina (frente) con parabrisas */}
+      {conCabina && (
+        <div className="absolute inset-x-[27%] top-[5%] h-[13%] rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="absolute inset-x-2 bottom-1.5 h-2 rounded-full bg-sky-200/70" />
+        </div>
+      )}
+      {/* Eje longitudinal (chasis) */}
+      <div
+        className="absolute left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-slate-200"
+        style={{ top: `${top}%`, height: `${Math.max(bottom - top, 0)}%` }}
+      />
+      {/* Ejes transversales por fila de ruedas */}
+      {ys.map((y) => (
+        <div
+          key={y}
+          className="absolute inset-x-[4%] h-1.5 -translate-y-1/2 rounded-full bg-slate-200"
+          style={{ top: `${y}%` }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Glifo de una cubierta vista desde arriba: goma con dibujo de banda y, en el
+// centro, la "llanta" coloreada según el estado (desgaste o neutro).
+function TireGlyph({
+  label,
+  sub,
+  eje,
+  wearClass,
+  empty,
+  badge,
+}: {
+  label: string
+  sub?: string | null
+  eje: PosicionNeumatico["eje"]
+  wearClass: string
+  empty: boolean
+  badge?: string | null
+}) {
+  const direccional = eje === "direccional"
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className={cn(
+          "relative h-10 w-[26px] rounded-[9px] transition-transform",
+          empty
+            ? "border-2 border-dashed border-slate-300 bg-white"
+            : "bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 shadow-md ring-1 ring-inset ring-white/10",
+          direccional && !empty && "ring-2 ring-blue-400"
+        )}
+      >
+        {!empty && (
+          <>
+            {/* Dibujo de banda de rodamiento */}
+            <span className="absolute inset-x-[3px] top-[3px] h-px rounded bg-white/25" />
+            <span className="absolute inset-x-[3px] top-[6px] h-px rounded bg-white/15" />
+            <span className="absolute inset-x-[3px] bottom-[3px] h-px rounded bg-white/25" />
+            <span className="absolute inset-x-[3px] bottom-[6px] h-px rounded bg-white/15" />
+          </>
+        )}
+        {/* Llanta / estado */}
+        <span
+          className={cn(
+            "absolute left-1/2 top-1/2 flex h-[22px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[5px] text-[9px] font-bold leading-none ring-2",
+            empty
+              ? "bg-slate-50 text-slate-400 ring-white"
+              : cn(wearClass, "text-white shadow ring-white/80")
+          )}
+        >
+          {label}
+        </span>
+      </div>
+      {sub && (
+        <span className="mt-px max-w-[44px] truncate text-[8px] leading-tight text-slate-500">
+          {sub}
+        </span>
+      )}
+      {badge && (
+        <span className="mt-px rounded bg-sky-100 px-1 text-[8px] font-semibold leading-none text-sky-700">
+          {badge}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function Diagrama({
   layout,
   porPosicion,
   onPos,
+  tipo,
 }: {
   layout: PosicionNeumatico[]
   porPosicion: Map<string, Neumatico>
   onPos: (pos: PosicionNeumatico) => void
+  tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-52 shrink-0">
-      {/* Silueta de la unidad */}
-      <div className="absolute inset-x-6 inset-y-2 rounded-2xl border-2 border-slate-300 bg-slate-50" />
-      {/* Cabina (frente) */}
-      <div className="absolute inset-x-12 top-3 h-8 rounded-lg border-2 border-slate-300 bg-white" />
+    <div className="relative aspect-[3/4] w-56 shrink-0">
+      <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
-        const ring = p.eje === "direccional" ? "ring-blue-500" : "ring-slate-400"
         return (
           <button
             key={p.code}
@@ -653,18 +756,17 @@ function Diagrama({
             onClick={() => onPos(p)}
             title={`${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}`}
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
-            className={cn(
-              "absolute flex size-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-md text-[10px] font-semibold text-white ring-2 transition-transform hover:scale-110",
-              ring,
-              n ? colorDesgaste(n.profundidad_actual_mm) : "border-2 border-dashed border-slate-300 bg-white text-slate-400 ring-transparent"
-            )}
+            className="group absolute -translate-x-1/2 -translate-y-1/2"
           >
-            <span>{p.label}</span>
-            {n && (
-              <span className="max-w-full truncate px-0.5 text-[8px] font-normal leading-tight opacity-90">
-                {n.numero || "s/n"}
-              </span>
-            )}
+            <div className="transition-transform group-hover:scale-110">
+              <TireGlyph
+                label={p.label}
+                sub={n ? n.numero || "s/n" : null}
+                eje={p.eje}
+                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+                empty={!n}
+              />
+            </div>
           </button>
         )
       })}
@@ -1293,7 +1395,12 @@ function RotacionCard({
         {/* Diagrama de rotación sugerida */}
         {Object.keys(sugerida).length > 0 ? (
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-            <RotacionDiagrama layout={layout} porPosicion={porPosicion} sugerida={sugerida} />
+            <RotacionDiagrama
+              layout={layout}
+              porPosicion={porPosicion}
+              sugerida={sugerida}
+              tipo={unidad.tipo}
+            />
             <div className="space-y-1 text-xs text-slate-500">
               <p className="font-medium text-slate-600">Rotación sugerida</p>
               {layout
@@ -1493,15 +1600,16 @@ function RotacionDiagrama({
   layout,
   porPosicion,
   sugerida,
+  tipo,
 }: {
   layout: PosicionNeumatico[]
   porPosicion: Map<string, Neumatico>
   sugerida: Record<string, string>
+  tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-52 shrink-0">
-      <div className="absolute inset-x-6 inset-y-2 rounded-2xl border-2 border-slate-300 bg-slate-50" />
-      <div className="absolute inset-x-12 top-3 h-8 rounded-lg border-2 border-slate-300 bg-white" />
+    <div className="relative aspect-[3/4] w-56 shrink-0">
+      <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
         const dest = sugerida[p.code]
@@ -1510,19 +1618,15 @@ function RotacionDiagrama({
             key={p.code}
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
             title={`${p.label}${n ? ` · ${n.numero || "s/n"}` : " · vacía"}${dest ? ` → ${dest}` : ""}`}
-            className={cn(
-              "absolute flex size-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-md border-2 text-[10px] font-semibold",
-              n
-                ? "border-slate-300 bg-white text-slate-700"
-                : "border-dashed border-slate-300 bg-white text-slate-400"
-            )}
+            className="absolute -translate-x-1/2 -translate-y-1/2"
           >
-            <span>{p.label}</span>
-            {dest && (
-              <span className="flex items-center text-[8px] font-normal text-sky-600">
-                →{dest}
-              </span>
-            )}
+            <TireGlyph
+              label={p.label}
+              eje={p.eje}
+              wearClass="bg-slate-500"
+              empty={!n}
+              badge={dest ? `→${dest}` : null}
+            />
           </div>
         )
       })}
