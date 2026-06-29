@@ -1,6 +1,7 @@
 "use server"
 
 import { consultarClusterClientes } from "@/lib/mercosur-dashboard"
+import { getCostoPorPdvYtd } from "./costo-pdv"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -197,6 +198,21 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     ? await getSupervisorPorPromotor(restarMeses(periodo.ytd_hasta, 6))
     : new Map<string, string>()
 
+  // Costo logístico $/HL del año (YTD) por PDV, reusando el indicador Costo/PDV
+  // (misma función que alimenta su solapa "Acumulado", para que los números
+  // coincidan). Es opcional: si no hay meses cargados o la RPC falla, queda vacío
+  // y la columna muestra "—".
+  const anioYtd = periodo.ytd_hasta ? parseInt(periodo.ytd_hasta.slice(0, 4), 10) : 0
+  const costoHlMap = new Map<number, number>()
+  if (anioYtd) {
+    const costoYtd = await getCostoPorPdvYtd(anioYtd)
+    if (!("error" in costoYtd)) {
+      for (const f of costoYtd.data) {
+        if (f.hl > 0) costoHlMap.set(f.id_cliente, f.costo_x_hl)
+      }
+    }
+  }
+
   // Umbral de facturación = mediana de la facturación YTD.
   const umbral = mediana(conDrop.map((r) => r.facturacion_ytd))
 
@@ -236,6 +252,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       bultos_actual: r.bultos_45d,
       dias_actual: r.dias_45d,
       drop_size,
+      costo_x_hl_ytd: costoHlMap.get(r.id_cliente) ?? null,
       rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
       rechazos_culpa,

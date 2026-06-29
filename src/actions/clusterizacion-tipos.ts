@@ -32,6 +32,11 @@ export interface ClienteClusterizado {
   dias_actual: number
   /** Proxy de costo de servir: bultos por visita (menor = más caro de servir). */
   drop_size: number
+  /**
+   * Costo logístico $/HL acumulado del año (YTD), traído del indicador Costo/PDV
+   * (misma fuente que su solapa "Acumulado"). null = el PDV no tiene costo cargado.
+   */
+  costo_x_hl_ytd: number | null
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number

@@ -434,6 +434,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                       <TableHead className="text-right">Crec.</TableHead>
                       <TableHead className="text-right">Drop size</TableHead>
                       <TableHead className="text-right">RMD</TableHead>
+                      <TableHead className="text-right">Costo/PDV<br />($/HL año)</TableHead>
                       <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -528,6 +529,9 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                               "—"
                             )}
                           </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button variant="outline" size="sm" onClick={() => setPlanCliente(c)}>
                               <ClipboardList className="h-4 w-4" /> Plan
@@ -538,7 +542,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
                     })}
                     {visibles.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
                           Sin clientes para los filtros aplicados.
                         </TableCell>
                       </TableRow>
