@@ -13,6 +13,7 @@ import {
   getAlineaciones,
   getKmFlota,
   getRotaciones,
+  getMantenimientoConfig,
 } from "@/actions/neumaticos"
 import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -44,6 +45,7 @@ export default async function MantenimientoPage() {
     indispRes,
     gastosRes,
     proveedoresRes,
+    configRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -59,6 +61,7 @@ export default async function MantenimientoPage() {
     getIndisponibilidades(),
     getGastos({ limit: 500 }),
     getProveedores(),
+    getMantenimientoConfig(),
     getProfile(),
   ])
 
@@ -135,6 +138,7 @@ export default async function MantenimientoPage() {
       indisponibilidades={indisponibilidades}
       gastos={gastos}
       proveedores={proveedores}
+      rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

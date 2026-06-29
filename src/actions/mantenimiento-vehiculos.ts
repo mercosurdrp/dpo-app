@@ -519,6 +519,8 @@ interface CreateMantenimientoInput {
   evidencia_urls?: string[] | null
   fuera_servicio_desde?: string | null
   fuera_servicio_hasta?: string | null
+  entrada_taller?: string | null
+  salida_taller?: string | null
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
 }
@@ -563,6 +565,30 @@ export async function subirFacturasMantenimiento(
   }
 }
 
+// El período "fuera de servicio" (para la disponibilidad de flota) se deriva de
+// la fecha de entrada/salida del taller, salvo que se pasen los campos
+// fuera_servicio_* explícitos (compatibilidad con el toggle y otros llamadores).
+function derivarFueraServicio(input: {
+  entrada_taller?: string | null
+  salida_taller?: string | null
+  fuera_servicio_desde?: string | null
+  fuera_servicio_hasta?: string | null
+}): { desde: string | null; hasta: string | null } {
+  const desde =
+    input.fuera_servicio_desde !== undefined
+      ? input.fuera_servicio_desde || null
+      : input.entrada_taller
+        ? input.entrada_taller.slice(0, 10)
+        : null
+  const hasta =
+    input.fuera_servicio_hasta !== undefined
+      ? input.fuera_servicio_hasta || null
+      : input.salida_taller
+        ? input.salida_taller.slice(0, 10)
+        : null
+  return { desde, hasta }
+}
+
 export async function createMantenimiento(
   input: CreateMantenimientoInput
 ): Promise<{ data: MantenimientoRealizado } | { error: string }> {
@@ -572,6 +598,7 @@ export async function createMantenimiento(
       return { error: "Agregá al menos una tarea realizada" }
     }
     const supabase = await createClient()
+    const fs = derivarFueraServicio(input)
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
@@ -591,8 +618,10 @@ export async function createMantenimiento(
         observaciones: input.observaciones?.trim() || null,
         es_service_general: input.es_service_general ?? false,
         evidencia_urls: input.evidencia_urls ?? null,
-        fuera_servicio_desde: input.fuera_servicio_desde || null,
-        fuera_servicio_hasta: input.fuera_servicio_hasta || null,
+        entrada_taller: input.entrada_taller || null,
+        salida_taller: input.salida_taller || null,
+        fuera_servicio_desde: fs.desde,
+        fuera_servicio_hasta: fs.hasta,
         created_by: profile.id,
       })
       .select()
@@ -654,6 +683,8 @@ interface UpdateMantenimientoInput {
   evidencia_urls?: string[] | null
   fuera_servicio_desde?: string | null
   fuera_servicio_hasta?: string | null
+  entrada_taller?: string | null
+  salida_taller?: string | null
   /** Si se pasa, reemplaza el detalle completo de tareas. */
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
@@ -685,10 +716,17 @@ export async function updateMantenimiento(
     if (input.es_service_general !== undefined)
       patch.es_service_general = input.es_service_general
     if (input.evidencia_urls !== undefined) patch.evidencia_urls = input.evidencia_urls
+    if (input.entrada_taller !== undefined) patch.entrada_taller = input.entrada_taller || null
+    if (input.salida_taller !== undefined) patch.salida_taller = input.salida_taller || null
+    // Fuera de servicio: explícito si se pasa; si no, se deriva de entrada/salida.
     if (input.fuera_servicio_desde !== undefined)
       patch.fuera_servicio_desde = input.fuera_servicio_desde || null
+    else if (input.entrada_taller !== undefined)
+      patch.fuera_servicio_desde = input.entrada_taller ? input.entrada_taller.slice(0, 10) : null
     if (input.fuera_servicio_hasta !== undefined)
       patch.fuera_servicio_hasta = input.fuera_servicio_hasta || null
+    else if (input.salida_taller !== undefined)
+      patch.fuera_servicio_hasta = input.salida_taller ? input.salida_taller.slice(0, 10) : null
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")

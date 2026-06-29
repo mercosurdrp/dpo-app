@@ -326,13 +326,15 @@ export async function getAlineaciones(): Promise<
   }
 }
 
-/** Registra una alineación de una unidad. */
+/** Registra una alineación/balanceo de una unidad. */
 export async function registrarAlineacion(input: {
   dominio: string
   fecha?: string
   km?: number | null
   proxima_fecha?: string | null
   proxima_km?: number | null
+  costo?: number | null
+  proveedor?: string
   observaciones?: string
 }): Promise<{ success: true } | { error: string }> {
   try {
@@ -345,9 +347,46 @@ export async function registrarAlineacion(input: {
       km: input.km ?? null,
       proxima_fecha: input.proxima_fecha || null,
       proxima_km: input.proxima_km ?? null,
+      costo: input.costo ?? null,
+      proveedor: input.proveedor?.trim() || null,
       observaciones: input.observaciones?.trim() || null,
       created_by: profile.id,
     })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Intervalo de km global para rotación y alineación (config de mantenimiento). */
+export async function getMantenimientoConfig(): Promise<{ rotacion_km: number }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("mantenimiento_config")
+      .select("rotacion_km")
+      .eq("id", true)
+      .maybeSingle()
+    return { rotacion_km: data?.rotacion_km ?? 20000 }
+  } catch {
+    return { rotacion_km: 20000 }
+  }
+}
+
+/** Cambia el intervalo de km global de rotación/alineación. */
+export async function setRotacionKm(input: {
+  rotacion_km: number
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const km = Math.round(Number(input.rotacion_km))
+    if (!Number.isFinite(km) || km <= 0) return { error: "El intervalo debe ser mayor a 0" }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_config")
+      .upsert({ id: true, rotacion_km: km, updated_at: new Date().toISOString() })
     if (error) return { error: error.message }
     return { success: true }
   } catch (e) {

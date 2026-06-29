@@ -62,6 +62,8 @@ export interface Alineacion {
   km: number | null
   proxima_fecha: string | null
   proxima_km: number | null
+  costo: number | null
+  proveedor: string | null
   observaciones: string | null
   created_at: string
 }

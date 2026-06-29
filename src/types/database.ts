@@ -1319,6 +1319,9 @@ export interface MantenimientoRealizado {
   /** Período fuera de servicio (para disponibilidad de flota). NULL = no sacó la unidad de ruta. */
   fuera_servicio_desde: string | null
   fuera_servicio_hasta: string | null
+  /** Entrada/salida del taller con fecha+hora (ISO). De acá se deriva el período fuera de servicio. */
+  entrada_taller: string | null
+  salida_taller: string | null
   /** true = service general/rodado: ancla el contador del próximo service. */
   es_service_general: boolean
   /** Origen del registro: cargado a mano o traído del sync de Cloudfleet. */

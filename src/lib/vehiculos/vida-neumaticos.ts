@@ -98,12 +98,14 @@ export interface RotacionEstado {
 export function rotacionEstado(
   baseKm: number | null,
   kmActual: number | null,
-  kmDia: number | null
+  kmDia: number | null,
+  intervaloKm: number = ROTACION_KM
 ): RotacionEstado {
   if (baseKm == null || kmActual == null) {
     return { proximaKm: null, kmRestante: null, diasRestantes: null, estado: "sin_datos" }
   }
-  const proximaKm = Math.round(baseKm + ROTACION_KM)
+  const intervalo = intervaloKm > 0 ? intervaloKm : ROTACION_KM
+  const proximaKm = Math.round(baseKm + intervalo)
   const kmRestante = Math.round(proximaKm - kmActual)
   const diasRestantes = kmDia && kmDia > 0 ? Math.round(kmRestante / kmDia) : null
   let estado: EstadoRotacion

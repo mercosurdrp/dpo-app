@@ -31,6 +31,7 @@ import {
   Crosshair,
   Gauge,
   Layers,
+  Pencil,
   Plus,
   RotateCw,
   Ruler,
@@ -49,6 +50,7 @@ import {
   registrarMedicionNeumatico,
   registrarRotacion,
   eliminarRotacion,
+  setRotacionKm,
   type KmFlotaUnidad,
 } from "@/actions/neumaticos"
 import {
@@ -67,7 +69,6 @@ import {
   rotacionSugerida,
   VIDA_BADGE,
   VIDA_UTIL_DEFAULT_KM,
-  ROTACION_KM,
   type VidaNeumatico,
 } from "@/lib/vehiculos/vida-neumaticos"
 import type { VehiculoTipo } from "@/types/database"
@@ -83,6 +84,7 @@ interface Props {
   kmFlota: Record<string, KmFlotaUnidad>
   rotaciones: Rotacion[]
   unidades: UnidadFlota[]
+  rotacionKm: number
   puedeEditar: boolean
 }
 
@@ -101,6 +103,9 @@ function colorDesgaste(prof: number | null): string {
 
 const fmtNum = (n: number | null | undefined) =>
   n == null ? "—" : new Intl.NumberFormat("es-AR").format(n)
+
+const fmtMoney = (n: number) =>
+  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n)
 
 // Última presión registrada de una cubierta (de su historial de mediciones).
 function ultimaPresion(n: Neumatico): number | null {
@@ -139,6 +144,7 @@ export function NeumaticosModule({
   kmFlota,
   rotaciones,
   unidades,
+  rotacionKm,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -232,7 +238,7 @@ export function NeumaticosModule({
   const baseRotacionKm = useMemo(() => {
     return ultimaRotacion?.km ?? null
   }, [ultimaRotacion])
-  const rotEstado = rotacionEstado(baseRotacionKm, kmUnidad.kmActual, kmUnidad.kmDia)
+  const rotEstado = rotacionEstado(baseRotacionKm, kmUnidad.kmActual, kmUnidad.kmDia, rotacionKm)
 
   const resumen = useMemo(() => {
     let instalados = 0
@@ -458,6 +464,7 @@ export function NeumaticosModule({
           alineaciones={alineacionesUnidad}
           ultimaAlineacion={ultimaAlineacion}
           kmActual={kmUnidad.kmActual}
+          rotacionKm={rotacionKm}
           puedeEditar={puedeEditar}
           onRefresh={refresh}
         />
@@ -1287,6 +1294,7 @@ function RotacionCard({
   alineaciones,
   ultimaAlineacion,
   kmActual,
+  rotacionKm,
   puedeEditar,
   onRefresh,
 }: {
@@ -1299,11 +1307,13 @@ function RotacionCard({
   alineaciones: Alineacion[]
   ultimaAlineacion: Alineacion | null
   kmActual: number | null
+  rotacionKm: number
   puedeEditar: boolean
   onRefresh: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [alinOpen, setAlinOpen] = useState(false)
+  const [intervaloOpen, setIntervaloOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const sugerida = rotacionSugerida(unidad.tipo)
   const badge = ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
@@ -1360,8 +1370,18 @@ function RotacionCard({
         {/* Contador de próxima rotación */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <Badge className={cn("border-0", badge.clase)}>{badge.label}</Badge>
-          <span className="text-slate-500">
-            Cada <span className="font-medium text-slate-700">{fmtNum(ROTACION_KM)} km</span>
+          <span className="flex items-center gap-1 text-slate-500">
+            Cada <span className="font-medium text-slate-700">{fmtNum(rotacionKm)} km</span>
+            {puedeEditar && (
+              <button
+                type="button"
+                onClick={() => setIntervaloOpen(true)}
+                title="Editar el intervalo de km (rotación y alineación)"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            )}
           </span>
           <span className="text-slate-500">
             Última:{" "}
@@ -1475,7 +1495,7 @@ function RotacionCard({
         <div className="border-t pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
             <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <Crosshair className="size-4 text-slate-500" /> Alineación
+              <Crosshair className="size-4 text-slate-500" /> Alineación y balanceo
             </p>
             {puedeEditar && (
               <div className="flex gap-2">
@@ -1489,32 +1509,36 @@ function RotacionCard({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <Badge className={cn("border-0", alin.clase)}>{alin.label}</Badge>
-            <span className="text-slate-500">
-              Última:{" "}
-              <span className="font-medium text-slate-700">
-                {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
-              </span>
-              {ultimaAlineacion?.km != null && <span> · {fmtNum(ultimaAlineacion.km)} km</span>}
-            </span>
-            {(ultimaAlineacion?.proxima_fecha || ultimaAlineacion?.proxima_km != null) && (
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            {/* Numeración de las cubiertas de la unidad (igual al diagrama de arriba) */}
+            <DiagramaNumeracion layout={layout} porPosicion={porPosicion} tipo={unidad.tipo} />
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <Badge className={cn("border-0", alin.clase)}>{alin.label}</Badge>
               <span className="text-slate-500">
-                Próxima:{" "}
+                Última:{" "}
                 <span className="font-medium text-slate-700">
-                  {fmtFecha(ultimaAlineacion?.proxima_fecha ?? null)}
+                  {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
                 </span>
-                {ultimaAlineacion?.proxima_km != null && (
-                  <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
-                )}
-                {alin.faltanKm != null && (
-                  <span className={cn(alin.faltanKm <= 0 ? "text-red-600" : "text-slate-500")}>
-                    {" "}
-                    ({alin.faltanKm <= 0 ? "vencida" : `faltan ${fmtNum(alin.faltanKm)} km`})
-                  </span>
-                )}
+                {ultimaAlineacion?.km != null && <span> · {fmtNum(ultimaAlineacion.km)} km</span>}
               </span>
-            )}
+              {(ultimaAlineacion?.proxima_fecha || ultimaAlineacion?.proxima_km != null) && (
+                <span className="text-slate-500">
+                  Próxima:{" "}
+                  <span className="font-medium text-slate-700">
+                    {fmtFecha(ultimaAlineacion?.proxima_fecha ?? null)}
+                  </span>
+                  {ultimaAlineacion?.proxima_km != null && (
+                    <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
+                  )}
+                  {alin.faltanKm != null && (
+                    <span className={cn(alin.faltanKm <= 0 ? "text-red-600" : "text-slate-500")}>
+                      {" "}
+                      ({alin.faltanKm <= 0 ? "vencida" : `faltan ${fmtNum(alin.faltanKm)} km`})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
           </div>
 
           {alineaciones.length > 0 && (
@@ -1526,6 +1550,8 @@ function RotacionCard({
                     <th className="text-right">Km</th>
                     <th>Próxima</th>
                     <th className="text-right">Próx. km</th>
+                    <th>Proveedor</th>
+                    <th className="text-right">Costo</th>
                     <th>Observaciones</th>
                     {puedeEditar && <th className="w-10" />}
                   </tr>
@@ -1541,6 +1567,10 @@ function RotacionCard({
                       <td className="text-slate-600">{fmtFecha(a.proxima_fecha)}</td>
                       <td className="text-right tabular-nums text-slate-600">
                         {fmtNum(a.proxima_km)}
+                      </td>
+                      <td className="text-slate-600">{a.proveedor || "—"}</td>
+                      <td className="text-right tabular-nums text-slate-600">
+                        {a.costo != null ? fmtMoney(Number(a.costo)) : "—"}
                       </td>
                       <td className="text-slate-600">{a.observaciones || "—"}</td>
                       {puedeEditar && (
@@ -1575,6 +1605,7 @@ function RotacionCard({
         <RegistrarRotacionDialog
           dominio={unidad.dominio}
           kmActual={kmActual}
+          rotacionKm={rotacionKm}
           onClose={() => setOpen(false)}
           onDone={() => {
             setOpen(false)
@@ -1592,7 +1623,115 @@ function RotacionCard({
           }}
         />
       )}
+      {intervaloOpen && (
+        <IntervaloDialog
+          actual={rotacionKm}
+          onClose={() => setIntervaloOpen(false)}
+          onDone={() => {
+            setIntervaloOpen(false)
+            onRefresh()
+          }}
+        />
+      )}
     </Card>
+  )
+}
+
+// Diagrama de solo lectura: muestra cada posición con el número de su cubierta
+// (igual al diagrama principal de la unidad, sin acciones).
+function DiagramaNumeracion({
+  layout,
+  porPosicion,
+  tipo,
+}: {
+  layout: PosicionNeumatico[]
+  porPosicion: Map<string, Neumatico>
+  tipo: VehiculoTipo | null
+}) {
+  return (
+    <div className="relative aspect-[3/4] w-44 shrink-0">
+      <SiluetaUnidad layout={layout} tipo={tipo} />
+      {layout.map((p) => {
+        const n = porPosicion.get(p.code)
+        return (
+          <div
+            key={p.code}
+            style={{ left: `${p.x}%`, top: `${p.y}%` }}
+            title={`${p.label}${n ? ` · ${n.numero || "s/n"}` : " · vacía"}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2"
+          >
+            <TireGlyph
+              label={p.label}
+              sub={n ? n.numero || "s/n" : null}
+              eje={p.eje}
+              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+              empty={!n}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Edita el intervalo de km global (rotación y alineación).
+function IntervaloDialog({
+  actual,
+  onClose,
+  onDone,
+}: {
+  actual: number
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [km, setKm] = useState(String(actual))
+  const [saving, setSaving] = useState(false)
+
+  const guardar = async () => {
+    const valor = Number(km)
+    if (!Number.isFinite(valor) || valor <= 0) {
+      toast.error("Ingresá un intervalo de km válido")
+      return
+    }
+    setSaving(true)
+    const res = await setRotacionKm({ rotacion_km: valor })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Intervalo actualizado")
+    onDone()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Intervalo de rotación y alineación</DialogTitle>
+          <DialogDescription>
+            Cada cuántos km se programa la rotación y la alineación/balanceo de la flota.
+          </DialogDescription>
+        </DialogHeader>
+        <div>
+          <Label className="text-xs text-slate-500">Intervalo (km)</Label>
+          <Input
+            type="number"
+            value={km}
+            onChange={(e) => setKm(e.target.value)}
+            placeholder="ej. 20000"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1637,11 +1776,13 @@ function RotacionDiagrama({
 function RegistrarRotacionDialog({
   dominio,
   kmActual,
+  rotacionKm,
   onClose,
   onDone,
 }: {
   dominio: string
   kmActual: number | null
+  rotacionKm: number
   onClose: () => void
   onDone: () => void
 }) {
@@ -1675,7 +1816,7 @@ function RegistrarRotacionDialog({
           <DialogTitle>Registrar rotación · {dominio}</DialogTitle>
           <DialogDescription>
             Queda como última rotación; desde su km se cuenta la próxima (cada{" "}
-            {fmtNum(ROTACION_KM)} km).
+            {fmtNum(rotacionKm)} km).
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
@@ -1724,6 +1865,8 @@ function AlineacionDialog({
   const [km, setKm] = useState("")
   const [proximaFecha, setProximaFecha] = useState("")
   const [proximaKm, setProximaKm] = useState("")
+  const [proveedor, setProveedor] = useState("")
+  const [costo, setCosto] = useState("")
   const [observaciones, setObservaciones] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -1735,6 +1878,8 @@ function AlineacionDialog({
       km: km ? Number(km) : null,
       proxima_fecha: proximaFecha || null,
       proxima_km: proximaKm ? Number(proximaKm) : null,
+      proveedor,
+      costo: costo ? Number(costo) : null,
       observaciones,
     })
     setSaving(false)
@@ -1784,6 +1929,23 @@ function AlineacionDialog({
               value={proximaKm}
               onChange={(e) => setProximaKm(e.target.value)}
               placeholder="opcional"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Proveedor / gomería</Label>
+            <Input
+              value={proveedor}
+              onChange={(e) => setProveedor(e.target.value)}
+              placeholder="ej. Gomería del Centro"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Costo ($)</Label>
+            <Input
+              type="number"
+              value={costo}
+              onChange={(e) => setCosto(e.target.value)}
+              placeholder="ej. 45000"
             />
           </div>
           <div className="col-span-2">
