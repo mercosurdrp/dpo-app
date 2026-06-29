@@ -61,7 +61,6 @@ import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { ContadorReunion } from "@/components/reuniones/contador-reunion"
 import { SeccionRoturasCalle } from "@/components/reuniones/seccion-roturas-calle"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
-import { SeccionRadarRechazos } from "@/components/reuniones/seccion-radar-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
 import { SeccionFrescura } from "@/components/reuniones/seccion-frescura"
@@ -1022,10 +1021,6 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
     [actividadesAll],
   )
-  const actividadesRadar = useMemo(
-    () => actividadesAll.filter((a) => a.seccion === "radar_rechazos"),
-    [actividadesAll],
-  )
   const actividadesRmd = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "rmd"),
     [actividadesAll],
@@ -1261,19 +1256,6 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesRechazos}
-          responsables={responsables}
-          puedeEditar={puedeEditar}
-          onActividadesChanged={refrescar}
-        />
-      )}
-
-      {/* Radar de Rechazos — gestión anticipada de clientes con entrega a +2 días
-          (solo Pampeana): contacto al cliente con captura del chat como evidencia
-          y disparo de plan de acción puntual hacia /planes. */}
-      {!IS_MISIONES && detalle.tipo === "logistica-ventas" && (
-        <SeccionRadarRechazos
-          reunionId={detalle.id}
-          actividades={actividadesRadar}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
