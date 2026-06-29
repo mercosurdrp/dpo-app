@@ -1,92 +1,84 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Timer, Play, Pause, RotateCcw } from "lucide-react"
+import { Timer, Play, Square, Lock, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import {
+  getContador,
+  iniciarContador,
+  finalizarContador,
+  type ContadorReunionData,
+} from "@/actions/reuniones-contador"
 
 /**
- * Contador (cuenta regresiva) para acotar la duración de la reunión.
- * Persiste en el navegador (localStorage) por reunión: si salís y volvés,
- * sigue corriendo. Guarda un instante de fin absoluto, así descuenta también
- * el tiempo que la reunión estuvo fuera de pantalla. No se sincroniza entre
- * participantes (cada navegador tiene su propio contador).
- * Arranca con "Iniciar", se puede Pausar y Reiniciar. Avisa al llegar a 0.
+ * Contador (cuenta regresiva) que acota la duración de la reunión y la cierra.
+ *
+ * El estado vive en el servidor (tabla reuniones_contador), 1 fila por reunión:
+ * el inicio y la finalización son COMPARTIDOS entre todos los participantes y
+ * se sincronizan por polling. Flujo: un editor "Inicia" → corre el contador →
+ * un editor "Finaliza" → la reunión queda terminada con el tiempo final del
+ * contador y NADIE puede volver a iniciarlo. Al llegar a 00:00 NO se cierra
+ * sola: se queda en 00:00 hasta que alguien finalice.
+ *
+ * El restante se recalcula contra el reloj (fin_previsto_at absoluto), así es
+ * robusto al throttling de pestañas en segundo plano.
  */
 
-const STORAGE_PREFIX = "contador-reunion:"
+const POLL_MS = 8000
 
-type EstadoPersistido = {
-  corriendo: boolean
-  /** Instante (epoch ms) en que llega a 0. Solo válido si corriendo=true. */
-  finEn: number | null
-  /** Segundos restantes cuando está pausado/detenido. */
-  restante: number
+function calcRestante(estado: ContadorReunionData): number {
+  if (estado.estado === "finalizada") return estado.restante_final_seg ?? 0
+  if (estado.estado === "en_curso" && estado.fin_previsto_at) {
+    return Math.max(
+      0,
+      Math.round((new Date(estado.fin_previsto_at).getTime() - Date.now()) / 1000),
+    )
+  }
+  return Math.max(1, Math.round(estado.minutos * 60))
 }
 
 export function ContadorReunion({
+  reunionId,
   minutos = 30,
   titulo = "Tiempo de la reunión",
-  storageKey,
+  puedeEditar = false,
 }: {
+  reunionId: string
   minutos?: number
   titulo?: string
-  /** Identificador para persistir el estado por reunión (p. ej. el id). */
-  storageKey?: string
+  /** Solo los editores (supervisor/admin) ven los botones Iniciar/Finalizar. */
+  puedeEditar?: boolean
 }) {
-  const totalSeg = Math.max(1, Math.round(minutos * 60))
-  const [restante, setRestante] = useState(totalSeg)
-  const [corriendo, setCorriendo] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const finEnRef = useRef<number | null>(null)
+  const [estado, setEstado] = useState<ContadorReunionData | null>(null)
+  const [restante, setRestante] = useState(Math.max(1, Math.round(minutos * 60)))
+  const [cargando, setCargando] = useState(true)
+  const [accionando, setAccionando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const beepDadoRef = useRef(false)
 
-  const terminado = restante <= 0
-
-  const persistir = useCallback(
-    (estado: EstadoPersistido) => {
-      if (!storageKey || typeof window === "undefined") return
-      try {
-        window.localStorage.setItem(
-          STORAGE_PREFIX + storageKey,
-          JSON.stringify(estado),
-        )
-      } catch {
-        // ignorar: localStorage puede no estar disponible
-      }
-    },
-    [storageKey],
-  )
-
-  // Rehidratar desde localStorage al montar (y al cambiar de reunión).
-  // Se hace en efecto (no en el estado inicial) para no romper el SSR/hidratación.
-  useEffect(() => {
-    if (!storageKey || typeof window === "undefined") return
-    try {
-      const raw = window.localStorage.getItem(STORAGE_PREFIX + storageKey)
-      if (!raw) return
-      const p = JSON.parse(raw) as EstadoPersistido
-      if (p.corriendo && typeof p.finEn === "number") {
-        const rest = Math.max(0, Math.round((p.finEn - Date.now()) / 1000))
-        if (rest > 0) {
-          finEnRef.current = p.finEn
-          setRestante(rest)
-          setCorriendo(true)
-        } else {
-          // Se cumplió el tiempo mientras estaba fuera de pantalla.
-          finEnRef.current = null
-          setRestante(0)
-          setCorriendo(false)
-        }
-      } else if (typeof p.restante === "number") {
-        finEnRef.current = null
-        setRestante(p.restante)
-        setCorriendo(false)
-      }
-    } catch {
-      // ignorar: estado corrupto, se arranca limpio
+  const refrescar = useCallback(async () => {
+    const res = await getContador(reunionId, minutos)
+    if ("data" in res) {
+      setEstado(res.data)
+      setRestante(calcRestante(res.data))
     }
-  }, [storageKey])
+    setCargando(false)
+  }, [reunionId, minutos])
+
+  // Carga inicial + polling para sincronizar entre participantes.
+  useEffect(() => {
+    let activo = true
+    void refrescar()
+    const id = setInterval(() => {
+      if (activo) void refrescar()
+    }, POLL_MS)
+    return () => {
+      activo = false
+      clearInterval(id)
+    }
+  }, [refrescar])
 
   const beep = useCallback(() => {
     try {
@@ -113,57 +105,62 @@ export function ContadorReunion({
     }
   }, [])
 
-  // Tick: recalcula el restante contra el reloj (robusto a throttling de
-  // pestañas en segundo plano y a salir/entrar de la reunión).
+  // Tick local 1s: recalcula el restante mientras corre (entre polls).
   useEffect(() => {
-    if (!corriendo) return
-    intervalRef.current = setInterval(() => {
-      const finEn = finEnRef.current
-      if (finEn == null) return
-      const rest = Math.max(0, Math.round((finEn - Date.now()) / 1000))
+    if (!estado || estado.estado !== "en_curso") return
+    const id = setInterval(() => {
+      const rest = calcRestante(estado)
       setRestante(rest)
-      if (rest <= 0) {
-        if (intervalRef.current) clearInterval(intervalRef.current)
-        finEnRef.current = null
-        setCorriendo(false)
-        persistir({ corriendo: false, finEn: null, restante: 0 })
+      if (rest <= 0 && !beepDadoRef.current) {
+        beepDadoRef.current = true
         beep()
       }
     }, 1000)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [corriendo, beep, persistir])
+    return () => clearInterval(id)
+  }, [estado, beep])
 
-  function iniciarPausar() {
-    if (terminado) return
-    if (corriendo) {
-      // Pausar: fijamos el restante actual.
-      finEnRef.current = null
-      setCorriendo(false)
-      persistir({ corriendo: false, finEn: null, restante })
-    } else {
-      // Iniciar/Reanudar: anclamos un instante de fin absoluto.
-      const finEn = Date.now() + restante * 1000
-      finEnRef.current = finEn
-      setCorriendo(true)
-      persistir({ corriendo: true, finEn, restante })
+  async function onIniciar() {
+    setError(null)
+    setAccionando(true)
+    const res = await iniciarContador(reunionId, minutos)
+    if ("error" in res) setError(res.error)
+    else {
+      beepDadoRef.current = false
+      setEstado(res.data)
+      setRestante(calcRestante(res.data))
     }
+    setAccionando(false)
   }
-  function reiniciar() {
-    finEnRef.current = null
-    setCorriendo(false)
-    setRestante(totalSeg)
-    persistir({ corriendo: false, finEn: null, restante: totalSeg })
+
+  async function onFinalizar() {
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(
+        "¿Finalizar la reunión? El contador se cierra con el tiempo actual y nadie podrá volver a iniciarlo.",
+      )
+      if (!ok) return
+    }
+    setError(null)
+    setAccionando(true)
+    const res = await finalizarContador(reunionId)
+    if ("error" in res) setError(res.error)
+    else {
+      setEstado(res.data)
+      setRestante(calcRestante(res.data))
+    }
+    setAccionando(false)
   }
+
+  const est = estado?.estado ?? "inactivo"
+  const enCurso = est === "en_curso"
+  const finalizada = est === "finalizada"
+  const tiempoCumplido = enCurso && restante <= 0
 
   const mm = String(Math.floor(restante / 60)).padStart(2, "0")
   const ss = String(restante % 60).padStart(2, "0")
 
-  // Color según urgencia.
-  const color = terminado
-    ? "text-red-600"
-    : restante <= 60
+  const color = finalizada
+    ? "text-slate-500"
+    : tiempoCumplido || restante <= 60
       ? "text-red-600"
       : restante <= 5 * 60
         ? "text-amber-600"
@@ -173,18 +170,23 @@ export function ContadorReunion({
     <Card
       className={cn(
         "border-slate-200",
-        terminado && "border-red-300 bg-red-50/40",
+        finalizada && "border-slate-300 bg-slate-50",
+        tiempoCumplido && "border-red-300 bg-red-50/40",
       )}
     >
       <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
         <div className="flex items-center gap-3">
-          <Timer
-            className={cn(
-              "size-6",
-              terminado ? "text-red-600" : "text-slate-500",
-              corriendo && "animate-pulse",
-            )}
-          />
+          {finalizada ? (
+            <Lock className="size-6 text-slate-500" />
+          ) : (
+            <Timer
+              className={cn(
+                "size-6",
+                tiempoCumplido ? "text-red-600" : "text-slate-500",
+                enCurso && "animate-pulse",
+              )}
+            />
+          )}
           <div className="flex flex-col">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {titulo}
@@ -198,39 +200,75 @@ export function ContadorReunion({
               {mm}:{ss}
             </span>
           </div>
-          {terminado && (
+
+          {finalizada && (
+            <span className="rounded-md bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">
+              Reunión finalizada
+            </span>
+          )}
+          {tiempoCumplido && (
             <span className="rounded-md bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">
               ¡Tiempo cumplido!
             </span>
           )}
+          {enCurso && !tiempoCumplido && (
+            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+              En curso
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={iniciarPausar}
-            disabled={terminado}
-            className={cn(
-              corriendo
-                ? "bg-amber-600 hover:bg-amber-700"
-                : "bg-emerald-600 hover:bg-emerald-700",
-            )}
-          >
-            {corriendo ? (
-              <>
-                <Pause className="mr-1.5 size-4" />
-                Pausar
-              </>
+
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2">
+            {cargando ? (
+              <Loader2 className="size-5 animate-spin text-slate-400" />
+            ) : finalizada ? (
+              <span className="text-xs text-muted-foreground">
+                Cerrada · tiempo final {mm}:{ss}
+              </span>
             ) : (
-              <>
-                <Play className="mr-1.5 size-4" />
-                Iniciar
-              </>
+              puedeEditar && (
+                <>
+                  {!enCurso && (
+                    <Button
+                      size="sm"
+                      onClick={onIniciar}
+                      disabled={accionando}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {accionando ? (
+                        <Loader2 className="mr-1.5 size-4 animate-spin" />
+                      ) : (
+                        <Play className="mr-1.5 size-4" />
+                      )}
+                      Iniciar
+                    </Button>
+                  )}
+                  {enCurso && (
+                    <Button
+                      size="sm"
+                      onClick={onFinalizar}
+                      disabled={accionando}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {accionando ? (
+                        <Loader2 className="mr-1.5 size-4 animate-spin" />
+                      ) : (
+                        <Square className="mr-1.5 size-4" />
+                      )}
+                      Finalizar reunión
+                    </Button>
+                  )}
+                </>
+              )
             )}
-          </Button>
-          <Button size="sm" variant="outline" onClick={reiniciar}>
-            <RotateCcw className="mr-1.5 size-4" />
-            Reiniciar
-          </Button>
+          </div>
+          {!puedeEditar && !finalizada && !cargando && (
+            <span className="text-[11px] text-muted-foreground">
+              Solo un supervisor puede {enCurso ? "finalizar" : "iniciar"}
+            </span>
+          )}
+          {error && <span className="text-[11px] text-red-600">{error}</span>}
         </div>
       </CardContent>
     </Card>
