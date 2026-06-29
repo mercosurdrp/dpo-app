@@ -11,6 +11,14 @@ import {
 } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
   getWarehousePerdidasDia,
   type WarehousePerdidasDia,
 } from "@/actions/warehouse-perdidas-dia"
@@ -85,7 +93,7 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] w-[95vw] max-w-[640px] overflow-y-auto">
+      <DialogContent className="max-h-[92vh] w-[95vw] max-w-[760px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Ventas y pérdidas del día
@@ -96,8 +104,9 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
             )}
           </DialogTitle>
           <DialogDescription>
-            Bultos vendidos y qué se perdió ese día. El WQI es PPM = HL de roturas ÷
-            HL vendidos × 1.000.000.
+            Bultos vendidos y qué se perdió ese día, con el detalle de cada
+            rotura por SKU (bultos, unidades y HL). El WQI es PPM = HL de roturas
+            ÷ HL vendidos × 1.000.000.
           </DialogDescription>
         </DialogHeader>
 
@@ -182,6 +191,52 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                 </div>
               </CardContent>
             </Card>
+
+            {/* Detalle de roturas por SKU: qué se rompió ese día */}
+            {data.roturas_detalle.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  Roturas por SKU ({data.roturas_detalle.length})
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="text-right">Bultos</TableHead>
+                        <TableHead className="text-right">Unid.</TableHead>
+                        <TableHead className="text-right">HL</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.roturas_detalle.map((r) => (
+                        <TableRow key={r.sku}>
+                          <TableCell className="font-mono font-medium">
+                            {r.sku}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[240px] truncate"
+                            title={r.descripcion}
+                          >
+                            {r.descripcion || "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmt(r.bultos, 2)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmt(r.unidades, 2)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-red-700">
+                            {fmt(r.hl, 4)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
 
             {/* Nota explicativa del 0 */}
             {sinRoturas && (

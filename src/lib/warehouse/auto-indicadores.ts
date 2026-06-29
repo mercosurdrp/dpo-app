@@ -557,12 +557,22 @@ interface DepositoIndicadoresSerieDiaria {
   fgli_dia?: Record<string, number | null>
   scl_dia?: Record<string, number | null>
   roturas_dia?: Record<string, number | null>
+  roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
   faltantes_dia?: Record<string, number | null>
   wnp_dia?: Record<string, number | null>
   precision?: Record<string, number | null>
   errores_count_dia?: Record<string, number>
   errores_count_por_operador_dia?: Record<string, Record<string, number>>
   targets?: Partial<WarehouseTargets>
+}
+
+/** Una rotura del día agregada por SKU (popover del WQI en la reunión). */
+export interface RoturaDetalleSku {
+  sku: string
+  descripcion: string
+  bultos: number
+  unidades: number
+  hl: number
 }
 
 interface DepositoOcupacionShared {

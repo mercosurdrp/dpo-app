@@ -21,6 +21,7 @@
  */
 import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
+import type { RoturaDetalleSku } from "@/lib/warehouse/auto-indicadores"
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 
@@ -35,6 +36,8 @@ export interface WarehousePerdidasDia {
   perdidas_val: number | null
   wqi_dia: number | null
   wqi_mtd: number | null
+  /** Qué se rompió ese día, agregado por SKU (ordenado por HL desc). */
+  roturas_detalle: RoturaDetalleSku[]
 }
 
 interface SerieDiariaResp {
@@ -42,6 +45,8 @@ interface SerieDiariaResp {
   roturas_dia?: Record<string, number | null>
   /** Roturas HL acumuladas MTD por día (numerador del WQI acumulado). */
   roturas?: Record<string, number | null>
+  /** Detalle de roturas por SKU de cada día. */
+  roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
   faltantes_dia?: Record<string, number | null>
   /** $ de pérdidas del día (SCL diario). */
   scl_dia?: Record<string, number | null>
@@ -78,6 +83,7 @@ export async function getWarehousePerdidasDia(
     const roturasDia = num(roturasDiaSerie[fecha])
     const faltantesDia = num(faltantesDiaSerie[fecha])
     const perdidasVal = num(sclDiaSerie[fecha])
+    const roturasDetalle = serie.roturas_detalle_dia?.[fecha] ?? []
 
     // 2) Bultos + HL vendidos del TABLERO (ventas_diarias), por día del mes.
     const supabase = await createClient()
@@ -136,6 +142,7 @@ export async function getWarehousePerdidasDia(
         perdidas_val: perdidasVal,
         wqi_dia: wqiDia,
         wqi_mtd: wqiMtd,
+        roturas_detalle: roturasDetalle,
       },
     }
   } catch (e) {
