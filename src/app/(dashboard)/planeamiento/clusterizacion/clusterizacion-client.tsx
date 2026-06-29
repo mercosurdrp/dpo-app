@@ -601,11 +601,26 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
   const { clientes, umbral_ingresos, umbral_costo } = data
   const [cuad, setCuad] = useState<CuadranteId | "todos">("todos")
   const [q, setQ] = useState("")
+  const [fLocalidad, setFLocalidad] = useState("todos")
+  const [fPromotor, setFPromotor] = useState("todos")
+  const [fSupervisor, setFSupervisor] = useState("todos")
+  const [fEstado, setFEstado] = useState<"todos" | "pasa" | "no_pasa">("todos")
   const [bajando, setBajando] = useState(false)
 
   // Solo los PDV con costo cargado (cuadrante != null) entran a la matriz.
   const conCuadrante = useMemo(() => clientes.filter((c) => c.cuadrante != null), [clientes])
   const sinCosto = clientes.length - conCuadrante.length
+
+  const opciones = useMemo(() => {
+    const loc = new Set<string>(), prom = new Set<string>(), sup = new Set<string>()
+    for (const c of conCuadrante) {
+      if (c.localidad) loc.add(c.localidad)
+      if (c.promotor) prom.add(c.promotor)
+      if (c.supervisor) sup.add(c.supervisor)
+    }
+    const ord = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b))
+    return { localidades: ord(loc), promotores: ord(prom), supervisores: ord(sup) }
+  }, [conCuadrante])
 
   const resumen = useMemo(() => {
     const m: Record<CuadranteId, { n: number; fact: number }> = {
@@ -626,15 +641,21 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
     const t = q.trim().toLowerCase()
     return conCuadrante
       .filter((c) => cuad === "todos" || c.cuadrante === cuad)
+      .filter((c) => fLocalidad === "todos" || c.localidad === fLocalidad)
+      .filter((c) => fPromotor === "todos" || c.promotor === fPromotor)
+      .filter((c) => fSupervisor === "todos" || c.supervisor === fSupervisor)
+      .filter((c) => fEstado === "todos" || c.estado === fEstado)
       .filter(
         (c) =>
           t === "" ||
           (c.nombre ?? "").toLowerCase().includes(t) ||
           String(c.id_cliente).includes(t) ||
-          (c.supervisor ?? "").toLowerCase().includes(t),
+          (c.supervisor ?? "").toLowerCase().includes(t) ||
+          (c.localidad ?? "").toLowerCase().includes(t) ||
+          (c.promotor ?? "").toLowerCase().includes(t),
       )
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [conCuadrante, cuad, q])
+  }, [conCuadrante, cuad, q, fLocalidad, fPromotor, fSupervisor, fEstado])
 
   const visibles = filtrados.slice(0, MAX_FILAS)
 
@@ -691,6 +712,11 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
               <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
               <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
             </p>
+            <p className="text-xs text-muted-foreground">
+              Filtrá el cuadrante por localidad, promotor, supervisor o rechazo.{" "}
+              <strong>Rechazo (45 d)</strong>: <strong className="text-red-600">No pasa</strong> = rechazó ≥ 1 entrega
+              por su culpa (sin dinero / cerrado / sin envases) en los últimos 45 días.
+            </p>
             {sinCosto > 0 && (
               <p className="text-xs text-muted-foreground">
                 {fmtNum(sinCosto)} PDV sin costo cargado quedan fuera de la matriz.
@@ -723,6 +749,29 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
         </CardContent>
       </Card>
 
+      {/* Filtros del listado (dentro del cuadrante seleccionado) */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SelectFiltro label="Localidad" value={fLocalidad} onChange={setFLocalidad} opciones={opciones.localidades} />
+            <SelectFiltro label="Promotor" value={fPromotor} onChange={setFPromotor} opciones={opciones.promotores} />
+            <SelectFiltro label="Supervisor" value={fSupervisor} onChange={setFSupervisor} opciones={opciones.supervisores} />
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Rechazo (45 días)</label>
+              <select
+                value={fEstado}
+                onChange={(e) => setFEstado(e.target.value as "todos" | "pasa" | "no_pasa")}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="no_pasa">Solo rechazan (No pasa)</option>
+                <option value="pasa">Sin rechazos (Pasa)</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Tabla con acción recomendada + export */}
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
@@ -740,7 +789,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Input
-              placeholder="Buscar por cliente, ID o supervisor…"
+              placeholder="Buscar por cliente, ID, localidad, promotor…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="max-w-xs"
@@ -756,10 +805,11 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Supervisor</TableHead>
+                  <TableHead>Localidad</TableHead>
                   <TableHead>Cluster</TableHead>
                   <TableHead className="text-right">Facturación YTD</TableHead>
                   <TableHead className="text-right">$/HL año</TableHead>
+                  <TableHead>Rechazo (45 d)</TableHead>
                   <TableHead>Acción recomendada</TableHead>
                 </TableRow>
               </TableHeader>
@@ -774,10 +824,12 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
                           #{c.id_cliente}
-                          {c.localidad ? ` · ${c.localidad}` : ""}
+                          {c.promotor ? ` · ${c.promotor}` : ""}
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-slate-600">{c.supervisor ?? "—"}</TableCell>
+                      <TableCell className="max-w-[120px] truncate text-sm text-slate-600" title={c.localidad ?? undefined}>
+                        {c.localidad ?? "—"}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant="secondary"
@@ -792,6 +844,44 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                       <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">
                         {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                      </TableCell>
+                      {/* Rechazo (criterio 45 días: solo culpa del cliente) */}
+                      <TableCell>
+                        {c.estado === "no_pasa" ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <span className="cursor-help">
+                                  <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100">
+                                    No pasa
+                                    <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)} rech.</span>
+                                  </Badge>
+                                </span>
+                              }
+                            />
+                            <TooltipContent className="w-60 items-stretch">
+                              <div className="flex w-full flex-col text-left">
+                                <p className="mb-1 font-semibold">Rechazos del cliente (últimos 45 días)</p>
+                                {c.rechazos_detalle.slice(0, 12).map((d, i) => (
+                                  <div key={i} className="flex justify-between gap-3 py-0.5">
+                                    <span className="opacity-80">{fmtFechaCorta(d.fecha)} · {d.motivo}</span>
+                                    <span className="tabular-nums">{fmtNum(d.bultos, 1)} blt</span>
+                                  </div>
+                                ))}
+                                {c.rechazos_detalle.length > 12 && (
+                                  <p className="text-[10px] opacity-60">+ {c.rechazos_detalle.length - 12} más…</p>
+                                )}
+                                {c.rechazos_total > c.rechazos_culpa && (
+                                  <p className="mt-1 border-t border-white/20 pt-1 text-[10px] opacity-70">
+                                    + {fmtNum(c.rechazos_total - c.rechazos_culpa)} rechazo(s) por otros motivos (no cuentan)
+                                  </p>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-xs text-emerald-600">Pasa</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {meta && c.cuadrante ? (
@@ -810,7 +900,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                 })}
                 {visibles.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                       Sin PDV con costo cargado para los filtros aplicados.
                     </TableCell>
                   </TableRow>
