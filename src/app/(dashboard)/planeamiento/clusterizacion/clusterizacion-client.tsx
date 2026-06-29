@@ -34,10 +34,14 @@ import {
   Star,
   ClipboardList,
   Plus,
+  Download,
+  LayoutGrid,
 } from "lucide-react"
 import {
   CLUSTER_LABELS,
+  CUADRANTE_LABELS,
   type ClusterId,
+  type CuadranteId,
   type ClienteClusterizado,
   type ClusterizacionData,
 } from "@/actions/clusterizacion-tipos"
@@ -82,6 +86,17 @@ const CLUSTER_META: Record<
     icon: <ArrowDownRight className="h-5 w-5" />,
     desc: "Baja facturación · sin crecer",
   },
+}
+
+// Estética de los 4 cuadrantes de la matriz Valor × Costo.
+const CUADRANTE_META: Record<
+  CuadranteId,
+  { color: string; bg: string; desc: string }
+> = {
+  proteger: { color: "#059669", bg: "bg-emerald-50", desc: "Facturación alta · barato de servir" },
+  optimizar: { color: "#D97706", bg: "bg-amber-50", desc: "Facturación alta · caro de servir" },
+  mantener: { color: "#2563EB", bg: "bg-blue-50", desc: "Facturación baja · barato de servir" },
+  revisar: { color: "#DC2626", bg: "bg-red-50", desc: "Facturación baja · caro de servir" },
 }
 
 const fmtMoneda = (n: number) =>
@@ -162,7 +177,7 @@ const MOSTRADOR = "VTA. MOSTRADOR"
 const MAX_FILAS = 300
 
 export function ClusterizacionClient({ data, planesIniciales }: Props) {
-  const [tab, setTab] = useState<"clientes" | "planes">("clientes")
+  const [tab, setTab] = useState<"clientes" | "analisis" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
   const [fLocalidad, setFLocalidad] = useState("todos")
@@ -220,6 +235,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
 
   const TABS = [
     { k: "clientes" as const, label: "Clientes" },
+    { k: "analisis" as const, label: "Análisis Valor×Costo" },
     { k: "planes" as const, label: `Planes (${planes.length})` },
   ]
 
@@ -262,6 +278,8 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
 
       {tab === "planes" ? (
         <SolapaPlanes planes={planes} onChange={refrescarPlanes} />
+      ) : tab === "analisis" ? (
+        <SolapaAnalisis data={data} />
       ) : (
         <>
           {/* Metodología */}
@@ -571,6 +589,243 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
         }}
       />
     </div>
+  )
+}
+
+/**
+ * Solapa "Análisis Valor × Costo": cruza la facturación (alta/baja) con el costo
+ * logístico $/HL del año (alto/bajo) en una matriz 2×2, asigna a cada PDV una
+ * acción recomendada según su cuadrante y permite bajar los reportes por supervisor.
+ */
+function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
+  const { clientes, umbral_ingresos, umbral_costo } = data
+  const [cuad, setCuad] = useState<CuadranteId | "todos">("todos")
+  const [q, setQ] = useState("")
+  const [bajando, setBajando] = useState(false)
+
+  // Solo los PDV con costo cargado (cuadrante != null) entran a la matriz.
+  const conCuadrante = useMemo(() => clientes.filter((c) => c.cuadrante != null), [clientes])
+  const sinCosto = clientes.length - conCuadrante.length
+
+  const resumen = useMemo(() => {
+    const m: Record<CuadranteId, { n: number; fact: number }> = {
+      proteger: { n: 0, fact: 0 },
+      optimizar: { n: 0, fact: 0 },
+      mantener: { n: 0, fact: 0 },
+      revisar: { n: 0, fact: 0 },
+    }
+    for (const c of conCuadrante) {
+      const k = c.cuadrante as CuadranteId
+      m[k].n += 1
+      m[k].fact += c.ingresos_actual
+    }
+    return m
+  }, [conCuadrante])
+
+  const filtrados = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    return conCuadrante
+      .filter((c) => cuad === "todos" || c.cuadrante === cuad)
+      .filter(
+        (c) =>
+          t === "" ||
+          (c.nombre ?? "").toLowerCase().includes(t) ||
+          String(c.id_cliente).includes(t) ||
+          (c.supervisor ?? "").toLowerCase().includes(t),
+      )
+      .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
+  }, [conCuadrante, cuad, q])
+
+  const visibles = filtrados.slice(0, MAX_FILAS)
+
+  const descargar = () => {
+    setBajando(true)
+    window.location.href = "/api/planeamiento/clusterizacion/export"
+    // El navegador dispara la descarga (Content-Disposition); reactivo el botón.
+    setTimeout(() => setBajando(false), 4000)
+  }
+
+  const celda = (id: CuadranteId) => {
+    const meta = CUADRANTE_META[id]
+    const r = resumen[id]
+    const activo = cuad === id
+    return (
+      <button onClick={() => setCuad(activo ? "todos" : id)} className="text-left">
+        <Card
+          className={`h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`}
+          style={{
+            // @ts-expect-error ring color via CSS var
+            "--tw-ring-color": meta.color,
+          }}
+        >
+          <CardContent className={`space-y-2 pt-4 ${meta.bg}`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold" style={{ color: meta.color }}>
+                {CUADRANTE_LABELS[id]}
+              </p>
+              <span className="text-2xl font-bold" style={{ color: meta.color }}>
+                {r.n}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">{meta.desc}</p>
+            <div className="flex justify-between border-t pt-1 text-xs text-slate-600">
+              <span>Facturación</span>
+              <span className="font-medium">{fmtMoneda(r.fact)}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </button>
+    )
+  }
+
+  return (
+    <>
+      {/* Metodología */}
+      <Card className="border-l-4 border-l-indigo-400 bg-indigo-50/40">
+        <CardContent className="flex gap-3 pt-5 text-sm text-slate-700">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
+          <div className="space-y-1">
+            <p>
+              Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación YTD</strong>{" "}
+              (alta/baja, corte = mediana <strong>{fmtMoneda(umbral_ingresos)}</strong>) con el{" "}
+              <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
+              <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
+            </p>
+            {sinCosto > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {fmtNum(sinCosto)} PDV sin costo cargado quedan fuera de la matriz.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Matriz 2×2 con ejes */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="grid grid-cols-[auto_1fr_1fr] gap-3">
+            <div />
+            <div className="pb-1 text-center text-xs font-medium text-slate-500">$/HL bajo · barato de servir</div>
+            <div className="pb-1 text-center text-xs font-medium text-slate-500">$/HL alto · caro de servir</div>
+
+            <div className="flex items-center justify-center text-xs font-medium text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              Facturación alta
+            </div>
+            {celda("proteger")}
+            {celda("optimizar")}
+
+            <div className="flex items-center justify-center text-xs font-medium text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              Facturación baja
+            </div>
+            {celda("mantener")}
+            {celda("revisar")}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla con acción recomendada + export */}
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <LayoutGrid className="h-4 w-4 text-indigo-500" />
+            PDV ({fmtNum(filtrados.length)})
+            {cuad !== "todos" && (
+              <Badge
+                className="ml-1"
+                style={{ backgroundColor: `${CUADRANTE_META[cuad].color}22`, color: CUADRANTE_META[cuad].color }}
+              >
+                {CUADRANTE_LABELS[cuad]}
+              </Badge>
+            )}
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Buscar por cliente, ID o supervisor…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="max-w-xs"
+            />
+            <Button variant="outline" onClick={descargar} disabled={bajando}>
+              <Download className="h-4 w-4" /> {bajando ? "Generando…" : "Descargar reporte (Excel)"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Supervisor</TableHead>
+                  <TableHead>Cluster</TableHead>
+                  <TableHead className="text-right">Facturación YTD</TableHead>
+                  <TableHead className="text-right">$/HL año</TableHead>
+                  <TableHead>Acción recomendada</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibles.map((c) => {
+                  const meta = c.cuadrante ? CUADRANTE_META[c.cuadrante] : null
+                  return (
+                    <TableRow key={c.id_cliente}>
+                      <TableCell className="max-w-[200px]">
+                        <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
+                          {c.nombre ?? `Cliente ${c.id_cliente}`}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          #{c.id_cliente}
+                          {c.localidad ? ` · ${c.localidad}` : ""}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-slate-600">{c.supervisor ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          style={{
+                            backgroundColor: `${CLUSTER_META[c.cluster].color}1A`,
+                            color: CLUSTER_META[c.cluster].color,
+                          }}
+                        >
+                          {CLUSTER_LABELS[c.cluster]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {meta && c.cuadrante ? (
+                          <Badge
+                            variant="secondary"
+                            style={{ backgroundColor: `${meta.color}1A`, color: meta.color }}
+                          >
+                            {CUADRANTE_LABELS[c.cuadrante]}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+                {visibles.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      Sin PDV con costo cargado para los filtros aplicados.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {filtrados.length > MAX_FILAS && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(filtrados.length)}. El Excel trae todos.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </>
   )
 }
 

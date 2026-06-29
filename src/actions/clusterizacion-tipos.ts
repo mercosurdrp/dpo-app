@@ -15,6 +15,17 @@ export const CLUSTER_LABELS: Record<ClusterId, string> = {
   ventas_bajas: "Ventas Bajas",
 }
 
+// Matriz Valor × Costo: cruce de facturación (alta/baja, mediana) con el costo
+// logístico $/HL del año (alto/bajo, mediana). Cada cuadrante tiene una jugada.
+export type CuadranteId = "proteger" | "optimizar" | "mantener" | "revisar"
+
+export const CUADRANTE_LABELS: Record<CuadranteId, string> = {
+  proteger: "Proteger y replicar",
+  optimizar: "Optimizar logística",
+  mantener: "Mantener bajo esfuerzo",
+  revisar: "Revisar (bajo valor, caro)",
+}
+
 export interface ClienteClusterizado {
   id_cliente: number
   nombre: string | null
@@ -37,6 +48,10 @@ export interface ClienteClusterizado {
    * (misma fuente que su solapa "Acumulado"). null = el PDV no tiene costo cargado.
    */
   costo_x_hl_ytd: number | null
+  /** Costo $/HL por encima de la mediana del año (caro de servir). null = sin dato de costo. */
+  costo_alto: boolean | null
+  /** Cuadrante Valor×Costo (facturación alta/baja × $/HL alto/bajo). null = sin dato de costo. */
+  cuadrante: CuadranteId | null
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number
@@ -79,6 +94,8 @@ export interface ClusterizacionData {
   periodo: ClusterPeriodo
   /** Umbral de facturación YTD (mediana) que separa "alto" de "bajo". */
   umbral_ingresos: number
+  /** Umbral de costo $/HL (mediana del año) que separa "caro" de "barato". 0 si no hay datos. */
+  umbral_costo: number
   resumen: ClusterResumen[]
   clientes: ClienteClusterizado[]
 }

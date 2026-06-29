@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import type {
   ClusterId,
+  CuadranteId,
   ClienteClusterizado,
   ClusterResumen,
   ClusterizacionData,
@@ -179,7 +180,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   // son representativos para el análisis de servicio reciente.
   const conDrop = rows.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
   if (conDrop.length === 0) {
-    return { data: { periodo, umbral_ingresos: 0, resumen: [], clientes: [] } }
+    return { data: { periodo, umbral_ingresos: 0, umbral_costo: 0, resumen: [], clientes: [] } }
   }
 
   // RMD de los últimos 6 meses (muestra suficiente por cliente).
@@ -213,6 +214,9 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     }
   }
 
+  // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
+  const umbralCosto = mediana([...costoHlMap.values()])
+
   // Umbral de facturación = mediana de la facturación YTD.
   const umbral = mediana(conDrop.map((r) => r.facturacion_ytd))
 
@@ -224,6 +228,19 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     const crecePositivo = crecimiento_pct === null || crecimiento_pct >= 0
     const ingresoAlto = r.facturacion_ytd >= umbral
     const drop_size = r.dias_45d > 0 ? r.bultos_45d / r.dias_45d : 0
+    // Costo $/HL del año y cuadrante Valor×Costo (sin dato de costo → null).
+    const costo_x_hl_ytd = costoHlMap.get(r.id_cliente) ?? null
+    const costo_alto = costo_x_hl_ytd == null ? null : costo_x_hl_ytd >= umbralCosto
+    const cuadrante: CuadranteId | null =
+      costo_alto == null
+        ? null
+        : ingresoAlto
+          ? costo_alto
+            ? "optimizar"
+            : "proteger"
+          : costo_alto
+            ? "revisar"
+            : "mantener"
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const rech = rechazoMap.get(r.id_cliente)
@@ -252,7 +269,9 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       bultos_actual: r.bultos_45d,
       dias_actual: r.dias_45d,
       drop_size,
-      costo_x_hl_ytd: costoHlMap.get(r.id_cliente) ?? null,
+      costo_x_hl_ytd,
+      costo_alto,
+      cuadrante,
       rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
       rechazos_culpa,
@@ -298,6 +317,6 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   })
 
   return {
-    data: { periodo, umbral_ingresos: umbral, resumen, clientes },
+    data: { periodo, umbral_ingresos: umbral, umbral_costo: umbralCosto, resumen, clientes },
   }
 }
