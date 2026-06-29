@@ -133,10 +133,17 @@ export function SeguimientoFlota({
     const paradas = new Map<string, { desde: string; hasta: string; causa: "PMC" | "PMP" }[]>()
     for (const m of mantenimientos) {
       if (!m.fuera_servicio_desde) continue
+      // Una OT cancelada nunca sacó la unidad de servicio.
+      if (m.estado === "cancelado") continue
       const arr = paradas.get(m.dominio) ?? []
+      // Sin fecha de retorno: la parada se arrastra "hasta hoy" SOLO mientras
+      // la OT sigue abierta. Una OT ya completada cierra en su propia fecha,
+      // para no inflar indefinidamente los días de parada (PMC/PMP).
+      const abierta = m.estado === "programado" || m.estado === "en_taller"
+      const hasta = m.fuera_servicio_hasta || (abierta ? hoy : m.fecha)
       arr.push({
         desde: m.fuera_servicio_desde,
-        hasta: m.fuera_servicio_hasta || hoy,
+        hasta,
         causa: m.tipo === "correctivo" ? "PMC" : "PMP",
       })
       paradas.set(m.dominio, arr)
