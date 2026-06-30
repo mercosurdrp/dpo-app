@@ -297,9 +297,9 @@ export function SeccionAvanceVenta({
             </div>
 
             <p className="text-[10px] text-muted-foreground">
-              Volumen en HL · Chess + GESCOM (excluye segunda vuelta, envases y combos) ·
-              tendencia ponderada por días hábiles (L-V=1, S=0,5). Fuente: dashboard
-              Mercosur Pampeana.
+              Volumen en HL · igual que &quot;Resumen Ventas&quot; del dashboard (venta Chess
+              por unidad de negocio, todos los fletes) · tendencia ponderada por días
+              hábiles (L-V=1, S=0,5). Fuente: dashboard Mercosur Pampeana.
             </p>
 
             {/* Action Log de la sección */}

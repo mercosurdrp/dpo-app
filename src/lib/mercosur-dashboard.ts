@@ -5,9 +5,13 @@ import { Pool } from "pg"
 // donde viven las ventas (Chess + GESCOM) y los objetivos de venta (PAV).
 // dpo-app no replica esos datos: los consulta acá y congela un snapshot en su
 // propia base. URL en la env MERCOSUR_DB_URL.
-// La lógica de avance replica la del endpoint /api/pav/avance del dashboard:
-// objetivo de `objetivos_final` (proceso cerrado del mes), venta real Chess+GESCOM
-// por categoría, y tendencia ponderada por días hábiles (L-V=1, S=0.5, Dom=0).
+// El "real" replica EXACTAMENTE la pantalla "Resumen Ventas" del dashboard
+// (/api/dashboard/ventas → dashboard.py): SUM(unimed_total) de Chess
+// (`comprobantes`) por unidad de negocio desde la tabla `segmentos`, SIN excluir
+// fletes (SEGUNDA VUELTA/REFUERZO) ni envases y SIN sumar GESCOM, para que el
+// número de la reunión coincida al decimal con el dashboard. El objetivo sale de
+// `objetivos_final` (proceso cerrado del mes) y la tendencia se pondera por días
+// hábiles (L-V=1, S=0.5, Dom=0).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _pool: Pool | null = null
@@ -69,12 +73,12 @@ function clasificarGrupo(grupo: string): CategoriaVenta | null {
   return null
 }
 
-// CASE compartido (Chess y GESCOM) para mapear uneg/segmento a categoría.
-// Mismos segmentos que /api/pav/avance; excluye combos, envases y NULL.
+// CASE que mapea la unidad de negocio (tabla `segmentos`) a la categoría del
+// avance, agrupando igual que "Resumen Ventas" del dashboard (dashboard.py).
 const CAT_SQL = `CASE
-  WHEN upper(a.uneg) = 'CERVEZAS CMQ' AND upper(coalesce(a.segmento,'')) IN ('LOW','CORE','CORE PLUS','HIGH END','SUPER PREMIUM') THEN 'Cervezas'
-  WHEN upper(a.uneg) = 'UNG' AND upper(coalesce(a.segmento,'')) IN ('TOP','UNG RESTO') THEN 'UNG'
-  WHEN upper(a.uneg) = 'AGUAS' AND upper(coalesce(a.segmento,'')) NOT LIKE 'ENV%' THEN 'Aguas'
+  WHEN s.uneg = 'CERVEZAS CMQ' THEN 'Cervezas'
+  WHEN s.uneg = 'UNG' THEN 'UNG'
+  WHEN s.uneg = 'AGUAS' THEN 'Aguas'
   ELSE NULL END`
 
 function ymd(d: Date): string {
@@ -170,35 +174,21 @@ export async function consultarAvanceEmpresa(
       }
     }
 
-    // 3. Venta real Chess (acumulado a la fecha) — mismos filtros que /api/pav/avance
-    const chessRes = await client.query<{ cat: CategoriaVenta | null; hl: string }>(
+    // 3. Venta real — réplica EXACTA de "Resumen Ventas" del dashboard
+    // (/api/dashboard/ventas → dashboard.py): SUM(unimed_total) de Chess por
+    // unidad de negocio desde la tabla `segmentos`, acumulado a la fecha, sin
+    // excluir fletes (SEGUNDA VUELTA/REFUERZO) ni envases y sin sumar GESCOM.
+    const ventasRes = await client.query<{ cat: CategoriaVenta | null; hl: string }>(
       `SELECT ${CAT_SQL} AS cat, SUM(c.unimed_total) AS hl
        FROM comprobantes c
-       LEFT JOIN articulos a ON c.id_articulo = a.id_articulo
+       LEFT JOIN segmentos s ON c.id_articulo = s.id_articulo
        WHERE c.fecha BETWEEN $1 AND $2
-         AND c.anulado = 'NO' AND c.region = 'pampeana'
-         AND COALESCE(c.ds_fletero_carga, '') NOT ILIKE '%SEGUNDA VUELTA%'
-         AND COALESCE(c.ds_fletero_carga, '') NOT ILIKE '%REFUERZO%'
-         AND COALESCE(a.segmento, '') NOT LIKE 'env%'
+         AND c.region = 'pampeana'
+         AND c.anulado = 'NO'
        GROUP BY 1`,
       [first, hastaStr],
     )
-    for (const r of chessRes.rows) {
-      if (r.cat) acc[r.cat].real += Number(r.hl) || 0
-    }
-
-    // 4. Venta real GESCOM (acumulado a la fecha)
-    const gescomRes = await client.query<{ cat: CategoriaVenta | null; hl: string }>(
-      `SELECT ${CAT_SQL} AS cat, SUM(g.cantidad * COALESCE(a.valor_unidad_medida, 0)) AS hl
-       FROM comprobantes_gescom g
-       LEFT JOIN articulos a ON g.id_articulo = a.id_articulo
-       WHERE g.fecha BETWEEN $1 AND $2
-         AND g.codigo_sede = 2 AND COALESCE(g.estado, '') = 'Finalizada'
-         AND COALESCE(a.segmento, '') NOT LIKE 'env%'
-       GROUP BY 1`,
-      [first, hastaStr],
-    )
-    for (const r of gescomRes.rows) {
+    for (const r of ventasRes.rows) {
       if (r.cat) acc[r.cat].real += Number(r.hl) || 0
     }
 
