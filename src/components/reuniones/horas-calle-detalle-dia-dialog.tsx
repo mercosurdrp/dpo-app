@@ -100,7 +100,7 @@ export function HorasCalleDetalleDiaDialog({
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1000px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1000px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Horas en la calle
+            Tiempo en ruta
             {fecha && (
               <span className="text-base font-normal text-muted-foreground">
                 · {formatFechaLarga(fecha)}

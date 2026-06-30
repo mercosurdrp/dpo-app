@@ -95,7 +95,7 @@ export function ChecklistDetalleDiaDialog({ open, onOpenChange, fecha }: Props) 
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <KpiCard
-                label="Camiones a la calle"
+                label="Cantidad de camiones"
                 value={formatInt(data.camiones)}
                 sub="unidades únicas"
               />

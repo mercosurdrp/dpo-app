@@ -2816,6 +2816,13 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("precision picking")
         NOMBRES_AUTO.add("roturas")
         NOMBRES_AUTO.add("faltantes")
+        // Las filas AUTO de checklist adoptan estos nombres (antes "Camiones a
+        // la calle" / "Horas en la calle"); ocultamos cualquier manual homónimo
+        // para no duplicar.
+        NOMBRES_AUTO.add("cantidad de camiones")
+        NOMBRES_AUTO.add("camiones a la calle")
+        NOMBRES_AUTO.add("tiempo en ruta")
+        NOMBRES_AUTO.add("horas en la calle")
       }
     }
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
@@ -3472,13 +3479,13 @@ async function getIndicadoresMesCore(
           }
         }
 
-        // Fila "Camiones a la calle": unidades únicas liberadas por día.
+        // Fila "Cantidad de camiones": unidades únicas liberadas por día.
         const camionesPorFecha: Record<string, number> = {}
         for (const f of Object.keys(dominiosPorFecha)) {
           camionesPorFecha[f] = dominiosPorFecha[f].size
         }
         indicadoresAuto.push(
-          buildAutoRow("auto_camiones_calle", "Camiones a la calle", camionesPorFecha),
+          buildAutoRow("auto_camiones_calle", "Cantidad de camiones", camionesPorFecha),
         )
 
         // Fila "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.
@@ -3612,7 +3619,7 @@ async function getIndicadoresMesCore(
         }
         indicadoresAuto.push({
           id: "auto_horas_calle",
-          nombre: "Horas en la calle",
+          nombre: "Tiempo en ruta",
           unidad: "hs",
           meta: null,
           orden: -1,
