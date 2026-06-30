@@ -90,8 +90,9 @@ export default function Diagrama3D({
     scene.add(dir)
 
     // 8 cubos.
-    const geo = new THREE.BoxGeometry(SIZE, SIZE, SIZE)
-    const edgesGeo = new THREE.EdgesGeometry(geo)
+    // Tamaño de cada cubo escalado por cantidad de PDV (más clientes = más grande).
+    const maxC = Math.max(1, ...puntosRef.current.map((p) => p.count))
+    const sizeFor = (n: number) => SIZE * (0.5 + 0.5 * (n / maxC)) // entre 0.5·SIZE y SIZE
     const meshes: THREE.Mesh[] = []
     for (const pt of puntosRef.current) {
       const mat = new THREE.MeshStandardMaterial({
@@ -101,11 +102,13 @@ export default function Diagrama3D({
         metalness: 0.1,
         roughness: 0.55,
       })
+      const s = sizeFor(pt.count)
+      const geo = new THREE.BoxGeometry(s, s, s)
       // x = costo, y = crecimiento (vertical), z = facturación
       const mesh = new THREE.Mesh(geo, mat)
       mesh.position.set(posCF(pt.x), posCrec(pt.y), posCF(pt.z))
       mesh.userData.cuboId = pt.id
-      mesh.add(new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ color: "#1e293b" })))
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: "#1e293b" })))
       mesh.add(etiqueta(`${pt.label}\n${pt.count}`, "pointer-events-none select-none whitespace-pre-line rounded bg-white/75 px-1 text-center text-[10px] font-bold leading-tight text-slate-900"))
       scene.add(mesh)
       meshes.push(mesh)

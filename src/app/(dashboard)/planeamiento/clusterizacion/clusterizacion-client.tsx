@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -667,6 +667,38 @@ const CUBOS_ORDEN: CuboId[] = [
   "promesa", "hormiga", "dilema", "critico",
 ]
 
+// Selección del diagrama: un cubo (8), una cara-cluster (4) o una cara-cuadrante (4).
+type Seleccion =
+  | { tipo: "cubo"; id: CuboId }
+  | { tipo: "cluster"; id: ClusterId }
+  | { tipo: "cuadrante"; id: CuadranteId }
+
+function selMatch(c: ClienteClusterizado, s: Seleccion): boolean {
+  if (s.tipo === "cubo") return c.cubo === s.id
+  if (s.tipo === "cluster") return c.cluster === s.id
+  return c.cuadrante === s.id
+}
+function selLabel(s: Seleccion): string {
+  if (s.tipo === "cubo") return CUBO_META[s.id].label
+  if (s.tipo === "cluster") return CLUSTER_LABELS[s.id]
+  return CUADRANTE_LABELS[s.id]
+}
+function selColor(s: Seleccion): string {
+  if (s.tipo === "cubo") return CUBO_META[s.id].color
+  if (s.tipo === "cluster") return CLUSTER_META[s.id].color
+  return CUADRANTE_META[s.id].color
+}
+
+// Caras 2D: cluster (facturación × crecimiento) y cuadrante (facturación × costo).
+const CARA_CLUSTERS: { fila: string; celdas: ClusterId[] }[] = [
+  { fila: "Facturación alta", celdas: ["ganador", "basico"] },
+  { fila: "Facturación baja", celdas: ["en_crecimiento", "ventas_bajas"] },
+]
+const CARA_CUADRANTES: { fila: string; celdas: CuadranteId[] }[] = [
+  { fila: "Facturación alta", celdas: ["proteger", "optimizar"] },
+  { fila: "Facturación baja", celdas: ["mantener", "revisar"] },
+]
+
 const PIE_COLORS = [
   "#4338ca", "#0891b2", "#059669", "#d97706", "#dc2626",
   "#7c3aed", "#db2777", "#0d9488", "#64748b", "#2563eb",
@@ -718,6 +750,55 @@ function PieMini({ titulo, datos }: { titulo: string; datos: { name: string; val
   )
 }
 
+/** Cara 2D (2×2) del cubo: clusters (fact×crecimiento) o cuadrantes (fact×costo). */
+function Cara2D({
+  filas, colHead, conteo, label, color, activo, onSel,
+}: {
+  filas: { fila: string; celdas: string[] }[]
+  colHead: string[]
+  conteo: Record<string, number>
+  label: (id: string) => string
+  color: (id: string) => string
+  activo: string | null
+  onSel: (id: string) => void
+}) {
+  return (
+    <div className="mx-auto grid max-w-2xl grid-cols-[auto_1fr_1fr] gap-3">
+      <div />
+      <div className="pb-1 text-center text-xs font-medium text-slate-500">{colHead[0]}</div>
+      <div className="pb-1 text-center text-xs font-medium text-slate-500">{colHead[1]}</div>
+      {filas.map((f) => (
+        <Fragment key={f.fila}>
+          <div className="flex items-center justify-center text-xs font-medium text-slate-500 [writing-mode:vertical-rl] rotate-180">
+            {f.fila}
+          </div>
+          {f.celdas.map((id) => {
+            const act = activo === id
+            const col = color(id)
+            return (
+              <button
+                key={id}
+                onClick={() => onSel(id)}
+                className={`rounded-lg border p-5 text-left transition-all hover:shadow-md ${act ? "ring-2" : ""}`}
+                style={{
+                  // @ts-expect-error ring color via CSS var
+                  "--tw-ring-color": col,
+                  backgroundColor: `${col}12`,
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold" style={{ color: col }}>{label(id)}</span>
+                  <span className="text-2xl font-bold" style={{ color: col }}>{conteo[id] ?? 0}</span>
+                </div>
+              </button>
+            )
+          })}
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
 /**
  * Solapa "Diagrama": cubo 3D (2×2×2) = facturación × costo × crecimiento → 8 tipos
  * de cliente. Se gira/zoomea el gráfico y al clickear (o tocar la leyenda) un cubo
@@ -734,14 +815,18 @@ function SolapaDiagrama({
   onPlanCubo: (cubo: CuboId) => void
 }) {
   const { clientes } = data
-  const [sel, setSel] = useState<CuboId | null>(null)
+  const [sel, setSel] = useState<Seleccion | null>(null)
+  const [vista, setVista] = useState<"3d" | "clusters" | "cuadrantes">("3d")
   const planPorCubo = useMemo(() => {
     const m = new Map<string, ClusterPlanCubo>()
     for (const p of planesCubo) m.set(p.cubo, p)
     return m
   }, [planesCubo])
-  const descargarPdf = (cubo: CuboId) => {
-    window.location.href = `/api/planeamiento/clusterizacion/cubo-pdf?cubo=${cubo}`
+  // Plan del cubo seleccionado (solo cuando la selección es un cubo).
+  const planSel = sel?.tipo === "cubo" ? planPorCubo.get(sel.id) ?? null : null
+  const descargarExcel = () => {
+    const p = sel ? `?${sel.tipo}=${sel.id}` : ""
+    window.location.href = `/api/planeamiento/clusterizacion/cubo-xlsx${p}`
   }
   // Filtros por columna del detalle.
   const [fCli, setFCli] = useState("")
@@ -764,6 +849,18 @@ function SolapaDiagrama({
     return m
   }, [conCubo])
 
+  // Conteos por cara 2D.
+  const conteoCluster = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const c of conCubo) m[c.cluster] = (m[c.cluster] ?? 0) + 1
+    return m
+  }, [conCubo])
+  const conteoCuad = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const c of conCubo) if (c.cuadrante) m[c.cuadrante] = (m[c.cuadrante] ?? 0) + 1
+    return m
+  }, [conCubo])
+
   const puntos: Punto3D[] = CUBOS_ORDEN.map((id) => ({
     id,
     label: CUBO_META[id].label,
@@ -774,8 +871,8 @@ function SolapaDiagrama({
     count: conteo[id],
   }))
 
-  // Base = el cubo seleccionado, o TODOS si no hay selección (tortas + tabla).
-  const base = useMemo(() => (sel ? conCubo.filter((c) => c.cubo === sel) : conCubo), [conCubo, sel])
+  // Base = la selección (cubo/cluster/cuadrante), o TODOS si no hay (tortas + tabla).
+  const base = useMemo(() => (sel ? conCubo.filter((c) => selMatch(c, sel)) : conCubo), [conCubo, sel])
 
   // Tortas (se recalculan con el cubo o el total).
   const pieLoc = useMemo(() => topN(base, (c) => c.localidad), [base])
@@ -847,10 +944,62 @@ function SolapaDiagrama({
         </CardContent>
       </Card>
 
-      {/* Gráfico 3D */}
+      {/* Gráfico: cubo 3D o caras 2D */}
       <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-0">
+          <CardTitle className="text-sm font-normal text-muted-foreground">
+            {vista === "3d"
+              ? "Cubo 3D · girá con el mouse"
+              : vista === "clusters"
+                ? "Cara 2D · Clusters (facturación × crecimiento)"
+                : "Cara 2D · Costo (facturación × costo)"}
+          </CardTitle>
+          <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
+            {([
+              { k: "3d" as const, label: "3D" },
+              { k: "clusters" as const, label: "Caras: Clusters" },
+              { k: "cuadrantes" as const, label: "Caras: Costo" },
+            ]).map((b) => (
+              <button
+                key={b.k}
+                onClick={() => setVista((v) => (v === b.k ? "3d" : b.k))}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  vista === b.k ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent className="pt-4">
-          <Diagrama3D puntos={puntos} selected={sel} onSelect={(id) => setSel((p) => (p === id ? null : id))} />
+          {vista === "3d" ? (
+            <Diagrama3D
+              puntos={puntos}
+              selected={sel?.tipo === "cubo" ? sel.id : null}
+              onSelect={(id) => setSel((p) => (p && p.tipo === "cubo" && p.id === id ? null : { tipo: "cubo", id }))}
+            />
+          ) : vista === "clusters" ? (
+            <Cara2D
+              filas={CARA_CLUSTERS}
+              colHead={["Creciendo", "Sin crecer"]}
+              conteo={conteoCluster}
+              label={(id) => CLUSTER_LABELS[id as ClusterId]}
+              color={(id) => CLUSTER_META[id as ClusterId].color}
+              activo={sel?.tipo === "cluster" ? sel.id : null}
+              onSel={(id) => setSel((s) => (s && s.tipo === "cluster" && s.id === id ? null : { tipo: "cluster", id: id as ClusterId }))}
+            />
+          ) : (
+            <Cara2D
+              filas={CARA_CUADRANTES}
+              colHead={["Costo bajo", "Costo alto"]}
+              conteo={conteoCuad}
+              label={(id) => CUADRANTE_LABELS[id as CuadranteId]}
+              color={(id) => CUADRANTE_META[id as CuadranteId].color}
+              activo={sel?.tipo === "cuadrante" ? sel.id : null}
+              onSel={(id) => setSel((s) => (s && s.tipo === "cuadrante" && s.id === id ? null : { tipo: "cuadrante", id: id as CuadranteId }))}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -858,15 +1007,15 @@ function SolapaDiagrama({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {CUBOS_ORDEN.map((id) => {
           const meta = CUBO_META[id]
-          const activo = sel === id
+          const activo = sel?.tipo === "cubo" && sel.id === id
           const plan = planPorCubo.get(id)
           return (
             <div
               key={id}
               role="button"
               tabIndex={0}
-              onClick={() => setSel(activo ? null : id)}
-              onKeyDown={(e) => { if (e.key === "Enter") setSel(activo ? null : id) }}
+              onClick={() => setSel(activo ? null : { tipo: "cubo", id })}
+              onKeyDown={(e) => { if (e.key === "Enter") setSel(activo ? null : { tipo: "cubo", id }) }}
               className="cursor-pointer text-left"
             >
               <Card className={`relative h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`} style={{
@@ -908,7 +1057,7 @@ function SolapaDiagrama({
       <Card>
         <CardHeader className="pb-1">
           <CardTitle className="text-base">
-            Distribución {sel ? `· ${CUBO_META[sel].label}` : "· Todos"} ({fmtNum(base.length)} PDV)
+            Distribución {sel ? `· ${selLabel(sel)}` : "· Todos"} ({fmtNum(base.length)} PDV)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -925,27 +1074,25 @@ function SolapaDiagrama({
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <Boxes className="h-4 w-4 text-indigo-500" />
-            {sel ? CUBO_META[sel].label : "Todos los PDV"}
+            {sel ? selLabel(sel) : "Todos los PDV"}
             <Badge
               className="ml-1"
-              style={sel ? { backgroundColor: `${CUBO_META[sel].color}22`, color: CUBO_META[sel].color } : undefined}
+              style={sel ? { backgroundColor: `${selColor(sel)}22`, color: selColor(sel) } : undefined}
             >
               {fmtNum(lista.length)} PDV
             </Badge>
-            {sel && <span className="text-xs font-normal text-slate-500">{CUBO_META[sel].combo}</span>}
+            {sel?.tipo === "cubo" && <span className="text-xs font-normal text-slate-500">{CUBO_META[sel.id].combo}</span>}
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
-            {sel && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => onPlanCubo(sel)}>
-                  {planPorCubo.get(sel) ? <ClipboardCheck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                  {planPorCubo.get(sel) ? "Editar plan del cubo" : "Plan del cubo"}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => descargarPdf(sel)}>
-                  <FileDown className="h-4 w-4" /> Descargar PDF
-                </Button>
-              </>
+            {sel?.tipo === "cubo" && (
+              <Button variant="outline" size="sm" onClick={() => onPlanCubo(sel.id)}>
+                {planSel ? <ClipboardCheck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                {planSel ? "Editar plan del cubo" : "Plan del cubo"}
+              </Button>
             )}
+            <Button variant="outline" size="sm" onClick={descargarExcel}>
+              <FileDown className="h-4 w-4" /> Descargar Excel
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -958,17 +1105,17 @@ function SolapaDiagrama({
           </div>
         </CardHeader>
         <CardContent>
-          {sel && <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel].jugada}</p>}
-          {sel && planPorCubo.get(sel) && (
+          {sel?.tipo === "cubo" && <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel.id].jugada}</p>}
+          {planSel && (
             <div className="mb-3 rounded-md border-l-4 border-l-emerald-400 bg-emerald-50/60 p-3 text-sm">
               <p className="flex items-center gap-1 font-semibold text-emerald-800">
                 <ClipboardCheck className="h-4 w-4" /> Plan de acción del cubo (aplica a todos los PDV)
               </p>
-              <p className="mt-1 text-slate-700">{planPorCubo.get(sel)!.descripcion}</p>
+              <p className="mt-1 text-slate-700">{planSel.descripcion}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {planPorCubo.get(sel)!.responsable ? `Responsable: ${planPorCubo.get(sel)!.responsable} · ` : ""}
-                {planPorCubo.get(sel)!.fecha_limite ? `Límite: ${planPorCubo.get(sel)!.fecha_limite} · ` : ""}
-                Estado: {planPorCubo.get(sel)!.estado}
+                {planSel.responsable ? `Responsable: ${planSel.responsable} · ` : ""}
+                {planSel.fecha_limite ? `Límite: ${planSel.fecha_limite} · ` : ""}
+                Estado: {planSel.estado}
               </p>
             </div>
           )}
