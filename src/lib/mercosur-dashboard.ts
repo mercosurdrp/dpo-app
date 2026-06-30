@@ -178,6 +178,7 @@ export async function consultarAvanceEmpresa(
        WHERE c.fecha BETWEEN $1 AND $2
          AND c.anulado = 'NO' AND c.region = 'pampeana'
          AND COALESCE(c.ds_fletero_carga, '') NOT ILIKE '%SEGUNDA VUELTA%'
+         AND COALESCE(c.ds_fletero_carga, '') NOT ILIKE '%REFUERZO%'
          AND COALESCE(a.segmento, '') NOT LIKE 'env%'
        GROUP BY 1`,
       [first, hastaStr],
