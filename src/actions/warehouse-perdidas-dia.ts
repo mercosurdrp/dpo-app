@@ -34,6 +34,8 @@ export interface WarehousePerdidasDia {
   roturas_hl: number | null
   faltantes_hl: number | null
   perdidas_val: number | null
+  /** $ solo de las roturas del día (suma del valor del detalle por SKU). */
+  roturas_val: number | null
   wqi_dia: number | null
   wqi_mtd: number | null
   /** Qué se rompió ese día, agregado por SKU (ordenado por HL desc). */
@@ -84,6 +86,10 @@ export async function getWarehousePerdidasDia(
     const faltantesDia = num(faltantesDiaSerie[fecha])
     const perdidasVal = num(sclDiaSerie[fecha])
     const roturasDetalle = serie.roturas_detalle_dia?.[fecha] ?? []
+    const roturasVal = roturasDetalle.reduce(
+      (s, r) => s + (typeof r.valor === "number" && Number.isFinite(r.valor) ? r.valor : 0),
+      0,
+    )
 
     // 2) Bultos + HL vendidos del TABLERO (ventas_diarias), por día del mes.
     const supabase = await createClient()
@@ -140,6 +146,7 @@ export async function getWarehousePerdidasDia(
         roturas_hl: roturasDia,
         faltantes_hl: faltantesDia,
         perdidas_val: perdidasVal,
+        roturas_val: Math.round(roturasVal * 100) / 100,
         wqi_dia: wqiDia,
         wqi_mtd: wqiMtd,
         roturas_detalle: roturasDetalle,

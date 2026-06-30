@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2, Package, PackageX, ShoppingCart } from "lucide-react"
+import { AlertTriangle, Loader2, Package, ShoppingCart } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -147,12 +147,12 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
               </CardContent>
             </Card>
 
-            {/* Pérdidas: roturas / faltantes / $ */}
-            <div className="grid grid-cols-3 gap-3">
+            {/* Roturas del día (el WQI mide solo roturas) */}
+            <div className="grid grid-cols-2 gap-3">
               <Card>
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">Roturas</p>
+                    <p className="text-xs text-muted-foreground">Roturas del día</p>
                     <Package className="size-4 text-slate-400" />
                   </div>
                   <p className="text-2xl font-bold text-red-700">{fmt(data.roturas_hl, 2)}</p>
@@ -161,19 +161,9 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
               </Card>
               <Card>
                 <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">Faltantes</p>
-                    <PackageX className="size-4 text-slate-400" />
-                  </div>
-                  <p className="text-2xl font-bold text-amber-700">{fmt(data.faltantes_hl, 2)}</p>
-                  <p className="text-xs text-muted-foreground">HL</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Pérdidas $</p>
-                  <p className="text-2xl font-bold">{fmtPesos(data.perdidas_val)}</p>
-                  <p className="text-xs text-muted-foreground">total del día</p>
+                  <p className="text-xs text-muted-foreground">Roturas $</p>
+                  <p className="text-2xl font-bold">{fmtPesos(data.roturas_val)}</p>
+                  <p className="text-xs text-muted-foreground">valor del día</p>
                 </CardContent>
               </Card>
             </div>
@@ -205,7 +195,6 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                         <TableHead>SKU</TableHead>
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Bultos</TableHead>
-                        <TableHead className="text-right">Unid.</TableHead>
                         <TableHead className="text-right">HL</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -222,10 +211,7 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                             {r.descripcion || "—"}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {fmt(r.bultos, 2)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {fmt(r.unidades, 2)}
+                            {fmt(r.bultos_eq ?? r.bultos, 2)}
                           </TableCell>
                           <TableCell className="text-right font-semibold tabular-nums text-red-700">
                             {fmt(r.hl, 4)}

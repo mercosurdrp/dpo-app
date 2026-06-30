@@ -2811,7 +2811,6 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("adherencia a checks")
       } else {
         NOMBRES_AUTO.add("wqi")
-        NOMBRES_AUTO.add("fgli")
         NOMBRES_AUTO.add("wnp")
         NOMBRES_AUTO.add("productividad de picking")
         NOMBRES_AUTO.add("precision picking")
@@ -4137,9 +4136,10 @@ async function getIndicadoresMesCore(
           ausentismoPorFecha[f] = f < fecha ? v : null
         }
 
-        // HL VENDIDOS del tablero (`ventas_diarias.total_hl`, Chess/rechazos-
-        // sync), denominador del WNP. El WQI dejó de ser fila del tablero: ahora
-        // se ve dentro del popover de FGLI como la rotura en PPM.
+        // WQI recalculado sobre el HL VENDIDOS del tablero
+        // (`ventas_diarias.total_hl`, Chess/rechazos-sync), NO sobre el HL
+        // despachado de deposito-esteban. Numerador: HL de roturas de la
+        // serie-diaria. Misma fuente HL que la fila "HL vendidos" y el WNP.
         const { data: ventHlRaw } = await supabase
           .from("ventas_diarias")
           .select("fecha, total_hl")
@@ -4153,6 +4153,29 @@ async function getIndicadoresMesCore(
           const h = Number(v.total_hl ?? 0)
           if (Number.isFinite(h)) {
             hlVendidoDia[v.fecha] = (hlVendidoDia[v.fecha] ?? 0) + h
+          }
+        }
+        // Celda diaria WQI = HL roturas día / HL vendido día × 1M.
+        // MTD = Σ HL roturas / Σ HL vendido (solo días cerrados, f < fecha).
+        const wqiDiaTablero: Record<string, number | null> = {}
+        const wqiMtdTablero: Record<string, number | null> = {}
+        let accHlVend = 0
+        for (const f of fechas) {
+          const rotDia = serie.roturas_dia[f]
+          const hlDia = hlVendidoDia[f] ?? 0
+          wqiDiaTablero[f] =
+            rotDia != null && Number.isFinite(rotDia) && hlDia > 0
+              ? Math.round((rotDia / hlDia) * 1_000_000 * 10) / 10
+              : null
+          if (f < fecha) {
+            accHlVend += hlDia
+            const rotAcum = serie.roturas[f]
+            wqiMtdTablero[f] =
+              rotAcum != null && Number.isFinite(rotAcum) && accHlVend > 0
+                ? Math.round((rotAcum / accHlVend) * 1_000_000 * 10) / 10
+                : null
+          } else {
+            wqiMtdTablero[f] = null
           }
         }
         // WNP (productividad del depósito, HL/HH) recalculado con la MISMA
@@ -4205,25 +4228,14 @@ async function getIndicadoresMesCore(
           }
         }
 
-        // FGLI (HL perdidos del día = roturas + faltantes + vencidos). Día y
-        // MTD acumulado vienen calculados de deposito-esteban; se enmascara el
-        // día de la reunión y futuros, igual que WQI/roturas/faltantes. El drill
-        // del día abre el popover de pérdidas con las 3 categorías.
-        const fgliDiaTablero: Record<string, number | null> = {}
-        const fgliMtdTablero: Record<string, number | null> = {}
-        for (const f of fechas) {
-          fgliDiaTablero[f] = f < fecha ? (serie.fgli_dia[f] ?? null) : null
-          fgliMtdTablero[f] = f < fecha ? (serie.fgli[f] ?? null) : null
-        }
-
         indicadoresAuto.push(
           buildDiarioConMtdRow(
-            "auto_fgli",
-            "FGLI",
-            "HL",
-            fgliDiaTablero,
-            fgliMtdTablero,
-            serie.targets.fgli,
+            "auto_wqi",
+            "WQI",
+            "PPM",
+            wqiDiaTablero,
+            wqiMtdTablero,
+            serie.targets.wqi,
             "menor",
           ),
           buildDiarioConMtdRow(

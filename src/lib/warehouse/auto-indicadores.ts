@@ -580,6 +580,8 @@ export interface RoturaDetalleSku {
   descripcion: string
   bultos: number
   unidades: number
+  /** Bultos equivalentes = bultos + unidades/un_bulto (un solo número). */
+  bultos_eq?: number
   hl: number
   valor?: number
 }
