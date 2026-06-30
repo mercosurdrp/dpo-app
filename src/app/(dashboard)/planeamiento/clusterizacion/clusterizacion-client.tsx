@@ -661,7 +661,16 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
 
   const descargar = () => {
     setBajando(true)
-    window.location.href = "/api/planeamiento/clusterizacion/export"
+    // El PDF respeta el cuadrante y los filtros que están en pantalla.
+    const p = new URLSearchParams()
+    if (cuad !== "todos") p.set("cuad", cuad)
+    if (fLocalidad !== "todos") p.set("localidad", fLocalidad)
+    if (fPromotor !== "todos") p.set("promotor", fPromotor)
+    if (fSupervisor !== "todos") p.set("supervisor", fSupervisor)
+    if (fEstado !== "todos") p.set("estado", fEstado)
+    if (q.trim()) p.set("q", q.trim())
+    const qs = p.toString()
+    window.location.href = `/api/planeamiento/clusterizacion/pdf${qs ? `?${qs}` : ""}`
     // El navegador dispara la descarga (Content-Disposition); reactivo el botón.
     setTimeout(() => setBajando(false), 4000)
   }
@@ -795,7 +804,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
               className="max-w-xs"
             />
             <Button variant="outline" onClick={descargar} disabled={bajando}>
-              <Download className="h-4 w-4" /> {bajando ? "Generando…" : "Descargar reporte (Excel)"}
+              <Download className="h-4 w-4" /> {bajando ? "Generando…" : "Descargar PDF"}
             </Button>
           </div>
         </CardHeader>
@@ -910,7 +919,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
           </div>
           {filtrados.length > MAX_FILAS && (
             <p className="mt-3 text-xs text-muted-foreground">
-              Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(filtrados.length)}. El Excel trae todos.
+              Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(filtrados.length)}. El PDF respeta los filtros aplicados.
             </p>
           )}
         </CardContent>
