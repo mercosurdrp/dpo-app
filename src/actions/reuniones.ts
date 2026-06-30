@@ -3256,8 +3256,8 @@ async function getIndicadoresMesCore(
 
     // 7d-bis. Indicador AUTO "Ocupación de Bodega" — todos los tipos salvo warehouse.
     //   Lee ocupacion_bodega_diaria (alimentado por el cron de rechazos).
-    //   Valor diario = AVG(ceq_total/450 × 100) de los viajes del día — % del target.
-    //   MTD = (Σ ceq / (450 × Σ viajes)) × 100 (% promedio ponderado por viaje).
+    //   Valor diario = AVG(ceq_total/600 × 100) de los viajes del día — % del target.
+    //   MTD = (Σ ceq / (600 × Σ viajes)) × 100 (% promedio ponderado por viaje).
     //   Unidad: % · Meta: 100 · mejor_si=mayor.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
       const { data: obRaw, error: errOB } = await supabase
@@ -3267,7 +3267,7 @@ async function getIndicadoresMesCore(
         .lte("fecha", fechaHasta)
         .gt("ceq_total", 0)
       if (!errOB) {
-        const TARGET_OB = 450
+        const TARGET_OB = 600
         const sumPorFecha: Record<string, number> = {}
         const countPorFecha: Record<string, number> = {}
         for (const r of (obRaw ?? []) as Array<{ fecha: string; ceq_total: number | null }>) {

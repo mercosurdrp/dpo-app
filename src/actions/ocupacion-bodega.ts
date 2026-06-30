@@ -7,7 +7,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 
-const TARGET_CEQ = 450
+const TARGET_CEQ = 600
 
 export interface ViajeOB {
   fecha: string
@@ -27,7 +27,7 @@ export interface OBKpis {
   viajes: number
   ceq_promedio: number
   ceq_total: number
-  pct_meta: number              // pct viajes que alcanzan 450 CEq
+  pct_meta: number              // pct viajes que alcanzan 600 CEq
   ceq_max: number
   ceq_min: number
   patente_top: string | null

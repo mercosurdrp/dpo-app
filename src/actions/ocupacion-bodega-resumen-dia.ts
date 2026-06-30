@@ -6,7 +6,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 
-const TARGET_CEQ = 450
+const TARGET_CEQ = 600
 
 export interface ViajeDelDia {
   patente: string
@@ -26,7 +26,7 @@ export interface OBResumenDia {
   ceq_total: number
   ceq_promedio: number
   pct_promedio: number   // promedio simple de OB% por viaje
-  en_meta: number        // viajes con CEq ≥ 450
+  en_meta: number        // viajes con CEq ≥ 600
   patente_top: string | null
   ceq_max: number
   ceq_min: number

@@ -93,7 +93,7 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
             )}
           </DialogTitle>
           <DialogDescription>
-            Detalle por camión del día: cuántas CEq cargó cada uno y su % respecto al target de {data?.target ?? 450} CEq.
+            Detalle por camión del día: cuántas CEq cargó cada uno y su % respecto al target de {data?.target ?? 600} CEq.
           </DialogDescription>
         </DialogHeader>
 

@@ -207,7 +207,7 @@ export function IndicadoresLandingClient({ pilares }: Props) {
                     Ocupación de Bodega
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    CEq por viaje · Target 450 — Pilar Entrega 1.2
+                    CEq por viaje · Target 600 — Pilar Entrega 1.2
                   </p>
                 </div>
               </CardContent>
