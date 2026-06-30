@@ -18,8 +18,15 @@ export interface Punto3D {
 }
 
 const ALTO = 460
-// Posición de cada capa: 0 → -0.75, 1 → +0.75 (cubos de lado 1 ⇒ separación 0.5).
-const pos = (v: 0 | 1) => (v === 0 ? -0.75 : 0.75)
+const SIZE = 1.2 // lado del cubo (un poco más grande)
+const SEP = 1.7 // separación entre centros de capas (gap ≈ 0.5)
+const HALF = SIZE / 2
+// Costo $/HL y Facturación: parten de 0 (capa baja pegada al origen, alta hacia +).
+const posCF = (v: 0 | 1) => (v === 0 ? HALF : HALF + SEP)
+// Crecimiento: centrado en 0 (negativo abajo, positivo arriba).
+const posCrec = (v: 0 | 1) => (v === 0 ? -SEP / 2 : SEP / 2)
+// Centro del bloque (para apuntar la cámara/controles).
+const CTR = (HALF + (HALF + SEP)) / 2
 
 function etiqueta(texto: string, clase: string): CSS2DObject {
   const div = document.createElement("div")
@@ -58,7 +65,7 @@ export default function Diagrama3D({
     scene.background = new THREE.Color("#f8fafc")
 
     const camera = new THREE.PerspectiveCamera(45, width / ALTO, 0.1, 100)
-    camera.position.set(4.4, 3.2, 4.8)
+    camera.position.set(CTR + 5, 3.8, CTR + 5.6)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setSize(width, ALTO)
@@ -75,7 +82,7 @@ export default function Diagrama3D({
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.target.set(0, 0, 0)
+    controls.target.set(CTR, 0, CTR)
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.8))
     const dir = new THREE.DirectionalLight(0xffffff, 0.85)
@@ -83,7 +90,7 @@ export default function Diagrama3D({
     scene.add(dir)
 
     // 8 cubos.
-    const geo = new THREE.BoxGeometry(1, 1, 1)
+    const geo = new THREE.BoxGeometry(SIZE, SIZE, SIZE)
     const edgesGeo = new THREE.EdgesGeometry(geo)
     const meshes: THREE.Mesh[] = []
     for (const pt of puntosRef.current) {
@@ -96,7 +103,7 @@ export default function Diagrama3D({
       })
       // x = costo, y = crecimiento (vertical), z = facturación
       const mesh = new THREE.Mesh(geo, mat)
-      mesh.position.set(pos(pt.x), pos(pt.y), pos(pt.z))
+      mesh.position.set(posCF(pt.x), posCrec(pt.y), posCF(pt.z))
       mesh.userData.cuboId = pt.id
       mesh.add(new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ color: "#1e293b" })))
       mesh.add(etiqueta(`${pt.label}\n${pt.count}`, "pointer-events-none select-none whitespace-pre-line rounded bg-white/75 px-1 text-center text-[10px] font-bold leading-tight text-slate-900"))
@@ -105,14 +112,16 @@ export default function Diagrama3D({
     }
     meshesRef.current = meshes
 
-    // Ejes (líneas + etiquetas de extremos).
-    const L = 1.9
+    // Ejes. Costo (X) y Facturación (Z) PARTEN DE 0 hacia + ; Crecimiento (Y)
+    // cruza el 0 (negativo abajo, positivo arriba).
+    const POS = HALF + SEP + HALF + 0.5 // largo del eje positivo (más allá de la capa alta)
+    const CREC = SEP / 2 + HALF + 0.5 // medio largo del eje de crecimiento
     const ejeMat = new THREE.LineBasicMaterial({ color: "#94a3b8" })
     const eje = (a: THREE.Vector3, b: THREE.Vector3) =>
       new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), ejeMat)
-    scene.add(eje(new THREE.Vector3(-L, 0, 0), new THREE.Vector3(L, 0, 0)))
-    scene.add(eje(new THREE.Vector3(0, -L, 0), new THREE.Vector3(0, L, 0)))
-    scene.add(eje(new THREE.Vector3(0, 0, -L), new THREE.Vector3(0, 0, L)))
+    scene.add(eje(new THREE.Vector3(0, 0, 0), new THREE.Vector3(POS, 0, 0))) // costo
+    scene.add(eje(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, POS))) // facturación
+    scene.add(eje(new THREE.Vector3(0, -CREC, 0), new THREE.Vector3(0, CREC, 0))) // crecimiento
 
     const addLabel = (texto: string, clase: string, p: THREE.Vector3) => {
       const l = etiqueta(texto, clase)
@@ -121,15 +130,20 @@ export default function Diagrama3D({
     }
     const cap = "pointer-events-none select-none whitespace-nowrap text-xs font-semibold text-slate-500"
     const tick = "pointer-events-none select-none whitespace-nowrap text-[10px] text-slate-400"
-    addLabel("Costo $/HL", cap, new THREE.Vector3(L + 0.25, 0, 0))
-    addLabel("Mayor", tick, new THREE.Vector3(1.05, -0.35, 0))
-    addLabel("Menor", tick, new THREE.Vector3(-1.05, -0.35, 0))
-    addLabel("Crecimiento", cap, new THREE.Vector3(0, L + 0.25, 0))
-    addLabel("Mayor", tick, new THREE.Vector3(0.3, 1.05, 0))
-    addLabel("Menor", tick, new THREE.Vector3(0.3, -1.05, 0))
-    addLabel("Facturación", cap, new THREE.Vector3(0, 0, L + 0.25))
-    addLabel("Alta", tick, new THREE.Vector3(0, -0.35, 1.05))
-    addLabel("Baja", tick, new THREE.Vector3(0, -0.35, -1.05))
+    const lo = posCF(0)
+    const hi = posCF(1)
+    // Costo $/HL (X) desde 0.
+    addLabel("Costo $/HL →", cap, new THREE.Vector3(POS + 0.15, 0, 0))
+    addLabel("0", tick, new THREE.Vector3(0, -0.3, 0))
+    addLabel("Menor", tick, new THREE.Vector3(lo, -0.35, 0))
+    addLabel("Mayor", tick, new THREE.Vector3(hi, -0.35, 0))
+    // Facturación (Z) desde 0.
+    addLabel("Facturación →", cap, new THREE.Vector3(0, 0, POS + 0.15))
+    addLabel("Baja", tick, new THREE.Vector3(0, -0.35, lo))
+    addLabel("Alta", tick, new THREE.Vector3(0, -0.35, hi))
+    // Crecimiento (Y) cruza 0.
+    addLabel("Crecimiento +", cap, new THREE.Vector3(0, CREC + 0.15, 0))
+    addLabel("− (cae)", tick, new THREE.Vector3(0.35, -CREC, 0))
 
     // Click por raycasting.
     const raycaster = new THREE.Raycaster()

@@ -36,6 +36,8 @@ export type CuboId =
 
 export interface CuboMeta {
   label: string
+  /** Combinación cluster + cuadrante que representa (ej. "Ganador + Óptimo"). */
+  combo: string
   /** Lectura / jugada recomendada. */
   jugada: string
   color: string
@@ -46,14 +48,14 @@ export interface CuboMeta {
 }
 
 export const CUBO_META: Record<CuboId, CuboMeta> = {
-  estrella: { label: "Estrella", jugada: "Lo mejor: factura, barato y crece. Proteger y replicar.", color: "#059669", x: 0, y: 1, z: 1 },
-  rentable: { label: "Rentable", jugada: "Gran margen y estable (vaca lechera). Defender y ordeñar.", color: "#0d9488", x: 0, y: 0, z: 1 },
-  motor: { label: "Motor", jugada: "Crece y factura pero caro. Abaratar la logística.", color: "#2563eb", x: 1, y: 1, z: 1 },
-  pesado: { label: "Pesado", jugada: "Factura, caro y plano. Optimizar costo de servir.", color: "#d97706", x: 1, y: 0, z: 1 },
-  promesa: { label: "Promesa", jugada: "Chico, barato y subiendo. Potenciar / desarrollar.", color: "#0891b2", x: 0, y: 1, z: 0 },
-  hormiga: { label: "Hormiga", jugada: "Chico, barato y plano. Mantener sin esfuerzo.", color: "#64748b", x: 0, y: 0, z: 0 },
-  dilema: { label: "Dilema", jugada: "Crece pero caro y chico. Vigilar: ¿escala o drena?", color: "#c026d3", x: 1, y: 1, z: 0 },
-  critico: { label: "Crítico", jugada: "Chico, caro y cayendo (sangría). Revisar / desinvertir.", color: "#dc2626", x: 1, y: 0, z: 0 },
+  estrella: { label: "Estrella", combo: "Ganador + Óptimo", jugada: "Lo mejor: factura, barato y crece. Proteger y replicar.", color: "#059669", x: 0, y: 1, z: 1 },
+  rentable: { label: "Rentable", combo: "Básico + Óptimo", jugada: "Gran margen y estable (vaca lechera). Defender y ordeñar.", color: "#0d9488", x: 0, y: 0, z: 1 },
+  motor: { label: "Motor", combo: "Ganador + Operacional", jugada: "Crece y factura pero caro. Abaratar la logística.", color: "#2563eb", x: 1, y: 1, z: 1 },
+  pesado: { label: "Pesado", combo: "Básico + Operacional", jugada: "Factura, caro y plano. Optimizar costo de servir.", color: "#d97706", x: 1, y: 0, z: 1 },
+  promesa: { label: "Promesa", combo: "Productor + Transaccional", jugada: "Chico, barato y subiendo. Potenciar / desarrollar.", color: "#0891b2", x: 0, y: 1, z: 0 },
+  hormiga: { label: "Hormiga", combo: "Ventas Bajas + Transaccional", jugada: "Chico, barato y plano. Mantener sin esfuerzo.", color: "#64748b", x: 0, y: 0, z: 0 },
+  dilema: { label: "Dilema", combo: "Productor + Parásito", jugada: "Crece pero caro y chico. Vigilar: ¿escala o drena?", color: "#c026d3", x: 1, y: 1, z: 0 },
+  critico: { label: "Crítico", combo: "Ventas Bajas + Parásito", jugada: "Chico, caro y cayendo (sangría). Revisar / desinvertir.", color: "#dc2626", x: 1, y: 0, z: 0 },
 }
 
 export interface ClienteClusterizado {

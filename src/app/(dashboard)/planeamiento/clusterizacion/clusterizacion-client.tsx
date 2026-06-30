@@ -52,6 +52,14 @@ import {
 } from "@/actions/clusterizacion-tipos"
 import type { Punto3D } from "./diagrama-3d"
 import {
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+  Tooltip as RTooltip,
+  ResponsiveContainer,
+} from "recharts"
+import {
   crearPlanCluster,
   getPlanesCluster,
   actualizarEstadoPlanCluster,
@@ -638,15 +646,75 @@ const CUBOS_ORDEN: CuboId[] = [
   "promesa", "hormiga", "dilema", "critico",
 ]
 
+const PIE_COLORS = [
+  "#4338ca", "#0891b2", "#059669", "#d97706", "#dc2626",
+  "#7c3aed", "#db2777", "#0d9488", "#64748b", "#2563eb",
+]
+
+/** Cuenta `items` por dimensión y deja top N + "Otros" (para las tortas). */
+function topN(
+  items: ClienteClusterizado[],
+  key: (c: ClienteClusterizado) => string | null,
+  n = 6,
+): { name: string; value: number }[] {
+  const m = new Map<string, number>()
+  for (const it of items) {
+    const k = (key(it) ?? "(s/d)").trim() || "(s/d)"
+    m.set(k, (m.get(k) ?? 0) + 1)
+  }
+  const arr = [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  if (arr.length <= n) return arr
+  const otros = arr.slice(n).reduce((s, x) => s + x.value, 0)
+  return [...arr.slice(0, n), { name: "Otros", value: otros }]
+}
+
+function PieMini({ titulo, datos }: { titulo: string; datos: { name: string; value: number }[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-1">
+        <CardTitle className="text-sm">{titulo}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-60">
+          {datos.length === 0 ? (
+            <p className="pt-8 text-center text-xs text-muted-foreground">Sin datos</p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={datos} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={68}>
+                  {datos.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <RTooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 /**
  * Solapa "Diagrama": cubo 3D (2×2×2) = facturación × costo × crecimiento → 8 tipos
  * de cliente. Se gira/zoomea el gráfico y al clickear (o tocar la leyenda) un cubo
- * se ve la lista de PDV de ese tipo con los datos de siempre.
+ * se ve la lista de PDV de ese tipo, con 3 tortas (localidad/supervisor/promotor)
+ * y filtros por columna.
  */
 function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
   const { clientes } = data
   const [sel, setSel] = useState<CuboId | null>(null)
-  const [q, setQ] = useState("")
+  // Filtros por columna del detalle.
+  const [fCli, setFCli] = useState("")
+  const [fLoc, setFLoc] = useState("todos")
+  const [fSup, setFSup] = useState("todos")
+  const [fFact, setFFact] = useState("")
+  const [fHl, setFHl] = useState("")
+  const [fCrec, setFCrec] = useState<"todos" | "crece" | "cae" | "nuevo">("todos")
+  const [fRech, setFRech] = useState<"todos" | "pasa" | "no_pasa">("todos")
+  const [fFrio, setFFrio] = useState<"todos" | "con" | "sin">("todos")
 
   // Solo PDV con costo cargado entran al cubo (igual que el Análisis).
   const conCubo = useMemo(() => clientes.filter((c) => c.cubo != null), [clientes])
@@ -669,21 +737,54 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
     count: conteo[id],
   }))
 
+  // Base = el cubo seleccionado, o TODOS si no hay selección (tortas + tabla).
+  const base = useMemo(() => (sel ? conCubo.filter((c) => c.cubo === sel) : conCubo), [conCubo, sel])
+
+  // Tortas (se recalculan con el cubo o el total).
+  const pieLoc = useMemo(() => topN(base, (c) => c.localidad), [base])
+  const pieSup = useMemo(() => topN(base, (c) => c.supervisor), [base])
+  const pieProm = useMemo(() => topN(base, (c) => c.promotor), [base])
+
+  // Opciones de los filtros select (sobre la base).
+  const opciones = useMemo(() => {
+    const loc = new Set<string>(), sup = new Set<string>()
+    for (const c of base) {
+      if (c.localidad) loc.add(c.localidad)
+      if (c.supervisor) sup.add(c.supervisor)
+    }
+    const ord = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b))
+    return { localidades: ord(loc), supervisores: ord(sup) }
+  }, [base])
+
   const lista = useMemo(() => {
-    if (!sel) return []
-    const t = q.trim().toLowerCase()
-    return conCubo
-      .filter((c) => c.cubo === sel)
+    const cli = fCli.trim().toLowerCase()
+    const factMin = parseFloat(fFact)
+    const hlMin = parseFloat(fHl)
+    return base
       .filter(
         (c) =>
-          t === "" ||
-          (c.nombre ?? "").toLowerCase().includes(t) ||
-          String(c.id_cliente).includes(t) ||
-          (c.supervisor ?? "").toLowerCase().includes(t) ||
-          (c.localidad ?? "").toLowerCase().includes(t),
+          cli === "" ||
+          (c.nombre ?? "").toLowerCase().includes(cli) ||
+          String(c.id_cliente).includes(cli) ||
+          (c.promotor ?? "").toLowerCase().includes(cli),
       )
+      .filter((c) => fLoc === "todos" || c.localidad === fLoc)
+      .filter((c) => fSup === "todos" || c.supervisor === fSup)
+      .filter((c) => isNaN(factMin) || c.ingresos_actual >= factMin)
+      .filter((c) => isNaN(hlMin) || (c.costo_x_hl_ytd ?? 0) >= hlMin)
+      .filter((c) =>
+        fCrec === "todos"
+          ? true
+          : fCrec === "nuevo"
+            ? c.crecimiento_pct === null
+            : fCrec === "crece"
+              ? c.crecimiento_pct !== null && c.crecimiento_pct >= 0
+              : c.crecimiento_pct !== null && c.crecimiento_pct < 0,
+      )
+      .filter((c) => fRech === "todos" || c.estado === fRech)
+      .filter((c) => fFrio === "todos" || (fFrio === "con" ? c.equipos_frio_n > 0 : c.equipos_frio_n === 0))
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [conCubo, sel, q])
+  }, [base, fCli, fLoc, fSup, fFact, fHl, fCrec, fRech, fFrio])
 
   const visibles = lista.slice(0, MAX_FILAS)
 
@@ -735,6 +836,7 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
                     </span>
                     <span className="text-xl font-bold" style={{ color: meta.color }}>{conteo[id]}</span>
                   </div>
+                  <p className="text-[11px] font-medium text-slate-500">{meta.combo}</p>
                   <p className="text-xs text-muted-foreground">{meta.jugada}</p>
                 </CardContent>
               </Card>
@@ -743,106 +845,173 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
         })}
       </div>
 
-      {/* Detalle del cubo seleccionado */}
+      {/* Tortas: localidad / supervisor / promotor (cubo o total) */}
       <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Boxes className="h-4 w-4 text-indigo-500" />
-            {sel ? (
-              <>
-                {CUBO_META[sel].label}
-                <Badge className="ml-1" style={{ backgroundColor: `${CUBO_META[sel].color}22`, color: CUBO_META[sel].color }}>
-                  {fmtNum(lista.length)} PDV
-                </Badge>
-              </>
-            ) : (
-              "Seleccioná un cubo"
-            )}
+        <CardHeader className="pb-1">
+          <CardTitle className="text-base">
+            Distribución {sel ? `· ${CUBO_META[sel].label}` : "· Todos"} ({fmtNum(base.length)} PDV)
           </CardTitle>
-          {sel && (
-            <Input
-              placeholder="Buscar por cliente, ID, localidad, supervisor…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="max-w-xs"
-            />
-          )}
         </CardHeader>
         <CardContent>
-          {!sel ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Hacé clic en un cubo del gráfico o en una tarjeta de la leyenda para ver sus clientes.
+          <div className="grid gap-4 lg:grid-cols-3">
+            <PieMini titulo="Por localidad" datos={pieLoc} />
+            <PieMini titulo="Por supervisor" datos={pieSup} />
+            <PieMini titulo="Por promotor" datos={pieProm} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detalle de clientes con filtros por columna */}
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <Boxes className="h-4 w-4 text-indigo-500" />
+            {sel ? CUBO_META[sel].label : "Todos los PDV"}
+            <Badge
+              className="ml-1"
+              style={sel ? { backgroundColor: `${CUBO_META[sel].color}22`, color: CUBO_META[sel].color } : undefined}
+            >
+              {fmtNum(lista.length)} PDV
+            </Badge>
+            {sel && <span className="text-xs font-normal text-slate-500">{CUBO_META[sel].combo}</span>}
+          </CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFCli(""); setFLoc("todos"); setFSup("todos"); setFFact(""); setFHl(""); setFCrec("todos"); setFRech("todos"); setFFrio("todos")
+            }}
+          >
+            Limpiar filtros
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {sel && <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel].jugada}</p>}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Localidad</TableHead>
+                  <TableHead>Supervisor</TableHead>
+                  <TableHead className="text-right">Facturación YTD</TableHead>
+                  <TableHead className="text-right">$/HL año</TableHead>
+                  <TableHead className="text-right">Crec.</TableHead>
+                  <TableHead>Rechazo (45 d)</TableHead>
+                  <TableHead>Equipo frío</TableHead>
+                </TableRow>
+                <TableRow className="align-top">
+                  <TableHead className="py-1">
+                    <input value={fCli} onChange={(e) => setFCli(e.target.value)} placeholder="nombre / ID"
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs" />
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <select value={fLoc} onChange={(e) => setFLoc(e.target.value)}
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs">
+                      <option value="todos">Todas</option>
+                      {opciones.localidades.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <select value={fSup} onChange={(e) => setFSup(e.target.value)}
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs">
+                      <option value="todos">Todos</option>
+                      {opciones.supervisores.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <input value={fFact} onChange={(e) => setFFact(e.target.value)} type="number" placeholder="≥"
+                      className="h-7 w-20 rounded border border-input bg-background px-1 text-right text-xs" />
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <input value={fHl} onChange={(e) => setFHl(e.target.value)} type="number" placeholder="≥"
+                      className="h-7 w-16 rounded border border-input bg-background px-1 text-right text-xs" />
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <select value={fCrec} onChange={(e) => setFCrec(e.target.value as typeof fCrec)}
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs">
+                      <option value="todos">Todos</option>
+                      <option value="crece">Crece</option>
+                      <option value="cae">Cae</option>
+                      <option value="nuevo">Nuevo</option>
+                    </select>
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <select value={fRech} onChange={(e) => setFRech(e.target.value as typeof fRech)}
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs">
+                      <option value="todos">Todos</option>
+                      <option value="no_pasa">No pasa</option>
+                      <option value="pasa">Pasa</option>
+                    </select>
+                  </TableHead>
+                  <TableHead className="py-1">
+                    <select value={fFrio} onChange={(e) => setFFrio(e.target.value as typeof fFrio)}
+                      className="h-7 w-full rounded border border-input bg-background px-1 text-xs">
+                      <option value="todos">Todos</option>
+                      <option value="con">Con</option>
+                      <option value="sin">Sin</option>
+                    </select>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibles.map((c) => (
+                  <TableRow key={c.id_cliente}>
+                    <TableCell className="max-w-[200px]">
+                      <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
+                        {c.nombre ?? `Cliente ${c.id_cliente}`}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        #{c.id_cliente}
+                        {c.promotor ? ` · ${c.promotor}` : ""}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-[120px] truncate text-sm text-slate-600" title={c.localidad ?? undefined}>
+                      {c.localidad ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600">{c.supervisor ?? "—"}</TableCell>
+                    <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <CrecimientoBadge pct={c.crecimiento_pct} />
+                    </TableCell>
+                    <TableCell>
+                      {c.estado === "no_pasa" ? (
+                        <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
+                          No pasa <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)}</span>
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-emerald-600">Pasa</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {c.equipos_frio_n > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700" title={c.equipos_frio_tipos ?? undefined}>
+                          <Snowflake className="h-3.5 w-3.5 text-sky-500" />
+                          {c.equipos_frio_n}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {visibles.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                      Sin PDV para los filtros aplicados.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {lista.length > MAX_FILAS && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(lista.length)}.
             </p>
-          ) : (
-            <>
-              <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel].jugada}</p>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Localidad</TableHead>
-                      <TableHead>Supervisor</TableHead>
-                      <TableHead className="text-right">Facturación YTD</TableHead>
-                      <TableHead className="text-right">$/HL año</TableHead>
-                      <TableHead className="text-right">Crec.</TableHead>
-                      <TableHead>Rechazo (45 d)</TableHead>
-                      <TableHead>Equipo frío</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibles.map((c) => (
-                      <TableRow key={c.id_cliente}>
-                        <TableCell className="max-w-[200px]">
-                          <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
-                            {c.nombre ?? `Cliente ${c.id_cliente}`}
-                          </div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            #{c.id_cliente}
-                            {c.promotor ? ` · ${c.promotor}` : ""}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-[120px] truncate text-sm text-slate-600" title={c.localidad ?? undefined}>
-                          {c.localidad ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-sm text-slate-600">{c.supervisor ?? "—"}</TableCell>
-                        <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
-                        <TableCell className="text-right text-sm tabular-nums">
-                          {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <CrecimientoBadge pct={c.crecimiento_pct} />
-                        </TableCell>
-                        <TableCell>
-                          {c.estado === "no_pasa" ? (
-                            <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
-                              No pasa <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)}</span>
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-emerald-600">Pasa</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {c.equipos_frio_n > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700" title={c.equipos_frio_tipos ?? undefined}>
-                              <Snowflake className="h-3.5 w-3.5 text-sky-500" />
-                              {c.equipos_frio_n}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              {lista.length > MAX_FILAS && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(lista.length)}.
-                </p>
-              )}
-            </>
           )}
         </CardContent>
       </Card>
