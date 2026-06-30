@@ -70,18 +70,17 @@ function fmtPesos(n: number | null): string {
   })
 }
 
-/** % consumido del presupuesto (real ÷ presup). Verde si está dentro, rojo si
- *  se pasó. Menos pérdida que lo presupuestado es bueno. */
+/** % del target diario (real ÷ target). Verde si está dentro, rojo si se pasó. */
 function compara(
   real: number | null,
-  presup: number | null,
+  target: number | null,
 ): { pct: string; clase: string } {
-  if (real == null || presup == null || presup <= 0)
+  if (real == null || target == null || target <= 0)
     return { pct: "", clase: "text-slate-400" }
-  const p = Math.round((real / presup) * 100)
+  const p = Math.round((real / target) * 100)
   return {
-    pct: `${p}% del presup.`,
-    clase: real <= presup ? "text-emerald-700" : "text-red-700",
+    pct: `${p}% del target`,
+    clase: real <= target ? "text-emerald-700" : "text-red-700",
   }
 }
 
@@ -111,10 +110,8 @@ function SeccionTipo({
   tipo: FgliTipoPerdida
 }) {
   const [abierto, setAbierto] = useState(false)
-  const [vista, setVista] = useState<"mes" | "dia">("mes")
-  const vacio = tipo.detalle.length === 0 && tipo.detalle_mes.length === 0
-  const cmpHl = compara(tipo.mtd_hl, tipo.presup_hl)
-  const filas = vista === "mes" ? tipo.detalle_mes : tipo.detalle
+  const vacio = tipo.detalle.length === 0
+  const cmp = compara(tipo.hl, tipo.target_hl)
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -158,100 +155,58 @@ function SeccionTipo({
           </span>
         </div>
 
-        {/* Comparación del mes (real acumulado vs presupuesto) */}
+        {/* Comparación del día contra el target diario */}
         <div className="flex items-center justify-between pl-6 text-xs tabular-nums">
           <span className="text-muted-foreground">
-            Mes: <b className="text-slate-700">{fmt(tipo.mtd_hl, 2)}</b> /{" "}
-            {fmt(tipo.presup_hl, 2)} HL presup.
+            vs target diario: {fmt(tipo.target_hl, 2)} HL
             <span className="mx-1 text-slate-300">·</span>
-            <b className="text-slate-700">{fmt(tipo.mtd_ppm, 0)}</b> /{" "}
-            {fmt(tipo.presup_ppm, 0)} {ppmLabel} presup.
+            {fmt(tipo.target_ppm, 0)} {ppmLabel}
           </span>
-          {cmpHl.pct && (
-            <span className={cn("font-semibold", cmpHl.clase)}>{cmpHl.pct}</span>
+          {cmp.pct && (
+            <span className={cn("font-semibold", cmp.clase)}>{cmp.pct}</span>
           )}
         </div>
       </button>
 
       {abierto && !vacio && (
-        <div className="border-t bg-white">
-          {/* Toggle día / mes acumulado */}
-          <div className="flex items-center gap-1 px-3 py-2 text-xs">
-            <span className="mr-1 text-muted-foreground">Detalle por SKU:</span>
-            <button
-              type="button"
-              onClick={() => setVista("mes")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition",
-                vista === "mes"
-                  ? "bg-slate-800 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-              )}
-            >
-              Mes acumulado
-            </button>
-            <button
-              type="button"
-              onClick={() => setVista("dia")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition",
-                vista === "dia"
-                  ? "bg-slate-800 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-              )}
-            >
-              Solo el día
-            </button>
-          </div>
-          {filas.length === 0 ? (
-            <p className="px-3 pb-3 text-sm text-muted-foreground">
-              {vista === "dia"
-                ? `Sin ${label.toLowerCase()}s registradas ese día.`
-                : `Sin ${label.toLowerCase()}s en el mes.`}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right">Bultos</TableHead>
-                    <TableHead className="text-right">Unid.</TableHead>
-                    <TableHead className="text-right">HL</TableHead>
-                    <TableHead className="text-right">$</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filas.map((r) => (
-                    <TableRow key={r.sku}>
-                      <TableCell className="font-mono font-medium">
-                        {r.sku}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[220px] truncate"
-                        title={r.descripcion}
-                      >
-                        {r.descripcion || "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(r.bultos, 2)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(r.unidades, 2)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">
-                        {fmt(r.hl, 4)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {r.valor != null ? fmtPesos(r.valor) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        <div className="overflow-x-auto border-t bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>SKU</TableHead>
+                <TableHead>Descripción</TableHead>
+                <TableHead className="text-right">Bultos</TableHead>
+                <TableHead className="text-right">Unid.</TableHead>
+                <TableHead className="text-right">HL</TableHead>
+                <TableHead className="text-right">$</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tipo.detalle.map((r) => (
+                <TableRow key={r.sku}>
+                  <TableCell className="font-mono font-medium">{r.sku}</TableCell>
+                  <TableCell
+                    className="max-w-[220px] truncate"
+                    title={r.descripcion}
+                  >
+                    {r.descripcion || "—"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.bultos, 2)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.unidades, 2)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {fmt(r.hl, 4)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {r.valor != null ? fmtPesos(r.valor) : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
@@ -288,7 +243,7 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
   }, [open, fecha])
 
   const sinPerdidas = data != null && (data.total.hl ?? 0) === 0
-  const cmpFgli = data ? compara(data.total.mtd_hl, data.total.presup_hl) : null
+  const cmpFgli = data ? compara(data.total.hl, data.total.target_hl) : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -303,9 +258,10 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
             )}
           </DialogTitle>
           <DialogDescription>
-            Total perdido el día y desglose por categoría (vencido, faltante,
-            rotura), con el acumulado del mes contra el presupuesto. Tocá una
-            flecha para ver el detalle por SKU. El PPM de la rotura es el WQI.
+            Lo perdido ese día y su desglose por categoría (vencido, faltante,
+            rotura), comparado contra el target diario (presupuesto del mes ÷ días
+            del mes). Tocá una flecha para ver el detalle por SKU del día. El PPM
+            de la rotura es el WQI.
           </DialogDescription>
         </DialogHeader>
 
@@ -343,12 +299,10 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
                     <p className="text-3xl font-bold">{fmtPesos(data.total.valor)}</p>
                   </div>
                 </div>
-                {/* FGLI acumulado del mes vs presupuesto */}
+                {/* FGLI del día vs target diario */}
                 <div className="flex items-center justify-between border-t pt-2 text-xs tabular-nums">
                   <span className="text-muted-foreground">
-                    FGLI mes:{" "}
-                    <b className="text-slate-700">{fmt(data.total.mtd_hl, 2)}</b> /{" "}
-                    {fmt(data.total.presup_hl, 2)} HL presup.
+                    FGLI día vs target diario: {fmt(data.total.target_hl, 2)} HL
                   </span>
                   {cmpFgli?.pct && (
                     <span className={cn("font-semibold", cmpFgli.clase)}>
