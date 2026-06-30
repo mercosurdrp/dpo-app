@@ -111,8 +111,10 @@ function SeccionTipo({
   tipo: FgliTipoPerdida
 }) {
   const [abierto, setAbierto] = useState(false)
-  const vacio = tipo.detalle.length === 0
+  const [vista, setVista] = useState<"mes" | "dia">("mes")
+  const vacio = tipo.detalle.length === 0 && tipo.detalle_mes.length === 0
   const cmpHl = compara(tipo.mtd_hl, tipo.presup_hl)
+  const filas = vista === "mes" ? tipo.detalle_mes : tipo.detalle
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -172,44 +174,84 @@ function SeccionTipo({
       </button>
 
       {abierto && !vacio && (
-        <div className="overflow-x-auto border-t bg-white">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead className="text-right">Bultos</TableHead>
-                <TableHead className="text-right">Unid.</TableHead>
-                <TableHead className="text-right">HL</TableHead>
-                <TableHead className="text-right">$</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tipo.detalle.map((r) => (
-                <TableRow key={r.sku}>
-                  <TableCell className="font-mono font-medium">{r.sku}</TableCell>
-                  <TableCell
-                    className="max-w-[220px] truncate"
-                    title={r.descripcion}
-                  >
-                    {r.descripcion || "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmt(r.bultos, 2)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmt(r.unidades, 2)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {fmt(r.hl, 4)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {r.valor != null ? fmtPesos(r.valor) : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="border-t bg-white">
+          {/* Toggle día / mes acumulado */}
+          <div className="flex items-center gap-1 px-3 py-2 text-xs">
+            <span className="mr-1 text-muted-foreground">Detalle por SKU:</span>
+            <button
+              type="button"
+              onClick={() => setVista("mes")}
+              className={cn(
+                "rounded px-2 py-0.5 font-medium transition",
+                vista === "mes"
+                  ? "bg-slate-800 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+              )}
+            >
+              Mes acumulado
+            </button>
+            <button
+              type="button"
+              onClick={() => setVista("dia")}
+              className={cn(
+                "rounded px-2 py-0.5 font-medium transition",
+                vista === "dia"
+                  ? "bg-slate-800 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+              )}
+            >
+              Solo el día
+            </button>
+          </div>
+          {filas.length === 0 ? (
+            <p className="px-3 pb-3 text-sm text-muted-foreground">
+              {vista === "dia"
+                ? `Sin ${label.toLowerCase()}s registradas ese día.`
+                : `Sin ${label.toLowerCase()}s en el mes.`}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead className="text-right">Bultos</TableHead>
+                    <TableHead className="text-right">Unid.</TableHead>
+                    <TableHead className="text-right">HL</TableHead>
+                    <TableHead className="text-right">$</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filas.map((r) => (
+                    <TableRow key={r.sku}>
+                      <TableCell className="font-mono font-medium">
+                        {r.sku}
+                      </TableCell>
+                      <TableCell
+                        className="max-w-[220px] truncate"
+                        title={r.descripcion}
+                      >
+                        {r.descripcion || "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt(r.bultos, 2)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt(r.unidades, 2)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {fmt(r.hl, 4)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {r.valor != null ? fmtPesos(r.valor) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
       )}
     </div>

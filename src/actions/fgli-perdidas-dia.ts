@@ -36,7 +36,10 @@ export interface FgliTipoPerdida {
   mtd_ppm: number | null
   presup_hl: number | null
   presup_ppm: number | null
+  /** Detalle por SKU del día clickeado. */
   detalle: RoturaDetalleSku[]
+  /** Detalle por SKU acumulado del mes a la fecha (para analizar el desvío). */
+  detalle_mes: RoturaDetalleSku[]
 }
 
 export interface FgliPerdidasDia {
@@ -82,6 +85,43 @@ function num(v: unknown): number | null {
 function ppm(hl: number | null, hlVendido: number | null): number | null {
   if (hl == null || hlVendido == null || hlVendido <= 0) return null
   return Math.round((hl / hlVendido) * 1_000_000 * 10) / 10
+}
+
+/** Acumula el detalle por SKU de todos los días del mes hasta `fecha` (incl.). */
+function acumularMes(
+  porDia: Record<string, RoturaDetalleSku[]> | undefined,
+  fecha: string,
+): RoturaDetalleSku[] {
+  const acc: Record<string, Required<RoturaDetalleSku>> = {}
+  for (const [f, arr] of Object.entries(porDia ?? {})) {
+    if (f > fecha) continue
+    for (const d of arr ?? []) {
+      const a =
+        acc[d.sku] ??
+        (acc[d.sku] = {
+          sku: d.sku,
+          descripcion: d.descripcion,
+          bultos: 0,
+          unidades: 0,
+          hl: 0,
+          valor: 0,
+        })
+      a.bultos += d.bultos
+      a.unidades += d.unidades
+      a.hl += d.hl
+      a.valor += d.valor ?? 0
+    }
+  }
+  return Object.values(acc)
+    .map((a) => ({
+      sku: a.sku,
+      descripcion: a.descripcion,
+      bultos: Math.round(a.bultos * 100) / 100,
+      unidades: Math.round(a.unidades * 100) / 100,
+      hl: Math.round(a.hl * 10000) / 10000,
+      valor: Math.round(a.valor * 100) / 100,
+    }))
+    .sort((x, y) => y.hl - x.hl)
 }
 
 export async function getFgliPerdidasDia(
@@ -130,6 +170,7 @@ export async function getFgliPerdidasDia(
       mtd: number | null,
       presup: number | null,
       detalle: RoturaDetalleSku[],
+      detalleMes: RoturaDetalleSku[],
     ): FgliTipoPerdida {
       let bultos = 0
       let valor = 0
@@ -147,6 +188,7 @@ export async function getFgliPerdidasDia(
         presup_hl: presup,
         presup_ppm: ppm(presup, ventasEsperadas),
         detalle,
+        detalle_mes: detalleMes,
       }
     }
 
@@ -155,18 +197,21 @@ export async function getFgliPerdidasDia(
       num(serie.roturas?.[fecha]),
       num(serie.targets?.roturas),
       serie.roturas_detalle_dia?.[fecha] ?? [],
+      acumularMes(serie.roturas_detalle_dia, fecha),
     )
     const faltante = buildTipo(
       num(serie.faltantes_dia?.[fecha]),
       num(serie.faltantes?.[fecha]),
       num(serie.targets?.faltantes),
       serie.faltantes_detalle_dia?.[fecha] ?? [],
+      acumularMes(serie.faltantes_detalle_dia, fecha),
     )
     const vencido = buildTipo(
       num(serie.vencidos_dia?.[fecha]),
       num(serie.vencidos?.[fecha]),
       num(serie.targets?.vencidos),
       serie.vencidos_detalle_dia?.[fecha] ?? [],
+      acumularMes(serie.vencidos_detalle_dia, fecha),
     )
 
     const totalBultos =
