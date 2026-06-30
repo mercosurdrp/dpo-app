@@ -70,32 +70,49 @@ function fmtPesos(n: number | null): string {
   })
 }
 
-type TipoKey = "vencido" | "faltante" | "rotura"
+/** % consumido del presupuesto (real ÷ presup). Verde si está dentro, rojo si
+ *  se pasó. Menos pérdida que lo presupuestado es bueno. */
+function compara(
+  real: number | null,
+  presup: number | null,
+): { pct: string; clase: string } {
+  if (real == null || presup == null || presup <= 0)
+    return { pct: "", clase: "text-slate-400" }
+  const p = Math.round((real / presup) * 100)
+  return {
+    pct: `${p}% del presup.`,
+    clase: real <= presup ? "text-emerald-700" : "text-red-700",
+  }
+}
 
 const TIPOS: Array<{
-  key: TipoKey
+  key: "vencido" | "faltante" | "rotura"
   label: string
   icon: typeof Package
   color: string
+  ppmLabel: string
 }> = [
-  { key: "vencido", label: "Vencido", icon: Hourglass, color: "text-violet-700" },
-  { key: "faltante", label: "Faltante", icon: PackageX, color: "text-amber-700" },
-  { key: "rotura", label: "Rotura", icon: Package, color: "text-red-700" },
+  { key: "vencido", label: "Vencido", icon: Hourglass, color: "text-violet-700", ppmLabel: "PPM" },
+  { key: "faltante", label: "Faltante", icon: PackageX, color: "text-amber-700", ppmLabel: "PPM" },
+  { key: "rotura", label: "Rotura", icon: Package, color: "text-red-700", ppmLabel: "WQI" },
 ]
 
 function SeccionTipo({
   label,
   icon: Icon,
   color,
+  ppmLabel,
   tipo,
 }: {
   label: string
   icon: typeof Package
   color: string
+  ppmLabel: string
   tipo: FgliTipoPerdida
 }) {
   const [abierto, setAbierto] = useState(false)
   const vacio = tipo.detalle.length === 0
+  const cmpHl = compara(tipo.mtd_hl, tipo.presup_hl)
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -104,33 +121,54 @@ function SeccionTipo({
         onClick={() => setAbierto((v) => !v)}
         disabled={vacio}
         className={cn(
-          "flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition",
-          vacio ? "cursor-default bg-slate-50/60" : "hover:bg-slate-50",
+          "flex w-full flex-col gap-1 px-3 py-2.5 text-left transition",
+          vacio ? "cursor-default" : "hover:bg-slate-50",
         )}
       >
-        <span className="flex items-center gap-2">
-          {vacio ? (
-            <span className="size-4" />
-          ) : abierto ? (
-            <ChevronDown className="size-4 text-slate-500" />
-          ) : (
-            <ChevronRight className="size-4 text-slate-500" />
-          )}
-          <Icon className={cn("size-4", color)} />
-          <span className="font-semibold text-slate-800">{label}</span>
-          {!vacio && (
-            <span className="text-xs text-muted-foreground">
-              ({tipo.detalle.length} SKU)
-            </span>
-          )}
-        </span>
-        <span className="flex items-center gap-4 text-sm tabular-nums">
-          <span className={cn("font-bold", color)}>{fmt(tipo.hl, 2)} HL</span>
-          <span className="hidden text-muted-foreground sm:inline">
-            {fmt(tipo.bultos, 0)} bul
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            {vacio ? (
+              <span className="size-4" />
+            ) : abierto ? (
+              <ChevronDown className="size-4 text-slate-500" />
+            ) : (
+              <ChevronRight className="size-4 text-slate-500" />
+            )}
+            <Icon className={cn("size-4", color)} />
+            <span className="font-semibold text-slate-800">{label}</span>
+            {!vacio && (
+              <span className="text-xs text-muted-foreground">
+                ({tipo.detalle.length} SKU)
+              </span>
+            )}
           </span>
-          <span className="font-medium text-slate-700">{fmtPesos(tipo.valor)}</span>
-        </span>
+          <span className="flex items-baseline gap-2 tabular-nums">
+            <span className={cn("text-lg font-bold", color)}>
+              {fmt(tipo.hl, 2)}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">HL</span>
+            </span>
+            <span className="text-sm font-semibold text-slate-600">
+              {fmt(tipo.ppm, 0)}
+              <span className="ml-0.5 text-[10px] font-normal text-muted-foreground">
+                {ppmLabel}
+              </span>
+            </span>
+          </span>
+        </div>
+
+        {/* Comparación del mes (real acumulado vs presupuesto) */}
+        <div className="flex items-center justify-between pl-6 text-xs tabular-nums">
+          <span className="text-muted-foreground">
+            Mes: <b className="text-slate-700">{fmt(tipo.mtd_hl, 2)}</b> /{" "}
+            {fmt(tipo.presup_hl, 2)} HL presup.
+            <span className="mx-1 text-slate-300">·</span>
+            <b className="text-slate-700">{fmt(tipo.mtd_ppm, 0)}</b> /{" "}
+            {fmt(tipo.presup_ppm, 0)} {ppmLabel} presup.
+          </span>
+          {cmpHl.pct && (
+            <span className={cn("font-semibold", cmpHl.clase)}>{cmpHl.pct}</span>
+          )}
+        </div>
       </button>
 
       {abierto && !vacio && (
@@ -208,10 +246,11 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
   }, [open, fecha])
 
   const sinPerdidas = data != null && (data.total.hl ?? 0) === 0
+  const cmpFgli = data ? compara(data.total.mtd_hl, data.total.presup_hl) : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] w-[95vw] max-w-[760px] overflow-y-auto">
+      <DialogContent className="max-h-[92vh] w-[95vw] max-w-[780px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Pérdidas del día (FGLI)
@@ -222,9 +261,9 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
             )}
           </DialogTitle>
           <DialogDescription>
-            Total perdido el día y su desglose por categoría (vencido, faltante y
-            rotura). Tocá una flecha para ver el detalle por SKU. FGLI = HL
-            perdidos = roturas + faltantes + vencidos.
+            Total perdido el día y desglose por categoría (vencido, faltante,
+            rotura), con el acumulado del mes contra el presupuesto. Tocá una
+            flecha para ver el detalle por SKU. El PPM de la rotura es el WQI.
           </DialogDescription>
         </DialogHeader>
 
@@ -242,23 +281,38 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
 
         {!loading && !error && data && (
           <div className="space-y-4">
-            {/* Recuadro central: total perdido (HL / bultos / $) */}
+            {/* Recuadro central: total perdido del día (HL / bultos / $) */}
             <Card>
-              <CardContent className="grid grid-cols-3 gap-2 pt-4 text-center">
-                <div>
-                  <p className="text-xs text-muted-foreground">HL perdidos</p>
-                  <p className="flex items-center justify-center gap-1 text-3xl font-bold">
-                    <Droplets className="size-5 text-slate-400" />
-                    {fmt(data.total.hl, 2)}
-                  </p>
+              <CardContent className="space-y-2 pt-4">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">HL perdidos</p>
+                    <p className="flex items-center justify-center gap-1 text-3xl font-bold">
+                      <Droplets className="size-5 text-slate-400" />
+                      {fmt(data.total.hl, 2)}
+                    </p>
+                  </div>
+                  <div className="border-x">
+                    <p className="text-xs text-muted-foreground">Bultos</p>
+                    <p className="text-3xl font-bold">{fmt(data.total.bultos, 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Precio</p>
+                    <p className="text-3xl font-bold">{fmtPesos(data.total.valor)}</p>
+                  </div>
                 </div>
-                <div className="border-x">
-                  <p className="text-xs text-muted-foreground">Bultos</p>
-                  <p className="text-3xl font-bold">{fmt(data.total.bultos, 0)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Precio</p>
-                  <p className="text-3xl font-bold">{fmtPesos(data.total.valor)}</p>
+                {/* FGLI acumulado del mes vs presupuesto */}
+                <div className="flex items-center justify-between border-t pt-2 text-xs tabular-nums">
+                  <span className="text-muted-foreground">
+                    FGLI mes:{" "}
+                    <b className="text-slate-700">{fmt(data.total.mtd_hl, 2)}</b> /{" "}
+                    {fmt(data.total.presup_hl, 2)} HL presup.
+                  </span>
+                  {cmpFgli?.pct && (
+                    <span className={cn("font-semibold", cmpFgli.clase)}>
+                      {cmpFgli.pct}
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -275,6 +329,7 @@ export function FgliPerdidasDetalleDiaDialog({ open, onOpenChange, fecha }: Prop
                     label={t.label}
                     icon={t.icon}
                     color={t.color}
+                    ppmLabel={t.ppmLabel}
                     tipo={data[t.key]}
                   />
                 ))}

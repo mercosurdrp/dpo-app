@@ -746,6 +746,22 @@ async function fetchObjetivoVentaHl(
 }
 
 /**
+ * HL de venta esperados del mes — el MISMO denominador que usa el target del WQI:
+ * objetivo de venta de chess-dashboard (/gerencial), con fallback al presupuesto
+ * fijo. Se usa para pasar los targets de pérdida (HL) a PPM en el popover de FGLI.
+ */
+export async function getVentasHlEsperadas(
+  year: number,
+  month: number,
+): Promise<number | null> {
+  return (
+    (await fetchObjetivoVentaHl(year, month)) ??
+    VENTAS_HL_PRESUPUESTO[year]?.[month] ??
+    null
+  )
+}
+
+/**
  * Trae de /api/indicadores/serie-diaria:
  *  - Series MTD acumuladas (roturas/faltantes) para que la columna MTD del
  *    indicador tome el último acumulado del mes.
