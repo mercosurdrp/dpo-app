@@ -1,6 +1,10 @@
 "use server"
 
-import { consultarClusterClientes } from "@/lib/mercosur-dashboard"
+import {
+  consultarClusterClientes,
+  consultarEquiposFrioPorCliente,
+  type EquipoFrioCliente,
+} from "@/lib/mercosur-dashboard"
 import { getCostoPorPdvYtd } from "./costo-pdv"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
@@ -214,6 +218,15 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     }
   }
 
+  // Equipos de frío (EDF) instalados por PDV, desde la base del dashboard
+  // (edf_activos). Opcional: si falla, la columna muestra "sin frío".
+  let frioMap = new Map<number, EquipoFrioCliente>()
+  try {
+    frioMap = await consultarEquiposFrioPorCliente()
+  } catch {
+    frioMap = new Map<number, EquipoFrioCliente>()
+  }
+
   // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
   const umbralCosto = mediana([...costoHlMap.values()])
 
@@ -272,6 +285,8 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       costo_x_hl_ytd,
       costo_alto,
       cuadrante,
+      equipos_frio_n: frioMap.get(r.id_cliente)?.cantidad ?? 0,
+      equipos_frio_tipos: frioMap.get(r.id_cliente)?.tipos ?? null,
       rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
       rechazos_culpa,

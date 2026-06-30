@@ -36,6 +36,7 @@ import {
   Plus,
   Download,
   LayoutGrid,
+  Snowflake,
 } from "lucide-react"
 import {
   CLUSTER_LABELS,
@@ -605,6 +606,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
   const [fPromotor, setFPromotor] = useState("todos")
   const [fSupervisor, setFSupervisor] = useState("todos")
   const [fEstado, setFEstado] = useState<"todos" | "pasa" | "no_pasa">("todos")
+  const [fFrio, setFFrio] = useState<"todos" | "con" | "sin">("todos")
   const [bajando, setBajando] = useState(false)
 
   // Solo los PDV con costo cargado (cuadrante != null) entran a la matriz.
@@ -647,6 +649,11 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
       .filter((c) => fEstado === "todos" || c.estado === fEstado)
       .filter(
         (c) =>
+          fFrio === "todos" ||
+          (fFrio === "con" ? c.equipos_frio_n > 0 : c.equipos_frio_n === 0),
+      )
+      .filter(
+        (c) =>
           t === "" ||
           (c.nombre ?? "").toLowerCase().includes(t) ||
           String(c.id_cliente).includes(t) ||
@@ -655,7 +662,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
           (c.promotor ?? "").toLowerCase().includes(t),
       )
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [conCuadrante, cuad, q, fLocalidad, fPromotor, fSupervisor, fEstado])
+  }, [conCuadrante, cuad, q, fLocalidad, fPromotor, fSupervisor, fEstado, fFrio])
 
   const visibles = filtrados.slice(0, MAX_FILAS)
 
@@ -668,6 +675,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
     if (fPromotor !== "todos") p.set("promotor", fPromotor)
     if (fSupervisor !== "todos") p.set("supervisor", fSupervisor)
     if (fEstado !== "todos") p.set("estado", fEstado)
+    if (fFrio !== "todos") p.set("frio", fFrio)
     if (q.trim()) p.set("q", q.trim())
     const qs = p.toString()
     window.location.href = `/api/planeamiento/clusterizacion/pdf${qs ? `?${qs}` : ""}`
@@ -761,7 +769,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
       {/* Filtros del listado (dentro del cuadrante seleccionado) */}
       <Card>
         <CardContent className="pt-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <SelectFiltro label="Localidad" value={fLocalidad} onChange={setFLocalidad} opciones={opciones.localidades} />
             <SelectFiltro label="Promotor" value={fPromotor} onChange={setFPromotor} opciones={opciones.promotores} />
             <SelectFiltro label="Supervisor" value={fSupervisor} onChange={setFSupervisor} opciones={opciones.supervisores} />
@@ -775,6 +783,18 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                 <option value="todos">Todos</option>
                 <option value="no_pasa">Solo rechazan (No pasa)</option>
                 <option value="pasa">Sin rechazos (Pasa)</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Equipo de frío</label>
+              <select
+                value={fFrio}
+                onChange={(e) => setFFrio(e.target.value as "todos" | "con" | "sin")}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="con">Con equipo de frío</option>
+                <option value="sin">Sin equipo de frío</option>
               </select>
             </div>
           </div>
@@ -819,6 +839,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                   <TableHead className="text-right">Facturación YTD</TableHead>
                   <TableHead className="text-right">$/HL año</TableHead>
                   <TableHead>Rechazo (45 d)</TableHead>
+                  <TableHead>Equipo frío</TableHead>
                   <TableHead>Acción recomendada</TableHead>
                 </TableRow>
               </TableHeader>
@@ -892,6 +913,20 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                           <span className="text-xs text-emerald-600">Pasa</span>
                         )}
                       </TableCell>
+                      {/* Equipo de frío (EDF instalados en comodato) */}
+                      <TableCell>
+                        {c.equipos_frio_n > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs font-medium text-sky-700"
+                            title={c.equipos_frio_tipos ?? undefined}
+                          >
+                            <Snowflake className="h-3.5 w-3.5 text-sky-500" />
+                            {c.equipos_frio_n}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {meta && c.cuadrante ? (
                           <Badge
@@ -909,7 +944,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                 })}
                 {visibles.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                       Sin PDV con costo cargado para los filtros aplicados.
                     </TableCell>
                   </TableRow>

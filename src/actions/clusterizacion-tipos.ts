@@ -52,6 +52,10 @@ export interface ClienteClusterizado {
   costo_alto: boolean | null
   /** Cuadrante Valor×Costo (facturación alta/baja × $/HL alto/bajo). null = sin dato de costo. */
   cuadrante: CuadranteId | null
+  /** Equipos de frío (EDF) INSTALADOS en el PDV (comodato). 0 = ninguno. */
+  equipos_frio_n: number
+  /** Modelos de equipos de frío instalados (resumen). null = ninguno. */
+  equipos_frio_tipos: string | null
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number

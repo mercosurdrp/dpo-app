@@ -477,3 +477,37 @@ export async function consultarClusterClientes(): Promise<ClusterVentasResultado
     client.release()
   }
 }
+
+export interface EquipoFrioCliente {
+  /** Cantidad de equipos de frío INSTALADOS en el PDV. */
+  cantidad: number
+  /** Resumen de modelos instalados (ej. "SLIM, VG"). null = sin dato. */
+  tipos: string | null
+}
+
+/**
+ * Equipos de frío (EDF) INSTALADOS por cliente, leídos de `edf_activos` (la base
+ * del dashboard Mercosur, misma DB que comprobantes — fuente viva, NO el Excel).
+ * Clave = id_cliente de Chess (cruza con la clusterización). Solo Estado=INSTALADO.
+ */
+export async function consultarEquiposFrioPorCliente(): Promise<Map<number, EquipoFrioCliente>> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    const res = await client.query<{ id_cliente: number; cantidad: string; tipos: string | null }>(
+      `SELECT cliente AS id_cliente,
+              count(*) AS cantidad,
+              string_agg(DISTINCT modelo, ', ' ORDER BY modelo) AS tipos
+         FROM edf_activos
+        WHERE estado = 'INSTALADO' AND cliente IS NOT NULL
+        GROUP BY cliente`,
+    )
+    const m = new Map<number, EquipoFrioCliente>()
+    for (const r of res.rows) {
+      m.set(Number(r.id_cliente), { cantidad: Number(r.cantidad) || 0, tipos: r.tipos })
+    }
+    return m
+  } finally {
+    client.release()
+  }
+}

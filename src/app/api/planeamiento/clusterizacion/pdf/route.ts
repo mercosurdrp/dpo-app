@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
   const fProm = sp.get("promotor")
   const fSup = sp.get("supervisor")
   const fEstado = sp.get("estado")
+  const fFrio = sp.get("frio")
   const q = (sp.get("q") ?? "").trim().toLowerCase()
 
   const lista = conCuadrante
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
     .filter((c) => !fProm || c.promotor === fProm)
     .filter((c) => !fSup || c.supervisor === fSup)
     .filter((c) => !fEstado || c.estado === fEstado)
+    .filter((c) => !fFrio || (fFrio === "con" ? c.equipos_frio_n > 0 : c.equipos_frio_n === 0))
     .filter(
       (c) =>
         q === "" ||
@@ -97,6 +99,8 @@ export async function GET(req: NextRequest) {
   if (fSup) filtros.push(`Supervisor: ${fSup}`)
   if (fEstado === "no_pasa") filtros.push("Rechazo: solo No pasa")
   if (fEstado === "pasa") filtros.push("Rechazo: solo Pasa")
+  if (fFrio === "con") filtros.push("Equipo de frío: con")
+  if (fFrio === "sin") filtros.push("Equipo de frío: sin")
   if (q) filtros.push(`Búsqueda: "${q}"`)
 
   const pdfBuf = await renderPDF({
@@ -297,14 +301,15 @@ interface Col {
 function drawTabla(doc: Doc, filas: ClienteClusterizado[]) {
   const cols: Col[] = [
     { header: "#", width: 22, align: "right", get: (_c, i) => String(i + 1) },
-    { header: "Cliente", width: 165, get: (c) => `${c.nombre ?? `Cliente ${c.id_cliente}`} (#${c.id_cliente})` },
-    { header: "Localidad", width: 90, get: (c) => c.localidad ?? "—" },
-    { header: "Supervisor", width: 95, get: (c) => c.supervisor ?? "—" },
-    { header: "Cluster", width: 75, get: (c) => CLUSTER_LABELS[c.cluster] },
-    { header: "Fact. YTD", width: 72, align: "right", get: (c) => formatMoneyShort(c.ingresos_actual) },
-    { header: "$/HL año", width: 58, align: "right", get: (c) => (c.costo_x_hl_ytd == null ? "—" : formatMoneyShort(c.costo_x_hl_ytd)) },
-    { header: "Rechazo", width: 52, get: (c) => (c.estado === "no_pasa" ? `No pasa (${c.rechazos_culpa})` : "Pasa") },
-    { header: "Acción recomendada", width: 140, get: (c) => (c.cuadrante ? CUADRANTE_LABELS[c.cuadrante] : "—") },
+    { header: "Cliente", width: 150, get: (c) => `${c.nombre ?? `Cliente ${c.id_cliente}`} (#${c.id_cliente})` },
+    { header: "Localidad", width: 85, get: (c) => c.localidad ?? "—" },
+    { header: "Supervisor", width: 88, get: (c) => c.supervisor ?? "—" },
+    { header: "Cluster", width: 72, get: (c) => CLUSTER_LABELS[c.cluster] },
+    { header: "Fact. YTD", width: 68, align: "right", get: (c) => formatMoneyShort(c.ingresos_actual) },
+    { header: "$/HL año", width: 56, align: "right", get: (c) => (c.costo_x_hl_ytd == null ? "—" : formatMoneyShort(c.costo_x_hl_ytd)) },
+    { header: "Rechazo", width: 50, get: (c) => (c.estado === "no_pasa" ? `No pasa (${c.rechazos_culpa})` : "Pasa") },
+    { header: "Frío", width: 48, get: (c) => (c.equipos_frio_n > 0 ? `Sí (${c.equipos_frio_n})` : "—") },
+    { header: "Acción recomendada", width: 128, get: (c) => (c.cuadrante ? CUADRANTE_LABELS[c.cuadrante] : "—") },
   ]
 
   const margin = doc.page.margins.left
