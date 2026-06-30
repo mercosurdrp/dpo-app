@@ -353,7 +353,7 @@ function PlanTareaCard({ tarea }: { tarea: MisTareasItemPlan }) {
           <EstadoBadge estado={tarea.estado_unificado} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex flex-col items-stretch gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <FechaMeta tarea={tarea} />
 
@@ -387,8 +387,8 @@ function PlanTareaCard({ tarea }: { tarea: MisTareasItemPlan }) {
             )}
           </div>
 
-          <Link href={`/planes/${tarea.id}`}>
-            <Button size="sm" variant="outline">
+          <Link href={`/planes/${tarea.id}`} className="w-full sm:w-auto">
+            <Button size="sm" variant="outline" className="w-full sm:w-auto">
               <ExternalLink className="mr-1.5 size-3.5" />
               Ver detalle
             </Button>
@@ -435,7 +435,7 @@ function S5TareaCard({
           <EstadoBadge estado={tarea.estado_unificado} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex flex-col items-stretch gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <FechaMeta tarea={tarea} />
 
@@ -455,7 +455,12 @@ function S5TareaCard({
             )}
           </div>
 
-          <Button size="sm" variant="outline" onClick={onAbrir}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAbrir}
+            className="w-full sm:w-auto"
+          >
             <ExternalLink className="mr-1.5 size-3.5" />
             {tarea.estado_unificado === "cerrada" ? "Ver" : "Responder"}
           </Button>
