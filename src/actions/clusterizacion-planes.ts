@@ -75,3 +75,78 @@ export async function actualizarEstadoPlanCluster(
   revalidatePath("/planeamiento/clusterizacion")
   return { ok: true }
 }
+
+// ── Plan AGRUPADO por cubo (uno por cubo, se reemplaza) ──────────────────────
+
+/** Plan de acción que aplica a TODOS los PDV de un cubo del diagrama 3D. */
+export interface ClusterPlanCubo {
+  cubo: string
+  descripcion: string
+  responsable: string | null
+  fecha_limite: string | null
+  estado: string
+  updated_at: string
+}
+
+export async function getPlanesCubo(): Promise<ClusterPlanCubo[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("cluster_planes_cubo")
+    .select("cubo, descripcion, responsable, fecha_limite, estado, updated_at")
+  return (data ?? []) as ClusterPlanCubo[]
+}
+
+export async function guardarPlanCubo(input: {
+  cubo: string
+  descripcion: string
+  responsable?: string | null
+  fecha_limite?: string | null
+}): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile) return { error: "No autenticado." }
+  if (!input.cubo) return { error: "Falta el cubo." }
+  if (!input.descripcion.trim()) return { error: "La descripción es obligatoria." }
+
+  const supabase = await createClient()
+  // Upsert por `cubo`: si ya existe, reemplaza descripción/responsable/límite.
+  // No se incluye `estado` para no pisarlo al editar (en alta usa el default).
+  const { error } = await supabase.from("cluster_planes_cubo").upsert(
+    {
+      cubo: input.cubo,
+      descripcion: input.descripcion.trim(),
+      responsable: input.responsable?.trim() || null,
+      fecha_limite: input.fecha_limite || null,
+      created_by: profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "cubo" },
+  )
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/clusterizacion")
+  return { ok: true }
+}
+
+export async function actualizarEstadoPlanCubo(
+  cubo: string,
+  estado: string,
+): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile) return { error: "No autenticado." }
+  if (!["pendiente", "en_proceso", "hecho"].includes(estado))
+    return { error: "Estado inválido." }
+  const supabase = await createClient()
+  const { error } = await supabase.from("cluster_planes_cubo").update({ estado }).eq("cubo", cubo)
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/clusterizacion")
+  return { ok: true }
+}
+
+export async function eliminarPlanCubo(cubo: string): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile) return { error: "No autenticado." }
+  const supabase = await createClient()
+  const { error } = await supabase.from("cluster_planes_cubo").delete().eq("cubo", cubo)
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/clusterizacion")
+  return { ok: true }
+}

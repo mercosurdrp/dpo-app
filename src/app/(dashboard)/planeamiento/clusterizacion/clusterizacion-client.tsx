@@ -39,6 +39,8 @@ import {
   LayoutGrid,
   Snowflake,
   Boxes,
+  ClipboardCheck,
+  FileDown,
 } from "lucide-react"
 import {
   CLUSTER_LABELS,
@@ -63,10 +65,14 @@ import {
   crearPlanCluster,
   getPlanesCluster,
   actualizarEstadoPlanCluster,
+  guardarPlanCubo,
+  getPlanesCubo,
+  actualizarEstadoPlanCubo,
   type ClusterPlan,
+  type ClusterPlanCubo,
 } from "@/actions/clusterizacion-planes"
 
-// El gráfico 3D (echarts-gl/WebGL) se carga solo en el cliente.
+// El gráfico 3D (Three.js/WebGL) se carga solo en el cliente.
 const Diagrama3D = dynamic(() => import("./diagrama-3d"), {
   ssr: false,
   loading: () => (
@@ -79,6 +85,7 @@ const Diagrama3D = dynamic(() => import("./diagrama-3d"), {
 interface Props {
   data: ClusterizacionData
   planesIniciales: ClusterPlan[]
+  planesCuboIniciales: ClusterPlanCubo[]
 }
 
 // Estética por cluster (color + ícono + descripción del cuadrante).
@@ -200,7 +207,7 @@ function SelectFiltro({
 const MOSTRADOR = "VTA. MOSTRADOR"
 const MAX_FILAS = 300
 
-export function ClusterizacionClient({ data, planesIniciales }: Props) {
+export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciales }: Props) {
   const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
@@ -212,10 +219,13 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
   const [incluirMostrador, setIncluirMostrador] = useState(false)
   const [planes, setPlanes] = useState<ClusterPlan[]>(planesIniciales)
   const [planCliente, setPlanCliente] = useState<ClienteClusterizado | null>(null)
+  const [planesCubo, setPlanesCubo] = useState<ClusterPlanCubo[]>(planesCuboIniciales)
+  const [planCuboTarget, setPlanCuboTarget] = useState<CuboId | null>(null)
 
   const { periodo, umbral_ingresos, resumen, clientes } = data
 
   const refrescarPlanes = async () => setPlanes(await getPlanesCluster())
+  const refrescarPlanesCubo = async () => setPlanesCubo(await getPlanesCubo())
 
   const opciones = useMemo(() => {
     const loc = new Set<string>(), prom = new Set<string>(), sup = new Set<string>()
@@ -363,11 +373,11 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
       </div>
 
       {tab === "planes" ? (
-        <SolapaPlanes planes={planes} onChange={refrescarPlanes} />
+        <SolapaPlanes planes={planes} onChange={refrescarPlanes} planesCubo={planesCubo} onChangeCubo={refrescarPlanesCubo} />
       ) : tab === "analisis" ? (
         <SolapaAnalisis data={data} />
       ) : tab === "diagrama" ? (
-        <SolapaDiagrama data={data} />
+        <SolapaDiagrama data={data} planesCubo={planesCubo} onPlanCubo={setPlanCuboTarget} />
       ) : (
         <>
           {/* Metodología */}
@@ -632,6 +642,17 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
           await refrescarPlanes()
         }}
       />
+
+      <CrearPlanCuboDialog
+        cubo={planCuboTarget}
+        planActual={planCuboTarget ? planesCubo.find((p) => p.cubo === planCuboTarget) ?? null : null}
+        cantidad={planCuboTarget ? clientes.filter((c) => c.cubo === planCuboTarget).length : 0}
+        onClose={() => setPlanCuboTarget(null)}
+        onSaved={async () => {
+          setPlanCuboTarget(null)
+          await refrescarPlanesCubo()
+        }}
+      />
     </div>
   )
 }
@@ -703,9 +724,25 @@ function PieMini({ titulo, datos }: { titulo: string; datos: { name: string; val
  * se ve la lista de PDV de ese tipo, con 3 tortas (localidad/supervisor/promotor)
  * y filtros por columna.
  */
-function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
+function SolapaDiagrama({
+  data,
+  planesCubo,
+  onPlanCubo,
+}: {
+  data: ClusterizacionData
+  planesCubo: ClusterPlanCubo[]
+  onPlanCubo: (cubo: CuboId) => void
+}) {
   const { clientes } = data
   const [sel, setSel] = useState<CuboId | null>(null)
+  const planPorCubo = useMemo(() => {
+    const m = new Map<string, ClusterPlanCubo>()
+    for (const p of planesCubo) m.set(p.cubo, p)
+    return m
+  }, [planesCubo])
+  const descargarPdf = (cubo: CuboId) => {
+    window.location.href = `/api/planeamiento/clusterizacion/cubo-pdf?cubo=${cubo}`
+  }
   // Filtros por columna del detalle.
   const [fCli, setFCli] = useState("")
   const [fLoc, setFLoc] = useState("todos")
@@ -822,13 +859,21 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
         {CUBOS_ORDEN.map((id) => {
           const meta = CUBO_META[id]
           const activo = sel === id
+          const plan = planPorCubo.get(id)
           return (
-            <button key={id} onClick={() => setSel(activo ? null : id)} className="text-left">
-              <Card className={`h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`} style={{
+            <div
+              key={id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSel(activo ? null : id)}
+              onKeyDown={(e) => { if (e.key === "Enter") setSel(activo ? null : id) }}
+              className="cursor-pointer text-left"
+            >
+              <Card className={`relative h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`} style={{
                 // @ts-expect-error ring color via CSS var
                 "--tw-ring-color": meta.color,
               }}>
-                <CardContent className="space-y-1 pt-4">
+                <CardContent className="space-y-1 pt-4 pb-9">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 font-semibold" style={{ color: meta.color }}>
                       <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: meta.color }} />
@@ -838,9 +883,23 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
                   </div>
                   <p className="text-[11px] font-medium text-slate-500">{meta.combo}</p>
                   <p className="text-xs text-muted-foreground">{meta.jugada}</p>
+                  {plan && (
+                    <p className="flex items-center gap-1 pt-0.5 text-[11px] text-emerald-700" title={plan.descripcion}>
+                      <ClipboardCheck className="h-3 w-3" /> <span className="truncate">{plan.descripcion}</span>
+                    </p>
+                  )}
                 </CardContent>
+                {/* Cargar/editar plan de acción del cubo completo (abajo a la derecha) */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onPlanCubo(id) }}
+                  title={plan ? "Editar plan de acción del cubo" : "Cargar plan de acción del cubo"}
+                  className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full border text-slate-600 hover:bg-slate-100"
+                  style={plan ? { backgroundColor: `${meta.color}1A`, color: meta.color, borderColor: "transparent" } : undefined}
+                >
+                  {plan ? <ClipboardCheck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                </button>
               </Card>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -875,18 +934,44 @@ function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
             </Badge>
             {sel && <span className="text-xs font-normal text-slate-500">{CUBO_META[sel].combo}</span>}
           </CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFCli(""); setFLoc("todos"); setFSup("todos"); setFFact(""); setFHl(""); setFCrec("todos"); setFRech("todos"); setFFrio("todos")
-            }}
-          >
-            Limpiar filtros
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {sel && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => onPlanCubo(sel)}>
+                  {planPorCubo.get(sel) ? <ClipboardCheck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {planPorCubo.get(sel) ? "Editar plan del cubo" : "Plan del cubo"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => descargarPdf(sel)}>
+                  <FileDown className="h-4 w-4" /> Descargar PDF
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setFCli(""); setFLoc("todos"); setFSup("todos"); setFFact(""); setFHl(""); setFCrec("todos"); setFRech("todos"); setFFrio("todos")
+              }}
+            >
+              Limpiar filtros
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {sel && <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel].jugada}</p>}
+          {sel && planPorCubo.get(sel) && (
+            <div className="mb-3 rounded-md border-l-4 border-l-emerald-400 bg-emerald-50/60 p-3 text-sm">
+              <p className="flex items-center gap-1 font-semibold text-emerald-800">
+                <ClipboardCheck className="h-4 w-4" /> Plan de acción del cubo (aplica a todos los PDV)
+              </p>
+              <p className="mt-1 text-slate-700">{planPorCubo.get(sel)!.descripcion}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {planPorCubo.get(sel)!.responsable ? `Responsable: ${planPorCubo.get(sel)!.responsable} · ` : ""}
+                {planPorCubo.get(sel)!.fecha_limite ? `Límite: ${planPorCubo.get(sel)!.fecha_limite} · ` : ""}
+                Estado: {planPorCubo.get(sel)!.estado}
+              </p>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -1385,71 +1470,147 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
 }
 
 /** Solapa con todos los planes de acción creados desde la clusterización. */
-function SolapaPlanes({ planes, onChange }: { planes: ClusterPlan[]; onChange: () => void | Promise<void> }) {
+function SolapaPlanes({
+  planes,
+  onChange,
+  planesCubo,
+  onChangeCubo,
+}: {
+  planes: ClusterPlan[]
+  onChange: () => void | Promise<void>
+  planesCubo: ClusterPlanCubo[]
+  onChangeCubo: () => void | Promise<void>
+}) {
   async function cambiarEstado(id: string, estado: string) {
     await actualizarEstadoPlanCluster(id, estado)
     await onChange()
   }
+  async function cambiarEstadoCubo(cubo: string, estado: string) {
+    await actualizarEstadoPlanCubo(cubo, estado)
+    await onChangeCubo()
+  }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Planes de acción ({planes.length})</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Planes creados sobre clientes desde la clusterización. También aparecen en el tablero unificado de planes.
-        </p>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Acción</TableHead>
-                <TableHead>Responsable</TableHead>
-                <TableHead>Límite</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {planes.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>
-                    <div className="font-medium text-slate-900">
-                      {p.nombre_cliente ?? `Cliente ${p.id_cliente}`}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      #{p.id_cliente}
-                      {p.cluster ? ` · ${CLUSTER_LABELS[p.cluster as ClusterId] ?? p.cluster}` : ""}
-                    </div>
-                  </TableCell>
-                  <TableCell className="max-w-md text-sm text-slate-700">{p.descripcion}</TableCell>
-                  <TableCell className="text-sm text-slate-600">{p.responsable ?? "—"}</TableCell>
-                  <TableCell className="text-sm text-slate-600">{p.fecha_limite ?? "—"}</TableCell>
-                  <TableCell>
-                    <select
-                      value={p.estado}
-                      onChange={(e) => cambiarEstado(p.id, e.target.value)}
-                      className={`h-8 rounded-md border-0 px-2 text-xs font-medium ${ESTADO_PLAN[p.estado]?.cls ?? ""}`}
-                    >
-                      <option value="pendiente">Pendiente</option>
-                      <option value="en_proceso">En proceso</option>
-                      <option value="hecho">Hecho</option>
-                    </select>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {planes.length === 0 && (
+    <div className="space-y-4">
+      {/* Planes por cubo (grupales) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Planes por cubo ({planesCubo.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Plan de acción que aplica a TODOS los PDV de un cubo del diagrama 3D. Se cargan/editan desde la solapa Diagrama.
+          </p>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    Todavía no hay planes. Creá uno desde el botón “Plan” en la pestaña Clientes.
-                  </TableCell>
+                  <TableHead>Cubo</TableHead>
+                  <TableHead>Acción</TableHead>
+                  <TableHead>Responsable</TableHead>
+                  <TableHead>Límite</TableHead>
+                  <TableHead>Estado</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {planesCubo.map((p) => {
+                  const meta = CUBO_META[p.cubo as CuboId]
+                  return (
+                    <TableRow key={p.cubo}>
+                      <TableCell>
+                        <div className="font-medium" style={{ color: meta?.color }}>{meta?.label ?? p.cubo}</div>
+                        <div className="text-xs text-muted-foreground">{meta?.combo ?? ""}</div>
+                      </TableCell>
+                      <TableCell className="max-w-md text-sm text-slate-700">{p.descripcion}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{p.responsable ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{p.fecha_limite ?? "—"}</TableCell>
+                      <TableCell>
+                        <select
+                          value={p.estado}
+                          onChange={(e) => cambiarEstadoCubo(p.cubo, e.target.value)}
+                          className={`h-8 rounded-md border-0 px-2 text-xs font-medium ${ESTADO_PLAN[p.estado]?.cls ?? ""}`}
+                        >
+                          <option value="pendiente">Pendiente</option>
+                          <option value="en_proceso">En proceso</option>
+                          <option value="hecho">Hecho</option>
+                        </select>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+                {planesCubo.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                      Todavía no hay planes por cubo. Cargá uno con el botón “+” en las tarjetas de la solapa Diagrama.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Planes puntuales (por cliente) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Planes puntuales ({planes.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Planes creados sobre clientes desde la clusterización. También aparecen en el tablero unificado de planes.
+          </p>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Acción</TableHead>
+                  <TableHead>Responsable</TableHead>
+                  <TableHead>Límite</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {planes.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>
+                      <div className="font-medium text-slate-900">
+                        {p.nombre_cliente ?? `Cliente ${p.id_cliente}`}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        #{p.id_cliente}
+                        {p.cluster ? ` · ${CLUSTER_LABELS[p.cluster as ClusterId] ?? p.cluster}` : ""}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-md text-sm text-slate-700">{p.descripcion}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{p.responsable ?? "—"}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{p.fecha_limite ?? "—"}</TableCell>
+                    <TableCell>
+                      <select
+                        value={p.estado}
+                        onChange={(e) => cambiarEstado(p.id, e.target.value)}
+                        className={`h-8 rounded-md border-0 px-2 text-xs font-medium ${ESTADO_PLAN[p.estado]?.cls ?? ""}`}
+                      >
+                        <option value="pendiente">Pendiente</option>
+                        <option value="en_proceso">En proceso</option>
+                        <option value="hecho">Hecho</option>
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {planes.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                      Todavía no hay planes. Creá uno desde el botón “Plan” en la pestaña Clientes.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -1548,6 +1709,105 @@ function CrearPlanDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button onClick={guardar} disabled={saving}>
             <Plus className="h-4 w-4" /> {saving ? "Guardando…" : "Crear plan"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Diálogo para cargar/editar el plan de acción AGRUPADO de un cubo (uno por cubo). */
+function CrearPlanCuboDialog({
+  cubo, planActual, cantidad, onClose, onSaved,
+}: {
+  cubo: CuboId | null
+  planActual: ClusterPlanCubo | null
+  cantidad: number
+  onClose: () => void
+  onSaved: () => void | Promise<void>
+}) {
+  const [descripcion, setDescripcion] = useState("")
+  const [responsable, setResponsable] = useState("")
+  const [fechaLimite, setFechaLimite] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Reinicio/precargo el form cuando cambia el cubo objetivo.
+  const [lastCubo, setLastCubo] = useState<CuboId | null>(null)
+  if (cubo !== lastCubo) {
+    setLastCubo(cubo)
+    setDescripcion(planActual?.descripcion ?? "")
+    setResponsable(planActual?.responsable ?? "")
+    setFechaLimite(planActual?.fecha_limite ?? "")
+    setError(null)
+  }
+
+  async function guardar() {
+    if (!cubo) return
+    if (!descripcion.trim()) {
+      setError("Escribí la acción a tomar.")
+      return
+    }
+    setSaving(true)
+    setError(null)
+    const res = await guardarPlanCubo({
+      cubo,
+      descripcion,
+      responsable,
+      fecha_limite: fechaLimite || null,
+    })
+    setSaving(false)
+    if ("error" in res) {
+      setError(res.error)
+      return
+    }
+    await onSaved()
+  }
+
+  const meta = cubo ? CUBO_META[cubo] : null
+
+  return (
+    <Dialog open={cubo !== null} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Plan de acción del cubo</DialogTitle>
+        </DialogHeader>
+        {meta && (
+          <div className="space-y-3">
+            <div className="rounded-md bg-slate-50 p-3 text-sm">
+              <div className="font-medium" style={{ color: meta.color }}>{meta.label}</div>
+              <div className="text-xs text-muted-foreground">{meta.combo} · {fmtNum(cantidad)} PDV</div>
+              <div className="mt-1 text-xs text-slate-600">{meta.jugada}</div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Esta acción aplica a <strong>todos</strong> los PDV del cubo y se incluye en el PDF del listado.
+            </p>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Acción a tomar *</label>
+              <Textarea
+                rows={3}
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+                placeholder="Ej.: subir frecuencia de visita y empujar combos de alta rotación…"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Responsable</label>
+                <Input value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Fecha límite</label>
+                <Input type="date" value={fechaLimite} onChange={(e) => setFechaLimite(e.target.value)} />
+              </div>
+            </div>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={guardar} disabled={saving}>
+            <Plus className="h-4 w-4" /> {saving ? "Guardando…" : planActual ? "Guardar cambios" : "Crear plan"}
           </Button>
         </DialogFooter>
       </DialogContent>
