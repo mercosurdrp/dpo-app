@@ -85,6 +85,7 @@ import { FoxtrotKpiDetalleDiaDialog } from "@/components/reuniones/foxtrot-kpi-d
 import type { FoxtrotKpiId } from "@/lib/foxtrot/matinal-kpi-types"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
 import { WarehousePerdidasDetalleDiaDialog } from "@/components/reuniones/warehouse-perdidas-detalle-dia-dialog"
+import { FgliPerdidasDetalleDiaDialog } from "@/components/reuniones/fgli-perdidas-detalle-dia-dialog"
 import type {
   EstadoReunionActividad,
   ReunionActividadConResponsable,
@@ -245,6 +246,7 @@ function formatearValor(n: number): string {
 // gatillo). El resto de indicadores conserva su coloreo histórico de 2 zonas.
 const SEMAFORO_3_ZONAS_ALMACEN = new Set([
   "auto_wqi",
+  "auto_fgli",
   "auto_wnp",
   "auto_productividad_picking",
   "auto_errores_picking",
@@ -866,6 +868,7 @@ export function ReunionDetallePageClient({
   // Detalle del día al hacer click en celda WQI / Roturas / Faltantes (warehouse):
   // popover con bultos vendidos + pérdidas del día (blob precocido warehouse-dia-detalle).
   const [wqiDetalleFecha, setWqiDetalleFecha] = useState<string | null>(null)
+  const [fgliDetalleFecha, setFgliDetalleFecha] = useState<string | null>(null)
   // Detalle del día seleccionado al hacer click en celda TML
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
@@ -1762,6 +1765,7 @@ export function ReunionDetallePageClient({
                           // clickeable, no "—". Así el WQI=0 deja de ser un misterio.
                           const esWqiPerdidasCero =
                             ind.id === "auto_wqi" ||
+                            ind.id === "auto_fgli" ||
                             ind.id === "auto_roturas" ||
                             ind.id === "auto_faltantes"
                           const valorValido =
@@ -1876,6 +1880,10 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_wqi" ||
                             ind.id === "auto_roturas" ||
                             ind.id === "auto_faltantes"
+                          // FGLI: popover propio con el total perdido y el
+                          // desglose por categoría (vencido/faltante/rotura) con
+                          // drill por SKU.
+                          const esFgli = ind.id === "auto_fgli"
                           // KPIs de Foxtrot (matinal Pampeana): drill por día con
                           // detalle por patente. Todos los id arrancan con auto_fx_.
                           const esFoxtrotKpi = ind.id.startsWith("auto_fx_")
@@ -1893,6 +1901,7 @@ export function ReunionDetallePageClient({
                               esOB ||
                               esTlp ||
                               esWqiPerdidas ||
+                              esFgli ||
                               esFoxtrotKpi) &&
                             muestra
                           const onCellClick = () => {
@@ -1910,6 +1919,7 @@ export function ReunionDetallePageClient({
                             else if (esOB) setObDetalleFecha(f)
                             else if (esTlp) setTlpDetalleFecha(f)
                             else if (esWqiPerdidas) setWqiDetalleFecha(f)
+                            else if (esFgli) setFgliDetalleFecha(f)
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
                           }
@@ -2190,6 +2200,14 @@ export function ReunionDetallePageClient({
           if (!o) setWqiDetalleFecha(null)
         }}
         fecha={wqiDetalleFecha}
+      />
+
+      <FgliPerdidasDetalleDiaDialog
+        open={fgliDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setFgliDetalleFecha(null)
+        }}
+        fecha={fgliDetalleFecha}
       />
     </div>
   )

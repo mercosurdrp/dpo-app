@@ -82,6 +82,8 @@ export interface WarehouseTargets {
   fgli: number | null
   roturas: number | null
   faltantes: number | null
+  /** Vencidos objetivo en HL = bultos vencidos presup. × 0,0987. */
+  vencidos: number | null
   /** WQI objetivo en PPM = HL roturas presup. / HL ventas esperadas × 1M. */
   wqi: number | null
   /** SCL objetivo en $ = roturas + faltantes + vencidos del presupuesto $. */
@@ -255,6 +257,7 @@ export async function buildWarehouseSerieDiaria(
     fgli: null,
     roturas: null,
     faltantes: null,
+    vencidos: null,
     wqi: null,
     scl: null,
     wnp: null,
@@ -559,6 +562,10 @@ interface DepositoIndicadoresSerieDiaria {
   roturas_dia?: Record<string, number | null>
   roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
   faltantes_dia?: Record<string, number | null>
+  faltantes_detalle_dia?: Record<string, RoturaDetalleSku[]>
+  vencidos?: Record<string, number | null>
+  vencidos_dia?: Record<string, number | null>
+  vencidos_detalle_dia?: Record<string, RoturaDetalleSku[]>
   wnp_dia?: Record<string, number | null>
   precision?: Record<string, number | null>
   errores_count_dia?: Record<string, number>
@@ -566,13 +573,15 @@ interface DepositoIndicadoresSerieDiaria {
   targets?: Partial<WarehouseTargets>
 }
 
-/** Una rotura del día agregada por SKU (popover del WQI en la reunión). */
+/** Una pérdida del día agregada por SKU (popover de FGLI/WQI en la reunión).
+ *  Vale para roturas, faltantes y vencidos. `valor` = $ sin IVA. */
 export interface RoturaDetalleSku {
   sku: string
   descripcion: string
   bultos: number
   unidades: number
   hl: number
+  valor?: number
 }
 
 interface DepositoOcupacionShared {
@@ -752,6 +761,7 @@ async function fetchSerieExtra(
 ): Promise<{
   roturas: Record<string, number | null>
   faltantes: Record<string, number | null>
+  fgli: Record<string, number | null>
   wnp: Record<string, number | null>
   wqi_dia: Record<string, number | null>
   fgli_dia: Record<string, number | null>
@@ -773,6 +783,7 @@ async function fetchSerieExtra(
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
+  const fgli: Record<string, number | null> = {}
   const wnp: Record<string, number | null> = {}
   const wqi_dia: Record<string, number | null> = {}
   const fgli_dia: Record<string, number | null> = {}
@@ -792,6 +803,8 @@ async function fetchSerieExtra(
     const cerrado = f < fechaReunion
     roturas[f] = cerrado ? (res?.roturas?.[f] ?? null) : null
     faltantes[f] = cerrado ? (res?.faltantes?.[f] ?? null) : null
+    // FGLI (MTD) conserva el día en curso, igual que fgli_dia/scl.
+    fgli[f] = visible ? (res?.fgli?.[f] ?? null) : null
     wnp[f] = cerrado ? (res?.wnp?.[f] ?? null) : null
     wqi_dia[f] = cerrado ? (res?.wqi_dia?.[f] ?? null) : null
     fgli_dia[f] = visible ? (res?.fgli_dia?.[f] ?? null) : null
@@ -831,6 +844,7 @@ async function fetchSerieExtra(
   return {
     roturas,
     faltantes,
+    fgli,
     wnp,
     wqi_dia,
     fgli_dia,
@@ -845,6 +859,7 @@ async function fetchSerieExtra(
       fgli: res?.targets?.fgli ?? null,
       roturas: roturasTarget,
       faltantes: res?.targets?.faltantes ?? null,
+      vencidos: res?.targets?.vencidos ?? null,
       wqi: wqiTarget,
       scl: res?.targets?.scl ?? null,
       wnp: wnpTarget,

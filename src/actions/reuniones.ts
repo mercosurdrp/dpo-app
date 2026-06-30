@@ -2811,6 +2811,7 @@ async function getIndicadoresMesCore(
         NOMBRES_AUTO.add("adherencia a checks")
       } else {
         NOMBRES_AUTO.add("wqi")
+        NOMBRES_AUTO.add("fgli")
         NOMBRES_AUTO.add("wnp")
         NOMBRES_AUTO.add("productividad de picking")
         NOMBRES_AUTO.add("precision picking")
@@ -4233,6 +4234,17 @@ async function getIndicadoresMesCore(
           }
         }
 
+        // FGLI (HL perdidos del día = roturas + faltantes + vencidos). Día y
+        // MTD acumulado vienen calculados de deposito-esteban; se enmascara el
+        // día de la reunión y futuros, igual que WQI/roturas/faltantes. El drill
+        // del día abre el popover de pérdidas con las 3 categorías.
+        const fgliDiaTablero: Record<string, number | null> = {}
+        const fgliMtdTablero: Record<string, number | null> = {}
+        for (const f of fechas) {
+          fgliDiaTablero[f] = f < fecha ? (serie.fgli_dia[f] ?? null) : null
+          fgliMtdTablero[f] = f < fecha ? (serie.fgli[f] ?? null) : null
+        }
+
         indicadoresAuto.push(
           buildDiarioConMtdRow(
             "auto_wqi",
@@ -4241,6 +4253,15 @@ async function getIndicadoresMesCore(
             wqiDiaTablero,
             wqiMtdTablero,
             serie.targets.wqi,
+            "menor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_fgli",
+            "FGLI",
+            "HL",
+            fgliDiaTablero,
+            fgliMtdTablero,
+            serie.targets.fgli,
             "menor",
           ),
           buildDiarioConMtdRow(
