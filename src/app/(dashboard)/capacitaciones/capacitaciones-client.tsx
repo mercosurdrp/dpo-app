@@ -46,7 +46,7 @@ import {
 } from "@/lib/constants"
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
-import { estadoDerivado } from "@/lib/capacitacion-estado"
+import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 
 interface Props {
   capacitaciones: CapacitacionConResumen[]
@@ -107,7 +107,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     descripcion: "",
     instructor: "",
     fecha: "",
-    duracion_horas: "1",
+    duracion_horas: "0.5",
     lugar: "",
     material_url: "",
     pilar: "",
@@ -198,7 +198,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
         descripcion: form.descripcion.trim() || undefined,
         instructor: form.instructor.trim(),
         fecha: form.fecha,
-        duracion_horas: parseFloat(form.duracion_horas) || 1,
+        duracion_horas: parseFloat(form.duracion_horas) || 0.5,
         lugar: form.lugar.trim() || undefined,
         material_url: form.material_url.trim() || undefined,
         pilar: form.pilar || undefined,
@@ -222,7 +222,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           descripcion: "",
           instructor: "",
           fecha: "",
-          duracion_horas: "1",
+          duracion_horas: "0.5",
           lugar: "",
           material_url: "",
           pilar: "",
@@ -654,7 +654,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="size-3.5" />
-                    <span>{cap.duracion_horas}h</span>
+                    <span>{formatDuracion(cap.duracion_horas)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="size-3.5" />

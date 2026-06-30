@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
-import { estadoDerivado } from "@/lib/capacitacion-estado"
+import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 import type {
   Capacitacion,
   AsistenciaConEmpleado,
@@ -118,7 +118,7 @@ export async function GET(_req: NextRequest) {
         Pilar: c.pilar ?? "",
         Instructor: c.instructor,
         Fecha: fmtDate(c.fecha),
-        "Duración (h)": c.duracion_horas ?? "",
+        Duración: formatDuracion(c.duracion_horas),
         Estado: estadoLabel,
         Lugar: c.lugar ?? "",
         Descripción: c.descripcion ?? "",

@@ -9,6 +9,21 @@ export interface CapacitacionEstadoInput {
   pendientes: number
 }
 
+/**
+ * Formatea una duración en horas (decimal) a un texto amigable.
+ * 0.5 -> "30 min", 1 -> "1 h", 1.5 -> "1 h 30 min", 2 -> "2 h".
+ */
+export function formatDuracion(duracionHoras: number | null | undefined): string {
+  const horas = Number(duracionHoras)
+  if (!Number.isFinite(horas) || horas <= 0) return "-"
+  const totalMin = Math.round(horas * 60)
+  const h = Math.floor(totalMin / 60)
+  const min = totalMin % 60
+  if (h === 0) return `${min} min`
+  if (min === 0) return `${h} h`
+  return `${h} h ${min} min`
+}
+
 export function estadoDerivado(
   c: CapacitacionEstadoInput,
   today: string = new Date().toISOString().slice(0, 10)

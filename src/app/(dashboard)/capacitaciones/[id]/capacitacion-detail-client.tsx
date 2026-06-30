@@ -87,6 +87,7 @@ import type {
   EstadoCapacitacion,
   ResultadoCapacitacion,
 } from "@/types/database"
+import { formatDuracion } from "@/lib/capacitacion-estado"
 
 interface DpoHierarchyPilar {
   id: string
@@ -373,7 +374,7 @@ export function CapacitacionDetailClient({
             <Clock className="size-5 text-amber-500" />
             <div>
               <p className="text-xs text-slate-500">Duracion</p>
-              <p className="text-sm font-medium">{cap.duracion_horas}h</p>
+              <p className="text-sm font-medium">{formatDuracion(cap.duracion_horas)}</p>
             </div>
           </CardContent>
         </Card>
