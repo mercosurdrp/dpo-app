@@ -63,6 +63,14 @@ function fechaLarga(iso: string): string {
   const [y, m, d] = iso.split("-")
   return `${d}/${m}/${y}`
 }
+/** Día del mes (sin ceros a la izquierda) y día de semana (0=dom..6=sáb). */
+function diaDe(iso: string): number {
+  return parseInt(iso.slice(8, 10), 10)
+}
+function dowDe(iso: string): number {
+  const [y, m, d] = iso.split("-").map((s) => parseInt(s, 10))
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+}
 
 const ESTADO_CELL: Record<EstadoCumplimiento, string> = {
   si: "bg-emerald-500",
@@ -184,6 +192,15 @@ export function SeccionSla({
     ? slas.filter((s) => codigos.includes(s.codigo))
     : slas
 
+  // Fechas que encabezan las columnas. Todas las filas comparten el mismo rango;
+  // tomamos la fila con más días por robustez.
+  const fechasCols = filasVisibles
+    .reduce<CumplimientoRangoFila["dias"]>(
+      (best, f) => (f.dias.length > best.length ? f.dias : best),
+      [],
+    )
+    .map((d) => d.fecha)
+
   return (
     <Card className="border-violet-200 bg-violet-50/30">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
@@ -224,72 +241,112 @@ export function SeccionSla({
           </div>
         ) : (
           <>
-            {/* Cumplimiento día a día por SLA medible */}
-            <div className="space-y-3">
-              {filasVisibles.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Sin SLAs medibles en el período.
-                </p>
-              )}
-              {filasVisibles.map((f) => {
-                const cumple = f.porcentaje != null && f.porcentaje >= f.target
-                return (
-                  <div
-                    key={f.codigo}
-                    className="rounded-lg border border-slate-200 bg-white p-3"
-                  >
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-slate-800">
-                        {f.nombre}
-                      </span>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">
-                          meta {f.target}% · {f.cumplidos}/{f.totalAplica} días
-                        </span>
-                        <Badge
-                          className={cn(
-                            "tabular-nums",
-                            f.porcentaje == null
-                              ? "bg-slate-100 text-slate-600"
-                              : cumple
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-red-100 text-red-700",
-                          )}
-                        >
-                          {f.porcentaje == null ? "s/d" : `${f.porcentaje}%`}
-                        </Badge>
-                      </div>
-                    </div>
-                    {/* Tira día a día (Sí/No abren el detalle del día) */}
-                    <div className="flex flex-wrap gap-1">
-                      {f.dias.map((d) =>
-                        d.estado === "si" || d.estado === "no" ? (
-                          <button
-                            key={d.fecha}
-                            type="button"
-                            onClick={() => abrirDetalleDia(f.codigo, d.fecha)}
-                            title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]} — ver detalle`}
+            {/* Cumplimiento día a día por SLA medible — matriz alineada: una
+                fila por SLA, una columna por fecha. La cabecera muestra el día y
+                líneas verticales finas guían cada columna de cuadrados. */}
+            {filasVisibles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sin SLAs medibles en el período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table className="border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 z-10 min-w-[12rem] border-b border-r border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold text-slate-600">
+                        SLA
+                      </th>
+                      {fechasCols.map((fecha) => {
+                        const finde = dowDe(fecha) === 0 || dowDe(fecha) === 6
+                        return (
+                          <th
+                            key={fecha}
+                            title={formatFecha(fecha)}
                             className={cn(
-                              "h-5 w-5 cursor-pointer rounded-sm transition hover:ring-2 hover:ring-violet-400 hover:ring-offset-1",
-                              ESTADO_CELL[d.estado],
+                              "w-7 border-b border-l border-slate-100 px-0 py-1 text-center text-[11px] font-medium tabular-nums",
+                              finde
+                                ? "bg-slate-50 text-slate-300"
+                                : "text-slate-400",
                             )}
-                          />
-                        ) : (
-                          <span
-                            key={d.fecha}
-                            title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]}`}
-                            className={cn(
-                              "h-5 w-5 rounded-sm",
-                              ESTADO_CELL[d.estado],
-                            )}
-                          />
-                        ),
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                          >
+                            {diaDe(fecha)}
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filasVisibles.map((f) => {
+                      const cumple =
+                        f.porcentaje != null && f.porcentaje >= f.target
+                      return (
+                        <tr key={f.codigo}>
+                          <td className="sticky left-0 z-10 min-w-[12rem] border-t border-r border-slate-200 bg-white px-3 py-1.5 align-middle">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold text-slate-800">
+                                {f.nombre}
+                              </span>
+                              <Badge
+                                className={cn(
+                                  "shrink-0 tabular-nums",
+                                  f.porcentaje == null
+                                    ? "bg-slate-100 text-slate-600"
+                                    : cumple
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-red-100 text-red-700",
+                                )}
+                              >
+                                {f.porcentaje == null ? "s/d" : `${f.porcentaje}%`}
+                              </Badge>
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              meta {f.target}% · {f.cumplidos}/{f.totalAplica} días
+                            </p>
+                          </td>
+                          {f.dias.map((d) => {
+                            const finde =
+                              dowDe(d.fecha) === 0 || dowDe(d.fecha) === 6
+                            const clickable =
+                              d.estado === "si" || d.estado === "no"
+                            return (
+                              <td
+                                key={d.fecha}
+                                className={cn(
+                                  "border-t border-l border-slate-100 px-0 py-1 text-center align-middle",
+                                  finde && "bg-slate-50/60",
+                                )}
+                              >
+                                {clickable ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      abrirDetalleDia(f.codigo, d.fecha)
+                                    }
+                                    title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]} — ver detalle`}
+                                    className={cn(
+                                      "mx-auto block h-5 w-5 cursor-pointer rounded-sm transition hover:ring-2 hover:ring-violet-400 hover:ring-offset-1",
+                                      ESTADO_CELL[d.estado],
+                                    )}
+                                  />
+                                ) : (
+                                  <span
+                                    title={`${formatFecha(d.fecha)} · ${ESTADO_LABEL[d.estado]}`}
+                                    className={cn(
+                                      "mx-auto block h-5 w-5 rounded-sm",
+                                      ESTADO_CELL[d.estado],
+                                    )}
+                                  />
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Referencia de colores */}
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
