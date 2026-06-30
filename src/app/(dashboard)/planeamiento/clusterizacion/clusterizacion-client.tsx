@@ -234,6 +234,67 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
   const visibles = filtrados.slice(0, MAX_FILAS)
   const resumenById = (cl: ClusterId) => resumen.find((r) => r.cluster === cl)
 
+  // Tarjeta de un cluster (clickeable = filtra). Se ubica en la matriz 2×2.
+  const tarjetaCluster = (cl: ClusterId) => {
+    const r = resumenById(cl)
+    const meta = CLUSTER_META[cl]
+    const activo = filtroCluster === cl
+    return (
+      <button onClick={() => setFiltroCluster(activo ? "todos" : cl)} className="text-left">
+        <Card
+          className={`h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`}
+          style={{
+            // @ts-expect-error ring color via CSS var
+            "--tw-ring-color": meta.color,
+          }}
+        >
+          <CardContent className={`space-y-3 pt-5 ${meta.bg}`}>
+            <div className="flex items-center justify-between">
+              <div className="rounded-lg p-2" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>
+                {meta.icon}
+              </div>
+              <span className="text-2xl font-bold" style={{ color: meta.color }}>
+                {r?.clientes ?? 0}
+              </span>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{CLUSTER_LABELS[cl]}</p>
+              <p className="text-xs text-muted-foreground">{meta.desc}</p>
+            </div>
+            <div className="space-y-1 border-t pt-2 text-xs text-slate-600">
+              <div className="flex justify-between">
+                <span>% PDV</span>
+                <span className="font-medium">{fmtPct(r?.pct_clientes ?? 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>% facturación</span>
+                <span className="font-medium">{fmtPct(r?.pct_ingresos ?? 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Drop size</span>
+                <span className="font-medium">{fmtNum(r?.drop_size_prom ?? 0, 1)} b/vis</span>
+              </div>
+              <div className="flex justify-between">
+                <span>RMD prom</span>
+                <span className="font-medium">
+                  {r?.rmd_prom != null ? `${fmtNum(r.rmd_prom, 2)} ★` : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between border-t pt-1">
+                <span>No pasa / Atención</span>
+                <span className="font-medium">
+                  <span className="text-red-600">{fmtNum(r?.no_pasan ?? 0)}</span>
+                  {" / "}
+                  <span className="text-amber-600">{fmtNum(r?.en_atencion ?? 0)}</span>
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </button>
+    )
+  }
+
   const TABS = [
     { k: "clientes" as const, label: "Clientes" },
     { k: "analisis" as const, label: "Análisis Valor×Costo" },
@@ -308,67 +369,23 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
             </CardContent>
           </Card>
 
-          {/* Matriz 2×2 de clústeres */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {(["ganador", "en_crecimiento", "basico", "ventas_bajas"] as ClusterId[]).map((cl) => {
-              const r = resumenById(cl)
-              const meta = CLUSTER_META[cl]
-              const activo = filtroCluster === cl
-              return (
-                <button key={cl} onClick={() => setFiltroCluster(activo ? "todos" : cl)} className="text-left">
-                  <Card
-                    className={`h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`}
-                    style={{
-                      // @ts-expect-error ring color via CSS var
-                      "--tw-ring-color": meta.color,
-                    }}
-                  >
-                    <CardContent className={`space-y-3 pt-5 ${meta.bg}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="rounded-lg p-2" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>
-                          {meta.icon}
-                        </div>
-                        <span className="text-2xl font-bold" style={{ color: meta.color }}>
-                          {r?.clientes ?? 0}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{CLUSTER_LABELS[cl]}</p>
-                        <p className="text-xs text-muted-foreground">{meta.desc}</p>
-                      </div>
-                      <div className="space-y-1 border-t pt-2 text-xs text-slate-600">
-                        <div className="flex justify-between">
-                          <span>% PDV</span>
-                          <span className="font-medium">{fmtPct(r?.pct_clientes ?? 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>% facturación</span>
-                          <span className="font-medium">{fmtPct(r?.pct_ingresos ?? 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Drop size</span>
-                          <span className="font-medium">{fmtNum(r?.drop_size_prom ?? 0, 1)} b/vis</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>RMD prom</span>
-                          <span className="font-medium">
-                            {r?.rmd_prom != null ? `${fmtNum(r.rmd_prom, 2)} ★` : "—"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between border-t pt-1">
-                          <span>No pasa / Atención</span>
-                          <span className="font-medium">
-                            <span className="text-red-600">{fmtNum(r?.no_pasan ?? 0)}</span>
-                            {" / "}
-                            <span className="text-amber-600">{fmtNum(r?.en_atencion ?? 0)}</span>
-                          </span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </button>
-              )
-            })}
+          {/* Matriz 2×2 de clústeres: facturación (alta/baja) × crecimiento */}
+          <div className="grid grid-cols-[auto_1fr_1fr] gap-4">
+            <div />
+            <div className="pb-1 text-center text-xs font-medium text-slate-500">Creciendo</div>
+            <div className="pb-1 text-center text-xs font-medium text-slate-500">Sin crecer</div>
+
+            <div className="flex items-center justify-center text-xs font-medium text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              Facturación alta
+            </div>
+            {tarjetaCluster("ganador")}
+            {tarjetaCluster("basico")}
+
+            <div className="flex items-center justify-center text-xs font-medium text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              Facturación baja
+            </div>
+            {tarjetaCluster("en_crecimiento")}
+            {tarjetaCluster("ventas_bajas")}
           </div>
 
           {/* Filtros (explorador) */}

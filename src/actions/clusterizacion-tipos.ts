@@ -10,7 +10,7 @@ export type ClusterId = "ganador" | "en_crecimiento" | "basico" | "ventas_bajas"
 
 export const CLUSTER_LABELS: Record<ClusterId, string> = {
   ganador: "Ganador",
-  en_crecimiento: "En crecimiento",
+  en_crecimiento: "Productor",
   basico: "Básico",
   ventas_bajas: "Ventas Bajas",
 }
