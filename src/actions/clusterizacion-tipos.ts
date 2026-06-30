@@ -20,10 +20,40 @@ export const CLUSTER_LABELS: Record<ClusterId, string> = {
 export type CuadranteId = "proteger" | "optimizar" | "mantener" | "revisar"
 
 export const CUADRANTE_LABELS: Record<CuadranteId, string> = {
-  proteger: "Proteger y replicar",
-  optimizar: "Optimizar logística",
-  mantener: "Mantener bajo esfuerzo",
-  revisar: "Revisar (bajo valor, caro)",
+  proteger: "Óptimos",
+  optimizar: "Operacional",
+  mantener: "Transaccional",
+  revisar: "Parásitos",
+}
+
+// ── Diagrama 3D (2×2×2) ──────────────────────────────────────────────────────
+// Cruce de los 3 ejes binarios → 8 tipos de cliente:
+//   Z facturación (alta/baja, mediana) × X costo $/HL (mayor/menor, mediana) ×
+//   Y crecimiento (mayor/menor vs YTD anterior).
+export type CuboId =
+  | "estrella" | "rentable" | "motor" | "pesado"
+  | "promesa" | "hormiga" | "dilema" | "critico"
+
+export interface CuboMeta {
+  label: string
+  /** Lectura / jugada recomendada. */
+  jugada: string
+  color: string
+  /** Coordenadas para el gráfico 3D (0/1). x=costo mayor, y=crecimiento mayor, z=facturación alta. */
+  x: 0 | 1
+  y: 0 | 1
+  z: 0 | 1
+}
+
+export const CUBO_META: Record<CuboId, CuboMeta> = {
+  estrella: { label: "Estrella", jugada: "Lo mejor: factura, barato y crece. Proteger y replicar.", color: "#059669", x: 0, y: 1, z: 1 },
+  rentable: { label: "Rentable", jugada: "Gran margen y estable (vaca lechera). Defender y ordeñar.", color: "#0d9488", x: 0, y: 0, z: 1 },
+  motor: { label: "Motor", jugada: "Crece y factura pero caro. Abaratar la logística.", color: "#2563eb", x: 1, y: 1, z: 1 },
+  pesado: { label: "Pesado", jugada: "Factura, caro y plano. Optimizar costo de servir.", color: "#d97706", x: 1, y: 0, z: 1 },
+  promesa: { label: "Promesa", jugada: "Chico, barato y subiendo. Potenciar / desarrollar.", color: "#0891b2", x: 0, y: 1, z: 0 },
+  hormiga: { label: "Hormiga", jugada: "Chico, barato y plano. Mantener sin esfuerzo.", color: "#64748b", x: 0, y: 0, z: 0 },
+  dilema: { label: "Dilema", jugada: "Crece pero caro y chico. Vigilar: ¿escala o drena?", color: "#c026d3", x: 1, y: 1, z: 0 },
+  critico: { label: "Crítico", jugada: "Chico, caro y cayendo (sangría). Revisar / desinvertir.", color: "#dc2626", x: 1, y: 0, z: 0 },
 }
 
 export interface ClienteClusterizado {
@@ -52,6 +82,8 @@ export interface ClienteClusterizado {
   costo_alto: boolean | null
   /** Cuadrante Valor×Costo (facturación alta/baja × $/HL alto/bajo). null = sin dato de costo. */
   cuadrante: CuadranteId | null
+  /** Cubo del diagrama 3D (facturación × costo × crecimiento). null = sin dato de costo. */
+  cubo: CuboId | null
   /** Equipos de frío (EDF) INSTALADOS en el PDV (comodato). 0 = ninguno. */
   equipos_frio_n: number
   /** Modelos de equipos de frío instalados (resumen). null = ninguno. */

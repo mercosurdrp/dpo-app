@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -37,21 +38,35 @@ import {
   Download,
   LayoutGrid,
   Snowflake,
+  Boxes,
 } from "lucide-react"
 import {
   CLUSTER_LABELS,
   CUADRANTE_LABELS,
+  CUBO_META,
   type ClusterId,
   type CuadranteId,
+  type CuboId,
   type ClienteClusterizado,
   type ClusterizacionData,
 } from "@/actions/clusterizacion-tipos"
+import type { Punto3D } from "./diagrama-3d"
 import {
   crearPlanCluster,
   getPlanesCluster,
   actualizarEstadoPlanCluster,
   type ClusterPlan,
 } from "@/actions/clusterizacion-planes"
+
+// El gráfico 3D (echarts-gl/WebGL) se carga solo en el cliente.
+const Diagrama3D = dynamic(() => import("./diagrama-3d"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[460px] items-center justify-center text-sm text-muted-foreground">
+      Cargando gráfico 3D…
+    </div>
+  ),
+})
 
 interface Props {
   data: ClusterizacionData
@@ -178,7 +193,7 @@ const MOSTRADOR = "VTA. MOSTRADOR"
 const MAX_FILAS = 300
 
 export function ClusterizacionClient({ data, planesIniciales }: Props) {
-  const [tab, setTab] = useState<"clientes" | "analisis" | "planes">("clientes")
+  const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
   const [fLocalidad, setFLocalidad] = useState("todos")
@@ -298,6 +313,7 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
   const TABS = [
     { k: "clientes" as const, label: "Clientes" },
     { k: "analisis" as const, label: "Análisis Valor×Costo" },
+    { k: "diagrama" as const, label: "Diagrama" },
     { k: "planes" as const, label: `Planes (${planes.length})` },
   ]
 
@@ -342,6 +358,8 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
         <SolapaPlanes planes={planes} onChange={refrescarPlanes} />
       ) : tab === "analisis" ? (
         <SolapaAnalisis data={data} />
+      ) : tab === "diagrama" ? (
+        <SolapaDiagrama data={data} />
       ) : (
         <>
           {/* Metodología */}
@@ -615,6 +633,223 @@ export function ClusterizacionClient({ data, planesIniciales }: Props) {
  * logístico $/HL del año (alto/bajo) en una matriz 2×2, asigna a cada PDV una
  * acción recomendada según su cuadrante y permite bajar los reportes por supervisor.
  */
+const CUBOS_ORDEN: CuboId[] = [
+  "estrella", "rentable", "motor", "pesado",
+  "promesa", "hormiga", "dilema", "critico",
+]
+
+/**
+ * Solapa "Diagrama": cubo 3D (2×2×2) = facturación × costo × crecimiento → 8 tipos
+ * de cliente. Se gira/zoomea el gráfico y al clickear (o tocar la leyenda) un cubo
+ * se ve la lista de PDV de ese tipo con los datos de siempre.
+ */
+function SolapaDiagrama({ data }: { data: ClusterizacionData }) {
+  const { clientes } = data
+  const [sel, setSel] = useState<CuboId | null>(null)
+  const [q, setQ] = useState("")
+
+  // Solo PDV con costo cargado entran al cubo (igual que el Análisis).
+  const conCubo = useMemo(() => clientes.filter((c) => c.cubo != null), [clientes])
+  const sinCosto = clientes.length - conCubo.length
+
+  const conteo = useMemo(() => {
+    const m = {} as Record<CuboId, number>
+    for (const id of CUBOS_ORDEN) m[id] = 0
+    for (const c of conCubo) m[c.cubo as CuboId] += 1
+    return m
+  }, [conCubo])
+
+  const puntos: Punto3D[] = CUBOS_ORDEN.map((id) => ({
+    id,
+    label: CUBO_META[id].label,
+    color: CUBO_META[id].color,
+    x: CUBO_META[id].x,
+    y: CUBO_META[id].y,
+    z: CUBO_META[id].z,
+    count: conteo[id],
+  }))
+
+  const lista = useMemo(() => {
+    if (!sel) return []
+    const t = q.trim().toLowerCase()
+    return conCubo
+      .filter((c) => c.cubo === sel)
+      .filter(
+        (c) =>
+          t === "" ||
+          (c.nombre ?? "").toLowerCase().includes(t) ||
+          String(c.id_cliente).includes(t) ||
+          (c.supervisor ?? "").toLowerCase().includes(t) ||
+          (c.localidad ?? "").toLowerCase().includes(t),
+      )
+      .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
+  }, [conCubo, sel, q])
+
+  const visibles = lista.slice(0, MAX_FILAS)
+
+  return (
+    <>
+      {/* Metodología */}
+      <Card className="border-l-4 border-l-indigo-400 bg-indigo-50/40">
+        <CardContent className="flex gap-3 pt-5 text-sm text-slate-700">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
+          <div className="space-y-1">
+            <p>
+              Diagrama <strong>2×2×2</strong>: cruza <strong>facturación</strong> (alta/baja),{" "}
+              <strong>costo $/HL</strong> (mayor/menor a la mediana) y <strong>crecimiento</strong>{" "}
+              (vs. YTD anterior) → <strong>8 tipos de cliente</strong>. Girá el gráfico con el mouse
+              y hacé clic en un cubo (o en la leyenda) para ver sus PDV.
+            </p>
+            {sinCosto > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {fmtNum(sinCosto)} PDV sin costo cargado quedan fuera del diagrama.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Gráfico 3D */}
+      <Card>
+        <CardContent className="pt-4">
+          <Diagrama3D puntos={puntos} selected={sel} onSelect={(id) => setSel((p) => (p === id ? null : id))} />
+        </CardContent>
+      </Card>
+
+      {/* Leyenda / selector de los 8 cubos */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {CUBOS_ORDEN.map((id) => {
+          const meta = CUBO_META[id]
+          const activo = sel === id
+          return (
+            <button key={id} onClick={() => setSel(activo ? null : id)} className="text-left">
+              <Card className={`h-full transition-all hover:shadow-md ${activo ? "ring-2" : ""}`} style={{
+                // @ts-expect-error ring color via CSS var
+                "--tw-ring-color": meta.color,
+              }}>
+                <CardContent className="space-y-1 pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-semibold" style={{ color: meta.color }}>
+                      <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: meta.color }} />
+                      {meta.label}
+                    </span>
+                    <span className="text-xl font-bold" style={{ color: meta.color }}>{conteo[id]}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{meta.jugada}</p>
+                </CardContent>
+              </Card>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Detalle del cubo seleccionado */}
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Boxes className="h-4 w-4 text-indigo-500" />
+            {sel ? (
+              <>
+                {CUBO_META[sel].label}
+                <Badge className="ml-1" style={{ backgroundColor: `${CUBO_META[sel].color}22`, color: CUBO_META[sel].color }}>
+                  {fmtNum(lista.length)} PDV
+                </Badge>
+              </>
+            ) : (
+              "Seleccioná un cubo"
+            )}
+          </CardTitle>
+          {sel && (
+            <Input
+              placeholder="Buscar por cliente, ID, localidad, supervisor…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="max-w-xs"
+            />
+          )}
+        </CardHeader>
+        <CardContent>
+          {!sel ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Hacé clic en un cubo del gráfico o en una tarjeta de la leyenda para ver sus clientes.
+            </p>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-slate-600">{CUBO_META[sel].jugada}</p>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Localidad</TableHead>
+                      <TableHead>Supervisor</TableHead>
+                      <TableHead className="text-right">Facturación YTD</TableHead>
+                      <TableHead className="text-right">$/HL año</TableHead>
+                      <TableHead className="text-right">Crec.</TableHead>
+                      <TableHead>Rechazo (45 d)</TableHead>
+                      <TableHead>Equipo frío</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibles.map((c) => (
+                      <TableRow key={c.id_cliente}>
+                        <TableCell className="max-w-[200px]">
+                          <div className="truncate font-medium text-slate-900" title={c.nombre ?? undefined}>
+                            {c.nombre ?? `Cliente ${c.id_cliente}`}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            #{c.id_cliente}
+                            {c.promotor ? ` · ${c.promotor}` : ""}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[120px] truncate text-sm text-slate-600" title={c.localidad ?? undefined}>
+                          {c.localidad ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-slate-600">{c.supervisor ?? "—"}</TableCell>
+                        <TableCell className="text-right font-medium">{fmtMoneda(c.ingresos_actual)}</TableCell>
+                        <TableCell className="text-right text-sm tabular-nums">
+                          {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <CrecimientoBadge pct={c.crecimiento_pct} />
+                        </TableCell>
+                        <TableCell>
+                          {c.estado === "no_pasa" ? (
+                            <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100">
+                              No pasa <span className="ml-1 text-[10px] opacity-70">{fmtNum(c.rechazos_culpa)}</span>
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-emerald-600">Pasa</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {c.equipos_frio_n > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700" title={c.equipos_frio_tipos ?? undefined}>
+                              <Snowflake className="h-3.5 w-3.5 text-sky-500" />
+                              {c.equipos_frio_n}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {lista.length > MAX_FILAS && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Mostrando los {MAX_FILAS} de mayor facturación de {fmtNum(lista.length)}.
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+
 function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
   const { clientes, umbral_ingresos, umbral_costo } = data
   const [cuad, setCuad] = useState<CuadranteId | "todos">("todos")

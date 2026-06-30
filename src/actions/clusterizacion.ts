@@ -12,6 +12,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import type {
   ClusterId,
   CuadranteId,
+  CuboId,
   ClienteClusterizado,
   ClusterResumen,
   ClusterizacionData,
@@ -254,6 +255,25 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
           : costo_alto
             ? "revisar"
             : "mantener"
+    // Cubo del diagrama 3D: facturación (z) × costo (x) × crecimiento (y).
+    const cubo: CuboId | null =
+      costo_alto == null
+        ? null
+        : ingresoAlto
+          ? costo_alto
+            ? crecePositivo
+              ? "motor"
+              : "pesado"
+            : crecePositivo
+              ? "estrella"
+              : "rentable"
+          : costo_alto
+            ? crecePositivo
+              ? "dilema"
+              : "critico"
+            : crecePositivo
+              ? "promesa"
+              : "hormiga"
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const rech = rechazoMap.get(r.id_cliente)
@@ -285,6 +305,7 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       costo_x_hl_ytd,
       costo_alto,
       cuadrante,
+      cubo,
       equipos_frio_n: frioMap.get(r.id_cliente)?.cantidad ?? 0,
       equipos_frio_tipos: frioMap.get(r.id_cliente)?.tipos ?? null,
       rmd_prom,
