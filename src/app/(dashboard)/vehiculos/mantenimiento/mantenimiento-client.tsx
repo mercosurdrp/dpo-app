@@ -1099,6 +1099,53 @@ export function MantenimientoClient({
   )
 }
 
+// Chips clicables con las últimas lecturas registradas de la unidad, para
+// completar odómetro/horómetro sin retipear. `unidad` solo cambia el sufijo.
+function SugerenciasLectura({
+  sugerencias,
+  valor,
+  onElegir,
+  unidad,
+}: {
+  sugerencias: LecturaSugerida[]
+  valor: string
+  onElegir: (v: string) => void
+  unidad: "km" | "hs"
+}) {
+  if (sugerencias.length === 0) return null
+  return (
+    <div className="mt-1.5">
+      <p className="text-[11px] text-slate-400">Últimas lecturas registradas:</p>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {sugerencias.map((s, i) => {
+          const val = String(s.odometro)
+          const activa = valor === val
+          return (
+            <button
+              key={`${s.odometro}-${s.fecha}-${i}`}
+              type="button"
+              onClick={() => onElegir(val)}
+              title={`${FUENTE_LECTURA_LABEL[s.fuente]} · ${fmtFecha(s.fecha)}`}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors",
+                activa
+                  ? "border-sky-300 bg-sky-100 text-sky-700"
+                  : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              {fmtNum(s.odometro)}
+              {unidad === "hs" && " hs"}
+              <span className="ml-1 text-[10px] font-normal text-slate-400">
+                {fmtFecha(s.fecha)}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ==================== Dialog: nuevo mantenimiento ====================
 
 function NuevoMantenimientoDialog({
@@ -1149,9 +1196,15 @@ function NuevoMantenimientoDialog({
   const tipoVeh = (vehiculoSel?.vehiculo.tipo ?? "camion") as VehiculoTipo
   const tareasDisponibles = vehiculoSel ? (tareasPorTipo.get(tipoVeh) ?? []) : []
   const esAutoelevador = tipoVeh === "autoelevador"
-  // Últimas lecturas de odómetro de la unidad (registros/checklist/combustible)
-  // para ofrecerlas como sugerencias al cargar la OT sin retipear el km.
-  const sugerenciasKm = dominio ? (ultimasLecturas[dominio] ?? []) : []
+  // Últimas lecturas de la unidad para sugerir al cargar la OT sin retipear.
+  // - Camiones/etc.: odómetro de registros/checklist/combustible.
+  // - Autoelevadores: horómetro que se toma en el checklist (se guarda en la
+  //   misma columna `odometro`, pero para el autoelevador representa horas).
+  const lecturasUnidad = dominio ? (ultimasLecturas[dominio] ?? []) : []
+  const sugerenciasKm = esAutoelevador ? [] : lecturasUnidad
+  const sugerenciasHoras = esAutoelevador
+    ? lecturasUnidad.filter((s) => s.fuente === "checklist")
+    : []
 
   const onDominioChange = (d: string) => {
     setDominio(d)
@@ -1294,6 +1347,12 @@ function NuevoMantenimientoDialog({
                   onChange={(e) => setHorometro(e.target.value)}
                   placeholder="Horas de uso"
                 />
+                <SugerenciasLectura
+                  sugerencias={sugerenciasHoras}
+                  valor={horometro}
+                  onElegir={setHorometro}
+                  unidad="hs"
+                />
               </div>
             ) : (
               <div>
@@ -1304,36 +1363,12 @@ function NuevoMantenimientoDialog({
                   onChange={(e) => setOdometro(e.target.value)}
                   placeholder="Km al momento"
                 />
-                {sugerenciasKm.length > 0 && (
-                  <div className="mt-1.5">
-                    <p className="text-[11px] text-slate-400">Últimas lecturas registradas:</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {sugerenciasKm.map((s, i) => {
-                        const val = String(s.odometro)
-                        const activa = odometro === val
-                        return (
-                          <button
-                            key={`${s.odometro}-${s.fecha}-${i}`}
-                            type="button"
-                            onClick={() => setOdometro(val)}
-                            title={`${FUENTE_LECTURA_LABEL[s.fuente]} · ${fmtFecha(s.fecha)}`}
-                            className={cn(
-                              "rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors",
-                              activa
-                                ? "border-sky-300 bg-sky-100 text-sky-700"
-                                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                            )}
-                          >
-                            {fmtNum(s.odometro)}
-                            <span className="ml-1 text-[10px] font-normal text-slate-400">
-                              {fmtFecha(s.fecha)}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
+                <SugerenciasLectura
+                  sugerencias={sugerenciasKm}
+                  valor={odometro}
+                  onElegir={setOdometro}
+                  unidad="km"
+                />
               </div>
             )}
             <div>
