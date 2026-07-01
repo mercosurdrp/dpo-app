@@ -4,12 +4,13 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ClipboardCheck, Settings, Plus, CalendarCheck } from "lucide-react"
+import { ClipboardCheck, Settings, Plus, CalendarCheck, CalendarDays } from "lucide-react"
 import type { OwdTemplateResumen } from "@/types/database"
 
 interface Props {
   templates: OwdTemplateResumen[]
   isAdmin: boolean
+  canAgenda: boolean
 }
 
 function pctColor(pct: number) {
@@ -18,7 +19,7 @@ function pctColor(pct: number) {
   return "text-red-600"
 }
 
-export function OwdLandingClient({ templates, isAdmin }: Props) {
+export function OwdLandingClient({ templates, isAdmin, canAgenda }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -28,13 +29,22 @@ export function OwdLandingClient({ templates, isAdmin }: Props) {
             Observación en el puesto de trabajo. Cada punto del manual DPO con plantilla aparece acá.
           </p>
         </div>
-        {isAdmin && (
-          <Link href="/owd/admin">
-            <Button variant="outline">
-              <Settings className="mr-2 h-4 w-4" /> Administrar plantillas
-            </Button>
-          </Link>
-        )}
+        <div className="flex flex-shrink-0 gap-2">
+          {canAgenda && (
+            <Link href="/owd/calendario">
+              <Button variant="outline">
+                <CalendarDays className="mr-2 h-4 w-4" /> Calendario
+              </Button>
+            </Link>
+          )}
+          {isAdmin && (
+            <Link href="/owd/admin">
+              <Button variant="outline">
+                <Settings className="mr-2 h-4 w-4" /> Administrar plantillas
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {templates.length === 0 ? (

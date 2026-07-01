@@ -1,5 +1,6 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
@@ -711,6 +712,17 @@ export async function createObservacion(
       user_nombre: profile.nombre,
       metadata: { supervisor: input.supervisor, pct_cumplimiento: pct, template_id: input.templateId },
     })
+
+    // Si la OWD se cargó desde el calendario, marcar la agenda como realizada
+    // y vincularla a esta observación (best-effort: no rompe el guardado).
+    const agendaId = str("agendaId")
+    if (agendaId) {
+      await supabase
+        .from("owd_agenda")
+        .update({ estado: "realizada", observacion_id: obs.id })
+        .eq("id", agendaId)
+      revalidatePath("/owd/calendario")
+    }
 
     return { data: obs as OwdObservacion }
   } catch (e) {

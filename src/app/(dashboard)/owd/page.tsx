@@ -15,5 +15,11 @@ export default async function OwdPage() {
     )
   }
 
-  return <OwdLandingClient templates={res.data} isAdmin={profile.role === "admin"} />
+  return (
+    <OwdLandingClient
+      templates={res.data}
+      isAdmin={profile.role === "admin"}
+      canAgenda={profile.role === "admin" || profile.role === "supervisor"}
+    />
+  )
 }

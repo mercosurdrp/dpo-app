@@ -7,10 +7,13 @@ import { NuevaOwdClient } from "./nueva-owd-client"
 
 export default async function NuevaOwdPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ templateId: string }>
+  searchParams: Promise<{ fecha?: string; supervisor?: string; empleado?: string; agendaId?: string }>
 }) {
   const { templateId } = await params
+  const sp = await searchParams
 
   const [tplRes, itemsRes, empleadosRes, vehiculosRes] = await Promise.all([
     getOwdTemplateById(templateId),
@@ -64,6 +67,10 @@ export default async function NuevaOwdPage({
         empleados={empleados}
         supervisorDefault={supervisorDefault}
         vehiculos={vehiculos}
+        initialFecha={sp.fecha}
+        initialSupervisor={sp.supervisor}
+        initialEmpleado={sp.empleado}
+        agendaId={sp.agendaId}
       />
     </div>
   )

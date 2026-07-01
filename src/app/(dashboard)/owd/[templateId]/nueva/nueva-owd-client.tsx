@@ -27,6 +27,11 @@ interface Props {
   empleados: { nombre: string; sector: string | null }[]
   supervisorDefault?: string
   vehiculos: CatalogoVehiculo[]
+  /** Prellenado y vínculo cuando se llega desde el calendario de OWD. */
+  initialFecha?: string
+  initialSupervisor?: string
+  initialEmpleado?: string
+  agendaId?: string
 }
 
 type Respuestas = Record<string, { resultado: OwdResultado; comentario: string }>
@@ -65,7 +70,7 @@ async function compressImage(file: File): Promise<File> {
   }
 }
 
-export function NuevaOwdClient({ templateId, titulo, items, empleados, supervisorDefault, vehiculos }: Props) {
+export function NuevaOwdClient({ templateId, titulo, items, empleados, supervisorDefault, vehiculos, initialFecha, initialSupervisor, initialEmpleado, agendaId }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -141,9 +146,9 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
   )
 
   const today = new Date().toISOString().slice(0, 10)
-  const [fecha, setFecha] = useState(today)
-  const [supervisor, setSupervisor] = useState(supervisorDefault ?? "")
-  const [empleado, setEmpleado] = useState("")
+  const [fecha, setFecha] = useState(initialFecha || today)
+  const [supervisor, setSupervisor] = useState(initialSupervisor || supervisorDefault || "")
+  const [empleado, setEmpleado] = useState(initialEmpleado || "")
   const [rol, setRol] = useState<string>("Chofer")
   const [dominio, setDominio] = useState<string>("")
   const [duracionMin, setDuracionMin] = useState<string>("")
@@ -196,6 +201,7 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     fd.append("duracionMinutos", duracionMin)
     fd.append("accionCorrectiva", accionCorrectiva)
     fd.append("observaciones", obsGeneral)
+    if (agendaId) fd.append("agendaId", agendaId)
     fd.append(
       "respuestas",
       JSON.stringify(
