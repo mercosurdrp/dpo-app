@@ -18,6 +18,7 @@ import {
   Wrench,
   PackageX,
   Sparkles,
+  Brain,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -47,6 +48,8 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
       ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: <CalendarCheck className="size-5" /> }]
       : []),
     { label: "Inicio", href: "/mis-capacitaciones", icon: <GraduationCap className="size-5" /> },
+    // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
+    { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Rechazos: solo Pampeana (fuente de datos).
     ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
     // Roturas en la calle: solo Pampeana (fuente de datos / DQI).

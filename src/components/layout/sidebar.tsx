@@ -21,6 +21,7 @@ import {
   ScrollText,
   ShieldAlert,
   ShieldCheck,
+  Brain,
   Target,
   ChevronLeft,
   ChevronRight,
@@ -219,6 +220,11 @@ export const navItems: NavItem[] = [
     href: "/mis-capacitaciones",
     icon: <GraduationCap className="size-5" />,
     roles: ["auditor"],
+  },
+  {
+    label: "Trivia",
+    href: "/trivia/ranking",
+    icon: <Brain className="size-5" />,
   },
   {
     label: "Reuniones",
