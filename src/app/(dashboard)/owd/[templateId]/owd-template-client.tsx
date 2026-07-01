@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -13,10 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  BarChart,
+  ComposedChart,
   Bar,
-  LineChart,
   Line,
+  BarChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -26,9 +27,20 @@ import {
   Cell,
 } from "recharts"
 import type { OwdObservacion, OwdMensual, OwdItemStats } from "@/types/database"
-import { Plus, ClipboardCheck, Target, AlertTriangle, CalendarCheck, Settings } from "lucide-react"
+import {
+  Plus,
+  ClipboardCheck,
+  Target,
+  AlertTriangle,
+  CalendarCheck,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+const TODOS = "todos"
 
 interface KpiData {
   totalObservaciones: number
@@ -39,9 +51,6 @@ interface KpiData {
   mensual: OwdMensual[]
   porEtapa: Array<{ etapa: string; pct: number; total: number }>
   itemsMasFallados: OwdItemStats[]
-  porRuteador: Array<{ nombre: string; obsMes: number; cubierto: boolean }>
-  ruteadoresTotal: number
-  ruteadoresCubiertos: number
 }
 
 interface Contexto {
@@ -66,10 +75,50 @@ function PctBadge({ pct }: { pct: number }) {
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{pct.toFixed(0)}%</Badge>
 }
 
+const monthKey = (m: OwdMensual) => `${m.year}-${String(m.mes).padStart(2, "0")}`
+const monthLabel = (m: OwdMensual) => `${MESES[m.mes]} ${m.year}`
+
 export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, isAdmin }: Props) {
   const meta = kpis.metaCumplimiento
-  const mensualData = kpis.mensual.map((m) => ({
-    name: MESES[m.mes],
+
+  // Meses con datos, orden cronológico ascendente
+  const meses = useMemo(
+    () => [...kpis.mensual].sort((a, b) => a.year - b.year || a.mes - b.mes),
+    [kpis.mensual]
+  )
+
+  // Mes seleccionado: por defecto el más reciente; TODOS = vista global
+  const [selected, setSelected] = useState<string>(
+    meses.length ? monthKey(meses[meses.length - 1]) : TODOS
+  )
+
+  const idx = meses.findIndex((m) => monthKey(m) === selected)
+  const mesSel = idx >= 0 ? meses[idx] : null
+  const esTodos = selected === TODOS
+
+  const goPrev = () => {
+    if (esTodos && meses.length) return setSelected(monthKey(meses[meses.length - 1]))
+    if (idx > 0) setSelected(monthKey(meses[idx - 1]))
+  }
+  const goNext = () => {
+    if (idx >= 0 && idx < meses.length - 1) setSelected(monthKey(meses[idx + 1]))
+  }
+
+  // Observaciones filtradas por el mes elegido (fecha = YYYY-MM-DD)
+  const obsFiltradas = useMemo(
+    () => (esTodos ? observaciones : observaciones.filter((o) => o.fecha?.startsWith(selected))),
+    [observaciones, selected, esTodos]
+  )
+
+  // KPIs que responden al selector de mes
+  const pctShown = esTodos ? kpis.promedioCumplimiento : mesSel?.promedio_cumplimiento ?? 0
+  const obsCount = esTodos ? kpis.obsMesActual : mesSel?.total_observaciones ?? 0
+  const obsCountLabel = esTodos ? "Mes actual" : monthLabel(mesSel!)
+
+  // Serie de evolución (todos los meses); resalta el seleccionado
+  const evolData = meses.map((m) => ({
+    key: monthKey(m),
+    name: `${MESES[m.mes]} '${String(m.year).slice(2)}`,
     cumplimiento: m.promedio_cumplimiento,
     total: m.total_observaciones,
   }))
@@ -106,6 +155,60 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
         </div>
       </div>
 
+      {/* Navegador de meses */}
+      {meses.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-slate-50 p-2">
+          <span className="px-1 text-sm font-medium text-slate-600">Período:</span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={goPrev}
+            disabled={!esTodos && idx <= 0}
+            aria-label="Mes anterior"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex flex-wrap gap-1">
+            {meses.map((m) => {
+              const k = monthKey(m)
+              const active = k === selected
+              return (
+                <button
+                  key={k}
+                  onClick={() => setSelected(k)}
+                  className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-100 border"
+                  }`}
+                >
+                  {monthLabel(m)}
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setSelected(TODOS)}
+              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                esTodos ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100 border"
+              }`}
+            >
+              Todos
+            </button>
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={goNext}
+            disabled={esTodos || idx >= meses.length - 1}
+            aria-label="Mes siguiente"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -115,29 +218,27 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 <p className="text-sm text-muted-foreground">% Cumplimiento</p>
                 <p
                   className={`text-3xl font-bold ${
-                    kpis.promedioCumplimiento >= meta
+                    pctShown >= meta
                       ? "text-green-600"
-                      : kpis.promedioCumplimiento >= meta - 15
+                      : pctShown >= meta - 15
                       ? "text-amber-600"
                       : "text-red-600"
                   }`}
                 >
-                  {kpis.promedioCumplimiento.toFixed(1)}%
+                  {pctShown.toFixed(1)}%
                 </p>
               </div>
               <div
-                className={`rounded-full p-3 ${
-                  kpis.promedioCumplimiento >= meta ? "bg-green-100" : "bg-amber-100"
-                }`}
+                className={`rounded-full p-3 ${pctShown >= meta ? "bg-green-100" : "bg-amber-100"}`}
               >
                 <Target
-                  className={`h-5 w-5 ${
-                    kpis.promedioCumplimiento >= meta ? "text-green-600" : "text-amber-600"
-                  }`}
+                  className={`h-5 w-5 ${pctShown >= meta ? "text-green-600" : "text-amber-600"}`}
                 />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Meta: ≥ {meta.toFixed(0)}%</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {esTodos ? "Promedio histórico" : monthLabel(mesSel!)} · Meta ≥ {meta.toFixed(0)}%
+            </p>
           </CardContent>
         </Card>
 
@@ -145,9 +246,9 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Obs. del mes</p>
+                <p className="text-sm text-muted-foreground">Observaciones</p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {kpis.obsMesActual}
+                  {obsCount}
                   <span className="text-lg font-normal text-muted-foreground">
                     /{kpis.metaMensual}
                   </span>
@@ -157,7 +258,9 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 <CalendarCheck className="h-5 w-5 text-blue-600" />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Meta: {kpis.metaMensual} OWD / mes</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {obsCountLabel} · Meta {kpis.metaMensual}/mes
+            </p>
           </CardContent>
         </Card>
 
@@ -172,7 +275,7 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 <ClipboardCheck className="h-5 w-5 text-slate-600" />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Observaciones cargadas</p>
+            <p className="mt-2 text-xs text-muted-foreground">Observaciones cargadas (histórico)</p>
           </CardContent>
         </Card>
 
@@ -187,103 +290,77 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Top 5 no conformes</p>
+            <p className="mt-2 text-xs text-muted-foreground">Top 5 no conformes (histórico)</p>
           </CardContent>
         </Card>
       </div>
-
-      {/* Cumplimiento por ruteador — meta 1 OWD/mes a cada uno */}
-      {kpis.ruteadoresTotal > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-base">
-                Cumplimiento por ruteador — mes actual
-              </CardTitle>
-              <Badge
-                className={
-                  kpis.ruteadoresCubiertos >= kpis.ruteadoresTotal
-                    ? "bg-green-100 text-green-700 hover:bg-green-100"
-                    : "bg-amber-100 text-amber-700 hover:bg-amber-100"
-                }
-              >
-                {kpis.ruteadoresCubiertos}/{kpis.ruteadoresTotal} con su OWD
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Meta: 1 OWD por mes a cada ruteador.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {kpis.porRuteador.map((r) => (
-                <div
-                  key={r.nombre}
-                  className={`flex items-center justify-between rounded-lg border p-3 ${
-                    r.cubierto
-                      ? "border-green-200 bg-green-50"
-                      : "border-amber-200 bg-amber-50"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2.5 rounded-full ${
-                        r.cubierto ? "bg-green-500" : "bg-amber-400"
-                      }`}
-                    />
-                    <span className="text-sm font-medium text-slate-800">
-                      {r.nombre}
-                    </span>
-                  </div>
-                  {r.cubierto ? (
-                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                      {r.obsMes === 1 ? "Hecha" : `${r.obsMes} hechas`}
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
-                      Pendiente
-                    </Badge>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Charts */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">% Cumplimiento por Mes</CardTitle>
+            <CardTitle className="text-base">Evolución mensual</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Barras = observaciones cargadas · Línea = % cumplimiento (clic en un mes para filtrar)
+            </p>
           </CardHeader>
           <CardContent>
             <div className="h-72">
-              {mensualData.length === 0 ? (
+              {evolData.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   Sin datos
                 </p>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={mensualData}>
+                  <ComposedChart data={evolData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="name" fontSize={11} />
-                    <YAxis fontSize={11} unit="%" domain={[0, 100]} />
-                    <Tooltip formatter={(v) => [`${v}%`, "Cumplimiento"]} />
+                    <YAxis yAxisId="left" fontSize={11} allowDecimals={false} />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      fontSize={11}
+                      unit="%"
+                      domain={[0, 100]}
+                    />
+                    <Tooltip
+                      formatter={(v, n) =>
+                        n === "cumplimiento" ? [`${v}%`, "Cumplimiento"] : [v, "Observaciones"]
+                      }
+                    />
                     <ReferenceLine
+                      yAxisId="right"
                       y={meta}
                       stroke="#10B981"
                       strokeDasharray="5 5"
                       label={{ value: `Meta ${meta.toFixed(0)}%`, position: "right", fontSize: 10 }}
                     />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="total"
+                      radius={[4, 4, 0, 0]}
+                      onClick={(d) => {
+                        const k = (d as { payload?: { key?: string } })?.payload?.key
+                        if (k) setSelected(k)
+                      }}
+                      cursor="pointer"
+                    >
+                      {evolData.map((e) => (
+                        <Cell
+                          key={e.key}
+                          fill={!esTodos && e.key === selected ? "#1e293b" : "#cbd5e1"}
+                        />
+                      ))}
+                    </Bar>
                     <Line
+                      yAxisId="right"
                       type="monotone"
                       dataKey="cumplimiento"
                       stroke="#10B981"
                       strokeWidth={2}
                       dot={{ fill: "#10B981", r: 3 }}
                     />
-                  </LineChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               )}
             </div>
@@ -293,6 +370,7 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
         <Card>
           <CardHeader>
             <CardTitle className="text-base">% Cumplimiento por Etapa</CardTitle>
+            <p className="text-xs text-muted-foreground">Histórico acumulado</p>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -354,10 +432,12 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
         </Card>
       )}
 
-      {/* Tabla últimas observaciones */}
+      {/* Tabla observaciones (filtradas por mes) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Últimas observaciones</CardTitle>
+          <CardTitle className="text-base">
+            Observaciones {esTodos ? "(todas)" : `· ${monthLabel(mesSel!)}`}
+          </CardTitle>
           <Link href={`/owd/${templateId}/nueva`}>
             <Button variant="outline" size="sm">
               <Plus className="mr-1 h-4 w-4" /> Nueva
@@ -365,9 +445,11 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
           </Link>
         </CardHeader>
         <CardContent>
-          {observaciones.length === 0 ? (
+          {obsFiltradas.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              Todavía no hay observaciones cargadas. Iniciá la primera OWD del equipo.
+              {esTodos
+                ? "Todavía no hay observaciones cargadas. Iniciá la primera OWD del equipo."
+                : `Sin observaciones cargadas en ${monthLabel(mesSel!)}.`}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -384,7 +466,7 @@ export function OwdTemplateClient({ templateId, contexto, kpis, observaciones, i
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {observaciones.map((o) => (
+                  {obsFiltradas.map((o) => (
                     <TableRow key={o.id}>
                       <TableCell className="text-sm">{o.fecha}</TableCell>
                       <TableCell className="text-sm">{o.supervisor}</TableCell>
