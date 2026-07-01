@@ -5,6 +5,8 @@ import {
   fetchLecturas,
   kmActualPorDominio,
   today,
+  ultimasLecturasPorDominio,
+  type LecturaSugerida,
 } from "@/lib/vehiculos/lecturas"
 import type {
   AlertaVehiculo,
@@ -190,6 +192,7 @@ export async function loadEstadoPlan(): Promise<{
   tareas: MantenimientoPlanTarea[]
   overrides: MantenimientoPlanOverride[]
   tareasById: Map<string, MantenimientoPlanTarea>
+  ultimasLecturas: Record<string, LecturaSugerida[]>
 }> {
   const supabase = await createClient()
 
@@ -262,7 +265,8 @@ export async function loadEstadoPlan(): Promise<{
 
   const estados = computeEstadoPlan({ vehiculos, tareas, overrides, ultimos, actuales })
   const tareasById = new Map(tareas.map((t) => [t.id, t]))
-  return { estados, tareas, overrides, tareasById }
+  const ultimasLecturas = ultimasLecturasPorDominio(lecturas)
+  return { estados, tareas, overrides, tareasById, ultimasLecturas }
 }
 
 /**

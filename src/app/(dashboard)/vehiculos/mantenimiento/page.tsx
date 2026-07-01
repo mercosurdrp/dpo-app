@@ -126,6 +126,7 @@ export default async function MantenimientoPage() {
       estados={estadoRes.data.estados}
       tareas={estadoRes.data.tareas}
       overrides={estadoRes.data.overrides}
+      ultimasLecturas={estadoRes.data.ultimasLecturas}
       mantenimientos={mantenimientos}
       costos={costos}
       tablero={tablero}

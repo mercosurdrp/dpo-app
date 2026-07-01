@@ -9,7 +9,12 @@ import {
   type DocumentoVencimiento,
   type ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
-import { startOfYear, today, daysBetween } from "@/lib/vehiculos/lecturas"
+import {
+  startOfYear,
+  today,
+  daysBetween,
+  type LecturaSugerida,
+} from "@/lib/vehiculos/lecturas"
 import type {
   CostosMantenimiento,
   DiaRuteo,
@@ -32,14 +37,15 @@ export async function getEstadoPlanFlota(): Promise<
         estados: EstadoPlanVehiculo[]
         tareas: MantenimientoPlanTarea[]
         overrides: MantenimientoPlanOverride[]
+        ultimasLecturas: Record<string, LecturaSugerida[]>
       }
     }
   | { error: string }
 > {
   try {
     await requireAuth()
-    const { estados, tareas, overrides } = await loadEstadoPlan()
-    return { data: { estados, tareas, overrides } }
+    const { estados, tareas, overrides, ultimasLecturas } = await loadEstadoPlan()
+    return { data: { estados, tareas, overrides, ultimasLecturas } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

@@ -97,6 +97,7 @@ import type {
 } from "@/actions/mantenimiento-vehiculos"
 import type { Neumatico, Alineacion, Rotacion } from "@/lib/vehiculos/neumaticos-tipos"
 import type { KmFlotaUnidad } from "@/actions/neumaticos"
+import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
 
 // ==================== Helpers ====================
 
@@ -106,6 +107,12 @@ const TIPO_VEHICULO_LABELS: Record<VehiculoTipo, string> = {
   autoelevador: "Autoelevadores",
   utilitario: "Utilitarios",
   acoplado: "Acoplados",
+}
+
+const FUENTE_LECTURA_LABEL: Record<LecturaSugerida["fuente"], string> = {
+  registros: "Registro de km",
+  checklist: "Checklist",
+  combustible: "Carga de combustible",
 }
 
 const TIPO_MANT_LABEL: Record<MantenimientoTipo, string> = {
@@ -302,6 +309,7 @@ interface MantenimientoClientProps {
   estados: EstadoPlanVehiculo[]
   tareas: MantenimientoPlanTarea[]
   overrides: MantenimientoPlanOverride[]
+  ultimasLecturas: Record<string, LecturaSugerida[]>
   mantenimientos: MantenimientoRealizado[]
   costos: CostosMantenimiento
   tablero: {
@@ -327,6 +335,7 @@ export function MantenimientoClient({
   estados,
   tareas,
   overrides,
+  ultimasLecturas,
   mantenimientos,
   costos,
   tablero,
@@ -993,6 +1002,7 @@ export function MantenimientoClient({
         <NuevoMantenimientoDialog
           estados={estados}
           tareasPorTipo={tareasPorTipo}
+          ultimasLecturas={ultimasLecturas}
           prefill={nuevoPrefill}
           onClose={() => setNuevoOpen(false)}
           onSaved={() => {
@@ -1094,12 +1104,14 @@ export function MantenimientoClient({
 function NuevoMantenimientoDialog({
   estados,
   tareasPorTipo,
+  ultimasLecturas,
   prefill,
   onClose,
   onSaved,
 }: {
   estados: EstadoPlanVehiculo[]
   tareasPorTipo: Map<VehiculoTipo, MantenimientoPlanTarea[]>
+  ultimasLecturas: Record<string, LecturaSugerida[]>
   prefill: { dominio?: string; tareaId?: string }
   onClose: () => void
   onSaved: () => void
@@ -1137,6 +1149,9 @@ function NuevoMantenimientoDialog({
   const tipoVeh = (vehiculoSel?.vehiculo.tipo ?? "camion") as VehiculoTipo
   const tareasDisponibles = vehiculoSel ? (tareasPorTipo.get(tipoVeh) ?? []) : []
   const esAutoelevador = tipoVeh === "autoelevador"
+  // Últimas lecturas de odómetro de la unidad (registros/checklist/combustible)
+  // para ofrecerlas como sugerencias al cargar la OT sin retipear el km.
+  const sugerenciasKm = dominio ? (ultimasLecturas[dominio] ?? []) : []
 
   const onDominioChange = (d: string) => {
     setDominio(d)
@@ -1289,6 +1304,36 @@ function NuevoMantenimientoDialog({
                   onChange={(e) => setOdometro(e.target.value)}
                   placeholder="Km al momento"
                 />
+                {sugerenciasKm.length > 0 && (
+                  <div className="mt-1.5">
+                    <p className="text-[11px] text-slate-400">Últimas lecturas registradas:</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {sugerenciasKm.map((s, i) => {
+                        const val = String(s.odometro)
+                        const activa = odometro === val
+                        return (
+                          <button
+                            key={`${s.odometro}-${s.fecha}-${i}`}
+                            type="button"
+                            onClick={() => setOdometro(val)}
+                            title={`${FUENTE_LECTURA_LABEL[s.fuente]} · ${fmtFecha(s.fecha)}`}
+                            className={cn(
+                              "rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors",
+                              activa
+                                ? "border-sky-300 bg-sky-100 text-sky-700"
+                                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                            )}
+                          >
+                            {fmtNum(s.odometro)}
+                            <span className="ml-1 text-[10px] font-normal text-slate-400">
+                              {fmtFecha(s.fecha)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div>

@@ -193,6 +193,46 @@ export async function fetchLecturas(filters?: {
   return lecturas
 }
 
+export interface LecturaSugerida {
+  odometro: number
+  fecha: string
+  fuente: Fuente
+}
+
+/**
+ * Últimas lecturas de odómetro por dominio, más recientes primero, para ofrecer
+ * como sugerencias al cargar una OT / mantenimiento. Deduplica por valor de
+ * odómetro (se queda con la aparición más reciente) y corta en `limite`.
+ */
+export function ultimasLecturasPorDominio(
+  lecturas: Lectura[],
+  limite = 8
+): Record<string, LecturaSugerida[]> {
+  const porDominio = new Map<string, Lectura[]>()
+  for (const l of lecturas) {
+    if (!porDominio.has(l.dominio)) porDominio.set(l.dominio, [])
+    porDominio.get(l.dominio)!.push(l)
+  }
+  const result: Record<string, LecturaSugerida[]> = {}
+  for (const [dominio, arr] of porDominio) {
+    // Orden descendente: fecha y luego hora.
+    arr.sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha < b.fecha ? 1 : -1
+      return a.hora < b.hora ? 1 : -1
+    })
+    const vistos = new Set<number>()
+    const top: LecturaSugerida[] = []
+    for (const l of arr) {
+      if (vistos.has(l.odometro)) continue
+      vistos.add(l.odometro)
+      top.push({ odometro: l.odometro, fecha: l.fecha, fuente: l.fuente })
+      if (top.length >= limite) break
+    }
+    result[dominio] = top
+  }
+  return result
+}
+
 /**
  * Km actual de cada dominio: odómetro máximo "limpio" (descarta retrocesos
  * tomando la secuencia cronológica y quedándose con el máximo creciente).
