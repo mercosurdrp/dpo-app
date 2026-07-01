@@ -304,6 +304,22 @@ export async function buildWarehouseSerieDiaria(
   return { ...base, ...extra }
 }
 
+/** HOY en zona horaria de Argentina (YYYY-MM-DD). Usar SIEMPRE esto en vez de
+ * `toISOString()`, que devuelve UTC y de noche (>21hs ART) adelanta un día. */
+function hoyArgentina(): string {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  })
+}
+
+/** ¿El día `f` ya cerró (dato confirmado)? El día de la reunión se oculta
+ * mientras la reunión sea de HOY o futura (en el matinal el cierre del día aún
+ * no está confirmado). Una vez que esa fecha quedó en el pasado, el día de la
+ * reunión ya cerró y se revela. */
+function diaCerrado(f: string, fechaReunion: string, hoy: string): boolean {
+  return fechaReunion < hoy ? f <= fechaReunion : f < fechaReunion
+}
+
 function buildSerieFromSnapshot(
   fechas: string[],
   fechaReunion: string,
@@ -318,15 +334,17 @@ function buildSerieFromSnapshot(
   const productividad: Record<string, number | null> = {}
   const errores_dia: Record<string, number | null> = {}
 
+  const hoy = hoyArgentina()
   for (const f of fechas) {
     const dia = dias[f]
     const visible = f <= fechaReunion
     // WQI/FGLI/SCL: serie MTD acumulada. Sólo se conserva para que la
     // columna MTD del indicador tome el último acumulado del mes; las
     // celdas diarias se renderizan con la serie *_dia (ver fetchSerieExtra).
-    // WQI oculta el día de la reunión (cierre de hoy aún no confirmado en el
-    // matinal): el MTD toma el último acumulado hasta el día anterior.
-    wqi[f] = f < fechaReunion ? (dia?.wqi ?? null) : null
+    // WQI oculta el día de la reunión sólo mientras esa fecha sea de hoy o
+    // futura (cierre aún no confirmado en el matinal); si la reunión ya quedó
+    // en el pasado, el día cerró y se muestra.
+    wqi[f] = diaCerrado(f, fechaReunion, hoy) ? (dia?.wqi ?? null) : null
     fgli[f] = visible ? (dia?.fgli ?? null) : null
     scl[f] = visible ? (dia?.scl ?? null) : null
     // Resto: valor del día (la grilla los muestra todos, no oculta futuro)
@@ -345,8 +363,9 @@ function buildSerieFromSnapshot(
       productividad[f] = dia?.productividad ?? null
     }
     // Precisión: ocultar el día actual y futuros (aún no se pickeó →
-    // no hay errores cargados, el valor sería falso 100%).
-    precision[f] = f < fechaReunion ? (dia?.precision ?? null) : null
+    // no hay errores cargados, el valor sería falso 100%). Se revela el día
+    // de la reunión una vez que quedó en el pasado.
+    precision[f] = diaCerrado(f, fechaReunion, hoy) ? (dia?.precision ?? null) : null
 
     // errores_dia (cantidad de errores) lo provee fetchSerieExtra desde
     // el endpoint serie-diaria (cuenta filas del Sheet). El snapshot
@@ -668,13 +687,14 @@ async function buildSerieLegacy(
   const wqi: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
   const scl: Record<string, number | null> = {}
+  const hoy = hoyArgentina()
   for (const f of fechas) {
     const visible = f <= fechaReunion
     // Serie MTD acumulada — sólo se usa para el MTD del indicador.
     // Las celdas diarias se renderizan con la serie *_dia (fetchSerieExtra).
-    // WQI oculta el día de la reunión (cierre de hoy aún no confirmado): el
-    // MTD toma el último acumulado hasta el día anterior.
-    wqi[f] = f < fechaReunion ? (serieRes?.wqi?.[f] ?? null) : null
+    // WQI oculta el día de la reunión mientras sea de hoy/futura; una vez que
+    // esa fecha quedó en el pasado, el día cerró y se muestra.
+    wqi[f] = diaCerrado(f, fechaReunion, hoy) ? (serieRes?.wqi?.[f] ?? null) : null
     fgli[f] = visible ? (serieRes?.fgli?.[f] ?? null) : null
     scl[f] = visible ? (serieRes?.scl?.[f] ?? null) : null
   }
@@ -714,8 +734,8 @@ async function buildSerieLegacy(
       new Map<OperadorApertura, number | null>(),
     )
     // Misma máscara que el path snapshot: precisión oculta para día
-    // actual y futuros.
-    precision[f] = f < fechaReunion ? apertura.precision_promedio : null
+    // actual y futuros; se revela el día de la reunión cuando ya cerró.
+    precision[f] = diaCerrado(f, fechaReunion, hoy) ? apertura.precision_promedio : null
     productividad[f] = apertura.productividad_promedio_bul_hh
     // errores_dia (conteo) lo provee fetchSerieExtra desde el endpoint
     // serie-diaria (cuenta filas del Sheet).
@@ -812,13 +832,15 @@ async function fetchSerieExtra(
   const precision: Record<string, number | null> = {}
   const errores_dia: Record<string, number | null> = {}
   const errores_por_operador_dia: Record<string, Record<string, number>> = {}
+  const hoy = hoyArgentina()
   for (const f of fechas) {
     // FGLI y SCL conservan el día en curso.
     const visible = f <= fechaReunion
     // WQI, roturas, faltantes y WNP ocultan el día de la reunión (y futuros): a
     // la hora del matinal el cierre de hoy todavía no está confirmado, igual que
-    // precisión, errores y ausentismo. Se muestran hasta el último día cerrado.
-    const cerrado = f < fechaReunion
+    // precisión, errores y ausentismo. Se muestran hasta el último día cerrado;
+    // el día de la reunión se revela una vez que esa fecha quedó en el pasado.
+    const cerrado = diaCerrado(f, fechaReunion, hoy)
     roturas[f] = cerrado ? (res?.roturas?.[f] ?? null) : null
     faltantes[f] = cerrado ? (res?.faltantes?.[f] ?? null) : null
     // FGLI (MTD) conserva el día en curso, igual que fgli_dia/scl.
@@ -830,9 +852,10 @@ async function fetchSerieExtra(
     roturas_dia[f] = cerrado ? (res?.roturas_dia?.[f] ?? null) : null
     faltantes_dia[f] = cerrado ? (res?.faltantes_dia?.[f] ?? null) : null
     wnp_dia[f] = cerrado ? (res?.wnp_dia?.[f] ?? null) : null
-    // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó).
-    precision[f] = f < fechaReunion ? (res?.precision?.[f] ?? null) : null
-    if (f < fechaReunion) {
+    // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó);
+    // el día de la reunión se revela una vez cerrado (misma máscara `cerrado`).
+    precision[f] = cerrado ? (res?.precision?.[f] ?? null) : null
+    if (cerrado) {
       const cnt = res?.errores_count_dia?.[f]
       errores_dia[f] = typeof cnt === "number" ? cnt : null
       const porOp = res?.errores_count_por_operador_dia?.[f]
