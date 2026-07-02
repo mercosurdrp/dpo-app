@@ -290,6 +290,7 @@ interface MantenimientoClientProps {
   overrides: MantenimientoPlanOverride[]
   ultimasLecturas: Record<string, LecturaSugerida[]>
   mantenimientos: MantenimientoRealizado[]
+  siguienteNumeroOt: string
   costos: CostosMantenimiento
   tablero: {
     programacion: ServiceGeneralUnidad[]
@@ -316,6 +317,7 @@ export function MantenimientoClient({
   overrides,
   ultimasLecturas,
   mantenimientos,
+  siguienteNumeroOt,
   costos,
   tablero,
   checklists,
@@ -982,6 +984,7 @@ export function MantenimientoClient({
           estados={estados}
           tareasPorTipo={tareasPorTipo}
           ultimasLecturas={ultimasLecturas}
+          siguienteNumeroOt={siguienteNumeroOt}
           prefill={nuevoPrefill}
           onClose={() => setNuevoOpen(false)}
           onSaved={() => {
@@ -1131,6 +1134,7 @@ function NuevoMantenimientoDialog({
   estados,
   tareasPorTipo,
   ultimasLecturas,
+  siguienteNumeroOt,
   prefill,
   onClose,
   onSaved,
@@ -1138,6 +1142,7 @@ function NuevoMantenimientoDialog({
   estados: EstadoPlanVehiculo[]
   tareasPorTipo: Map<VehiculoTipo, MantenimientoPlanTarea[]>
   ultimasLecturas: Record<string, LecturaSugerida[]>
+  siguienteNumeroOt: string
   prefill: { dominio?: string; tareaId?: string }
   onClose: () => void
   onSaved: () => void
@@ -1155,7 +1160,8 @@ function NuevoMantenimientoDialog({
   const [taller, setTaller] = useState("")
   const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
-  const [numeroOt, setNumeroOt] = useState("")
+  // N° de OT sugerido = último correlativo + 1 (editable).
+  const [numeroOt, setNumeroOt] = useState(siguienteNumeroOt)
   const [obs, setObs] = useState("")
   const [esServiceGeneral, setEsServiceGeneral] = useState(false)
   // Entrada/salida del taller (fecha + hora). De acá se deriva el período fuera
@@ -1355,6 +1361,11 @@ function NuevoMantenimientoDialog({
                 onChange={(e) => setNumeroOt(e.target.value)}
                 placeholder="Orden de trabajo"
               />
+              {siguienteNumeroOt && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Sugerido: {siguienteNumeroOt} (siguiente correlativo)
+                </p>
+              )}
             </div>
             <div>
               <Label>N° factura</Label>

@@ -495,6 +495,35 @@ export async function getMantenimientos(
   }
 }
 
+/**
+ * Sugiere el siguiente N° de OT = (máximo N° de OT numérico cargado) + 1, para
+ * prellenar el campo al crear una orden. Es solo una sugerencia editable: los
+ * N° de OT históricos son enteros correlativos (migrados de Cloudfleet). Cadena
+ * vacía si todavía no hay ninguna OT numérica. Recorre TODAS las filas (no el
+ * límite de la grilla) para no sugerir un número ya usado.
+ */
+export async function getSiguienteNumeroOt(): Promise<
+  { data: string } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_realizados")
+      .select("numero_ot")
+      .not("numero_ot", "is", null)
+    if (error) return { error: error.message }
+    let max = 0
+    for (const r of (data || []) as Array<{ numero_ot: string | null }>) {
+      const n = (r.numero_ot ?? "").trim()
+      if (/^\d+$/.test(n)) max = Math.max(max, parseInt(n, 10))
+    }
+    return { data: max > 0 ? String(max + 1) : "" }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 interface MantenimientoTareaInput {
   tareaId?: string
   descripcion?: string

@@ -6,6 +6,7 @@ import {
   getEstadoPlanFlota,
   getIndisponibilidades,
   getMantenimientos,
+  getSiguienteNumeroOt,
   getTableroOperativo,
 } from "@/actions/mantenimiento-vehiculos"
 import {
@@ -46,6 +47,7 @@ export default async function MantenimientoPage() {
     gastosRes,
     proveedoresRes,
     configRes,
+    siguienteNumeroOtRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -62,6 +64,7 @@ export default async function MantenimientoPage() {
     getGastos({ limit: 500 }),
     getProveedores(),
     getMantenimientoConfig(),
+    getSiguienteNumeroOt(),
     getProfile(),
   ])
 
@@ -119,6 +122,8 @@ export default async function MantenimientoPage() {
   const indisponibilidades = "data" in indispRes ? indispRes.data : []
   const gastos = "data" in gastosRes ? gastosRes.data : []
   const proveedores = "data" in proveedoresRes ? proveedoresRes.data : []
+  const siguienteNumeroOt =
+    "data" in siguienteNumeroOtRes ? siguienteNumeroOtRes.data : ""
   const role = profile?.role ?? "viewer"
 
   return (
@@ -128,6 +133,7 @@ export default async function MantenimientoPage() {
       overrides={estadoRes.data.overrides}
       ultimasLecturas={estadoRes.data.ultimasLecturas}
       mantenimientos={mantenimientos}
+      siguienteNumeroOt={siguienteNumeroOt}
       costos={costos}
       tablero={tablero}
       checklists={checklists}
