@@ -361,6 +361,8 @@ export interface ActualizarAccionInput {
   responsableId?: string
   fechaCompromiso?: string | null
   estado?: Exclude<S5AccionEstado, "cerrada">
+  sectorNumero?: number | null
+  vehiculoId?: string | null
 }
 
 export async function actualizarAccion(
@@ -384,6 +386,18 @@ export async function actualizarAccion(
     }
     if (patch.estado !== undefined) {
       update.estado = patch.estado
+    }
+    if (patch.sectorNumero !== undefined) {
+      if (
+        patch.sectorNumero !== null &&
+        (patch.sectorNumero < 1 || patch.sectorNumero > 4)
+      ) {
+        return { error: "El sector debe estar entre 1 y 4" }
+      }
+      update.sector_numero = patch.sectorNumero
+    }
+    if (patch.vehiculoId !== undefined) {
+      update.vehiculo_id = patch.vehiculoId
     }
 
     if (Object.keys(update).length === 0) {
@@ -425,6 +439,28 @@ export async function actualizarAccion(
         accion.responsable_id,
         accion.descripcion,
         accion.tipo
+      )
+    }
+
+    // Espejar la edición a la actividad de reuniones enlazada.
+    if (accion.origen_reunion_actividad_id) {
+      const actividadUpdate: Record<string, unknown> = {}
+      if (patch.descripcion !== undefined) {
+        actividadUpdate.descripcion = accion.descripcion
+      }
+      if (patch.responsableId !== undefined) {
+        actividadUpdate.responsable_id = accion.responsable_id
+      }
+      if (patch.fechaCompromiso !== undefined) {
+        actividadUpdate.fecha_compromiso = accion.fecha_compromiso
+      }
+      if (patch.estado !== undefined) {
+        actividadUpdate.estado = accion.estado
+        actividadUpdate.completado_at = null
+      }
+      await espejarEstadoActividad(
+        accion.origen_reunion_actividad_id,
+        actividadUpdate,
       )
     }
 

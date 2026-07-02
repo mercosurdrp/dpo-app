@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ClipboardList,
   Filter,
+  MessageSquarePlus,
   Pencil,
   Plus,
   Trash2,
@@ -41,6 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { eliminarAccion } from "@/actions/s5-acciones"
 import { CrearAccionDialog } from "./_components/crear-accion-dialog"
+import { EditarAccionDialog } from "./_components/editar-accion-dialog"
 import { ResponderAccionDialog } from "./_components/responder-accion-dialog"
 import {
   S5_ACCION_ESTADO_COLORS,
@@ -188,6 +190,9 @@ export function AccionesClient({
 
   const [openCrear, setOpenCrear] = useState(false)
   const [responderId, setResponderId] = useState<string | null>(null)
+  const [editarAccion, setEditarAccion] = useState<S5AccionConMeta | null>(
+    null
+  )
 
   const canCreate = currentRole === "admin" || currentRole === "auditor"
 
@@ -457,6 +462,8 @@ export function AccionesClient({
                   {accionesFiltradas.map((a) => {
                     const isMine = a.responsable_id === currentUserId
                     const canDelete = canCreate
+                    const canEdit =
+                      (canCreate || isMine) && a.estado !== "cerrada"
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="max-w-md">
@@ -516,9 +523,19 @@ export function AccionesClient({
                               size="sm"
                               onClick={() => setResponderId(a.id)}
                             >
-                              <Pencil className="mr-1 size-3.5" />
+                              <MessageSquarePlus className="mr-1 size-3.5" />
                               {a.estado === "cerrada" ? "Ver" : "Responder"}
                             </Button>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Editar acción"
+                                onClick={() => setEditarAccion(a)}
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button
                                 variant="ghost"
@@ -552,6 +569,22 @@ export function AccionesClient({
           router.refresh()
         }}
       />
+
+      {editarAccion && (
+        <EditarAccionDialog
+          accion={editarAccion}
+          open={!!editarAccion}
+          onOpenChange={(open) => {
+            if (!open) setEditarAccion(null)
+          }}
+          responsables={responsables}
+          vehiculos={vehiculos}
+          sectoresAlmacen={sectoresAlmacen}
+          onSaved={() => {
+            router.refresh()
+          }}
+        />
+      )}
 
       {responderId && (
         <ResponderAccionDialog
