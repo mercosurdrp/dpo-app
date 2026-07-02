@@ -10,6 +10,8 @@
  *   2) Total de bultos entregados por fletero (denominador per-día).
  *   3) Upsert a `rechazos` (filtros: idRechazo>0, !anulado, patente válida).
  *   4) Upsert a `ventas_diarias` (solo FCVTA, patente válida).
+ *   5) Upsert a `ventas_mostrador_diarias`/`_sku` (FCVTA SIN patente válida =
+ *      venta de mostrador, que ventas_diarias no captura).
  *
  * Chofer (persona) se resuelve únicamente desde `mapeo_patente_chofer`
  * (tabla manual). Foxtrot NO se consulta acá — el dato de chofer del
@@ -31,6 +33,7 @@ export interface SyncDayResult {
   rechazos_repetidos: number
   rechazos_eliminados: number
   ventas_diarias_upserted: number
+  ventas_mostrador_upserted: number
   total_rechazos_intentados: number
   chofer: { mapeo: number; sin_resolver: number }
   errors: Array<{ day: string | null; kind: "rechazo" | "ventas_diarias" | "ocupacion_bodega" | "fatal"; message: string }>
@@ -245,6 +248,7 @@ export async function syncRechazosForDate(
     rechazos_repetidos: 0,
     rechazos_eliminados: 0,
     ventas_diarias_upserted: 0,
+    ventas_mostrador_upserted: 0,
     total_rechazos_intentados: 0,
     chofer: { mapeo: 0, sin_resolver: 0 },
     errors: [],
@@ -516,5 +520,111 @@ export async function syncRechazosForDate(
     }
   }
 
+  // ---- upsert ventas de MOSTRADOR (FCVTA sin patente válida) ----
+  result.ventas_mostrador_upserted = await upsertVentasMostradorDia(
+    supabase,
+    fecha,
+    ventas,
+  )
+
   return result
+}
+
+// ----------------------------- Ventas de mostrador -----------------------------
+
+/**
+ * Persiste las ventas de MOSTRADOR del día: líneas FCVTA cuyo fletero NO es una
+ * patente (ej. "MOSTRADOR RAMALLO"), que `ventas_diarias` excluye a propósito
+ * (esa tabla mide lo DISTRIBUIDO en camión). Van a tablas propias
+ * `ventas_mostrador_diarias` + `ventas_mostrador_sku` (mig 2026-07-02) para no
+ * contaminar a los consumidores de ventas_diarias que no filtran origen.
+ * Mismos criterios que el bloque FCVTA: !anulado, sin encabezados de combo.
+ * Devuelve cuántos fleteros upserteó (0 si el día no tuvo mostrador).
+ */
+export async function upsertVentasMostradorDia(
+  supabase: SupabaseClient,
+  fecha: string,
+  ventas: ChessVenta[],
+): Promise<number> {
+  const mostrador = ventas.filter(
+    (v) =>
+      v.idDocumento === "FCVTA" &&
+      v.anulado !== "SI" &&
+      v.esCombo !== "SI" &&
+      !isPatenteValida(v.dsFleteroCarga)
+  )
+  if (mostrador.length === 0) return 0
+
+  type Agg = { bultos: number; unidades: number; hl: number }
+  const agg = new Map<string, Agg>()
+  type AggSku = { ds: string; bultos: number; hl: number }
+  const aggSku = new Map<number, AggSku>()
+  for (const v of mostrador) {
+    const fletero = (v.dsFleteroCarga ?? "").trim() || "(sin fletero)"
+    const a = agg.get(fletero) ?? { bultos: 0, unidades: 0, hl: 0 }
+    a.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
+    a.unidades += Math.abs(Number(v.unidadesSolicitadas) || 0)
+    a.hl += Math.abs(Number(v.unimedtotal) || 0)
+    agg.set(fletero, a)
+
+    const s = aggSku.get(v.idArticulo) ?? { ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0 }
+    s.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
+    s.hl += Math.abs(Number(v.unimedtotal) || 0)
+    aggSku.set(v.idArticulo, s)
+  }
+
+  let upserted = 0
+  const rows = [...agg.entries()].map(([fletero, a]) => ({
+    fecha,
+    ds_fletero_carga: fletero,
+    total_bultos: Math.round(a.bultos * 100) / 100,
+    total_unidades: Math.round(a.unidades * 10000) / 10000,
+    total_hl: Math.round(a.hl * 10000) / 10000,
+    updated_at: new Date().toISOString(),
+  }))
+  {
+    const { error } = await supabase
+      .from("ventas_mostrador_diarias")
+      .upsert(rows, { onConflict: "fecha,ds_fletero_carga" })
+    if (error) {
+      // Tabla nueva: si aún no existe en este tenant, no es fatal.
+      console.warn(`[sync] ventas_mostrador_diarias day=${fecha}: ${error.message}`)
+    } else {
+      upserted = rows.length
+    }
+  }
+
+  const skuRows = [...aggSku.entries()].map(([idArt, s]) => ({
+    fecha,
+    id_articulo: idArt,
+    ds_articulo: s.ds,
+    bultos: Math.round(s.bultos * 100) / 100,
+    hl: Math.round(s.hl * 10000) / 10000,
+    updated_at: new Date().toISOString(),
+  }))
+  {
+    const { error } = await supabase
+      .from("ventas_mostrador_sku")
+      .upsert(skuRows, { onConflict: "fecha,id_articulo" })
+    if (error) {
+      console.warn(`[sync] ventas_mostrador_sku day=${fecha}: ${error.message}`)
+    }
+  }
+
+  return upserted
+}
+
+/**
+ * Variante standalone para el backfill: hace su propio fetch a Chess del día y
+ * upsertea SOLO mostrador (no toca rechazos ni ventas_diarias, así el histórico
+ * ya sincronizado queda intacto).
+ */
+export async function syncVentasMostradorForDate(
+  fecha: string,
+  deps: { supabase: SupabaseClient; chess: ChessCredentials; sessionId: string },
+): Promise<{ fecha: string; sin_datos: boolean; upserted: number }> {
+  const ventas = await fetchVentasDia(deps.chess, deps.sessionId, fecha)
+  if (ventas.length === 0) return { fecha, sin_datos: true, upserted: 0 }
+  const upserted = await upsertVentasMostradorDia(deps.supabase, fecha, ventas)
+  return { fecha, sin_datos: false, upserted }
 }

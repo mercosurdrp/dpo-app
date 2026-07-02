@@ -82,12 +82,36 @@ export async function getCuadroMensualIndicadores(): Promise<
     const PAGE = 1000
     const rows: Array<{
       fecha: string
+      origen: string | null
       total_hl: number | null
       total_bultos: number | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("ventas_diarias")
+        .select("fecha, origen, total_hl, total_bultos")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
+  // Ventas de mostrador (Chess sin camión) — tabla propia, muy por debajo de
+  // 1000 filas/rango pero se pagina igual por consistencia.
+  async function ventasMostradorTodas() {
+    const PAGE = 1000
+    const rows: Array<{
+      fecha: string
+      total_hl: number | null
+      total_bultos: number | null
+    }> = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("ventas_mostrador_diarias")
         .select("fecha, total_hl, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
@@ -121,7 +145,7 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── Fetches de rango (en paralelo) ──
   // reportes_seguridad y foxtrot_routes están muy por debajo de 1000 filas en
   // el rango, así que no necesitan paginación.
-  const [repRes, ventasRows, rechazosRows, foxRes] = await Promise.all([
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRes] = await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -130,6 +154,7 @@ export async function getCuadroMensualIndicadores(): Promise<
       .lte("fecha", hasta)
       .order("fecha", { ascending: true }),
     ventasDiariasTodas(),
+    ventasMostradorTodas(),
     rechazosTodos(),
     supabase
       .from("foxtrot_routes")
@@ -182,16 +207,37 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
   }
 
-  // ── ENTREGA: HL vendidos + % rechazo (de los fetches de rango) ──
+  // ── ENTREGA: HL distribuidos + % rechazo (de los fetches de rango) ──
+  // Además se separa lo distribuido SOLO Chess (origen='chess'), base de la
+  // sección Ventas (venta total Chess = distribuido Chess + mostrador).
   const ventasHlPorMes: Record<string, number> = {}
   const ventasBultosPorMes: Record<string, number> = {}
+  const chessHlPorMes: Record<string, number> = {}
+  const chessBultosPorMes: Record<string, number> = {}
   for (const v of ventasRows) {
     const mes = v.fecha.slice(0, 7)
     const hl = Number(v.total_hl ?? 0)
-    if (Number.isFinite(hl)) ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+    if (Number.isFinite(hl)) {
+      ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+      if (v.origen === "chess") chessHlPorMes[mes] = (chessHlPorMes[mes] ?? 0) + hl
+    }
+    const bultos = Number(v.total_bultos ?? 0)
+    if (Number.isFinite(bultos)) {
+      ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
+      if (v.origen === "chess")
+        chessBultosPorMes[mes] = (chessBultosPorMes[mes] ?? 0) + bultos
+    }
+  }
+  const mostradorHlPorMes: Record<string, number> = {}
+  const mostradorBultosPorMes: Record<string, number> = {}
+  for (const v of mostradorRows) {
+    const mes = v.fecha.slice(0, 7)
+    const hl = Number(v.total_hl ?? 0)
+    if (Number.isFinite(hl))
+      mostradorHlPorMes[mes] = (mostradorHlPorMes[mes] ?? 0) + hl
     const bultos = Number(v.total_bultos ?? 0)
     if (Number.isFinite(bultos))
-      ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
+      mostradorBultosPorMes[mes] = (mostradorBultosPorMes[mes] ?? 0) + bultos
   }
   const rechHlPorMes: Record<string, number> = {}
   for (const r of rechazosRows) {
@@ -220,24 +266,74 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: ventas > 0 ? (rech / ventas) * 100 : null,
       parcial: esActual,
     }
+
+    // Ventas (total Chess) y Venta mostrador
+    const mostBultos = mostradorBultosPorMes[mes] ?? 0
+    const mostHl = mostradorHlPorMes[mes] ?? 0
+    const totBultos = (chessBultosPorMes[mes] ?? 0) + mostBultos
+    const totHl = (chessHlPorMes[mes] ?? 0) + mostHl
+    celdas.ventas_bultos[mes] = {
+      mes,
+      valor: totBultos > 0 ? totBultos : null,
+      parcial: esActual,
+    }
+    celdas.ventas_hl[mes] = {
+      mes,
+      valor: totHl > 0 ? totHl : null,
+      parcial: esActual,
+    }
+    celdas.mostrador_bultos[mes] = {
+      mes,
+      valor: mostBultos > 0 ? mostBultos : null,
+      parcial: esActual,
+    }
+    celdas.mostrador_hl[mes] = {
+      mes,
+      valor: mostHl > 0 ? mostHl : null,
+      parcial: esActual,
+    }
   }
 
-  // ── ENTREGA: CEq vendidas (bultos × ceq_factor, vía función SQL) ──
+  // ── ENTREGA/VENTAS: CEq (bultos × ceq_factor, vía funciones SQL) ──
+  // cuadro_ceq_mensual: distribuido chess+gestion (fila de Entrega).
+  // cuadro_ceq_chess_mensual: distribuido solo Chess (base de Ventas).
+  // cuadro_ceq_mostrador_mensual: mostrador. Ventas = chess + mostrador.
   {
-    const { data: ceqRows } = await supabase.rpc("cuadro_ceq_mensual", {
-      p_desde: desde,
-    })
-    const ceqPorMes: Record<string, number> = {}
-    for (const r of (ceqRows ?? []) as Array<{ mes: string; ceq: number | null }>) {
-      const v = Number(r.ceq ?? 0)
-      if (Number.isFinite(v)) ceqPorMes[r.mes] = v
+    const [ceqRes, ceqChessRes, ceqMostRes] = await Promise.all([
+      supabase.rpc("cuadro_ceq_mensual", { p_desde: desde }),
+      supabase.rpc("cuadro_ceq_chess_mensual", { p_desde: desde }),
+      supabase.rpc("cuadro_ceq_mostrador_mensual", { p_desde: desde }),
+    ])
+    const aMap = (rows: unknown): Record<string, number> => {
+      const out: Record<string, number> = {}
+      for (const r of (rows ?? []) as Array<{ mes: string; ceq: number | null }>) {
+        const v = Number(r.ceq ?? 0)
+        if (Number.isFinite(v)) out[r.mes] = v
+      }
+      return out
     }
+    const ceqPorMes = aMap(ceqRes.data)
+    const ceqChessPorMes = aMap(ceqChessRes.data)
+    const ceqMostPorMes = aMap(ceqMostRes.data)
     for (const mes of meses) {
+      const esActual = mes === mesActual
       const v = ceqPorMes[mes]
       celdas.ceq_vendidas[mes] = {
         mes,
         valor: v !== undefined && v > 0 ? v : null,
-        parcial: mes === mesActual,
+        parcial: esActual,
+      }
+      const most = ceqMostPorMes[mes] ?? 0
+      const tot = (ceqChessPorMes[mes] ?? 0) + most
+      celdas.ventas_ceq[mes] = {
+        mes,
+        valor: tot > 0 ? tot : null,
+        parcial: esActual,
+      }
+      celdas.mostrador_ceq[mes] = {
+        mes,
+        valor: most > 0 ? most : null,
+        parcial: esActual,
       }
     }
   }
