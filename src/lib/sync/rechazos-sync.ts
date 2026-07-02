@@ -574,14 +574,18 @@ export async function upsertVentasMostradorDia(
   }
 
   let upserted = 0
-  const rows = [...agg.entries()].map(([fletero, a]) => ({
-    fecha,
-    ds_fletero_carga: fletero,
-    total_bultos: Math.round(a.bultos * 100) / 100,
-    total_unidades: Math.round(a.unidades * 10000) / 10000,
-    total_hl: Math.round(a.hl * 10000) / 10000,
-    updated_at: new Date().toISOString(),
-  }))
+  const rows = [...agg.entries()]
+    // Chess trae líneas FCVTA con fletero vacío y cantidades 0 — ruido, afuera.
+    .filter(([, a]) => a.bultos > 0 || a.unidades > 0 || a.hl > 0)
+    .map(([fletero, a]) => ({
+      fecha,
+      ds_fletero_carga: fletero,
+      total_bultos: Math.round(a.bultos * 100) / 100,
+      total_unidades: Math.round(a.unidades * 10000) / 10000,
+      total_hl: Math.round(a.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+  if (rows.length === 0) return 0
   {
     const { error } = await supabase
       .from("ventas_mostrador_diarias")
@@ -594,15 +598,17 @@ export async function upsertVentasMostradorDia(
     }
   }
 
-  const skuRows = [...aggSku.entries()].map(([idArt, s]) => ({
-    fecha,
-    id_articulo: idArt,
-    ds_articulo: s.ds,
-    bultos: Math.round(s.bultos * 100) / 100,
-    hl: Math.round(s.hl * 10000) / 10000,
-    updated_at: new Date().toISOString(),
-  }))
-  {
+  const skuRows = [...aggSku.entries()]
+    .filter(([, s]) => s.bultos > 0 || s.hl > 0)
+    .map(([idArt, s]) => ({
+      fecha,
+      id_articulo: idArt,
+      ds_articulo: s.ds,
+      bultos: Math.round(s.bultos * 100) / 100,
+      hl: Math.round(s.hl * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    }))
+  if (skuRows.length > 0) {
     const { error } = await supabase
       .from("ventas_mostrador_sku")
       .upsert(skuRows, { onConflict: "fecha,id_articulo" })
