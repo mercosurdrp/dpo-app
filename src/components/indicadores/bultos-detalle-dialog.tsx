@@ -75,7 +75,7 @@ export function BultosDetalleDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Bultos vendidos — {mes ? nombreMes(mes) : ""}
+            Bultos distribuidos — {mes ? nombreMes(mes) : ""}
           </DialogTitle>
           <DialogDescription>
             {bultosCelda !== null
