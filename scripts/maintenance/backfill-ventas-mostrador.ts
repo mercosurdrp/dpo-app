@@ -40,6 +40,9 @@ const chess: ChessCredentials = {
 
 const supabase = createClient(SUPABASE_URL, SVC, {
   auth: { persistSession: false, autoRefreshToken: false },
+  // Node 20 no trae WebSocket nativo y supabase-js lo exige al construir el
+  // cliente realtime; este script no usa realtime, así que va un stub.
+  realtime: { transport: class {} as unknown as new (...args: unknown[]) => WebSocket },
 })
 
 function diaSiguiente(fecha: string): string {
