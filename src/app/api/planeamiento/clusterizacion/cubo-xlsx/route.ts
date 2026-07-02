@@ -3,14 +3,17 @@ export const maxDuration = 60
 import { NextResponse, type NextRequest } from "next/server"
 import * as XLSX from "xlsx"
 import { getClusterizacion } from "@/actions/clusterizacion"
-import { getPlanesCubo } from "@/actions/clusterizacion-planes"
+import { getPlanesCubo, getPlanesFrente } from "@/actions/clusterizacion-planes"
 import {
   CLUSTER_LABELS,
   CUADRANTE_LABELS,
   CUBO_META,
+  DOMINIO_META,
+  FRENTE_META,
   type ClusterId,
   type CuadranteId,
   type CuboId,
+  type FrenteId,
   type ClienteClusterizado,
 } from "@/actions/clusterizacion-tipos"
 
@@ -19,12 +22,14 @@ export const dynamic = "force-dynamic"
 const isCubo = (s: string): s is CuboId => s in CUBO_META
 const isCluster = (s: string): s is ClusterId => s in CLUSTER_LABELS
 const isCuadrante = (s: string): s is CuadranteId => s in CUADRANTE_LABELS
+const isFrente = (s: string): s is FrenteId => s in FRENTE_META
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const cubo = sp.get("cubo")
   const cluster = sp.get("cluster")
   const cuadrante = sp.get("cuadrante")
+  const frente = sp.get("frente")
 
   let res
   try {
@@ -44,13 +49,25 @@ export async function GET(req: NextRequest) {
     filas = filas.filter((c) => c.cluster === cluster); titulo = CLUSTER_LABELS[cluster]; archivo = `cluster_${cluster}`
   } else if (cuadrante && isCuadrante(cuadrante)) {
     filas = filas.filter((c) => c.cuadrante === cuadrante); titulo = CUADRANTE_LABELS[cuadrante]; archivo = `cuadrante_${cuadrante}`
+  } else if (frente && isFrente(frente)) {
+    filas = filas.filter((c) => c.frente === frente); titulo = FRENTE_META[frente].label; archivo = `frente_${frente}`
   }
-  filas.sort(
-    (a, b) =>
-      (a.supervisor ?? "").localeCompare(b.supervisor ?? "") || b.ingresos_actual - a.ingresos_actual,
-  )
+  // Los frentes ordenan por score de ataque (a quién atacar primero).
+  if (frente && isFrente(frente)) {
+    filas.sort((a, b) => (b.score_ataque ?? 0) - (a.score_ataque ?? 0))
+  } else {
+    filas.sort(
+      (a, b) =>
+        (a.supervisor ?? "").localeCompare(b.supervisor ?? "") || b.ingresos_actual - a.ingresos_actual,
+    )
+  }
 
-  const plan = cubo && isCubo(cubo) ? (await getPlanesCubo()).find((p) => p.cubo === cubo) ?? null : null
+  const plan =
+    cubo && isCubo(cubo)
+      ? (await getPlanesCubo()).find((p) => p.cubo === cubo) ?? null
+      : frente && isFrente(frente)
+        ? (await getPlanesFrente()).find((p) => p.frente === frente) ?? null
+        : null
 
   const wb = XLSX.utils.book_new()
 
@@ -58,6 +75,7 @@ export async function GET(req: NextRequest) {
   const info: (string | number)[][] = [
     ["Grupo", titulo],
     ...(cubo && isCubo(cubo) ? [["Combinación", CUBO_META[cubo].combo]] : []),
+    ...(frente && isFrente(frente) ? [["Jugada", FRENTE_META[frente].jugada]] : []),
     ["PDV", filas.length],
     [""],
     ["Plan de acción", plan ? plan.descripcion : "(sin plan cargado)"],
@@ -73,6 +91,7 @@ export async function GET(req: NextRequest) {
   const HEADER = [
     "Cliente", "ID", "Localidad", "Supervisor", "Promotor", "Cluster",
     "Facturación YTD", "$/HL año", "Crecimiento %", "Rechazo (45d)", "Equipos frío", "Modelos frío",
+    "Cubo", "SOM censo %", "HL mercado", "HL competencia", "Dominio", "Frente", "Batalla", "Score ataque",
   ]
   const rows = filas.map((c: ClienteClusterizado) => ({
     Cliente: c.nombre ?? `Cliente ${c.id_cliente}`,
@@ -87,6 +106,14 @@ export async function GET(req: NextRequest) {
     "Rechazo (45d)": c.estado === "no_pasa" ? `No pasa (${c.rechazos_culpa})` : "Pasa",
     "Equipos frío": c.equipos_frio_n,
     "Modelos frío": c.equipos_frio_tipos ?? "",
+    Cubo: c.cubo ? CUBO_META[c.cubo].label : "",
+    "SOM censo %": c.censo_som == null ? "" : Math.round(c.censo_som * 100),
+    "HL mercado": c.censo_hl_mercado == null ? "" : Number(c.censo_hl_mercado.toFixed(1)),
+    "HL competencia": c.censo_hl_comp == null ? "" : Number(c.censo_hl_comp.toFixed(1)),
+    Dominio: c.dominio ? DOMINIO_META[c.dominio].label : "",
+    Frente: c.frente ? FRENTE_META[c.frente].label : "",
+    Batalla: c.batalla ?? "",
+    "Score ataque": c.score_ataque == null ? "" : Number(c.score_ataque.toFixed(1)),
   }))
   const wsCli = rows.length
     ? XLSX.utils.json_to_sheet(rows, { header: HEADER })
@@ -94,6 +121,7 @@ export async function GET(req: NextRequest) {
   wsCli["!cols"] = [
     { wch: 36 }, { wch: 8 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 14 },
     { wch: 16 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 20 },
+    { wch: 10 }, { wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 28 }, { wch: 12 },
   ]
   XLSX.utils.book_append_sheet(wb, wsCli, "Clientes")
 

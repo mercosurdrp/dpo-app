@@ -3,7 +3,9 @@
 import {
   consultarClusterClientes,
   consultarEquiposFrioPorCliente,
+  consultarCensoThomasPorPdv,
   type EquipoFrioCliente,
+  type CensoThomasResultado,
 } from "@/lib/mercosur-dashboard"
 import { getCostoPorPdvYtd } from "./costo-pdv"
 import { createClient } from "@/lib/supabase/server"
@@ -13,9 +15,12 @@ import type {
   ClusterId,
   CuadranteId,
   CuboId,
+  DominioId,
+  FrenteId,
   ClienteClusterizado,
   ClusterResumen,
   ClusterizacionData,
+  ConquistaPdv,
 } from "./clusterizacion-tipos"
 
 type Result<T> = { data: T } | { error: string }
@@ -38,6 +43,37 @@ function mediana(valores: number[]): number {
   return orden.length % 2 === 0
     ? (orden[mid - 1] + orden[mid]) / 2
     : orden[mid]
+}
+
+// ── Cruce con el Censo Thomas ─────────────────────────────────────────────────
+// Bandas de dominio (share of market CMQ en el PDV).
+const SOM_DOMINADO = 0.7
+const SOM_INVADIDO = 0.4
+// Facilidad de ataque por cubo: el mismo HL de competencia vale más donde el
+// cliente es barato de servir y viene creciendo (mejor retorno del esfuerzo).
+const FACILIDAD_CUBO: Record<CuboId, number> = {
+  estrella: 1,
+  promesa: 1,
+  rentable: 0.9,
+  hormiga: 0.85,
+  motor: 0.7,
+  pesado: 0.6,
+  dilema: 0.55,
+  critico: 0.4,
+}
+// Marca CMQ espejo por segmento de la marca de competencia top del PDV
+// (batallas del módulo censo: VALUE↔1890, Schneider/CORE↔Brahma-Quilmes, etc.).
+const ESPEJO_CMQ: Record<string, string> = {
+  VALUE: "1890",
+  CORE: "Brahma/Quilmes",
+  "CORE PLUS": "Andes Origen",
+  PREMIUM: "Stella Artois",
+  "SUPER PREMIUM": "Corona",
+  "0.0% SIN ALCOHOL": "0.0% CMQ",
+}
+
+function dominioDe(som: number): DominioId {
+  return som >= SOM_DOMINADO ? "dominado" : som >= SOM_INVADIDO ? "compartido" : "invadido"
 }
 
 function clasificar(ingresoAlto: boolean, crecePositivo: boolean): ClusterId {
@@ -185,7 +221,18 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   // son representativos para el análisis de servicio reciente.
   const conDrop = rows.filter((r) => r.dias_45d > 0 && r.bultos_45d > 0)
   if (conDrop.length === 0) {
-    return { data: { periodo, umbral_ingresos: 0, umbral_costo: 0, resumen: [], clientes: [] } }
+    return {
+      data: {
+        periodo,
+        umbral_ingresos: 0,
+        umbral_costo: 0,
+        resumen: [],
+        clientes: [],
+        censo_nombre: null,
+        umbral_potencial: 0,
+        conquista: [],
+      },
+    }
   }
 
   // RMD de los últimos 6 meses (muestra suficiente por cliente).
@@ -226,6 +273,33 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
     frioMap = await consultarEquiposFrioPorCliente()
   } catch {
     frioMap = new Map<number, EquipoFrioCliente>()
+  }
+
+  // Censo Thomas (mercado vs competencia) del censo más reciente. Opcional: si
+  // el módulo censo no está disponible, la solapa Mercado muestra el aviso.
+  let censo: CensoThomasResultado | null = null
+  try {
+    censo = await consultarCensoThomasPorPdv()
+  } catch {
+    censo = null
+  }
+
+  // Umbral de potencial cautivo = p75 del HL de competencia entre los PDV de la
+  // cartera activa que tienen competencia adentro (separa "potencial alto").
+  let umbralPotencial = 0
+  if (censo) {
+    const comps: number[] = []
+    for (const r of conDrop) {
+      const cp = censo.pdvs.get(r.id_cliente)
+      if (cp?.con_volumen) {
+        const comp = cp.hl_total - cp.hl_cmq
+        if (comp > 0) comps.push(comp)
+      }
+    }
+    if (comps.length > 0) {
+      const orden = [...comps].sort((a, b) => a - b)
+      umbralPotencial = orden[Math.min(orden.length - 1, Math.floor(orden.length * 0.75))]
+    }
   }
 
   // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
@@ -274,6 +348,29 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
             : crecePositivo
               ? "promesa"
               : "hormiga"
+    // Cruce con el censo: dominio, frente estratégico, score de ataque y batalla.
+    const cp = censo?.pdvs.get(r.id_cliente)
+    const conCenso = !!cp?.con_volumen && cp.hl_total > 0
+    const censo_hl_mercado = conCenso ? cp!.hl_total : null
+    const censo_hl_comp = conCenso ? Math.max(0, cp!.hl_total - cp!.hl_cmq) : null
+    const censo_som = conCenso ? cp!.som : null
+    const dominio: DominioId | null = censo_som != null ? dominioDe(censo_som) : null
+    const potencialAlto =
+      censo_hl_comp != null && umbralPotencial > 0 && censo_hl_comp >= umbralPotencial
+    let frente: FrenteId | null = null
+    if (conCenso && cubo) {
+      if (potencialAlto && ingresoAlto) frente = "casa_propia"
+      else if (potencialAlto) frente = "gigantes"
+      else if (dominio === "dominado" && ingresoAlto) frente = "muro"
+      else if (cubo === "dilema" || cubo === "critico") frente = "veredicto"
+      else frente = "sin_frente"
+    }
+    const score_ataque =
+      censo_hl_comp != null && cubo ? censo_hl_comp * FACILIDAD_CUBO[cubo] : null
+    const batalla =
+      conCenso && cp!.comp_marca && cp!.comp_marca_hl > 0
+        ? `${cp!.comp_marca} → ${ESPEJO_CMQ[cp!.comp_segmento ?? ""] ?? "portfolio CMQ"}`
+        : null
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
     const rech = rechazoMap.get(r.id_cliente)
@@ -317,8 +414,37 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       drop_bajo,
       rmd_bajo,
       salud,
+      censo_hl_mercado,
+      censo_hl_comp,
+      censo_som,
+      dominio,
+      frente,
+      score_ataque,
+      batalla,
     }
   })
+
+  // Conquista: PDVs censados CON volumen de mercado donde no tenemos venta este
+  // año (no aparecen en comprobantes YTD). Invisibles para la clusterización.
+  const conquista: ConquistaPdv[] = []
+  if (censo) {
+    const activos = new Set(rows.map((r) => r.id_cliente))
+    for (const [id, cp] of censo.pdvs) {
+      if (!cp.con_volumen || cp.hl_total <= 0 || activos.has(id)) continue
+      conquista.push({
+        id_cliente: id,
+        hl_total: cp.hl_total,
+        hl_cmq: cp.hl_cmq,
+        som: cp.som,
+        canal: cp.canal,
+        subcanal: cp.subcanal,
+        promotor_censo: cp.promotor_censo,
+        comp_marca: cp.comp_marca,
+        comp_marca_hl: cp.comp_marca_hl,
+      })
+    }
+    conquista.sort((a, b) => b.hl_total - a.hl_total)
+  }
 
   // Resumen por cluster.
   const facturacionTotalGlobal = clientes.reduce((s, c) => s + c.ingresos_actual, 0)
@@ -353,6 +479,15 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   })
 
   return {
-    data: { periodo, umbral_ingresos: umbral, umbral_costo: umbralCosto, resumen, clientes },
+    data: {
+      periodo,
+      umbral_ingresos: umbral,
+      umbral_costo: umbralCosto,
+      resumen,
+      clientes,
+      censo_nombre: censo?.censo_nombre ?? null,
+      umbral_potencial: umbralPotencial,
+      conquista,
+    },
   }
 }

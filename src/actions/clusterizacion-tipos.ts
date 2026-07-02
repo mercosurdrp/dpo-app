@@ -111,6 +111,21 @@ export interface ClienteClusterizado {
   rmd_bajo: boolean
   /** SALUD de servicio: "atencion" si drop bajo o RMD bajo; "sano" si ninguna. */
   salud: "sano" | "atencion"
+  // ── Censo Thomas (null = PDV fuera del censo o censado sin volumen) ──
+  /** HL/mes de TODO el mercado en el PDV según el censo vigente. */
+  censo_hl_mercado: number | null
+  /** HL/mes que el PDV le compra a la COMPETENCIA (potencial cautivo). */
+  censo_hl_comp: number | null
+  /** Share of market CMQ en el PDV (0–1). */
+  censo_som: number | null
+  /** Banda de SOM (dominado/compartido/invadido). */
+  dominio: DominioId | null
+  /** Frente estratégico del cruce cubos × censo. */
+  frente: FrenteId | null
+  /** Score de ataque = HL competencia × facilidad del cubo (prioriza puntuales). */
+  score_ataque: number | null
+  /** Batalla sugerida: marca competencia top del PDV → marca CMQ espejo. */
+  batalla: string | null
 }
 
 export interface ClusterResumen {
@@ -136,4 +151,78 @@ export interface ClusterizacionData {
   umbral_costo: number
   resumen: ClusterResumen[]
   clientes: ClienteClusterizado[]
+  // ── Censo Thomas (null/[] = sin censo cargado o base no disponible) ──
+  /** Nombre del censo vigente usado para el cruce (ej. "ABR-26"). */
+  censo_nombre: string | null
+  /** Umbral de potencial cautivo (p75 del HL comp entre PDV con competencia). */
+  umbral_potencial: number
+  /** PDV censados con volumen de mercado pero SIN venta nuestra este año. */
+  conquista: ConquistaPdv[]
+}
+
+// ── Cruce con el Censo Thomas (mercado vs competencia) ────────────────────────
+
+/** Banda de share of market CMQ en el PDV según el censo. */
+export type DominioId = "dominado" | "compartido" | "invadido"
+
+export const DOMINIO_META: Record<DominioId, { label: string; desc: string; color: string }> = {
+  dominado: { label: "Dominado", desc: "SOM ≥ 70% — el PDV es nuestro", color: "#059669" },
+  compartido: { label: "Compartido", desc: "SOM 40–70% — convivimos con la competencia", color: "#d97706" },
+  invadido: { label: "Invadido", desc: "SOM < 40% — la competencia manda en el PDV", color: "#dc2626" },
+}
+
+/** Frente estratégico del cruce cubos × censo (nivel macro nuevo). */
+export type FrenteId = "casa_propia" | "muro" | "gigantes" | "veredicto" | "sin_frente"
+
+export const FRENTE_META: Record<
+  FrenteId,
+  { label: string; icon: string; jugada: string; color: string }
+> = {
+  casa_propia: {
+    label: "Ganar la casa propia",
+    icon: "⚔️",
+    jugada:
+      "Estrellas/Rentables con mucho volumen de competencia adentro: ya entramos, ya cobramos, ya crecemos — ganar share es la venta más barata que existe.",
+    color: "#059669",
+  },
+  muro: {
+    label: "Muro defensivo",
+    icon: "🏰",
+    jugada:
+      "Facturación alta y SOM ≥ 70%: acá no hay share que ganar, hay exclusividad que defender (evitar la entrada de CCU).",
+    color: "#2563eb",
+  },
+  gigantes: {
+    label: "Gigantes dormidos",
+    icon: "💎",
+    jugada:
+      "Chicos PARA NOSOTROS pero grandes DEL MERCADO: el censo revela que mueven volumen — se lo compran a otro. Tratamiento de desarrollo agresivo.",
+    color: "#0891b2",
+  },
+  veredicto: {
+    label: "Veredicto con datos",
+    icon: "⚖️",
+    jugada:
+      "Dilemas/Críticos: el censo decide — invadido con mercado = atacar (mal penetrado, no mal cliente); dominado y chico = desinvertir sin culpa, no queda jugo.",
+    color: "#c026d3",
+  },
+  sin_frente: {
+    label: "Plan del cubo",
+    icon: "📦",
+    jugada: "Sin oportunidad diferencial de mercado: aplica el plan genérico de su cubo.",
+    color: "#64748b",
+  },
+}
+
+/** PDV censado con volumen de mercado pero SIN venta nuestra este año (conquista). */
+export interface ConquistaPdv {
+  id_cliente: number
+  hl_total: number
+  hl_cmq: number
+  som: number | null
+  canal: string | null
+  subcanal: string | null
+  promotor_censo: string | null
+  comp_marca: string | null
+  comp_marca_hl: number
 }

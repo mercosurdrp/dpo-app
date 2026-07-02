@@ -68,9 +68,12 @@ import {
   guardarPlanCubo,
   getPlanesCubo,
   actualizarEstadoPlanCubo,
+  getPlanesFrente,
   type ClusterPlan,
   type ClusterPlanCubo,
+  type ClusterPlanFrente,
 } from "@/actions/clusterizacion-planes"
+import { SolapaMercado } from "./mercado-censo"
 
 // El gráfico 3D (Three.js/WebGL) se carga solo en el cliente.
 const Diagrama3D = dynamic(() => import("./diagrama-3d"), {
@@ -86,6 +89,7 @@ interface Props {
   data: ClusterizacionData
   planesIniciales: ClusterPlan[]
   planesCuboIniciales: ClusterPlanCubo[]
+  planesFrenteIniciales: ClusterPlanFrente[]
 }
 
 // Estética por cluster (color + ícono + descripción del cuadrante).
@@ -207,8 +211,8 @@ function SelectFiltro({
 const MOSTRADOR = "VTA. MOSTRADOR"
 const MAX_FILAS = 300
 
-export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciales }: Props) {
-  const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "planes">("clientes")
+export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciales, planesFrenteIniciales }: Props) {
+  const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "mercado" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
   const [fLocalidad, setFLocalidad] = useState("todos")
@@ -221,11 +225,13 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
   const [planCliente, setPlanCliente] = useState<ClienteClusterizado | null>(null)
   const [planesCubo, setPlanesCubo] = useState<ClusterPlanCubo[]>(planesCuboIniciales)
   const [planCuboTarget, setPlanCuboTarget] = useState<CuboId | null>(null)
+  const [planesFrente, setPlanesFrente] = useState<ClusterPlanFrente[]>(planesFrenteIniciales)
 
   const { periodo, umbral_ingresos, resumen, clientes } = data
 
   const refrescarPlanes = async () => setPlanes(await getPlanesCluster())
   const refrescarPlanesCubo = async () => setPlanesCubo(await getPlanesCubo())
+  const refrescarPlanesFrente = async () => setPlanesFrente(await getPlanesFrente())
 
   const opciones = useMemo(() => {
     const loc = new Set<string>(), prom = new Set<string>(), sup = new Set<string>()
@@ -332,6 +338,7 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
     { k: "clientes" as const, label: "Clientes" },
     { k: "analisis" as const, label: "Análisis Valor×Costo" },
     { k: "diagrama" as const, label: "Diagrama" },
+    { k: "mercado" as const, label: `Mercado (${data.censo_nombre ?? "censo"})` },
     { k: "planes" as const, label: `Planes (${planes.length})` },
   ]
 
@@ -374,6 +381,13 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
 
       {tab === "planes" ? (
         <SolapaPlanes planes={planes} onChange={refrescarPlanes} planesCubo={planesCubo} onChangeCubo={refrescarPlanesCubo} />
+      ) : tab === "mercado" ? (
+        <SolapaMercado
+          data={data}
+          planesFrente={planesFrente}
+          onChangeFrente={refrescarPlanesFrente}
+          onCrearPlanCliente={setPlanCliente}
+        />
       ) : tab === "analisis" ? (
         <SolapaAnalisis data={data} />
       ) : tab === "diagrama" ? (

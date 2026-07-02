@@ -150,3 +150,71 @@ export async function eliminarPlanCubo(cubo: string): Promise<{ ok: true } | { e
   revalidatePath("/planeamiento/clusterizacion")
   return { ok: true }
 }
+
+// ── Plan AGRUPADO por frente estratégico (cruce cubos × Censo Thomas) ─────────
+
+/** Plan de acción que aplica a TODOS los PDV de un frente de la solapa Mercado. */
+export interface ClusterPlanFrente {
+  frente: string
+  descripcion: string
+  responsable: string | null
+  fecha_limite: string | null
+  estado: string
+  updated_at: string
+}
+
+export async function getPlanesFrente(): Promise<ClusterPlanFrente[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("cluster_planes_frente")
+    .select("frente, descripcion, responsable, fecha_limite, estado, updated_at")
+  return (data ?? []) as ClusterPlanFrente[]
+}
+
+export async function guardarPlanFrente(input: {
+  frente: string
+  descripcion: string
+  responsable?: string | null
+  fecha_limite?: string | null
+}): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile) return { error: "No autenticado." }
+  if (!input.frente) return { error: "Falta el frente." }
+  if (!input.descripcion.trim()) return { error: "La descripción es obligatoria." }
+
+  const supabase = await createClient()
+  // Upsert por `frente`: si ya existe, reemplaza descripción/responsable/límite.
+  // No se incluye `estado` para no pisarlo al editar (en alta usa el default).
+  const { error } = await supabase.from("cluster_planes_frente").upsert(
+    {
+      frente: input.frente,
+      descripcion: input.descripcion.trim(),
+      responsable: input.responsable?.trim() || null,
+      fecha_limite: input.fecha_limite || null,
+      created_by: profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "frente" },
+  )
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/clusterizacion")
+  return { ok: true }
+}
+
+export async function actualizarEstadoPlanFrente(
+  frente: string,
+  estado: string,
+): Promise<{ ok: true } | { error: string }> {
+  const profile = await getProfile()
+  if (!profile) return { error: "No autenticado." }
+  if (!["pendiente", "en_proceso", "hecho"].includes(estado))
+    return { error: "Estado inválido." }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("cluster_planes_frente")
+    .update({ estado })
+    .eq("frente", frente)
+  if (error) return { error: error.message }
+  revalidatePath("/planeamiento/clusterizacion")
+  return { ok: true }
+}

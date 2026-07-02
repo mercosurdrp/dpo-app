@@ -502,3 +502,98 @@ export async function consultarEquiposFrioPorCliente(): Promise<Map<number, Equi
     client.release()
   }
 }
+
+export interface CensoPdvInfo {
+  /** HL/mes que el PDV mueve en TODO el mercado (CMQ + CCU + otros). */
+  hl_total: number
+  /** HL/mes CMQ relevados en el PDV. */
+  hl_cmq: number
+  /** Share of market CMQ en el PDV (hl_cmq / hl_total). null = sin volumen. */
+  som: number | null
+  canal: string | null
+  subcanal: string | null
+  /** Promotor según el censo (puede diferir del vigente en Chess). */
+  promotor_censo: string | null
+  /** true = el censo relevó volumen en el PDV (universo de KPIs del censo). */
+  con_volumen: boolean
+  /** Marca madre de la COMPETENCIA con más HL en el PDV (batalla sugerida). */
+  comp_marca: string | null
+  comp_marca_hl: number
+  /** Segmento de esa marca (VALUE/CORE/…) — define la marca CMQ espejo. */
+  comp_segmento: string | null
+}
+
+export interface CensoThomasResultado {
+  censo_id: number
+  censo_nombre: string
+  /** PDV del censo por código (= id_cliente de Chess). */
+  pdvs: Map<number, CensoPdvInfo>
+}
+
+/**
+ * Censo Thomas (módulo censo del dashboard Mercosur, misma DB que comprobantes):
+ * volumen de mercado por PDV del censo MÁS RECIENTE + la marca de la competencia
+ * más vendida en cada PDV. Clave = codigo_pdv numérico (= id_cliente de Chess).
+ * Devuelve null si todavía no hay censos cargados.
+ */
+export async function consultarCensoThomasPorPdv(): Promise<CensoThomasResultado | null> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    const cRes = await client.query<{ id: number; nombre: string }>(
+      `SELECT id, nombre FROM censo_thomas_censos ORDER BY fecha DESC, id DESC LIMIT 1`,
+    )
+    const censo = cRes.rows[0]
+    if (!censo) return null
+
+    const res = await client.query<{
+      codigo_pdv: string
+      hl_total: string | null
+      hl_cmq: string | null
+      canal_agrupado: string | null
+      subcanal_mkt: string | null
+      promotor: string | null
+      censado_con_volumen: boolean | null
+      comp_marca: string | null
+      comp_marca_hl: string | null
+      comp_segmento: string | null
+    }>(
+      `SELECT p.codigo_pdv, p.hl_total, p.hl_cmq, p.canal_agrupado, p.subcanal_mkt,
+              p.promotor, p.censado_con_volumen,
+              t.marca_madre AS comp_marca, t.hl AS comp_marca_hl, t.segmento AS comp_segmento
+         FROM censo_thomas_pdv p
+         LEFT JOIN LATERAL (
+           SELECT r.marca_madre, r.segmento, sum(r.hl_mes) AS hl
+             FROM censo_thomas_respuestas r
+            WHERE r.censo_id = p.censo_id AND r.codigo_pdv = p.codigo_pdv
+              AND r.fabricante <> 'CMQ' AND r.hl_mes > 0
+            GROUP BY r.marca_madre, r.segmento
+            ORDER BY sum(r.hl_mes) DESC
+            LIMIT 1
+         ) t ON true
+        WHERE p.censo_id = $1 AND p.codigo_pdv ~ '^[0-9]+$'`,
+      [censo.id],
+    )
+
+    const pdvs = new Map<number, CensoPdvInfo>()
+    for (const r of res.rows) {
+      const hlTotal = Number(r.hl_total) || 0
+      const hlCmq = Number(r.hl_cmq) || 0
+      pdvs.set(Number(r.codigo_pdv), {
+        hl_total: hlTotal,
+        hl_cmq: hlCmq,
+        som: hlTotal > 0 ? hlCmq / hlTotal : null,
+        canal: r.canal_agrupado,
+        subcanal: r.subcanal_mkt,
+        promotor_censo: r.promotor,
+        con_volumen: !!r.censado_con_volumen,
+        comp_marca: r.comp_marca,
+        comp_marca_hl: Number(r.comp_marca_hl) || 0,
+        comp_segmento: r.comp_segmento,
+      })
+    }
+    return { censo_id: censo.id, censo_nombre: censo.nombre, pdvs }
+  } finally {
+    client.release()
+  }
+}
