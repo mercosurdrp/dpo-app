@@ -75,8 +75,10 @@ function defaultsPorTipo(tipo: VehiculoTipo | null): {
     case "acoplado":
       // El acoplado no tiene motor: service por tiempo (frenos/rodamientos).
       return { km: null, horas: null, meses: 12 }
-    case "camion":
     case "camioneta":
+      // Las camionetas hacen service cada 10.000 km (o 12 meses por tiempo).
+      return { km: 10000, horas: null, meses: 12 }
+    case "camion":
     case "utilitario":
     default:
       return { km: 20000, horas: null, meses: 12 }
