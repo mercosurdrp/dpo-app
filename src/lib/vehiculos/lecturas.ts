@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 // registro_combustible. Extraído de src/actions/vehiculos-analytics.ts para
 // poder reusarse desde otras actions (este archivo NO es "use server").
 
-export type Fuente = "registros" | "checklist" | "combustible"
+export type Fuente = "registros" | "checklist" | "combustible" | "mantenimiento"
 
 export interface Lectura {
   dominio: string
@@ -131,7 +131,43 @@ export async function fetchLecturas(filters?: {
     }>("registro_combustible", "dominio, fecha, odometro, chofer"),
   ]).then(([r, c, k]) => [{ data: r }, { data: c }, { data: k }] as const)
 
+  // OT de mantenimiento: el odómetro/horómetro que se carga al registrar una
+  // orden completada es una lectura real del vehículo (y a veces la MÁS reciente,
+  // si todavía no se cargó un checklist/combustible posterior). Sin esto, los km
+  // que el usuario carga en la OT no se reflejan en el "km/horas actual" ni en la
+  // proyección del próximo service. Para autoelevadores el valor puede venir en
+  // `horometro`; si no, se usa `odometro` (donde el check guarda las horas).
+  let qMant = supabase
+    .from("mantenimiento_realizados")
+    .select("dominio, fecha, odometro, horometro")
+    .eq("estado", "completado")
+    .or("odometro.not.is.null,horometro.not.is.null")
+  if (filters?.dominio) qMant = qMant.eq("dominio", filters.dominio)
+  if (filters?.fechaDesde) qMant = qMant.gte("fecha", filters.fechaDesde)
+  if (filters?.fechaHasta) qMant = qMant.lte("fecha", filters.fechaHasta)
+  const mant = await qMant
+  if (mant.error) throw new Error(mant.error.message)
+
   const lecturas: Lectura[] = []
+
+  for (const r of (mant.data || []) as Array<{
+    dominio: string
+    fecha: string
+    odometro: number | null
+    horometro: number | null
+  }>) {
+    const val = r.odometro ?? r.horometro
+    if (val == null) continue
+    lecturas.push({
+      dominio: r.dominio,
+      fecha: r.fecha,
+      hora: "12:00:00",
+      odometro: Number(val),
+      fuente: "mantenimiento",
+      tipo: null,
+      chofer: null,
+    })
+  }
 
   for (const r of (reg.data || []) as Array<{
     dominio: string

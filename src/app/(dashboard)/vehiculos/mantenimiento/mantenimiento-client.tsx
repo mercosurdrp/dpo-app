@@ -111,6 +111,7 @@ const FUENTE_LECTURA_LABEL: Record<LecturaSugerida["fuente"], string> = {
   registros: "Registro de km",
   checklist: "Checklist",
   combustible: "Carga de combustible",
+  mantenimiento: "Orden de trabajo",
 }
 
 const TIPO_MANT_LABEL: Record<MantenimientoTipo, string> = {
