@@ -41,13 +41,13 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "rechazo", pilar: "Entrega", nombre: "% Rechazo", unidad: "%", meta: 1.7, mejor_si: "menor", resumen: "promedio", nota: "HL rechazados / HL distribuidos del mes. Meta ≤ 1,7%." },
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
 
-  // ── Ventas (venta total Chess: reparto + mostrador) ──
-  { id: "ventas_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total Chess del mes: bultos distribuidos en camión + bultos de mostrador. No incluye Gestión." },
-  { id: "ventas_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total Chess del mes en hectolitros (reparto + mostrador). No incluye Gestión." },
-  { id: "ventas_ceq", pilar: "Ventas", nombre: "CEq vendidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes de la venta total Chess (bultos × factor CEq = 120/bultos_pallet). Misma base que Bultos vendidos." },
+  // ── Ventas (venta total: todo lo distribuido + mostrador) ──
+  { id: "ventas_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total del mes: Bultos distribuidos (Chess + Gestión) + Bultos mostrador. Siempre cierra Vendidos = Distribuidos + Mostrador." },
+  { id: "ventas_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total del mes en hectolitros: HL distribuidos + HL mostrador." },
+  { id: "ventas_ceq", pilar: "Ventas", nombre: "CEq vendidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes de la venta total (bultos × factor CEq = 120/bultos_pallet): CEq distribuidas + CEq mostrador." },
 
   // ── Venta mostrador (Chess sin camión de reparto = vendidos − distribuidos) ──
-  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Ventas Chess sin camión de reparto (fletero MOSTRADOR) = Bultos vendidos − Bultos distribuidos (Chess)." },
+  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Ventas Chess sin camión de reparto (fletero MOSTRADOR) = Bultos vendidos − Bultos distribuidos." },
   { id: "mostrador_hl", pilar: "Venta mostrador", nombre: "HL mostrador", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros vendidos por mostrador (Chess, sin camión de reparto)." },
   { id: "mostrador_ceq", pilar: "Venta mostrador", nombre: "CEq mostrador", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes vendidas por mostrador (bultos × factor CEq = 120/bultos_pallet)." },
 

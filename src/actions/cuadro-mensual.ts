@@ -82,14 +82,13 @@ export async function getCuadroMensualIndicadores(): Promise<
     const PAGE = 1000
     const rows: Array<{
       fecha: string
-      origen: string | null
       total_hl: number | null
       total_bultos: number | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("ventas_diarias")
-        .select("fecha, origen, total_hl, total_bultos")
+        .select("fecha, total_hl, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("id", { ascending: true })
@@ -208,25 +207,15 @@ export async function getCuadroMensualIndicadores(): Promise<
   }
 
   // ── ENTREGA: HL distribuidos + % rechazo (de los fetches de rango) ──
-  // Además se separa lo distribuido SOLO Chess (origen='chess'), base de la
-  // sección Ventas (venta total Chess = distribuido Chess + mostrador).
   const ventasHlPorMes: Record<string, number> = {}
   const ventasBultosPorMes: Record<string, number> = {}
-  const chessHlPorMes: Record<string, number> = {}
-  const chessBultosPorMes: Record<string, number> = {}
   for (const v of ventasRows) {
     const mes = v.fecha.slice(0, 7)
     const hl = Number(v.total_hl ?? 0)
-    if (Number.isFinite(hl)) {
-      ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
-      if (v.origen === "chess") chessHlPorMes[mes] = (chessHlPorMes[mes] ?? 0) + hl
-    }
+    if (Number.isFinite(hl)) ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
     const bultos = Number(v.total_bultos ?? 0)
-    if (Number.isFinite(bultos)) {
+    if (Number.isFinite(bultos))
       ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
-      if (v.origen === "chess")
-        chessBultosPorMes[mes] = (chessBultosPorMes[mes] ?? 0) + bultos
-    }
   }
   const mostradorHlPorMes: Record<string, number> = {}
   const mostradorBultosPorMes: Record<string, number> = {}
@@ -267,11 +256,13 @@ export async function getCuadroMensualIndicadores(): Promise<
       parcial: esActual,
     }
 
-    // Ventas (total Chess) y Venta mostrador
+    // Ventas totales y Venta mostrador. Ventas = TODO lo distribuido (Chess +
+    // Gestión, la misma base que la fila de Entrega) + mostrador Chess, para
+    // que siempre cierre la identidad Ventas = Distribuidos + Mostrador.
     const mostBultos = mostradorBultosPorMes[mes] ?? 0
     const mostHl = mostradorHlPorMes[mes] ?? 0
-    const totBultos = (chessBultosPorMes[mes] ?? 0) + mostBultos
-    const totHl = (chessHlPorMes[mes] ?? 0) + mostHl
+    const totBultos = bultos + mostBultos
+    const totHl = ventas + mostHl
     celdas.ventas_bultos[mes] = {
       mes,
       valor: totBultos > 0 ? totBultos : null,
@@ -296,12 +287,11 @@ export async function getCuadroMensualIndicadores(): Promise<
 
   // ── ENTREGA/VENTAS: CEq (bultos × ceq_factor, vía funciones SQL) ──
   // cuadro_ceq_mensual: distribuido chess+gestion (fila de Entrega).
-  // cuadro_ceq_chess_mensual: distribuido solo Chess (base de Ventas).
-  // cuadro_ceq_mostrador_mensual: mostrador. Ventas = chess + mostrador.
+  // cuadro_ceq_mostrador_mensual: mostrador Chess.
+  // Ventas = distribuido total + mostrador (misma identidad que bultos/HL).
   {
-    const [ceqRes, ceqChessRes, ceqMostRes] = await Promise.all([
+    const [ceqRes, ceqMostRes] = await Promise.all([
       supabase.rpc("cuadro_ceq_mensual", { p_desde: desde }),
-      supabase.rpc("cuadro_ceq_chess_mensual", { p_desde: desde }),
       supabase.rpc("cuadro_ceq_mostrador_mensual", { p_desde: desde }),
     ])
     const aMap = (rows: unknown): Record<string, number> => {
@@ -313,7 +303,6 @@ export async function getCuadroMensualIndicadores(): Promise<
       return out
     }
     const ceqPorMes = aMap(ceqRes.data)
-    const ceqChessPorMes = aMap(ceqChessRes.data)
     const ceqMostPorMes = aMap(ceqMostRes.data)
     for (const mes of meses) {
       const esActual = mes === mesActual
@@ -324,7 +313,7 @@ export async function getCuadroMensualIndicadores(): Promise<
         parcial: esActual,
       }
       const most = ceqMostPorMes[mes] ?? 0
-      const tot = (ceqChessPorMes[mes] ?? 0) + most
+      const tot = (ceqPorMes[mes] ?? 0) + most
       celdas.ventas_ceq[mes] = {
         mes,
         valor: tot > 0 ? tot : null,
