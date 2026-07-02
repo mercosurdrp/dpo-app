@@ -10,8 +10,8 @@
  *   2) Total de bultos entregados por fletero (denominador per-día).
  *   3) Upsert a `rechazos` (filtros: idRechazo>0, !anulado, patente válida).
  *   4) Upsert a `ventas_diarias` (solo FCVTA, patente válida).
- *   5) Upsert a `ventas_mostrador_diarias`/`_sku` (FCVTA SIN patente válida =
- *      venta de mostrador, que ventas_diarias no captura).
+ *   5) Upsert a `ventas_mostrador_diarias`/`_sku` (no distribuido: FCVTA SIN
+ *      patente válida = mostrador, y PRVTA = factura presupuesto/2da vuelta).
  *
  * Chofer (persona) se resuelve únicamente desde `mapeo_patente_chofer`
  * (tabla manual). Foxtrot NO se consulta acá — el dato de chofer del
@@ -533,53 +533,62 @@ export async function syncRechazosForDate(
 // ----------------------------- Ventas de mostrador -----------------------------
 
 /**
- * Persiste las ventas de MOSTRADOR del día: líneas FCVTA cuyo fletero NO es una
- * patente (ej. "MOSTRADOR RAMALLO"), que `ventas_diarias` excluye a propósito
- * (esa tabla mide lo DISTRIBUIDO en camión). Van a tablas propias
- * `ventas_mostrador_diarias` + `ventas_mostrador_sku` (mig 2026-07-02) para no
- * contaminar a los consumidores de ventas_diarias que no filtran origen.
- * Mismos criterios que el bloque FCVTA: !anulado, sin encabezados de combo.
- * Devuelve cuántos fleteros upserteó (0 si el día no tuvo mostrador).
+ * Persiste las ventas NO distribuidas del día en `ventas_mostrador_diarias` +
+ * `ventas_mostrador_sku` (mig 2026-07-02), discriminadas por `ds_documento`:
+ *   - 'FCVTA': facturas cuyo fletero NO es una patente (ej. "MOSTRADOR
+ *     RAMALLO") = venta de mostrador físico.
+ *   - 'PRVTA': FACTURA PRESUPUESTO (ticket no fiscal, canal "SEGUNDA VUELTA"
+ *     ~95%), cualquier fletero — `ventas_diarias` nunca las captura.
+ * Tablas propias para no contaminar a los consumidores de ventas_diarias que
+ * no filtran origen. Mismos criterios que el bloque FCVTA distribuido:
+ * !anulado, sin encabezados de combo (los headers de combo traen HL=0 y sus
+ * componentes ya vienen como líneas propias).
+ * Devuelve cuántas filas fletero-documento upserteó.
  */
 export async function upsertVentasMostradorDia(
   supabase: SupabaseClient,
   fecha: string,
   ventas: ChessVenta[],
 ): Promise<number> {
-  const mostrador = ventas.filter(
+  const noDistribuidas = ventas.filter(
     (v) =>
-      v.idDocumento === "FCVTA" &&
       v.anulado !== "SI" &&
       v.esCombo !== "SI" &&
-      !isPatenteValida(v.dsFleteroCarga)
+      (
+        (v.idDocumento === "FCVTA" && !isPatenteValida(v.dsFleteroCarga)) ||
+        v.idDocumento === "PRVTA"
+      )
   )
-  if (mostrador.length === 0) return 0
+  if (noDistribuidas.length === 0) return 0
 
   type Agg = { bultos: number; unidades: number; hl: number }
-  const agg = new Map<string, Agg>()
+  const agg = new Map<string, Agg>() // clave "<doc>|<fletero>"
   type AggSku = { ds: string; bultos: number; hl: number }
-  const aggSku = new Map<number, AggSku>()
-  for (const v of mostrador) {
+  const aggSku = new Map<string, AggSku>() // clave "<doc>|<idArticulo>"
+  for (const v of noDistribuidas) {
     const fletero = (v.dsFleteroCarga ?? "").trim() || "(sin fletero)"
-    const a = agg.get(fletero) ?? { bultos: 0, unidades: 0, hl: 0 }
+    const k = `${v.idDocumento}|${fletero}`
+    const a = agg.get(k) ?? { bultos: 0, unidades: 0, hl: 0 }
     a.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
     a.unidades += Math.abs(Number(v.unidadesSolicitadas) || 0)
     a.hl += Math.abs(Number(v.unimedtotal) || 0)
-    agg.set(fletero, a)
+    agg.set(k, a)
 
-    const s = aggSku.get(v.idArticulo) ?? { ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0 }
+    const sk = `${v.idDocumento}|${v.idArticulo}`
+    const s = aggSku.get(sk) ?? { ds: v.dsArticulo ?? `Art ${v.idArticulo}`, bultos: 0, hl: 0 }
     s.bultos += Math.abs(Number(v.cantidadesTotal) || 0)
     s.hl += Math.abs(Number(v.unimedtotal) || 0)
-    aggSku.set(v.idArticulo, s)
+    aggSku.set(sk, s)
   }
 
   let upserted = 0
   const rows = [...agg.entries()]
-    // Chess trae líneas FCVTA con fletero vacío y cantidades 0 — ruido, afuera.
+    // Chess trae líneas con fletero vacío y cantidades 0 — ruido, afuera.
     .filter(([, a]) => a.bultos > 0 || a.unidades > 0 || a.hl > 0)
-    .map(([fletero, a]) => ({
+    .map(([k, a]) => ({
       fecha,
-      ds_fletero_carga: fletero,
+      ds_documento: k.split("|")[0],
+      ds_fletero_carga: k.split("|")[1],
       total_bultos: Math.round(a.bultos * 100) / 100,
       total_unidades: Math.round(a.unidades * 10000) / 10000,
       total_hl: Math.round(a.hl * 10000) / 10000,
@@ -589,7 +598,7 @@ export async function upsertVentasMostradorDia(
   {
     const { error } = await supabase
       .from("ventas_mostrador_diarias")
-      .upsert(rows, { onConflict: "fecha,ds_fletero_carga" })
+      .upsert(rows, { onConflict: "fecha,ds_documento,ds_fletero_carga" })
     if (error) {
       // Tabla nueva: si aún no existe en este tenant, no es fatal.
       console.warn(`[sync] ventas_mostrador_diarias day=${fecha}: ${error.message}`)
@@ -600,9 +609,10 @@ export async function upsertVentasMostradorDia(
 
   const skuRows = [...aggSku.entries()]
     .filter(([, s]) => s.bultos > 0 || s.hl > 0)
-    .map(([idArt, s]) => ({
+    .map(([k, s]) => ({
       fecha,
-      id_articulo: idArt,
+      ds_documento: k.split("|")[0],
+      id_articulo: Number(k.split("|")[1]),
       ds_articulo: s.ds,
       bultos: Math.round(s.bultos * 100) / 100,
       hl: Math.round(s.hl * 10000) / 10000,
@@ -611,7 +621,7 @@ export async function upsertVentasMostradorDia(
   if (skuRows.length > 0) {
     const { error } = await supabase
       .from("ventas_mostrador_sku")
-      .upsert(skuRows, { onConflict: "fecha,id_articulo" })
+      .upsert(skuRows, { onConflict: "fecha,ds_documento,id_articulo" })
     if (error) {
       console.warn(`[sync] ventas_mostrador_sku day=${fecha}: ${error.message}`)
     }

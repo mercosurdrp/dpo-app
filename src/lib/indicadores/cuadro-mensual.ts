@@ -4,7 +4,7 @@
 // fuentes (Supabase, deposito-esteban, foxtrot, etc.) vive en
 // src/actions/cuadro-mensual.ts.
 
-export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén"
+export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Venta presupuesto" | "Flota" | "Almacén"
 
 /** Polaridad del indicador para el semáforo. "sin" = informativo, sin color. */
 export type MejorSi = "mayor" | "menor" | "sin"
@@ -41,15 +41,20 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "rechazo", pilar: "Entrega", nombre: "% Rechazo", unidad: "%", meta: 1.7, mejor_si: "menor", resumen: "promedio", nota: "HL rechazados / HL distribuidos del mes. Meta ≤ 1,7%." },
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
 
-  // ── Ventas (venta total: todo lo distribuido + mostrador) ──
-  { id: "ventas_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total del mes: Bultos distribuidos (Chess + Gestión) + Bultos mostrador. Siempre cierra Vendidos = Distribuidos + Mostrador." },
-  { id: "ventas_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total del mes en hectolitros: HL distribuidos + HL mostrador." },
-  { id: "ventas_ceq", pilar: "Ventas", nombre: "CEq vendidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes de la venta total (bultos × factor CEq = 120/bultos_pallet): CEq distribuidas + CEq mostrador." },
+  // ── Ventas (venta total facturada) ──
+  { id: "ventas_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total facturada del mes: Bultos distribuidos (Chess + Gestión) + Bultos mostrador + Bultos presupuesto (2da vuelta)." },
+  { id: "ventas_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Venta total facturada del mes en hectolitros: HL distribuidos + HL mostrador + HL presupuesto." },
+  { id: "ventas_ceq", pilar: "Ventas", nombre: "CEq vendidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes de la venta total (bultos × factor CEq = 120/bultos_pallet): CEq distribuidas + CEq mostrador + CEq presupuesto." },
 
-  // ── Venta mostrador (Chess sin camión de reparto = vendidos − distribuidos) ──
-  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Ventas Chess sin camión de reparto (fletero MOSTRADOR) = Bultos vendidos − Bultos distribuidos." },
+  // ── Venta mostrador (facturas Chess sin camión de reparto) ──
+  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Facturas Chess sin camión de reparto (fletero MOSTRADOR RAMALLO y similares)." },
   { id: "mostrador_hl", pilar: "Venta mostrador", nombre: "HL mostrador", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros vendidos por mostrador (Chess, sin camión de reparto)." },
   { id: "mostrador_ceq", pilar: "Venta mostrador", nombre: "CEq mostrador", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes vendidas por mostrador (bultos × factor CEq = 120/bultos_pallet)." },
+
+  // ── Venta presupuesto (FACTURA PRESUPUESTO / canal SEGUNDA VUELTA) ──
+  { id: "presupuesto_bultos", pilar: "Venta presupuesto", nombre: "Bultos presupuesto", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Ventas Chess por FACTURA PRESUPUESTO (ticket no fiscal, canal SEGUNDA VUELTA en su mayoría). No pasan por el reparto en camión de la fila Distribuidos." },
+  { id: "presupuesto_hl", pilar: "Venta presupuesto", nombre: "HL presupuesto", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros vendidos por factura presupuesto (2da vuelta)." },
+  { id: "presupuesto_ceq", pilar: "Venta presupuesto", nombre: "CEq presupuesto", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes vendidas por factura presupuesto (bultos × factor CEq = 120/bultos_pallet)." },
 
   // ── Flota ──
   { id: "tiempo_ruta", pilar: "Flota", nombre: "Tiempo prom. en ruta", unidad: "hs", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Promedio de duración puerta a puerta de las rutas finalizadas (Foxtrot)." },
@@ -62,7 +67,7 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "precision", pilar: "Almacén", nombre: "Precisión de picking", unidad: "%", meta: 99, mejor_si: "mayor", resumen: "promedio", nota: "% de bultos pickeados sin error (promedio diario del mes). Meta ≥ 99%." },
 ]
 
-export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén"]
+export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Venta presupuesto", "Flota", "Almacén"]
 
 /** Color del pilar para los encabezados de grupo (tailwind-ish, inline). */
 export const PILAR_COLOR: Record<Pilar, string> = {
@@ -70,6 +75,7 @@ export const PILAR_COLOR: Record<Pilar, string> = {
   Entrega: "#2563eb", // azul
   Ventas: "#16a34a", // verde
   "Venta mostrador": "#d97706", // ámbar
+  "Venta presupuesto": "#db2777", // rosa
   Flota: "#7c3aed", // violeta
   Almacén: "#0891b2", // cyan
 }
