@@ -13,8 +13,8 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ZonaReparto,
-  guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ProyeccionData, type ZonaReparto,
+  guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto, guardarAjustesVolumen,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
 } from "@/actions/dimensionamiento"
@@ -174,7 +174,7 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Dotación: <b>{fmt(rol.dotacion)}</b>{rol.tripulacion !== 1 ? ` · ${fmt(rol.tripulacion)} por camión` : ""}. Capacidad de un camión: <b>{fmt(capCamionViaje)} CEq/día</b>. Volumen CEq prom del mes: <b>{fmt(Math.round(ceqProm))}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}.
+        Dotación: <b>{fmt(rol.dotacion)}</b>{rol.tripulacion !== 1 ? ` · ${fmt(rol.tripulacion)} por camión` : ""}. Capacidad de un camión: <b>{fmt(capCamionViaje)} CEq/día</b>. Volumen CEq prom del mes: <b>{fmt(Math.round(ceqProm))}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -282,12 +282,9 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
           </Card>
           {proy && (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (HL/mes) — del presupuesto</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (HL/mes) — del presupuesto + escenario</CardTitle></CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">{mesLabel(proy.mesBase)} (base)</TableHead>{proy.meses.map((mm) => (<TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>))}</TableRow></TableHeader>
-                  <TableBody><TableRow><TableCell className="font-medium">HL</TableCell><TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>{proy.meses.map((mm) => (<TableCell key={mm.mes} className="text-right">{fmt(Math.round(mm.hl))}</TableCell>))}</TableRow></TableBody>
-                </Table>
+                <VolumenProyectadoTable proy={proy} canEdit={canEdit} run={run} isPending={isPending} />
               </CardContent>
             </Card>
           )}
@@ -388,7 +385,7 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes }: { rol: Proyeccion
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}.
+        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -502,11 +499,8 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
             </div>
             {proy && (
               <div>
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Volumen proyectado (HL/mes) — del presupuesto anual</p>
-                <Table>
-                  <TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">{mesLabel(proy.mesBase)} (base)</TableHead>{proy.meses.map((m) => (<TableHead key={m.mes} className="text-right">{mesLabel(m.mes)}</TableHead>))}</TableRow></TableHeader>
-                  <TableBody><TableRow><TableCell className="font-medium">HL</TableCell><TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>{proy.meses.map((m) => (<TableCell key={m.mes} className="text-right">{fmt(Math.round(m.hl))}</TableCell>))}</TableRow></TableBody>
-                </Table>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Volumen proyectado (HL/mes) — del presupuesto anual + escenario</p>
+                <VolumenProyectadoTable proy={proy} canEdit={canEdit} run={run} isPending={isPending} />
               </div>
             )}
             <p className="text-xs text-muted-foreground">
@@ -593,6 +587,68 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
 
 const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
+
+// Volumen proyectado (HL/mes) del presupuesto + % de ajuste de escenario editable por mes.
+// La proyección de flota/almacén usa el HL ajustado (hl × (1 + %/100)).
+function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: ProyeccionData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+  const [pct, setPct] = useState<Record<string, string>>(() =>
+    Object.fromEntries(proy.meses.map((m) => [m.mes, String(m.ajustePct)])))
+  const pctDe = (mes: string) => Number(pct[mes]) || 0
+  const hayAjuste = proy.meses.some((m) => m.ajustePct !== 0 || pctDe(m.mes) !== 0)
+  const sinGuardar = proy.meses.some((m) => pctDe(m.mes) !== m.ajustePct)
+  const guardar = () => run(() => guardarAjustesVolumen(proy.meses.map((m) => ({
+    anio: Number(m.mes.split("-")[0]), mes: Number(m.mes.split("-")[1]), ajustePct: pctDe(m.mes),
+  }))), "Escenario de volumen guardado")
+  return (
+    <div className="space-y-2">
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Mes</TableHead><TableHead className="text-right">{mesLabel(proy.mesBase)} (base)</TableHead>
+          {proy.meses.map((m) => (<TableHead key={m.mes} className="text-right">{mesLabel(m.mes)}</TableHead>))}
+        </TableRow></TableHeader>
+        <TableBody>
+          <TableRow>
+            <TableCell className="font-medium">HL presupuesto</TableCell>
+            <TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>
+            {proy.meses.map((m) => (<TableCell key={m.mes} className="text-right">{fmt(Math.round(m.hlPresupuesto))}</TableCell>))}
+          </TableRow>
+          {canEdit && (
+            <TableRow>
+              <TableCell className="font-medium">Ajuste escenario (%)</TableCell>
+              <TableCell className="text-right text-muted-foreground">—</TableCell>
+              {proy.meses.map((m) => (
+                <TableCell key={m.mes} className="text-right">
+                  <Input type="number" step="1" className="h-8 w-16 text-right" value={pct[m.mes] ?? "0"}
+                    onChange={(e) => setPct((s) => ({ ...s, [m.mes]: e.target.value }))} />
+                </TableCell>
+              ))}
+            </TableRow>
+          )}
+          {hayAjuste && (
+            <TableRow>
+              <TableCell className="font-medium">HL escenario</TableCell>
+              <TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>
+              {proy.meses.map((m) => (
+                <TableCell key={m.mes} className={`text-right ${pctDe(m.mes) !== 0 ? "font-semibold text-sky-700" : ""}`}>
+                  {fmt(Math.round(m.hlPresupuesto * (1 + pctDe(m.mes) / 100)))}
+                </TableCell>
+              ))}
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" disabled={isPending} onClick={guardar}>Guardar escenario</Button>
+          {sinGuardar && <span className="text-xs text-amber-600">Hay ajustes sin guardar — la proyección de abajo usa lo guardado.</span>}
+          <p className="w-full text-xs text-muted-foreground">
+            Escenario de volumen: cargá un % de aumento (o de baja, con signo −) sobre el HL del presupuesto en cualquier mes. Al guardar, la proyección de flota y almacén se recalcula con el HL ajustado; 0 = sin ajuste.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ConfigCard({ config, run, isPending }: { config: DimConfig; run: RunFn; isPending: boolean }) {
   const [c, setC] = useState<DimConfig>(config)

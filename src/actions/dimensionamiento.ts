@@ -194,7 +194,9 @@ export interface RepartoData {
 // por el índice hl_mes / hl_mes_actual; dotación fija → anticipa horas extra / refuerzo.
 export interface ProyeccionMes {
   mes: string             // "2026-07"
-  hl: number
+  hl: number              // HL del escenario = presupuesto × (1 + ajuste_pct/100)
+  hlPresupuesto: number   // HL original del presupuesto anual
+  ajustePct: number       // % de ajuste de escenario cargado para el mes (0 = sin ajuste)
   indice: number          // hl / hlBase
 }
 // Almacén: dotación fija → horas extra (hora-hombre) por mes en los días que el volumen supera la capacidad.
@@ -582,15 +584,22 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     try {
       const anioActual = hoy.getFullYear()
       const mesActual = hoy.getMonth() + 1
-      const { data: vol } = await supabase.from("dim_volumen_proyectado").select("mes, hl").eq("anio", anioActual)
-      const hlPorMes = new Map<number, number>()
-      for (const r of vol ?? []) hlPorMes.set(Number(r.mes), Number(r.hl))
-      const hlBase = hlPorMes.get(mesActual) ?? 0
+      // fallback sin ajuste_pct por si la migración aún no corrió en esta base
+      let vol: { mes: number; hl: number; ajuste_pct?: number }[] | null =
+        (await supabase.from("dim_volumen_proyectado").select("mes, hl, ajuste_pct").eq("anio", anioActual)).data
+      if (!vol) vol = (await supabase.from("dim_volumen_proyectado").select("mes, hl").eq("anio", anioActual)).data
+      const hlPorMes = new Map<number, { hl: number; pct: number }>()
+      for (const r of vol ?? []) hlPorMes.set(Number(r.mes), { hl: Number(r.hl), pct: Number(r.ajuste_pct ?? 0) })
+      const hlBase = hlPorMes.get(mesActual)?.hl ?? 0
       if (hlBase > 0) {
         const meses: ProyeccionMes[] = []
         for (let m = mesActual + 1; m <= 12; m++) {
-          const hl = hlPorMes.get(m)
-          if (hl && hl > 0) meses.push({ mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, indice: hl / hlBase })
+          const v = hlPorMes.get(m)
+          if (v && v.hl > 0) {
+            // escenario: el % de ajuste del mes escala el HL del presupuesto (y por lo tanto el índice)
+            const hl = v.hl * (1 + v.pct / 100)
+            meses.push({ mes: `${anioActual}-${String(m).padStart(2, "0")}`, hl, hlPresupuesto: v.hl, ajustePct: v.pct, indice: hl / hlBase })
+          }
         }
         if (meses.length > 0) {
           // Pesos de volumen por día de semana (lun..sáb), normalizados.
@@ -803,6 +812,29 @@ export async function guardarZonasReparto(zonas: { zona: string; peso: number; c
       }))
     if (rows.length) {
       const { error } = await supabase.from("dim_zonas_reparto").insert(rows)
+      if (error) return { error: error.message }
+    }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+/** Guarda el % de ajuste de escenario del volumen proyectado, mes a mes. */
+export async function guardarAjustesVolumen(
+  ajustes: { anio: number; mes: number; ajustePct: number }[],
+): Promise<Result<true>> {
+  try {
+    const profile = await requireRole(ROLES_EDICION)
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const supabase = await createClient()
+    for (const a of ajustes) {
+      const { error } = await supabase
+        .from("dim_volumen_proyectado")
+        .update({ ajuste_pct: Number(a.ajustePct) || 0, updated_by: profile.id, updated_at: new Date().toISOString() })
+        .eq("anio", a.anio)
+        .eq("mes", a.mes)
       if (error) return { error: error.message }
     }
     revalidatePath("/planeamiento/dimensionamiento")
