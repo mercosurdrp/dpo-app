@@ -124,6 +124,30 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
     return rows
   }
+  // foxtrot_routes supera las 1000 filas en el rango ene→hoy desde el
+  // backfill histórico (≈180 rutas/mes), así que también se pagina.
+  async function foxtrotRoutesTodas() {
+    const PAGE = 1000
+    const rows: Array<{
+      route_id: string
+      fecha: string
+      is_finalized: boolean | null
+      tiempo_ruta_minutos: number | null
+    }> = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("foxtrot_routes")
+        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("route_id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
   async function rechazosTodos() {
     const PAGE = 1000
     const rows: Array<{ fecha_venta: string; hl_rechazados: number | null }> =
@@ -144,9 +168,9 @@ export async function getCuadroMensualIndicadores(): Promise<
   }
 
   // ── Fetches de rango (en paralelo) ──
-  // reportes_seguridad y foxtrot_routes están muy por debajo de 1000 filas en
-  // el rango, así que no necesitan paginación.
-  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRes] = await Promise.all([
+  // reportes_seguridad está muy por debajo de 1000 filas en el rango, así que
+  // no necesita paginación.
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows] = await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -157,11 +181,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     ventasDiariasTodas(),
     ventasNoDistribuidasTodas(),
     rechazosTodos(),
-    supabase
-      .from("foxtrot_routes")
-      .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
-      .gte("fecha", desde)
-      .lte("fecha", hasta),
+    foxtrotRoutesTodas(),
   ])
 
   // ── SEGURIDAD ──
@@ -404,12 +424,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     string,
     { tiempos: number[]; rutas: number; fechas: Set<string> }
   > = {}
-  for (const r of (foxRes.data ?? []) as Array<{
-    route_id: string
-    fecha: string
-    is_finalized: boolean | null
-    tiempo_ruta_minutos: number | null
-  }>) {
+  for (const r of foxRows) {
     const mes = r.fecha.slice(0, 7)
     const acc = (foxPorMes[mes] ??= { tiempos: [], rutas: 0, fechas: new Set() })
     acc.rutas++
