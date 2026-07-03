@@ -14,6 +14,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Table,
   TableBody,
   TableCell,
@@ -32,7 +39,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { ArrowLeft, Fuel, Loader2, RefreshCw } from "lucide-react"
+import { ArrowLeft, ChevronDown, Fuel, Loader2, RefreshCw } from "lucide-react"
 import { PlanesAccionFlota } from "../_components/planes-accion-flota"
 
 const CAMION_COLOR = "#1D4ED8" // azul (gas oil)
@@ -168,7 +175,8 @@ export function CombustibleFlotaClient() {
   const [cargando, setCargando] = useState(true)
   const [progreso, setProgreso] = useState<string | null>(null)
   const [sucursal, setSucursal] = useState("__all__")
-  const [mes, setMes] = useState("__all__")
+  // Meses tildados (multi-selección). Vacío = todos los meses.
+  const [mesesSel, setMesesSel] = useState<string[]>([])
   const [dia, setDia] = useState("__all__")
   const [grupo, setGrupo] = useState<GrupoKey>("camiones")
   const [metrica, setMetrica] = useState<MetricaKey>("litros")
@@ -227,12 +235,14 @@ export function CombustibleFlotaClient() {
     () => [...new Set(entradas.map((e) => (e.fecha || "").slice(0, 7)).filter(Boolean))].sort().reverse(),
     [entradas]
   )
+  // Con UN solo mes tildado se habilita el filtro por día y el gráfico se abre por día.
+  const mesUnico = mesesSel.length === 1 ? mesesSel[0] : null
   const dias = useMemo(
     () =>
-      mes !== "__all__"
-        ? [...new Set(entradas.map((e) => e.fecha).filter((f) => f && f.startsWith(mes)))].sort().reverse()
+      mesUnico
+        ? [...new Set(entradas.map((e) => e.fecha).filter((f) => f && f.startsWith(mesUnico)))].sort().reverse()
         : [],
-    [entradas, mes]
+    [entradas, mesUnico]
   )
 
   // Base = filtros de sucursal + período aplicados (los dos grupos juntos).
@@ -241,10 +251,10 @@ export function CombustibleFlotaClient() {
       entradas.filter((e) => {
         if (sucursal !== "__all__" && normSucursal(e.sucursal) !== sucursal) return false
         if (dia !== "__all__") return e.fecha === dia
-        if (mes !== "__all__") return (e.fecha || "").startsWith(mes)
+        if (mesesSel.length > 0) return mesesSel.includes((e.fecha || "").slice(0, 7))
         return true
       }),
-    [entradas, sucursal, mes, dia]
+    [entradas, sucursal, mesesSel, dia]
   )
 
   const camiones = useMemo(() => base.filter((e) => PATENTES_FLOTA.has(e.patente)), [base])
@@ -375,9 +385,9 @@ export function CombustibleFlotaClient() {
       .sort((a, b) => b.litros - a.litros)
   }, [autoelevadores])
 
-  // Serie del gráfico: por mes (o por día si hay mes elegido), del grupo elegido.
+  // Serie del gráfico: por mes (o por día si hay UN solo mes tildado), del grupo elegido.
   const serieCol = useMemo(() => {
-    const porDia = mes !== "__all__"
+    const porDia = mesUnico != null
     const m = new Map<string, SerieCol & { _ent: Entrada[] }>()
     for (const e of entradasGrupo) {
       if (!e.fecha) continue
@@ -401,7 +411,7 @@ export function CombustibleFlotaClient() {
       horas: grupo === "autoelevadores" ? horasPorHorimetro(_ent) : 0,
     }))
     return { arr: arr.sort((a, b) => a.clave.localeCompare(b.clave)), porDia }
-  }, [entradasGrupo, mes, grupo])
+  }, [entradasGrupo, mesUnico, grupo])
 
   // Consumo por UNIDAD (una barra por camión / autoelevador) del grupo elegido,
   // ordenado de mayor a menor según la métrica (litros o costo).
@@ -425,7 +435,19 @@ export function CombustibleFlotaClient() {
   const grupoDef = GRUPOS.find((g) => g.key === grupo)!
   const met = METRICAS.find((x) => x.key === metrica)!
   const periodoTexto =
-    dia !== "__all__" ? fmtFecha(dia) : mes !== "__all__" ? etiquetaMes(mes) : "año 2026"
+    dia !== "__all__"
+      ? fmtFecha(dia)
+      : mesUnico
+        ? etiquetaMes(mesUnico)
+        : mesesSel.length > 1
+          ? [...mesesSel].sort().map(etiquetaMesCorto).join(" + ")
+          : "año 2026"
+
+  // Tildar / destildar un mes en el filtro (resetea el día elegido).
+  const toggleMes = (m: string, tildado: boolean) => {
+    setDia("__all__")
+    setMesesSel((prev) => (tildado ? [...prev, m].sort() : prev.filter((x) => x !== m)))
+  }
 
   const ordenar = (col: OrdenCol) =>
     setOrdenCamion((o) => ({ col, desc: o.col === col ? !o.desc : true }))
@@ -494,38 +516,54 @@ export function CombustibleFlotaClient() {
             <SelectItem value="Iguazú">Iguazú</SelectItem>
           </SelectContent>
         </Select>
-        <Select
-          value={mes}
-          onValueChange={(v) => {
-            setMes(v ?? "__all__")
-            setDia("__all__")
-          }}
-        >
-          <SelectTrigger className="h-9 w-[170px] font-semibold">
-            <SelectValue placeholder="Mes">
-              {(v) => (v === "__all__" || v == null ? "Todos los meses" : etiquetaMes(String(v)))}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">Todos los meses</SelectItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex h-9 w-[190px] items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm font-semibold whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50">
+            <span className="truncate">
+              {mesesSel.length === 0
+                ? "Todos los meses"
+                : mesUnico
+                  ? etiquetaMes(mesUnico)
+                  : `${mesesSel.length} meses tildados`}
+            </span>
+            <ChevronDown className="pointer-events-none size-4 shrink-0 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-[190px]">
+            <DropdownMenuCheckboxItem
+              checked={mesesSel.length === 0}
+              closeOnClick={false}
+              onCheckedChange={() => {
+                setMesesSel([])
+                setDia("__all__")
+              }}
+            >
+              Todos los meses
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
             {meses.map((m) => (
-              <SelectItem key={m} value={m}>{etiquetaMes(m)}</SelectItem>
+              <DropdownMenuCheckboxItem
+                key={m}
+                checked={mesesSel.includes(m)}
+                closeOnClick={false}
+                onCheckedChange={(tildado) => toggleMes(m, tildado)}
+              >
+                {etiquetaMes(m)}
+              </DropdownMenuCheckboxItem>
             ))}
-          </SelectContent>
-        </Select>
-        <Select value={dia} onValueChange={(v) => setDia(v ?? "__all__")} disabled={mes === "__all__"}>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Select value={dia} onValueChange={(v) => setDia(v ?? "__all__")} disabled={!mesUnico}>
           <SelectTrigger className="h-9 w-[150px] font-semibold">
             <SelectValue placeholder="Día">
               {(v) =>
                 v === "__all__" || v == null
-                  ? mes !== "__all__"
+                  ? mesUnico
                     ? "Todos los días"
                     : "Elegí un mes"
                   : fmtFecha(String(v))}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">{mes !== "__all__" ? "Todos los días" : "Elegí un mes"}</SelectItem>
+            <SelectItem value="__all__">{mesUnico ? "Todos los días" : "Elegí un mes"}</SelectItem>
             {dias.map((d) => (
               <SelectItem key={d} value={d}>{fmtFecha(d)}</SelectItem>
             ))}
@@ -661,7 +699,11 @@ export function CombustibleFlotaClient() {
               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold text-slate-900">
                   {met.label} · {grupoDef.titulo}{" "}
-                  {mes !== "__all__" ? `· ${etiquetaMes(mes)} (por día)` : "(por mes)"}
+                  {mesUnico
+                    ? `· ${etiquetaMes(mesUnico)} (por día)`
+                    : mesesSel.length > 1
+                      ? `· ${mesesSel.length} meses tildados (por mes)`
+                      : "(por mes)"}
                   {sucursal !== "__all__" ? ` · ${sucursal}` : ""}
                 </h2>
                 <div className="flex gap-2">
@@ -678,7 +720,8 @@ export function CombustibleFlotaClient() {
                 </div>
               </div>
               <p className="mb-3 text-xs text-muted-foreground">
-                Elegí un mes en los filtros para abrirlo por día.
+                Tildá en el filtro los meses que quieras comparar (una barra por mes). Con un solo mes
+                tildado, el gráfico se abre por día.
               </p>
               {serieCol.arr.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
