@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -74,6 +74,82 @@ function TorCard() {
   )
 }
 
+// ─── Recalculo en vivo del escenario ─────────────────────────────────────────
+
+// weekday JS de cada día del mes "aaaa-mm" (0=dom..6=sáb); domingo no opera.
+function weekdaysDelMes(mesStr: string): number[] {
+  const [a, m] = mesStr.split("-").map(Number)
+  const out: number[] = []
+  const last = new Date(a, m, 0).getDate()
+  for (let d = 1; d <= last; d++) out.push(new Date(a, m - 1, d).getDay())
+  return out
+}
+
+// Recalcula la proyección EN EL CLIENTE con los % de escenario tipeados (sin guardar),
+// replicando el modelo del server (getDatosDimensionamiento): índices, horas extra por
+// día de semana (almacén) y días de refuerzo / 2ª vuelta (flota). Así el simulador
+// responde al instante; «Guardar escenario» solo persiste para otros usuarios.
+function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: Record<string, string>): ProyeccionData {
+  const pctDe = (mes: string, saved: number) => (pct[mes] !== undefined ? Number(pct[mes]) || 0 : saved)
+  const hlBase = proy.hlBasePresupuesto * (1 + pctDe(proy.mesBase, proy.ajusteBasePct) / 100)
+  if (hlBase <= 0) return proy
+  const meses = proy.meses.map((m) => {
+    const pc = pctDe(m.mes, m.ajustePct)
+    const hl = m.hlPresupuesto * (1 + pc / 100)
+    return { ...m, hl, ajustePct: pc, indice: hl / hlBase }
+  })
+  const pesos = proy.pesos
+  const maxPeso = Math.max(...pesos)
+  const pesoDe = (wd: number) => (wd === 0 ? 0 : pesos[wd - 1] ?? 0)
+
+  const almacen = proy.almacen.map((r) => {
+    const capPersona = r.dotacion > 0 ? r.capDiaria / r.dotacion : 0
+    const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
+    for (const mm of meses) {
+      const volMes = r.volPromBase * mm.indice
+      let hh = 0
+      for (const wd of weekdaysDelMes(mm.mes)) {
+        const w = pesoDe(wd)
+        if (w <= 0) continue
+        const volDia = volMes * 6 * w
+        if (volDia > r.capDiaria && r.prodH > 0) hh += (volDia - r.capDiaria) / r.prodH
+      }
+      const pico = volMes * 6 * maxPeso
+      horasExtra.push(Math.round(hh * 10) / 10)
+      volPicoDia.push(Math.round(pico))
+      faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - r.capDiaria) / capPersona)) : 0)
+    }
+    return { ...r, horasExtra, faltanPico, volPicoDia }
+  })
+
+  const camionesDe = (ceqDia: number) => zonas.length > 0 && proy.capCamionViaje > 0
+    ? zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((ceqDia * z.peso) / proy.capCamionViaje)), 0)
+    : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
+  const flota = proy.flota.map((rf) => {
+    const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
+    for (const mm of meses) {
+      const ceqMes = proy.flotaCeqPromBase * mm.indice
+      let dias = 0, pico = 0, sv = false
+      for (const wd of weekdaysDelMes(mm.mes)) {
+        const w = pesoDe(wd)
+        if (w <= 0) continue
+        const ceqDia = ceqMes * 6 * w
+        const camionesDia = camionesDe(ceqDia)
+        const necesarios = camionesDia * rf.tripulacion
+        if (necesarios > rf.dotacion) dias++
+        if (camionesDia > proy.camionesDisp) sv = true
+        pico = Math.max(pico, necesarios)
+      }
+      diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
+    }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses }
+  })
+
+  return { ...proy, hlBase, ajusteBasePct: pctDe(proy.mesBase, proy.ajusteBasePct), meses, almacen, flota }
+}
+
+type PctEscenario = { pct: Record<string, string>; setPct: React.Dispatch<React.SetStateAction<Record<string, string>>> }
+
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEdit: boolean }) {
@@ -86,6 +162,18 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
       if (res?.error) toast.error(res.error)
       else toast.success(ok)
     })
+
+  // Escenario de volumen compartido entre Flota y Almacén: los % tipeados recalculan
+  // la proyección al instante (proyLive), sin esperar al Guardar.
+  const proySaved = data.proyeccion
+  const [pctEsc, setPctEsc] = useState<Record<string, string>>(() => proySaved
+    ? Object.fromEntries([[proySaved.mesBase, String(proySaved.ajusteBasePct)], ...proySaved.meses.map((mm) => [mm.mes, String(mm.ajustePct)])])
+    : {})
+  const proyLive = useMemo(
+    () => (proySaved ? recalcularProyeccion(proySaved, data.zonas, pctEsc) : null),
+    [proySaved, data.zonas, pctEsc],
+  )
+  const escenario: PctEscenario = { pct: pctEsc, setPct: setPctEsc }
 
   return (
     <div className="space-y-4 p-6">
@@ -107,12 +195,12 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
         {/* ─── Flota / Entrega ─── */}
         <TabsContent value="flotaentrega" className="space-y-4">
-          <FlotaTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+          <FlotaTab data={data} proyLive={proyLive} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
         {/* ─── Almacén ─── */}
         <TabsContent value="almacen" className="space-y-4">
-          <AlmacenTab data={data} canEdit={canEdit} run={run} isPending={isPending} />
+          <AlmacenTab data={data} proyLive={proyLive} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}
@@ -201,10 +289,10 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
   )
 }
 
-function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data: DimData; proyLive: ProyeccionData | null; escenario: PctEscenario; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const m = data.metricas
   const rep = data.reparto
-  const proy = data.proyeccion
+  const proy = proyLive
   const dispo = data.unidadesDisponibles
   const [c, setC] = useState({
     choferes_por_camion: String(data.config.choferes_por_camion),
@@ -284,7 +372,7 @@ function FlotaTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: b
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-base">Volumen proyectado (HL/mes) — del presupuesto + escenario</CardTitle></CardHeader>
               <CardContent>
-                <VolumenProyectadoTable proy={proy} canEdit={canEdit} run={run} isPending={isPending} />
+                <VolumenProyectadoTable proy={proy} saved={data.proyeccion} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
               </CardContent>
             </Card>
           )}
@@ -414,9 +502,9 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes }: { rol: Proyeccion
   )
 }
 
-function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { data: DimData; proyLive: ProyeccionData | null; escenario: PctEscenario; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
-  const proy = data.proyeccion
+  const proy = proyLive
   const [c, setC] = useState({
     prod_bul_hh: String(data.config.prod_bul_hh), util_pickeros: String(data.config.util_pickeros), dotacion_almacen: String(data.config.dotacion_almacen),
     prod_clasif_pal_h: String(data.config.prod_clasif_pal_h), util_clasif: String(data.config.util_clasif), dotacion_clasif: String(data.config.dotacion_clasif),
@@ -500,7 +588,7 @@ function AlmacenTab({ data, canEdit, run, isPending }: { data: DimData; canEdit:
             {proy && (
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Volumen proyectado (HL/mes) — del presupuesto anual + escenario</p>
-                <VolumenProyectadoTable proy={proy} canEdit={canEdit} run={run} isPending={isPending} />
+                <VolumenProyectadoTable proy={proy} saved={data.proyeccion} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
               </div>
             )}
             <p className="text-xs text-muted-foreground">
@@ -589,15 +677,18 @@ const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "S
 const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
 
 // Volumen proyectado (HL/mes) del presupuesto + % de ajuste de escenario editable por mes.
-// La proyección de flota/almacén usa el HL ajustado (hl × (1 + %/100)).
-function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: ProyeccionData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+// Los % viven en el estado compartido (escenario) → la proyección de flota/almacén de la
+// página se recalcula EN VIVO mientras se tipea; «Guardar escenario» solo lo persiste.
+function VolumenProyectadoTable({ proy, saved, escenario, canEdit, run, isPending }: {
+  proy: ProyeccionData; saved: ProyeccionData | null; escenario: PctEscenario; canEdit: boolean; run: RunFn; isPending: boolean
+}) {
   // El mes base también es ajustable: su escenario recalibra el índice de TODOS los meses.
-  const [pct, setPct] = useState<Record<string, string>>(() =>
-    Object.fromEntries([[proy.mesBase, String(proy.ajusteBasePct)], ...proy.meses.map((m) => [m.mes, String(m.ajustePct)])]))
+  const { pct, setPct } = escenario
   const pctDe = (mes: string) => Number(pct[mes]) || 0
-  const todos = [{ mes: proy.mesBase, hlPresupuesto: proy.hlBasePresupuesto, ajustePct: proy.ajusteBasePct }, ...proy.meses]
-  const hayAjuste = todos.some((m) => m.ajustePct !== 0 || pctDe(m.mes) !== 0)
-  const sinGuardar = todos.some((m) => pctDe(m.mes) !== m.ajustePct)
+  const todos = [{ mes: proy.mesBase, hlPresupuesto: proy.hlBasePresupuesto }, ...proy.meses]
+  const savedPct = new Map<string, number>(saved ? [[saved.mesBase, saved.ajusteBasePct], ...saved.meses.map((m): [string, number] => [m.mes, m.ajustePct])] : [])
+  const hayAjuste = todos.some((m) => pctDe(m.mes) !== 0)
+  const sinGuardar = todos.some((m) => pctDe(m.mes) !== (savedPct.get(m.mes) ?? 0))
   const guardar = () => run(() => guardarAjustesVolumen(todos.map((m) => ({
     anio: Number(m.mes.split("-")[0]), mes: Number(m.mes.split("-")[1]), ajustePct: pctDe(m.mes),
   }))), "Escenario de volumen guardado")
@@ -639,9 +730,9 @@ function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: Proye
       {canEdit && (
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" disabled={isPending} onClick={guardar}>Guardar escenario</Button>
-          {sinGuardar && <span className="text-xs text-amber-600">Hay ajustes sin guardar — la proyección de abajo usa lo guardado.</span>}
+          {sinGuardar && <span className="text-xs text-amber-600">La proyección ya refleja estos % — guardá para fijarlos (si recargás sin guardar, vuelve a lo guardado).</span>}
           <p className="w-full text-xs text-muted-foreground">
-            Escenario de volumen: cargá un % de aumento (o de baja, con signo −) sobre el HL del presupuesto en cualquier mes, incluido el base. Al guardar, la proyección de flota y almacén se recalcula con el HL ajustado; 0 = sin ajuste. Ojo: ajustar el <b>mes base</b> recalibra el índice de todos los meses (sube el base → bajan los índices futuros, y viceversa).
+            Escenario de volumen: cargá un % de aumento (o de baja, con signo −) sobre el HL del presupuesto en cualquier mes, incluido el base. <b>La proyección de flota y almacén se recalcula al instante mientras tipeás</b> (también en la otra solapa); «Guardar escenario» lo persiste para todos. Ojo: ajustar el <b>mes base</b> recalibra el índice de todos los meses (sube el base → bajan los índices futuros, y viceversa).
           </p>
         </div>
       )}
