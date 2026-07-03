@@ -21,7 +21,8 @@ import type { CatalogoVehiculo, VehiculoTipo } from "@/types/database"
 // Cuando no se puede medir la tasa (sin recorrido, o autoelevadores que miden
 // horas y no hay lectura) se cae a la frecuencia en meses desde el últ. servicio.
 // El semáforo es por días restantes: ≤10 rojo, ≤15 naranja, ≤30 amarillo,
-// vencido si ya pasó.
+// vencido si ya pasó. Para autoelevadores (miden horas) además avisa por
+// horas restantes: ≤50 amarillo, ≤25 naranja, ≤10 rojo — manda el peor eje.
 
 export type EstadoServiceGeneral =
   | "vencido"
@@ -70,8 +71,9 @@ function defaultsPorTipo(tipo: VehiculoTipo | null): {
 } {
   switch (tipo) {
     case "autoelevador":
-      // Service de autoelevadores cada 200 hs de uso (o 6 meses por tiempo).
-      return { km: null, horas: 200, meses: 6 }
+      // Service de autoelevadores cada 250 hs de uso (o 6 meses por tiempo).
+      // El aviso arranca 50 hs antes (a las 200 hs), ver HORAS_AVISO.
+      return { km: null, horas: 250, meses: 6 }
     case "acoplado":
       // El acoplado no tiene motor: service por tiempo (frenos/rodamientos).
       return { km: null, horas: null, meses: 12 }
@@ -92,6 +94,35 @@ export function estadoPorDias(dias: number | null): EstadoServiceGeneral {
   if (dias <= UMBRAL_NARANJA) return "naranja"
   if (dias <= UMBRAL_AMARILLO) return "amarillo"
   return "ok"
+}
+
+// Aviso por HORAS para unidades que miden horómetro (autoelevadores): con
+// frecuencia de 250 hs el sistema empieza a avisar al llegar a las 200 hs de
+// uso, es decir cuando faltan HORAS_AVISO (50) hs para el próximo service.
+const HORAS_AVISO = 50
+const HORAS_NARANJA = 25
+const HORAS_ROJO = 10
+
+export function estadoPorHorasRestantes(restante: number | null): EstadoServiceGeneral {
+  if (restante == null) return "sin_datos"
+  if (restante <= 0) return "vencido"
+  if (restante <= HORAS_ROJO) return "rojo"
+  if (restante <= HORAS_NARANJA) return "naranja"
+  if (restante <= HORAS_AVISO) return "amarillo"
+  return "ok"
+}
+
+const ORDEN_SEVERIDAD: Record<EstadoServiceGeneral, number> = {
+  vencido: 5,
+  rojo: 4,
+  naranja: 3,
+  amarillo: 2,
+  ok: 1,
+  sin_datos: 0,
+}
+
+function peorEstado(a: EstadoServiceGeneral, b: EstadoServiceGeneral): EstadoServiceGeneral {
+  return ORDEN_SEVERIDAD[a] >= ORDEN_SEVERIDAD[b] ? a : b
 }
 
 export interface DocumentoVencimiento {
@@ -237,6 +268,13 @@ export function computeServiceGeneral(params: {
     }
 
     if (base.diasRestantes != null) base.estado = estadoPorDias(base.diasRestantes)
+
+    // Unidades por horómetro: además del semáforo por días proyectados, el
+    // aviso arranca por horas de uso (a las 200 hs de un ciclo de 250, o sea
+    // cuando faltan ≤50 hs). Entre ambos ejes manda el peor.
+    if (mide === "horas" && base.kmRestante != null) {
+      base.estado = peorEstado(base.estado, estadoPorHorasRestantes(base.kmRestante))
+    }
 
     out.push(base)
   }
