@@ -222,7 +222,9 @@ export interface ProyeccionFlotaRol {
 }
 export interface ProyeccionData {
   mesBase: string
-  hlBase: number
+  hlBase: number                 // HL del escenario para el mes base = presupuesto × (1 + ajuste/100)
+  hlBasePresupuesto: number      // HL original del presupuesto para el mes base
+  ajusteBasePct: number          // % de ajuste de escenario del mes base (recalibra el índice de todos los meses)
   meses: ProyeccionMes[]
   almacen: ProyeccionAlmacenRol[]
   flota: ProyeccionFlotaRol[]
@@ -590,7 +592,11 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       if (!vol) vol = (await supabase.from("dim_volumen_proyectado").select("mes, hl").eq("anio", anioActual)).data
       const hlPorMes = new Map<number, { hl: number; pct: number }>()
       for (const r of vol ?? []) hlPorMes.set(Number(r.mes), { hl: Number(r.hl), pct: Number(r.ajuste_pct ?? 0) })
-      const hlBase = hlPorMes.get(mesActual)?.hl ?? 0
+      // El ajuste del mes base también escala su HL → recalibra el índice de TODOS los meses.
+      const base = hlPorMes.get(mesActual)
+      const hlBasePresupuesto = base?.hl ?? 0
+      const ajusteBasePct = base?.pct ?? 0
+      const hlBase = hlBasePresupuesto * (1 + ajusteBasePct / 100)
       if (hlBase > 0) {
         const meses: ProyeccionMes[] = []
         for (let m = mesActual + 1; m <= 12; m++) {
@@ -683,7 +689,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
           proyeccion = {
             mesBase: `${anioActual}-${String(mesActual).padStart(2, "0")}`,
-            hlBase, meses, almacen: almacenProy, flota: flotaProy,
+            hlBase, hlBasePresupuesto, ajusteBasePct,
+            meses, almacen: almacenProy, flota: flotaProy,
             flotaCeqPromBase: Math.round(ceqProm), capCamionViaje: Math.round(capCamionViaje),
             choferesDisp, camionesDisp, capCamion: Math.round(capCamion),
             pesos: pesos.map((x) => Math.round((x / sumaPesos) * 1000) / 1000),
@@ -832,7 +839,7 @@ export async function guardarAjustesVolumen(
     for (const a of ajustes) {
       const { error } = await supabase
         .from("dim_volumen_proyectado")
-        .update({ ajuste_pct: Number(a.ajustePct) || 0, updated_by: profile.id, updated_at: new Date().toISOString() })
+        .update({ ajuste_pct: Math.max(-90, Math.min(500, Number(a.ajustePct) || 0)), updated_by: profile.id, updated_at: new Date().toISOString() })
         .eq("anio", a.anio)
         .eq("mes", a.mes)
       if (error) return { error: error.message }

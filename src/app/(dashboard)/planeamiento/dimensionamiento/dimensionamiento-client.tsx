@@ -591,12 +591,14 @@ const mesLabel = (s: string) => MES_ABBR[Number(s.split("-")[1])] ?? s
 // Volumen proyectado (HL/mes) del presupuesto + % de ajuste de escenario editable por mes.
 // La proyección de flota/almacén usa el HL ajustado (hl × (1 + %/100)).
 function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: ProyeccionData; canEdit: boolean; run: RunFn; isPending: boolean }) {
+  // El mes base también es ajustable: su escenario recalibra el índice de TODOS los meses.
   const [pct, setPct] = useState<Record<string, string>>(() =>
-    Object.fromEntries(proy.meses.map((m) => [m.mes, String(m.ajustePct)])))
+    Object.fromEntries([[proy.mesBase, String(proy.ajusteBasePct)], ...proy.meses.map((m) => [m.mes, String(m.ajustePct)])]))
   const pctDe = (mes: string) => Number(pct[mes]) || 0
-  const hayAjuste = proy.meses.some((m) => m.ajustePct !== 0 || pctDe(m.mes) !== 0)
-  const sinGuardar = proy.meses.some((m) => pctDe(m.mes) !== m.ajustePct)
-  const guardar = () => run(() => guardarAjustesVolumen(proy.meses.map((m) => ({
+  const todos = [{ mes: proy.mesBase, hlPresupuesto: proy.hlBasePresupuesto, ajustePct: proy.ajusteBasePct }, ...proy.meses]
+  const hayAjuste = todos.some((m) => m.ajustePct !== 0 || pctDe(m.mes) !== 0)
+  const sinGuardar = todos.some((m) => pctDe(m.mes) !== m.ajustePct)
+  const guardar = () => run(() => guardarAjustesVolumen(todos.map((m) => ({
     anio: Number(m.mes.split("-")[0]), mes: Number(m.mes.split("-")[1]), ajustePct: pctDe(m.mes),
   }))), "Escenario de volumen guardado")
   return (
@@ -609,14 +611,12 @@ function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: Proye
         <TableBody>
           <TableRow>
             <TableCell className="font-medium">HL presupuesto</TableCell>
-            <TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>
-            {proy.meses.map((m) => (<TableCell key={m.mes} className="text-right">{fmt(Math.round(m.hlPresupuesto))}</TableCell>))}
+            {todos.map((m) => (<TableCell key={m.mes} className="text-right">{fmt(Math.round(m.hlPresupuesto))}</TableCell>))}
           </TableRow>
           {canEdit && (
             <TableRow>
               <TableCell className="font-medium">Ajuste escenario (%)</TableCell>
-              <TableCell className="text-right text-muted-foreground">—</TableCell>
-              {proy.meses.map((m) => (
+              {todos.map((m) => (
                 <TableCell key={m.mes} className="text-right">
                   <Input type="number" step="1" className="h-8 w-16 text-right" value={pct[m.mes] ?? "0"}
                     onChange={(e) => setPct((s) => ({ ...s, [m.mes]: e.target.value }))} />
@@ -627,8 +627,7 @@ function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: Proye
           {hayAjuste && (
             <TableRow>
               <TableCell className="font-medium">HL escenario</TableCell>
-              <TableCell className="text-right">{fmt(Math.round(proy.hlBase))}</TableCell>
-              {proy.meses.map((m) => (
+              {todos.map((m) => (
                 <TableCell key={m.mes} className={`text-right ${pctDe(m.mes) !== 0 ? "font-semibold text-sky-700" : ""}`}>
                   {fmt(Math.round(m.hlPresupuesto * (1 + pctDe(m.mes) / 100)))}
                 </TableCell>
@@ -642,7 +641,7 @@ function VolumenProyectadoTable({ proy, canEdit, run, isPending }: { proy: Proye
           <Button size="sm" disabled={isPending} onClick={guardar}>Guardar escenario</Button>
           {sinGuardar && <span className="text-xs text-amber-600">Hay ajustes sin guardar — la proyección de abajo usa lo guardado.</span>}
           <p className="w-full text-xs text-muted-foreground">
-            Escenario de volumen: cargá un % de aumento (o de baja, con signo −) sobre el HL del presupuesto en cualquier mes. Al guardar, la proyección de flota y almacén se recalcula con el HL ajustado; 0 = sin ajuste.
+            Escenario de volumen: cargá un % de aumento (o de baja, con signo −) sobre el HL del presupuesto en cualquier mes, incluido el base. Al guardar, la proyección de flota y almacén se recalcula con el HL ajustado; 0 = sin ajuste. Ojo: ajustar el <b>mes base</b> recalibra el índice de todos los meses (sube el base → bajan los índices futuros, y viceversa).
           </p>
         </div>
       )}
