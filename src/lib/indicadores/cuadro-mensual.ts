@@ -38,6 +38,8 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "bultos_vendidos", pilar: "Entrega", nombre: "Bultos distribuidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cantidad total de bultos facturados del mes (ventas_diarias)." },
   { id: "hl_vendidos", pilar: "Entrega", nombre: "HL distribuidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Volumen total distribuido del mes en hectolitros (ventas_diarias)." },
   { id: "ceq_vendidas", pilar: "Entrega", nombre: "CEq distribuidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes distribuidas del mes (bultos × factor CEq = 120/bultos_pallet). Misma base que Bultos distribuidos." },
+  { id: "viajes_mes", pilar: "Entrega", nombre: "Camiones a la calle", unidad: "viajes", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cantidad de viajes del mes: suma de los camiones que salieron a reparto cada día (rutas Foxtrot). Un camión con viaje en un día cuenta 1." },
+  { id: "hl_rechazados", pilar: "Entrega", nombre: "HL rechazados", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Volumen total rechazado del mes en hectolitros (misma base que el % Rechazo)." },
   { id: "rechazo", pilar: "Entrega", nombre: "% Rechazo", unidad: "%", meta: 1.7, mejor_si: "menor", resumen: "promedio", nota: "HL rechazados / HL distribuidos del mes. Meta ≤ 1,7%." },
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
 
@@ -195,6 +197,7 @@ export function formatValor(valor: number | null, unidad: string): string {
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 1 })
     case "casos":
     case "días":
+    case "viajes":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })
     default:
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 2 })

@@ -286,6 +286,13 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: ventas > 0 ? (rech / ventas) * 100 : null,
       parcial: esActual,
     }
+    // Volumen rechazado del mes (misma base que el %): con distribución en el
+    // mes se muestra aunque sea 0; sin distribución queda sin dato.
+    celdas.hl_rechazados[mes] = {
+      mes,
+      valor: ventas > 0 ? rech : null,
+      parcial: esActual,
+    }
 
     const mostBultos = mostradorBultosPorMes[mes] ?? 0
     const mostHl = mostradorHlPorMes[mes] ?? 0
@@ -421,6 +428,13 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.camiones_dia[mes] = {
       mes,
       valor: acc && acc.fechas.size > 0 ? acc.rutas / acc.fechas.size : null,
+      parcial: esActual,
+    }
+    // Entrega: viajes del mes = total de rutas Foxtrot (suma de camiones
+    // que salieron por día; un camión con viaje un día cuenta 1).
+    celdas.viajes_mes[mes] = {
+      mes,
+      valor: acc && acc.rutas > 0 ? acc.rutas : null,
       parcial: esActual,
     }
     // Mantenimiento: sin histórico mensual disponible → siempre gris.
