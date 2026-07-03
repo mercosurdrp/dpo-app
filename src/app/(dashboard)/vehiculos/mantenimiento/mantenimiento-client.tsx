@@ -1227,7 +1227,6 @@ function NuevoMantenimientoDialog({
   })
   const [horometro, setHorometro] = useState("")
   const [taller, setTaller] = useState("")
-  const [costo, setCosto] = useState("")
   const [factura, setFactura] = useState("")
   // N° de OT sugerido = último correlativo + 1 (editable).
   const [numeroOt, setNumeroOt] = useState(siguienteNumeroOt)
@@ -1244,7 +1243,6 @@ function NuevoMantenimientoDialog({
   const [libres, setLibres] = useState<string[]>([])
   const [libreInput, setLibreInput] = useState("")
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>([])
-  const [horasMO, setHorasMO] = useState("")
   const [costoMO, setCostoMO] = useState("")
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
@@ -1311,12 +1309,12 @@ function NuevoMantenimientoDialog({
       odometro: parseNum(odometro),
       horometro: parseNum(horometro),
       taller,
-      costo: parseNum(costo),
+      // El costo total se arma solo: mano de obra + repuestos.
+      costo: totalOt(repuestos, costoMO),
       numero_factura: factura,
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
-      horas_mano_obra: parseNum(horasMO),
       costo_mano_obra: parseNum(costoMO),
       repuestos: repuestosPayload(repuestos),
       evidencia_urls: evidencia.length > 0 ? evidencia : null,
@@ -1464,28 +1462,19 @@ function NuevoMantenimientoDialog({
               <Input value={factura} onChange={(e) => setFactura(e.target.value)} />
             </div>
             <div>
-              <Label>Costo ($)</Label>
-              <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
-              <div className="mt-1">
-                <CostoSugerido
-                  repuestos={repuestos}
-                  costoManoObra={costoMO}
-                  costoTotal={costo}
-                  setCostoTotal={setCosto}
-                />
-              </div>
+              <Label>Mano de obra ($)</Label>
+              <Input
+                type="number"
+                value={costoMO}
+                onChange={(e) => setCostoMO(e.target.value)}
+              />
             </div>
           </div>
 
-          {/* Desglose: repuestos por un lado, mano de obra por el otro. */}
+          {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="space-y-3 rounded-md border border-slate-200 p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <ManoDeObraFields
-              horas={horasMO}
-              setHoras={setHorasMO}
-              costo={costoMO}
-              setCosto={setCostoMO}
-            />
+            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
           </div>
 
           <FacturasInput facturas={facturas} setFacturas={setFacturas} />
@@ -1776,67 +1765,40 @@ function RepuestosEditor({
   )
 }
 
-// Bloque "mano de obra" (horas + costo) reutilizado en alta y edición.
-function ManoDeObraFields({
-  horas,
-  setHoras,
-  costo,
-  setCosto,
+// Total de la OT = mano de obra + repuestos, cada suma por su lado y el total al pie.
+function TotalOtLinea({
+  repuestos,
+  costoManoObra,
 }: {
-  horas: string
-  setHoras: (v: string) => void
-  costo: string
-  setCosto: (v: string) => void
+  repuestos: RepuestoForm[]
+  costoManoObra: string
 }) {
+  const mo = parseFloat(costoManoObra) || 0
+  const rep = subtotalRepuestos(repuestos)
+  if (mo <= 0 && rep <= 0) return null
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <Label>Mano de obra (hs)</Label>
-        <Input
-          type="number"
-          value={horas}
-          onChange={(e) => setHoras(e.target.value)}
-          placeholder="Horas"
-        />
-      </div>
-      <div>
-        <Label>Costo mano de obra ($)</Label>
-        <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
-      </div>
+    <div className="space-y-0.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      <p className="flex justify-between">
+        <span>Mano de obra</span>
+        <span className="tabular-nums">{fmtMoney(mo)}</span>
+      </p>
+      <p className="flex justify-between">
+        <span>Repuestos</span>
+        <span className="tabular-nums">{fmtMoney(rep)}</span>
+      </p>
+      <p className="flex justify-between border-t border-slate-200 pt-0.5 text-sm font-semibold text-slate-800">
+        <span>Total</span>
+        <span className="tabular-nums">{fmtMoney(mo + rep)}</span>
+      </p>
     </div>
   )
 }
 
-// Línea "costo sugerido" (repuestos + mano de obra) con botón para volcarlo al
-// costo total, así el reporte de costos no subcontabiliza.
-function CostoSugerido({
-  repuestos,
-  costoManoObra,
-  costoTotal,
-  setCostoTotal,
-}: {
-  repuestos: RepuestoForm[]
-  costoManoObra: string
-  costoTotal: string
-  setCostoTotal: (v: string) => void
-}) {
-  const sugerido = subtotalRepuestos(repuestos) + (parseFloat(costoManoObra) || 0)
-  if (sugerido <= 0) return null
-  const yaCoincide = (parseFloat(costoTotal) || 0) === sugerido
-  return (
-    <p className="text-xs text-slate-500">
-      Repuestos + mano de obra = <span className="font-medium">{fmtMoney(sugerido)}</span>
-      {!yaCoincide && (
-        <button
-          type="button"
-          onClick={() => setCostoTotal(String(sugerido))}
-          className="ml-2 font-medium text-sky-600 hover:underline"
-        >
-          usar como costo total
-        </button>
-      )}
-    </p>
-  )
+// Total que se guarda en `costo` (lo usa el reporte de costos): MO + repuestos.
+function totalOt(repuestos: RepuestoForm[], costoManoObra: string): number | null {
+  const mo = parseFloat(costoManoObra) || 0
+  const total = mo + subtotalRepuestos(repuestos)
+  return total > 0 ? total : null
 }
 
 // ==================== Dialog: ver orden de trabajo ====================
@@ -1935,7 +1897,9 @@ function DetalleOrdenDialog({
               <dd className="text-slate-900">{m.taller || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">Costo</dt>
+              <dt className="text-xs font-medium text-slate-500">
+                Costo total (mano de obra + repuestos)
+              </dt>
               <dd className="tabular-nums text-slate-900">
                 {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
               </dd>
@@ -2129,7 +2093,6 @@ function EditarMantenimientoDialog({
   const [odometro, setOdometro] = useState(m.odometro != null ? String(m.odometro) : "")
   const [horometro, setHorometro] = useState(m.horometro != null ? String(m.horometro) : "")
   const [taller, setTaller] = useState(m.taller ?? "")
-  const [costo, setCosto] = useState(m.costo != null ? String(m.costo) : "")
   const [factura, setFactura] = useState(m.numero_factura ?? "")
   const [numeroOt, setNumeroOt] = useState(m.numero_ot ?? "")
   const [obs, setObs] = useState(m.observaciones ?? "")
@@ -2145,12 +2108,15 @@ function EditarMantenimientoDialog({
   const [urlsExistentes, setUrlsExistentes] = useState<string[]>(m.evidencia_urls ?? [])
   const [facturasNuevas, setFacturasNuevas] = useState<File[]>([])
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>(() => repuestosDesde(m))
-  const [horasMO, setHorasMO] = useState(
-    m.horas_mano_obra != null ? String(m.horas_mano_obra) : ""
-  )
-  const [costoMO, setCostoMO] = useState(
-    m.costo_mano_obra != null ? String(m.costo_mano_obra) : ""
-  )
+  const [costoMO, setCostoMO] = useState(() => {
+    if (m.costo_mano_obra != null) return String(m.costo_mano_obra)
+    // OT vieja sin desglose: la mano de obra hereda el costo total menos los repuestos.
+    if (m.costo != null) {
+      const mo = Number(m.costo) - subtotalRepuestos(repuestosDesde(m))
+      return mo > 0 ? String(mo) : ""
+    }
+    return ""
+  })
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
@@ -2168,12 +2134,12 @@ function EditarMantenimientoDialog({
       odometro: parseNum(odometro),
       horometro: parseNum(horometro),
       taller,
-      costo: parseNum(costo),
+      // El costo total se arma solo: mano de obra + repuestos.
+      costo: totalOt(repuestos, costoMO),
       numero_factura: factura,
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
-      horas_mano_obra: parseNum(horasMO),
       costo_mano_obra: parseNum(costoMO),
       repuestos: repuestosPayload(repuestos),
       evidencia_urls: evidencia,
@@ -2237,16 +2203,12 @@ function EditarMantenimientoDialog({
             <Input value={taller} onChange={(e) => setTaller(e.target.value)} />
           </div>
           <div>
-            <Label>Costo ($)</Label>
-            <Input type="number" value={costo} onChange={(e) => setCosto(e.target.value)} />
-            <div className="mt-1">
-              <CostoSugerido
-                repuestos={repuestos}
-                costoManoObra={costoMO}
-                costoTotal={costo}
-                setCostoTotal={setCosto}
-              />
-            </div>
+            <Label>Mano de obra ($)</Label>
+            <Input
+              type="number"
+              value={costoMO}
+              onChange={(e) => setCostoMO(e.target.value)}
+            />
           </div>
           <div>
             <Label>N° factura</Label>
@@ -2260,15 +2222,10 @@ function EditarMantenimientoDialog({
               placeholder="Orden de trabajo"
             />
           </div>
-          {/* Desglose: repuestos por un lado, mano de obra por el otro. */}
+          {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="col-span-2 space-y-3 rounded-md border border-slate-200 p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <ManoDeObraFields
-              horas={horasMO}
-              setHoras={setHorasMO}
-              costo={costoMO}
-              setCosto={setCostoMO}
-            />
+            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
           </div>
           <div className="col-span-2">
             <Label>Observaciones</Label>
