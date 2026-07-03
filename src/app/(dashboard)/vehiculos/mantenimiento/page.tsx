@@ -111,6 +111,7 @@ export default async function MantenimientoPage() {
               inventario: { minimaSuperada: 0, maximaSuperada: 0 },
             },
           },
+          unidadesBaja: [],
         }
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }

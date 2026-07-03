@@ -11,13 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { CircleDot, ClipboardList, Gauge, Wrench } from "lucide-react"
+import { Archive, CircleDot, ClipboardList, Gauge, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type {
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
 import type { NeumaticosResumen } from "@/lib/vehiculos/neumaticos-tipos"
+import type { UnidadBaja } from "@/actions/mantenimiento-vehiculos"
 
 const ESTADO_SG: Record<
   EstadoServiceGeneral,
@@ -83,10 +84,11 @@ interface Props {
   programacion: ServiceGeneralUnidad[]
   otPendientes: OTPendiente[]
   neumaticos: NeumaticosResumen
+  unidadesBaja: UnidadBaja[]
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, otPendientes, neumaticos, onNavigate }: Props) {
+export function TableroOperativo({ programacion, otPendientes, neumaticos, unidadesBaja, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
 
   const esAlerta = (e: EstadoServiceGeneral) =>
@@ -322,6 +324,37 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, onNav
           </Table>
         </CardContent>
       </Card>
+
+      {/* ===== Unidades dadas de baja (vendidas/retiradas) ===== */}
+      {unidadesBaja.length > 0 && (
+        <Card className="border-dashed">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base text-slate-500">
+              <Archive className="size-4" /> Unidades dadas de baja
+            </CardTitle>
+            <p className="text-xs text-slate-400">
+              Fuera de la programación, pero con su historial de OTs y checklists conservado.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="divide-y divide-slate-100">
+              {unidadesBaja.map((u) => (
+                <li key={u.dominio} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                  <span className="font-medium text-slate-600">{u.dominio}</span>
+                  <span className="text-slate-400">{u.descripcion ?? "—"}</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-blue-600 hover:underline"
+                    onClick={() => onNavigate("historial", u.dominio)}
+                  >
+                    Ver sus OTs
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -85,6 +85,14 @@ export interface TableroResumen {
   }
 }
 
+// Unidades dadas de baja (vendidas/retiradas): siguen en el catálogo con
+// active=false para conservar su historial de OTs/checklists.
+export interface UnidadBaja {
+  dominio: string
+  descripcion: string | null
+  tipo: string | null
+}
+
 // Umbrales de llantas (orientativos, ajustables luego por config).
 const LLANTA_PROF_MIN_MM = 3
 const LLANTA_PRESION_MIN_PSI = 90
@@ -106,6 +114,7 @@ export async function getTableroOperativo(): Promise<
         programacion: ServiceGeneralUnidad[]
         documentos: DocumentoVencimiento[]
         resumen: TableroResumen
+        unidadesBaja: UnidadBaja[]
       }
     }
   | { error: string }
@@ -123,6 +132,7 @@ export async function getTableroOperativo(): Promise<
       otRes,
       chkRes,
       vehRes,
+      bajasRes,
       novRes,
       llantasRes,
       repuestosRes,
@@ -141,6 +151,11 @@ export async function getTableroOperativo(): Promise<
         .select("estado, costo, created_at, updated_at"),
       supabase.from("checklist_vehiculos").select("dominio, fecha, tipo"),
       supabase.from("catalogo_vehiculos").select("dominio, tipo").eq("active", true),
+      supabase
+        .from("catalogo_vehiculos")
+        .select("dominio, descripcion, tipo")
+        .eq("active", false)
+        .order("dominio"),
       supabase.from("mantenimiento_novedades").select("estado, fecha"),
       supabase
         .from("mantenimiento_llantas")
@@ -149,7 +164,7 @@ export async function getTableroOperativo(): Promise<
       supabase.from("mantenimiento_ordenes_compra").select("estado"),
     ])
     for (const r of [
-      catsRes, reqsRes, otRes, chkRes, vehRes, novRes, llantasRes, repuestosRes, ocRes,
+      catsRes, reqsRes, otRes, chkRes, vehRes, bajasRes, novRes, llantasRes, repuestosRes, ocRes,
     ]) {
       if (r.error) throw new Error(r.error.message)
     }
@@ -327,7 +342,9 @@ export async function getTableroOperativo(): Promise<
       },
     }
 
-    return { data: { programacion, documentos, resumen } }
+    const unidadesBaja = (bajasRes.data || []) as UnidadBaja[]
+
+    return { data: { programacion, documentos, resumen, unidadesBaja } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

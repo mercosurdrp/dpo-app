@@ -97,6 +97,7 @@ import type {
   ChecklistComentario,
   ChecklistItemNoOk,
   TableroResumen,
+  UnidadBaja,
 } from "@/actions/mantenimiento-vehiculos"
 import type { Neumatico, Alineacion, Rotacion } from "@/lib/vehiculos/neumaticos-tipos"
 import type { KmFlotaUnidad } from "@/actions/neumaticos"
@@ -329,6 +330,7 @@ interface MantenimientoClientProps {
     programacion: ServiceGeneralUnidad[]
     documentos: DocumentoVencimiento[]
     resumen: TableroResumen
+    unidadesBaja: UnidadBaja[]
   }
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   neumaticos: Neumatico[]
@@ -571,6 +573,7 @@ export function MantenimientoClient({
             programacion={tablero.programacion}
             otPendientes={otPendientes}
             neumaticos={neumaticosResumen}
+            unidadesBaja={tablero.unidadesBaja}
             onNavigate={navegar}
           />
         </TabsContent>
@@ -661,6 +664,11 @@ export function MantenimientoClient({
                   {estados.map((e) => (
                     <SelectItem key={e.vehiculo.dominio} value={e.vehiculo.dominio}>
                       {e.vehiculo.dominio}
+                    </SelectItem>
+                  ))}
+                  {tablero.unidadesBaja.map((u) => (
+                    <SelectItem key={u.dominio} value={u.dominio}>
+                      {u.dominio} (baja)
                     </SelectItem>
                   ))}
                 </SelectContent>
