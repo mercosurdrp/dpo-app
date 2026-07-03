@@ -43,6 +43,7 @@ import {
   Paperclip,
   Plus,
   Pencil,
+  Search,
   Trash2,
   Truck,
   Wrench,
@@ -352,6 +353,7 @@ export function MantenimientoClient({
   const [fTipo, setFTipo] = useState("todos")
   const [fEstado, setFEstado] = useState("todos")
   const [fMes, setFMes] = useState("todos")
+  const [fBusqueda, setFBusqueda] = useState("")
 
   const refresh = () => startTransition(() => router.refresh())
 
@@ -388,17 +390,20 @@ export function MantenimientoClient({
     [mantenimientos]
   )
 
-  const mantenimientosFiltrados = useMemo(
-    () =>
-      mantenimientos.filter(
-        (m) =>
-          (fDominio === "todos" || m.dominio === fDominio) &&
-          (fTipo === "todos" || m.tipo === fTipo) &&
-          (fEstado === "todos" || m.estado === fEstado) &&
-          (fMes === "todos" || m.fecha.slice(0, 7) === fMes)
-      ),
-    [mantenimientos, fDominio, fTipo, fEstado, fMes]
-  )
+  const mantenimientosFiltrados = useMemo(() => {
+    const q = fBusqueda.trim().toLowerCase()
+    return mantenimientos.filter(
+      (m) =>
+        (fDominio === "todos" || m.dominio === fDominio) &&
+        (fTipo === "todos" || m.tipo === fTipo) &&
+        (fEstado === "todos" || m.estado === fEstado) &&
+        (fMes === "todos" || m.fecha.slice(0, 7) === fMes) &&
+        (q === "" ||
+          (m.numero_ot ?? "").toLowerCase().includes(q) ||
+          (m.numero_factura ?? "").toLowerCase().includes(q) ||
+          (m.cloudfleet_number != null && String(m.cloudfleet_number).includes(q)))
+    )
+  }, [mantenimientos, fDominio, fTipo, fEstado, fMes, fBusqueda])
 
   // Costo total de las órdenes según los filtros aplicados.
   const costoFiltrado = useMemo(
@@ -590,6 +595,28 @@ export function MantenimientoClient({
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div>
+              <Label className="text-xs text-slate-500">Buscar</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={fBusqueda}
+                  onChange={(e) => setFBusqueda(e.target.value)}
+                  placeholder="N° OT o factura…"
+                  className="w-48 pl-8"
+                />
+                {fBusqueda !== "" && (
+                  <button
+                    type="button"
+                    onClick={() => setFBusqueda("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
               <Label className="text-xs text-slate-500">Dominio</Label>
               <Select
                 value={fDominio}
@@ -686,6 +713,7 @@ export function MantenimientoClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
+                      <TableHead>N° OT / Fact.</TableHead>
                       <TableHead>Dominio</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Estado</TableHead>
@@ -708,6 +736,15 @@ export function MantenimientoClient({
                         )}
                       >
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs tabular-nums text-slate-600">
+                          <span className="block">
+                            {m.numero_ot ||
+                              (m.cloudfleet_number != null ? `CF #${m.cloudfleet_number}` : "—")}
+                          </span>
+                          {m.numero_factura && (
+                            <span className="block text-slate-400">Fc {m.numero_factura}</span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">
                           <span className="flex items-center gap-1.5">
                             {m.dominio}
