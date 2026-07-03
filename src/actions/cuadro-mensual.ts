@@ -287,25 +287,10 @@ export async function getCuadroMensualIndicadores(): Promise<
       parcial: esActual,
     }
 
-    // Ventas totales = TODO lo distribuido (Chess + Gestión, misma base que la
-    // fila de Entrega) + mostrador + presupuesto. Siempre cierra la identidad
-    // Vendidos = Distribuidos + Mostrador + Presupuesto.
     const mostBultos = mostradorBultosPorMes[mes] ?? 0
     const mostHl = mostradorHlPorMes[mes] ?? 0
     const presBultos = presupuestoBultosPorMes[mes] ?? 0
     const presHl = presupuestoHlPorMes[mes] ?? 0
-    const totBultos = bultos + mostBultos + presBultos
-    const totHl = ventas + mostHl + presHl
-    celdas.ventas_bultos[mes] = {
-      mes,
-      valor: totBultos > 0 ? totBultos : null,
-      parcial: esActual,
-    }
-    celdas.ventas_hl[mes] = {
-      mes,
-      valor: totHl > 0 ? totHl : null,
-      parcial: esActual,
-    }
     celdas.mostrador_bultos[mes] = {
       mes,
       valor: mostBultos > 0 ? mostBultos : null,
@@ -316,17 +301,6 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: mostHl > 0 ? mostHl : null,
       parcial: esActual,
     }
-    celdas.presupuesto_bultos[mes] = {
-      mes,
-      valor: presBultos > 0 ? presBultos : null,
-      parcial: esActual,
-    }
-    celdas.presupuesto_hl[mes] = {
-      mes,
-      valor: presHl > 0 ? presHl : null,
-      parcial: esActual,
-    }
-
     // Facturado Chess NETO (sistema madre, sin Gestión):
     // FCVTA (distribuido chess + mostrador) + PRVTA − DVVTA − PRDVO.
     const chessDistBultos = chessDistBultosPorMes[mes] ?? 0
@@ -351,9 +325,9 @@ export async function getCuadroMensualIndicadores(): Promise<
 
   // ── ENTREGA/VENTAS: CEq (bultos × ceq_factor, vía funciones SQL) ──
   // cuadro_ceq_mensual: distribuido chess+gestion (fila de Entrega).
-  // cuadro_ceq_no_distribuido_mensual: mostrador (FCVTA) + presupuesto (PRVTA).
-  // Ventas = distribuido + mostrador + presupuesto (misma identidad que
-  // bultos/HL).
+  // cuadro_ceq_chess_mensual: distribuido SOLO chess (base de Ventas neto).
+  // cuadro_ceq_no_distribuido_mensual: mostrador (FCVTA) + presupuesto (PRVTA)
+  // + notas de crédito (DVVTA) + devoluciones presupuesto (PRDVO).
   {
     const [ceqRes, ceqChessRes, ceqNoDistRes] = await Promise.all([
       supabase.rpc("cuadro_ceq_mensual", { p_desde: desde }),
@@ -398,20 +372,9 @@ export async function getCuadroMensualIndicadores(): Promise<
       }
       const most = ceqMostPorMes[mes] ?? 0
       const pres = ceqPresPorMes[mes] ?? 0
-      const tot = (ceqPorMes[mes] ?? 0) + most + pres
-      celdas.ventas_ceq[mes] = {
-        mes,
-        valor: tot > 0 ? tot : null,
-        parcial: esActual,
-      }
       celdas.mostrador_ceq[mes] = {
         mes,
         valor: most > 0 ? most : null,
-        parcial: esActual,
-      }
-      celdas.presupuesto_ceq[mes] = {
-        mes,
-        valor: pres > 0 ? pres : null,
         parcial: esActual,
       }
       const chessDist = ceqChessDistPorMes[mes] ?? 0
