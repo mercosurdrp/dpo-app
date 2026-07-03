@@ -1420,6 +1420,8 @@ export interface MantenimientoGasto {
   monto: number
   medio_pago: GastoMedioPago | null
   numero_comprobante: string | null
+  /** N° de orden de trabajo (OT) asociado, para seguimiento. Obligatorio si tipo=factura. */
+  orden_trabajo: string | null
   cuenta_contable: string | null
   centro_costo: string | null
   dominio: string | null

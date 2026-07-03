@@ -86,6 +86,7 @@ function buildHtml(gasto: MantenimientoGasto): string {
       ${row("Fecha de carga", gasto.fecha_carga)}
       ${row("Mes de imputación", gasto.mes_imputacion)}
       ${row("N° comprobante", gasto.numero_comprobante)}
+      ${row("N° orden de trabajo", gasto.orden_trabajo)}
       ${row("Medio de pago", gasto.medio_pago ? GASTO_MEDIO_PAGO_LABELS[gasto.medio_pago] : null)}
       ${row("Cuenta contable", gasto.cuenta_contable)}
       ${row("Centro de costo", gasto.centro_costo)}
@@ -154,6 +155,10 @@ export async function createGasto(
     const medioRaw = str("medio_pago")
     const medio_pago = (medioRaw as GastoMedioPago | null) ?? null
 
+    const orden_trabajo = str("orden_trabajo")
+    if (tipo === "factura" && !orden_trabajo)
+      return { error: "Ingresá el N° de orden de trabajo (obligatorio para facturas)" }
+
     const tipoMantRaw = str("tipo_mantenimiento")
     const tipo_mantenimiento =
       tipoMantRaw && TIPOS_MANT.includes(tipoMantRaw as MantenimientoTipo)
@@ -197,6 +202,7 @@ export async function createGasto(
         monto,
         medio_pago,
         numero_comprobante: str("numero_comprobante"),
+        orden_trabajo,
         cuenta_contable: str("cuenta_contable"),
         centro_costo: str("centro_costo"),
         dominio: str("dominio"),

@@ -13,6 +13,8 @@ import {
   RotateCcw,
   Receipt,
   FileText,
+  FileSpreadsheet,
+  FileDown,
   Wallet,
   Check,
   X,
@@ -157,6 +159,15 @@ export function GastosTab({
 
   const refresh = () => startTransition(() => router.refresh())
 
+  // URL de descarga (Excel/PDF) respetando los filtros visibles.
+  const exportUrl = (formato: "xlsx" | "pdf") => {
+    const params = new URLSearchParams()
+    if (fMes !== "todos") params.set("mes", fMes)
+    if (fTipo !== "todos") params.set("tipo", fTipo)
+    const qs = params.toString()
+    return `/api/vehiculos/gastos/${formato === "xlsx" ? "export" : "pdf"}${qs ? `?${qs}` : ""}`
+  }
+
   const onEstado = async (
     g: MantenimientoGasto,
     patch: Parameters<typeof updateGastoEstado>[1]
@@ -271,11 +282,27 @@ export function GastosTab({
               </Select>
             </div>
           </div>
-          {puedeEditar && (
-            <Button onClick={() => setNuevoOpen(true)}>
-              <Plus className="mr-1 size-4" /> Nuevo gasto
+          <div className="flex items-end gap-2">
+            <Button
+              variant="outline"
+              title="Descargar Excel con el filtro actual"
+              render={<a href={exportUrl("xlsx")} download />}
+            >
+              <FileSpreadsheet className="mr-1 size-4 text-emerald-600" /> Excel
             </Button>
-          )}
+            <Button
+              variant="outline"
+              title="Descargar PDF con el filtro actual"
+              render={<a href={exportUrl("pdf")} target="_blank" rel="noreferrer" />}
+            >
+              <FileDown className="mr-1 size-4 text-red-600" /> PDF
+            </Button>
+            {puedeEditar && (
+              <Button onClick={() => setNuevoOpen(true)}>
+                <Plus className="mr-1 size-4" /> Nuevo gasto
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabla */}
@@ -324,9 +351,13 @@ export function GastosTab({
                       <TableCell>
                         <div className="font-medium text-slate-800">{g.proveedor ?? "—"}</div>
                         <div className="text-xs text-slate-500">
-                          {g.dominio ? `${g.dominio}` : ""}
-                          {g.dominio && g.numero_comprobante ? " · " : ""}
-                          {g.numero_comprobante ? `N° ${g.numero_comprobante}` : ""}
+                          {[
+                            g.dominio,
+                            g.numero_comprobante ? `N° ${g.numero_comprobante}` : null,
+                            g.orden_trabajo ? `OT ${g.orden_trabajo}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </div>
                         {g.tipo_mantenimiento && (
                           <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
@@ -605,6 +636,7 @@ function NuevoGastoDialog({
   const [tipoMant, setTipoMant] = useState<MantenimientoTipo | "">("")
   const [medioPago, setMedioPago] = useState<GastoMedioPago | "">("")
   const [nroComp, setNroComp] = useState("")
+  const [ordenTrabajo, setOrdenTrabajo] = useState("")
   const [ctaContable, setCtaContable] = useState("")
   const [centroCosto, setCentroCosto] = useState("")
   const [dominio, setDominio] = useState("")
@@ -618,6 +650,10 @@ function NuevoGastoDialog({
       toast.error("Ingresá un monto válido")
       return
     }
+    if (tipo === "factura" && !ordenTrabajo.trim()) {
+      toast.error("Ingresá el N° de orden de trabajo (obligatorio para facturas)")
+      return
+    }
     setSaving(true)
     const fd = new FormData()
     fd.set("tipo", tipo)
@@ -629,6 +665,7 @@ function NuevoGastoDialog({
     fd.set("tipo_mantenimiento", tipoMant)
     fd.set("medio_pago", medioPago)
     fd.set("numero_comprobante", nroComp)
+    fd.set("orden_trabajo", ordenTrabajo)
     fd.set("cuenta_contable", ctaContable)
     fd.set("centro_costo", centroCosto)
     fd.set("dominio", dominio)
@@ -753,6 +790,16 @@ function NuevoGastoDialog({
           <div>
             <Label>N° comprobante</Label>
             <Input value={nroComp} onChange={(e) => setNroComp(e.target.value)} />
+          </div>
+          <div>
+            <Label>
+              N° orden de trabajo{tipo === "factura" && <span className="text-red-500"> *</span>}
+            </Label>
+            <Input
+              value={ordenTrabajo}
+              onChange={(e) => setOrdenTrabajo(e.target.value)}
+              placeholder={tipo === "factura" ? "Obligatorio para facturas" : "Opcional"}
+            />
           </div>
           <div>
             <Label>Unidad (opcional)</Label>
