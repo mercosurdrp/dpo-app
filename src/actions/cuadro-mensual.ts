@@ -291,16 +291,6 @@ export async function getCuadroMensualIndicadores(): Promise<
     const mostHl = mostradorHlPorMes[mes] ?? 0
     const presBultos = presupuestoBultosPorMes[mes] ?? 0
     const presHl = presupuestoHlPorMes[mes] ?? 0
-    celdas.mostrador_bultos[mes] = {
-      mes,
-      valor: mostBultos > 0 ? mostBultos : null,
-      parcial: esActual,
-    }
-    celdas.mostrador_hl[mes] = {
-      mes,
-      valor: mostHl > 0 ? mostHl : null,
-      parcial: esActual,
-    }
     // Facturado Chess NETO (sistema madre, sin Gestión):
     // FCVTA (distribuido chess + mostrador) + PRVTA − DVVTA − PRDVO.
     const chessDistBultos = chessDistBultosPorMes[mes] ?? 0
@@ -319,6 +309,18 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.facturado_chess_hl[mes] = {
       mes,
       valor: chessDistHl > 0 ? factHl : null,
+      parcial: esActual,
+    }
+    // Venta mostrador = resta directa de las dos filas del cuadro:
+    // Vendidos (facturado Chess neto) − Distribuidos (chess + gestión).
+    celdas.mostrador_bultos[mes] = {
+      mes,
+      valor: chessDistBultos > 0 && bultos > 0 ? factBultos - bultos : null,
+      parcial: esActual,
+    }
+    celdas.mostrador_hl[mes] = {
+      mes,
+      valor: chessDistHl > 0 && ventas > 0 ? factHl - ventas : null,
       parcial: esActual,
     }
   }
@@ -372,17 +374,19 @@ export async function getCuadroMensualIndicadores(): Promise<
       }
       const most = ceqMostPorMes[mes] ?? 0
       const pres = ceqPresPorMes[mes] ?? 0
-      celdas.mostrador_ceq[mes] = {
-        mes,
-        valor: most > 0 ? most : null,
-        parcial: esActual,
-      }
       const chessDist = ceqChessDistPorMes[mes] ?? 0
       const factCeq =
         chessDist + most + pres - (ceqNcPorMes[mes] ?? 0) - (ceqDevPresPorMes[mes] ?? 0)
       celdas.facturado_chess_ceq[mes] = {
         mes,
         valor: chessDist > 0 ? factCeq : null,
+        parcial: esActual,
+      }
+      // Venta mostrador = Vendidos − Distribuidos (resta de las dos filas).
+      const distTotal = ceqPorMes[mes] ?? 0
+      celdas.mostrador_ceq[mes] = {
+        mes,
+        valor: chessDist > 0 && distTotal > 0 ? factCeq - distTotal : null,
         parcial: esActual,
       }
     }

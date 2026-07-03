@@ -46,10 +46,10 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "facturado_chess_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros netos facturados en Chess: Factura + Factura Presupuesto − Notas de Crédito − Devoluciones Presupuesto. No incluye Gestión." },
   { id: "facturado_chess_ceq", pilar: "Ventas", nombre: "CEq vendidas", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes netas facturadas en Chess (bultos × factor CEq = 120/bultos_pallet): Factura + Factura Presupuesto − Notas de Crédito − Devoluciones Presupuesto. No incluye Gestión." },
 
-  // ── Venta mostrador (facturas Chess sin camión de reparto) ──
-  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Facturas Chess sin camión de reparto (fletero MOSTRADOR RAMALLO y similares)." },
-  { id: "mostrador_hl", pilar: "Venta mostrador", nombre: "HL mostrador", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros vendidos por mostrador (Chess, sin camión de reparto)." },
-  { id: "mostrador_ceq", pilar: "Venta mostrador", nombre: "CEq mostrador", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "Cajas equivalentes vendidas por mostrador (bultos × factor CEq = 120/bultos_pallet)." },
+  // ── Venta mostrador (diferencia Vendidos − Distribuidos) ──
+  { id: "mostrador_bultos", pilar: "Venta mostrador", nombre: "Bultos mostrador", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Bultos vendidos (facturado Chess neto) − Bultos distribuidos: lo facturado que no salió en camión de reparto." },
+  { id: "mostrador_hl", pilar: "Venta mostrador", nombre: "HL mostrador", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "HL vendidos (facturado Chess neto) − HL distribuidos." },
+  { id: "mostrador_ceq", pilar: "Venta mostrador", nombre: "CEq mostrador", unidad: "CEq", meta: null, mejor_si: "sin", resumen: "suma", nota: "CEq vendidas (facturado Chess neto) − CEq distribuidas." },
 
   // ── Flota ──
   { id: "tiempo_ruta", pilar: "Flota", nombre: "Tiempo prom. en ruta", unidad: "hs", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Promedio de duración puerta a puerta de las rutas finalizadas (Foxtrot)." },
