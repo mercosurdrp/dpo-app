@@ -34,12 +34,13 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts"
-import { ArrowLeft, ChevronDown, Fuel, Loader2, RefreshCw } from "lucide-react"
+import { ArrowLeft, ChevronDown, Download, Fuel, Loader2, RefreshCw } from "lucide-react"
 import { PlanesAccionFlota } from "../_components/planes-accion-flota"
 
 const CAMION_COLOR = "#1D4ED8" // azul (gas oil)
@@ -123,6 +124,61 @@ function horasPorHorimetro(entradas: Entrada[]) {
   return total
 }
 
+// Nombre de archivo seguro a partir del título del gráfico.
+function slugArchivo(s: string) {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+}
+
+// Descarga el SVG de un gráfico (recharts) como PNG con fondo blanco y título,
+// en alta resolución, para pegarlo directo en un informe.
+function descargarGraficoPng(cont: HTMLElement | null, titulo: string) {
+  const svg = cont?.querySelector("svg")
+  if (!svg) return
+  const rect = svg.getBoundingClientRect()
+  const ancho = Math.round(rect.width)
+  const alto = Math.round(rect.height)
+  if (!ancho || !alto) return
+  const clon = svg.cloneNode(true) as SVGSVGElement
+  clon.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+  clon.setAttribute("width", String(ancho))
+  clon.setAttribute("height", String(alto))
+  // La imagen suelta pierde el CSS de la página: fijamos la tipografía en el SVG.
+  clon.style.fontFamily = "system-ui, -apple-system, 'Segoe UI', sans-serif"
+  const xml = new XMLSerializer().serializeToString(clon)
+  const img = new window.Image()
+  img.onload = () => {
+    const escala = 3
+    const margen = 44
+    const canvas = document.createElement("canvas")
+    canvas.width = ancho * escala
+    canvas.height = (alto + margen) * escala
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    ctx.scale(escala, escala)
+    ctx.fillStyle = "#FFFFFF"
+    ctx.fillRect(0, 0, ancho, alto + margen)
+    ctx.fillStyle = "#0F172A"
+    ctx.font = "600 15px system-ui, -apple-system, 'Segoe UI', sans-serif"
+    ctx.fillText(titulo, 12, 27)
+    ctx.drawImage(img, 0, margen, ancho, alto)
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${slugArchivo(titulo)}.png`
+      a.click()
+      URL.revokeObjectURL(url)
+    }, "image/png")
+  }
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml)
+}
+
 const METRICAS = [
   { key: "litros" as const, label: "Litros", fmt: (v: number) => fmtNum.format(v) },
   { key: "costo" as const, label: "Costo", fmt: (v: number) => `$${fmtCorto(v)}` },
@@ -182,6 +238,10 @@ export function CombustibleFlotaClient() {
   const [metrica, setMetrica] = useState<MetricaKey>("litros")
   const [ordenCamion, setOrdenCamion] = useState<{ col: OrdenCol; desc: boolean }>({ col: "litros", desc: true })
   const pedidos = useRef(0)
+  // Contenedores de los gráficos, para descargarlos como PNG.
+  const grafMesRef = useRef<HTMLDivElement>(null)
+  const grafUnidadRef = useRef<HTMLDivElement>(null)
+  const grafChoferRef = useRef<HTMLDivElement>(null)
 
   // `forzar` = botón Sincronizar: saltea el TTL y trae lo nuevo de Cloudfleet.
   // Replica la carga incremental: si la respuesta vino `parcial`, vuelve a
@@ -412,6 +472,34 @@ export function CombustibleFlotaClient() {
     }))
     return { arr: arr.sort((a, b) => a.clave.localeCompare(b.clave)), porDia }
   }, [entradasGrupo, mesUnico, grupo])
+
+  // Promedio mensual del año (grupo + sucursal, SIN el filtro de meses): línea de
+  // referencia para comparar los meses tildados contra el promedio. El mes en
+  // curso queda afuera (está incompleto y arrastraría el promedio para abajo).
+  const promedioMensual = useMemo(() => {
+    const mesActual = new Date()
+      .toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" })
+      .slice(0, 7)
+    const porMes = new Map<string, { litros: number; costo: number }>()
+    for (const e of entradas) {
+      const esDelGrupo = grupo === "camiones" ? PATENTES_FLOTA.has(e.patente) : esAutoelevador(e.patente)
+      if (!esDelGrupo || !e.fecha) continue
+      if (sucursal !== "__all__" && normSucursal(e.sucursal) !== sucursal) continue
+      const clave = e.fecha.slice(0, 7)
+      if (clave === mesActual) continue
+      const g = porMes.get(clave) || { litros: 0, costo: 0 }
+      g.litros += e.litros || 0
+      g.costo += e.costo || 0
+      porMes.set(clave, g)
+    }
+    if (porMes.size < 2) return null
+    let litros = 0, costo = 0
+    for (const v of porMes.values()) {
+      litros += v.litros
+      costo += v.costo
+    }
+    return { litros: litros / porMes.size, costo: costo / porMes.size, meses: porMes.size }
+  }, [entradas, grupo, sucursal])
 
   // Consumo por UNIDAD (una barra por camión / autoelevador) del grupo elegido,
   // ordenado de mayor a menor según la métrica (litros o costo).
@@ -717,22 +805,52 @@ export function CombustibleFlotaClient() {
                       {mt.label}
                     </Button>
                   ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    title="Descargar el gráfico como imagen para el informe"
+                    onClick={() =>
+                      descargarGraficoPng(
+                        grafMesRef.current,
+                        `Combustible · ${met.label} · ${grupoDef.titulo} · ${periodoTexto}${sucursal !== "__all__" ? ` · ${sucursal}` : ""}`
+                      )
+                    }
+                  >
+                    <Download className="h-4 w-4" /> PNG
+                  </Button>
                 </div>
               </div>
               <p className="mb-3 text-xs text-muted-foreground">
                 Tildá en el filtro los meses que quieras comparar (una barra por mes). Con un solo mes
                 tildado, el gráfico se abre por día.
+                {!serieCol.porDia && promedioMensual != null && (
+                  <> La línea punteada es el promedio mensual del año (sin el mes en curso).</>
+                )}
               </p>
               {serieCol.arr.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
               ) : (
-                <div className="h-[300px] w-full">
+                <div className="h-[300px] w-full" ref={grafMesRef}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={serieCol.arr} margin={{ top: 22, right: 16, bottom: 8, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                       <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                       <YAxis tickFormatter={(v) => met.fmt(v as number)} tick={{ fontSize: 12 }} width={56} />
                       <Tooltip content={<ColTooltip grupo={grupo} grupoDef={grupoDef} />} />
+                      {!serieCol.porDia && promedioMensual != null && (
+                        <ReferenceLine
+                          y={promedioMensual[metrica]}
+                          stroke="#64748B"
+                          strokeDasharray="6 3"
+                          ifOverflow="extendDomain"
+                          label={{
+                            value: `Prom. mensual: ${met.fmt(promedioMensual[metrica])}`,
+                            position: "insideTopRight",
+                            fontSize: 11,
+                            fill: "#64748B",
+                          }}
+                        />
+                      )}
                       <Bar dataKey={metrica} name={met.label} fill={grupoDef.color} radius={[3, 3, 0, 0]}>
                         <LabelList
                           dataKey={metrica}
@@ -774,6 +892,19 @@ export function CombustibleFlotaClient() {
                       {mt.label}
                     </Button>
                   ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    title="Descargar el gráfico como imagen para el informe"
+                    onClick={() =>
+                      descargarGraficoPng(
+                        grafUnidadRef.current,
+                        `Combustible · ${met.label} por ${grupo === "camiones" ? "camión" : "autoelevador"} · ${periodoTexto}${sucursal !== "__all__" ? ` · ${sucursal}` : ""}`
+                      )
+                    }
+                  >
+                    <Download className="h-4 w-4" /> PNG
+                  </Button>
                 </div>
               </div>
               <p className="mb-3 text-xs text-muted-foreground">
@@ -782,7 +913,7 @@ export function CombustibleFlotaClient() {
               {consumoPorUnidad.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
               ) : (
-                <div className="w-full" style={{ height: Math.max(220, consumoPorUnidad.length * 38) }}>
+                <div className="w-full" style={{ height: Math.max(220, consumoPorUnidad.length * 38) }} ref={grafUnidadRef}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       layout="vertical"
@@ -831,6 +962,19 @@ export function CombustibleFlotaClient() {
                       {mt.label}
                     </Button>
                   ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    title="Descargar el gráfico como imagen para el informe"
+                    onClick={() =>
+                      descargarGraficoPng(
+                        grafChoferRef.current,
+                        `Combustible · ${met.label} por ${grupo === "camiones" ? "chofer" : "operario"} · ${periodoTexto}${sucursal !== "__all__" ? ` · ${sucursal}` : ""}`
+                      )
+                    }
+                  >
+                    <Download className="h-4 w-4" /> PNG
+                  </Button>
                 </div>
               </div>
               <p className="mb-3 text-xs text-muted-foreground">
@@ -845,7 +989,7 @@ export function CombustibleFlotaClient() {
               {consumoPorChoferGrafico.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Sin datos para graficar.</p>
               ) : (
-                <div className="w-full" style={{ height: Math.max(220, consumoPorChoferGrafico.length * 34) }}>
+                <div className="w-full" style={{ height: Math.max(220, consumoPorChoferGrafico.length * 34) }} ref={grafChoferRef}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       layout="vertical"
