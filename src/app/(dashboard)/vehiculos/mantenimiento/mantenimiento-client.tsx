@@ -1397,13 +1397,24 @@ function NuevoMantenimientoDialog({
               <Input
                 value={numeroOt}
                 onChange={(e) => setNumeroOt(e.target.value)}
-                placeholder="Orden de trabajo"
+                placeholder="Automático al guardar"
               />
-              {siguienteNumeroOt && (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Sugerido: {siguienteNumeroOt} (siguiente correlativo)
-                </p>
-              )}
+              <p className="mt-1 text-[11px] text-slate-400">
+                {siguienteNumeroOt && numeroOt !== siguienteNumeroOt ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setNumeroOt(siguienteNumeroOt)}
+                      className="font-medium text-sky-600 hover:underline"
+                    >
+                      Usar N° {siguienteNumeroOt}
+                    </button>{" "}
+                    (siguiente correlativo) · vacío = se asigna solo
+                  </>
+                ) : (
+                  <>Siguiente correlativo. Si lo dejás vacío se asigna solo al guardar.</>
+                )}
+              </p>
             </div>
             <div>
               <Label>N° factura</Label>

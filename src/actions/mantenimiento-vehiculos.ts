@@ -502,23 +502,32 @@ export async function getMantenimientos(
  * vacía si todavía no hay ninguna OT numérica. Recorre TODAS las filas (no el
  * límite de la grilla) para no sugerir un número ya usado.
  */
+// Siguiente correlativo de OT = mayor numero_ot puramente numérico + 1 (las OT
+// importadas de Cloudfleet también cuentan: la serie manual continúa la de
+// Cloudfleet, que quedó discontinuado). Arranca en 1 si no hay ninguna.
+async function calcularSiguienteNumeroOt(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("mantenimiento_realizados")
+    .select("numero_ot")
+    .not("numero_ot", "is", null)
+  if (error) throw new Error(error.message)
+  let max = 0
+  for (const r of (data || []) as Array<{ numero_ot: string | null }>) {
+    const n = (r.numero_ot ?? "").trim()
+    if (/^\d+$/.test(n)) max = Math.max(max, parseInt(n, 10))
+  }
+  return String(max + 1)
+}
+
 export async function getSiguienteNumeroOt(): Promise<
   { data: string } | { error: string }
 > {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("mantenimiento_realizados")
-      .select("numero_ot")
-      .not("numero_ot", "is", null)
-    if (error) return { error: error.message }
-    let max = 0
-    for (const r of (data || []) as Array<{ numero_ot: string | null }>) {
-      const n = (r.numero_ot ?? "").trim()
-      if (/^\d+$/.test(n)) max = Math.max(max, parseInt(n, 10))
-    }
-    return { data: max > 0 ? String(max + 1) : "" }
+    return { data: await calcularSiguienteNumeroOt(supabase) }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -635,6 +644,11 @@ export async function createMantenimiento(
     const supabase = await createClient()
     const fs = derivarFueraServicio(input)
 
+    // Toda OT nueva queda numerada: si no vino un N° de OT, se asigna el
+    // siguiente correlativo al momento de guardar (evita sugerencias viejas).
+    const numeroOt =
+      input.numero_ot?.trim() || (await calcularSiguienteNumeroOt(supabase))
+
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
       .insert({
@@ -647,7 +661,7 @@ export async function createMantenimiento(
         taller: input.taller?.trim() || null,
         costo: input.costo ?? null,
         numero_factura: input.numero_factura?.trim() || null,
-        numero_ot: input.numero_ot?.trim() || null,
+        numero_ot: numeroOt,
         horas_mano_obra: input.horas_mano_obra ?? null,
         costo_mano_obra: input.costo_mano_obra ?? null,
         observaciones: input.observaciones?.trim() || null,
