@@ -10,8 +10,10 @@
  *   2) Total de bultos entregados por fletero (denominador per-día).
  *   3) Upsert a `rechazos` (filtros: idRechazo>0, !anulado, patente válida).
  *   4) Upsert a `ventas_diarias` (solo FCVTA, patente válida).
- *   5) Upsert a `ventas_mostrador_diarias`/`_sku` (no distribuido: FCVTA SIN
- *      patente válida = mostrador, y PRVTA = factura presupuesto/2da vuelta).
+ *   5) Upsert a `ventas_mostrador_diarias`/`_sku` (por documento: FCVTA SIN
+ *      patente válida = mostrador, PRVTA = factura presupuesto/2da vuelta,
+ *      DVVTA = notas de crédito y PRDVO = devoluciones presupuesto — estos
+ *      dos en valor absoluto, el cuadro mensual los resta).
  *
  * Chofer (persona) se resuelve únicamente desde `mapeo_patente_chofer`
  * (tabla manual). Foxtrot NO se consulta acá — el dato de chofer del
@@ -539,6 +541,12 @@ export async function syncRechazosForDate(
  *     RAMALLO") = venta de mostrador físico.
  *   - 'PRVTA': FACTURA PRESUPUESTO (ticket no fiscal, canal "SEGUNDA VUELTA"
  *     ~95%), cualquier fletero — `ventas_diarias` nunca las captura.
+ *   - 'DVVTA': NOTA DE CRÉDITO (todas, sin filtro de patente ni idRechazo —
+ *     a diferencia de la tabla `rechazos`, que solo guarda las de reparto).
+ *   - 'PRDVO': DEVOLUCIÓN PRESUPUESTO.
+ * DVVTA/PRDVO se guardan en valor ABSOLUTO (como el resto de la tabla); el
+ * consumidor (fila "facturados Chess" del cuadro mensual) los RESTA:
+ * facturado neto = FCVTA + PRVTA − DVVTA − PRDVO.
  * Tablas propias para no contaminar a los consumidores de ventas_diarias que
  * no filtran origen. Mismos criterios que el bloque FCVTA distribuido:
  * !anulado, sin encabezados de combo (los headers de combo traen HL=0 y sus
@@ -556,7 +564,9 @@ export async function upsertVentasMostradorDia(
       v.esCombo !== "SI" &&
       (
         (v.idDocumento === "FCVTA" && !isPatenteValida(v.dsFleteroCarga)) ||
-        v.idDocumento === "PRVTA"
+        v.idDocumento === "PRVTA" ||
+        v.idDocumento === "DVVTA" ||
+        v.idDocumento === "PRDVO"
       )
   )
   if (noDistribuidas.length === 0) return 0

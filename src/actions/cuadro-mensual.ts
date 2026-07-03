@@ -82,13 +82,14 @@ export async function getCuadroMensualIndicadores(): Promise<
     const PAGE = 1000
     const rows: Array<{
       fecha: string
+      origen: string | null
       total_hl: number | null
       total_bultos: number | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("ventas_diarias")
-        .select("fecha, total_hl, total_bultos")
+        .select("fecha, origen, total_hl, total_bultos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("id", { ascending: true })
@@ -210,24 +211,49 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── ENTREGA: HL distribuidos + % rechazo (de los fetches de rango) ──
   const ventasHlPorMes: Record<string, number> = {}
   const ventasBultosPorMes: Record<string, number> = {}
+  // Solo origen='chess' de lo distribuido — base de "facturados Chess".
+  const chessDistHlPorMes: Record<string, number> = {}
+  const chessDistBultosPorMes: Record<string, number> = {}
   for (const v of ventasRows) {
     const mes = v.fecha.slice(0, 7)
     const hl = Number(v.total_hl ?? 0)
-    if (Number.isFinite(hl)) ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+    if (Number.isFinite(hl)) {
+      ventasHlPorMes[mes] = (ventasHlPorMes[mes] ?? 0) + hl
+      if (v.origen === "chess")
+        chessDistHlPorMes[mes] = (chessDistHlPorMes[mes] ?? 0) + hl
+    }
     const bultos = Number(v.total_bultos ?? 0)
-    if (Number.isFinite(bultos))
+    if (Number.isFinite(bultos)) {
       ventasBultosPorMes[mes] = (ventasBultosPorMes[mes] ?? 0) + bultos
+      if (v.origen === "chess")
+        chessDistBultosPorMes[mes] = (chessDistBultosPorMes[mes] ?? 0) + bultos
+    }
   }
-  // No distribuido: 'FCVTA' = mostrador físico, 'PRVTA' = factura presupuesto.
+  // No distribuido, por documento: 'FCVTA' = mostrador físico, 'PRVTA' =
+  // factura presupuesto, 'DVVTA' = notas de crédito, 'PRDVO' = devoluciones
+  // presupuesto (los dos últimos vienen en absoluto y acá se restan).
   const mostradorHlPorMes: Record<string, number> = {}
   const mostradorBultosPorMes: Record<string, number> = {}
   const presupuestoHlPorMes: Record<string, number> = {}
   const presupuestoBultosPorMes: Record<string, number> = {}
+  const ncHlPorMes: Record<string, number> = {}
+  const ncBultosPorMes: Record<string, number> = {}
+  const devPresHlPorMes: Record<string, number> = {}
+  const devPresBultosPorMes: Record<string, number> = {}
   for (const v of mostradorRows) {
     const mes = v.fecha.slice(0, 7)
-    const esPresupuesto = v.ds_documento === "PRVTA"
-    const hlMap = esPresupuesto ? presupuestoHlPorMes : mostradorHlPorMes
-    const bultosMap = esPresupuesto ? presupuestoBultosPorMes : mostradorBultosPorMes
+    let hlMap = mostradorHlPorMes
+    let bultosMap = mostradorBultosPorMes
+    if (v.ds_documento === "PRVTA") {
+      hlMap = presupuestoHlPorMes
+      bultosMap = presupuestoBultosPorMes
+    } else if (v.ds_documento === "DVVTA") {
+      hlMap = ncHlPorMes
+      bultosMap = ncBultosPorMes
+    } else if (v.ds_documento === "PRDVO") {
+      hlMap = devPresHlPorMes
+      bultosMap = devPresBultosPorMes
+    }
     const hl = Number(v.total_hl ?? 0)
     if (Number.isFinite(hl)) hlMap[mes] = (hlMap[mes] ?? 0) + hl
     const bultos = Number(v.total_bultos ?? 0)
@@ -300,6 +326,27 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: presHl > 0 ? presHl : null,
       parcial: esActual,
     }
+
+    // Facturado Chess NETO (sistema madre, sin Gestión):
+    // FCVTA (distribuido chess + mostrador) + PRVTA − DVVTA − PRDVO.
+    const chessDistBultos = chessDistBultosPorMes[mes] ?? 0
+    const chessDistHl = chessDistHlPorMes[mes] ?? 0
+    const factBultos =
+      chessDistBultos + mostBultos + presBultos -
+      (ncBultosPorMes[mes] ?? 0) - (devPresBultosPorMes[mes] ?? 0)
+    const factHl =
+      chessDistHl + mostHl + presHl -
+      (ncHlPorMes[mes] ?? 0) - (devPresHlPorMes[mes] ?? 0)
+    celdas.facturado_chess_bultos[mes] = {
+      mes,
+      valor: chessDistBultos > 0 ? factBultos : null,
+      parcial: esActual,
+    }
+    celdas.facturado_chess_hl[mes] = {
+      mes,
+      valor: chessDistHl > 0 ? factHl : null,
+      parcial: esActual,
+    }
   }
 
   // ── ENTREGA/VENTAS: CEq (bultos × ceq_factor, vía funciones SQL) ──
@@ -308,8 +355,9 @@ export async function getCuadroMensualIndicadores(): Promise<
   // Ventas = distribuido + mostrador + presupuesto (misma identidad que
   // bultos/HL).
   {
-    const [ceqRes, ceqNoDistRes] = await Promise.all([
+    const [ceqRes, ceqChessRes, ceqNoDistRes] = await Promise.all([
       supabase.rpc("cuadro_ceq_mensual", { p_desde: desde }),
+      supabase.rpc("cuadro_ceq_chess_mensual", { p_desde: desde }),
       supabase.rpc("cuadro_ceq_no_distribuido_mensual", { p_desde: desde }),
     ])
     const ceqPorMes: Record<string, number> = {}
@@ -317,8 +365,15 @@ export async function getCuadroMensualIndicadores(): Promise<
       const v = Number(r.ceq ?? 0)
       if (Number.isFinite(v)) ceqPorMes[r.mes] = v
     }
+    const ceqChessDistPorMes: Record<string, number> = {}
+    for (const r of (ceqChessRes.data ?? []) as Array<{ mes: string; ceq: number | null }>) {
+      const v = Number(r.ceq ?? 0)
+      if (Number.isFinite(v)) ceqChessDistPorMes[r.mes] = v
+    }
     const ceqMostPorMes: Record<string, number> = {}
     const ceqPresPorMes: Record<string, number> = {}
+    const ceqNcPorMes: Record<string, number> = {}
+    const ceqDevPresPorMes: Record<string, number> = {}
     for (const r of (ceqNoDistRes.data ?? []) as Array<{
       mes: string
       ds_documento: string | null
@@ -326,7 +381,11 @@ export async function getCuadroMensualIndicadores(): Promise<
     }>) {
       const v = Number(r.ceq ?? 0)
       if (!Number.isFinite(v)) continue
-      const map = r.ds_documento === "PRVTA" ? ceqPresPorMes : ceqMostPorMes
+      const map =
+        r.ds_documento === "PRVTA" ? ceqPresPorMes
+        : r.ds_documento === "DVVTA" ? ceqNcPorMes
+        : r.ds_documento === "PRDVO" ? ceqDevPresPorMes
+        : ceqMostPorMes
       map[r.mes] = (map[r.mes] ?? 0) + v
     }
     for (const mes of meses) {
@@ -353,6 +412,14 @@ export async function getCuadroMensualIndicadores(): Promise<
       celdas.presupuesto_ceq[mes] = {
         mes,
         valor: pres > 0 ? pres : null,
+        parcial: esActual,
+      }
+      const chessDist = ceqChessDistPorMes[mes] ?? 0
+      const factCeq =
+        chessDist + most + pres - (ceqNcPorMes[mes] ?? 0) - (ceqDevPresPorMes[mes] ?? 0)
+      celdas.facturado_chess_ceq[mes] = {
+        mes,
+        valor: chessDist > 0 ? factCeq : null,
         parcial: esActual,
       }
     }

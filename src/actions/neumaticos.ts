@@ -135,7 +135,7 @@ export async function crearNeumaticosMasivo(input: {
       estado: "stock" as const,
       created_by: profile.id,
     }
-    const filas =
+    const filas: Array<typeof base & { numero: string | null }> =
       numeros.length > 0
         ? numeros.map((numero) => ({ ...base, numero }))
         : Array.from({ length: cantidad }, () => ({ ...base, numero: null }))
