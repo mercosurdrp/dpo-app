@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import {
   ARBOL_SUENO,
+  KPI_AGREGACION_MENSUAL,
+  agregarMensual,
+  esKpiManualMensual,
   type MejorSi,
   type SuenoNodo,
 } from "@/lib/sueno/arbol-config"
@@ -23,6 +26,35 @@ interface ValorRow {
   mejor_si: MejorSi
   nota: string | null
   updated_at: string | null
+}
+
+interface MensualRow {
+  kpi_key: string
+  mes: number
+  valor: number
+}
+
+/**
+ * Valores mensuales del año agrupados por KPI. Tolerante a que la tabla
+ * todavía no exista (PGRST205) → mapa vacío.
+ */
+async function fetchMensualesDelAnio(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Map<string, MensualRow[]>> {
+  const { data, error } = await supabase
+    .from("sueno_kpi_mensual")
+    .select("kpi_key,mes,valor")
+    .eq("anio", year)
+    .order("mes")
+  const out = new Map<string, MensualRow[]>()
+  if (error) return out
+  for (const r of (data ?? []) as MensualRow[]) {
+    const list = out.get(r.kpi_key) ?? []
+    list.push(r)
+    out.set(r.kpi_key, list)
+  }
+  return out
 }
 
 function anioActual(): number {
@@ -56,14 +88,20 @@ export async function getSuenoArbol(
     // Si el depósito no responde, se cae al valor persistido en la tabla.
     const externos = await resolverValoresExternos(year)
 
+    // KPIs manuales con carga mensual: el YTD sale de los meses cargados.
+    const mensuales = await fetchMensualesDelAnio(supabase, year)
+
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
       const row = byKey.get(cfg.key)
       const meta = row?.meta ?? cfg.metaDefault
       const externoVal = externos.get(cfg.key)
+      const mensualYtd = esKpiManualMensual(cfg.key)
+        ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
+        : null
       const valorYtd =
         externoVal !== undefined && externoVal !== null
           ? externoVal
-          : (row?.valor_ytd ?? null)
+          : (mensualYtd ?? row?.valor_ytd ?? null)
       const gatillo = row?.gatillo ?? null
       const mejorSi = row?.mejor_si ?? cfg.mejorSi
       return {
@@ -158,7 +196,27 @@ export async function getSuenoDetalle(
 
     const explicacion = EXPLICACION[kpiKey]
     if (!explicacion) {
-      // KPI manual: sin detalle automático
+      // KPI manual: el detalle son los meses cargados a mano (sueno_kpi_mensual).
+      const supabaseManual = await createClient()
+      const { data: rows } = await supabaseManual
+        .from("sueno_kpi_mensual")
+        .select("mes,valor")
+        .eq("kpi_key", kpiKey)
+        .eq("anio", year)
+        .order("mes")
+      const mesesManual: SuenoDetalleMes[] = ((rows ?? []) as {
+        mes: number
+        valor: number
+      }[]).map((r) => ({
+        mes: r.mes,
+        etiqueta: MES_LABEL[r.mes - 1] ?? String(r.mes),
+        valor: Number(r.valor),
+        detalle: null,
+      }))
+      const regla =
+        KPI_AGREGACION_MENSUAL[kpiKey] === "suma"
+          ? "la suma"
+          : "el promedio"
       return {
         data: {
           kpiKey,
@@ -166,8 +224,10 @@ export async function getSuenoDetalle(
           unidad: cfg.unidad,
           fuente: "manual",
           explicacion:
-            "Indicador de carga manual: todavía no tiene detalle mensual automático.",
-          meses: [],
+            mesesManual.length > 0
+              ? `Indicador de carga manual mes a mes: el YTD es ${regla} de los meses cargados. Se edita con el lápiz de la tarjeta (solo admin).`
+              : "Indicador de carga manual: todavía no tiene meses cargados. Se cargan con el lápiz de la tarjeta (solo admin).",
+          meses: mesesManual,
         },
       }
     }
@@ -218,6 +278,119 @@ export async function refreshSuenoAuto(
     revalidatePath("/")
     revalidatePath("/mis-capacitaciones")
     return { ok: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Valores mensuales cargados de un KPI manual (para precargar el form de edición). */
+export async function getSuenoMensual(
+  kpiKey: string,
+  anio?: number,
+): Promise<{ data: { mes: number; valor: number }[] } | { error: string }> {
+  try {
+    await requireAuth()
+    if (!esKpiManualMensual(kpiKey)) return { data: [] }
+    const year = anio ?? anioActual()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("sueno_kpi_mensual")
+      .select("mes,valor")
+      .eq("kpi_key", kpiKey)
+      .eq("anio", year)
+      .order("mes")
+    // PGRST205 = la tabla todavía no existe en esta Supabase → sin meses.
+    if (error && error.code !== "PGRST205") return { error: error.message }
+    return {
+      data: ((data ?? []) as { mes: number; valor: number }[]).map((r) => ({
+        mes: r.mes,
+        valor: Number(r.valor),
+      })),
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Guarda los valores mensuales de un KPI manual y recalcula su YTD
+ * (promedio o suma según el KPI). Un valor null borra el mes. Solo admin.
+ */
+export async function setSuenoMensual(input: {
+  kpi_key: string
+  anio?: number
+  valores: { mes: number; valor: number | null }[]
+}): Promise<{ ok: true; valorYtd: number | null } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin"])
+    const year = input.anio ?? anioActual()
+
+    if (!esKpiManualMensual(input.kpi_key)) {
+      return { error: "Este KPI no admite carga mensual manual" }
+    }
+    if (input.valores.some((v) => !Number.isInteger(v.mes) || v.mes < 1 || v.mes > 12)) {
+      return { error: "Mes inválido" }
+    }
+
+    const supabase = await createClient()
+
+    const aGuardar = input.valores.filter((v) => v.valor != null)
+    const aBorrar = input.valores.filter((v) => v.valor == null).map((v) => v.mes)
+
+    if (aGuardar.length > 0) {
+      const { error } = await supabase.from("sueno_kpi_mensual").upsert(
+        aGuardar.map((v) => ({
+          kpi_key: input.kpi_key,
+          anio: year,
+          mes: v.mes,
+          valor: v.valor as number,
+          updated_by: profile.id,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "kpi_key,anio,mes" },
+      )
+      if (error) return { error: error.message }
+    }
+
+    if (aBorrar.length > 0) {
+      const { error } = await supabase
+        .from("sueno_kpi_mensual")
+        .delete()
+        .eq("kpi_key", input.kpi_key)
+        .eq("anio", year)
+        .in("mes", aBorrar)
+      if (error) return { error: error.message }
+    }
+
+    // Recalcular el YTD desde lo que quedó en la tabla y persistirlo en
+    // sueno_kpi_valores (así el resto de la app sigue leyendo valor_ytd).
+    const { data: rows, error: readError } = await supabase
+      .from("sueno_kpi_mensual")
+      .select("valor")
+      .eq("kpi_key", input.kpi_key)
+      .eq("anio", year)
+    if (readError) return { error: readError.message }
+
+    const valorYtd = agregarMensual(
+      input.kpi_key,
+      ((rows ?? []) as { valor: number }[]).map((r) => Number(r.valor)),
+    )
+
+    const { error: upsertError } = await supabase.from("sueno_kpi_valores").upsert(
+      {
+        kpi_key: input.kpi_key,
+        anio: year,
+        valor_ytd: valorYtd,
+        updated_by: profile.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "kpi_key,anio" },
+    )
+    if (upsertError) return { error: upsertError.message }
+
+    revalidatePath("/")
+    revalidatePath("/mis-capacitaciones")
+    return { ok: true, valorYtd }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

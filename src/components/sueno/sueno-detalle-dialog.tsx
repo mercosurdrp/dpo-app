@@ -138,10 +138,10 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
         </table>
       )}
 
-      {detalle && !pending && detalle.fuente === "manual" && (
+      {detalle && !pending && detalle.fuente === "manual" && detalle.meses.length === 0 && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          Este indicador se carga manualmente; todavía no tiene detalle mensual
-          automático.
+          Este indicador se carga manualmente y todavía no tiene meses cargados.
+          Un admin puede cargarlos con el lápiz de la tarjeta.
         </p>
       )}
 

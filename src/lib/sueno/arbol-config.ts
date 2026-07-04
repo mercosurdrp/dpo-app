@@ -103,3 +103,38 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
 
 /** KPIs estratégicos (raíces del árbol), en orden de rama. */
 export const KPIS_ESTRATEGICOS = ARBOL_SUENO.filter((n) => n.nivel === "estrategia")
+
+// ---------------------------------------------------------------------------
+// Carga mensual de KPIs manuales (tabla `sueno_kpi_mensual`)
+// ---------------------------------------------------------------------------
+
+export type AgregacionMensual = "promedio" | "suma"
+
+/**
+ * KPIs de fuente MANUAL que admiten carga mes a mes, con la regla para
+ * calcular el YTD desde los meses cargados. Los que no figuran acá tienen
+ * detalle automático (RPC `sueno_kpi_detalle`) o externo (deposito-esteban).
+ */
+export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
+  tri: "suma",
+  lti: "suma",
+  vlc_hl: "promedio",
+  tlp: "promedio",
+  wnp: "promedio",
+  tiempo_ruta: "promedio",
+  tiempo_pdv: "promedio",
+  cantidad_pnp: "promedio",
+  hs_extras: "promedio",
+}
+
+export function esKpiManualMensual(key: string): boolean {
+  return key in KPI_AGREGACION_MENSUAL
+}
+
+/** YTD desde los valores mensuales cargados (null si no hay ninguno). */
+export function agregarMensual(key: string, valores: number[]): number | null {
+  if (valores.length === 0) return null
+  const suma = valores.reduce((a, b) => a + b, 0)
+  if (KPI_AGREGACION_MENSUAL[key] === "suma") return suma
+  return Math.round((suma / valores.length) * 100) / 100
+}
