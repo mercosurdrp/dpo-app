@@ -5,6 +5,7 @@ import { useEffect } from "react"
 
 const ALLOWED_PATHS = [
   "/mis-capacitaciones",
+  "/visibilidad-resultados",
   "/trivia",
   "/mis-tareas",
   "/planes",
