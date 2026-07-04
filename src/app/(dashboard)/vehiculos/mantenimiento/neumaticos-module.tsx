@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils"
 import {
   asignarNeumatico,
   crearNeumaticosMasivo,
+  crearYColocarNeumatico,
   darDeBajaNeumatico,
   eliminarAlineacion,
   eliminarNeumatico,
@@ -56,6 +57,7 @@ import { createMantenimiento } from "@/actions/mantenimiento-vehiculos"
 import {
   type Alineacion,
   type Neumatico,
+  type NeumaticoTipo,
   type Rotacion,
   PROFUNDIDAD_CRITICA_MM,
 } from "@/lib/vehiculos/neumaticos-tipos"
@@ -1291,9 +1293,16 @@ function PosicionDialog({
 }) {
   const [saving, setSaving] = useState(false)
   // Asignación (posición vacía) — km de instalación prefijado con el km actual.
+  const [modo, setModo] = useState<"nueva" | "stock">(stock.length > 0 ? "stock" : "nueva")
   const [stockSel, setStockSel] = useState("")
   const [kmInst, setKmInst] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
   const [vidaUtil, setVidaUtil] = useState("")
+  // Carga directa (compra y colocación, sin pasar por stock)
+  const [tipoNueva, setTipoNueva] = useState<NeumaticoTipo>("nuevo")
+  const [numeroNueva, setNumeroNueva] = useState("")
+  const [marcaNueva, setMarcaNueva] = useState("")
+  const [medidaNueva, setMedidaNueva] = useState("")
+  const [profNueva, setProfNueva] = useState("")
   // Medición (posición ocupada)
   const [profMed, setProfMed] = useState("")
   const [kmMed, setKmMed] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
@@ -1304,7 +1313,12 @@ function PosicionDialog({
   const [genOtOpen, setGenOtOpen] = useState(false)
 
   const stockTire = stock.find((s) => s.id === stockSel) ?? null
-  const vidaDefault = stockTire ? VIDA_UTIL_DEFAULT_KM[stockTire.tipo] : null
+  const vidaDefault =
+    modo === "nueva"
+      ? VIDA_UTIL_DEFAULT_KM[tipoNueva]
+      : stockTire
+        ? VIDA_UTIL_DEFAULT_KM[stockTire.tipo]
+        : null
 
   const wrap = async (fn: () => Promise<{ success: true } | { error: string }>, ok: string) => {
     setSaving(true)
@@ -1330,31 +1344,89 @@ function PosicionDialog({
           <DialogDescription>
             {actual
               ? `Cubierta ${actual.numero || "s/n"} (${TIPO_LABEL[actual.tipo]})`
-              : "Posición vacía — asigná una cubierta del stock."}
+              : "Posición vacía — cargá una cubierta acá mismo o asigná una del stock."}
           </DialogDescription>
         </DialogHeader>
 
         {!actual ? (
-          // ----- Asignar desde stock -----
+          // ----- Posición vacía: cargar directo o asignar desde stock -----
           <div className="space-y-3">
-            <div>
-              <Label className="text-xs text-slate-500">Cubierta del stock</Label>
-              <Select value={stockSel} onValueChange={(v) => setStockSel(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder={stock.length ? "Elegí una cubierta" : "Sin stock"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {stock.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {(n.numero || "s/n") +
-                        ` · ${TIPO_LABEL[n.tipo]}` +
-                        (n.medida ? ` · ${n.medida}` : "") +
-                        (n.profundidad_actual_mm != null ? ` · ${n.profundidad_actual_mm}mm` : "")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={modo === "nueva" ? "default" : "outline"}
+                onClick={() => setModo("nueva")}
+              >
+                Cargar cubierta acá
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={modo === "stock" ? "default" : "outline"}
+                onClick={() => setModo("stock")}
+                disabled={stock.length === 0}
+              >
+                Del stock ({stock.length})
+              </Button>
             </div>
+
+            {modo === "nueva" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-500">Estado</Label>
+                    <Select value={tipoNueva} onValueChange={(v) => setTipoNueva((v as NeumaticoTipo) ?? "nuevo")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nuevo">Nuevo</SelectItem>
+                        <SelectItem value="recapado">Recapado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-500">N° de cubierta (opcional)</Label>
+                    <Input value={numeroNueva} onChange={(e) => setNumeroNueva(e.target.value)} placeholder="Ej: 45" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-500">Marca</Label>
+                    <Input value={marcaNueva} onChange={(e) => setMarcaNueva(e.target.value)} placeholder="Fate" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-500">Medida</Label>
+                    <Input value={medidaNueva} onChange={(e) => setMedidaNueva(e.target.value)} placeholder="295/80R22.5" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-500">Prof. (mm)</Label>
+                    <Input type="number" step="0.1" value={profNueva} onChange={(e) => setProfNueva(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label className="text-xs text-slate-500">Cubierta del stock</Label>
+                <Select value={stockSel} onValueChange={(v) => setStockSel(v ?? "")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={stock.length ? "Elegí una cubierta" : "Sin stock"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stock.map((n) => (
+                      <SelectItem key={n.id} value={n.id}>
+                        {(n.numero || "s/n") +
+                          ` · ${TIPO_LABEL[n.tipo]}` +
+                          (n.medida ? ` · ${n.medida}` : "") +
+                          (n.profundidad_actual_mm != null ? ` · ${n.profundidad_actual_mm}mm` : "")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-slate-500">Km de instalación</Label>
@@ -1379,25 +1451,51 @@ function PosicionDialog({
               <Button variant="outline" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button
-                disabled={saving || !stockSel}
-                onClick={() =>
-                  wrap(
-                    () =>
-                      asignarNeumatico({
-                        id: stockSel,
-                        dominio: unidad.dominio,
-                        posicion: pos.code,
-                        eje: pos.eje,
-                        km_instalacion: kmInst ? Number(kmInst) : null,
-                        vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
-                      }),
-                    "Cubierta instalada"
-                  )
-                }
-              >
-                Instalar
-              </Button>
+              {modo === "nueva" ? (
+                <Button
+                  disabled={saving}
+                  onClick={() =>
+                    wrap(
+                      () =>
+                        crearYColocarNeumatico({
+                          dominio: unidad.dominio,
+                          posicion: pos.code,
+                          eje: pos.eje,
+                          tipo: tipoNueva,
+                          numero: numeroNueva,
+                          marca: marcaNueva,
+                          medida: medidaNueva,
+                          profundidad_inicial_mm: profNueva ? Number(profNueva) : null,
+                          km_instalacion: kmInst ? Number(kmInst) : null,
+                          vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
+                        }),
+                      "Cubierta cargada e instalada"
+                    )
+                  }
+                >
+                  Cargar e instalar
+                </Button>
+              ) : (
+                <Button
+                  disabled={saving || !stockSel}
+                  onClick={() =>
+                    wrap(
+                      () =>
+                        asignarNeumatico({
+                          id: stockSel,
+                          dominio: unidad.dominio,
+                          posicion: pos.code,
+                          eje: pos.eje,
+                          km_instalacion: kmInst ? Number(kmInst) : null,
+                          vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
+                        }),
+                      "Cubierta instalada"
+                    )
+                  }
+                >
+                  Instalar
+                </Button>
+              )}
             </DialogFooter>
           </div>
         ) : (

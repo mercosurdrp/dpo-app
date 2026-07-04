@@ -196,6 +196,61 @@ export async function asignarNeumatico(input: {
   }
 }
 
+/**
+ * Carga una cubierta nueva/recapada y la instala directo en una unidad/posición
+ * (compra y colocación, sin pasar por el stock).
+ */
+export async function crearYColocarNeumatico(input: {
+  dominio: string
+  posicion: string
+  eje: EjeNeumatico | null
+  tipo: NeumaticoTipo
+  numero?: string
+  marca?: string
+  medida?: string
+  profundidad_inicial_mm?: number | null
+  km_instalacion?: number | null
+  vida_util_km?: number | null
+  fecha_instalacion?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.dominio || !input.posicion) return { error: "Falta unidad o posición" }
+    const supabase = await createClient()
+
+    // La posición no puede estar ocupada por otra cubierta instalada.
+    const { data: ocupa } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select("id")
+      .eq("dominio", input.dominio.toUpperCase())
+      .eq("posicion", input.posicion)
+      .eq("estado", "instalado")
+      .maybeSingle()
+    if (ocupa) return { error: "Esa posición ya tiene una cubierta instalada" }
+
+    const { error } = await supabase.from("mantenimiento_neumaticos").insert({
+      tipo: input.tipo,
+      numero: input.numero?.trim() || null,
+      marca: input.marca?.trim() || null,
+      medida: input.medida?.trim() || null,
+      profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
+      profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
+      estado: "instalado",
+      dominio: input.dominio.toUpperCase(),
+      posicion: input.posicion,
+      eje: input.eje,
+      km_instalacion: input.km_instalacion ?? null,
+      vida_util_km: input.vida_util_km ?? null,
+      fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 /** Quita la cubierta de la unidad y la devuelve al stock. */
 export async function quitarNeumatico(input: {
   id: string
