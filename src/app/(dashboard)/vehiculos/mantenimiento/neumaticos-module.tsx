@@ -71,11 +71,13 @@ import {
   VIDA_UTIL_DEFAULT_KM,
   type VidaNeumatico,
 } from "@/lib/vehiculos/vida-neumaticos"
-import type { VehiculoTipo } from "@/types/database"
+import { VEHICULO_TIPO_LABELS, type VehiculoTipo } from "@/types/database"
 
 interface UnidadFlota {
   dominio: string
   tipo: VehiculoTipo | null
+  modelo?: string | null
+  anio?: number | null
 }
 
 interface Props {
@@ -296,35 +298,54 @@ export function NeumaticosModule({
           {!unidad ? (
             <p className="text-sm text-slate-500">Elegí una unidad.</p>
           ) : (
-            <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-              <Diagrama
-                layout={layout}
-                porPosicion={porPosicion}
-                tipo={unidad?.tipo ?? null}
-                onPos={(pos) =>
-                  puedeEditar &&
-                  setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
-                }
-              />
-              <div className="space-y-2 text-xs text-slate-500">
-                <p className="font-medium text-slate-600">Referencias</p>
-                <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
-                <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
-                <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
-                <Leyenda color="bg-slate-400" txt="Sin medición" />
-                <div className="pt-1">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="size-3 rounded-full ring-2 ring-blue-500" /> Direccional
-                  </span>
-                  <span className="ml-3 inline-flex items-center gap-1">
-                    <span className="size-3 rounded-full ring-2 ring-slate-400" /> Tracción
-                  </span>
+            <div className="space-y-4">
+              {/* Datos del vehículo (estilo Cloudfleet) */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md border bg-slate-50/60 p-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                <DatoVehiculo label="Vehículo" valor={unidad.dominio} destacado />
+                <DatoVehiculo
+                  label="Tipo"
+                  valor={unidad.tipo ? VEHICULO_TIPO_LABELS[unidad.tipo] : "—"}
+                />
+                <DatoVehiculo label="Modelo" valor={unidad.modelo || "—"} />
+                <DatoVehiculo label="Año" valor={unidad.anio != null ? String(unidad.anio) : "—"} />
+                <DatoVehiculo
+                  label="Odómetro actual"
+                  valor={
+                    kmUnidad.kmActual != null
+                      ? `${fmtNum(Math.round(kmUnidad.kmActual))} km${kmUnidad.fecha ? ` [${fmtFecha(kmUnidad.fecha)}]` : ""}`
+                      : "—"
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+                <Diagrama
+                  layout={layout}
+                  porPosicion={porPosicion}
+                  tipo={unidad?.tipo ?? null}
+                  onPos={(pos) =>
+                    puedeEditar &&
+                    setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
+                  }
+                />
+                <div className="space-y-2 text-xs text-slate-500">
+                  <p className="font-medium text-slate-600">Convenciones</p>
+                  <div className="space-y-1">
+                    <LeyendaEje clase="border-amber-400" txt="Eje direccional" />
+                    <LeyendaEje clase="border-emerald-500" txt="Eje de tracción" />
+                    <LeyendaEje clase="border-slate-300" txt="Eje libre" />
+                  </div>
+                  <p className="pt-1 font-medium text-slate-600">Desgaste (chip de posición)</p>
+                  <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
+                  <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
+                  <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
+                  <Leyenda color="bg-slate-400" txt="Sin medición" />
+                  <p className="pt-1 text-slate-400">
+                    {puedeEditar
+                      ? "Hacé clic en una posición para asignar / medir / dar de baja."
+                      : "Vista de solo lectura."}
+                  </p>
                 </div>
-                <p className="pt-1 text-slate-400">
-                  {puedeEditar
-                    ? "Hacé clic en una posición para asignar / medir / dar de baja."
-                    : "Vista de solo lectura."}
-                </p>
               </div>
             </div>
           )}
@@ -372,6 +393,8 @@ export function NeumaticosModule({
                     <th>Medida</th>
                     <th className="text-right">Prof. inic.</th>
                     <th className="text-right">Prof. act.</th>
+                    <th className="text-right">mm gast.</th>
+                    <th className="text-right">Km/mm</th>
                     <th className="text-right">Presión</th>
                     <th>Instalación</th>
                     <th className="text-right">Km inst.</th>
@@ -385,6 +408,18 @@ export function NeumaticosModule({
                   {instaladasOrden.map((n, i) => {
                     const pres = ultimaPresion(n)
                     const v = vidaPorId.get(n.id)
+                    // Desgaste acumulado y rendimiento km por mm (estilo Cloudfleet).
+                    const mmGastados =
+                      n.profundidad_inicial_mm != null && n.profundidad_actual_mm != null
+                        ? Math.max(
+                            Math.round((n.profundidad_inicial_mm - n.profundidad_actual_mm) * 10) / 10,
+                            0
+                          )
+                        : null
+                    const kmPorMm =
+                      mmGastados != null && mmGastados > 0 && v?.kmRodados != null
+                        ? Math.round(v.kmRodados / mmGastados)
+                        : null
                     return (
                       <tr
                         key={n.id}
@@ -408,6 +443,12 @@ export function NeumaticosModule({
                           )}
                         >
                           {n.profundidad_actual_mm ?? "—"}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {mmGastados ?? "—"}
+                        </td>
+                        <td className="text-right tabular-nums text-slate-600">
+                          {kmPorMm != null ? fmtNum(kmPorMm) : "—"}
                         </td>
                         <td className="text-right tabular-nums text-slate-600">
                           {pres != null ? `${pres} psi` : "—"}
@@ -636,8 +677,46 @@ function Leyenda({ color, txt }: { color: string; txt: string }) {
   )
 }
 
-// Silueta de la unidad vista desde arriba: cuerpo/chasis, cabina (frente) y los
-// ejes (longitudinal + transversales por cada fila de ruedas del layout).
+// Línea punteada de la leyenda de convenciones de ejes.
+function LeyendaEje({ clase, txt }: { clase: string; txt: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={cn("w-6 border-t-[3px] border-dashed", clase)} />
+      <span>{txt}</span>
+    </span>
+  )
+}
+
+function DatoVehiculo({
+  label,
+  valor,
+  destacado,
+}: {
+  label: string
+  valor: string
+  destacado?: boolean
+}) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className={cn("text-sm", destacado ? "font-bold text-slate-900" : "font-medium text-slate-700")}>
+        {valor}
+      </p>
+    </div>
+  )
+}
+
+// Color de la línea de eje según su función (convención estilo Cloudfleet:
+// amarillo = direccional, verde = tracción, gris = eje libre).
+const EJE_LINEA: Record<string, string> = {
+  direccional: "border-amber-400",
+  traccion: "border-emerald-500",
+  libre: "border-slate-300",
+}
+
+// Silueta de la unidad vista desde arriba, estilo Cloudfleet: bastidor central
+// rectangular con travesaños y una línea de eje punteada por cada fila de
+// ruedas, coloreada según la función del eje.
 function SiluetaUnidad({
   layout,
   tipo,
@@ -645,39 +724,69 @@ function SiluetaUnidad({
   layout: PosicionNeumatico[]
   tipo: VehiculoTipo | null
 }) {
-  const ys = [...new Set(layout.map((p) => p.y))].sort((a, b) => a - b)
+  // Filas de ruedas (ejes) con su función y el ancho que abarcan.
+  const filas = [...new Set(layout.map((p) => p.y))]
+    .sort((a, b) => a - b)
+    .map((y) => {
+      const enFila = layout.filter((p) => p.y === y)
+      return {
+        y,
+        eje: enFila[0]?.eje ?? null,
+        x1: Math.min(...enFila.map((p) => p.x)),
+        x2: Math.max(...enFila.map((p) => p.x)),
+      }
+    })
   const conCabina = tipo !== "acoplado"
-  const top = ys[0] ?? 10
-  const bottom = ys[ys.length - 1] ?? 90
+  // El bastidor termina poco después del último eje (no sigue hasta abajo).
+  const bastidorTop = 2
+  const bastidorBottom = Math.min((filas[filas.length - 1]?.y ?? 84) + 14, 98)
   return (
     <div className="pointer-events-none absolute inset-0">
-      {/* Cuerpo / chasis */}
-      <div className="absolute inset-x-[18%] inset-y-[3%] rounded-[1.4rem] border border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100 shadow-inner" />
+      {/* Bastidor */}
+      <div
+        className="absolute inset-x-[34%] rounded-md border-2 border-slate-300 bg-white"
+        style={{ top: `${bastidorTop}%`, height: `${bastidorBottom - bastidorTop}%` }}
+      >
+        {/* Largueros */}
+        <div className="absolute inset-y-1 left-[18%] w-px bg-slate-200" />
+        <div className="absolute inset-y-1 right-[18%] w-px bg-slate-200" />
+        {/* Travesaños en cada eje */}
+        {filas.map((f) => (
+          <div
+            key={f.y}
+            className="absolute inset-x-0 h-1 -translate-y-1/2 bg-slate-200"
+            style={{ top: `${((f.y - bastidorTop) / (bastidorBottom - bastidorTop)) * 100}%` }}
+          />
+        ))}
+      </div>
       {/* Cabina (frente) con parabrisas */}
       {conCabina && (
-        <div className="absolute inset-x-[27%] top-[5%] h-[13%] rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="absolute inset-x-2 bottom-1.5 h-2 rounded-full bg-sky-200/70" />
+        <div className="absolute inset-x-[30%] top-[4%] h-[11%] rounded-lg border border-slate-300 bg-slate-50 shadow-sm">
+          <div className="absolute inset-x-1.5 top-1 h-1.5 rounded-full bg-sky-200/80" />
         </div>
       )}
-      {/* Eje longitudinal (chasis) */}
-      <div
-        className="absolute left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-slate-200"
-        style={{ top: `${top}%`, height: `${Math.max(bottom - top, 0)}%` }}
-      />
-      {/* Ejes transversales por fila de ruedas */}
-      {ys.map((y) => (
+      {/* Lanza de enganche (acoplado) */}
+      {!conCabina && (
+        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-slate-300" />
+      )}
+      {/* Línea de eje punteada por fila de ruedas, coloreada por función */}
+      {filas.map((f) => (
         <div
-          key={y}
-          className="absolute inset-x-[4%] h-1.5 -translate-y-1/2 rounded-full bg-slate-200"
-          style={{ top: `${y}%` }}
+          key={f.y}
+          className={cn(
+            "absolute -translate-y-1/2 border-t-[3px] border-dashed",
+            EJE_LINEA[f.eje ?? "libre"]
+          )}
+          style={{ top: `${f.y}%`, left: `${f.x1}%`, width: `${f.x2 - f.x1}%` }}
         />
       ))}
     </div>
   )
 }
 
-// Glifo de una cubierta vista desde arriba: goma con dibujo de banda y, en el
-// centro, la "llanta" coloreada según el estado (desgaste o neutro).
+// Glifo de una cubierta vista desde arriba, estilo Cloudfleet: goma oscura con
+// tacos de banda de rodamiento y canales, y un chip con la posición coloreado
+// según el desgaste.
 function TireGlyph({
   label,
   sub,
@@ -698,36 +807,61 @@ function TireGlyph({
     <div className="flex flex-col items-center">
       <div
         className={cn(
-          "relative h-10 w-[26px] rounded-[9px] transition-transform",
+          "relative h-12 w-8 rounded-[7px] transition-transform",
           empty
             ? "border-2 border-dashed border-slate-300 bg-white"
-            : "bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 shadow-md ring-1 ring-inset ring-white/10",
-          direccional && !empty && "ring-2 ring-blue-400"
+            : "shadow-md ring-1 ring-slate-900/40"
         )}
       >
         {!empty && (
-          <>
-            {/* Dibujo de banda de rodamiento */}
-            <span className="absolute inset-x-[3px] top-[3px] h-px rounded bg-white/25" />
-            <span className="absolute inset-x-[3px] top-[6px] h-px rounded bg-white/15" />
-            <span className="absolute inset-x-[3px] bottom-[3px] h-px rounded bg-white/25" />
-            <span className="absolute inset-x-[3px] bottom-[6px] h-px rounded bg-white/15" />
-          </>
+          <svg viewBox="0 0 32 48" className="absolute inset-0 h-full w-full" aria-hidden>
+            {/* Goma con sombreado cilíndrico (flancos más oscuros) */}
+            <defs>
+              <linearGradient id="tire-body" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#0f172a" />
+                <stop offset="0.18" stopColor="#334155" />
+                <stop offset="0.5" stopColor="#475569" />
+                <stop offset="0.82" stopColor="#334155" />
+                <stop offset="1" stopColor="#0f172a" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="32" height="48" rx="7" fill="url(#tire-body)" />
+            {/* Tacos de la banda de rodamiento */}
+            {Array.from({ length: 8 }, (_, i) => (
+              <rect
+                key={i}
+                x="4"
+                y={2.5 + i * 5.6}
+                width="24"
+                height="3.4"
+                rx="1.2"
+                fill="#1e293b"
+                {...(direccional
+                  ? { transform: `skewX(-12) translate(${(2.5 + i * 5.6 + 1.7) * 0.21} 0)` }
+                  : {})}
+              />
+            ))}
+            {/* Canales longitudinales */}
+            <rect x="10.5" y="1" width="1.6" height="46" fill="#0f172a" opacity="0.85" />
+            <rect x="19.9" y="1" width="1.6" height="46" fill="#0f172a" opacity="0.85" />
+            {/* Brillo superior */}
+            <rect x="3" y="1.5" width="26" height="4" rx="2" fill="#fff" opacity="0.10" />
+          </svg>
         )}
-        {/* Llanta / estado */}
+        {/* Chip de posición coloreado por desgaste */}
         <span
           className={cn(
-            "absolute left-1/2 top-1/2 flex h-[22px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[5px] text-[9px] font-bold leading-none ring-2",
+            "absolute left-1/2 top-1/2 flex h-[20px] min-w-[20px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none ring-2",
             empty
               ? "bg-slate-50 text-slate-400 ring-white"
-              : cn(wearClass, "text-white shadow ring-white/80")
+              : cn(wearClass, "text-white shadow ring-white/90")
           )}
         >
           {label}
         </span>
       </div>
       {sub && (
-        <span className="mt-px max-w-[44px] truncate text-[8px] leading-tight text-slate-500">
+        <span className="mt-px max-w-[48px] truncate text-[8px] leading-tight text-slate-500">
           {sub}
         </span>
       )}
@@ -752,7 +886,7 @@ function Diagrama({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-56 shrink-0">
+    <div className="relative aspect-[3/4] w-64 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
@@ -1649,7 +1783,7 @@ function DiagramaNumeracion({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-44 shrink-0">
+    <div className="relative aspect-[3/4] w-52 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
@@ -1747,7 +1881,7 @@ function RotacionDiagrama({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-56 shrink-0">
+    <div className="relative aspect-[3/4] w-64 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
