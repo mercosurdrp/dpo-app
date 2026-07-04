@@ -807,7 +807,7 @@ function TireGlyph({
     <div className="flex flex-col items-center">
       <div
         className={cn(
-          "relative h-12 w-8 rounded-[7px] transition-transform",
+          "relative h-16 w-11 rounded-[9px] transition-transform",
           empty
             ? "border-2 border-dashed border-slate-300 bg-white"
             : "shadow-md ring-1 ring-slate-900/40"
@@ -851,7 +851,7 @@ function TireGlyph({
         {/* Chip de posición coloreado por desgaste */}
         <span
           className={cn(
-            "absolute left-1/2 top-1/2 flex h-[20px] min-w-[20px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none ring-2",
+            "absolute left-1/2 top-1/2 flex h-[28px] min-w-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-1 text-[12px] font-bold leading-none ring-2",
             empty
               ? "bg-slate-50 text-slate-400 ring-white"
               : cn(wearClass, "text-white shadow ring-white/90")
@@ -861,7 +861,7 @@ function TireGlyph({
         </span>
       </div>
       {sub && (
-        <span className="mt-px max-w-[48px] truncate text-[8px] leading-tight text-slate-500">
+        <span className="mt-0.5 max-w-[60px] truncate text-[10px] font-medium leading-tight text-slate-600">
           {sub}
         </span>
       )}
@@ -886,7 +886,7 @@ function Diagrama({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-64 shrink-0">
+    <div className="relative aspect-[3/4] w-72 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
@@ -1783,7 +1783,7 @@ function DiagramaNumeracion({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-52 shrink-0">
+    <div className="relative aspect-[3/4] w-60 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
@@ -1881,7 +1881,7 @@ function RotacionDiagrama({
   tipo: VehiculoTipo | null
 }) {
   return (
-    <div className="relative aspect-[3/4] w-64 shrink-0">
+    <div className="relative aspect-[3/4] w-72 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
