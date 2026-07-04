@@ -550,6 +550,79 @@ export async function getSiguienteNumeroOt(): Promise<
   }
 }
 
+// ==================== SYNC OT → NEUMÁTICOS ====================
+
+// Una OT completada cuyas tareas (u observaciones) mencionan rotación o
+// alineación/balanceo registra automáticamente esa rotación/alineación en el
+// módulo Neumáticos, vinculada por ot_id (carga única: la OT). Si la OT deja
+// de estar completada o pierde la tarea, el registro vinculado se elimina.
+function normalizarTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+}
+
+async function sincronizarNeumaticosDesdeOt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  otId: string
+): Promise<void> {
+  const { data: ot } = await supabase
+    .from("mantenimiento_realizados")
+    .select(
+      "id, dominio, fecha, estado, odometro, taller, costo, numero_ot, observaciones, tareas:mantenimiento_realizado_tareas(descripcion)"
+    )
+    .eq("id", otId)
+    .single()
+  if (!ot) return
+
+  const textos = [
+    ...((ot.tareas as Array<{ descripcion: string | null }> | null) ?? []).map(
+      (t) => t.descripcion ?? ""
+    ),
+    ot.observaciones ?? "",
+  ].map(normalizarTexto)
+  const tieneRotacion = textos.some((t) => t.includes("rotacion"))
+  const tieneAlineacion = textos.some(
+    (t) => t.includes("alineacion") || t.includes("balanceo")
+  )
+  const completada = ot.estado === "completado"
+
+  const sync = async (
+    tabla: "mantenimiento_rotaciones" | "mantenimiento_alineaciones",
+    aplica: boolean,
+    valores: Record<string, unknown>
+  ) => {
+    if (aplica && completada) {
+      const { data: previo } = await supabase
+        .from(tabla)
+        .select("id")
+        .eq("ot_id", ot.id)
+        .maybeSingle()
+      if (previo) {
+        await supabase.from(tabla).update(valores).eq("id", previo.id)
+      } else {
+        await supabase.from(tabla).insert({ ...valores, ot_id: ot.id })
+      }
+    } else {
+      await supabase.from(tabla).delete().eq("ot_id", ot.id)
+    }
+  }
+
+  const base = {
+    dominio: ot.dominio,
+    fecha: ot.fecha,
+    km: ot.odometro ?? null,
+    observaciones: `Desde OT${ot.numero_ot ? ` #${ot.numero_ot}` : ""}`,
+  }
+  await sync("mantenimiento_rotaciones", tieneRotacion, base)
+  await sync("mantenimiento_alineaciones", tieneAlineacion, {
+    ...base,
+    costo: ot.costo ?? null,
+    proveedor: ot.taller ?? null,
+  })
+}
+
 interface MantenimientoTareaInput {
   tareaId?: string
   descripcion?: string
@@ -725,6 +798,12 @@ export async function createMantenimiento(
       }
     }
 
+    try {
+      await sincronizarNeumaticosDesdeOt(supabase, mantenimiento.id)
+    } catch (e) {
+      console.error("Sync Neumáticos desde OT:", e)
+    }
+
     return { data: mantenimiento }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -842,6 +921,12 @@ export async function updateMantenimiento(
           )
         if (insRepError) return { error: insRepError.message }
       }
+    }
+
+    try {
+      await sincronizarNeumaticosDesdeOt(supabase, input.id)
+    } catch (e) {
+      console.error("Sync Neumáticos desde OT:", e)
     }
 
     return { data: data as MantenimientoRealizado }

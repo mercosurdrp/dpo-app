@@ -535,52 +535,5 @@ export async function eliminarRotacion(input: {
   }
 }
 
-// ==================== GENERAR OT DE NEUMÁTICOS ====================
-
-/**
- * Crea una orden de trabajo (mantenimiento) PROGRAMADA anticipada para
- * neumáticos (cambio o rotación), sin sacar la unidad de servicio todavía.
- */
-export async function generarOrdenNeumaticos(input: {
-  dominio: string
-  descripcion: string
-  km?: number | null
-}): Promise<{ success: true } | { error: string }> {
-  try {
-    const profile = await requireRole(["admin", "supervisor"])
-    if (!input.dominio) return { error: "Falta la unidad" }
-    if (!input.descripcion?.trim()) return { error: "Falta la descripción de la tarea" }
-    const supabase = await createClient()
-
-    const { data: ot, error } = await supabase
-      .from("mantenimiento_realizados")
-      .insert({
-        dominio: input.dominio.toUpperCase(),
-        fecha: new Date().toISOString().slice(0, 10),
-        tipo: "preventivo",
-        estado: "programado",
-        odometro: input.km ?? null,
-        observaciones: "Generada desde Neumáticos",
-        created_by: profile.id,
-      })
-      .select("id")
-      .single()
-    if (error) return { error: error.message }
-
-    const { error: tareaErr } = await supabase
-      .from("mantenimiento_realizado_tareas")
-      .insert({
-        mantenimiento_id: ot.id,
-        tarea_id: null,
-        descripcion: input.descripcion.trim(),
-        costo: null,
-      })
-    if (tareaErr) {
-      await supabase.from("mantenimiento_realizados").delete().eq("id", ot.id)
-      return { error: tareaErr.message }
-    }
-    return { success: true }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Error desconocido" }
-  }
-}
+// La generación de OT desde Neumáticos ahora usa createMantenimiento (misma OT
+// que la pestaña Órdenes de Trabajo: N° correlativo automático, taller, costos).

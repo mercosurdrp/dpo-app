@@ -65,6 +65,8 @@ export interface Alineacion {
   costo: number | null
   proveedor: string | null
   observaciones: string | null
+  /** OT que la generó automáticamente (null si fue carga manual). */
+  ot_id: string | null
   created_at: string
 }
 
@@ -76,5 +78,7 @@ export interface Rotacion {
   proxima_fecha: string | null
   proxima_km: number | null
   observaciones: string | null
+  /** OT que la generó automáticamente (null si fue carga manual). */
+  ot_id: string | null
   created_at: string
 }

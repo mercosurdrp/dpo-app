@@ -44,7 +44,6 @@ import {
   darDeBajaNeumatico,
   eliminarAlineacion,
   eliminarNeumatico,
-  generarOrdenNeumaticos,
   quitarNeumatico,
   registrarAlineacion,
   registrarMedicionNeumatico,
@@ -53,6 +52,7 @@ import {
   setRotacionKm,
   type KmFlotaUnidad,
 } from "@/actions/neumaticos"
+import { createMantenimiento } from "@/actions/mantenimiento-vehiculos"
 import {
   type Alineacion,
   type Neumatico,
@@ -1152,6 +1152,124 @@ function CargaIndividualDialog({
   )
 }
 
+// Fecha de HOY en horario local (evita el corrimiento de día de toISOString,
+// que es UTC: a la noche en Argentina ya marca el día siguiente).
+function hoyLocalISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`
+}
+
+// Genera una OT real (la misma que se crea en la pestaña Órdenes de Trabajo:
+// N° correlativo automático, taller/costo opcionales). Al completarse esa OT,
+// la rotación/alineación se registra sola en este módulo — carga única.
+function GenerarOtNeumaticosDialog({
+  dominio,
+  kmActual,
+  descripcionInicial,
+  onClose,
+  onDone,
+}: {
+  dominio: string
+  kmActual: number | null
+  descripcionInicial: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [descripcion, setDescripcion] = useState(descripcionInicial)
+  const [fecha, setFecha] = useState(hoyLocalISO())
+  const [taller, setTaller] = useState("")
+  const [costoMo, setCostoMo] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const generar = async () => {
+    if (!descripcion.trim()) {
+      toast.error("Falta la descripción del trabajo")
+      return
+    }
+    setSaving(true)
+    const res = await createMantenimiento({
+      dominio,
+      fecha,
+      tipo: "preventivo",
+      estado: "programado",
+      odometro: kmActual != null ? Math.round(kmActual) : null,
+      taller: taller.trim() || undefined,
+      costo_mano_obra: costoMo ? Number(costoMo) : null,
+      costo: costoMo ? Number(costoMo) : null,
+      observaciones: "Generada desde Neumáticos",
+      tareas: [{ descripcion: descripcion.trim() }],
+    })
+    setSaving(false)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`OT #${res.data.numero_ot} generada (programada)`)
+      onDone()
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Generar OT · {dominio}</DialogTitle>
+          <DialogDescription>
+            Crea la orden en Órdenes de Trabajo con N° automático. Cuando la completes ahí,
+            la rotación/alineación se registra sola en Neumáticos (no hace falta cargarla dos
+            veces).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs text-slate-500">Trabajo a realizar</Label>
+            <Textarea
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              rows={2}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-slate-500">Fecha</Label>
+              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Km (odómetro)</Label>
+              <Input value={kmActual != null ? fmtNum(Math.round(kmActual)) : "—"} disabled />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Taller (opcional)</Label>
+              <Input
+                value={taller}
+                onChange={(e) => setTaller(e.target.value)}
+                placeholder="ej. Gomería Pozzi"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Mano de obra $ (opcional)</Label>
+              <Input
+                type="number"
+                value={costoMo}
+                onChange={(e) => setCostoMo(e.target.value)}
+                placeholder="se puede cargar después"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={generar} disabled={saving}>
+            {saving ? "Generando…" : "Generar OT"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function PosicionDialog({
   unidad,
   pos,
@@ -1182,6 +1300,8 @@ function PosicionDialog({
   const [presion, setPresion] = useState("")
   // Baja
   const [motivoBaja, setMotivoBaja] = useState("")
+  // OT de cambio anticipada
+  const [genOtOpen, setGenOtOpen] = useState(false)
 
   const stockTire = stock.find((s) => s.id === stockSel) ?? null
   const vidaDefault = stockTire ? VIDA_UTIL_DEFAULT_KM[stockTire.tipo] : null
@@ -1377,20 +1497,22 @@ function PosicionDialog({
               size="sm"
               className="w-full gap-1"
               disabled={saving}
-              onClick={() =>
-                wrap(
-                  () =>
-                    generarOrdenNeumaticos({
-                      dominio: unidad.dominio,
-                      descripcion: `Cambio de neumático posición ${pos.label}${actual.numero ? ` (N° ${actual.numero})` : ""}`,
-                      km: kmActual,
-                    }),
-                  "OT de cambio generada (programada)"
-                )
-              }
+              onClick={() => setGenOtOpen(true)}
             >
               <ClipboardPlus className="size-4" /> Generar OT de cambio
             </Button>
+            {genOtOpen && (
+              <GenerarOtNeumaticosDialog
+                dominio={unidad.dominio}
+                kmActual={kmActual}
+                descripcionInicial={`Cambio de neumático posición ${pos.label}${actual.numero ? ` (N° ${actual.numero})` : ""}`}
+                onClose={() => setGenOtOpen(false)}
+                onDone={() => {
+                  setGenOtOpen(false)
+                  onDone()
+                }}
+              />
+            )}
 
             <DialogFooter className="sm:justify-between">
               <Button
@@ -1448,40 +1570,11 @@ function RotacionCard({
   const [open, setOpen] = useState(false)
   const [alinOpen, setAlinOpen] = useState(false)
   const [intervaloOpen, setIntervaloOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
+  // Descripción prellenada de la OT a generar (null = diálogo cerrado)
+  const [genOtDesc, setGenOtDesc] = useState<string | null>(null)
   const sugerida = rotacionSugerida(unidad.tipo)
   const badge = ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
   const alin = estadoAlineacionConKm(ultimaAlineacion, kmActual)
-
-  const generarOT = async () => {
-    setSaving(true)
-    const res = await generarOrdenNeumaticos({
-      dominio: unidad.dominio,
-      descripcion: "Rotación de neumáticos",
-      km: kmActual,
-    })
-    setSaving(false)
-    if ("error" in res) toast.error(res.error)
-    else {
-      toast.success("OT de rotación generada (programada)")
-      onRefresh()
-    }
-  }
-
-  const generarOTAlin = async () => {
-    setSaving(true)
-    const res = await generarOrdenNeumaticos({
-      dominio: unidad.dominio,
-      descripcion: "Alineación de neumáticos",
-      km: kmActual,
-    })
-    setSaving(false)
-    if ("error" in res) toast.error(res.error)
-    else {
-      toast.success("OT de alineación generada (programada)")
-      onRefresh()
-    }
-  }
 
   return (
     <Card>
@@ -1494,7 +1587,7 @@ function RotacionCard({
             <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
               <Plus className="mr-1 size-4" /> Registrar rotación
             </Button>
-            <Button size="sm" disabled={saving} onClick={generarOT}>
+            <Button size="sm" onClick={() => setGenOtDesc("Rotación de neumáticos")}>
               <ClipboardPlus className="mr-1 size-4" /> OT rotación
             </Button>
           </div>
@@ -1636,7 +1729,10 @@ function RotacionCard({
                 <Button variant="outline" size="sm" onClick={() => setAlinOpen(true)}>
                   <Plus className="mr-1 size-4" /> Registrar alineación
                 </Button>
-                <Button size="sm" disabled={saving} onClick={generarOTAlin}>
+                <Button
+                  size="sm"
+                  onClick={() => setGenOtDesc("Alineación y balanceo de neumáticos")}
+                >
                   <ClipboardPlus className="mr-1 size-4" /> OT alineación
                 </Button>
               </div>
@@ -1763,6 +1859,18 @@ function RotacionCard({
           onClose={() => setIntervaloOpen(false)}
           onDone={() => {
             setIntervaloOpen(false)
+            onRefresh()
+          }}
+        />
+      )}
+      {genOtDesc != null && (
+        <GenerarOtNeumaticosDialog
+          dominio={unidad.dominio}
+          kmActual={kmActual}
+          descripcionInicial={genOtDesc}
+          onClose={() => setGenOtDesc(null)}
+          onDone={() => {
+            setGenOtDesc(null)
             onRefresh()
           }}
         />
