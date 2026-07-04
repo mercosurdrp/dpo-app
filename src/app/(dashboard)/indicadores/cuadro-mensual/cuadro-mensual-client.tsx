@@ -13,9 +13,10 @@ import {
   type FilaIndicador,
 } from "@/lib/indicadores/cuadro-mensual"
 import { BultosDetalleDialog } from "@/components/indicadores/bultos-detalle-dialog"
+import { RechazoDetalleDialog } from "@/components/indicadores/rechazo-detalle-dialog"
 
-// Indicador cuyas celdas son clickeables (abren el modal de detalle).
-const INDICADOR_DETALLE = "bultos_vendidos"
+// Indicadores cuyas celdas son clickeables (abren un modal de detalle).
+const INDICADORES_DETALLE = ["bultos_vendidos", "rechazo"]
 
 interface Props {
   data: CuadroMensual
@@ -26,6 +27,10 @@ export function CuadroMensualClient({ data }: Props) {
   const [detalle, setDetalle] = useState<{ mes: string; bultos: number | null } | null>(
     null,
   )
+  const [detalleRechazo, setDetalleRechazo] = useState<{
+    mes: string
+    pct: number | null
+  } | null>(null)
 
   async function exportar() {
     const XLSX = await import("xlsx")
@@ -130,7 +135,10 @@ export function CuadroMensualClient({ data }: Props) {
                   filas={filasPilar}
                   meses={meses}
                   totalCols={meses.length + 2}
-                  onBultosClick={(mes, bultos) => setDetalle({ mes, bultos })}
+                  onCeldaClick={(id, mes, valor) => {
+                    if (id === "bultos_vendidos") setDetalle({ mes, bultos: valor })
+                    else if (id === "rechazo") setDetalleRechazo({ mes, pct: valor })
+                  }}
                 />
               )
             })}
@@ -143,6 +151,13 @@ export function CuadroMensualClient({ data }: Props) {
         onOpenChange={(o) => !o && setDetalle(null)}
         mes={detalle?.mes ?? null}
         bultosCelda={detalle?.bultos ?? null}
+      />
+
+      <RechazoDetalleDialog
+        open={detalleRechazo !== null}
+        onOpenChange={(o) => !o && setDetalleRechazo(null)}
+        mes={detalleRechazo?.mes ?? null}
+        pctCelda={detalleRechazo?.pct ?? null}
       />
 
       {/* Leyenda */}
@@ -173,14 +188,14 @@ function PilarBloque({
   filas,
   meses,
   totalCols,
-  onBultosClick,
+  onCeldaClick,
 }: {
   pilar: string
   color: string
   filas: FilaIndicador[]
   meses: string[]
   totalCols: number
-  onBultosClick: (mes: string, bultos: number | null) => void
+  onCeldaClick: (id: string, mes: string, valor: number | null) => void
 }) {
   return (
     <>
@@ -195,7 +210,7 @@ function PilarBloque({
       </tr>
       {filas.map((fila) => {
         const metaDefault = fila.def.meta
-        const esDetalle = fila.def.id === INDICADOR_DETALLE
+        const esDetalle = INDICADORES_DETALLE.includes(fila.def.id)
         return (
           <tr
             key={fila.def.id}
@@ -217,6 +232,9 @@ function PilarBloque({
               const valor = celda?.valor ?? null
               const meta = celda?.meta ?? metaDefault
               const clickeable = esDetalle && valor !== null
+              // Las celdas con semáforo (ej. % Rechazo) conservan su color y
+              // solo agregan el subrayado; las sin semáforo van en azul link.
+              const conSemaforo = fila.def.mejor_si !== "sin" && meta != null
               return (
                 <td
                   key={m}
@@ -226,11 +244,15 @@ function PilarBloque({
                     fila.def.mejor_si,
                   )} ${
                     clickeable
-                      ? "cursor-pointer font-medium text-blue-700 underline decoration-dotted underline-offset-2 hover:bg-blue-50"
+                      ? `cursor-pointer font-medium underline decoration-dotted underline-offset-2 ${
+                          conSemaforo ? "hover:opacity-75" : "text-blue-700 hover:bg-blue-50"
+                        }`
                       : ""
                   }`}
                   onClick={
-                    clickeable ? () => onBultosClick(m, valor) : undefined
+                    clickeable
+                      ? () => onCeldaClick(fila.def.id, m, valor)
+                      : undefined
                   }
                   title={clickeable ? "Ver desglose del mes" : undefined}
                 >

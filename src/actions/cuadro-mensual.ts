@@ -21,6 +21,8 @@ import {
   armarItems,
   ORDEN_FAMILIAS,
   type DetalleBultos,
+  type DetalleRechazos,
+  type DetalleRechazoItem,
 } from "@/lib/indicadores/cuadro-mensual-detalle"
 
 type Result<T> = { data: T } | { error: string }
@@ -533,6 +535,98 @@ export async function getCuadroMensualIndicadores(): Promise<
       generadoEn: new Date().toISOString(),
     },
   }
+}
+
+/**
+ * Detalle de % Rechazo de un mes: top de rechazos agrupados por comprobante
+ * (origen+serie+nrodoc, sumando sus líneas de artículos), ordenados por HL.
+ * Misma base que la celda del cuadro (tabla rechazos, por fecha_venta).
+ */
+export async function getDetalleRechazosMes(
+  mes: string,
+): Promise<Result<DetalleRechazos>> {
+  await requireAuth()
+  if (IS_MISIONES) {
+    return { error: "Solo disponible en Pampeana." }
+  }
+  if (!/^\d{4}-\d{2}$/.test(mes)) {
+    return { error: "Mes inválido." }
+  }
+
+  const dias = diasDelMes(mes)
+  const desde = dias[0]
+  const hasta = dias[dias.length - 1]
+  const supabase = await createClient()
+
+  // Rechazos del mes (paginado: abril supera las 1000 filas).
+  const PAGE = 1000
+  type Fila = {
+    fecha_venta: string
+    serie: number | null
+    nrodoc: number | null
+    origen: string | null
+    id_cliente: number | null
+    nombre_cliente: string | null
+    ds_rechazo: string | null
+    bultos_rechazados: number | null
+    hl_rechazados: number | null
+  }
+  const rows: Fila[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("rechazos")
+      .select(
+        "fecha_venta, serie, nrodoc, origen, id_cliente, nombre_cliente, ds_rechazo, bultos_rechazados, hl_rechazados",
+      )
+      .gte("fecha_venta", desde)
+      .lte("fecha_venta", hasta)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) return { error: error.message }
+    if (!data || data.length === 0) break
+    rows.push(...(data as Fila[]))
+    if (data.length < PAGE) break
+  }
+
+  let totalHl = 0
+  const porDoc = new Map<
+    string,
+    { fecha: string; cliente: string; motivos: Set<string>; bultos: number; hl: number }
+  >()
+  for (const r of rows) {
+    const hl = Number(r.hl_rechazados ?? 0)
+    if (Number.isFinite(hl)) totalHl += hl
+    const k = `${r.origen}|${r.serie}|${r.nrodoc}`
+    let d = porDoc.get(k)
+    if (!d) {
+      d = {
+        fecha: r.fecha_venta,
+        cliente: r.nombre_cliente ?? (r.id_cliente ? `Cliente ${r.id_cliente}` : "—"),
+        motivos: new Set(),
+        bultos: 0,
+        hl: 0,
+      }
+      porDoc.set(k, d)
+    }
+    if (Number.isFinite(hl)) d.hl += hl
+    const bultos = Number(r.bultos_rechazados ?? 0)
+    if (Number.isFinite(bultos)) d.bultos += bultos
+    if (r.ds_rechazo) d.motivos.add(r.ds_rechazo)
+  }
+
+  const top: DetalleRechazoItem[] = [...porDoc.values()]
+    .sort((a, b) => b.hl - a.hl)
+    .slice(0, 10)
+    .map((d) => ({
+      fecha: d.fecha,
+      cliente: d.cliente,
+      motivo: [...d.motivos].join(" / ") || "Sin motivo",
+      bultos: d.bultos,
+      hl: d.hl,
+      pctMes: totalHl > 0 ? (d.hl / totalHl) * 100 : 0,
+    }))
+
+  return { data: { mes, totalHl, cantidad: rows.length, top } }
 }
 
 /**

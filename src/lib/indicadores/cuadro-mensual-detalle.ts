@@ -38,6 +38,37 @@ export function clasificarFamilia(
 /** Orden fijo de familias en el desglose. */
 export const ORDEN_FAMILIAS = ["Cervezas", "Aguas", "Gaseosas (UNG)", "Otros"]
 
+// ── Detalle de "% Rechazo" (modal del cuadro mensual) ──
+
+export interface DetalleRechazoItem {
+  /** "YYYY-MM-DD" de la venta. */
+  fecha: string
+  cliente: string
+  motivo: string
+  bultos: number
+  hl: number
+  /** Participación sobre los HL rechazados del mes (0..100). */
+  pctMes: number
+}
+
+export interface DetalleRechazos {
+  mes: string // "YYYY-MM"
+  /** HL rechazados totales del mes. */
+  totalHl: number
+  /** Cantidad de rechazos (filas) del mes. */
+  cantidad: number
+  /** Top de rechazos agrupados por comprobante, ordenados por HL desc. */
+  top: DetalleRechazoItem[]
+}
+
+/**
+ * Planes de acción publicados por mes (PDF en /public/planes-accion). El modal
+ * de % Rechazo muestra el botón de descarga cuando el mes tiene plan.
+ */
+export const PLANES_ACCION_RECHAZO: Record<string, string> = {
+  "2026-04": "/planes-accion/rechazos-2026-04-plan-accion.pdf",
+}
+
 /** Arma items ordenados con su % sobre el total, a partir de un mapa label→bultos. */
 export function armarItems(
   porLabel: Record<string, number>,
