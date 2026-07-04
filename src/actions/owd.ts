@@ -22,6 +22,7 @@ import type {
   OwdRespuestaFoto,
   OwdResultado,
   OwdResponsable,
+  OwdItemRol,
   OwdMensual,
   OwdItemStats,
   OwdTemplate,
@@ -408,6 +409,7 @@ interface CreateItemInput {
   descripcion?: string
   critico?: boolean
   responsable?: OwdResponsable
+  rol?: OwdItemRol
   orden?: number
 }
 
@@ -439,6 +441,7 @@ export async function createOwdItem(
         descripcion: input.descripcion?.trim() || null,
         critico: input.critico ?? false,
         responsable: input.responsable ?? "operario",
+        rol: input.rol ?? "ambos",
         orden,
       })
       .select("*")
@@ -458,6 +461,7 @@ export async function updateOwdItem(
     descripcion: string | null
     critico: boolean
     responsable: OwdResponsable
+    rol: OwdItemRol
     orden: number
     active: boolean
   }>,

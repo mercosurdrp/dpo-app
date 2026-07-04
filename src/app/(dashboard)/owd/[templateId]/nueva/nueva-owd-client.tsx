@@ -159,18 +159,28 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     Object.fromEntries(items.map((i) => [i.id, { resultado: "ok" as OwdResultado, comentario: "" }])),
   )
 
+  // Chofer y Ayudante ven solo las preguntas de su rol + las comunes;
+  // otros roles (Operario/Otro) ven el checklist completo.
+  const rolKey = rol === "Chofer" ? "chofer" : rol === "Ayudante" ? "ayudante" : null
+  const visibleItems = useMemo(
+    () =>
+      rolKey ? items.filter((i) => (i.rol ?? "ambos") === "ambos" || i.rol === rolKey) : items,
+    [items, rolKey],
+  )
+
   const itemsPorEtapa = useMemo(() => {
     const map = new Map<string, OwdItem[]>()
-    for (const i of items) {
+    for (const i of visibleItems) {
       if (!map.has(i.etapa)) map.set(i.etapa, [])
       map.get(i.etapa)!.push(i)
     }
     return Array.from(map.entries())
-  }, [items])
+  }, [visibleItems])
 
-  const totalOk = Object.values(respuestas).filter((r) => r.resultado === "ok").length
-  const totalNook = Object.values(respuestas).filter((r) => r.resultado === "nook").length
-  const totalNa = Object.values(respuestas).filter((r) => r.resultado === "na").length
+  const visibleRespuestas = visibleItems.map((i) => respuestas[i.id])
+  const totalOk = visibleRespuestas.filter((r) => r.resultado === "ok").length
+  const totalNook = visibleRespuestas.filter((r) => r.resultado === "nook").length
+  const totalNa = visibleRespuestas.filter((r) => r.resultado === "na").length
   const evaluables = totalOk + totalNook
   const pct = evaluables === 0 ? 0 : Math.round((totalOk / evaluables) * 1000) / 10
 
@@ -205,14 +215,14 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
     fd.append(
       "respuestas",
       JSON.stringify(
-        items.map((i) => ({
+        visibleItems.map((i) => ({
           item_id: i.id,
           resultado: respuestas[i.id].resultado,
           comentario: respuestas[i.id].comentario || undefined,
         })),
       ),
     )
-    for (const i of items) {
+    for (const i of visibleItems) {
       for (const f of fotos[i.id] ?? []) {
         // Comprimir en el navegador antes de subir (esquiva el límite de payload)
         const comprimida = await comprimirImagen(f.file).catch(() => f.file)
@@ -311,6 +321,11 @@ export function NuevaOwdClient({ templateId, titulo, items, empleados, superviso
                   <SelectItem value="Otro">Otro</SelectItem>
                 </SelectContent>
               </Select>
+              {rolKey && visibleItems.length < items.length && (
+                <p className="text-xs text-muted-foreground">
+                  {visibleItems.length} de {items.length} preguntas aplican a {rol}
+                </p>
+              )}
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

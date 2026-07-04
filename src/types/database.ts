@@ -833,6 +833,9 @@ export type OwdResultado = "ok" | "nook" | "na"
 // A quién se atribuye un ítem del checklist: condiciona la tendencia por operario
 export type OwdResponsable = "operario" | "sdr" | "proceso"
 
+// Rol del observado al que aplica el ítem: filtra las preguntas al cargar la OWD
+export type OwdItemRol = "chofer" | "ayudante" | "ambos"
+
 export interface OwdItem {
   id: string
   template_id: string | null
@@ -843,6 +846,7 @@ export interface OwdItem {
   descripcion: string | null
   critico: boolean
   responsable: OwdResponsable
+  rol: OwdItemRol
   active: boolean
   created_at: string
 }

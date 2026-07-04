@@ -19,13 +19,19 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Plus, Pencil, Trash2, Loader2, Save, ExternalLink } from "lucide-react"
-import type { OwdItem, OwdTemplate, OwdResponsable } from "@/types/database"
+import type { OwdItem, OwdTemplate, OwdResponsable, OwdItemRol } from "@/types/database"
 import { createOwdItem, updateOwdItem, deleteOwdItem, updateOwdTemplate } from "@/actions/owd"
 
 const RESPONSABLE_LABEL: Record<OwdResponsable, string> = {
   operario: "Operario observado",
   sdr: "SDR / supervisor",
   proceso: "Proceso / Admin",
+}
+
+const ROL_LABEL: Record<OwdItemRol, string> = {
+  chofer: "Solo Chofer",
+  ayudante: "Solo Ayudante",
+  ambos: "Chofer y Ayudante",
 }
 
 interface Contexto {
@@ -91,6 +97,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
   const [fDescripcion, setFDescripcion] = useState("")
   const [fCritico, setFCritico] = useState(false)
   const [fResponsable, setFResponsable] = useState<OwdResponsable>("operario")
+  const [fRol, setFRol] = useState<OwdItemRol>("ambos")
   const [fOrden, setFOrden] = useState("")
   const [savingItem, setSavingItem] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -102,6 +109,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
     setFDescripcion("")
     setFCritico(false)
     setFResponsable("operario")
+    setFRol("ambos")
     setFOrden("")
     setDialogOpen(true)
   }
@@ -112,6 +120,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
     setFDescripcion(item.descripcion ?? "")
     setFCritico(item.critico)
     setFResponsable(item.responsable ?? "operario")
+    setFRol(item.rol ?? "ambos")
     setFOrden(String(item.orden))
     setDialogOpen(true)
   }
@@ -127,6 +136,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
           descripcion: fDescripcion.trim() || null,
           critico: fCritico,
           responsable: fResponsable,
+          rol: fRol,
           ...(fOrden ? { orden: Number(fOrden) } : {}),
         })
       : await createOwdItem({
@@ -136,6 +146,7 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
           descripcion: fDescripcion.trim() || undefined,
           critico: fCritico,
           responsable: fResponsable,
+          rol: fRol,
           ...(fOrden ? { orden: Number(fOrden) } : {}),
         })
     setSavingItem(false)
@@ -282,6 +293,14 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
                               {RESPONSABLE_LABEL[item.responsable ?? "operario"]}
                             </Badge>
                           )}
+                          {(item.rol ?? "ambos") !== "ambos" && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 align-middle text-[10px] text-blue-600"
+                            >
+                              {ROL_LABEL[item.rol ?? "ambos"]}
+                            </Badge>
+                          )}
                         </p>
                         {item.descripcion && (
                           <p className="text-xs text-muted-foreground">{item.descripcion}</p>
@@ -388,6 +407,22 @@ export function OwdTemplateEditorClient({ templateId, contexto, items }: Props) 
               <p className="text-xs text-muted-foreground">
                 La tendencia por operario sólo computa los ítems del operario, así no se lo penaliza
                 por desvíos del SDR o del proceso.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>¿A qué rol aplica la pregunta?</Label>
+              <select
+                className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                value={fRol}
+                onChange={(e) => setFRol(e.target.value as OwdItemRol)}
+              >
+                <option value="ambos">Chofer y Ayudante (común)</option>
+                <option value="chofer">Solo Chofer</option>
+                <option value="ayudante">Solo Ayudante</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Al cargar la OWD, si el observado es Chofer o Ayudante solo se muestran las
+                preguntas de su rol más las comunes.
               </p>
             </div>
           </div>
