@@ -43,6 +43,7 @@ import {
   HeartHandshake,
   PackageCheck,
   Megaphone,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -192,6 +193,16 @@ export const navItems: NavItem[] = [
     label: "Asistencia",
     href: "/asistencia",
     icon: <Fingerprint className="size-5" />,
+  },
+  // Visibilidad de Resultados (DPO Entrega 2.1): HHEE + bultos por empleado.
+  // Dato sensible (≈compensación) → sin viewer; el empleado entra por SU
+  // sidebar a la misma ruta y ve solo lo suyo.
+  {
+    label: "Visibilidad de Resultados",
+    href: "/visibilidad-resultados",
+    icon: <TrendingUp className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor", "admin_rrhh", "auditor"],
   },
   {
     label: "Vehículos",

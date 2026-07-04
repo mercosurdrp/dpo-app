@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Menu,
   X,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -48,6 +49,10 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
       ? [{ label: "Orden de salida", href: "/mi-orden-del-dia", icon: <CalendarCheck className="size-5" /> }]
       : []),
     { label: "Inicio", href: "/mis-capacitaciones", icon: <GraduationCap className="size-5" /> },
+    // Mis Resultados (DPO Entrega 2.1): HHEE + bultos propios, solo Pampeana.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mis Resultados", href: "/visibilidad-resultados", icon: <TrendingUp className="size-5" /> }]),
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
     // Rechazos: solo Pampeana (fuente de datos).
