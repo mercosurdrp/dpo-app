@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,7 +26,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  ArrowDownToLine,
   ArrowRight,
+  ArrowUpFromLine,
   CircleDot,
   ClipboardPlus,
   Crosshair,
@@ -157,6 +160,7 @@ export function NeumaticosModule({
 
   const [cargaOpen, setCargaOpen] = useState(false)
   const [individualOpen, setIndividualOpen] = useState(false)
+  const [montajeModo, setMontajeModo] = useState<"montar" | "desmontar" | null>(null)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
     pos: PosicionNeumatico
@@ -267,7 +271,13 @@ export function NeumaticosModule({
       </div>
 
       {puedeEditar && (
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => setMontajeModo("montar")}>
+            <ArrowDownToLine className="mr-1 size-4" /> Montar neumáticos
+          </Button>
+          <Button variant="outline" onClick={() => setMontajeModo("desmontar")}>
+            <ArrowUpFromLine className="mr-1 size-4" /> Desmontar
+          </Button>
           <Button variant="outline" onClick={() => setIndividualOpen(true)}>
             <Plus className="mr-1 size-4" /> Carga individual
           </Button>
@@ -620,6 +630,17 @@ export function NeumaticosModule({
         <CargaIndividualDialog
           onClose={() => setIndividualOpen(false)}
           onDone={refresh}
+        />
+      )}
+      {montajeModo && (
+        <MontajeDialog
+          modo={montajeModo}
+          unidades={unidades}
+          unidadInicial={unidadSel}
+          neumaticos={neumaticos}
+          kmFlota={kmFlota}
+          onClose={() => setMontajeModo(null)}
+          onRefresh={refresh}
         />
       )}
       {posDialog && unidad && (
@@ -1150,6 +1171,327 @@ function CargaIndividualDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+    </Dialog>
+  )
+}
+
+// ==================== Montaje / Desmontaje con arrastre ====================
+
+// Elemento que se está arrastrando (o quedó seleccionado con un toque):
+// una cubierta del stock (para montar) o una instalada en el diagrama (para
+// desmontar al stock).
+type MontajeItem =
+  | { origen: "stock"; n: Neumatico }
+  | { origen: "diagrama"; n: Neumatico; pos: PosicionNeumatico }
+
+// Pantalla de montaje/desmontaje: diagrama de la unidad + panel de stock al
+// costado. Se opera arrastrando (mouse o dedo) o tocando cubierta y destino.
+function MontajeDialog({
+  modo,
+  unidades,
+  unidadInicial,
+  neumaticos,
+  kmFlota,
+  onClose,
+  onRefresh,
+}: {
+  modo: "montar" | "desmontar"
+  unidades: UnidadFlota[]
+  unidadInicial: string
+  neumaticos: Neumatico[]
+  kmFlota: Record<string, KmFlotaUnidad>
+  onClose: () => void
+  onRefresh: () => void
+}) {
+  const [unidadSel, setUnidadSel] = useState(unidadInicial)
+  const unidad = unidades.find((u) => u.dominio === unidadSel) ?? null
+  const layout = layoutDeTipo(unidad?.tipo ?? null)
+  const stock = useMemo(
+    () => neumaticos.filter((n) => n.estado === "stock"),
+    [neumaticos]
+  )
+  const porPosicion = useMemo(() => {
+    const m = new Map<string, Neumatico>()
+    for (const n of neumaticos)
+      if (n.estado === "instalado" && n.dominio === unidadSel && n.posicion)
+        m.set(n.posicion, n)
+    return m
+  }, [neumaticos, unidadSel])
+  const kmU = kmFlota[unidadSel] ?? { kmActual: null, kmDia: null, fecha: null }
+
+  const [saving, setSaving] = useState(false)
+  const [drag, setDrag] = useState<MontajeItem | null>(null)
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
+  const [sel, setSel] = useState<MontajeItem | null>(null)
+
+  const montar = async (n: Neumatico, pos: PosicionNeumatico) => {
+    if (!unidad || saving) return
+    if (porPosicion.get(pos.code)) {
+      toast.error("Esa posición ya tiene una cubierta instalada")
+      return
+    }
+    setSaving(true)
+    const res = await asignarNeumatico({
+      id: n.id,
+      dominio: unidad.dominio,
+      posicion: pos.code,
+      eje: pos.eje,
+      km_instalacion: kmU.kmActual != null ? Math.round(kmU.kmActual) : null,
+      vida_util_km: VIDA_UTIL_DEFAULT_KM[n.tipo] ?? null,
+    })
+    setSaving(false)
+    setSel(null)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`Cubierta ${n.numero || "s/n"} montada en ${pos.label}`)
+      onRefresh()
+    }
+  }
+
+  const desmontar = async (n: Neumatico) => {
+    if (saving) return
+    setSaving(true)
+    const res = await quitarNeumatico({ id: n.id })
+    setSaving(false)
+    setSel(null)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`Cubierta ${n.numero || "s/n"} desmontada al stock`)
+      onRefresh()
+    }
+  }
+
+  // Arrastre con Pointer Events (funciona con mouse y touch). Si el puntero
+  // no se mueve, el gesto cuenta como toque: selecciona / deselecciona.
+  const startDrag = (item: MontajeItem) => (e: React.PointerEvent) => {
+    if (saving) return
+    e.preventDefault()
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let dragging = false
+    const limpiar = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", cancel)
+      setDrag(null)
+      setGhost(null)
+    }
+    const move = (ev: PointerEvent) => {
+      if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 6) {
+        dragging = true
+        setDrag(item)
+      }
+      if (dragging) setGhost({ x: ev.clientX, y: ev.clientY })
+    }
+    const up = (ev: PointerEvent) => {
+      limpiar()
+      if (!dragging) {
+        // Toque: seleccionar (o deseleccionar si ya estaba)
+        setSel((prev) => (prev && prev.n.id === item.n.id ? null : item))
+        return
+      }
+      setSel(null)
+      const drop =
+        document
+          .elementFromPoint(ev.clientX, ev.clientY)
+          ?.closest?.("[data-drop]")
+          ?.getAttribute("data-drop") ?? null
+      if (drop === "stock" && item.origen === "diagrama") {
+        void desmontar(item.n)
+      } else if (drop?.startsWith("pos:") && item.origen === "stock") {
+        const pos = layout.find((p) => p.code === drop.slice(4))
+        if (pos) void montar(item.n, pos)
+      }
+    }
+    const cancel = () => limpiar()
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+    window.addEventListener("pointercancel", cancel)
+  }
+
+  // Destinos resaltados según lo que se arrastra / seleccionó.
+  const resaltaPosiciones = drag?.origen === "stock" || sel?.origen === "stock"
+  const resaltaStock = drag?.origen === "diagrama" || sel?.origen === "diagrama"
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            {modo === "montar" ? "Montar neumáticos" : "Desmontar neumáticos"}
+            {unidad ? ` · ${unidad.dominio}` : ""}
+          </DialogTitle>
+          <DialogDescription>
+            Deslizá una cubierta del stock a una posición vacía para montarla, o una del
+            camión hacia el panel de stock para desmontarla. También podés tocar la
+            cubierta y después tocar el destino.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-slate-500">Unidad</Label>
+          <Select value={unidadSel} onValueChange={(v) => setUnidadSel(v ?? "")}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Unidad" />
+            </SelectTrigger>
+            <SelectContent>
+              {unidades.map((u) => (
+                <SelectItem key={u.dominio} value={u.dominio}>
+                  {u.dominio}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {kmU.kmActual != null && (
+            <span className="text-xs text-slate-400">
+              {fmtNum(Math.round(kmU.kmActual))} km — al montar se usa este km de
+              instalación y la vida útil default por tipo
+            </span>
+          )}
+        </div>
+
+        {!unidad ? (
+          <p className="text-sm text-slate-500">Elegí una unidad.</p>
+        ) : (
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            {/* Diagrama de la unidad */}
+            <div className="relative aspect-[3/4] w-64 shrink-0 sm:w-72">
+              <SiluetaUnidad layout={layout} tipo={unidad.tipo ?? null} />
+              {layout.map((p) => {
+                const n = porPosicion.get(p.code)
+                if (n) {
+                  return (
+                    <div
+                      key={p.code}
+                      data-draggable
+                      onPointerDown={startDrag({ origen: "diagrama", n, pos: p })}
+                      title={`${p.label} · ${n.numero || "s/n"} — arrastrá al stock para desmontar`}
+                      style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                      className={cn(
+                        "absolute -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none select-none rounded-lg",
+                        sel?.n.id === n.id && "ring-2 ring-sky-500 ring-offset-1",
+                        drag?.n.id === n.id && "opacity-40"
+                      )}
+                    >
+                      <TireGlyph
+                        label={p.label}
+                        sub={n.numero || "s/n"}
+                        eje={p.eje}
+                        wearClass={colorDesgaste(n.profundidad_actual_mm)}
+                        empty={false}
+                      />
+                    </div>
+                  )
+                }
+                return (
+                  <button
+                    key={p.code}
+                    type="button"
+                    data-drop={`pos:${p.code}`}
+                    onClick={() => {
+                      if (sel?.origen === "stock") void montar(sel.n, p)
+                    }}
+                    title={`${p.label} · vacía — soltá acá una cubierta del stock`}
+                    style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                    className={cn(
+                      "absolute -translate-x-1/2 -translate-y-1/2 rounded-lg",
+                      resaltaPosiciones && "ring-2 ring-emerald-500 ring-offset-1"
+                    )}
+                  >
+                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-slate-400" empty />
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Panel de stock (zona para soltar al desmontar) */}
+            <div
+              data-drop="stock"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("[data-draggable]")) return
+                if (sel?.origen === "diagrama") void desmontar(sel.n)
+              }}
+              className={cn(
+                "min-h-48 w-full min-w-0 flex-1 rounded-lg border bg-slate-50/60 p-3 transition-colors",
+                resaltaStock && "border-sky-400 bg-sky-50 ring-2 ring-sky-400"
+              )}
+            >
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-600">
+                <Layers className="size-4 text-slate-400" /> Stock ({stock.length})
+                {resaltaStock && (
+                  <span className="text-xs font-normal text-sky-600">
+                    — soltá acá para desmontar
+                  </span>
+                )}
+              </p>
+              {stock.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  No hay cubiertas en stock. Cargalas con “Carga individual” o “Carga
+                  masiva”.
+                </p>
+              ) : (
+                <div className="grid max-h-[48vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+                  {stock.map((n) => (
+                    <div
+                      key={n.id}
+                      data-draggable
+                      onPointerDown={startDrag({ origen: "stock", n })}
+                      title={`${n.numero || "s/n"} — arrastrá a una posición vacía para montar`}
+                      className={cn(
+                        "flex cursor-grab touch-none select-none flex-col items-center rounded-md border bg-white p-1.5 shadow-sm",
+                        sel?.n.id === n.id && "ring-2 ring-emerald-500",
+                        drag?.n.id === n.id && "opacity-40"
+                      )}
+                    >
+                      <TireGlyph
+                        label={n.numero || "s/n"}
+                        sub={[TIPO_LABEL[n.tipo], n.medida].filter(Boolean).join(" · ")}
+                        eje={null}
+                        wearClass={colorDesgaste(n.profundidad_actual_mm)}
+                        empty={false}
+                      />
+                      <span className="mt-0.5 text-[10px] tabular-nums text-slate-500">
+                        {n.profundidad_actual_mm != null
+                          ? `${n.profundidad_actual_mm} mm`
+                          : "sin medición"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <span className="mr-auto text-xs text-slate-400">
+            {saving ? "Guardando…" : sel ? `Seleccionada: ${sel.n.numero || "s/n"} — tocá el destino` : ""}
+          </span>
+          <Button variant="outline" onClick={onClose}>
+            Listo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+
+      {/* Fantasma que sigue al puntero durante el arrastre (portal al body:
+          DialogContent tiene transform y rompería position:fixed) */}
+      {drag &&
+        ghost &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[9999] -translate-x-1/2 -translate-y-1/2 opacity-90 drop-shadow-lg"
+            style={{ left: ghost.x, top: ghost.y }}
+          >
+            <TireGlyph
+              label={drag.n.numero || "s/n"}
+              eje={null}
+              wearClass={colorDesgaste(drag.n.profundidad_actual_mm)}
+              empty={false}
+            />
+          </div>,
+          document.body
+        )}
     </Dialog>
   )
 }
