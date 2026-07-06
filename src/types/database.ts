@@ -2936,6 +2936,7 @@ export interface PlanAccionPresupuesto {
   fecha_limite: string | null
   estado: EstadoPlanAccion
   observaciones: string | null
+  adjunto_urls: string[]
   created_by: string | null
   created_at: string
   updated_at: string

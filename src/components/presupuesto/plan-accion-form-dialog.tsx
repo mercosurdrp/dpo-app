@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
-import { Loader2 } from "lucide-react"
+import { useEffect, useRef, useState, useTransition } from "react"
+import { Loader2, Paperclip, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,12 @@ interface Props {
 
 const SIN_TAREA = "__sin__"
 
+/** Nombre legible de un adjunto ya subido (quita el prefijo timestamp del path). */
+function nombreAdjunto(url: string): string {
+  const base = decodeURIComponent(url.split("/").pop() ?? "adjunto")
+  return base.replace(/^\d{10,}-/, "")
+}
+
 export function PlanAccionFormDialog({
   open,
   onOpenChange,
@@ -70,14 +76,50 @@ export function PlanAccionFormDialog({
   )
   const [tareaId, setTareaId] = useState<string>(plan?.tarea_id ?? SIN_TAREA)
 
+  // Adjuntos: los ya subidos que se conservan + los nuevos a subir
+  const [adjuntosExistentes, setAdjuntosExistentes] = useState<string[]>(
+    plan?.adjunto_urls ?? [],
+  )
+  const [nuevosAdjuntos, setNuevosAdjuntos] = useState<File[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     if (open) {
       setEstado(plan?.estado ?? "abierto")
       setResponsableId(plan?.responsable_id ?? "")
       setTareaId(plan?.tarea_id ?? SIN_TAREA)
+      setAdjuntosExistentes(plan?.adjunto_urls ?? [])
+      setNuevosAdjuntos([])
       setError(null)
     }
   }, [open, plan])
+
+  function agregarArchivos(files: File[]) {
+    if (!files.length) return
+    setNuevosAdjuntos((prev) => [...prev, ...files])
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = Array.from(e.clipboardData?.items ?? [])
+    const imagenes: File[] = []
+    for (const item of items) {
+      if (!item.type.startsWith("image/")) continue
+      const file = item.getAsFile()
+      if (!file) continue
+      const ext = file.type.split("/")[1] || "png"
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, "")
+        .slice(0, 14)
+      imagenes.push(
+        new File([file], `captura-${stamp}.${ext}`, { type: file.type }),
+      )
+    }
+    if (imagenes.length) {
+      e.preventDefault()
+      agregarArchivos(imagenes)
+    }
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -90,6 +132,10 @@ export function PlanAccionFormDialog({
     else formData.delete("responsable_id")
     if (tareaId && tareaId !== SIN_TAREA) formData.set("tarea_id", tareaId)
     else formData.delete("tarea_id")
+
+    for (const file of nuevosAdjuntos) formData.append("adjuntos", file)
+    if (editing)
+      formData.set("adjuntos_existentes", JSON.stringify(adjuntosExistentes))
 
     startTransition(async () => {
       const result = editing
@@ -236,6 +282,99 @@ export function PlanAccionFormDialog({
               rows={2}
               defaultValue={plan?.observaciones ?? ""}
             />
+          </div>
+
+          {/* Adjuntos */}
+          <div className="space-y-1.5">
+            <Label>Archivos adjuntos</Label>
+            <div
+              tabIndex={0}
+              onPaste={handlePaste}
+              className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              {(adjuntosExistentes.length > 0 || nuevosAdjuntos.length > 0) && (
+                <ul className="space-y-1">
+                  {adjuntosExistentes.map((url) => (
+                    <li
+                      key={url}
+                      className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-sm"
+                    >
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex min-w-0 items-center gap-1.5 text-blue-600 hover:underline"
+                      >
+                        <Paperclip className="size-3.5 shrink-0" />
+                        <span className="truncate">{nombreAdjunto(url)}</span>
+                      </a>
+                      <button
+                        type="button"
+                        title="Quitar adjunto"
+                        onClick={() =>
+                          setAdjuntosExistentes((prev) =>
+                            prev.filter((u) => u !== url),
+                          )
+                        }
+                        className="shrink-0 text-slate-400 hover:text-red-600"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </li>
+                  ))}
+                  {nuevosAdjuntos.map((file, i) => (
+                    <li
+                      key={`${file.name}-${i}`}
+                      className="flex items-center justify-between gap-2 rounded-md bg-blue-50 px-2 py-1 text-sm"
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 text-slate-700">
+                        <Paperclip className="size-3.5 shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          (nuevo)
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        title="Quitar adjunto"
+                        onClick={() =>
+                          setNuevosAdjuntos((prev) =>
+                            prev.filter((_, j) => j !== i),
+                          )
+                        }
+                        className="shrink-0 text-slate-400 hover:text-red-600"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="mr-1.5 size-3.5" />
+                  Agregar archivos
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  o pegá una captura con Ctrl+V
+                </span>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  agregarArchivos(Array.from(e.target.files ?? []))
+                  e.target.value = ""
+                }}
+              />
+            </div>
           </div>
 
           {error && (

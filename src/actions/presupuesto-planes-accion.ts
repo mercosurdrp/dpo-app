@@ -12,6 +12,7 @@ import type {
 } from "@/types/database"
 
 const REVALIDATE_PATH = "/presupuesto"
+const BUCKET = "planes-accion-presupuesto"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -50,6 +51,47 @@ function parseNum(v: FormDataEntryValue | null): number | null {
 function parseText(v: FormDataEntryValue | null): string | null {
   const s = String(v ?? "").trim()
   return s === "" ? null : s
+}
+
+function cleanFileName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(-80)
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
+
+/** Sube los archivos "adjuntos" del FormData al bucket y devuelve sus URLs públicas. */
+async function subirAdjuntos(
+  supabase: SupabaseServerClient,
+  formData: FormData,
+): Promise<Result<{ urls: string[]; paths: string[] }>> {
+  const files = formData
+    .getAll("adjuntos")
+    .filter((f): f is File => f instanceof File && f.size > 0)
+  const urls: string[] = []
+  const paths: string[] = []
+  for (const file of files) {
+    const path = `${Date.now()}-${cleanFileName(file.name)}`
+    const buffer = await file.arrayBuffer()
+    const { error } = await supabase.storage.from(BUCKET).upload(path, buffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    })
+    if (error) {
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
+      return { error: `Subiendo adjunto: ${error.message}` }
+    }
+    paths.push(path)
+    urls.push(supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl)
+  }
+  return { data: { urls, paths } }
+}
+
+function pathsDesdeUrls(urls: string[]): string[] {
+  return urls.map((u) => u.split(`/${BUCKET}/`)[1]).filter(Boolean) as string[]
 }
 
 export async function puedeEditarPlanesAccion(): Promise<boolean> {
@@ -115,6 +157,7 @@ export async function listPlanesAccion(
         fecha_limite: r.fecha_limite,
         estado: r.estado as EstadoPlanAccion,
         observaciones: r.observaciones,
+        adjunto_urls: (r.adjunto_urls as string[] | null) ?? [],
         created_by: r.created_by,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -173,13 +216,25 @@ export async function crearPlanAccion(
     const campos = camposPlanDesdeForm(formData)
     if (!campos.titulo) return { error: "El título es obligatorio" }
 
+    const subida = await subirAdjuntos(supabase, formData)
+    if ("error" in subida) return { error: subida.error }
+
     const { data, error } = await supabase
       .from("presupuestos_planes_accion")
-      .insert({ anio, ...campos, created_by: profile.id })
+      .insert({
+        anio,
+        ...campos,
+        adjunto_urls: subida.data.urls,
+        created_by: profile.id,
+      })
       .select("id")
       .single()
 
-    if (error) return { error: error.message }
+    if (error) {
+      if (subida.data.paths.length)
+        await supabase.storage.from(BUCKET).remove(subida.data.paths)
+      return { error: error.message }
+    }
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { id: (data as { id: string }).id } }
@@ -201,12 +256,43 @@ export async function actualizarPlanAccion(
     const campos = camposPlanDesdeForm(formData)
     if (!campos.titulo) return { error: "El título es obligatorio" }
 
+    // Adjuntos: los existentes que el usuario conservó + los nuevos subidos.
+    const { data: actual } = await supabase
+      .from("presupuestos_planes_accion")
+      .select("adjunto_urls")
+      .eq("id", id)
+      .single()
+    const previas = ((actual?.adjunto_urls as string[] | null) ?? [])
+
+    let conservadas = previas
+    const existentesRaw = formData.get("adjuntos_existentes")
+    if (typeof existentesRaw === "string") {
+      try {
+        const parsed = JSON.parse(existentesRaw)
+        if (Array.isArray(parsed))
+          conservadas = previas.filter((u) => parsed.includes(u))
+      } catch {
+        // si no parsea, conservar todo
+      }
+    }
+
+    const subida = await subirAdjuntos(supabase, formData)
+    if ("error" in subida) return { error: subida.error }
+
     const { error } = await supabase
       .from("presupuestos_planes_accion")
-      .update(campos)
+      .update({ ...campos, adjunto_urls: [...conservadas, ...subida.data.urls] })
       .eq("id", id)
 
-    if (error) return { error: error.message }
+    if (error) {
+      if (subida.data.paths.length)
+        await supabase.storage.from(BUCKET).remove(subida.data.paths)
+      return { error: error.message }
+    }
+
+    // Borrar del bucket los adjuntos que el usuario quitó.
+    const removidas = pathsDesdeUrls(previas.filter((u) => !conservadas.includes(u)))
+    if (removidas.length) await supabase.storage.from(BUCKET).remove(removidas)
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { id } }
@@ -225,6 +311,12 @@ export async function eliminarPlanAccion(
     await requireEditor()
     const supabase = await createClient()
 
+    const { data: actual } = await supabase
+      .from("presupuestos_planes_accion")
+      .select("adjunto_urls")
+      .eq("id", id)
+      .single()
+
     // Los pasos caen por CASCADE
     const { error } = await supabase
       .from("presupuestos_planes_accion")
@@ -232,6 +324,9 @@ export async function eliminarPlanAccion(
       .eq("id", id)
 
     if (error) return { error: error.message }
+
+    const paths = pathsDesdeUrls((actual?.adjunto_urls as string[] | null) ?? [])
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { ok: true } }

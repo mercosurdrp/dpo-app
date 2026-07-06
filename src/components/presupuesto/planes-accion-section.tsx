@@ -11,6 +11,7 @@ import {
   ListChecks,
   CheckCircle2,
   Link2,
+  Paperclip,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -56,6 +57,11 @@ function formatDate(iso: string | null): string {
     month: "2-digit",
     year: "numeric",
   })
+}
+
+function nombreAdjunto(url: string): string {
+  const base = decodeURIComponent(url.split("/").pop() ?? "adjunto")
+  return base.replace(/^\d{10,}-/, "")
 }
 
 function progresoPlan(pasos: PlanAccionPaso[]): number | null {
@@ -440,6 +446,26 @@ export function PlanesAccionSection({
                       </div>
                     )}
                   </div>
+
+                  {plan.adjunto_urls.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Adjuntos
+                      </span>
+                      {plan.adjunto_urls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex max-w-56 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 hover:underline"
+                        >
+                          <Paperclip className="size-3 shrink-0" />
+                          <span className="truncate">{nombreAdjunto(url)}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
                   {plan.observaciones && (
                     <p className="text-xs text-muted-foreground">
