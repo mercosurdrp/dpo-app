@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useMemo, useState, useTransition } from "react"
 import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -73,6 +73,7 @@ import {
   type ClusterPlanCubo,
   type ClusterPlanFrente,
 } from "@/actions/clusterizacion-planes"
+import { getClusterizacion } from "@/actions/clusterizacion"
 import { SolapaMercado } from "./mercado-censo"
 
 // El gráfico 3D (Three.js/WebGL) se carga solo en el cliente.
@@ -211,7 +212,18 @@ function SelectFiltro({
 const MOSTRADOR = "VTA. MOSTRADOR"
 const MAX_FILAS = 300
 
-export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciales, planesFrenteIniciales }: Props) {
+export function ClusterizacionClient({ data: dataInicial, planesIniciales, planesCuboIniciales, planesFrenteIniciales }: Props) {
+  const [data, setData] = useState(dataInicial)
+  const [cargandoSem, startSemTransition] = useTransition()
+  const [errorSem, setErrorSem] = useState<string | null>(null)
+  const cambiarSemestre = (id: string) => {
+    setErrorSem(null)
+    startSemTransition(async () => {
+      const r = await getClusterizacion(id)
+      if ("error" in r) setErrorSem(r.error)
+      else setData(r.data)
+    })
+  }
   const [tab, setTab] = useState<"clientes" | "analisis" | "diagrama" | "mercado" | "planes">("clientes")
   const [filtroCluster, setFiltroCluster] = useState<ClusterId | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
@@ -359,9 +371,23 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
             </p>
           </div>
         </div>
-        <Badge variant="secondary" className="bg-indigo-100 text-indigo-700">
-          Encuadre YTD · {periodo.ytd_desde} → {periodo.ytd_hasta}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground">Semestre</label>
+          <select
+            value={periodo.semestre_id}
+            onChange={(e) => cambiarSemestre(e.target.value)}
+            disabled={cargandoSem}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-medium disabled:opacity-60"
+          >
+            {periodo.semestres.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+          <Badge variant="secondary" className="bg-indigo-100 text-indigo-700">
+            {cargandoSem ? "Calculando…" : `${periodo.sem_desde} → ${periodo.sem_hasta}`}
+          </Badge>
+          {errorSem ? <span className="text-xs text-red-600">{errorSem}</span> : null}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -401,8 +427,9 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
               <div className="space-y-1">
                 <p>
                   4 clústeres por el cruce <strong>facturación × crecimiento</strong>{" "}
-                  en modo <strong>YTD</strong>: acumulado <strong>{periodo.ytd_desde} → {periodo.ytd_hasta}</strong>{" "}
-                  vs. el mismo tramo del año anterior (<strong>{periodo.ytd_prev_desde} → {periodo.ytd_prev_hasta}</strong>).
+                  por <strong>semestre calendario fijo</strong>: <strong>{periodo.sem_desde} → {periodo.sem_hasta}</strong>{" "}
+                  vs. el mismo {periodo.en_curso ? "tramo" : "semestre"} del año anterior (<strong>{periodo.sem_prev_desde} → {periodo.sem_prev_hasta}</strong>).
+                  {periodo.en_curso ? " Semestre EN CURSO: la foto avanza con cada día de ventas hasta cerrarlo." : " Semestre cerrado: el análisis queda congelado (corrida DPO)."}
                   Umbral de facturación alta/baja = mediana = <strong>{fmtMoneda(umbral_ingresos)}</strong>.
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -516,7 +543,7 @@ export function ClusterizacionClient({ data, planesIniciales, planesCuboIniciale
                       <TableHead>Cluster</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead>Salud</TableHead>
-                      <TableHead className="text-right">Facturación YTD</TableHead>
+                      <TableHead className="text-right">Facturación semestre</TableHead>
                       <TableHead className="text-right">Crec.</TableHead>
                       <TableHead className="text-right">Drop size</TableHead>
                       <TableHead className="text-right">RMD</TableHead>
@@ -946,7 +973,7 @@ function SolapaDiagrama({
             <p>
               Diagrama <strong>2×2×2</strong>: cruza <strong>facturación</strong> (alta/baja),{" "}
               <strong>costo $/HL</strong> (mayor/menor a la mediana) y <strong>crecimiento</strong>{" "}
-              (vs. YTD anterior) → <strong>8 tipos de cliente</strong>. Girá el gráfico con el mouse
+              (vs. mismo semestre del año anterior) → <strong>8 tipos de cliente</strong>. Girá el gráfico con el mouse
               y hacé clic en un cubo (o en la leyenda) para ver sus PDV.
             </p>
             {sinCosto > 0 && (
@@ -1140,7 +1167,7 @@ function SolapaDiagrama({
                   <TableHead>Cliente</TableHead>
                   <TableHead>Localidad</TableHead>
                   <TableHead>Supervisor</TableHead>
-                  <TableHead className="text-right">Facturación YTD</TableHead>
+                  <TableHead className="text-right">Facturación semestre</TableHead>
                   <TableHead className="text-right">$/HL año</TableHead>
                   <TableHead className="text-right">Crec.</TableHead>
                   <TableHead>Rechazo (45 d)</TableHead>
@@ -1391,7 +1418,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
           <div className="space-y-1">
             <p>
-              Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación YTD</strong>{" "}
+              Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación del semestre</strong>{" "}
               (alta/baja, corte = mediana <strong>{fmtMoneda(umbral_ingresos)}</strong>) con el{" "}
               <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
               <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
@@ -1503,7 +1530,7 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Localidad</TableHead>
                   <TableHead>Cluster</TableHead>
-                  <TableHead className="text-right">Facturación YTD</TableHead>
+                  <TableHead className="text-right">Facturación semestre</TableHead>
                   <TableHead className="text-right">$/HL año</TableHead>
                   <TableHead>Rechazo (45 d)</TableHead>
                   <TableHead>Equipo frío</TableHead>

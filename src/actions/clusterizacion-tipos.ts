@@ -29,7 +29,7 @@ export const CUADRANTE_LABELS: Record<CuadranteId, string> = {
 // ── Diagrama 3D (2×2×2) ──────────────────────────────────────────────────────
 // Cruce de los 3 ejes binarios → 8 tipos de cliente:
 //   Z facturación (alta/baja, mediana) × X costo $/HL (mayor/menor, mediana) ×
-//   Y crecimiento (mayor/menor vs YTD anterior).
+//   Y crecimiento (mayor/menor vs el mismo semestre del año anterior).
 export type CuboId =
   | "estrella" | "rentable" | "motor" | "pesado"
   | "promesa" | "hormiga" | "dilema" | "critico"
@@ -145,7 +145,7 @@ export interface ClusterResumen {
 
 export interface ClusterizacionData {
   periodo: ClusterPeriodo
-  /** Umbral de facturación YTD (mediana) que separa "alto" de "bajo". */
+  /** Umbral de facturación del semestre (mediana) que separa "alto" de "bajo". */
   umbral_ingresos: number
   /** Umbral de costo $/HL (mediana del año) que separa "caro" de "barato". 0 si no hay datos. */
   umbral_costo: number

@@ -360,9 +360,12 @@ export async function consultarVentasPorCliente(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clusterización (Planeamiento 4.2): el ENCUADRE (facturación + crecimiento) es
-// YTD —acumulado del año vs el mismo tramo del año anterior—, mientras que el
-// DROP SIZE mira solo los últimos 45 días (foto reciente). El rechazo (estado)
-// también se evalúa a 45 días, pero eso lo resuelve la capa de Supabase.
+// por SEMESTRE CALENDARIO FIJO —el semestre elegido vs el mismo semestre del año
+// anterior— para que cada corrida DPO (2 veces al año, R4.2.2) quede congelada
+// y no cambie con cada día nuevo de ventas. El semestre EN CURSO se puede espiar
+// (corta en el último día con datos y compara contra el mismo tramo del año
+// anterior). El DROP SIZE mira los últimos 45 días del semestre y el rechazo
+// (estado) también, pero eso lo resuelve la capa de Supabase.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ClusterClienteRow {
@@ -371,22 +374,35 @@ export interface ClusterClienteRow {
   localidad: string | null
   promotor: string | null
   segmento: string | null
-  /** Facturación neta acumulada del año en curso (YTD). */
-  facturacion_ytd: number
-  /** Facturación neta del mismo tramo del año anterior (YTD-1). */
-  facturacion_ytd_prev: number
-  /** Bultos de los últimos 45 días (para el drop size). */
+  /** Facturación neta del semestre elegido. */
+  facturacion_sem: number
+  /** Facturación neta del mismo semestre (o mismo tramo) del año anterior. */
+  facturacion_sem_prev: number
+  /** Bultos de los últimos 45 días del semestre (para el drop size). */
   bultos_45d: number
-  /** Días con visita en los últimos 45 días. */
+  /** Días con visita en los últimos 45 días del semestre. */
   dias_45d: number
 }
 
+export interface SemestreOpcion {
+  /** "2026-S1" */
+  id: string
+  /** "1º semestre 2026 (ene–jun)" */
+  label: string
+  en_curso: boolean
+}
+
 export interface ClusterPeriodo {
-  ytd_desde: string
-  ytd_hasta: string
-  ytd_prev_desde: string
-  ytd_prev_hasta: string
+  sem_desde: string
+  /** Fin efectivo del análisis: fin del semestre, o el último día con ventas si está en curso. */
+  sem_hasta: string
+  sem_prev_desde: string
+  sem_prev_hasta: string
   drop_desde: string
+  semestre_id: string
+  en_curso: boolean
+  /** Semestres seleccionables (del más nuevo al más viejo). */
+  semestres: SemestreOpcion[]
 }
 
 export interface ClusterVentasResultado {
@@ -396,27 +412,76 @@ export interface ClusterVentasResultado {
 
 const DROP_DIAS = 45
 
-export async function consultarClusterClientes(): Promise<ClusterVentasResultado> {
+function rangoSemestre(anio: number, mitad: 1 | 2): { desde: string; hasta: string } {
+  return mitad === 1
+    ? { desde: `${anio}-01-01`, hasta: `${anio}-06-30` }
+    : { desde: `${anio}-07-01`, hasta: `${anio}-12-31` }
+}
+
+function labelSemestre(anio: number, mitad: 1 | 2, enCurso: boolean): string {
+  const meses = mitad === 1 ? "ene–jun" : "jul–dic"
+  return `${mitad}º semestre ${anio} (${meses})${enCurso ? " · en curso" : ""}`
+}
+
+export async function consultarClusterClientes(
+  semestreId?: string,
+): Promise<ClusterVentasResultado> {
   const pool = getPool()
   const client = await pool.connect()
   try {
-    const maxRes = await client.query<{ maxf: string }>(
-      "SELECT to_char(max(fecha), 'YYYY-MM-DD') AS maxf FROM comprobantes",
+    const bounds = await client.query<{ minf: string | null; maxf: string | null }>(
+      "SELECT to_char(min(fecha), 'YYYY-MM-DD') AS minf, to_char(max(fecha), 'YYYY-MM-DD') AS maxf FROM comprobantes",
     )
-    const maxF = maxRes.rows[0]?.maxf
+    const maxF = bounds.rows[0]?.maxf
+    const minF = bounds.rows[0]?.minf ?? ""
     if (!maxF) {
       return {
-        periodo: { ytd_desde: "", ytd_hasta: "", ytd_prev_desde: "", ytd_prev_hasta: "", drop_desde: "" },
+        periodo: {
+          sem_desde: "", sem_hasta: "", sem_prev_desde: "", sem_prev_hasta: "",
+          drop_desde: "", semestre_id: "", en_curso: false, semestres: [],
+        },
         clientes: [],
       }
     }
 
-    const [y, m, d] = maxF.split("-").map((s) => parseInt(s, 10))
-    const ancla = new Date(Date.UTC(y, m - 1, d)) // inclusive
-    const ytdDesde = `${y}-01-01`
-    const ytdPrevDesde = `${y - 1}-01-01`
-    const ytdPrevHasta = ymd(new Date(Date.UTC(y - 1, m - 1, d))) // mismo día/mes, año anterior
-    const dropDesdeD = new Date(ancla)
+    // Semestres seleccionables: desde el que contiene el último dato hacia atrás,
+    // mientras el semestre espejo del año anterior tenga al menos parte con datos
+    // (sin espejo no hay crecimiento comparable).
+    const [maxY, maxM] = maxF.split("-").map((s) => parseInt(s, 10))
+    const mitadMax: 1 | 2 = maxM <= 6 ? 1 : 2
+    const semestres: SemestreOpcion[] = []
+    let a = maxY
+    let h: 1 | 2 = mitadMax
+    while (semestres.length < 8) {
+      const r = rangoSemestre(a, h)
+      const espejoHasta = `${a - 1}${r.hasta.slice(4)}`
+      const esElDeMaxF = a === maxY && h === mitadMax
+      if (espejoHasta < minF && !esElDeMaxF) break
+      const enCurso = esElDeMaxF && maxF < r.hasta
+      semestres.push({ id: `${a}-S${h}`, label: labelSemestre(a, h, enCurso), en_curso: enCurso })
+      if (h === 1) { a -= 1; h = 2 } else h = 1
+    }
+
+    // Semestre elegido: el pedido si existe; si no, el último CERRADO (la corrida
+    // DPO se hace sobre semestres completos), o el en curso si es el único.
+    const elegido =
+      semestres.find((s) => s.id === semestreId) ??
+      semestres.find((s) => !s.en_curso) ??
+      semestres[0]
+    const [anioSel, mitadSel] = [
+      parseInt(elegido.id.slice(0, 4), 10),
+      elegido.id.endsWith("S1") ? (1 as const) : (2 as const),
+    ]
+    const rango = rangoSemestre(anioSel, mitadSel)
+    const semDesde = rango.desde
+    const semHasta = elegido.en_curso ? maxF : rango.hasta
+    const semPrevDesde = `${anioSel - 1}${semDesde.slice(4)}`
+    // Cerrado → semestre espejo completo; en curso → mismo tramo del año anterior.
+    const semPrevHasta = elegido.en_curso
+      ? ymd(new Date(Date.UTC(anioSel - 1, maxM - 1, parseInt(maxF.slice(8, 10), 10))))
+      : `${anioSel - 1}${rango.hasta.slice(4)}`
+    const [hy, hm, hd] = semHasta.split("-").map((s) => parseInt(s, 10))
+    const dropDesdeD = new Date(Date.UTC(hy, hm - 1, hd))
     dropDesdeD.setUTCDate(dropDesdeD.getUTCDate() - (DROP_DIAS - 1))
     const dropDesde = ymd(dropDesdeD)
 
@@ -426,8 +491,8 @@ export async function consultarClusterClientes(): Promise<ClusterVentasResultado
       localidad: string | null
       promotor: string | null
       segmento: string | null
-      facturacion_ytd: string
-      facturacion_ytd_prev: string
+      facturacion_sem: string
+      facturacion_sem_prev: string
       bultos_45d: string
       dias_45d: string
     }>(
@@ -437,15 +502,15 @@ export async function consultarClusterClientes(): Promise<ClusterVentasResultado
          max(ds_localidad)     AS localidad,
          max(ds_vendedor)      AS promotor,
          max(ds_segmento_mkt)  AS segmento,
-         sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END)                  AS facturacion_ytd,
-         sum(CASE WHEN fecha >= $2 AND fecha <= $3 THEN subtotal_neto ELSE 0 END)  AS facturacion_ytd_prev,
-         sum(CASE WHEN fecha >= $4 THEN cantidades_total ELSE 0 END)               AS bultos_45d,
-         count(DISTINCT CASE WHEN fecha >= $4 THEN fecha::date END)                AS dias_45d
+         sum(CASE WHEN fecha >= $1 AND fecha <= $2 THEN subtotal_neto ELSE 0 END)  AS facturacion_sem,
+         sum(CASE WHEN fecha >= $3 AND fecha <= $4 THEN subtotal_neto ELSE 0 END)  AS facturacion_sem_prev,
+         sum(CASE WHEN fecha >= $5 AND fecha <= $2 THEN cantidades_total ELSE 0 END) AS bultos_45d,
+         count(DISTINCT CASE WHEN fecha >= $5 AND fecha <= $2 THEN fecha::date END) AS dias_45d
        FROM comprobantes
-       WHERE fecha >= $2 AND fecha <= $5 AND anulado = 'NO' AND id_cliente IS NOT NULL
+       WHERE fecha >= $3 AND fecha <= $2 AND anulado = 'NO' AND id_cliente IS NOT NULL
        GROUP BY id_cliente
-       HAVING sum(CASE WHEN fecha >= $1 THEN subtotal_neto ELSE 0 END) > 0`,
-      [ytdDesde, ytdPrevDesde, ytdPrevHasta, dropDesde, maxF],
+       HAVING sum(CASE WHEN fecha >= $1 AND fecha <= $2 THEN subtotal_neto ELSE 0 END) > 0`,
+      [semDesde, semHasta, semPrevDesde, semPrevHasta, dropDesde],
     )
 
     const clientes: ClusterClienteRow[] = res.rows.map((r) => ({
@@ -454,14 +519,23 @@ export async function consultarClusterClientes(): Promise<ClusterVentasResultado
       localidad: r.localidad,
       promotor: r.promotor,
       segmento: r.segmento,
-      facturacion_ytd: Number(r.facturacion_ytd) || 0,
-      facturacion_ytd_prev: Number(r.facturacion_ytd_prev) || 0,
+      facturacion_sem: Number(r.facturacion_sem) || 0,
+      facturacion_sem_prev: Number(r.facturacion_sem_prev) || 0,
       bultos_45d: Number(r.bultos_45d) || 0,
       dias_45d: Number(r.dias_45d) || 0,
     }))
 
     return {
-      periodo: { ytd_desde: ytdDesde, ytd_hasta: maxF, ytd_prev_desde: ytdPrevDesde, ytd_prev_hasta: ytdPrevHasta, drop_desde: dropDesde },
+      periodo: {
+        sem_desde: semDesde,
+        sem_hasta: semHasta,
+        sem_prev_desde: semPrevDesde,
+        sem_prev_hasta: semPrevHasta,
+        drop_desde: dropDesde,
+        semestre_id: elegido.id,
+        en_curso: elegido.en_curso,
+        semestres,
+      },
       clientes,
     }
   } finally {

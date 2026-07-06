@@ -200,13 +200,15 @@ function restarMeses(fechaYmd: string, meses: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
 }
 
-export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
+export async function getClusterizacion(
+  semestreId?: string,
+): Promise<Result<ClusterizacionData>> {
   await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
 
   let ventas
   try {
-    ventas = await consultarClusterClientes()
+    ventas = await consultarClusterClientes(semestreId)
   } catch (e) {
     return {
       error:
@@ -236,26 +238,26 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   }
 
   // RMD de los últimos 6 meses (muestra suficiente por cliente).
-  const rmdDesde = periodo.ytd_hasta ? restarMeses(periodo.ytd_hasta, 6) : ""
+  const rmdDesde = periodo.sem_hasta ? restarMeses(periodo.sem_hasta, 6) : ""
   const rmdMap = rmdDesde ? await getRmdPorCliente(rmdDesde) : new Map()
 
-  // Rechazos de los últimos 45 días [drop_desde, ytd_hasta] (foto reciente):
+  // Rechazos de los últimos 45 días [drop_desde, sem_hasta] (foto reciente):
   // un rechazo de enero no debe condenar al cliente en junio.
   const rechazoMap =
-    periodo.drop_desde && periodo.ytd_hasta
-      ? await getRechazoPorCliente(periodo.drop_desde, periodo.ytd_hasta)
+    periodo.drop_desde && periodo.sem_hasta
+      ? await getRechazoPorCliente(periodo.drop_desde, periodo.sem_hasta)
       : new Map<number, RechazoAcum>()
 
   // Supervisor por promotor (para el filtro del explorador).
-  const supMap = periodo.ytd_hasta
-    ? await getSupervisorPorPromotor(restarMeses(periodo.ytd_hasta, 6))
+  const supMap = periodo.sem_hasta
+    ? await getSupervisorPorPromotor(restarMeses(periodo.sem_hasta, 6))
     : new Map<string, string>()
 
   // Costo logístico $/HL del año (YTD) por PDV, reusando el indicador Costo/PDV
   // (misma función que alimenta su solapa "Acumulado", para que los números
   // coincidan). Es opcional: si no hay meses cargados o la RPC falla, queda vacío
   // y la columna muestra "—".
-  const anioYtd = periodo.ytd_hasta ? parseInt(periodo.ytd_hasta.slice(0, 4), 10) : 0
+  const anioYtd = periodo.sem_hasta ? parseInt(periodo.sem_hasta.slice(0, 4), 10) : 0
   const costoHlMap = new Map<number, number>()
   if (anioYtd) {
     const costoYtd = await getCostoPorPdvYtd(anioYtd)
@@ -305,16 +307,16 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
   // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
   const umbralCosto = mediana([...costoHlMap.values()])
 
-  // Umbral de facturación = mediana de la facturación YTD.
-  const umbral = mediana(conDrop.map((r) => r.facturacion_ytd))
+  // Umbral de facturación = mediana de la facturación del semestre.
+  const umbral = mediana(conDrop.map((r) => r.facturacion_sem))
 
   const clientes: ClienteClusterizado[] = conDrop.map((r) => {
     const crecimiento_pct =
-      r.facturacion_ytd_prev > 0
-        ? (r.facturacion_ytd - r.facturacion_ytd_prev) / r.facturacion_ytd_prev
+      r.facturacion_sem_prev > 0
+        ? (r.facturacion_sem - r.facturacion_sem_prev) / r.facturacion_sem_prev
         : null // sin venta el año anterior → cliente nuevo
     const crecePositivo = crecimiento_pct === null || crecimiento_pct >= 0
-    const ingresoAlto = r.facturacion_ytd >= umbral
+    const ingresoAlto = r.facturacion_sem >= umbral
     const drop_size = r.dias_45d > 0 ? r.bultos_45d / r.dias_45d : 0
     // Costo $/HL del año y cuadrante Valor×Costo (sin dato de costo → null).
     const costo_x_hl_ytd = costoHlMap.get(r.id_cliente) ?? null
@@ -393,8 +395,8 @@ export async function getClusterizacion(): Promise<Result<ClusterizacionData>> {
       supervisor: r.promotor ? supMap.get(r.promotor.trim().toUpperCase()) ?? null : null,
       segmento: r.segmento,
       cluster: clasificar(ingresoAlto, crecePositivo),
-      ingresos_actual: r.facturacion_ytd,
-      ingresos_anterior: r.facturacion_ytd_prev,
+      ingresos_actual: r.facturacion_sem,
+      ingresos_anterior: r.facturacion_sem_prev,
       crecimiento_pct,
       bultos_actual: r.bultos_45d,
       dias_actual: r.dias_45d,
