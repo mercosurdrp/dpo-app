@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 // registro_combustible. Extraído de src/actions/vehiculos-analytics.ts para
 // poder reusarse desde otras actions (este archivo NO es "use server").
 
-export type Fuente = "registros" | "checklist" | "combustible" | "mantenimiento"
+export type Fuente = "registros" | "checklist" | "combustible" | "mantenimiento" | "manual"
 
 export interface Lectura {
   dominio: string
@@ -148,7 +148,38 @@ export async function fetchLecturas(filters?: {
   const mant = await qMant
   if (mant.error) throw new Error(mant.error.message)
 
+  // Lecturas cargadas a mano desde el Tablero operativo (unidades sin fuente
+  // automática: autoelevadores sin checklist diario, camionetas del depósito).
+  // `valor` son km u horas según el tipo de la unidad.
+  let qMan = supabase
+    .from("vehiculos_lecturas")
+    .select("dominio, fecha, valor, created_at")
+    .order("fecha", { ascending: true })
+  if (filters?.dominio) qMan = qMan.eq("dominio", filters.dominio)
+  if (filters?.fechaDesde) qMan = qMan.gte("fecha", filters.fechaDesde)
+  if (filters?.fechaHasta) qMan = qMan.lte("fecha", filters.fechaHasta)
+  const man = await qMan
+  if (man.error) throw new Error(man.error.message)
+
   const lecturas: Lectura[] = []
+
+  for (const r of (man.data || []) as Array<{
+    dominio: string
+    fecha: string
+    valor: number | null
+    created_at: string
+  }>) {
+    if (r.valor == null) continue
+    lecturas.push({
+      dominio: r.dominio,
+      fecha: r.fecha,
+      hora: normalizeHora(r.created_at),
+      odometro: Number(r.valor),
+      fuente: "manual",
+      tipo: null,
+      chofer: null,
+    })
+  }
 
   for (const r of (mant.data || []) as Array<{
     dominio: string
