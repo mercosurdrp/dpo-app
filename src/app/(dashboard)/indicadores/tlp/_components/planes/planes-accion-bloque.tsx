@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
+  AlertTriangle,
   Calendar,
+  CheckCircle2,
   ClipboardList,
+  Columns3,
+  List,
+  Loader2,
+  MapPin,
   MessageSquare,
+  Paperclip,
   Plus,
-  Target,
+  Truck,
   User,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -52,22 +59,198 @@ const PRIORIDAD_BADGE: Record<string, string> = {
   baja: "bg-slate-100 text-slate-700 border-slate-200",
 }
 
+/** Borde izquierdo de la tarjeta según prioridad. */
+const PRIORIDAD_BORDE: Record<string, string> = {
+  alta: "border-l-red-400",
+  media: "border-l-amber-300",
+  baja: "border-l-slate-200",
+}
+
+const COLUMNAS: Array<{
+  estado: EstadoTlpPlan
+  titulo: string
+  header: string
+  dot: string
+}> = [
+  {
+    estado: "pendiente",
+    titulo: "Pendiente",
+    header: "bg-amber-50 border-amber-200 text-amber-800",
+    dot: "bg-amber-400",
+  },
+  {
+    estado: "en_progreso",
+    titulo: "En progreso",
+    header: "bg-blue-50 border-blue-200 text-blue-800",
+    dot: "bg-blue-400",
+  },
+  {
+    estado: "completado",
+    titulo: "Completado",
+    header: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    dot: "bg-emerald-400",
+  },
+]
+
 const TODOS = "__todos__"
 
-const FMT_DIA = new Intl.DateTimeFormat("es-AR", {
+const FMT_DIA_CORTO = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
   month: "2-digit",
-  year: "numeric",
   timeZone: "America/Argentina/Buenos_Aires",
 })
 
 function fechaDia(iso: string | null): string {
   if (!iso) return "—"
   try {
-    return FMT_DIA.format(new Date(iso + "T00:00:00"))
+    return FMT_DIA_CORTO.format(new Date(iso.slice(0, 10) + "T00:00:00"))
   } catch {
     return iso
   }
+}
+
+/** Hoy (YYYY-MM-DD) en horario argentino. */
+function hoyISO(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date())
+}
+
+function estaVencido(p: TlpPlan, hoy: string): boolean {
+  return (
+    p.estado !== "completado" &&
+    p.fecha_objetivo != null &&
+    p.fecha_objetivo < hoy
+  )
+}
+
+/** Normaliza para comparar título vs foco (tildes, "&"/"y", espacios). */
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/&/g, "y")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+/** Tarjeta de plan — se usa en el tablero y en la lista. */
+function PlanCard({
+  plan,
+  hoy,
+  compacta,
+  onClick,
+}: {
+  plan: TlpPlan
+  hoy: string
+  compacta: boolean
+  onClick: () => void
+}) {
+  const vencido = estaVencido(plan, hoy)
+  // Si el título es solo la ciudad o la patente foco, el titular de la
+  // tarjeta es la ACCIÓN (descripción) y el foco lo acompaña debajo.
+  const tituloEsFoco =
+    (plan.foco_ciudad &&
+      normalizar(plan.titulo) === normalizar(plan.foco_ciudad)) ||
+    (plan.foco_patente &&
+      normalizar(plan.titulo) === normalizar(plan.foco_patente))
+  const titular =
+    tituloEsFoco && plan.descripcion ? plan.descripcion : plan.titulo
+  const descripcionAparte =
+    plan.descripcion && plan.descripcion !== titular ? plan.descripcion : null
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-md border border-l-4 bg-white p-3 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 ${
+        PRIORIDAD_BORDE[plan.prioridad] ?? "border-l-slate-200"
+      } ${vencido ? "border-red-200 bg-red-50/40" : "border-slate-200"}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 flex-1 text-[15px] font-bold leading-snug text-slate-900">
+          {titular}
+        </span>
+        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {compacta && (
+            <Badge
+              variant="outline"
+              className={`text-[10px] ${ESTADO_BADGE[plan.estado]}`}
+            >
+              {ESTADO_LABELS[plan.estado]}
+            </Badge>
+          )}
+          <Badge
+            variant="outline"
+            className={`text-[10px] ${PRIORIDAD_BADGE[plan.prioridad] ?? ""}`}
+          >
+            {PRIORIDAD_LABELS[plan.prioridad] ?? plan.prioridad}
+          </Badge>
+        </span>
+      </div>
+
+      {/* La acción propiamente dicha (cuando no es ya el titular) */}
+      {descripcionAparte && (
+        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap rounded border-l-2 border-slate-300 bg-slate-50 px-2 py-1 text-[13px] font-semibold text-slate-800">
+          {descripcionAparte}
+        </p>
+      )}
+
+      {/* Foco del plan */}
+      {(plan.foco_ciudad || plan.foco_patente) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {plan.foco_ciudad && (
+            <span className="inline-flex max-w-full items-center gap-1 rounded bg-sky-100 px-1.5 py-0.5 text-[12px] font-semibold text-sky-800">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{plan.foco_ciudad}</span>
+            </span>
+          )}
+          {plan.foco_patente && (
+            <span className="inline-flex max-w-full items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700">
+              <Truck className="h-3 w-3 shrink-0" />
+              <span className="truncate">{plan.foco_patente}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Pie: responsable, fecha, avances */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+        <span className="flex min-w-0 items-center gap-1">
+          <User className="h-3 w-3 shrink-0" />
+          <span className="truncate">
+            {plan.responsable_nombre ?? "Sin asignar"}
+          </span>
+        </span>
+        <span
+          className={`flex items-center gap-1 ${
+            vencido ? "font-semibold text-red-600" : ""
+          }`}
+        >
+          {vencido ? (
+            <AlertTriangle className="h-3 w-3" />
+          ) : (
+            <Calendar className="h-3 w-3" />
+          )}
+          {fechaDia(plan.fecha_objetivo)}
+          {vencido && " · vencido"}
+        </span>
+        <span
+          className={`flex items-center gap-1 ${
+            plan.avances_count === 0 ? "text-slate-400" : ""
+          }`}
+          title={`${plan.avances_count} avance(s) de seguimiento cargados`}
+        >
+          {plan.avances_count > 0 ? (
+            <Paperclip className="h-3 w-3" />
+          ) : (
+            <MessageSquare className="h-3 w-3" />
+          )}
+          {plan.avances_count} av.
+        </span>
+      </div>
+    </button>
+  )
 }
 
 interface Props {
@@ -85,11 +268,16 @@ export function PlanesAccionBloque({
   const [responsables, setResponsables] = useState<
     { id: string; nombre: string }[]
   >([])
+  const [vista, setVista] = useState<"tablero" | "lista">("tablero")
   const [filtroEstado, setFiltroEstado] = useState<string>(TODOS)
+  const [filtroCiudad, setFiltroCiudad] = useState<string>(TODOS)
+  const [filtroResponsable, setFiltroResponsable] = useState<string>(TODOS)
 
   const [formOpen, setFormOpen] = useState(false)
   const [planEditar, setPlanEditar] = useState<TlpPlan | null>(null)
   const [planDetalle, setPlanDetalle] = useState<TlpPlan | null>(null)
+
+  const hoy = useMemo(() => hoyISO(), [])
 
   useEffect(() => {
     listResponsablesPosibles().then((r) => {
@@ -110,10 +298,48 @@ export function PlanesAccionBloque({
     }
   }
 
+  const ciudadesEnPlanes = useMemo(
+    () =>
+      [...new Set(planes.map((p) => p.foco_ciudad).filter(Boolean))] as string[],
+    [planes],
+  )
+  const responsablesEnPlanes = useMemo(
+    () =>
+      [
+        ...new Set(planes.map((p) => p.responsable_nombre).filter(Boolean)),
+      ] as string[],
+    [planes],
+  )
+
   const planesFiltrados = useMemo(() => {
-    if (filtroEstado === TODOS) return planes
-    return planes.filter((p) => p.estado === filtroEstado)
-  }, [planes, filtroEstado])
+    return planes.filter((p) => {
+      if (filtroCiudad !== TODOS && p.foco_ciudad !== filtroCiudad) return false
+      if (
+        filtroResponsable !== TODOS &&
+        p.responsable_nombre !== filtroResponsable
+      )
+        return false
+      return true
+    })
+  }, [planes, filtroCiudad, filtroResponsable])
+
+  // En la lista además aplica el filtro de estado (el tablero ya separa por columnas).
+  const planesLista = useMemo(() => {
+    if (filtroEstado === TODOS) return planesFiltrados
+    return planesFiltrados.filter((p) => p.estado === filtroEstado)
+  }, [planesFiltrados, filtroEstado])
+
+  const resumen = useMemo(() => {
+    const porEstado = { pendiente: 0, en_progreso: 0, completado: 0 }
+    let vencidos = 0
+    for (const p of planesFiltrados) {
+      porEstado[p.estado] += 1
+      if (estaVencido(p, hoy)) vencidos += 1
+    }
+    return { porEstado, vencidos }
+  }, [planesFiltrados, hoy])
+
+  const hayFiltros = filtroCiudad !== TODOS || filtroResponsable !== TODOS
 
   function abrirNuevo() {
     setPlanEditar(null)
@@ -126,26 +352,106 @@ export function PlanesAccionBloque({
     setFormOpen(true)
   }
 
+  const resumenTiles: Array<{
+    icono: React.ReactNode
+    valor: number | string
+    etiqueta: string
+    cls: string
+  }> = [
+    {
+      icono: <ClipboardList className="h-4 w-4" />,
+      valor: planesFiltrados.length,
+      etiqueta: "Planes",
+      cls: "text-slate-700",
+    },
+    {
+      icono: <Loader2 className="h-4 w-4" />,
+      valor: resumen.porEstado.pendiente + resumen.porEstado.en_progreso,
+      etiqueta: "Abiertos",
+      cls: "text-blue-700",
+    },
+    {
+      icono: <CheckCircle2 className="h-4 w-4" />,
+      valor: resumen.porEstado.completado,
+      etiqueta: "Completados",
+      cls: "text-emerald-700",
+    },
+    {
+      icono: <AlertTriangle className="h-4 w-4" />,
+      valor: resumen.vencidos,
+      etiqueta: "Vencidos",
+      cls: resumen.vencidos > 0 ? "text-red-600" : "text-slate-400",
+    },
+  ]
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
           <span className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-slate-500" />
             Planes de acción sobre TLP
           </span>
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setVista("tablero")}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  vista === "tablero"
+                    ? "bg-slate-800 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Columns3 className="h-3.5 w-3.5" />
+                Tablero
+              </button>
+              <button
+                type="button"
+                onClick={() => setVista("lista")}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  vista === "lista"
+                    ? "bg-slate-800 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <List className="h-3.5 w-3.5" />
+                Lista
+              </button>
+            </div>
+            <Button size="sm" onClick={abrirNuevo}>
+              <Plus className="mr-1 h-4 w-4" />
+              Nuevo plan
+            </Button>
+          </span>
+        </CardTitle>
+
+        {/* Resumen */}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {resumenTiles.map((t) => (
+            <div
+              key={t.etiqueta}
+              className="flex items-center gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-2.5 py-1.5"
+            >
+              <span className={t.cls}>{t.icono}</span>
+              <span className={`text-lg font-bold tabular-nums ${t.cls}`}>
+                {t.valor}
+              </span>
+              <span className="text-[11px] leading-tight text-slate-500">
+                {t.etiqueta}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Filtros */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {vista === "lista" && (
             <Select
               value={filtroEstado}
               onValueChange={(v) => v && setFiltroEstado(v)}
-              items={{
-                [TODOS]: "Todos los estados",
-                pendiente: "Pendiente",
-                en_progreso: "En progreso",
-                completado: "Completado",
-              }}
             >
-              <SelectTrigger className="h-8 w-[150px] text-xs">
+              <SelectTrigger className="h-8 w-[140px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -155,13 +461,59 @@ export function PlanesAccionBloque({
                 <SelectItem value="completado">Completado</SelectItem>
               </SelectContent>
             </Select>
-            <Button size="sm" onClick={abrirNuevo}>
-              <Plus className="mr-1 h-4 w-4" />
-              Nuevo plan
+          )}
+          {ciudadesEnPlanes.length > 0 && (
+            <Select
+              value={filtroCiudad}
+              onValueChange={(v) => v && setFiltroCiudad(v)}
+            >
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODOS}>Todas las ciudades</SelectItem>
+                {ciudadesEnPlanes.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {responsablesEnPlanes.length > 0 && (
+            <Select
+              value={filtroResponsable}
+              onValueChange={(v) => v && setFiltroResponsable(v)}
+            >
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODOS}>Todos los responsables</SelectItem>
+                {responsablesEnPlanes.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {hayFiltros && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-slate-500"
+              onClick={() => {
+                setFiltroCiudad(TODOS)
+                setFiltroResponsable(TODOS)
+              }}
+            >
+              Limpiar filtros
             </Button>
-          </span>
-        </CardTitle>
+          )}
+        </div>
       </CardHeader>
+
       <CardContent className="border-t pt-4">
         {planesFiltrados.length === 0 ? (
           <div className="py-10 text-center text-sm text-slate-400">
@@ -171,67 +523,66 @@ export function PlanesAccionBloque({
                 seguimiento del TLP.
               </>
             ) : (
-              <>No hay planes con ese estado.</>
+              <>No hay planes con esos filtros.</>
             )}
+          </div>
+        ) : vista === "tablero" ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {COLUMNAS.map((col) => {
+              const items = planesFiltrados.filter(
+                (p) => p.estado === col.estado,
+              )
+              return (
+                <div
+                  key={col.estado}
+                  className="flex flex-col rounded-lg border border-slate-200 bg-slate-50/50"
+                >
+                  <div
+                    className={`flex items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2 text-sm font-semibold ${col.header}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${col.dot}`} />
+                      {col.titulo}
+                    </span>
+                    <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-bold tabular-nums">
+                      {items.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 p-2">
+                    {items.length === 0 ? (
+                      <p className="py-6 text-center text-xs text-slate-400">
+                        Sin planes
+                      </p>
+                    ) : (
+                      items.map((p) => (
+                        <PlanCard
+                          key={p.id}
+                          plan={p}
+                          hoy={hoy}
+                          compacta={false}
+                          onClick={() => setPlanDetalle(p)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : planesLista.length === 0 ? (
+          <div className="py-10 text-center text-sm text-slate-400">
+            No hay planes con ese estado.
           </div>
         ) : (
           <ul className="space-y-2">
-            {planesFiltrados.map((p) => (
+            {planesLista.map((p) => (
               <li key={p.id}>
-                <button
-                  type="button"
+                <PlanCard
+                  plan={p}
+                  hoy={hoy}
+                  compacta
                   onClick={() => setPlanDetalle(p)}
-                  className="w-full rounded-md border border-slate-200 bg-white p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 flex-1 font-medium text-slate-900">
-                      {p.titulo}
-                    </span>
-                    <span className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] ${ESTADO_BADGE[p.estado]}`}
-                      >
-                        {ESTADO_LABELS[p.estado]}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] ${
-                          PRIORIDAD_BADGE[p.prioridad] ?? ""
-                        }`}
-                      >
-                        {PRIORIDAD_LABELS[p.prioridad] ?? p.prioridad}
-                      </Badge>
-                    </span>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                    {(p.foco_ciudad || p.foco_patente) && (
-                      <span className="flex items-center gap-1">
-                        <Target className="h-3.5 w-3.5" />
-                        {[
-                          p.foco_ciudad ? `Ciudad: ${p.foco_ciudad}` : null,
-                          p.foco_patente ? `Camión: ${p.foco_patente}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <User className="h-3.5 w-3.5" />
-                      {p.responsable_nombre ?? "Sin asignar"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
-                      {fechaDia(p.fecha_objetivo)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      {p.avances_count}{" "}
-                      {p.avances_count === 1 ? "avance" : "avances"}
-                    </span>
-                  </div>
-                </button>
+                />
               </li>
             ))}
           </ul>
