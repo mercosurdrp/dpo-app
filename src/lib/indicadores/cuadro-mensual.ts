@@ -4,7 +4,7 @@
 // fuentes (Supabase, deposito-esteban, foxtrot, etc.) vive en
 // src/actions/cuadro-mensual.ts.
 
-export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén"
+export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén" | "Personas"
 
 /** Polaridad del indicador para el semáforo. "sin" = informativo, sin color. */
 export type MejorSi = "mayor" | "menor" | "sin"
@@ -55,6 +55,7 @@ export const INDICADORES: IndicadorDef[] = [
 
   // ── Flota ──
   { id: "tiempo_ruta", pilar: "Flota", nombre: "Tiempo prom. en ruta", unidad: "hs", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Promedio de duración puerta a puerta de las rutas finalizadas (Foxtrot)." },
+  { id: "horas_ruta", pilar: "Flota", nombre: "Horas en ruta", unidad: "hs", meta: null, mejor_si: "sin", resumen: "suma", nota: "Total de horas en la calle del mes: suma de la duración puerta a puerta de las rutas finalizadas (Foxtrot). Misma base que el tiempo promedio." },
   { id: "camiones_dia", pilar: "Flota", nombre: "Camiones por día", unidad: "u.", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Promedio de rutas/camiones que salieron a reparto por día con actividad." },
   { id: "mantenimiento", pilar: "Flota", nombre: "% Cumpl. mantenimiento", unidad: "%", meta: 90, mejor_si: "mayor", resumen: "ultimo", nota: "Sin histórico mensual disponible aún: sólo se puede ver el estado actual del plan." },
 
@@ -62,9 +63,12 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "wqi", pilar: "Almacén", nombre: "WQI (calidad)", unidad: "PPM", meta: null, mejor_si: "menor", resumen: "ultimo", nota: "Pérdidas en partes por millón (acumulado del mes). Meta = target dinámico del presupuesto." },
   { id: "productividad", pilar: "Almacén", nombre: "Productividad de picking", unidad: "HL/HH", meta: null, mejor_si: "mayor", resumen: "promedio", nota: "Hectolitros pickeados por hora-hombre (promedio diario del mes)." },
   { id: "precision", pilar: "Almacén", nombre: "Precisión de picking", unidad: "%", meta: 99, mejor_si: "mayor", resumen: "promedio", nota: "% de bultos pickeados sin error (promedio diario del mes). Meta ≥ 99%." },
+
+  // ── Personas ──
+  { id: "fte_prom", pilar: "Personas", nombre: "FTE promedio", unidad: "FTE", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Equivalentes a tiempo completo del mes: horas fichadas en el biométrico ÷ (8 hs × días hábiles L–V). Fichadas disponibles desde abril 2026; meses con cobertura insuficiente quedan sin dato." },
 ]
 
-export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén"]
+export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Personas"]
 
 /** Color del pilar para los encabezados de grupo (tailwind-ish, inline). */
 export const PILAR_COLOR: Record<Pilar, string> = {
@@ -74,6 +78,7 @@ export const PILAR_COLOR: Record<Pilar, string> = {
   "Venta mostrador": "#d97706", // ámbar
   Flota: "#7c3aed", // violeta
   Almacén: "#0891b2", // cyan
+  Personas: "#db2777", // rosa
 }
 
 export interface CeldaMes {
@@ -192,6 +197,8 @@ export function formatValor(valor: number | null, unidad: string): string {
     case "hs":
       return valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     case "HL/HH":
+      return valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    case "FTE":
       return valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     case "u.":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 1 })

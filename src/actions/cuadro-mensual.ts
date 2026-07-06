@@ -48,6 +48,17 @@ function diaSiguiente(fecha: string): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
 }
 
+/** Cantidad de días hábiles (lun–vie) de un mes "YYYY-MM" hasta `corte` inclusive. */
+function diasHabilesHasta(mes: string, corte: string): number {
+  let n = 0
+  for (const d of diasDelMes(mes)) {
+    if (d > corte) break
+    const dow = new Date(`${d}T00:00:00Z`).getUTCDay()
+    if (dow >= 1 && dow <= 5) n++
+  }
+  return n
+}
+
 /**
  * Cuadro Mensual de Indicadores por Pilar (Pampeana), de enero al mes en curso.
  * Calcula todo automáticamente desde las fuentes existentes; los meses/celdas
@@ -150,6 +161,26 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
     return rows
   }
+  // Fichadas del biométrico para el FTE: ~600-700 filas/mes → paginar en
+  // rangos largos.
+  async function fichadasTodas() {
+    const PAGE = 1000
+    const rows: Array<{ fecha: string; horas_trabajadas: number | null }> = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("asistencia_resumen_diario")
+        .select("fecha, horas_trabajadas")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .order("legajo", { ascending: true })
+        .order("fecha", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      rows.push(...data)
+      if (data.length < PAGE) break
+    }
+    return rows
+  }
   async function rechazosTodos() {
     const PAGE = 1000
     const rows: Array<{ fecha_venta: string; hl_rechazados: number | null }> =
@@ -172,7 +203,7 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── Fetches de rango (en paralelo) ──
   // reportes_seguridad está muy por debajo de 1000 filas en el rango, así que
   // no necesita paginación.
-  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows] = await Promise.all([
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, fichadasRows] = await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -184,6 +215,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     ventasNoDistribuidasTodas(),
     rechazosTodos(),
     foxtrotRoutesTodas(),
+    fichadasTodas(),
   ])
 
   // ── SEGURIDAD ──
@@ -442,6 +474,16 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: acc && acc.tiempos.length > 0 ? avg(acc.tiempos) / 60 : null,
       parcial: esActual,
     }
+    // Horas en ruta del mes: suma de las duraciones de las rutas finalizadas
+    // (misma base que el promedio de arriba).
+    celdas.horas_ruta[mes] = {
+      mes,
+      valor:
+        acc && acc.tiempos.length > 0
+          ? acc.tiempos.reduce((a, b) => a + b, 0) / 60
+          : null,
+      parcial: esActual,
+    }
     celdas.camiones_dia[mes] = {
       mes,
       valor: acc && acc.fechas.size > 0 ? acc.rutas / acc.fechas.size : null,
@@ -456,6 +498,38 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
     // Mantenimiento: sin histórico mensual disponible → siempre gris.
     celdas.mantenimiento[mes] = { mes, valor: null, parcial: esActual }
+  }
+
+  // ── PERSONAS: FTE promedio (fichadas del biométrico) ──
+  // FTE del mes = horas fichadas / (8 hs × días hábiles L–V hasta el corte).
+  // Se exige cobertura mínima (fichadas en ≥ 50% de los días hábiles) para no
+  // mostrar un FTE engañoso en meses con biométrico incompleto (ej. marzo
+  // tiene un solo día cargado).
+  const fichadasPorMes: Record<string, { horas: number; dias: Set<string> }> = {}
+  for (const f of fichadasRows) {
+    const mes = f.fecha.slice(0, 7)
+    const acc = (fichadasPorMes[mes] ??= { horas: 0, dias: new Set() })
+    const h = Number(f.horas_trabajadas ?? 0)
+    if (Number.isFinite(h) && h > 0) {
+      acc.horas += h
+      acc.dias.add(f.fecha)
+    }
+  }
+  for (const mes of meses) {
+    const esActual = mes === mesActual
+    const dias = diasDelMes(mes)
+    const corte = esActual ? hoy : dias[dias.length - 1]
+    const habiles = diasHabilesHasta(mes, corte)
+    const acc = fichadasPorMes[mes]
+    const cobertura = acc && habiles > 0 ? acc.dias.size / habiles : 0
+    celdas.fte_prom[mes] = {
+      mes,
+      valor:
+        acc && habiles > 0 && cobertura >= 0.5
+          ? acc.horas / (8 * habiles)
+          : null,
+      parcial: esActual,
+    }
   }
 
   // ── ENTREGA: SLA (secuencial por mes) ──
