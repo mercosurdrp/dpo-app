@@ -1,4 +1,5 @@
 import {
+  getRaci,
   listCategorias,
   listRequisitos,
   listResponsablesPosibles,
@@ -7,11 +8,12 @@ import {
 import { RequisitosLegalesClient } from "./requisitos-legales-client"
 
 export default async function RequisitosLegalesPage() {
-  const [catRes, reqRes, respRes, puedeEditar] = await Promise.all([
+  const [catRes, reqRes, respRes, puedeEditar, raciRes] = await Promise.all([
     listCategorias(),
     listRequisitos(),
     listResponsablesPosibles(),
     puedeEditarRequisitos(),
+    getRaci(),
   ])
 
   if ("error" in catRes) {
@@ -37,6 +39,7 @@ export default async function RequisitosLegalesPage() {
       requisitos={reqRes.data}
       responsables={"data" in respRes ? respRes.data : []}
       puedeEditar={puedeEditar}
+      raci={"data" in raciRes ? raciRes.data : null}
     />
   )
 }

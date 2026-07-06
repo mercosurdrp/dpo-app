@@ -47,11 +47,13 @@ import {
 import { RequisitoFormDialog } from "@/components/requisitos-legales/requisito-form-dialog"
 import { RenovarDialog } from "@/components/requisitos-legales/renovar-dialog"
 import { CategoriaFormDialog } from "@/components/requisitos-legales/categoria-form-dialog"
+import { RaciTab } from "@/components/requisitos-legales/raci-tab"
 import type {
   EstadoRequisitoLegal,
   Profile,
   RequisitoLegalCategoria,
   RequisitoLegalConResponsable,
+  RequisitoLegalRaci,
   TipoIdentificadorRequisito,
 } from "@/types/database"
 
@@ -60,6 +62,7 @@ interface Props {
   requisitos: RequisitoLegalConResponsable[]
   responsables: Pick<Profile, "id" | "nombre" | "email">[]
   puedeEditar: boolean
+  raci: RequisitoLegalRaci | null
 }
 
 function formatDate(iso: string | null): string {
@@ -367,6 +370,7 @@ export function RequisitosLegalesClient({
   requisitos,
   responsables,
   puedeEditar,
+  raci,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -613,7 +617,18 @@ export function RequisitosLegalesClient({
               </TabsTrigger>
             )
           })}
+          {raci && (
+            <TabsTrigger value="raci" className="flex-none font-semibold">
+              RACI
+            </TabsTrigger>
+          )}
         </TabsList>
+
+        {raci && (
+          <TabsContent value="raci" className="mt-4">
+            <RaciTab key={raci.filas.map((f) => f.updated_at).join("|")} raci={raci} puedeEditar={puedeEditar} />
+          </TabsContent>
+        )}
 
         {categorias.map((c) => (
           <TabsContent key={c.id} value={c.id} className="mt-4">

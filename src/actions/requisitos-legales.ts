@@ -10,6 +10,10 @@ import type {
   RequisitoLegalConResponsable,
   EstadoRequisitoLegal,
   RequisitoLegalAlertaConfig,
+  RequisitoLegalRaci,
+  RequisitoLegalRaciFila,
+  RequisitoLegalRaciRol,
+  RaciLetra,
 } from "@/types/database"
 
 const BUCKET = "requisitos-legales"
@@ -695,6 +699,279 @@ export async function puedeEditarRequisitos(): Promise<boolean> {
   const profile = await getProfile()
   if (!profile) return false
   return ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+}
+
+// =============================================
+// RACI (DPO Planeamiento 2.1 — R2.1.1)
+// =============================================
+
+/**
+ * Devuelve la matriz RACI. Si las tablas no existen en el tenant
+ * (Misiones aún no las tiene), devuelve error y la UI oculta la solapa.
+ */
+export async function getRaci(): Promise<Result<RequisitoLegalRaci>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const [rolesRes, filasRes] = await Promise.all([
+      supabase
+        .from("requisitos_legales_raci_roles")
+        .select("*")
+        .eq("activa", true)
+        .order("orden", { ascending: true }),
+      supabase
+        .from("requisitos_legales_raci_filas")
+        .select("*")
+        .eq("activa", true)
+        .order("orden", { ascending: true }),
+    ])
+
+    if (rolesRes.error) return { error: rolesRes.error.message }
+    if (filasRes.error) return { error: filasRes.error.message }
+
+    return {
+      data: {
+        roles: (rolesRes.data ?? []) as RequisitoLegalRaciRol[],
+        filas: (filasRes.data ?? []) as RequisitoLegalRaciFila[],
+      },
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando RACI",
+    }
+  }
+}
+
+export async function setCeldaRaci(
+  filaId: string,
+  rolId: string,
+  letra: RaciLetra | null,
+): Promise<Result<RequisitoLegalRaciFila>> {
+  try {
+    await requireEditor()
+    if (letra !== null && !["R", "A", "C", "I"].includes(letra)) {
+      return { error: "Letra RACI inválida" }
+    }
+    const supabase = await createClient()
+
+    const { data: fila, error: errFila } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .select("asignaciones")
+      .eq("id", filaId)
+      .single()
+    if (errFila) return { error: errFila.message }
+
+    const asignaciones = {
+      ...((fila?.asignaciones ?? {}) as Record<string, RaciLetra>),
+    }
+    if (letra === null) {
+      delete asignaciones[rolId]
+    } else {
+      asignaciones[rolId] = letra
+    }
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .update({ asignaciones })
+      .eq("id", filaId)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalRaciFila }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error guardando celda",
+    }
+  }
+}
+
+export async function crearFilaRaci(
+  nombre: string,
+  descripcion: string | null,
+): Promise<Result<RequisitoLegalRaciFila>> {
+  try {
+    await requireEditor()
+    const nombreClean = nombre.trim()
+    if (!nombreClean) return { error: "El nombre de la fila es obligatorio" }
+    const supabase = await createClient()
+
+    const { data: maxRow } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .select("orden")
+      .order("orden", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const orden = ((maxRow?.orden as number | undefined) ?? 0) + 10
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .insert({
+        nombre: nombreClean,
+        descripcion: descripcion?.trim() || null,
+        orden,
+      })
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalRaciFila }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error creando fila",
+    }
+  }
+}
+
+export async function actualizarFilaRaci(
+  id: string,
+  nombre: string,
+  descripcion: string | null,
+): Promise<Result<RequisitoLegalRaciFila>> {
+  try {
+    await requireEditor()
+    const nombreClean = nombre.trim()
+    if (!nombreClean) return { error: "El nombre de la fila es obligatorio" }
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .update({ nombre: nombreClean, descripcion: descripcion?.trim() || null })
+      .eq("id", id)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalRaciFila }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando fila",
+    }
+  }
+}
+
+export async function eliminarFilaRaci(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .delete()
+      .eq("id", id)
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando fila",
+    }
+  }
+}
+
+export async function crearRolRaci(
+  nombre: string,
+): Promise<Result<RequisitoLegalRaciRol>> {
+  try {
+    await requireEditor()
+    const nombreClean = nombre.trim()
+    if (!nombreClean) return { error: "El nombre del rol es obligatorio" }
+    const supabase = await createClient()
+
+    const { data: maxRow } = await supabase
+      .from("requisitos_legales_raci_roles")
+      .select("orden")
+      .order("orden", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const orden = ((maxRow?.orden as number | undefined) ?? 0) + 10
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_raci_roles")
+      .insert({ nombre: nombreClean, orden })
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalRaciRol }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error creando rol",
+    }
+  }
+}
+
+export async function actualizarRolRaci(
+  id: string,
+  nombre: string,
+): Promise<Result<RequisitoLegalRaciRol>> {
+  try {
+    await requireEditor()
+    const nombreClean = nombre.trim()
+    if (!nombreClean) return { error: "El nombre del rol es obligatorio" }
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("requisitos_legales_raci_roles")
+      .update({ nombre: nombreClean })
+      .eq("id", id)
+      .select("*")
+      .single()
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RequisitoLegalRaciRol }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error actualizando rol",
+    }
+  }
+}
+
+export async function eliminarRolRaci(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    // Limpiar las asignaciones del rol en todas las filas
+    const { data: filas, error: errFilas } = await supabase
+      .from("requisitos_legales_raci_filas")
+      .select("id, asignaciones")
+    if (errFilas) return { error: errFilas.message }
+
+    for (const fila of filas ?? []) {
+      const asignaciones = (fila.asignaciones ?? {}) as Record<string, string>
+      if (id in asignaciones) {
+        delete asignaciones[id]
+        const { error: errUpd } = await supabase
+          .from("requisitos_legales_raci_filas")
+          .update({ asignaciones })
+          .eq("id", fila.id)
+        if (errUpd) return { error: errUpd.message }
+      }
+    }
+
+    const { error } = await supabase
+      .from("requisitos_legales_raci_roles")
+      .delete()
+      .eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando rol",
+    }
+  }
 }
 
 // =============================================

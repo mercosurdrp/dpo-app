@@ -2776,6 +2776,33 @@ export interface RequisitoLegalAlertaConfig {
   created_at: string
 }
 
+export type RaciLetra = "R" | "A" | "C" | "I"
+
+export interface RequisitoLegalRaciRol {
+  id: string
+  nombre: string
+  orden: number
+  activa: boolean
+  created_at: string
+}
+
+export interface RequisitoLegalRaciFila {
+  id: string
+  nombre: string
+  descripcion: string | null
+  orden: number
+  activa: boolean
+  /** rol_id → letra RACI */
+  asignaciones: Record<string, RaciLetra>
+  created_at: string
+  updated_at: string
+}
+
+export interface RequisitoLegalRaci {
+  roles: RequisitoLegalRaciRol[]
+  filas: RequisitoLegalRaciFila[]
+}
+
 // =============================================
 // Presupuesto (módulo /presupuesto)
 // =============================================
