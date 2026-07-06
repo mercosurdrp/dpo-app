@@ -375,6 +375,7 @@ export function RequisitosLegalesClient({
   const router = useRouter()
   const [, startTransition] = useTransition()
 
+  const [vista, setVista] = useState<string>("general")
   const [tab, setTab] = useState<string>(categorias[0]?.id ?? "")
 
   const [openForm, setOpenForm] = useState(false)
@@ -477,10 +478,28 @@ export function RequisitosLegalesClient({
         </p>
       </div>
 
+      {/* Solapas de nivel superior: Matriz general | RACI */}
+      <Tabs value={vista} onValueChange={(v: string | null) => setVista(v ?? "general")}>
+        <TabsList>
+          <TabsTrigger value="general">Matriz general</TabsTrigger>
+          {raci && <TabsTrigger value="raci">RACI</TabsTrigger>}
+        </TabsList>
+
+        {raci && (
+          <TabsContent value="raci" className="mt-4">
+            <RaciTab
+              key={raci.filas.map((f) => f.updated_at).join("|")}
+              raci={raci}
+              puedeEditar={puedeEditar}
+            />
+          </TabsContent>
+        )}
+
+        <TabsContent value="general" className="mt-4 space-y-5">
       {/* Matriz general — resumen por categoría */}
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-700">Matriz general</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Resumen por categoría</h2>
           {puedeEditar && (
             <Button
               size="sm"
@@ -617,18 +636,7 @@ export function RequisitosLegalesClient({
               </TabsTrigger>
             )
           })}
-          {raci && (
-            <TabsTrigger value="raci" className="flex-none font-semibold">
-              RACI
-            </TabsTrigger>
-          )}
         </TabsList>
-
-        {raci && (
-          <TabsContent value="raci" className="mt-4">
-            <RaciTab key={raci.filas.map((f) => f.updated_at).join("|")} raci={raci} puedeEditar={puedeEditar} />
-          </TabsContent>
-        )}
 
         {categorias.map((c) => (
           <TabsContent key={c.id} value={c.id} className="mt-4">
@@ -660,6 +668,8 @@ export function RequisitosLegalesClient({
             />
           </TabsContent>
         ))}
+      </Tabs>
+        </TabsContent>
       </Tabs>
 
       {/* Dialogs */}
