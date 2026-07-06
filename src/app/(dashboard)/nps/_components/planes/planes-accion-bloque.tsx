@@ -252,7 +252,7 @@ function PlanCard({
       } ${vencido ? "border-red-200 bg-red-50/40" : "border-slate-200"}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-slate-900">
+        <span className="min-w-0 flex-1 text-[15px] font-bold leading-snug text-slate-900">
           {plan.titulo}
         </span>
         <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -272,6 +272,13 @@ function PlanCard({
           </Badge>
         </span>
       </div>
+
+      {/* La acción propiamente dicha */}
+      {plan.descripcion && (
+        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap rounded border-l-2 border-slate-300 bg-slate-50 px-2 py-1 text-[13px] font-semibold text-slate-800">
+          {plan.descripcion}
+        </p>
+      )}
 
       {/* Foco del plan */}
       {(plan.foco_driver || plan.foco_cliente_nombre || plan.foco_promotor) && (

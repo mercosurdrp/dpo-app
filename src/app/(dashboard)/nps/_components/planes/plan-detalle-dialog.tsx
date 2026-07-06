@@ -281,7 +281,7 @@ export function PlanDetalleDialog({
         </div>
 
         {plan.descripcion && (
-          <p className="whitespace-pre-wrap text-sm text-slate-700">
+          <p className="whitespace-pre-wrap rounded-md border-l-4 border-slate-400 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
             {plan.descripcion}
           </p>
         )}
