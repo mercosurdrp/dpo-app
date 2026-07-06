@@ -118,6 +118,7 @@ const FUENTE_LECTURA_LABEL: Record<LecturaSugerida["fuente"], string> = {
   checklist: "Checklist",
   combustible: "Carga de combustible",
   mantenimiento: "Orden de trabajo",
+  manual: "Lectura manual",
 }
 
 const TIPO_MANT_LABEL: Record<MantenimientoTipo, string> = {
@@ -574,6 +575,7 @@ export function MantenimientoClient({
             otPendientes={otPendientes}
             neumaticos={neumaticosResumen}
             unidadesBaja={tablero.unidadesBaja}
+            puedeEditar={puedeEditar}
             onNavigate={navegar}
           />
         </TabsContent>

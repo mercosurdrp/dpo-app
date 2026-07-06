@@ -443,9 +443,14 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
   }
 
   // Ancla del km actual robusto = último service (fecha + odómetro) cuando existe.
+  // Para autoelevadores (miden horas) el ancla solo vale si la OT trae horómetro:
+  // su campo `odometro` suele traer valores basura de Cloudfleet que rechazarían
+  // las lecturas reales de horómetro (mucho menores).
+  const tipoPorDominio = new Map(vehiculos.map((v) => [v.dominio, v.tipo ?? null]))
   const anclas = new Map<string, { fecha: string; odometro: number }>()
   for (const [dom, u] of ultimos) {
-    if (u.odometro != null) anclas.set(dom, { fecha: u.fecha, odometro: u.odometro })
+    const valor = tipoPorDominio.get(dom) === "autoelevador" ? u.horometro : u.odometro
+    if (valor != null) anclas.set(dom, { fecha: u.fecha, odometro: valor })
   }
   const kmActuales = kmActualRobustoPorDominio(lecturas, anclas)
   const tasaUso = tasaUsoPorDominio(lecturas)

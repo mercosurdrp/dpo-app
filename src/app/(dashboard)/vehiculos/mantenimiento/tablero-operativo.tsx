@@ -1,8 +1,21 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -11,8 +24,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Archive, CircleDot, ClipboardList, Gauge, Wrench } from "lucide-react"
+import { Archive, CircleDot, ClipboardList, Gauge, Loader2, Plus, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { registrarLecturaVehiculo } from "@/actions/mantenimiento-vehiculos"
 import type {
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
@@ -82,16 +96,106 @@ function Dot({ estado }: { estado: EstadoServiceGeneral }) {
   return <span className={cn("inline-block size-2.5 rounded-full", ESTADO_SG[estado].dot)} />
 }
 
+// Diálogo de carga rápida de lectura de odómetro/horómetro, para unidades sin
+// fuente automática (autoelevadores sin checklist diario, camionetas del
+// depósito). La lectura alimenta el "km/hs actual" y la proyección del service.
+function CargarLecturaDialog({
+  unidad,
+  onClose,
+}: {
+  unidad: ServiceGeneralUnidad
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [valor, setValor] = useState("")
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [guardando, setGuardando] = useState(false)
+  const esHoras = unidad.mide === "horas"
+
+  const guardar = async () => {
+    const v = Number(valor)
+    if (!valor.trim() || !Number.isFinite(v) || v < 0) {
+      toast.error(`Cargá ${esHoras ? "las horas" : "los km"} de la unidad`)
+      return
+    }
+    setGuardando(true)
+    const res = await registrarLecturaVehiculo({
+      dominio: unidad.dominio,
+      fecha,
+      valor: v,
+    })
+    setGuardando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(`Lectura de ${unidad.dominio} guardada`)
+    onClose()
+    startTransition(() => router.refresh())
+  }
+
+  return (
+    <Dialog open onOpenChange={(o: boolean) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Cargar lectura — {unidad.dominio}</DialogTitle>
+          <DialogDescription>
+            {esHoras
+              ? "Horas del horómetro tal como figuran en el tablero de la unidad."
+              : "Kilómetros del odómetro tal como figuran en el tablero de la unidad."}{" "}
+            Actualiza el {esHoras ? "horas" : "km"} actual y la proyección del próximo service.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>{esHoras ? "Horómetro (hs)" : "Odómetro (km)"}</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              placeholder={
+                unidad.kmActual != null
+                  ? `última: ${new Intl.NumberFormat("es-AR").format(unidad.kmActual)}`
+                  : esHoras
+                    ? "hs actuales"
+                    : "km actuales"
+              }
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label>Fecha de la lectura</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={guardando}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={guardando || pending}>
+            {guardando && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 interface Props {
   programacion: ServiceGeneralUnidad[]
   otPendientes: OTPendiente[]
   neumaticos: NeumaticosResumen
   unidadesBaja: UnidadBaja[]
+  puedeEditar: boolean
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, otPendientes, neumaticos, unidadesBaja, onNavigate }: Props) {
+export function TableroOperativo({ programacion, otPendientes, neumaticos, unidadesBaja, puedeEditar, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
+  const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
 
   const esAlerta = (e: EstadoServiceGeneral) =>
     e === "vencido" || e === "rojo" || e === "naranja" || e === "amarillo"
@@ -271,6 +375,7 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
                 <TableHead>Próximo service</TableHead>
                 <TableHead className="text-right">Días para service</TableHead>
                 <TableHead>Estado</TableHead>
+                {puedeEditar && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -319,6 +424,19 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
                         {ESTADO_SG[p.estado].label}
                       </Badge>
                     </TableCell>
+                    {puedeEditar && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          title={`Cargar lectura de ${p.mide === "horas" ? "horómetro" : "odómetro"}`}
+                          onClick={() => setLecturaDe(p)}
+                        >
+                          <Plus className="size-3.5" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
@@ -326,6 +444,8 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
           </Table>
         </CardContent>
       </Card>
+
+      {lecturaDe && <CargarLecturaDialog unidad={lecturaDe} onClose={() => setLecturaDe(null)} />}
 
       {/* ===== Unidades dadas de baja (vendidas/retiradas) ===== */}
       {unidadesBaja.length > 0 && (

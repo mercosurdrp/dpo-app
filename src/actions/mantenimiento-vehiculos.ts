@@ -1729,3 +1729,40 @@ export async function eliminarIndisponibilidad(input: {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
+
+// ==================== LECTURAS MANUALES (odómetro/horómetro) ====================
+
+export interface RegistrarLecturaInput {
+  dominio: string
+  fecha: string
+  valor: number
+  observaciones?: string
+}
+
+/**
+ * Registra una lectura manual de odómetro (km) u horómetro (hs) para unidades
+ * sin fuente automática (autoelevadores sin checklist diario, camionetas del
+ * depósito). Alimenta el "km/hs actual" y la proyección del service general.
+ */
+export async function registrarLecturaVehiculo(
+  input: RegistrarLecturaInput
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const valor = Number(input.valor)
+    if (!input.dominio.trim()) return { error: "Falta el dominio" }
+    if (!Number.isFinite(valor) || valor < 0) return { error: "Lectura inválida" }
+    const { error } = await supabase.from("vehiculos_lecturas").insert({
+      dominio: input.dominio.trim().toUpperCase(),
+      fecha: input.fecha,
+      valor,
+      observaciones: input.observaciones?.trim() || null,
+      created_by: profile.id,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
