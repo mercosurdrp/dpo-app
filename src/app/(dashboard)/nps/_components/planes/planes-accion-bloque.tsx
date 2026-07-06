@@ -230,6 +230,17 @@ function ScoreTrack({
   )
 }
 
+/** Normaliza para comparar título vs foco (tildes, "&"/"y", espacios). */
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/&/g, "y")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
 /** Tarjeta de plan — se usa en el tablero y en la lista. */
 function PlanCard({
   plan,
@@ -243,6 +254,17 @@ function PlanCard({
   onClick: () => void
 }) {
   const vencido = estaVencido(plan, hoy)
+  // Muchos planes se cargaron con el nombre del cliente (o del driver) como
+  // título y la acción en la descripción. En ese caso el titular de la
+  // tarjeta es la ACCIÓN, y el cliente la acompaña debajo.
+  const tituloEsFoco =
+    (plan.foco_cliente_nombre &&
+      normalizar(plan.titulo) === normalizar(plan.foco_cliente_nombre)) ||
+    (plan.foco_driver &&
+      normalizar(plan.titulo) === normalizar(plan.foco_driver))
+  const titular = tituloEsFoco && plan.descripcion ? plan.descripcion : plan.titulo
+  const descripcionAparte =
+    plan.descripcion && plan.descripcion !== titular ? plan.descripcion : null
   return (
     <button
       type="button"
@@ -253,7 +275,7 @@ function PlanCard({
     >
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 flex-1 text-[15px] font-bold leading-snug text-slate-900">
-          {plan.titulo}
+          {titular}
         </span>
         <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {compacta && (
@@ -273,10 +295,10 @@ function PlanCard({
         </span>
       </div>
 
-      {/* La acción propiamente dicha */}
-      {plan.descripcion && (
+      {/* La acción propiamente dicha (cuando no es ya el titular) */}
+      {descripcionAparte && (
         <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap rounded border-l-2 border-slate-300 bg-slate-50 px-2 py-1 text-[13px] font-semibold text-slate-800">
-          {plan.descripcion}
+          {descripcionAparte}
         </p>
       )}
 
@@ -290,7 +312,7 @@ function PlanCard({
             </span>
           )}
           {plan.foco_cliente_nombre && (
-            <span className="inline-flex max-w-full items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-700">
+            <span className="inline-flex max-w-full items-center gap-1 rounded bg-sky-100 px-1.5 py-0.5 text-[12px] font-semibold text-sky-800">
               <span className="truncate">{plan.foco_cliente_nombre}</span>
             </span>
           )}
