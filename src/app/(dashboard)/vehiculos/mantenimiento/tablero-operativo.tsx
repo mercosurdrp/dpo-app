@@ -30,6 +30,7 @@ const ESTADO_SG: Record<
   amarillo: { label: "≤30 días", dot: "bg-amber-400", badge: "border-amber-200 bg-amber-100 text-amber-800" },
   ok: { label: "Al día", dot: "bg-emerald-500", badge: "border-emerald-200 bg-emerald-100 text-emerald-700" },
   sin_datos: { label: "Sin datos", dot: "bg-slate-300", badge: "border-slate-200 bg-slate-100 text-slate-500" },
+  no_aplica: { label: "No lleva service", dot: "bg-slate-200", badge: "border-slate-200 bg-slate-50 text-slate-400" },
 }
 
 const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
@@ -39,6 +40,7 @@ const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
   amarillo: 3,
   ok: 4,
   sin_datos: 5,
+  no_aplica: 6,
 }
 
 export interface OTPendiente {
@@ -244,7 +246,7 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
 
       {/* Leyenda del semáforo de service */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos"] as EstadoServiceGeneral[]).map((k) => (
+        {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos", "no_aplica"] as EstadoServiceGeneral[]).map((k) => (
           <span key={k} className="flex items-center gap-1.5">
             <Dot estado={k} /> {ESTADO_SG[k].label}
           </span>

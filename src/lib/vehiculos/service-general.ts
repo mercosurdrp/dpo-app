@@ -31,6 +31,7 @@ export type EstadoServiceGeneral =
   | "amarillo"
   | "ok"
   | "sin_datos"
+  | "no_aplica"
 
 export interface ServiceGeneralUnidad {
   dominio: string
@@ -75,8 +76,9 @@ function defaultsPorTipo(tipo: VehiculoTipo | null): {
       // El aviso arranca 50 hs antes (a las 200 hs), ver HORAS_AVISO.
       return { km: null, horas: 250, meses: 6 }
     case "acoplado":
-      // El acoplado no tiene motor: service por tiempo (frenos/rodamientos).
-      return { km: null, horas: null, meses: 12 }
+      // El acoplado no tiene motor y NO lleva service: queda en el tablero
+      // pero sin contador de días (estado "no_aplica", ver computeServiceGeneral).
+      return { km: null, horas: null, meses: null }
     case "camioneta":
       // Las camionetas hacen service cada 10.000 km (o 12 meses por tiempo).
       return { km: 10000, horas: null, meses: 12 }
@@ -119,6 +121,7 @@ const ORDEN_SEVERIDAD: Record<EstadoServiceGeneral, number> = {
   amarillo: 2,
   ok: 1,
   sin_datos: 0,
+  no_aplica: 0,
 }
 
 function peorEstado(a: EstadoServiceGeneral, b: EstadoServiceGeneral): EstadoServiceGeneral {
@@ -193,6 +196,14 @@ export function computeServiceGeneral(params: {
       proximaFecha: null,
       diasRestantes: null,
       motivo: null,
+    }
+
+    // Acoplados: no llevan service. Quedan listados (con su último arreglo,
+    // si lo tuvo) pero sin proyección ni días contados.
+    if (tipo === "acoplado") {
+      base.estado = "no_aplica"
+      out.push(base)
+      continue
     }
 
     // --- Criterio columna G de la planilla -------------------------------
