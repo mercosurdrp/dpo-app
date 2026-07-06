@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import {
   aprobarPorSupervisor,
   rechazarPorSupervisor,
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function MiEquipoClient({ equipo, solicitudes }: Props) {
+  const router = useRouter()
   const [tab, setTab] = useState<"equipo" | "solicitudes">("solicitudes")
   const [pending, startTransition] = useTransition()
 
@@ -30,7 +32,7 @@ export function MiEquipoClient({ equipo, solicitudes }: Props) {
     startTransition(async () => {
       const res = await aprobarPorSupervisor(id, obs)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 
@@ -40,7 +42,7 @@ export function MiEquipoClient({ equipo, solicitudes }: Props) {
     startTransition(async () => {
       const res = await rechazarPorSupervisor(id, obs)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 

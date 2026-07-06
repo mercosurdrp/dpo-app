@@ -59,7 +59,6 @@ export function SeccionAccionesComerciales({
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
     void getAccionesComerciales(reunionId).then((res) => {
       if (cancel) return
       setItems("error" in res ? [] : res.data)

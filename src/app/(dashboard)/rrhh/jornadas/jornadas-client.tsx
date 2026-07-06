@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import {
   asignarJornada,
   crearJornadaPlantilla,
@@ -29,6 +30,7 @@ const DIAS_SEMANA = [
 ]
 
 export function JornadasClient({ plantillas, asignaciones, empleados }: Props) {
+  const router = useRouter()
   const [tab, setTab] = useState<"plantillas" | "asignaciones">("asignaciones")
   const [pending, startTransition] = useTransition()
   const [openPlantilla, setOpenPlantilla] = useState(false)
@@ -53,7 +55,10 @@ export function JornadasClient({ plantillas, asignaciones, empleados }: Props) {
     startTransition(async () => {
       const res = await crearJornadaPlantilla(pForm)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else {
+        setOpenPlantilla(false)
+        router.refresh()
+      }
     })
   }
 
@@ -72,7 +77,10 @@ export function JornadasClient({ plantillas, asignaciones, empleados }: Props) {
         dias_semana: aForm.dias_semana,
       })
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else {
+        setOpenAsignar(false)
+        router.refresh()
+      }
     })
   }
 
@@ -82,7 +90,7 @@ export function JornadasClient({ plantillas, asignaciones, empleados }: Props) {
     startTransition(async () => {
       const res = await finalizarAsignacion(id, fecha)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 

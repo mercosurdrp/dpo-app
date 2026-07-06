@@ -142,7 +142,6 @@ export function SeccionFrescura({
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
     void getFrescuraData(reunionId).then((res) => {
       if (cancel) return
       if ("error" in res) {

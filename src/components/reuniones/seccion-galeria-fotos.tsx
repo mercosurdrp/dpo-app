@@ -104,7 +104,6 @@ export function SeccionGaleriaFotos({
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
     const secciones = [seccion, ...(extrasKey ? extrasKey.split(",") : [])]
     void Promise.all(secciones.map((s) => getSeccionFotos(reunionId, s))).then(
       (resultados) => {

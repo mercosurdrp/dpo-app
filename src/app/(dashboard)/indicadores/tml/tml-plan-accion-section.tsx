@@ -394,7 +394,6 @@ function PlanDetailDialog({
   const [evidenciaCierre, setEvidenciaCierre] = useState("")
 
   async function reload() {
-    setLoading(true)
     const res = await getTmlPlanById(planId)
     setLoading(false)
     if ("error" in res) {

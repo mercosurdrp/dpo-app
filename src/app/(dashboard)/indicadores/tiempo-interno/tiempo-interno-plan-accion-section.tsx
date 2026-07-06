@@ -383,7 +383,6 @@ function PlanDetailDialog({
   const [evidenciaCierre, setEvidenciaCierre] = useState("")
 
   async function reload() {
-    setLoading(true)
     const res = await getTiPlanById(planId)
     setLoading(false)
     if ("error" in res) {

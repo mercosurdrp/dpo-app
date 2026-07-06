@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { setSaldoVacaciones } from "@/actions/rrhh-licencias"
 import type {
   EmpleadoConSupervisor,
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function ConfiguracionClient({ tipos, empleados, saldos, anio }: Props) {
+  const router = useRouter()
   const [tab, setTab] = useState<"saldos" | "tipos">("saldos")
   const [pending, startTransition] = useTransition()
 
@@ -32,7 +34,7 @@ export function ConfiguracionClient({ tipos, empleados, saldos, anio }: Props) {
     startTransition(async () => {
       const res = await setSaldoVacaciones(empId, anio, dias)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 

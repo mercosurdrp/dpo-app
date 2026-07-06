@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { actualizarEmpleado, crearEmpleado } from "@/actions/rrhh-personal"
 import {
   TIPO_CONTRATO_LABELS,
@@ -30,6 +31,7 @@ const EMPTY_FORM = {
 }
 
 export function PersonalClient({ empleados }: Props) {
+  const router = useRouter()
   const [search, setSearch] = useState("")
   const [showInactivos, setShowInactivos] = useState(false)
   const [open, setOpen] = useState(false)
@@ -108,7 +110,12 @@ export function PersonalClient({ empleados }: Props) {
         ? await actualizarEmpleado(editId, payload)
         : await crearEmpleado(payload)
       if ("error" in res) setError(res.error)
-      else window.location.reload()
+      else {
+        setOpen(false)
+        setEditId(null)
+        setForm(EMPTY_FORM)
+        router.refresh()
+      }
     })
   }
 

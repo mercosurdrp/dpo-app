@@ -111,7 +111,6 @@ export function SeccionSobrestock({
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
     void getSobrestockData(reunionId).then((res) => {
       if (cancel) return
       if ("error" in res) {

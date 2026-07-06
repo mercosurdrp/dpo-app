@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { aprobarPorRRHH, rechazarPorRRHH } from "@/actions/rrhh-licencias"
 import {
   RRHH_SOLICITUD_ESTADO_COLORS,
@@ -23,6 +24,7 @@ const ESTADOS_FILTRO: { value: RrhhSolicitudEstado | "todos"; label: string }[] 
 ]
 
 export function LicenciasClient({ solicitudes }: Props) {
+  const router = useRouter()
   const [filtro, setFiltro] = useState<RrhhSolicitudEstado | "todos">(
     "pendiente_rrhh"
   )
@@ -38,7 +40,7 @@ export function LicenciasClient({ solicitudes }: Props) {
     startTransition(async () => {
       const res = await aprobarPorRRHH(id, obs)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 
@@ -48,7 +50,7 @@ export function LicenciasClient({ solicitudes }: Props) {
     startTransition(async () => {
       const res = await rechazarPorRRHH(id, obs)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 

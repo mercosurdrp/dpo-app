@@ -82,7 +82,6 @@ export function SeccionAvanceVenta({
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
     void getAvanceVentaData(reunionId).then((res) => {
       if (cancel) return
       if ("error" in res) {

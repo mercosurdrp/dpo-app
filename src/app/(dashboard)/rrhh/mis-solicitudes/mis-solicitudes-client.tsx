@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import {
   cancelarSolicitud,
   crearSolicitud,
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function MisSolicitudesClient({ solicitudes, tipos, saldo, anio }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +57,7 @@ export function MisSolicitudesClient({ solicitudes, tipos, saldo, anio }: Props)
           fecha_hasta: "",
           motivo: "",
         })
-        window.location.reload()
+        router.refresh()
       }
     })
   }
@@ -65,7 +67,7 @@ export function MisSolicitudesClient({ solicitudes, tipos, saldo, anio }: Props)
     startTransition(async () => {
       const res = await cancelarSolicitud(id)
       if ("error" in res) alert(res.error)
-      else window.location.reload()
+      else router.refresh()
     })
   }
 

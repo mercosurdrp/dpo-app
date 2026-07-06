@@ -111,7 +111,6 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     getReportePlanesTablero().then((res) => {
       if (cancelled) return
       if ("error" in res) {
