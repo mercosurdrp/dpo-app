@@ -51,7 +51,7 @@ const LEYENDA: { letra: RaciLetra; label: string; detalle: string }[] = [
 function LetraBadge({ letra }: { letra: RaciLetra }) {
   return (
     <span
-      className={`inline-flex size-7 items-center justify-center rounded-md border text-sm font-bold ${LETRA_STYLE[letra]}`}
+      className={`inline-flex size-6 items-center justify-center rounded-md border text-xs font-bold ${LETRA_STYLE[letra]}`}
     >
       {letra}
     </span>
@@ -230,11 +230,15 @@ export function RaciTab({ raci, puedeEditar }: Props) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-56">Requisitos legales</TableHead>
+              <TableHead className="min-w-40 px-2 text-xs">
+                Requisitos legales
+              </TableHead>
               {roles.map((rol) => (
-                <TableHead key={rol.id} className="text-center">
-                  <div className="group/rol inline-flex items-center gap-1">
-                    <span className="whitespace-nowrap">{rol.nombre}</span>
+                <TableHead key={rol.id} className="px-1 py-1.5 text-center align-middle">
+                  <div className="group/rol inline-flex items-center gap-0.5">
+                    <span className="max-w-24 whitespace-normal break-words text-[11px] leading-tight">
+                      {rol.nombre}
+                    </span>
                     {puedeEditar && (
                       <span className="flex opacity-0 transition group-hover/rol:opacity-100">
                         <button
@@ -258,7 +262,7 @@ export function RaciTab({ raci, puedeEditar }: Props) {
                   </div>
                 </TableHead>
               ))}
-              {puedeEditar && <TableHead className="w-20 text-right" />}
+              {puedeEditar && <TableHead className="w-14 px-1 text-right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,17 +280,19 @@ export function RaciTab({ raci, puedeEditar }: Props) {
               const avisos = avisosPorFila.get(fila.id) ?? []
               return (
                 <TableRow key={fila.id}>
-                  <TableCell>
+                  <TableCell className="px-2 py-1.5">
                     <div className="flex items-start gap-1.5">
                       {avisos.length > 0 && (
                         <span title={avisos.join(" · ")} className="mt-0.5 shrink-0">
-                          <AlertTriangle className="size-4 text-amber-500" />
+                          <AlertTriangle className="size-3.5 text-amber-500" />
                         </span>
                       )}
                       <div>
-                        <p className="font-medium">{fila.nombre}</p>
+                        <p className="text-xs font-medium leading-tight">
+                          {fila.nombre}
+                        </p>
                         {fila.descripcion && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
+                          <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
                             {fila.descripcion}
                           </p>
                         )}
@@ -296,7 +302,7 @@ export function RaciTab({ raci, puedeEditar }: Props) {
                   {roles.map((rol) => {
                     const letra = fila.asignaciones[rol.id] ?? null
                     return (
-                      <TableCell key={rol.id} className="text-center">
+                      <TableCell key={rol.id} className="px-1 py-1.5 text-center">
                         <button
                           type="button"
                           disabled={!puedeEditar}
@@ -315,7 +321,7 @@ export function RaciTab({ raci, puedeEditar }: Props) {
                           {letra ? (
                             <LetraBadge letra={letra} />
                           ) : (
-                            <span className="inline-flex size-7 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300">
+                            <span className="inline-flex size-6 items-center justify-center rounded-md border border-dashed border-slate-200 text-xs text-slate-300">
                               —
                             </span>
                           )}
@@ -324,27 +330,24 @@ export function RaciTab({ raci, puedeEditar }: Props) {
                     )
                   })}
                   {puedeEditar && (
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
+                    <TableCell className="px-1 py-1.5 text-right">
+                      <div className="flex justify-end gap-0.5">
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => handleEditarFila(fila)}
                           title="Editar fila"
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                         >
                           <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => handleEliminarFila(fila)}
                           title="Eliminar fila"
-                          className="text-red-600 hover:text-red-700"
+                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                         >
                           <Trash2 className="size-3.5" />
-                        </Button>
+                        </button>
                       </div>
                     </TableCell>
                   )}
