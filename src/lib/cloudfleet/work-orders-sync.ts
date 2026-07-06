@@ -48,6 +48,18 @@ export interface CloudfleetWorkOrdersSyncResult {
   error?: string
 }
 
+// 🚨 Cloudfleet manda `affectsMaintenanceSchedule = true` en prácticamente
+// todas las OT (hasta un cambio de foco), así que ese flag NO sirve para
+// detectar el service general: corría el ancla del "último service" del
+// Tablero operativo a cualquier arreglo menor. El service se detecta por
+// texto en la mano de obra / observaciones ("Servís completo", "servis", …).
+const SERVICE_RE = /serv[ií]ce|serv[ií]s|servicio\s+(general|completo)/i
+
+function esServiceGeneral(d: CloudfleetWorkOrderDetail): boolean {
+  const textos = [d.comments, d.reason, d.detectedIssue, ...(d.labors ?? []).map((l) => l.name)]
+  return textos.some((s) => s != null && SERVICE_RE.test(s))
+}
+
 async function upsertOrden(
   supabase: SupabaseClient,
   d: CloudfleetWorkOrderDetail,
@@ -77,7 +89,7 @@ async function upsertOrden(
     costo: d.totalCost ?? null,
     costo_mano_obra: d.totalCostLabors ?? null,
     observaciones,
-    es_service_general: d.affectsMaintenanceSchedule === true,
+    es_service_general: esServiceGeneral(d),
     fuera_servicio_desde: fueraDeServicio ? fechaOt : null,
     fuera_servicio_hasta:
       fueraDeServicio && d.finalCompletionDate ? fechaARG(d.finalCompletionDate) : null,
