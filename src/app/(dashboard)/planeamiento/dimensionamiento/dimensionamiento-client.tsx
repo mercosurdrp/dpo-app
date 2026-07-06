@@ -103,7 +103,8 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
   const pesoDe = (wd: number) => (wd === 0 ? 0 : pesos[wd - 1] ?? 0)
 
   const almacen = proy.almacen.map((r) => {
-    const capPersona = r.dotacion > 0 ? r.capDiaria / r.dotacion : 0
+    // capPersona viene del server (capDiaria ya descuenta ausentismo, no sirve para derivarla)
+    const capPersona = r.capPersona ?? (r.dotacion > 0 ? r.capDiaria / r.dotacion : 0)
     const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
     for (const mm of meses) {
       const volMes = r.volPromBase * mm.indice
@@ -299,6 +300,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
     ayudantes_por_camion: String(data.config.ayudantes_por_camion),
     dotacion_choferes: String(data.config.dotacion_choferes),
     dotacion_ayudantes: String(data.config.dotacion_ayudantes),
+    ausentismo_reparto: String(data.config.ausentismo_reparto),
   })
   const [zonas, setZonas] = useState(data.zonas.map((z) => ({ zona: z.zona, peso: String(z.peso), camiones_minimos: String(z.camiones_minimos) })))
   const estado = (nec: number, dot: number, pico: number) =>
@@ -330,8 +332,9 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
               <div><Label className="text-xs">Dotación ayudantes</Label><Input type="number" step="1" className="h-8 w-24" value={c.dotacion_ayudantes} onChange={(e) => setC((s) => ({ ...s, dotacion_ayudantes: e.target.value }))} /></div>
               <div><Label className="text-xs">Choferes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.choferes_por_camion} onChange={(e) => setC((s) => ({ ...s, choferes_por_camion: e.target.value }))} /></div>
               <div><Label className="text-xs">Ayudantes por camión</Label><Input type="number" step="0.1" className="h-8 w-24" value={c.ayudantes_por_camion} onChange={(e) => setC((s) => ({ ...s, ayudantes_por_camion: e.target.value }))} /></div>
-              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion), dotacion_choferes: Number(c.dotacion_choferes), dotacion_ayudantes: Number(c.dotacion_ayudantes) }), "Tripulación y dotación guardadas")}>Guardar</Button>
-              {rep && <p className="w-full text-xs text-muted-foreground">Dotación de choferes/ayudantes: poné tu plantel real; si lo dejás en <b>0</b> se usa el promedio real de <b>registros_vehiculos</b> (egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionObservada))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionObservada))} ayudantes</b> por día. Tripulación = personas por camión. Viajes/día y capacidad CEq se configuran arriba.</p>}
+              <div><Label className="text-xs">Ausentismo (0–1)</Label><Input type="number" step="0.01" className="h-8 w-24" value={c.ausentismo_reparto} onChange={(e) => setC((s) => ({ ...s, ausentismo_reparto: e.target.value }))} /></div>
+              <Button size="sm" disabled={isPending} onClick={() => run(() => guardarConfigDim({ ...data.config, choferes_por_camion: Number(c.choferes_por_camion), ayudantes_por_camion: Number(c.ayudantes_por_camion), dotacion_choferes: Number(c.dotacion_choferes), dotacion_ayudantes: Number(c.dotacion_ayudantes), ausentismo_reparto: Number(c.ausentismo_reparto) }), "Tripulación y dotación guardadas")}>Guardar</Button>
+              {rep && <p className="w-full text-xs text-muted-foreground">Dotación de choferes/ayudantes: poné tu plantel real; si lo dejás en <b>0</b> se usa el promedio real de <b>registros_vehiculos</b> (egresos dpo-app): <b>{fmt(Math.round(rep.choferes.dotacionObservada))} choferes</b> y <b>{fmt(Math.round(rep.ayudantes.dotacionObservada))} ayudantes</b> por día. <b>Ausentismo</b>: dejalo en 0 si usás el promedio real (ya trae las ausencias implícitas); cargalo (ej. 0,08) solo si ponés el plantel nominal. Tripulación = personas por camión. Viajes/día y capacidad CEq se configuran arriba.</p>}
             </CardContent>
           </Card>
           <Card>
@@ -473,7 +476,7 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes }: { rol: Proyeccion
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
-        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
+        Capacidad: <b>{fmt(cap)} {rol.unidadVol}/día</b> (dotación {rol.dotacionEfectiva != null && rol.dotacionEfectiva < rol.dotacion ? <>efectiva {fmt(rol.dotacionEfectiva)} de {rol.dotacion}</> : rol.dotacion} × {fmt(rol.prodH)} {rol.unidadVol}/HH). Volumen prom del mes (presupuesto): <b>{fmt(Math.round(volProm))} {rol.unidadVol}/día</b> · índice ×{mes.indice.toFixed(2).replace(".", ",")}{mes.ajustePct !== 0 ? <> · <b className="text-sky-700">escenario {mes.ajustePct > 0 ? "+" : ""}{mes.ajustePct}%</b></> : null}.
       </p>
       <Table>
         <TableHeader><TableRow>
@@ -510,7 +513,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_clasif_pal_h: String(data.config.prod_clasif_pal_h), util_clasif: String(data.config.util_clasif), dotacion_clasif: String(data.config.dotacion_clasif),
     prod_reempaque_bul_hh: String(data.config.prod_reempaque_bul_hh), util_reempaque: String(data.config.util_reempaque), dotacion_reempaque: String(data.config.dotacion_reempaque),
     prod_pal_h: String(data.config.prod_pal_h), util_maquinistas: String(data.config.util_maquinistas), dotacion_maquinistas: String(data.config.dotacion_maquinistas),
-    horas_turno: String(data.config.horas_turno),
+    horas_turno: String(data.config.horas_turno), ausentismo_almacen: String(data.config.ausentismo_almacen),
     peso_lun: String(data.config.peso_lun), peso_mar: String(data.config.peso_mar), peso_mie: String(data.config.peso_mie),
     peso_jue: String(data.config.peso_jue), peso_vie: String(data.config.peso_vie), peso_sab: String(data.config.peso_sab),
   })
@@ -534,7 +537,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     prod_clasif_pal_h: Number(c.prod_clasif_pal_h), util_clasif: Number(c.util_clasif), dotacion_clasif: Number(c.dotacion_clasif),
     prod_reempaque_bul_hh: Number(c.prod_reempaque_bul_hh), util_reempaque: Number(c.util_reempaque), dotacion_reempaque: Number(c.dotacion_reempaque),
     prod_pal_h: Number(c.prod_pal_h), util_maquinistas: Number(c.util_maquinistas), dotacion_maquinistas: Number(c.dotacion_maquinistas),
-    horas_turno: Number(c.horas_turno),
+    horas_turno: Number(c.horas_turno), ausentismo_almacen: Number(c.ausentismo_almacen),
     peso_lun: Number(c.peso_lun), peso_mar: Number(c.peso_mar), peso_mie: Number(c.peso_mie),
     peso_jue: Number(c.peso_jue), peso_vie: Number(c.peso_vie), peso_sab: Number(c.peso_sab),
   }), "Datos de almacén guardados")
@@ -545,10 +548,11 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
     { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false },
     { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false },
   ] : []
+  // Compara contra la dotación EFECTIVA (descontado el ausentismo).
   const estadoHoy = (r: RolFte) =>
-    r.fteNecesariosPico <= r.dotacion ? { txt: "Cubre", cls: "text-emerald-700" }
-      : r.fteNecesariosProm <= r.dotacion ? { txt: "Extras en pico", cls: "text-amber-700" }
-        : { txt: `Faltan ${r.fteNecesariosProm - r.dotacion}`, cls: "text-red-700 font-semibold" }
+    r.fteNecesariosPico <= r.dotacionEfectiva ? { txt: "Cubre", cls: "text-emerald-700" }
+      : r.fteNecesariosProm <= r.dotacionEfectiva ? { txt: "Extras en pico", cls: "text-amber-700" }
+        : { txt: `Faltan ${fmt(Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10)}`, cls: "text-red-700 font-semibold" }
 
   return (
     <div className="space-y-6">
@@ -579,6 +583,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
             </Table>
             <div className="flex flex-wrap items-end gap-3">
               <div><Label className="text-xs">Horas / turno</Label><Input type="number" step="0.1" className="h-8 w-20" value={c.horas_turno} onChange={(e) => setC((s) => ({ ...s, horas_turno: e.target.value }))} /></div>
+              <div><Label className="text-xs">Ausentismo (0–1)</Label><Input type="number" step="0.01" className="h-8 w-20" value={c.ausentismo_almacen} onChange={(e) => setC((s) => ({ ...s, ausentismo_almacen: e.target.value }))} /></div>
               <span className="self-center text-xs font-medium text-muted-foreground">Peso de volumen por día:</span>
               {([["peso_lun", "Lun"], ["peso_mar", "Mar"], ["peso_mie", "Mié"], ["peso_jue", "Jue"], ["peso_vie", "Vie"], ["peso_sab", "Sáb"]] as const).map(([k, l]) => (
                 <div key={k}><Label className="text-xs">{l}</Label><Input type="number" step="0.05" className="h-8 w-16" value={c[k]} onChange={(e) => setC((s) => ({ ...s, [k]: e.target.value }))} /></div>
@@ -592,7 +597,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. Utilización por defecto 0,875 (7 h efectivas sobre 8). Tras recalcular, revisá y tocá <b>Guardar</b>.
+              Productividad y volumen vienen vinculados: «↻ Traer productividad real» toma el promedio del mes de <b>deposito-esteban</b> (picking/maquinistas/reempaque) y de la tabla de clasificación de <b>dpo-app</b>; el volumen sale del <b>presupuesto anual</b>. Todo es editable como override. Utilización por defecto 0,875 (7 h efectivas sobre 8). <b>Ausentismo</b> = fracción de la dotación que en promedio no está (vacaciones, licencias, faltas); la dotación efectiva = dotación × (1 − ausentismo) es la que se compara contra la demanda. Tras recalcular, revisá y tocá <b>Guardar</b>.
             </p>
           </CardContent>
         </Card>
@@ -619,10 +624,10 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                   return (
                     <TableRow key={n}>
                       <TableCell className="font-medium">{n}</TableCell>
-                      <TableCell className="text-right">{fmt(r.dotacion)}</TableCell>
+                      <TableCell className="text-right">{fmt(r.dotacion)}{r.dotacionEfectiva < r.dotacion ? <span className="block text-[10px] text-muted-foreground">ef. {fmt(r.dotacionEfectiva)}</span> : null}</TableCell>
                       <TableCell className="text-right">{fmt(r.productividad)} {unidadProd}</TableCell>
                       <TableCell className="text-right">{Math.round(r.utilizacion * 100)}%</TableCell>
-                      <TableCell className="text-right">{fmt(r.capDiariaFte * r.dotacion)} {u}</TableCell>
+                      <TableCell className="text-right">{fmt(Math.round(r.capDiariaFte * r.dotacionEfectiva))} {u}</TableCell>
                       <TableCell className="text-right">{fmt(pico ? r.volumenPico : r.volumenProm)} <span className="text-xs text-muted-foreground">(pico {fmt(r.volumenPico)})</span></TableCell>
                       <TableCell className="text-right font-semibold">{r.fteNecesariosProm}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${r.fteNecesariosPico})` : ""}</TableCell>
                       <TableCell className={e.cls}>{e.txt}</TableCell>
@@ -631,7 +636,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación × productividad × horas/turno × utilización. Clasificadores se evalúa sobre el día pico de paletas. «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores se evalúa sobre el día pico de paletas. «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
           </CardContent>
         </Card>
       )}

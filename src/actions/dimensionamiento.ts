@@ -118,6 +118,8 @@ export interface DimConfig {
   prod_reempaque_bul_hh: number // productividad reempaque (bultos/HH)
   util_reempaque: number        // % del turno aplicado a reempaque (0–1)
   dotacion_reempaque: number    // tareas generales / reempaque actuales
+  ausentismo_almacen: number    // fracción 0–1 no disponible en promedio (vacaciones/licencias/faltas)
+  ausentismo_reparto: number    // ídem reparto; 0 = la dotación observada ya lo trae implícito
 }
 
 export interface RolFte {
@@ -128,6 +130,7 @@ export interface RolFte {
   fteNecesariosProm: number
   fteNecesariosPico: number
   dotacion: number
+  dotacionEfectiva: number      // dotación × (1 − ausentismo): contra esto se compara
   utilizacion: number           // % del turno aplicado a la tarea (0–1)
   capDiariaFte: number          // capacidad efectiva por persona/día = prod × horas × utilización
 }
@@ -203,7 +206,9 @@ export interface ProyeccionMes {
 export interface ProyeccionAlmacenRol {
   rol: string
   dotacion: number
-  capDiaria: number        // volumen/día que cubre la dotación en jornada normal
+  dotacionEfectiva: number // dotación × (1 − ausentismo)
+  capDiaria: number        // volumen/día que cubre la dotación EFECTIVA en jornada normal
+  capPersona: number       // capacidad de 1 persona/día (para "falta N" sin depender del client)
   unidadVol: string        // "bultos" | "paletas" | "pallets"
   horasExtra: number[]     // hora-hombre extra por mes (mismo orden que meses)
   faltanPico: number[]     // personas que faltarían en el día pico de cada mes (0 = cubre)
@@ -291,7 +296,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
 
     const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes, zonasRes] =
       await Promise.all([
-        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, dotacion_choferes, dotacion_ayudantes, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque").eq("id", 1).maybeSingle(),
+        supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, dotacion_choferes, dotacion_ayudantes, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque, ausentismo_almacen, ausentismo_reparto").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
@@ -334,7 +339,11 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       prod_reempaque_bul_hh: Number(configRes.data?.prod_reempaque_bul_hh ?? 37) || 37,
       util_reempaque: Number(configRes.data?.util_reempaque ?? 0.875) || 0.875,
       dotacion_reempaque: Number(configRes.data?.dotacion_reempaque ?? 1),
+      ausentismo_almacen: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_almacen ?? 0.08))),
+      ausentismo_reparto: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_reparto ?? 0))),
     }
+    // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
+    const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
     const objetivos = (objetivosRes.data ?? []) as KpiObjetivo[]
 
     const capMap = new Map(
@@ -432,6 +441,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         fteNecesariosProm: capPicker > 0 ? Math.ceil(pk.prom / capPicker) : 0,
         fteNecesariosPico: capPicker > 0 ? Math.ceil(pk.pico / capPicker) : 0,
         dotacion: config.dotacion_almacen,
+        dotacionEfectiva: efAlmacen(config.dotacion_almacen),
         utilizacion: config.util_pickeros,
         capDiariaFte: Math.round(capPicker),
       }
@@ -472,6 +482,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         fteNecesariosProm: capMaq > 0 ? Math.ceil(mq.prom / capMaq) : 0,
         fteNecesariosPico: capMaq > 0 ? Math.ceil(mq.pico / capMaq) : 0,
         dotacion: config.dotacion_maquinistas,
+        dotacionEfectiva: efAlmacen(config.dotacion_maquinistas),
         utilizacion: config.util_maquinistas,
         capDiariaFte: Math.round(capMaq),
         palAcarreoProm: avgArr(acaVals),
@@ -495,6 +506,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         fteNecesariosProm: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
         fteNecesariosPico: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
         dotacion: config.dotacion_clasif,
+        dotacionEfectiva: efAlmacen(config.dotacion_clasif),
         utilizacion: config.util_clasif,
         capDiariaFte: Math.round(capClasif),
       }
@@ -514,6 +526,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         fteNecesariosProm: capReempaque > 0 ? Math.ceil(re.prom / capReempaque) : 0,
         fteNecesariosPico: capReempaque > 0 ? Math.ceil(re.pico / capReempaque) : 0,
         dotacion: config.dotacion_reempaque,
+        dotacionEfectiva: efAlmacen(config.dotacion_reempaque),
         utilizacion: config.util_reempaque,
         capDiariaFte: Math.round(capReempaque),
       }
@@ -552,16 +565,19 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const cnProm = metricas?.camionesNecesariosPromedio ?? 0
       const cnPico = metricas?.camionesNecesariosPico ?? 0
       // dotación efectiva: plantel cargado a mano si >0, si no el promedio real observado.
+      // Al plantel se le descuenta el ausentismo de reparto (el observado ya lo trae implícito,
+      // pero el parámetro aplica igual por si se quiere simular; default 0).
+      const ausRep = 1 - config.ausentismo_reparto
       const rol = (porCamion: number, counts: number[], override: number): RolReparto => {
         const obsProm = Math.round(avgN(counts) * 10) / 10
         const obsPico = maxN(counts)
-        const efectiva = override > 0 ? override : obsProm
+        const efectiva = Math.round((override > 0 ? override : obsProm) * ausRep * 10) / 10
         return {
           porCamion,
           fteNecesariosProm: Math.ceil(cnProm * porCamion),
           fteNecesariosPico: Math.ceil(cnPico * porCamion),
           dotacionProm: efectiva,
-          dotacionPico: override > 0 ? override : obsPico,
+          dotacionPico: Math.round((override > 0 ? override : obsPico) * ausRep * 10) / 10,
           dotacionObservada: obsProm,
         }
       }
@@ -632,7 +648,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const maxPesoNorm = Math.max(...pesos) / sumaPesos
           const almacenProy: ProyeccionAlmacenRol[] = rolesAlm.map((r) => {
             const volBase = r.rolFte?.volumenProm ?? 0                            // promedio diario (NO el pico)
-            const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * r.dotacion          // dotación completa
+            const dotEfectiva = efAlmacen(r.dotacion)                             // descuenta ausentismo
+            const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * dotEfectiva         // dotación efectiva
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
             const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
             for (const mm of meses) {
@@ -650,7 +667,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
               // personas extra para cubrir el pico SIN horas extra; redondeo normal (evita "falta 1" por excedente mínimo)
               faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((pico - capDiaria) / capPersona)) : 0)
             }
-            return { rol: r.rol, dotacion: r.dotacion, capDiaria: Math.round(capDiaria), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
+            return { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
           })
 
           // Flota → por recurso, días que requieren refuerzo (2ª vuelta o contratar).
@@ -789,6 +806,8 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         prod_reempaque_bul_hh: Math.max(0.1, Number(config.prod_reempaque_bul_hh) || 37),
         util_reempaque: Math.min(1, Math.max(0.01, Number(config.util_reempaque) || 0.875)),
         dotacion_reempaque: Math.max(0, Number(config.dotacion_reempaque) || 0),
+        ausentismo_almacen: Math.min(0.9, Math.max(0, Number(config.ausentismo_almacen) || 0)),
+        ausentismo_reparto: Math.min(0.9, Math.max(0, Number(config.ausentismo_reparto) || 0)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })
