@@ -34,6 +34,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import {
   getResumenSemanal,
   getTipoConfig,
   listReunionesByTipo,
@@ -42,6 +48,7 @@ import {
 } from "@/actions/reuniones"
 import { NuevaReunionDialog } from "./nueva-reunion-dialog"
 import { ParticipantesFijosDialog } from "./participantes-fijos-dialog"
+import { TorReunion } from "./tor-reunion"
 import type {
   ReunionConResumen,
   ReunionTipoConfig,
@@ -199,6 +206,9 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
 
   const [openNueva, setOpenNueva] = useState(false)
   const [openParticipantes, setOpenParticipantes] = useState(false)
+
+  // Sub-solapa: listado de reuniones | TOR (Términos de Referencia)
+  const [vista, setVista] = useState<string>("reuniones")
 
   // Filtros
   const hoyDate = useMemo(() => new Date(), [refreshKey])
@@ -402,6 +412,17 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
           </div>
         )}
       </div>
+
+      <Tabs
+        value={vista}
+        onValueChange={(v: string | null) => setVista(v ?? "reuniones")}
+      >
+        <TabsList>
+          <TabsTrigger value="reuniones">Reuniones</TabsTrigger>
+          <TabsTrigger value="tor">TOR</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="reuniones" className="mt-4 space-y-4">
 
       {/* Filtros */}
       {!loading && !loadError && (
@@ -832,6 +853,17 @@ export function ReunionesTabContent({ tipo, tipoLabel }: Props) {
           )}
         </div>
       )}
+
+        </TabsContent>
+
+        <TabsContent value="tor" className="mt-4">
+          <TorReunion
+            tipo={tipo}
+            tipoLabel={tipoLabel}
+            puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Diálogos */}
       {puedeEditar && (

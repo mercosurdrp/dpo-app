@@ -3009,6 +3009,38 @@ export type TipoReunion =
   | "warehouse"
   | "presupuesto"
 
+// --- TOR (Términos de Referencia) por tipo de reunión ---
+
+export type TorFrecuencia = "diaria" | "semanal" | "mensual"
+
+export interface TorTemarioItem {
+  tema: string
+  quien: string
+}
+
+export interface TorContenido {
+  nombre: string
+  objetivos: string
+  dueno: string[]
+  participantes: string[]
+  ubicacion: string[]
+  duracion: string
+  frecuencia_texto: string
+  reglas: string[]
+  entradas: string[]
+  salidas: string[]
+  kpis: string[]
+  temario: TorTemarioItem[]
+}
+
+export interface ReunionTor {
+  id: string
+  tipo: TipoReunion
+  frecuencia: TorFrecuencia
+  contenido: TorContenido
+  updated_at: string
+}
+
 export type EstadoReunionCompromiso = "pendiente" | "en_progreso" | "completado"
 
 export interface ReunionTipoConfig {
