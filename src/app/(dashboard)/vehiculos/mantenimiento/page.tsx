@@ -133,6 +133,7 @@ export default async function MantenimientoPage() {
       tareas={estadoRes.data.tareas}
       overrides={estadoRes.data.overrides}
       ultimasLecturas={estadoRes.data.ultimasLecturas}
+      historialLecturas={estadoRes.data.historialLecturas}
       mantenimientos={mantenimientos}
       siguienteNumeroOt={siguienteNumeroOt}
       costos={costos}

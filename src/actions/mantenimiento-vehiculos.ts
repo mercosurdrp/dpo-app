@@ -38,14 +38,16 @@ export async function getEstadoPlanFlota(): Promise<
         tareas: MantenimientoPlanTarea[]
         overrides: MantenimientoPlanOverride[]
         ultimasLecturas: Record<string, LecturaSugerida[]>
+        historialLecturas: Record<string, LecturaSugerida[]>
       }
     }
   | { error: string }
 > {
   try {
     await requireAuth()
-    const { estados, tareas, overrides, ultimasLecturas } = await loadEstadoPlan()
-    return { data: { estados, tareas, overrides, ultimasLecturas } }
+    const { estados, tareas, overrides, ultimasLecturas, historialLecturas } =
+      await loadEstadoPlan()
+    return { data: { estados, tareas, overrides, ultimasLecturas, historialLecturas } }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

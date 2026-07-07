@@ -42,6 +42,7 @@ import {
   Cloud,
   FileDown,
   FileSpreadsheet,
+  History,
   Paperclip,
   Plus,
   Pencil,
@@ -324,6 +325,7 @@ interface MantenimientoClientProps {
   tareas: MantenimientoPlanTarea[]
   overrides: MantenimientoPlanOverride[]
   ultimasLecturas: Record<string, LecturaSugerida[]>
+  historialLecturas: Record<string, LecturaSugerida[]>
   mantenimientos: MantenimientoRealizado[]
   siguienteNumeroOt: string
   costos: CostosMantenimiento
@@ -352,6 +354,7 @@ export function MantenimientoClient({
   tareas,
   overrides,
   ultimasLecturas,
+  historialLecturas,
   mantenimientos,
   siguienteNumeroOt,
   costos,
@@ -1045,6 +1048,7 @@ export function MantenimientoClient({
           estados={estados}
           tareasPorTipo={tareasPorTipo}
           ultimasLecturas={ultimasLecturas}
+          historialLecturas={historialLecturas}
           siguienteNumeroOt={siguienteNumeroOt}
           prefill={nuevoPrefill}
           onClose={() => setNuevoOpen(false)}
@@ -1189,12 +1193,87 @@ function SugerenciasLectura({
   )
 }
 
+// Días entre dos fechas ISO (YYYY-MM-DD), positivo si b es posterior a a.
+function diffDiasISO(a: string, b: string): number {
+  const da = new Date(a + "T12:00:00").getTime()
+  const db = new Date(b + "T12:00:00").getTime()
+  return Math.round((db - da) / 86_400_000)
+}
+
+// Historial de lecturas del último mes de la unidad (una fila por día), como
+// referencia al cargar una OT con fecha retroactiva. Al elegir un día completa
+// el odómetro/horómetro Y la fecha de la OT con ese día. Muestra la variación
+// de km/hs y de días respecto de la lectura anterior.
+function HistorialLecturasMes({
+  open,
+  onToggle,
+  historial,
+  unidad,
+  onElegir,
+}: {
+  open: boolean
+  onToggle: () => void
+  historial: LecturaSugerida[]
+  unidad: "km" | "hs"
+  onElegir: (valor: string, fecha: string) => void
+}) {
+  if (historial.length === 0) return null
+  const suf = unidad === "hs" ? "hs" : "km"
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-1 text-[11px] font-medium text-sky-600 hover:text-sky-700"
+      >
+        <History className="size-3" />
+        {open ? "Ocultar historial del mes" : `Ver historial del mes (${historial.length})`}
+      </button>
+      {open && (
+        <div className="mt-1 overflow-hidden rounded-md border border-slate-200">
+          <p className="border-b border-slate-100 bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
+            Elegí el día de la factura: completa fecha y {suf} de la OT.
+          </p>
+          <div className="max-h-52 overflow-y-auto divide-y divide-slate-100">
+            {historial.map((s, i) => {
+              const prev = historial[i + 1] // lectura anterior (más vieja)
+              const dKm = prev ? s.odometro - prev.odometro : null
+              const dDias = prev ? diffDiasISO(prev.fecha, s.fecha) : null
+              return (
+                <button
+                  key={`${s.fecha}-${s.odometro}-${i}`}
+                  type="button"
+                  onClick={() => onElegir(String(s.odometro), s.fecha)}
+                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs hover:bg-sky-50"
+                >
+                  <span className="w-16 shrink-0 tabular-nums text-slate-600">
+                    {fmtFecha(s.fecha)}
+                  </span>
+                  <span className="flex-1 text-right font-medium tabular-nums text-slate-900">
+                    {fmtNum(s.odometro)} {suf}
+                  </span>
+                  <span className="w-24 shrink-0 text-right text-[10px] tabular-nums text-slate-400">
+                    {dKm != null && dDias != null
+                      ? `${dKm >= 0 ? "+" : ""}${fmtNum(dKm)} ${suf} · ${dDias}d`
+                      : ""}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ==================== Dialog: nuevo mantenimiento ====================
 
 function NuevoMantenimientoDialog({
   estados,
   tareasPorTipo,
   ultimasLecturas,
+  historialLecturas,
   siguienteNumeroOt,
   prefill,
   onClose,
@@ -1203,6 +1282,7 @@ function NuevoMantenimientoDialog({
   estados: EstadoPlanVehiculo[]
   tareasPorTipo: Map<VehiculoTipo, MantenimientoPlanTarea[]>
   ultimasLecturas: Record<string, LecturaSugerida[]>
+  historialLecturas: Record<string, LecturaSugerida[]>
   siguienteNumeroOt: string
   prefill: { dominio?: string; tareaId?: string }
   onClose: () => void
@@ -1252,6 +1332,13 @@ function NuevoMantenimientoDialog({
   const sugerenciasHoras = esAutoelevador
     ? lecturasUnidad.filter((s) => s.fuente === "checklist")
     : []
+  // Historial de lecturas del último mes de la unidad (una por día). Referencia
+  // para cargar OTs con fecha retroactiva (facturas del mes cargadas juntas).
+  const historialUnidad = dominio ? (historialLecturas[dominio] ?? []) : []
+  const historialKm = esAutoelevador
+    ? historialUnidad.filter((s) => s.fuente === "checklist")
+    : historialUnidad
+  const [historialOpen, setHistorialOpen] = useState(false)
 
   const onDominioChange = (d: string) => {
     setDominio(d)
@@ -1395,6 +1482,7 @@ function NuevoMantenimientoDialog({
                   type="number"
                   value={horometro}
                   onChange={(e) => setHorometro(e.target.value)}
+                  onFocus={() => setHistorialOpen(true)}
                   placeholder="Horas de uso"
                 />
                 <SugerenciasLectura
@@ -1402,6 +1490,17 @@ function NuevoMantenimientoDialog({
                   valor={horometro}
                   onElegir={setHorometro}
                   unidad="hs"
+                />
+                <HistorialLecturasMes
+                  open={historialOpen}
+                  onToggle={() => setHistorialOpen((o) => !o)}
+                  historial={historialKm}
+                  unidad="hs"
+                  onElegir={(val, f) => {
+                    setHorometro(val)
+                    setFecha(f)
+                    setHistorialOpen(false)
+                  }}
                 />
               </div>
             ) : (
@@ -1411,6 +1510,7 @@ function NuevoMantenimientoDialog({
                   type="number"
                   value={odometro}
                   onChange={(e) => setOdometro(e.target.value)}
+                  onFocus={() => setHistorialOpen(true)}
                   placeholder="Km al momento"
                 />
                 <SugerenciasLectura
@@ -1418,6 +1518,17 @@ function NuevoMantenimientoDialog({
                   valor={odometro}
                   onElegir={setOdometro}
                   unidad="km"
+                />
+                <HistorialLecturasMes
+                  open={historialOpen}
+                  onToggle={() => setHistorialOpen((o) => !o)}
+                  historial={historialKm}
+                  unidad="km"
+                  onElegir={(val, f) => {
+                    setOdometro(val)
+                    setFecha(f)
+                    setHistorialOpen(false)
+                  }}
                 />
               </div>
             )}

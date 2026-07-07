@@ -3,6 +3,7 @@ import {
   addMonths,
   daysBetween,
   fetchLecturas,
+  historialLecturasPorDominio,
   kmActualPorDominio,
   today,
   ultimasLecturasPorDominio,
@@ -193,6 +194,7 @@ export async function loadEstadoPlan(): Promise<{
   overrides: MantenimientoPlanOverride[]
   tareasById: Map<string, MantenimientoPlanTarea>
   ultimasLecturas: Record<string, LecturaSugerida[]>
+  historialLecturas: Record<string, LecturaSugerida[]>
 }> {
   const supabase = await createClient()
 
@@ -266,7 +268,8 @@ export async function loadEstadoPlan(): Promise<{
   const estados = computeEstadoPlan({ vehiculos, tareas, overrides, ultimos, actuales })
   const tareasById = new Map(tareas.map((t) => [t.id, t]))
   const ultimasLecturas = ultimasLecturasPorDominio(lecturas)
-  return { estados, tareas, overrides, tareasById, ultimasLecturas }
+  const historialLecturas = historialLecturasPorDominio(lecturas)
+  return { estados, tareas, overrides, tareasById, ultimasLecturas, historialLecturas }
 }
 
 /**

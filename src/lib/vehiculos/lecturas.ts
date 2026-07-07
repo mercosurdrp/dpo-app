@@ -301,6 +301,40 @@ export function ultimasLecturasPorDominio(
 }
 
 /**
+ * Historial de lecturas por dominio de los últimos `dias` días (por defecto ~el
+ * último mes y medio), una fila por día (la lectura de odómetro más alta de ese
+ * día), más reciente primero. Sirve de referencia al cargar una OT con fecha
+ * retroactiva: el usuario carga las facturas del mes juntas y necesita ver cómo
+ * venían los km/día para completar el odómetro del día de cada factura.
+ */
+export function historialLecturasPorDominio(
+  lecturas: Lectura[],
+  dias = 45
+): Record<string, LecturaSugerida[]> {
+  const limite = addDays(today(), -dias)
+  // dominio -> (fecha 'YYYY-MM-DD' -> mejor lectura de ese día)
+  const porDominio = new Map<string, Map<string, LecturaSugerida>>()
+  for (const l of lecturas) {
+    const dia = l.fecha.slice(0, 10)
+    if (dia < limite) continue
+    let porDia = porDominio.get(l.dominio)
+    if (!porDia) {
+      porDia = new Map()
+      porDominio.set(l.dominio, porDia)
+    }
+    const prev = porDia.get(dia)
+    if (!prev || l.odometro > prev.odometro) {
+      porDia.set(dia, { odometro: l.odometro, fecha: dia, fuente: l.fuente })
+    }
+  }
+  const result: Record<string, LecturaSugerida[]> = {}
+  for (const [dominio, porDia] of porDominio) {
+    result[dominio] = [...porDia.values()].sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
+  }
+  return result
+}
+
+/**
  * Km actual de cada dominio: odómetro máximo "limpio" (descarta retrocesos
  * tomando la secuencia cronológica y quedándose con el máximo creciente).
  * Devuelve también la fecha de la última lectura usada.
