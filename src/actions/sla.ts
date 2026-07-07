@@ -1271,6 +1271,9 @@ async function filaCarga(
 export async function getCumplimientoMes(
   year: number,
   month: number,
+  // El SLA de peso límite se calcula SOLO a pedido (reunión de Logística); no se
+  // suma a la matriz general de /sla ni a la reunión Ventas-Logística.
+  incluirPeso = false,
 ): Promise<Result<CumplimientoMes>> {
   try {
     await requireAuth()
@@ -1295,7 +1298,9 @@ export async function getCumplimientoMes(
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
-      await filaPesoLimite(supabase, year, month, diasDelMes),
+      ...(incluirPeso
+        ? [await filaPesoLimite(supabase, year, month, diasDelMes)]
+        : []),
       await filaPushed(supabase, year, month, diasDelMes),
       filaCargaResuelta,
       await filaRecepcion(year, month, diasDelMes),
@@ -1791,6 +1796,8 @@ export async function getDetalleDiaSla(
 export async function getCumplimientoRango(
   desde: string,
   hasta: string,
+  // Incluye la fila del SLA de peso límite (solo la usa la reunión de Logística).
+  incluirPeso = false,
 ): Promise<Result<CumplimientoRango>> {
   try {
     await requireAuth()
@@ -1816,7 +1823,7 @@ export async function getCumplimientoRango(
     const mEnd = Number(d1.slice(5, 7))
     let guard = 0
     while ((y < yEnd || (y === yEnd && m <= mEnd)) && guard++ < 36) {
-      const res = await getCumplimientoMes(y, m)
+      const res = await getCumplimientoMes(y, m, incluirPeso)
       if ("data" in res) {
         const cm = res.data
         for (const fila of cm.filas) {

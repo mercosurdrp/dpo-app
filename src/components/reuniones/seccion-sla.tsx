@@ -28,14 +28,15 @@ import type {
 
 export const SECCION_SLA = "sla"
 
-// SLA que se revisan en las reuniones operativas (logística, matinal,
-// warehouse): los 5 acordados — quedan afuera capacidad del camión y demás.
+// SLA que se revisan en la reunión de Logística: los 5 acordados + el peso
+// límite de camiones. Queda afuera capacidad del camión y demás.
 export const SLA_CODIGOS_REUNION_OPERATIVA = [
   "plan_syop",
   "plan_ruteo_tiempo",
   "alm_carga",
   "alm_recepcion",
   "plan_ruteo_pushed",
+  "plan_ruteo_peso",
 ]
 
 interface ResponsableOpt {
@@ -154,7 +155,9 @@ export function SeccionSla({
     let cancel = false
     setLoading(true)
     setError(null)
-    void Promise.all([getCumplimientoRango(desde, hasta), getSlas()]).then(
+    // El SLA de peso solo se pide cuando esta reunión lo lista (Logística).
+    const incluirPeso = !!codigos?.includes("plan_ruteo_peso")
+    void Promise.all([getCumplimientoRango(desde, hasta, incluirPeso), getSlas()]).then(
       ([resCumpl, resSlas]) => {
         if (cancel) return
         if ("error" in resCumpl) {
