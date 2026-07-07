@@ -34,6 +34,23 @@ function presupuestoTargets(iso: string): string[] {
 }
 
 /**
+ * Fecha objetivo de la reunión de Mantenimiento para el mes de `iso`
+ * (regla_especial = 'segundo_lunes'): el 2º lunes del mes.
+ * El 2º lunes es el lunes cuyo día del mes cae entre 8 y 14 inclusive.
+ * Devuelve "YYYY-MM-DD".
+ */
+function segundoLunesTarget(iso: string): string {
+  const [y, m] = iso.split("-").map(Number)
+  // Día de semana del día 1 del mes (0 = dom, 1 = lun, ..., 6 = sáb), en UTC.
+  const dow1 = new Date(Date.UTC(y, m - 1, 1)).getUTCDay()
+  // Primer lunes: desplazamiento desde el día 1 hasta el lunes.
+  const primerLunes = 1 + ((1 - dow1 + 7) % 7)
+  const segundoLunes = primerLunes + 7
+  const d = new Date(Date.UTC(y, m - 1, segundoLunes))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+}
+
+/**
  * Devuelve el día actual en zona ARG en formato { iso: "YYYY-MM-DD", weekday: 1..7 }
  * (1 = lunes, ..., 7 = domingo).
  */
@@ -81,6 +98,11 @@ export async function GET(req: Request) {
     // semana: se crean solo en sus fechas objetivo del mes.
     if (t.regla_especial === "quincena_2") {
       if (!presupuestoTargets(hoyIso).includes(hoyIso)) {
+        skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
+        continue
+      }
+    } else if (t.regla_especial === "segundo_lunes") {
+      if (segundoLunesTarget(hoyIso) !== hoyIso) {
         skipped.push({ tipo: t.tipo, motivo: "fuera_de_fecha_objetivo" })
         continue
       }

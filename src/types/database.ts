@@ -3035,6 +3035,7 @@ export type TipoReunion =
   | "matinal-distribucion"
   | "warehouse"
   | "presupuesto"
+  | "mantenimiento"
 
 // --- TOR (Términos de Referencia) por tipo de reunión ---
 

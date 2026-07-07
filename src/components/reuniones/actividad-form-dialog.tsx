@@ -100,6 +100,12 @@ const DESTINOS_POR_TIPO: Record<
     // Reunión de presupuesto: compromisos simples (default).
     { value: "simple", label: "Simple" },
   ],
+  mantenimiento: [
+    { value: "simple", label: "Simple" },
+    { value: "5s_flota", label: "5S Flota" },
+    { value: "5s_almacen", label: "5S Almacén" },
+    { value: "mantenimiento_edilicio", label: "Mantenimiento Edilicio" },
+  ],
 }
 
 export function ActividadFormDialog({

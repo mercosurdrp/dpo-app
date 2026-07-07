@@ -13,6 +13,7 @@ import { LogisticaVentasTab } from "@/components/reuniones/logistica-ventas-tab"
 import { MatinalDistribucionTab } from "@/components/reuniones/matinal-distribucion-tab"
 import { WarehouseTab } from "@/components/reuniones/warehouse-tab"
 import { PresupuestoTab } from "@/components/reuniones/presupuesto-tab"
+import { MantenimientoTab } from "@/components/reuniones/mantenimiento-tab"
 import { IS_MISIONES } from "@/lib/empresa"
 
 export function ReunionesClient() {
@@ -51,6 +52,11 @@ export function ReunionesClient() {
               Presupuesto
             </TabsTrigger>
           )}
+          {!IS_MISIONES && (
+            <TabsTrigger value="mantenimiento" className="flex-none">
+              Mantenimiento
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="logistica" className="mt-4">
@@ -68,6 +74,11 @@ export function ReunionesClient() {
         {!IS_MISIONES && (
           <TabsContent value="presupuesto" className="mt-4">
             <PresupuestoTab />
+          </TabsContent>
+        )}
+        {!IS_MISIONES && (
+          <TabsContent value="mantenimiento" className="mt-4">
+            <MantenimientoTab />
           </TabsContent>
         )}
       </Tabs>

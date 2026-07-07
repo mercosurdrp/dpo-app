@@ -681,7 +681,7 @@ export async function crearReunion(
 
     if (!tipoRaw) return { error: "El tipo de reunión es obligatorio" }
     if (
-      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto"].includes(
+      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento"].includes(
         tipoRaw,
       )
     ) {
@@ -1964,7 +1964,7 @@ export async function crearIndicadorConfig(
 
     if (!tipoRaw) return { error: "El tipo es obligatorio" }
     if (
-      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto"].includes(
+      !["logistica", "logistica-ventas", "matinal-distribucion", "warehouse", "presupuesto", "mantenimiento"].includes(
         tipoRaw,
       )
     ) {
