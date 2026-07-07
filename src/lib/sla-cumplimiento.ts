@@ -12,6 +12,27 @@ export const SLA_SYOP_TARGET = 95
 export const SLA_CAPACIDAD_NOMBRE = "Cumplimiento de capacidad del camión"
 export const SLA_CAPACIDAD_TARGET = 95
 
+export const SLA_PESO_NOMBRE = "Peso límite de camiones"
+export const SLA_PESO_TARGET = 95
+// Techo de peso NETO de producto ruteado por camión. Ningún viaje debería
+// rutearse con carga que supere este peso: peso bruto máximo (PBT) − tara.
+// El peso real del producto llega en ocupacion_bodega_diaria.peso_total (kg).
+export const PESO_TARA_KG = 6500
+export const PESO_BRUTO_KG = 15000
+export const PESO_LIMITE_KG = PESO_BRUTO_KG - PESO_TARA_KG // 8500 kg (flota estándar)
+
+// Excepciones por patente: camiones con tara/bruto distintos → otro neto.
+//   • AE908DF ("el DF"): tara 4500 · bruto 11500 → neto 7000 kg.
+export const PESO_LIMITE_POR_PATENTE: Record<string, number> = {
+  AE908DF: 11500 - 4500, // 7000 kg
+}
+
+/** Límite de peso neto (kg) para una patente: su excepción o el estándar. */
+export function pesoLimiteKg(patente: string | null | undefined): number {
+  const p = (patente ?? "").trim().toUpperCase()
+  return PESO_LIMITE_POR_PATENTE[p] ?? PESO_LIMITE_KG
+}
+
 export const SLA_PUSHED_NOMBRE = "Volumen no ruteado (Pushed)"
 export const SLA_PUSHED_TARGET = 95
 

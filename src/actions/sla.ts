@@ -12,6 +12,10 @@ import {
   SLA_SYOP_TARGET,
   SLA_CAPACIDAD_NOMBRE,
   SLA_CAPACIDAD_TARGET,
+  SLA_PESO_NOMBRE,
+  SLA_PESO_TARGET,
+  PESO_LIMITE_KG,
+  pesoLimiteKg,
   SLA_PUSHED_NOMBRE,
   SLA_PUSHED_TARGET,
   SLA_RECEPCION_NOMBRE,
@@ -603,6 +607,75 @@ async function filaCapacidad(
     codigo: "plan_ruteo_capacidad",
     nombre: SLA_CAPACIDAD_NOMBRE,
     target: SLA_CAPACIDAD_TARGET,
+    porcentaje,
+    cumplidos,
+    totalAplica,
+    dias,
+  }
+}
+
+/**
+ * Fila del SLA de peso límite del camión (`plan_ruteo_peso`), el techo que
+ * complementa al SLA de capacidad (el piso): ningún viaje ruteado debe superar
+ * el peso neto de producto permitido (PESO_LIMITE_KG = bruto − tara = 8500 kg).
+ * Fuente: ocupacion_bodega_diaria.peso_total (kg reales de producto por viaje).
+ * Un día cumple si NINGUNA patente ruteada superó el límite.
+ */
+async function filaPesoLimite(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("ocupacion_bodega_diaria")
+    .select("fecha, patente, peso_total")
+    .gte("fecha", desde)
+    .lt("fecha", hastaExcl)
+    .gt("ceq_total", 0)
+
+  // día → ¿alguna patente superó SU límite? (cada camión con su tope según tara)
+  const exceso = new Map<number, boolean>()
+  for (const row of (data ?? []) as any[]) {
+    const dia = Number((row.fecha as string).slice(8, 10))
+    const peso = Number(row.peso_total ?? 0)
+    const supera = peso > pesoLimiteKg(row.patente as string)
+    exceso.set(dia, (exceso.get(dia) ?? false) || supera)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let totalAplica = 0
+  let cumplidos = 0
+
+  for (let d = 1; d <= diasDelMes; d++) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    if (dowFromISO(iso) === 0) {
+      dias.push("na") // domingo: no se reparte
+      continue
+    }
+    if (!exceso.has(d)) {
+      dias.push("sd") // sin ocupación registrada / futuro
+      continue
+    }
+    const cumple = !exceso.get(d)
+    totalAplica++
+    if (cumple) cumplidos++
+    dias.push(cumple ? "si" : "no")
+  }
+
+  const porcentaje =
+    totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+
+  return {
+    codigo: "plan_ruteo_peso",
+    nombre: SLA_PESO_NOMBRE,
+    target: SLA_PESO_TARGET,
     porcentaje,
     cumplidos,
     totalAplica,
@@ -1222,6 +1295,7 @@ export async function getCumplimientoMes(
       await filaSyop(supabase, year, month, diasDelMes),
       await filaRuteo(supabase, year, month, diasDelMes),
       await filaCapacidad(supabase, year, month, diasDelMes),
+      await filaPesoLimite(supabase, year, month, diasDelMes),
       await filaPushed(supabase, year, month, diasDelMes),
       filaCargaResuelta,
       await filaRecepcion(year, month, diasDelMes),
@@ -1385,6 +1459,64 @@ export async function getDetalleDiaSla(
         data: {
           codigo,
           nombre: SLA_CAPACIDAD_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
+    if (codigo === "plan_ruteo_peso") {
+      const { data } = await supabase
+        .from("ocupacion_bodega_diaria")
+        .select("patente, peso_total, ceq_total")
+        .eq("fecha", fecha)
+        .gt("ceq_total", 0)
+        .order("peso_total", { ascending: false })
+
+      const rows = (data ?? []) as any[]
+      const metaLabel = `Peso neto ≤ ${PESO_LIMITE_KG.toLocaleString("es-AR")} kg por camión`
+
+      let estado: EstadoCumplimiento = "sd"
+      let nota: string | undefined
+      let valorLabel = "—"
+      const filas: { label: string; valor: string }[] = []
+
+      if (dow === 0) {
+        estado = "na"
+        nota = "Domingo: no se reparte."
+      } else if (rows.length === 0) {
+        estado = "sd"
+        nota = "Sin ocupación de bodega registrada este día (depende del sync de Chess)."
+      } else {
+        const excedidos = rows.filter(
+          (r) => Number(r.peso_total ?? 0) > pesoLimiteKg(r.patente as string),
+        )
+        estado = excedidos.length === 0 ? "si" : "no"
+        valorLabel =
+          excedidos.length === 0
+            ? `todos dentro del límite`
+            : `${excedidos.length} camión(es) excedido(s)`
+        for (const r of rows) {
+          const peso = Number(r.peso_total ?? 0)
+          const lim = pesoLimiteKg(r.patente as string)
+          const mark = peso > lim ? "✗" : "✓"
+          const limNota = lim !== PESO_LIMITE_KG ? ` (lím. ${lim.toLocaleString("es-AR")})` : ""
+          filas.push({
+            label: String(r.patente ?? "—"),
+            valor: `${peso.toLocaleString("es-AR", { maximumFractionDigits: 0 })} kg${limNota} ${mark}`,
+          })
+        }
+      }
+
+      return {
+        data: {
+          codigo,
+          nombre: SLA_PESO_NOMBRE,
           fecha,
           diaSemana,
           estado,

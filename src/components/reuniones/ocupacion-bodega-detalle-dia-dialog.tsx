@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2, Package, Target, Truck } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Loader2, Package, Target, Truck } from "lucide-react"
+import { pesoLimiteKg } from "@/lib/sla-cumplimiento"
 import {
   Dialog,
   DialogContent,
@@ -203,7 +204,32 @@ export function OcupacionBodegaDetalleDiaDialog({ open, onOpenChange, fecha }: P
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.bultos_total, 1)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtN(v.hl_total, 1)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{v.peso_total > 0 ? fmtN(v.peso_total, 0) : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {v.peso_total > 0 ? (
+                            (() => {
+                              const lim = pesoLimiteKg(v.patente)
+                              const excede = v.peso_total > lim
+                              const titulo = excede
+                                ? `Supera el peso permitido (${fmtN(lim, 0)} kg)`
+                                : `Dentro del peso permitido (${fmtN(lim, 0)} kg)`
+                              return (
+                                <span
+                                  className={`inline-flex items-center justify-end gap-1 ${excede ? "font-semibold text-red-600" : ""}`}
+                                  title={titulo}
+                                >
+                                  {fmtN(v.peso_total, 0)}
+                                  {excede ? (
+                                    <AlertTriangle className="size-4 shrink-0 text-red-600" />
+                                  ) : (
+                                    <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                                  )}
+                                </span>
+                              )
+                            })()
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{v.lineas}</TableCell>
                         <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{v.skus_distintos}</TableCell>
                       </TableRow>
