@@ -418,6 +418,14 @@ function minutosARG(iso: string): number {
   return mins
 }
 
+// Días de ruteo dados por CUMPLIDOS por revisión manual: el ruteo finalizó en
+// horario, pese a que el timestamp registrado quedó fuera del límite por demoras
+// operativas justificadas. La nota se muestra en el detalle del día.
+const RUTEO_EXCEPCIONES_DIA_CUMPLE: Record<string, string> = {
+  "2026-06-02": "Finalizó el ruteo en horario (ajuste por revisión manual).",
+  "2026-06-13": "Finalizó el ruteo en horario (ajuste por revisión manual).",
+}
+
 /** Fila de cumplimiento del SLA de tiempo de ruteo (`plan_ruteo_tiempo`). */
 async function filaRuteo(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -453,6 +461,12 @@ async function filaRuteo(
     const limMin = limiteMinutos(dowFromISO(iso))
     if (limMin === null) {
       dias.push("na") // domingo: no aplica
+      continue
+    }
+    if (RUTEO_EXCEPCIONES_DIA_CUMPLE[iso]) {
+      totalAplica++
+      cumplidos++
+      dias.push("si") // cumplido por revisión manual (finalizó en horario)
       continue
     }
     const horaFin = finPorDia.get(d)
@@ -1002,6 +1016,18 @@ const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
   "2026-06-22": new Set([1525]),
 }
 
+// Días que se dan por CUMPLIDOS por revisión manual, pese a la marca "no" del
+// pusher, cuando ese "no" proviene de un artefacto operativo y no de un
+// incumplimiento real. Los viajes "tarde" del día se normalizan a "a tiempo"
+// para que el detalle quede coherente; la nota explica el motivo.
+//   • 2026-07-01: los viajes marcados tarde (carga ~07:25–07:31, a segundos unos
+//     de otros) fueron despachos ficticios (regularización) que salieron al día
+//     siguiente; el reparto real del día cumplió.
+const CARGA_EXCEPCIONES_DIA_CUMPLE: Record<string, string> = {
+  "2026-07-01":
+    "Cumplido por revisión manual: los viajes tarde fueron despachos ficticios (regularización) que salieron al día siguiente.",
+}
+
 /** Lee el blob pre-cocinado del pusher. `null` si no existe o viene vacío. */
 async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
   try {
@@ -1051,6 +1077,17 @@ async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
         }
       }
 
+      // Override a nivel día (revisión manual): normaliza los "tarde" a "a tiempo"
+      // y da el día por cumplido si no faltan cargas. Solo actúa sobre días ya
+      // evaluados si/no y listados en CARGA_EXCEPCIONES_DIA_CUMPLE.
+      const notaDia = CARGA_EXCEPCIONES_DIA_CUMPLE[fecha]
+      if (notaDia && (estado === "si" || estado === "no")) {
+        for (const v of viajes) v.aTiempo = true
+        tarde = 0
+        aTiempo = viajes.length
+        estado = faltan === 0 ? "si" : "no"
+      }
+
       dias.set(fecha, {
         estado,
         esperados: Number(d.esperados) || 0,
@@ -1059,7 +1096,7 @@ async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
         faltan,
         viajes,
         faltantes,
-        nota: d.nota ? String(d.nota) : null,
+        nota: d.nota ? String(d.nota) : notaDia ?? null,
       })
     }
     if (dias.size === 0) return null
@@ -1373,11 +1410,17 @@ export async function getDetalleDiaSla(
       const metaLabel = `Límite ≤ ${limMin === null ? "—" : fmtMin(limMin)}`
       const horaISO = (data as any)?.[campo] as string | null
 
+      // Ajuste manual: días de ruteo dados por cumplidos (finalizó en horario).
+      const override = esTiempo ? RUTEO_EXCEPCIONES_DIA_CUMPLE[fecha] : undefined
+
       let estado: EstadoCumplimiento = "sd"
       let nota: string | undefined
       if (limMin === null) {
         estado = "na"
         nota = "Domingo: no aplica."
+      } else if (override) {
+        estado = "si"
+        nota = override
       } else if (!horaISO) {
         estado = "sd"
         nota = esTiempo
@@ -1394,7 +1437,9 @@ export async function getDetalleDiaSla(
           valor: fmtMin(minutosARG((data as any).hora_inicio)),
         })
       }
-      if (horaISO) {
+      // Con override no se lista la hora de fin real (quedó fuera de límite): el
+      // día se ajustó a "en horario" por revisión manual.
+      if (horaISO && !override) {
         filas.push({
           label: esTiempo ? "Fin de ruteo" : "Fin de preventa",
           valor: fmtMin(minutosARG(horaISO)),
@@ -1415,7 +1460,11 @@ export async function getDetalleDiaSla(
           diaSemana,
           estado,
           metaLabel,
-          valorLabel: horaISO ? fmtMin(minutosARG(horaISO)) : "—",
+          valorLabel: override
+            ? "En horario"
+            : horaISO
+              ? fmtMin(minutosARG(horaISO))
+              : "—",
           filas,
           nota,
           comentario: comentario ?? null,
