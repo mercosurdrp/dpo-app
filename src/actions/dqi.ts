@@ -190,3 +190,98 @@ export async function crearPlanDqi(input: {
   if ("error" in res) return { error: res.error }
   return { ok: true }
 }
+
+// ===== DQI por patente / móvil =====
+// Desglose de las roturas y faltantes ocurridos EN DISTRIBUCIÓN, agrupados por la
+// patente del camión (col "Descripción Transporte") y su móvil (col "Transporte")
+// del "Detalle de Movimiento". La fuente es el mismo tablero deposito-esteban,
+// endpoint /api/perdidas/distribucion-patente. `month` opcional: sin month = año
+// entero. OJO: el DQI en PPM NO es calculable por patente (falta el denominador
+// de HL entregados por camión); acá se expone el numerador desglosado (HL/unid/$
+// rotos y faltantes por patente) para que la página lo muestre.
+
+/** Roturas o faltantes de una patente/SKU (mismo shape en ambos). */
+export interface DqiPatenteMagnitud {
+  bultos: number
+  unidades: number
+  hl: number
+}
+
+export interface DqiPatenteSku {
+  codigo: string
+  descripcion: string
+  roturas: DqiPatenteMagnitud
+  faltantes: DqiPatenteMagnitud
+}
+
+export interface DqiPatente {
+  patente: string
+  /** Código de móvil (col "Transporte") o null si no vino. */
+  movil: string | null
+  roturas: DqiPatenteMagnitud
+  faltantes: DqiPatenteMagnitud
+  /** HL total (roturas + faltantes) valorizado con el maestro de artículos. */
+  hl_total: number
+  /** Desglose por SKU dentro de la patente. */
+  detalle: DqiPatenteSku[]
+}
+
+export interface DqiPorPatenteData {
+  year: number
+  /** Mes 1-12, o null cuando es el año entero. */
+  month: number | null
+  patentes: DqiPatente[]
+  total: {
+    roturas: DqiPatenteMagnitud
+    faltantes: DqiPatenteMagnitud
+  }
+  /** Total de filas de movimiento de distribución consideradas. */
+  total_filas: number
+  /** Filas que no traían patente (caen en la fila "(sin patente)"). */
+  filas_sin_patente: number
+  /** true si el maestro de artículos permitió valorizar HL. */
+  tiene_hl: boolean
+}
+
+/** Trae el DQI (roturas + faltantes en distribución) desglosado por patente/móvil.
+ * @param year año, ej 2026
+ * @param month mes 1-12; omitir (o null) para el año entero. */
+export async function getDqiPorPatente(
+  year: number,
+  month?: number | null,
+): Promise<{ data: DqiPorPatenteData } | { error: string }> {
+  await requireAuth()
+  try {
+    const qs = new URLSearchParams({ year: String(year) })
+    if (month != null) qs.set("month", String(month))
+    const res = await fetch(
+      `${DEPOSITO_API_BASE}/api/perdidas/distribucion-patente?${qs.toString()}`,
+      { cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    )
+    if (!res.ok) {
+      return { error: `El tablero de pérdidas respondió ${res.status}` }
+    }
+    const j = (await res.json()) as DqiPorPatenteData
+    return {
+      data: {
+        year: j.year,
+        month: j.month ?? null,
+        patentes: j.patentes ?? [],
+        total: j.total ?? {
+          roturas: { bultos: 0, unidades: 0, hl: 0 },
+          faltantes: { bultos: 0, unidades: 0, hl: 0 },
+        },
+        total_filas: j.total_filas ?? 0,
+        filas_sin_patente: j.filas_sin_patente ?? 0,
+        tiene_hl: j.tiene_hl ?? false,
+      },
+    }
+  } catch (e) {
+    return {
+      error:
+        e instanceof Error
+          ? `No se pudo consultar el DQI por patente: ${e.message}`
+          : "Error consultando el DQI por patente.",
+    }
+  }
+}
