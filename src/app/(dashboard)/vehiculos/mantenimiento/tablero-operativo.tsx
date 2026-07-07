@@ -24,14 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Archive, CircleDot, ClipboardList, Gauge, Loader2, Plus, Wrench } from "lucide-react"
+import { Archive, ClipboardList, Gauge, Loader2, Plus, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { registrarLecturaVehiculo } from "@/actions/mantenimiento-vehiculos"
 import type {
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
-import type { NeumaticosResumen } from "@/lib/vehiculos/neumaticos-tipos"
 import type { UnidadBaja } from "@/actions/mantenimiento-vehiculos"
 
 const ESTADO_SG: Record<
@@ -187,13 +186,12 @@ function CargarLecturaDialog({
 interface Props {
   programacion: ServiceGeneralUnidad[]
   otPendientes: OTPendiente[]
-  neumaticos: NeumaticosResumen
   unidadesBaja: UnidadBaja[]
   puedeEditar: boolean
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, otPendientes, neumaticos, unidadesBaja, puedeEditar, onNavigate }: Props) {
+export function TableroOperativo({ programacion, otPendientes, unidadesBaja, puedeEditar, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
 
@@ -328,26 +326,6 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
         </Card>
       </div>
 
-      {/* ===== Neumáticos (resumen, atajo a la pestaña) ===== */}
-      <Card
-        className="cursor-pointer transition-colors hover:bg-slate-50"
-        onClick={() => onNavigate("neumaticos")}
-      >
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CircleDot className="size-4 text-slate-500" /> Neumáticos
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Mini label="En stock" value={neumaticos.stock} />
-            <Mini label="Instaladas" value={neumaticos.instalados} />
-            <Mini label="Desgaste crítico" value={neumaticos.criticos} danger />
-            <Mini label="Bajas del mes" value={neumaticos.bajasMes} />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Leyenda del semáforo de service */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
         {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos", "no_aplica"] as EstadoServiceGeneral[]).map((k) => (
@@ -481,13 +459,3 @@ export function TableroOperativo({ programacion, otPendientes, neumaticos, unida
   )
 }
 
-function Mini({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-3 text-center">
-      <p className={cn("text-2xl font-bold", danger && value > 0 ? "text-red-600" : "text-slate-900")}>
-        {value}
-      </p>
-      <p className="text-xs text-slate-500">{label}</p>
-    </div>
-  )
-}

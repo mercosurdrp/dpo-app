@@ -465,23 +465,6 @@ export function MantenimientoClient({
   )
 
   // Resumen de neumáticos para la tarjeta del tablero.
-  const neumaticosResumen = useMemo(() => {
-    const ahora = new Date()
-    const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}`
-    let stock = 0
-    let instalados = 0
-    let criticos = 0
-    let bajasMes = 0
-    for (const n of neumaticos) {
-      if (n.estado === "stock") stock++
-      else if (n.estado === "instalado") {
-        instalados++
-        if (n.profundidad_actual_mm != null && n.profundidad_actual_mm <= 3) criticos++
-      } else if (n.estado === "baja" && n.fecha_baja?.slice(0, 7) === mes) bajasMes++
-    }
-    return { stock, instalados, criticos, bajasMes }
-  }, [neumaticos])
-
   const unidades = useMemo(
     () =>
       estados.map((e) => ({
@@ -573,7 +556,6 @@ export function MantenimientoClient({
           <TableroOperativo
             programacion={tablero.programacion}
             otPendientes={otPendientes}
-            neumaticos={neumaticosResumen}
             unidadesBaja={tablero.unidadesBaja}
             puedeEditar={puedeEditar}
             onNavigate={navegar}
