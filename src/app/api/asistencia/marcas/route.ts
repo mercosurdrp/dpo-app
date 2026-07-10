@@ -28,6 +28,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const marcas: MarcaInput[] = Array.isArray(body) ? body : [body]
 
+    // Log de diagnóstico del sync YAM→DPO: sin esto los pushes del reloj son
+    // invisibles (la respuesta 200 no queda registrada en ningún lado y el
+    // PHP remoto no reporta errores). No loguear el x-api-key.
+    console.log(
+      `[asistencia/marcas] recibidas=${marcas.length} primera=${JSON.stringify(marcas[0] ?? null)} ultima=${JSON.stringify(marcas[marcas.length - 1] ?? null)}`
+    )
+
     if (marcas.length === 0) {
       return NextResponse.json({ error: "No marcas provided" }, { status: 400 })
     }
@@ -68,6 +75,10 @@ export async function POST(request: NextRequest) {
         insertadas++
       }
     }
+
+    console.log(
+      `[asistencia/marcas] resultado insertadas=${insertadas} repetidas=${repetidas} errores=${errores.length > 0 ? JSON.stringify(errores.slice(0, 5)) : "ninguno"}`
+    )
 
     return NextResponse.json({
       success: true,
