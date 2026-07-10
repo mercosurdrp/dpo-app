@@ -159,9 +159,14 @@ export async function getTableroOperativo(): Promise<
         .eq("active", false)
         .order("dominio"),
       supabase.from("mantenimiento_novedades").select("estado, fecha"),
+      // Mediciones de cubiertas INSTALADAS (módulo Neumáticos): de acá salen
+      // las alertas de profundidad/presión y las inspeccionadas hoy.
       supabase
-        .from("mantenimiento_llantas")
-        .select("dominio, posicion, fecha, profundidad_mm, presion_psi"),
+        .from("mantenimiento_neumatico_mediciones")
+        .select(
+          "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado)"
+        )
+        .eq("neumatico.estado", "instalado"),
       supabase.from("mantenimiento_repuestos").select("stock_actual, stock_min, stock_max"),
       supabase.from("mantenimiento_ordenes_compra").select("estado"),
     ])
@@ -273,22 +278,19 @@ export async function getTableroOperativo(): Promise<
       if (n.fecha?.slice(0, 10) === hoy) novedadesCreadas++
     }
 
-    // --- Llantas: última inspección por dominio+posición ---
-    const llaveLlanta = (d: string, p: string | null) => `${d}|${p ?? ""}`
+    // --- Llantas: última medición por cubierta instalada ---
     const ultLlanta = new Map<string, { fecha: string; prof: number | null; presion: number | null }>()
     let llantasInspeccionadas = 0
-    for (const l of (llantasRes.data || []) as Array<{
-      dominio: string
-      posicion: string | null
+    for (const l of (llantasRes.data || []) as unknown as Array<{
+      neumatico_id: string
       fecha: string
       profundidad_mm: number | null
       presion_psi: number | null
     }>) {
       if (l.fecha?.slice(0, 10) === hoy) llantasInspeccionadas++
-      const k = llaveLlanta(l.dominio, l.posicion)
-      const prev = ultLlanta.get(k)
+      const prev = ultLlanta.get(l.neumatico_id)
       if (!prev || l.fecha > prev.fecha) {
-        ultLlanta.set(k, {
+        ultLlanta.set(l.neumatico_id, {
           fecha: l.fecha,
           prof: l.profundidad_mm != null ? Number(l.profundidad_mm) : null,
           presion: l.presion_psi != null ? Number(l.presion_psi) : null,
@@ -1337,7 +1339,7 @@ export async function eliminarItemChecklist(
   }
 }
 
-// ==================== GESTIÓN / CARGA (novedades, llantas, repuestos, OC) ====
+// ==================== GESTIÓN / CARGA (novedades, repuestos, OC) ============
 
 export interface Novedad {
   id: string
@@ -1348,15 +1350,6 @@ export interface Novedad {
   prioridad: string
   estado: string
   created_at: string
-}
-export interface LlantaInspeccion {
-  id: string
-  dominio: string
-  fecha: string
-  posicion: string | null
-  profundidad_mm: number | null
-  presion_psi: number | null
-  observaciones: string | null
 }
 export interface Repuesto {
   id: string
@@ -1382,7 +1375,6 @@ export async function getGestionMtto(): Promise<
   | {
       data: {
         novedades: Novedad[]
-        llantas: LlantaInspeccion[]
         repuestos: Repuesto[]
         ordenesCompra: OrdenCompra[]
       }
@@ -1392,20 +1384,18 @@ export async function getGestionMtto(): Promise<
   try {
     await requireAuth()
     const supabase = await createClient()
-    const [nov, lla, rep, oc] = await Promise.all([
+    const [nov, rep, oc] = await Promise.all([
       supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
-      supabase.from("mantenimiento_llantas").select("*").order("fecha", { ascending: false }),
       supabase.from("mantenimiento_repuestos").select("*").order("nombre"),
       supabase
         .from("mantenimiento_ordenes_compra")
         .select("*")
         .order("fecha", { ascending: false }),
     ])
-    for (const r of [nov, lla, rep, oc]) if (r.error) throw new Error(r.error.message)
+    for (const r of [nov, rep, oc]) if (r.error) throw new Error(r.error.message)
     return {
       data: {
         novedades: (nov.data || []) as Novedad[],
-        llantas: (lla.data || []) as LlantaInspeccion[],
         repuestos: (rep.data || []) as Repuesto[],
         ordenesCompra: (oc.data || []) as OrdenCompra[],
       },
@@ -1458,35 +1448,6 @@ export async function updateNovedadEstado(
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-    if (error) return { error: error.message }
-    return { success: true }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Error desconocido" }
-  }
-}
-
-// ----- Llantas -----
-export async function createLlanta(input: {
-  dominio: string
-  fecha: string
-  posicion?: string
-  profundidad_mm?: number | null
-  presion_psi?: number | null
-  observaciones?: string
-}): Promise<{ success: true } | { error: string }> {
-  try {
-    const profile = await requireRole(["admin", "supervisor"])
-    if (!input.dominio) return { error: "Elegí la unidad" }
-    const supabase = await createClient()
-    const { error } = await supabase.from("mantenimiento_llantas").insert({
-      dominio: input.dominio.trim().toUpperCase(),
-      fecha: input.fecha,
-      posicion: input.posicion?.trim() || null,
-      profundidad_mm: input.profundidad_mm ?? null,
-      presion_psi: input.presion_psi ?? null,
-      observaciones: input.observaciones?.trim() || null,
-      created_by: profile.id,
-    })
     if (error) return { error: error.message }
     return { success: true }
   } catch (e) {
@@ -1577,7 +1538,7 @@ export async function updateOrdenCompraEstado(
 
 // ----- Borrado genérico de filas de gestión -----
 export async function deleteGestionRow(
-  tabla: "novedades" | "llantas" | "repuestos" | "ordenes_compra",
+  tabla: "novedades" | "repuestos" | "ordenes_compra",
   id: string
 ): Promise<{ success: true } | { error: string }> {
   try {

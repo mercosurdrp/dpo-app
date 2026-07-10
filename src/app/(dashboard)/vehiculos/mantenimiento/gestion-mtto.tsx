@@ -35,14 +35,12 @@ import {
 import { Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  createLlanta,
   createNovedad,
   createOrdenCompra,
   deleteGestionRow,
   updateNovedadEstado,
   updateOrdenCompraEstado,
   upsertRepuesto,
-  type LlantaInspeccion,
   type Novedad,
   type OrdenCompra,
   type Repuesto,
@@ -81,7 +79,6 @@ const ESTADO_OC_BADGE: Record<string, string> = {
 interface Props {
   dominios: string[]
   novedades: Novedad[]
-  llantas: LlantaInspeccion[]
   repuestos: Repuesto[]
   ordenesCompra: OrdenCompra[]
   puedeEditar: boolean
@@ -90,7 +87,6 @@ interface Props {
 export function GestionMtto({
   dominios,
   novedades,
-  llantas,
   repuestos,
   ordenesCompra,
   puedeEditar,
@@ -100,12 +96,12 @@ export function GestionMtto({
   const refresh = () => startTransition(() => router.refresh())
 
   const [dialog, setDialog] = useState<
-    null | "novedad" | "llanta" | "repuesto" | "oc"
+    null | "novedad" | "repuesto" | "oc"
   >(null)
   const [repuestoEdit, setRepuestoEdit] = useState<Repuesto | null>(null)
 
   const borrar = async (
-    tabla: "novedades" | "llantas" | "repuestos" | "ordenes_compra",
+    tabla: "novedades" | "repuestos" | "ordenes_compra",
     id: string
   ) => {
     const res = await deleteGestionRow(tabla, id)
@@ -123,7 +119,6 @@ export function GestionMtto({
           <TabsTrigger value="repuestos">Inventario</TabsTrigger>
           <TabsTrigger value="oc">Órdenes de compra</TabsTrigger>
           <TabsTrigger value="novedades">Novedades</TabsTrigger>
-          <TabsTrigger value="llantas">Inspección de llantas</TabsTrigger>
         </TabsList>
 
         {/* ===== Novedades ===== */}
@@ -197,70 +192,6 @@ export function GestionMtto({
                                 <Trash2 className="size-3.5" />
                               </Button>
                             </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ===== Llantas ===== */}
-        <TabsContent value="llantas" className="space-y-3">
-          {puedeEditar && (
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setDialog("llanta")}>
-                <Plus className="mr-1 size-4" /> Nueva inspección
-              </Button>
-            </div>
-          )}
-          <Card>
-            <CardContent className="overflow-x-auto pt-6">
-              {llantas.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
-                  Sin inspecciones de neumáticos cargadas.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Unidad</TableHead>
-                      <TableHead>Posición</TableHead>
-                      <TableHead className="text-right">Profundidad (mm)</TableHead>
-                      <TableHead className="text-right">Presión (psi)</TableHead>
-                      <TableHead>Observaciones</TableHead>
-                      {puedeEditar && <TableHead className="w-12" />}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {llantas.map((l) => (
-                      <TableRow key={l.id}>
-                        <TableCell className="whitespace-nowrap">{fmtFecha(l.fecha)}</TableCell>
-                        <TableCell className="font-medium">{l.dominio}</TableCell>
-                        <TableCell>{l.posicion || "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmtNum(l.profundidad_mm)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmtNum(l.presion_psi)}
-                        </TableCell>
-                        <TableCell className="max-w-60 text-slate-600">
-                          {l.observaciones || "—"}
-                        </TableCell>
-                        {puedeEditar && (
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 text-red-500"
-                              onClick={() => borrar("llantas", l.id)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
                           </TableCell>
                         )}
                       </TableRow>
@@ -462,16 +393,6 @@ export function GestionMtto({
           }}
         />
       )}
-      {dialog === "llanta" && (
-        <LlantaDialog
-          dominios={dominios}
-          onClose={() => setDialog(null)}
-          onSaved={() => {
-            setDialog(null)
-            refresh()
-          }}
-        />
-      )}
       {dialog === "repuesto" && (
         <RepuestoDialog
           repuesto={repuestoEdit}
@@ -582,93 +503,6 @@ function NovedadDialog({
               onChange={(e) => setDescripcion(e.target.value)}
               rows={3}
             />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function LlantaDialog({
-  dominios,
-  onClose,
-  onSaved,
-}: {
-  dominios: string[]
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [dominio, setDominio] = useState("")
-  const [fecha, setFecha] = useState(hoyISO())
-  const [posicion, setPosicion] = useState("")
-  const [prof, setProf] = useState("")
-  const [presion, setPresion] = useState("")
-  const [obs, setObs] = useState("")
-  const [saving, setSaving] = useState(false)
-
-  const submit = async () => {
-    setSaving(true)
-    const res = await createLlanta({
-      dominio,
-      fecha,
-      posicion,
-      profundidad_mm: parseNum(prof),
-      presion_psi: parseNum(presion),
-      observaciones: obs,
-    })
-    setSaving(false)
-    if ("error" in res) return toast.error(res.error)
-    toast.success("Inspección cargada")
-    onSaved()
-  }
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Nueva inspección de neumático</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Unidad</Label>
-              <UnidadSelect dominios={dominios} value={dominio} onChange={setDominio} />
-            </div>
-            <div>
-              <Label>Fecha</Label>
-              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </div>
-            <div>
-              <Label>Posición</Label>
-              <Input
-                value={posicion}
-                onChange={(e) => setPosicion(e.target.value)}
-                placeholder="Ej: DD, DI, TDI1"
-              />
-            </div>
-            <div>
-              <Label>Profundidad (mm)</Label>
-              <Input type="number" value={prof} onChange={(e) => setProf(e.target.value)} />
-            </div>
-            <div>
-              <Label>Presión (psi)</Label>
-              <Input
-                type="number"
-                value={presion}
-                onChange={(e) => setPresion(e.target.value)}
-              />
-            </div>
-          </div>
-          <div>
-            <Label>Observaciones</Label>
-            <Textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} />
           </div>
         </div>
         <DialogFooter>

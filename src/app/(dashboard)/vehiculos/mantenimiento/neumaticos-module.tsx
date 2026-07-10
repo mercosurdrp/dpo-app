@@ -287,8 +287,20 @@ export function NeumaticosModule({
         </div>
       )}
 
+      {/* Inspección mensual: ronda de profundidad + presión de toda la flota */}
+      <InspeccionMensualCard
+        neumaticos={neumaticos}
+        unidades={unidades}
+        onIrAUnidad={(dominio) => {
+          setUnidadSel(dominio)
+          document
+            .getElementById("diagrama-unidad")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }}
+      />
+
       {/* Diagrama por unidad */}
-      <Card>
+      <Card id="diagrama-unidad">
         <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CircleDot className="size-4 text-slate-500" /> Diagrama de la unidad
@@ -659,6 +671,164 @@ export function NeumaticosModule({
         />
       )}
     </div>
+  )
+}
+
+// ==================== Inspección mensual ====================
+// Ronda mensual de la flota entera: una vez por mes se mide profundidad y
+// presión de TODAS las cubiertas instaladas. Esta card controla el avance de
+// la ronda del mes: qué unidades ya se midieron y cuáles faltan.
+
+const MESES_LARGO = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+const fmtMesLargo = (ym: string) =>
+  `${MESES_LARGO[Number(ym.slice(5, 7)) - 1] ?? ym} ${ym.slice(0, 4)}`
+
+function InspeccionMensualCard({
+  neumaticos,
+  unidades,
+  onIrAUnidad,
+}: {
+  neumaticos: Neumatico[]
+  unidades: UnidadFlota[]
+  onIrAUnidad: (dominio: string) => void
+}) {
+  const mesActual = hoyLocalISO().slice(0, 7)
+
+  // Meses elegibles: el actual + los últimos 5 (para revisar rondas pasadas).
+  const meses = useMemo(() => {
+    const [y, m] = mesActual.split("-").map(Number)
+    return Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(y, m - 1 - i, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    })
+  }, [mesActual])
+  const [mesSel, setMesSel] = useState(mesActual)
+
+  const filas = useMemo(() => {
+    const instaladasPorUnidad = new Map<string, Neumatico[]>()
+    for (const n of neumaticos) {
+      if (n.estado !== "instalado" || !n.dominio) continue
+      const arr = instaladasPorUnidad.get(n.dominio) ?? []
+      arr.push(n)
+      instaladasPorUnidad.set(n.dominio, arr)
+    }
+    return unidades
+      .filter((u) => (instaladasPorUnidad.get(u.dominio)?.length ?? 0) > 0)
+      .map((u) => {
+        const cubiertas = instaladasPorUnidad.get(u.dominio)!
+        let medidas = 0
+        let ultima: string | null = null
+        for (const n of cubiertas) {
+          const med = (n.mediciones ?? []).find(
+            (m) =>
+              m.fecha.slice(0, 7) === mesSel &&
+              (m.profundidad_mm != null || m.presion_psi != null)
+          )
+          if (med) {
+            medidas++
+            if (!ultima || med.fecha > ultima) ultima = med.fecha
+          }
+        }
+        return {
+          dominio: u.dominio,
+          total: cubiertas.length,
+          medidas,
+          ultima,
+          estado:
+            medidas === 0 ? "pendiente" : medidas < cubiertas.length ? "parcial" : "completa",
+        }
+      })
+      .sort((a, b) => a.dominio.localeCompare(b.dominio))
+  }, [neumaticos, unidades, mesSel])
+
+  const completas = filas.filter((f) => f.estado === "completa").length
+  const pct = filas.length > 0 ? Math.round((completas / filas.length) * 100) : 0
+
+  const BADGE: Record<string, string> = {
+    completa: "bg-emerald-100 text-emerald-700",
+    parcial: "bg-amber-100 text-amber-700",
+    pendiente: "bg-slate-100 text-slate-500",
+  }
+  const LABEL: Record<string, string> = {
+    completa: "Completa",
+    parcial: "Parcial",
+    pendiente: "Pendiente",
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Ruler className="size-4 text-slate-500" /> Inspección mensual
+          </CardTitle>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Una vez por mes se mide profundidad y presión de todas las cubiertas de la
+            flota. Las mediciones se cargan desde el diagrama de cada unidad.
+          </p>
+        </div>
+        <Select value={mesSel} onValueChange={(v) => v && setMesSel(v)}>
+          <SelectTrigger className="w-44 capitalize">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {meses.map((ym) => (
+              <SelectItem key={ym} value={ym} className="capitalize">
+                {fmtMesLargo(ym)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Avance de la ronda */}
+        <div className="flex items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={cn(
+                "h-full rounded-full",
+                pct === 100 ? "bg-emerald-500" : "bg-sky-500"
+              )}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="whitespace-nowrap text-sm font-medium text-slate-700">
+            {completas}/{filas.length} unidades · {pct}%
+          </span>
+        </div>
+
+        {filas.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No hay cubiertas instaladas cargadas en el módulo.
+          </p>
+        ) : (
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+            {filas.map((f) => (
+              <button
+                key={f.dominio}
+                className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left hover:bg-slate-50"
+                onClick={() => onIrAUnidad(f.dominio)}
+                title="Ir al diagrama de la unidad para cargar mediciones"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">{f.dominio}</p>
+                  <p className="text-xs tabular-nums text-slate-500">
+                    {f.medidas}/{f.total} cubiertas
+                    {f.ultima && ` · ${fmtFecha(f.ultima)}`}
+                  </p>
+                </div>
+                <Badge variant="outline" className={cn("shrink-0", BADGE[f.estado])}>
+                  {LABEL[f.estado]}
+                </Badge>
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

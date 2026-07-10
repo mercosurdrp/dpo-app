@@ -100,7 +100,6 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
-  LlantaInspeccion,
   Novedad,
   OrdenCompra,
   Repuesto,
@@ -366,7 +365,6 @@ interface MantenimientoClientProps {
   proveedores: MantenimientoProveedor[]
   gestion: {
     novedades: Novedad[]
-    llantas: LlantaInspeccion[]
     repuestos: Repuesto[]
     ordenesCompra: OrdenCompra[]
   }
@@ -656,12 +654,11 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
-        {/* ============ TAB: Repuestos (novedades, llantas, inventario y OC) ============ */}
+        {/* ============ TAB: Repuestos (inventario, OC y novedades) ============ */}
         <TabsContent value="repuestos" className="space-y-6">
           <GestionMtto
             dominios={unidades.map((u) => u.dominio)}
             novedades={gestion.novedades}
-            llantas={gestion.llantas}
             repuestos={gestion.repuestos}
             ordenesCompra={gestion.ordenesCompra}
             puedeEditar={puedeEditar}

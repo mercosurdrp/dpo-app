@@ -136,7 +136,7 @@ export default async function MantenimientoPage() {
   const gestion =
     "data" in gestionRes
       ? gestionRes.data
-      : { novedades: [], llantas: [], repuestos: [], ordenesCompra: [] }
+      : { novedades: [], repuestos: [], ordenesCompra: [] }
   const flotaMetas = "data" in metasRes ? metasRes.data : []
   const flotaPlanes = "data" in planesFlotaRes ? planesFlotaRes.data : []
   const role = profile?.role ?? "viewer"
