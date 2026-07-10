@@ -296,6 +296,11 @@ export async function guardarCostoMensual(input: {
     { onConflict: "anio,mes" },
   )
   if (error) return { error: error.message }
+  // El VLC/HL del Árbol del Sueño sale de esta tabla → recalcularlo al toque
+  // para que el inicio no espere al cron diario. Best-effort: si la RPC falla,
+  // el guardado del costo igual queda hecho.
+  await supabase.rpc("sueno_kpi_refresh", { p_anio: input.anio })
   revalidatePath("/planeamiento/costo-por-pdv")
+  revalidatePath("/")
   return { ok: true }
 }

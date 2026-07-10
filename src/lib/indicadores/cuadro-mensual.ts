@@ -4,7 +4,7 @@
 // fuentes (Supabase, deposito-esteban, foxtrot, etc.) vive en
 // src/actions/cuadro-mensual.ts.
 
-export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén" | "Personas"
+export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén" | "Personas" | "Costo Logístico"
 
 /** Polaridad del indicador para el semáforo. "sin" = informativo, sin color. */
 export type MejorSi = "mayor" | "menor" | "sin"
@@ -66,9 +66,14 @@ export const INDICADORES: IndicadorDef[] = [
 
   // ── Personas ──
   { id: "fte_prom", pilar: "Personas", nombre: "FTE promedio", unidad: "FTE", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Equivalentes a tiempo completo del mes: horas fichadas en el biométrico ÷ (8 hs × días hábiles L–V). Fichadas disponibles desde abril 2026; meses con cobertura insuficiente quedan sin dato." },
+
+  // ── Costo Logístico (tabla costo_logistico_mensual, la misma que carga
+  // el panel de Costo por Punto de Venta / Clusterización) ──
+  { id: "costo_distribucion", pilar: "Costo Logístico", nombre: "Costo Distribución", unidad: "$", meta: null, mejor_si: "sin", resumen: "suma", nota: "Costo de distribución del mes, cargado por los admins en Planeamiento → Costo por Punto de Venta. Meses sin carga quedan sin dato." },
+  { id: "costo_almacen", pilar: "Costo Logístico", nombre: "Costo Almacén", unidad: "$", meta: null, mejor_si: "sin", resumen: "suma", nota: "Costo de almacén del mes, cargado por los admins en Planeamiento → Costo por Punto de Venta. Meses sin carga quedan sin dato." },
 ]
 
-export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Personas"]
+export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Personas", "Costo Logístico"]
 
 /** Color del pilar para los encabezados de grupo (tailwind-ish, inline). */
 export const PILAR_COLOR: Record<Pilar, string> = {
@@ -79,6 +84,7 @@ export const PILAR_COLOR: Record<Pilar, string> = {
   Flota: "#7c3aed", // violeta
   Almacén: "#0891b2", // cyan
   Personas: "#db2777", // rosa
+  "Costo Logístico": "#92400e", // marrón
 }
 
 export interface CeldaMes {
@@ -186,6 +192,8 @@ export function formatValor(valor: number | null, unidad: string): string {
   switch (unidad) {
     case "%":
       return `${valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+    case "$":
+      return `$ ${valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`
     case "HL":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 0 })
     case "bultos":
