@@ -177,6 +177,56 @@ export async function fetchWorkOrders(
   return out
 }
 
+// ===================== Vehículos (datos maestros) =====================
+// Endpoint `vehicles/`: ficha técnica de cada unidad (marca, modelo, chasis,
+// motor, capacidad, chofer asignado...). NO expone fotos ni documentos
+// adjuntos (verificado 2026-07-10: no existen endpoints de imagen/documento
+// en la API v1) — eso se carga a mano en la app.
+
+export interface CloudfleetVehicle {
+  id: number
+  code: string | null // dominio/patente
+  typeName: string | null
+  brandName: string | null
+  lineName: string | null
+  year: string | null
+  color: string | null
+  mainFuelType: string | null
+  auxFuelType: string | null
+  odometer: { lastMeter?: number | null; lastMeterAt?: string | null } | null
+  hourmeter: { lastMeter?: number | null; lastMeterAt?: string | null } | null
+  city: CfNamed | null
+  costCenter: CfNamed | null
+  commentGroupingData: string | null
+  vin: string | null
+  engine: string | null
+  weightCapacity: { value?: number | null; unit?: string | null } | null
+  chassisNumber: string | null
+  bodyType: string | null
+  driver: { id?: number; name?: string | null; personId?: string | null } | null
+}
+
+/** Lista todos los vehículos de la cuenta (pagina de a 50). */
+export async function fetchVehicles(): Promise<CloudfleetVehicle[]> {
+  const out: CloudfleetVehicle[] = []
+  for (let page = 1; page <= 40; page++) {
+    const res = await fetch(`${BASE_URL}/vehicles/?page=${page}`, {
+      headers: CF_HEADERS(),
+      cache: "no-store",
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      if (res.status === 404) break
+      throw new Error(`Cloudfleet vehicles ${res.status}: ${body.slice(0, 200)}`)
+    }
+    const chunk = (await res.json()) as CloudfleetVehicle[]
+    if (!Array.isArray(chunk) || chunk.length === 0) break
+    out.push(...chunk)
+    if (chunk.length < 50) break
+  }
+  return out
+}
+
 /** Detalle de una OT con su desglose de mano de obra (`labors`) y repuestos (`parts`). */
 export async function fetchWorkOrderDetail(
   number: number,

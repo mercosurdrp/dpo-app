@@ -2,7 +2,10 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { getVehiculoDetalle } from "@/actions/vehiculos-analytics"
+import { getFichaVehiculo } from "@/actions/vehiculos-ficha"
+import { getProfile } from "@/lib/session"
 import { VehiculoDetalleClient } from "./vehiculo-detalle-client"
+import { FichaVehiculo } from "./ficha-vehiculo"
 
 export default async function VehiculoDetallePage({
   params,
@@ -11,7 +14,11 @@ export default async function VehiculoDetallePage({
 }) {
   const { dominio } = await params
   const decoded = decodeURIComponent(dominio)
-  const res = await getVehiculoDetalle(decoded)
+  const [res, fichaRes, profile] = await Promise.all([
+    getVehiculoDetalle(decoded),
+    getFichaVehiculo(decoded),
+    getProfile(),
+  ])
 
   if ("error" in res) {
     if (res.error.includes("no encontrado")) notFound()
@@ -23,6 +30,9 @@ export default async function VehiculoDetallePage({
     )
   }
 
+  const fichaData = "data" in fichaRes ? fichaRes.data : { ficha: null, documentos: [] }
+  const canEdit = profile?.role === "admin" || profile?.role === "supervisor"
+
   return (
     <div className="space-y-4">
       <Link
@@ -31,7 +41,14 @@ export default async function VehiculoDetallePage({
       >
         <ArrowLeft className="h-4 w-4" /> Volver a Vehículos
       </Link>
-      <VehiculoDetalleClient detalle={res.data} />
+      <VehiculoDetalleClient detalle={res.data}>
+        <FichaVehiculo
+          dominio={res.data.vehiculo.dominio}
+          ficha={fichaData.ficha}
+          documentos={fichaData.documentos}
+          canEdit={canEdit}
+        />
+      </VehiculoDetalleClient>
     </div>
   )
 }

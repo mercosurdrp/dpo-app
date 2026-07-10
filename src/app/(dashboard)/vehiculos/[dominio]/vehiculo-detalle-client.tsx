@@ -32,6 +32,9 @@ import type { VehiculoDetalle, VehiculoTimelineEvento } from "@/types/database"
 
 interface Props {
   detalle: VehiculoDetalle
+  // Ficha técnica + documentación (server la arma con datos y permisos y se
+  // renderiza entre el header y los KPIs)
+  children?: React.ReactNode
 }
 
 const TIMELINE_CONFIG: Record<
@@ -74,7 +77,7 @@ function formatFechaCorta(fechaIso: string) {
   return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`
 }
 
-export function VehiculoDetalleClient({ detalle }: Props) {
+export function VehiculoDetalleClient({ detalle, children }: Props) {
   const { vehiculo, kpis, kmUltimos30Dias, rendimientoUltimas10Cargas, timeline, proximaAlerta } =
     detalle
 
@@ -99,6 +102,9 @@ export function VehiculoDetalleClient({ detalle }: Props) {
           {vehiculo.descripcion || "Sin descripción"}
         </p>
       </div>
+
+      {/* Ficha técnica + documentación */}
+      {children}
 
       {/* Banner alerta */}
       {proximaAlerta && (

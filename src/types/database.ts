@@ -741,6 +741,69 @@ export interface ChecklistItem {
   tipo_vehiculo: VehiculoTipo | null
 }
 
+// Ficha técnica de la unidad (datos maestros, sync Cloudfleet + edición manual)
+export interface VehiculoFicha {
+  dominio: string
+  cloudfleet_id: number | null
+  marca: string | null
+  modelo: string | null
+  anio: string | null
+  color: string | null
+  tipo_unidad: string | null
+  combustible: string | null
+  combustible_aux: string | null
+  chasis: string | null
+  vin: string | null
+  motor: string | null
+  capacidad_carga: string | null
+  carroceria: string | null
+  ciudad: string | null
+  centro_costo: string | null
+  chofer_asignado: string | null
+  notas: string | null
+  foto_path: string | null
+  foto_url?: string | null // derivada (getPublicUrl), no es columna
+  cf_odometro: number | null
+  cf_odometro_fecha: string | null
+  cf_synced_at: string | null
+  updated_by: string | null
+  updated_at: string
+}
+
+// Campos de la ficha editables a mano / completables desde Cloudfleet
+export type CampoFicha =
+  | "marca"
+  | "modelo"
+  | "anio"
+  | "color"
+  | "tipo_unidad"
+  | "combustible"
+  | "combustible_aux"
+  | "chasis"
+  | "vin"
+  | "motor"
+  | "capacidad_carga"
+  | "carroceria"
+  | "ciudad"
+  | "centro_costo"
+  | "chofer_asignado"
+  | "notas"
+
+export type VehiculoDocumentoTipo = "cedula" | "titulo" | "seguro" | "vtv" | "otro"
+
+export interface VehiculoDocumento {
+  id: string
+  dominio: string
+  nombre: string
+  tipo: VehiculoDocumentoTipo
+  storage_path: string
+  mime_type: string | null
+  vencimiento: string | null
+  created_by: string | null
+  created_at: string
+  url?: string // derivada (getPublicUrl)
+}
+
 export interface ChecklistVehiculo {
   id: string
   tipo: TipoChecklist
