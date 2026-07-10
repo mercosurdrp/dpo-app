@@ -91,6 +91,8 @@ import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
+import { IndicadoresFlota } from "./indicadores-flota"
+import type { FlotaMeta, FlotaPlanConItems } from "@/actions/flota-indicadores"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -368,6 +370,8 @@ interface MantenimientoClientProps {
     repuestos: Repuesto[]
     ordenesCompra: OrdenCompra[]
   }
+  flotaMetas: FlotaMeta[]
+  flotaPlanes: FlotaPlanConItems[]
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -393,6 +397,8 @@ export function MantenimientoClient({
   gastos,
   proveedores,
   gestion,
+  flotaMetas,
+  flotaPlanes,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -534,6 +540,7 @@ export function MantenimientoClient({
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
+          <TabsTrigger value="indicadores">Indicadores</TabsTrigger>
           <TabsTrigger value="checklists">Check lists</TabsTrigger>
           <TabsTrigger value="piramide">Pirámide de defectos</TabsTrigger>
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
@@ -629,6 +636,23 @@ export function MantenimientoClient({
             unidades={unidades}
             rotacionKm={rotacionKm}
             puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Indicadores de flota ============ */}
+        <TabsContent value="indicadores" className="space-y-6">
+          <IndicadoresFlota
+            estados={estados}
+            programacion={tablero.programacion}
+            costos={costos}
+            mantenimientos={mantenimientos}
+            unidades={unidades}
+            diasRuteo={diasRuteo}
+            indisponibilidades={indisponibilidades}
+            metas={flotaMetas}
+            planes={flotaPlanes}
+            puedeEditar={puedeEditar}
+            esAdmin={esAdmin}
           />
         </TabsContent>
 

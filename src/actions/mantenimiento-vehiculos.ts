@@ -1605,6 +1605,12 @@ export async function getCostosMantenimiento(): Promise<
     const hoy = today()
     const inicioAnio = startOfYear(hoy)
     const mesActual = hoy.slice(0, 7)
+    // Ventana: desde inicio de año, pero nunca menos de 3 meses hacia atrás
+    // (la tendencia del tablero de indicadores necesita porMes aun en ene/feb).
+    const d3 = new Date(`${mesActual}-01T12:00:00`)
+    d3.setMonth(d3.getMonth() - 2)
+    const inicio3Meses = d3.toISOString().slice(0, 10)
+    const desde = inicio3Meses < inicioAnio ? inicio3Meses : inicioAnio
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
@@ -1612,7 +1618,7 @@ export async function getCostosMantenimiento(): Promise<
         "fecha, tipo, costo, costo_mano_obra, tareas:mantenimiento_realizado_tareas(costo), repuestos:mantenimiento_realizado_repuestos(cantidad, costo_unitario)"
       )
       .neq("estado", "cancelado")
-      .gte("fecha", inicioAnio)
+      .gte("fecha", desde)
     if (error) return { error: error.message }
 
     let costoMes = 0
@@ -1639,7 +1645,7 @@ export async function getCostosMantenimiento(): Promise<
       // (sin tareas); tomar el mayor entre cabecera y desglose suma lo que falte
       // sin duplicar, y conserva las OT viejas que solo tienen costo de cabecera.
       const costo = Math.max(Number(m.costo || 0), desglosado)
-      costoYTD += costo
+      if (m.fecha >= inicioAnio) costoYTD += costo
       if (m.fecha.slice(0, 7) === mesActual) costoMes += costo
       const mes = m.fecha.slice(0, 7)
       if (!porMesMap.has(mes))

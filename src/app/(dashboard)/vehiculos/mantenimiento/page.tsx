@@ -18,6 +18,7 @@ import {
   getMantenimientoConfig,
 } from "@/actions/neumaticos"
 import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
+import { getFlotaMetas, getFlotaPlanes } from "@/actions/flota-indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -50,6 +51,8 @@ export default async function MantenimientoPage() {
     configRes,
     siguienteNumeroOtRes,
     gestionRes,
+    metasRes,
+    planesFlotaRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -68,6 +71,8 @@ export default async function MantenimientoPage() {
     getMantenimientoConfig(),
     getSiguienteNumeroOt(),
     getGestionMtto(),
+    getFlotaMetas(),
+    getFlotaPlanes(),
     getProfile(),
   ])
 
@@ -132,6 +137,8 @@ export default async function MantenimientoPage() {
     "data" in gestionRes
       ? gestionRes.data
       : { novedades: [], llantas: [], repuestos: [], ordenesCompra: [] }
+  const flotaMetas = "data" in metasRes ? metasRes.data : []
+  const flotaPlanes = "data" in planesFlotaRes ? planesFlotaRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -155,6 +162,8 @@ export default async function MantenimientoPage() {
       gastos={gastos}
       proveedores={proveedores}
       gestion={gestion}
+      flotaMetas={flotaMetas}
+      flotaPlanes={flotaPlanes}
       rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}

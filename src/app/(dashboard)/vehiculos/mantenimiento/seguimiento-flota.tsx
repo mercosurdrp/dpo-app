@@ -24,11 +24,15 @@ import type {
   DiaRuteo,
   FlotaIndisponibilidad,
   MantenimientoRealizado,
-  VehiculoTipo,
 } from "@/types/database"
-
-// Objetivo de disponibilidad de flota (de la planilla histórica: 98%).
-const TARGET_DISP = 98
+import {
+  TARGET_DISP,
+  calcularDisponibilidadMes,
+  flotaDeRuta,
+  ruteoSetDe,
+  type EstadoDiaFlota as Estado,
+  type UnidadFlota,
+} from "@/lib/vehiculos/disponibilidad-flota"
 
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -46,41 +50,12 @@ const hoyISO = () => {
 const fmtFecha = (f: string | null) =>
   !f ? "—" : f.slice(0, 10).split("-").reverse().join("/")
 
-interface UnidadFlota {
-  dominio: string
-  tipo: VehiculoTipo | null
-  modelo?: string | null
-  anio?: number | null
-}
-
 interface Props {
   mantenimientos: MantenimientoRealizado[]
   unidades: UnidadFlota[]
   diasRuteo: DiaRuteo[]
   indisponibilidades: FlotaIndisponibilidad[]
   puedeEditar: boolean
-}
-
-// LIB = día no laboral (ningún camión de la flota ruteó ese día): disponible pero
-// NO cuenta para la utilización (no era un día de trabajo).
-type Estado = "PMC" | "PMP" | "IND" | "DRT" | "DSP" | "LIB"
-
-interface FilaDisp {
-  dominio: string
-  modelo: string | null
-  anio: number | null
-  diasPeriodo: number
-  pmc: number
-  pmp: number
-  ind: number
-  drt: number
-  dsp: number
-  lib: number
-  parado: number
-  disponibles: number
-  pctDisp: number | null
-  pctUtil: number | null
-  porDia: Map<number, Estado>
 }
 
 export function SeguimientoFlota({
@@ -95,12 +70,7 @@ export function SeguimientoFlota({
   const refresh = () => startTransition(() => router.refresh())
   const [vista, setVista] = useState<"mes" | "dia">("mes")
 
-  // Unidades de ruta: excluyo autoelevadores (se miden distinto) y acoplados
-  // (no rutean solos, van remolcados).
-  const flota = useMemo(
-    () => unidades.filter((u) => u.tipo !== "autoelevador" && u.tipo !== "acoplado"),
-    [unidades]
-  )
+  const flota = useMemo(() => flotaDeRuta(unidades), [unidades])
 
   const meses = useMemo(() => {
     const set = new Set<string>()
@@ -116,118 +86,20 @@ export function SeguimientoFlota({
   const [mesSel, setMesSel] = useState<string>(meses[0] ?? hoyISO().slice(0, 7))
 
   // Set de días ruteados: "DOMINIO|YYYY-MM-DD"
-  const ruteoSet = useMemo(
-    () => new Set(diasRuteo.map((r) => `${r.dominio}|${r.fecha}`)),
-    [diasRuteo]
+  const ruteoSet = useMemo(() => ruteoSetDe(diasRuteo), [diasRuteo])
+
+  const calc = useMemo(
+    () =>
+      calcularDisponibilidadMes(
+        mesSel,
+        flota,
+        mantenimientos,
+        indisponibilidades,
+        ruteoSet,
+        hoyISO()
+      ),
+    [mesSel, mantenimientos, indisponibilidades, flota, ruteoSet]
   )
-
-  const calc = useMemo(() => {
-    const [y, mm] = mesSel.split("-").map(Number)
-    const diasDelMes = new Date(y, mm, 0).getDate()
-    const hoy = hoyISO()
-    const esMesActual = mesSel === hoy.slice(0, 7)
-    const esFuturo = mesSel > hoy.slice(0, 7)
-    const diasPeriodo = esFuturo ? 0 : esMesActual ? Number(hoy.slice(8, 10)) : diasDelMes
-
-    // Paradas por OT (con período) por dominio.
-    const paradas = new Map<string, { desde: string; hasta: string; causa: "PMC" | "PMP" }[]>()
-    for (const m of mantenimientos) {
-      if (!m.fuera_servicio_desde) continue
-      // Una OT cancelada nunca sacó la unidad de servicio.
-      if (m.estado === "cancelado") continue
-      const arr = paradas.get(m.dominio) ?? []
-      // Sin fecha de retorno: la parada se arrastra "hasta hoy" SOLO mientras
-      // la OT sigue abierta. Una OT ya completada cierra en su propia fecha,
-      // para no inflar indefinidamente los días de parada (PMC/PMP).
-      const abierta = m.estado === "programado" || m.estado === "en_taller"
-      const hasta = m.fuera_servicio_hasta || (abierta ? hoy : m.fecha)
-      arr.push({
-        desde: m.fuera_servicio_desde,
-        hasta,
-        causa: m.tipo === "correctivo" ? "PMC" : "PMP",
-      })
-      paradas.set(m.dominio, arr)
-    }
-    // Indisponibilidades (IND) por dominio.
-    const inds = new Map<string, { desde: string; hasta: string }[]>()
-    for (const i of indisponibilidades) {
-      const arr = inds.get(i.dominio) ?? []
-      arr.push({ desde: i.fecha_desde, hasta: i.fecha_hasta })
-      inds.set(i.dominio, arr)
-    }
-
-    // Días laborales = días con al menos un camión de la flota ruteado.
-    // Los demás (domingos/feriados sin ruteo) NO cuentan para la utilización.
-    const laboral = new Set<number>()
-    for (let d = 1; d <= diasPeriodo; d++) {
-      const fecha = `${mesSel}-${pad(d)}`
-      for (const u of flota) {
-        if (ruteoSet.has(`${u.dominio}|${fecha}`)) { laboral.add(d); break }
-      }
-    }
-
-    const filas: FilaDisp[] = flota.map((u) => {
-      const porDia = new Map<number, Estado>()
-      const ps = paradas.get(u.dominio) ?? []
-      const is = inds.get(u.dominio) ?? []
-      for (let d = 1; d <= diasPeriodo; d++) {
-        const fecha = `${mesSel}-${pad(d)}`
-        // Prioridad: correctivo > preventivo > indisponible > ruteó(DRT) > disponible
-        let est: Estado | null = null
-        for (const p of ps) {
-          if (fecha >= p.desde && fecha <= p.hasta) {
-            if (p.causa === "PMC") { est = "PMC"; break }
-            est = "PMP"
-          }
-        }
-        if (est == null) {
-          for (const i of is) {
-            if (fecha >= i.desde && fecha <= i.hasta) { est = "IND"; break }
-          }
-        }
-        if (est == null) {
-          if (ruteoSet.has(`${u.dominio}|${fecha}`)) est = "DRT"
-          else est = laboral.has(d) ? "DSP" : "LIB" // LIB = día no laboral
-        }
-        porDia.set(d, est)
-      }
-      let pmc = 0, pmp = 0, ind = 0, drt = 0, dsp = 0, lib = 0
-      for (const e of porDia.values()) {
-        if (e === "PMC") pmc++
-        else if (e === "PMP") pmp++
-        else if (e === "IND") ind++
-        else if (e === "DRT") drt++
-        else if (e === "DSP") dsp++
-        else lib++
-      }
-      const parado = pmc + pmp + ind
-      const disponibles = drt + dsp + lib
-      const pctDisp = diasPeriodo > 0 ? (disponibles / diasPeriodo) * 100 : null
-      // Utilización: solo sobre días laborales disponibles (DRT + DSP), sin contar LIB.
-      const baseUtil = drt + dsp
-      const pctUtil = baseUtil > 0 ? (drt / baseUtil) * 100 : null
-      return {
-        dominio: u.dominio, modelo: u.modelo ?? null, anio: u.anio ?? null,
-        diasPeriodo, pmc, pmp, ind, drt, dsp, lib,
-        parado, disponibles, pctDisp, pctUtil, porDia,
-      }
-    })
-
-    const conDisp = filas.filter((f) => f.pctDisp != null)
-    const flotaDisp = conDisp.length
-      ? conDisp.reduce((a, f) => a + (f.pctDisp ?? 0), 0) / conDisp.length
-      : null
-    // Utilización de flota: solo sobre unidades EN SERVICIO en el período (las que
-    // rutearon al menos un día). Las de reserva con 0 ruteos no diluyen el número.
-    const enServicio = filas.filter((f) => f.drt > 0)
-    const totBaseUtil = enServicio.reduce((a, f) => a + f.drt + f.dsp, 0)
-    const totDrt = enServicio.reduce((a, f) => a + f.drt, 0)
-    const flotaUtil = totBaseUtil > 0 ? (totDrt / totBaseUtil) * 100 : null
-    const diasLaborales = laboral.size
-    const camionesConParada = filas.filter((f) => f.parado > 0).length
-
-    return { diasDelMes, diasPeriodo, diasLaborales, filas, flotaDisp, flotaUtil, camionesConParada }
-  }, [mesSel, mantenimientos, indisponibilidades, flota, ruteoSet])
 
   const colorPct = (pct: number | null, target = TARGET_DISP) =>
     pct == null
