@@ -2,6 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  FTE_FALLBACK,
+  fetchViajesTlp,
+  fteDeAyudantes,
+  mapaCiudades,
+  normPatente,
+} from "@/lib/tlp/calc"
 
 // TLP (Transport Labor Productivity) = Cajas Equivalentes entregadas
 //   ────────────────────────────────────────────────────────────────
@@ -12,8 +19,7 @@ import { requireAuth } from "@/lib/session"
 //   - horas:    checklist_vehiculos retorno (tiempo_ruta_minutos = retorno − liberación)
 //   - FTE:      registros_vehiculos egreso (1 chofer + ayudantes); fallback 2 si falta
 // Cada viaje se imputa a su ciudad PREDOMINANTE (donde entregó más CEq).
-
-const FTE_FALLBACK = 2
+// El núcleo del cálculo vive en `@/lib/tlp/calc` (compartido con el Sueño).
 
 export interface TlpFila {
   ciudad: string
@@ -44,18 +50,6 @@ export interface TlpResumen {
   viajes_fte_fallback: number // usaron FTE=2 por falta de registro de egreso
 }
 
-function normPatente(s: string | null | undefined): string {
-  return (s ?? "").trim().toUpperCase()
-}
-
-function fteDeAyudantes(ayudante1: string | null, ayudante2: string | null): number {
-  return (
-    1 +
-    ( (ayudante1 ?? "").trim() !== "" ? 1 : 0) +
-    ( (ayudante2 ?? "").trim() !== "" ? 1 : 0)
-  )
-}
-
 function nuevaFila(ciudad: string): TlpFila {
   return { ciudad, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null }
 }
@@ -72,18 +66,6 @@ function cerrarTlp<
   }
 }
 
-/** Carga el mapeo localidad → ciudad. Localidades sin match → "Otras". */
-async function mapaCiudades(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<Map<string, string>> {
-  const { data } = await supabase.from("dim_localidad_ciudad").select("localidad, ciudad")
-  const m = new Map<string, string>()
-  for (const r of (data ?? []) as { localidad: string; ciudad: string }[]) {
-    m.set(r.localidad.trim().toUpperCase(), r.ciudad)
-  }
-  return m
-}
-
 export async function getTlpMes(
   desde: string,
   hasta: string,
@@ -92,122 +74,39 @@ export async function getTlpMes(
     await requireAuth()
     const supabase = await createClient()
 
-    const [locRes, retRes, egrRes, ciudades] = await Promise.all([
-      supabase
-        .from("ocupacion_bodega_localidad_diaria")
-        .select("patente, fecha, localidad, ceq_total")
-        .gte("fecha", desde)
-        .lte("fecha", hasta),
-      supabase
-        .from("checklist_vehiculos")
-        .select("dominio, fecha, tiempo_ruta_minutos")
-        .eq("tipo", "retorno")
-        .not("tiempo_ruta_minutos", "is", null)
-        .gte("fecha", desde)
-        .lte("fecha", hasta),
-      supabase
-        .from("registros_vehiculos")
-        .select("dominio, fecha, ayudante1, ayudante2")
-        .eq("tipo", "egreso")
-        .gte("fecha", desde)
-        .lte("fecha", hasta),
-      mapaCiudades(supabase),
-    ])
-
-    if (locRes.error) return { error: locRes.error.message }
-    if (retRes.error) return { error: retRes.error.message }
-    if (egrRes.error) return { error: egrRes.error.message }
-
-    // Viaje = patente|fecha. CEq total + CEq por ciudad.
-    const viajes = new Map<
-      string,
-      { ceqTotal: number; porCiudad: Map<string, number> }
-    >()
-    for (const r of (locRes.data ?? []) as {
-      patente: string
-      fecha: string
-      localidad: string
-      ceq_total: number
-    }[]) {
-      const ceq = Number(r.ceq_total) || 0
-      if (ceq <= 0) continue
-      const key = `${normPatente(r.patente)}|${r.fecha}`
-      const ciudad = ciudades.get((r.localidad ?? "").trim().toUpperCase()) ?? "Otras"
-      const v = viajes.get(key) ?? { ceqTotal: 0, porCiudad: new Map<string, number>() }
-      v.ceqTotal += ceq
-      v.porCiudad.set(ciudad, (v.porCiudad.get(ciudad) ?? 0) + ceq)
-      viajes.set(key, v)
-    }
-
-    // Tiempo en ruta (minutos) por viaje — el mayor del día si hubiera varios.
-    const tiempo = new Map<string, number>()
-    for (const r of (retRes.data ?? []) as {
-      dominio: string
-      fecha: string
-      tiempo_ruta_minutos: number
-    }[]) {
-      const key = `${normPatente(r.dominio)}|${r.fecha}`
-      const min = Number(r.tiempo_ruta_minutos) || 0
-      if (min <= 0) continue
-      tiempo.set(key, Math.max(tiempo.get(key) ?? 0, min))
-    }
-
-    // FTE por viaje — el mayor del día si hubiera varios egresos.
-    const fte = new Map<string, number>()
-    for (const r of (egrRes.data ?? []) as {
-      dominio: string
-      fecha: string
-      ayudante1: string | null
-      ayudante2: string | null
-    }[]) {
-      const key = `${normPatente(r.dominio)}|${r.fecha}`
-      fte.set(key, Math.max(fte.get(key) ?? 0, fteDeAyudantes(r.ayudante1, r.ayudante2)))
-    }
+    const { viajes, viajesSinTiempo, viajesConCeq } = await fetchViajesTlp(
+      supabase,
+      desde,
+      hasta,
+    )
 
     const total = nuevaFila("Total")
     const porCiudad = new Map<string, TlpFila>()
     const porPatente = new Map<string, TlpPatenteFila>()
-    let viajesSinTiempo = 0
     let viajesFteFallback = 0
 
-    for (const [key, v] of viajes) {
-      const min = tiempo.get(key)
-      if (!min) {
-        viajesSinTiempo++
-        continue // sin tiempo en ruta no hay denominador
-      }
-      const fteReal = fte.get(key)
-      const fteUsado = fteReal ?? FTE_FALLBACK
-      if (fteReal == null) viajesFteFallback++
-      const horasRuta = min / 60
-      const horasHombre = horasRuta * fteUsado
+    for (const v of viajes) {
+      if (v.fteFallback) viajesFteFallback++
+      const horasHombre = v.horasRuta * v.fte
 
-      // ciudad predominante del viaje
-      let ciudadPred = "Otras"
-      let maxCeq = -1
-      for (const [c, ceq] of v.porCiudad) {
-        if (ceq > maxCeq) { maxCeq = ceq; ciudadPred = c }
-      }
-
-      for (const f of [total, (porCiudad.get(ciudadPred) ?? (() => {
-        const nf = nuevaFila(ciudadPred); porCiudad.set(ciudadPred, nf); return nf
+      for (const f of [total, (porCiudad.get(v.ciudad) ?? (() => {
+        const nf = nuevaFila(v.ciudad); porCiudad.set(v.ciudad, nf); return nf
       })())]) {
-        f.ceq += v.ceqTotal
-        f.horas_ruta += horasRuta
+        f.ceq += v.ceq
+        f.horas_ruta += v.horasRuta
         f.horas_hombre += horasHombre
         f.viajes += 1
       }
 
       // Acumulado por camión (patente del viaje).
-      const patente = key.split("|")[0]
-      const fp = porPatente.get(patente) ?? {
-        patente, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null,
+      const fp = porPatente.get(v.patente) ?? {
+        patente: v.patente, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null,
       }
-      fp.ceq += v.ceqTotal
-      fp.horas_ruta += horasRuta
+      fp.ceq += v.ceq
+      fp.horas_ruta += v.horasRuta
       fp.horas_hombre += horasHombre
       fp.viajes += 1
-      porPatente.set(patente, fp)
+      porPatente.set(v.patente, fp)
     }
 
     const filas = [...porCiudad.values()]
@@ -224,7 +123,7 @@ export async function getTlpMes(
         total: cerrarTlp(total),
         por_ciudad: filas,
         por_patente: filasPatente,
-        viajes_con_ceq: viajes.size,
+        viajes_con_ceq: viajesConCeq,
         viajes_sin_tiempo: viajesSinTiempo,
         viajes_fte_fallback: viajesFteFallback,
       },

@@ -82,7 +82,7 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
 
   // ---- Gestión ----
   { key: "lti", label: "LTI", nivel: "gestion", rama: "seguridad", parentKey: "tri", unidad: "cant.", mejorSi: "menor", metaDefault: 0 },
-  { key: "tlp", label: "TLP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "Ceq/hh", mejorSi: "mayor", metaDefault: 40 },
+  { key: "tlp", label: "TLP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "Ceq/hh", mejorSi: "mayor", metaDefault: 25 },
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6.5 },
   { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
@@ -118,7 +118,6 @@ export type AgregacionMensual = "promedio" | "suma"
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   tri: "suma",
   lti: "suma",
-  tlp: "promedio",
   wnp: "promedio",
   tiempo_ruta: "promedio",
   tiempo_pdv: "promedio",

@@ -17,6 +17,22 @@ import {
   esKpiExterno,
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
+import { tlpAnual } from "@/lib/tlp/calc"
+
+/**
+ * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
+ * Tolerante a fallos → null (el caller cae al valor persistido en la tabla).
+ */
+async function resolverTlpVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof tlpAnual>>> {
+  try {
+    return await tlpAnual(supabase, year)
+  } catch {
+    return null
+  }
+}
 
 interface ValorRow {
   kpi_key: string
@@ -91,10 +107,14 @@ export async function getSuenoArbol(
     // KPIs manuales con carga mensual: el YTD sale de los meses cargados.
     const mensuales = await fetchMensualesDelAnio(supabase, year)
 
+    // TLP en vivo (mismo cálculo que /indicadores/tlp); si falla, cae a la tabla.
+    const tlpVivo = await resolverTlpVivo(supabase, year)
+
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
       const row = byKey.get(cfg.key)
       const meta = row?.meta ?? cfg.metaDefault
-      const externoVal = externos.get(cfg.key)
+      const externoVal =
+        cfg.key === "tlp" ? (tlpVivo?.ytd ?? null) : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
@@ -176,6 +196,31 @@ export async function getSuenoDetalle(
     const year = anio ?? anioActual()
     const cfg = ARBOL_SUENO.find((n) => n.key === kpiKey)
     if (!cfg) return { error: "KPI desconocido" }
+
+    // TLP: detalle mensual en vivo, mismo cálculo que /indicadores/tlp.
+    if (kpiKey === "tlp") {
+      const supabaseTlp = await createClient()
+      const vivo = await resolverTlpVivo(supabaseTlp, year)
+      const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
+        mes: m.mes,
+        etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+        valor: m.tlp,
+        detalle: m.viajes,
+      }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: vivo ? "auto" : "manual",
+          explicacion: vivo
+            ? "TLP = cajas equivalentes entregadas ÷ horas-hombre en ruta (horas del checklist de retorno × dotación del camión). Mismo cálculo que Indicadores → TLP; el YTD acumula CEq y horas-hombre del año. Metas por ciudad en /indicadores/tlp."
+            : "No se pudo calcular el TLP en vivo en este momento.",
+          meses,
+          detalleLabel: "Viajes",
+        },
+      }
+    }
 
     // KPI externo (deposito-esteban): detalle mensual desde la API del depósito.
     if (esKpiExterno(kpiKey)) {

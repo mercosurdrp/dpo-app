@@ -13,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { TlpResumen } from "@/actions/tlp"
+import { TLP_META_GLOBAL, tlpMetaDe, type TlpMeta } from "@/lib/tlp/metas"
+import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import type { TlpPlan } from "@/actions/tlp-planes"
 import { PlanesAccionBloque } from "./_components/planes/planes-accion-bloque"
 import { TlpRutaDetalleDialog, type RutaFiltro } from "./tlp-ruta-detalle-dialog"
@@ -33,11 +35,12 @@ const fmtN = (n: number, dec = 0) =>
 
 const fmtTlp = (v: number | null) => (v == null ? "—" : fmtN(v, 2))
 
-function tlpColor(v: number | null): string {
-  if (v == null) return "text-slate-400"
-  if (v >= 25) return "text-emerald-700"
-  if (v >= 18) return "text-amber-700"
-  return "text-red-700"
+function tlpColor(v: number | null, meta: TlpMeta = TLP_META_GLOBAL): string {
+  const estado = estadoSemaforo(v, meta.meta, meta.gatillo, "mayor")
+  if (estado === "verde") return "text-emerald-700"
+  if (estado === "amarillo") return "text-amber-700"
+  if (estado === "rojo") return "text-red-700"
+  return "text-slate-400"
 }
 
 export function TlpClient({
@@ -89,7 +92,7 @@ export function TlpClient({
           icon={<Gauge className="size-5 text-slate-400" />}
           label="TLP del mes"
           value={fmtTlp(t.tlp)}
-          sub="CEq por hora-hombre"
+          sub={`meta ${TLP_META_GLOBAL.meta} · gatillo ${TLP_META_GLOBAL.gatillo} CEq/HH`}
           valueClass={tlpColor(t.tlp)}
         />
         <Kpi
@@ -149,7 +152,8 @@ export function TlpClient({
       <TablaTlp
         titulo="Por ciudad"
         labelCol="Ciudad"
-        filas={data.por_ciudad.map((f) => ({ label: f.ciudad, ...f }))}
+        filas={data.por_ciudad.map((f) => ({ label: f.ciudad, meta: tlpMetaDe(f.ciudad), ...f }))}
+        conMeta
         onRow={(label) => setRutaFiltro({ tipo: "ciudad", valor: label, label })}
       />
 
@@ -158,7 +162,7 @@ export function TlpClient({
         titulo="Por camión"
         labelCol="Patente"
         mono
-        filas={data.por_patente.map((f) => ({ label: f.patente, ...f }))}
+        filas={data.por_patente.map((f) => ({ label: f.patente, meta: TLP_META_GLOBAL, ...f }))}
         onRow={(label) => setRutaFiltro({ tipo: "patente", valor: label, label })}
       />
 
@@ -218,6 +222,7 @@ interface FilaTlp {
   horas_hombre: number
   viajes: number
   tlp: number | null
+  meta?: TlpMeta
 }
 
 function TablaTlp({
@@ -226,12 +231,14 @@ function TablaTlp({
   filas,
   mono,
   onRow,
+  conMeta,
 }: {
   titulo: string
   labelCol: string
   filas: FilaTlp[]
   mono?: boolean
   onRow?: (label: string) => void
+  conMeta?: boolean
 }) {
   return (
     <div>
@@ -252,13 +259,14 @@ function TablaTlp({
                 <TableHead className="text-right">Hs-hombre</TableHead>
                 <TableHead className="text-right">Viajes</TableHead>
                 <TableHead className="text-right">TLP</TableHead>
+                {conMeta && <TableHead className="text-right">Meta</TableHead>}
                 {onRow && <TableHead className="w-8" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filas.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={onRow ? 7 : 6} className="py-6 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={(onRow ? 7 : 6) + (conMeta ? 1 : 0)} className="py-6 text-center text-sm text-muted-foreground">
                     Sin datos para este mes.
                   </TableCell>
                 </TableRow>
@@ -276,9 +284,14 @@ function TablaTlp({
                     <TableCell className="text-right font-medium tabular-nums text-slate-700 group-hover:text-sky-700">{fmtN(f.horas_ruta, 1)}</TableCell>
                     <TableCell className="text-right tabular-nums text-slate-500">{fmtN(f.horas_hombre, 1)}</TableCell>
                     <TableCell className="text-right tabular-nums text-slate-500">{fmtN(f.viajes)}</TableCell>
-                    <TableCell className={`text-right font-semibold tabular-nums ${tlpColor(f.tlp)}`}>
+                    <TableCell className={`text-right font-semibold tabular-nums ${tlpColor(f.tlp, f.meta)}`}>
                       {fmtTlp(f.tlp)}
                     </TableCell>
+                    {conMeta && (
+                      <TableCell className="text-right tabular-nums text-slate-400">
+                        {f.meta ? `${f.meta.meta}` : "—"}
+                      </TableCell>
+                    )}
                     {onRow && (
                       <TableCell className="px-2 text-slate-300">
                         <ChevronRight className="size-4 transition-colors group-hover:text-slate-500" />
