@@ -136,8 +136,10 @@ const EXPLICACION: Record<string, string> = {
   in_full: "In-Full = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle por mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
-  sin_dinero: "Rechazos por motivo «Sin dinero», por mes (cantidad y bultos).",
-  cerrado: "Rechazos por motivo «Cerrado», por mes (cantidad y bultos).",
+  sin_dinero:
+    "Cantidad de VECES que los clientes rechazaron por «Sin dinero»: cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Por mes, con los bultos rechazados.",
+  cerrado:
+    "Cantidad de VECES que los clientes rechazaron por «Cerrado»: cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Por mes, con los bultos rechazados.",
 }
 
 /** Encabezado de la columna "detalle" del modal para KPIs automáticos
