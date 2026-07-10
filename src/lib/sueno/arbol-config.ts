@@ -118,7 +118,6 @@ export type AgregacionMensual = "promedio" | "suma"
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   tri: "suma",
   lti: "suma",
-  vlc_hl: "promedio",
   tlp: "promedio",
   wnp: "promedio",
   tiempo_ruta: "promedio",

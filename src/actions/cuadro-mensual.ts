@@ -453,6 +453,45 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
   }
 
+  // ── COSTO LOGÍSTICO: Distribución + Almacén por mes (costo_logistico_mensual,
+  // la misma tabla que carga el panel de Costo por Punto de Venta). Tabla chica
+  // (una fila por mes), no necesita paginación.
+  {
+    const anioInicio = Number(INICIO.slice(0, 4))
+    const { data } = await supabase
+      .from("costo_logistico_mensual")
+      .select("anio, mes, distribucion, almacen")
+      .gte("anio", anioInicio)
+    for (const r of (data ?? []) as Array<{
+      anio: number
+      mes: number
+      distribucion: number | null
+      almacen: number | null
+    }>) {
+      const mesKey = `${r.anio}-${String(r.mes).padStart(2, "0")}`
+      if (!meses.includes(mesKey)) continue
+      const esActual = mesKey === mesActual
+      const dist = Number(r.distribucion ?? 0)
+      const alm = Number(r.almacen ?? 0)
+      celdas.costo_distribucion[mesKey] = {
+        mes: mesKey,
+        valor: Number.isFinite(dist) && dist > 0 ? dist : null,
+        parcial: esActual,
+      }
+      celdas.costo_almacen[mesKey] = {
+        mes: mesKey,
+        valor: Number.isFinite(alm) && alm > 0 ? alm : null,
+        parcial: esActual,
+      }
+    }
+    // Meses del cuadro sin fila en la tabla → celda gris (sin dato).
+    for (const mes of meses) {
+      const esActual = mes === mesActual
+      celdas.costo_distribucion[mes] ??= { mes, valor: null, parcial: esActual }
+      celdas.costo_almacen[mes] ??= { mes, valor: null, parcial: esActual }
+    }
+  }
+
   // ── FLOTA: tiempo en ruta + camiones/día (Foxtrot) ──
   const foxPorMes: Record<
     string,

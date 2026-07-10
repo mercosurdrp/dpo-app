@@ -129,6 +129,8 @@ const MES_LABEL = [
 ]
 
 const EXPLICACION: Record<string, string> = {
+  vlc_hl:
+    "VLC/HL = costo logístico del mes (Distribución + Almacén, cargados en Planeamiento → Costo por Punto de Venta) ÷ HL vendidos (facturado Chess neto). El YTD pondera por volumen: suma de costos ÷ suma de HL de los meses con costo cargado.",
   otif: "OTIF = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle mensual con los bultos rechazados de cada mes.",
   rechazo: "Rechazo = bultos rechazados ÷ bultos entregados (%). Por mes, con los bultos rechazados.",
   in_full: "In-Full = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle por mes.",
@@ -136,6 +138,12 @@ const EXPLICACION: Record<string, string> = {
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
   sin_dinero: "Rechazos por motivo «Sin dinero», por mes (cantidad y bultos).",
   cerrado: "Rechazos por motivo «Cerrado», por mes (cantidad y bultos).",
+}
+
+/** Encabezado de la columna "detalle" del modal para KPIs automáticos
+ *  cuyo dato acompañante no son bultos rechazados. */
+const DETALLE_LABEL: Record<string, string> = {
+  vlc_hl: "HL vendidos",
 }
 
 export interface SuenoDetalleMes {
@@ -258,6 +266,7 @@ export async function getSuenoDetalle(
         fuente: "auto",
         explicacion,
         meses,
+        detalleLabel: DETALLE_LABEL[kpiKey],
       },
     }
   } catch (e) {
