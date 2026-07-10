@@ -33,8 +33,12 @@ import {
   XCircle,
   LogOut,
   LogIn,
+  Camera,
+  X,
 } from "lucide-react"
 import { createChecklist } from "@/actions/checklist-vehiculos"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
+import { createClient } from "@/lib/supabase/client"
 
 interface Props {
   items: ChecklistItem[]
@@ -145,15 +149,23 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   // y se chequean una sola vez al inicio de la jornada (sin salida/entrada por hora).
   const vehiculoSel = vehiculos.find((v) => v.dominio === dominio)
   const esAutoelevador = vehiculoSel?.tipo === "autoelevador"
+  // Las camionetas tienen su propio checklist corto (carrocería + luces) y son
+  // un control único del día (registro de km), igual que el autoelevador.
+  const esCamioneta = vehiculoSel?.tipo === "camioneta"
+  const esControlUnico = esAutoelevador || esCamioneta
 
-  // Ítems que aplican al vehículo elegido: los del autoelevador, o los generales
-  // (camiones) cuando tipo_vehiculo es NULL.
+  // Ítems que aplican al vehículo elegido: los del autoelevador, los de la
+  // camioneta, o los generales (camiones) cuando tipo_vehiculo es NULL.
   const itemsAplicables = items.filter((i) =>
-    esAutoelevador ? i.tipo_vehiculo === "autoelevador" : i.tipo_vehiculo == null
+    esAutoelevador
+      ? i.tipo_vehiculo === "autoelevador"
+      : esCamioneta
+      ? i.tipo_vehiculo === "camioneta"
+      : i.tipo_vehiculo == null
   )
 
-  // Para mostrar/colorear el botón: el autoelevador siempre es "liberación".
-  const tipoVisual: TipoChecklist = esAutoelevador ? "liberacion" : tipo
+  // Para mostrar/colorear el botón: el control único siempre es "liberación".
+  const tipoVisual: TipoChecklist = esControlUnico ? "liberacion" : tipo
 
   // Choferes de reparto (camiones) vs maquinistas (autoelevador): cada flujo
   // tiene su propia lista habilitada.
@@ -166,6 +178,10 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const [observaciones, setObservaciones] = useState("")
   const [respuestas, setRespuestas] = useState<Record<string, string>>({})
   const [comentarios, setComentarios] = useState<Record<string, string>>({})
+  // Foto opcional (camionetas): se comprime en el navegador y se sube directo
+  // al bucket al registrar; al server action solo llega el storage path.
+  const [foto, setFoto] = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   // Marca de inicio del llenado (cuando el chofer abre el form). Se usa para
   // medir cuánto tarda en completar el checklist. Mismo reloj que el envío, así
@@ -180,6 +196,28 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
 
   function setComentario(itemId: string, texto: string) {
     setComentarios((prev) => ({ ...prev, [itemId]: texto }))
+  }
+
+  function handleFotoPick(files: FileList | null) {
+    const f = files?.[0]
+    if (!f) return
+    if (!f.type.startsWith("image/")) {
+      toast.error("El archivo tiene que ser una imagen")
+      return
+    }
+    setFoto(f)
+    setFotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(f)
+    })
+  }
+
+  function quitarFoto() {
+    setFoto(null)
+    setFotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
   }
 
   // Check if any critical item is nook/malo
@@ -202,9 +240,34 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       toast.error(`Faltan ${totalItems - completados} ítems por completar`)
       return
     }
+    // El checklist de camioneta existe justamente para registrar los km.
+    if (esCamioneta && !odometro) {
+      toast.error("Cargá los km de la camioneta")
+      return
+    }
 
     setSaving(true)
     const hoy = new Date().toISOString().slice(0, 10)
+
+    let fotoPath: string | undefined
+    if (foto) {
+      try {
+        const comprimida = await comprimirImagen(foto)
+        const path = `${hoy}/${dominio}-${crypto.randomUUID()}.jpg`
+        const supabase = createClient()
+        const { error } = await supabase.storage
+          .from("checklist-vehiculos")
+          .upload(path, comprimida, { contentType: "image/jpeg", upsert: false })
+        if (error) throw new Error(error.message)
+        fotoPath = path
+      } catch (e) {
+        toast.error(
+          `No se pudo subir la foto: ${e instanceof Error ? e.message : "error desconocido"}`
+        )
+        setSaving(false)
+        return
+      }
+    }
 
     const result = await createChecklist({
       fecha: hoy,
@@ -214,6 +277,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       observaciones: observaciones || undefined,
       iniciadoEn: new Date(inicioMs).toISOString(),
       duracionSegundos: Math.max(0, Math.round((Date.now() - inicioMs) / 1000)),
+      fotoPath,
       respuestas: itemsAplicables.map((item) => ({
         item_id: item.id,
         valor: respuestas[item.id],
@@ -228,8 +292,11 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
     }
 
     // El tipo lo decide el servidor según la hora; el toast refleja lo guardado.
-    const label =
-      result.data.tipo === "liberacion" ? "salida del depósito" : "entrada al depósito"
+    const label = esCamioneta
+      ? "camioneta"
+      : result.data.tipo === "liberacion"
+      ? "salida del depósito"
+      : "entrada al depósito"
     if (result.data.resultado === "rechazado") {
       toast.error(`Checklist de ${label} RECHAZADO — ítems críticos no aprobados`)
     } else {
@@ -258,6 +325,8 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
           <p className="text-sm text-muted-foreground">
             {esAutoelevador
               ? "Autoelevador — control de inicio de jornada"
+              : esCamioneta
+              ? "Camioneta — control básico con registro de km"
               : "El tipo se define solo según la hora"}
           </p>
         </div>
@@ -271,6 +340,18 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
               </div>
               <div className="mt-1 text-xs text-emerald-100 sm:text-sm">
                 El autoelevador se controla una vez al comenzar el día (sin checklist de retorno).
+              </div>
+            </div>
+          </div>
+        ) : esCamioneta ? (
+          <div className="flex items-center gap-4 rounded-2xl border border-violet-200 bg-violet-600 p-5 text-white shadow-sm sm:gap-5 sm:p-6">
+            <ClipboardCheck className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
+                CONTROL DE CAMIONETA
+              </div>
+              <div className="mt-1 text-xs text-violet-100 sm:text-sm">
+                Registro del día: km, carrocería y luces. Si hay alguna novedad, dejá un comentario y una foto.
               </div>
             </div>
           </div>
@@ -333,19 +414,32 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             </div>
 
             <div className="space-y-2 sm:col-span-1 lg:col-span-2">
-              <Label className="text-base font-semibold text-slate-800">Chofer</Label>
-              <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
-                <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
-                  <SelectValue placeholder="Seleccionar chofer..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {choferesParaMostrar.map((c) => (
-                    <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
-                      {c.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-base font-semibold text-slate-800">
+                {esCamioneta ? "Conductor" : "Chofer"}
+              </Label>
+              {esCamioneta ? (
+                // Las camionetas las puede manejar cualquiera (no hay lista de
+                // choferes habilitados): el conductor se escribe a mano.
+                <Input
+                  placeholder="Nombre y apellido del conductor"
+                  value={chofer}
+                  onChange={(e) => setChofer(e.target.value)}
+                  className="h-14 text-lg font-semibold text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+                />
+              ) : (
+                <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
+                  <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
+                    <SelectValue placeholder="Seleccionar chofer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {choferesParaMostrar.map((c) => (
+                      <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
+                        {c.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-2 sm:col-span-2 lg:col-span-2">
@@ -572,6 +666,52 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
         </CardContent>
       </Card>
 
+      {/* Foto opcional (camionetas) */}
+      {esCamioneta && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Camera className="h-4 w-4 text-violet-600" />
+              Foto (opcional)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Si la camioneta tiene algún golpe, rayón o novedad, sacale una foto y adjuntala acá.
+            </p>
+            {fotoPreview ? (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={fotoPreview}
+                  alt="Foto adjunta al checklist"
+                  className="max-h-64 rounded-lg border border-slate-200 object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={quitarFoto}
+                  className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-white shadow hover:bg-red-700"
+                  aria-label="Quitar foto"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex h-24 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition-colors hover:border-violet-400 hover:text-violet-600">
+                <Camera className="h-6 w-6" />
+                <span className="text-sm font-medium">Sacar o elegir foto</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFotoPick(e.target.files)}
+                />
+              </label>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Submit */}
       <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -604,6 +744,8 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                 ? "bg-red-600 hover:bg-red-700"
                 : esAutoelevador
                 ? "bg-emerald-600 hover:bg-emerald-700"
+                : esCamioneta
+                ? "bg-violet-600 hover:bg-violet-700"
                 : tipoVisual === "liberacion"
                 ? "bg-blue-600 hover:bg-blue-700"
                 : "bg-orange-500 hover:bg-orange-600"
@@ -620,10 +762,22 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
               ? "Registrando..."
               : hayRechazo
               ? `Registrar Rechazo de ${
-                  esAutoelevador ? "Checklist" : tipoVisual === "liberacion" ? "Salida" : "Entrada"
+                  esAutoelevador
+                    ? "Checklist"
+                    : esCamioneta
+                    ? "Control"
+                    : tipoVisual === "liberacion"
+                    ? "Salida"
+                    : "Entrada"
                 }`
               : `Registrar ${
-                  esAutoelevador ? "Checklist" : tipoVisual === "liberacion" ? "Salida" : "Entrada"
+                  esAutoelevador
+                    ? "Checklist"
+                    : esCamioneta
+                    ? "Control"
+                    : tipoVisual === "liberacion"
+                    ? "Salida"
+                    : "Entrada"
                 }`}
           </Button>
         </div>

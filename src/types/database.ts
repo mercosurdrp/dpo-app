@@ -754,6 +754,8 @@ export interface ChecklistVehiculo {
   odometro: number | null
   iniciado_en: string | null // TIMESTAMPTZ — inicio de llenado del form
   duracion_segundos: number | null // segundos que tardó en completarse
+  foto_path?: string | null // foto adjunta (solo Pampeana; camionetas)
+  foto_url?: string | null // URL pública derivada de foto_path (solo en detalle)
   created_by: string | null
   created_at: string
 }

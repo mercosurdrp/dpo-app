@@ -67,6 +67,7 @@ interface CreateChecklistInput {
   observaciones?: string
   iniciadoEn?: string // ISO del momento en que se abrió el form
   duracionSegundos?: number // duración de llenado medida en el cliente
+  fotoPath?: string // storage path en el bucket checklist-vehiculos (la sube el cliente)
   respuestas: { item_id: string; valor: string; comentario?: string }[]
 }
 
@@ -82,16 +83,18 @@ export async function createChecklist(
 
     // Los autoelevadores se chequean una sola vez, al inicio de la jornada (no
     // tienen checklist de retorno), así que su registro es SIEMPRE liberación sin
-    // importar la hora. Para el resto, el tipo se deriva de la hora del registro
-    // (mismo instante que se guarda en `hora`): antes de las 09:00 AR es salida
-    // (liberación), después es entrada (retorno).
+    // importar la hora. Las camionetas también son un control único del día
+    // (registro de km + estado general, sin salida/entrada). Para el resto, el
+    // tipo se deriva de la hora del registro (mismo instante que se guarda en
+    // `hora`): antes de las 09:00 AR es salida (liberación), después es entrada
+    // (retorno).
     const { data: veh } = await supabase
       .from("catalogo_vehiculos")
       .select("tipo")
       .eq("dominio", dominioNorm)
       .maybeSingle()
-    const esAutoelevador = veh?.tipo === "autoelevador"
-    const tipo: TipoChecklist = esAutoelevador
+    const esControlUnico = veh?.tipo === "autoelevador" || veh?.tipo === "camioneta"
+    const tipo: TipoChecklist = esControlUnico
       ? "liberacion"
       : tipoChecklistPorHora(now)
 
@@ -151,6 +154,9 @@ export async function createChecklist(
         odometro: input.odometro || null,
         iniciado_en: input.iniciadoEn || null,
         duracion_segundos: input.duracionSegundos ?? null,
+        // Solo incluir la key si hay foto: el tenant Misiones no tiene la
+        // columna foto_path y el insert fallaría con la key presente.
+        ...(input.fotoPath ? { foto_path: input.fotoPath } : {}),
         created_by: profile.id,
       })
       .select()
@@ -244,9 +250,17 @@ export async function getChecklistDetalle(
 
     if (respError) return { error: respError.message }
 
+    // URL pública de la foto adjunta (bucket público, igual que roturas-calle)
+    const fotoUrl = checklist.foto_path
+      ? supabase.storage
+          .from("checklist-vehiculos")
+          .getPublicUrl(checklist.foto_path).data.publicUrl
+      : null
+
     return {
       data: {
         ...checklist,
+        foto_url: fotoUrl,
         respuestas: respuestas || [],
       } as ChecklistVehiculoConRespuestas,
     }

@@ -230,6 +230,25 @@ export function ChecklistDetalleClient({ checklist }: Props) {
           </CardContent>
         </Card>
       )}
+
+      {/* Foto adjunta (camionetas) */}
+      {checklist.foto_url && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Foto adjunta</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <a href={checklist.foto_url} target="_blank" rel="noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={checklist.foto_url}
+                alt="Foto adjunta al checklist"
+                className="max-h-96 rounded-lg border border-slate-200 object-contain"
+              />
+            </a>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
