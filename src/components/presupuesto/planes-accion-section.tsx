@@ -17,6 +17,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   eliminarPlanAccion,
   eliminarPaso,
 } from "@/actions/presupuesto-planes-accion"
@@ -64,6 +70,13 @@ function nombreAdjunto(url: string): string {
   return base.replace(/^\d{10,}-/, "")
 }
 
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp"]
+
+function esImagenAdjunto(url: string): boolean {
+  const ext = nombreAdjunto(url).split(".").pop()?.toLowerCase() ?? ""
+  return IMAGE_EXTS.includes(ext)
+}
+
 function progresoPlan(pasos: PlanAccionPaso[]): number | null {
   if (pasos.length === 0) return null
   const completados = pasos.filter((p) => p.estado === "completado").length
@@ -93,6 +106,11 @@ export function PlanesAccionSection({
   // Diálogo de paso: el plan al que pertenece + el paso (null = nuevo)
   const [pasoPlan, setPasoPlan] = useState<PlanAccionPresupuestoConDetalle | null>(null)
   const [pasoEditando, setPasoEditando] = useState<PlanAccionPaso | null>(null)
+
+  // Visor de imágenes adjuntas ampliadas
+  const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(
+    null,
+  )
 
   function refrescar() {
     router.refresh()
@@ -448,22 +466,44 @@ export function PlanesAccionSection({
                   </div>
 
                   {plan.adjunto_urls.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="space-y-2">
                       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Adjuntos
                       </span>
-                      {plan.adjunto_urls.map((url) => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex max-w-56 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 hover:underline"
-                        >
-                          <Paperclip className="size-3 shrink-0" />
-                          <span className="truncate">{nombreAdjunto(url)}</span>
-                        </a>
-                      ))}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {plan.adjunto_urls.map((url) =>
+                          esImagenAdjunto(url) ? (
+                            <button
+                              key={url}
+                              type="button"
+                              onClick={() =>
+                                setLightbox({ url, titulo: nombreAdjunto(url) })
+                              }
+                              className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                              title={`Ver ${nombreAdjunto(url)}`}
+                            >
+                              <img
+                                src={url}
+                                alt={nombreAdjunto(url)}
+                                className="h-20 w-20 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <a
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex max-w-56 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 hover:underline"
+                            >
+                              <Paperclip className="size-3 shrink-0" />
+                              <span className="truncate">
+                                {nombreAdjunto(url)}
+                              </span>
+                            </a>
+                          ),
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -492,6 +532,37 @@ export function PlanesAccionSection({
           onSaved={refrescar}
         />
       )}
+
+      {/* Visor de imagen adjunta */}
+      <Dialog
+        open={lightbox !== null}
+        onOpenChange={(o) => !o && setLightbox(null)}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="pr-8">
+              {lightbox?.titulo ?? "Vista previa"}
+            </DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <>
+              <img
+                src={lightbox.url}
+                alt={lightbox.titulo}
+                className="h-auto max-h-[80vh] w-full rounded object-contain"
+              />
+              <a
+                href={lightbox.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Abrir original en pestaña nueva
+              </a>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {puedeEditar && pasoPlan && (
         <PasoPlanAccionDialog
