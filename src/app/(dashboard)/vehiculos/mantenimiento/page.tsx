@@ -4,6 +4,7 @@ import {
   getCostosMantenimiento,
   getDiasRuteo,
   getEstadoPlanFlota,
+  getGestionMtto,
   getIndisponibilidades,
   getMantenimientos,
   getSiguienteNumeroOt,
@@ -48,6 +49,7 @@ export default async function MantenimientoPage() {
     proveedoresRes,
     configRes,
     siguienteNumeroOtRes,
+    gestionRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -65,6 +67,7 @@ export default async function MantenimientoPage() {
     getProveedores(),
     getMantenimientoConfig(),
     getSiguienteNumeroOt(),
+    getGestionMtto(),
     getProfile(),
   ])
 
@@ -125,6 +128,10 @@ export default async function MantenimientoPage() {
   const proveedores = "data" in proveedoresRes ? proveedoresRes.data : []
   const siguienteNumeroOt =
     "data" in siguienteNumeroOtRes ? siguienteNumeroOtRes.data : ""
+  const gestion =
+    "data" in gestionRes
+      ? gestionRes.data
+      : { novedades: [], llantas: [], repuestos: [], ordenesCompra: [] }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -147,6 +154,7 @@ export default async function MantenimientoPage() {
       indisponibilidades={indisponibilidades}
       gastos={gastos}
       proveedores={proveedores}
+      gestion={gestion}
       rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}

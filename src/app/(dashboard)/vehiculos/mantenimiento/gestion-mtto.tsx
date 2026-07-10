@@ -118,12 +118,12 @@ export function GestionMtto({
 
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="novedades">
+      <Tabs defaultValue="repuestos">
         <TabsList>
-          <TabsTrigger value="novedades">Novedades</TabsTrigger>
-          <TabsTrigger value="llantas">Neumáticos</TabsTrigger>
-          <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
+          <TabsTrigger value="repuestos">Inventario</TabsTrigger>
           <TabsTrigger value="oc">Órdenes de compra</TabsTrigger>
+          <TabsTrigger value="novedades">Novedades</TabsTrigger>
+          <TabsTrigger value="llantas">Inspección de llantas</TabsTrigger>
         </TabsList>
 
         {/* ===== Novedades ===== */}

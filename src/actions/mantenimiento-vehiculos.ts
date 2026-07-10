@@ -1608,7 +1608,9 @@ export async function getCostosMantenimiento(): Promise<
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
-      .select("fecha, tipo, costo, tareas:mantenimiento_realizado_tareas(costo)")
+      .select(
+        "fecha, tipo, costo, costo_mano_obra, tareas:mantenimiento_realizado_tareas(costo), repuestos:mantenimiento_realizado_repuestos(cantidad, costo_unitario)"
+      )
       .neq("estado", "cancelado")
       .gte("fecha", inicioAnio)
     if (error) return { error: error.message }
@@ -1623,10 +1625,20 @@ export async function getCostosMantenimiento(): Promise<
       fecha: string
       tipo: MantenimientoTipo
       costo: number | null
+      costo_mano_obra: number | null
       tareas: { costo: number | null }[]
+      repuestos: { cantidad: number | null; costo_unitario: number | null }[]
     }>) {
       const costoTareas = (m.tareas || []).reduce((a, t) => a + Number(t.costo || 0), 0)
-      const costo = m.costo != null ? Number(m.costo) : costoTareas
+      const costoRepuestos = (m.repuestos || []).reduce(
+        (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
+        0
+      )
+      const desglosado = costoTareas + Number(m.costo_mano_obra || 0) + costoRepuestos
+      // El costo de cabecera de las OT cargadas por la app ya es MO + repuestos
+      // (sin tareas); tomar el mayor entre cabecera y desglose suma lo que falte
+      // sin duplicar, y conserva las OT viejas que solo tienen costo de cabecera.
+      const costo = Math.max(Number(m.costo || 0), desglosado)
       costoYTD += costo
       if (m.fecha.slice(0, 7) === mesActual) costoMes += costo
       const mes = m.fecha.slice(0, 7)

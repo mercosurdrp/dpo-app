@@ -90,6 +90,7 @@ import { NeumaticosModule } from "./neumaticos-module"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
+import { GestionMtto } from "./gestion-mtto"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -97,6 +98,10 @@ import type {
 import type {
   ChecklistComentario,
   ChecklistItemNoOk,
+  LlantaInspeccion,
+  Novedad,
+  OrdenCompra,
+  Repuesto,
   TableroResumen,
   UnidadBaja,
 } from "@/actions/mantenimiento-vehiculos"
@@ -200,6 +205,19 @@ const fmtMoney = (v: number) =>
   }).format(v)
 
 const fmtNum = (v: number) => new Intl.NumberFormat("es-AR").format(v)
+
+// Costo total de una OT = mayor entre el costo de cabecera y el desglose
+// (tareas + mano de obra + repuestos). Mismo criterio que getCostosMantenimiento:
+// la cabecera de las OT cargadas por la app ya es MO + repuestos, así no se duplica.
+function costoTotalOt(m: MantenimientoRealizado): number {
+  const tareas = (m.tareas ?? []).reduce((a, t) => a + Number(t.costo || 0), 0)
+  const repuestos = (m.repuestos ?? []).reduce(
+    (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
+    0
+  )
+  const desglosado = tareas + Number(m.costo_mano_obra || 0) + repuestos
+  return Math.max(Number(m.costo || 0), desglosado)
+}
 
 function parseNum(s: string): number | null {
   if (!s.trim()) return null
@@ -344,6 +362,12 @@ interface MantenimientoClientProps {
   indisponibilidades: FlotaIndisponibilidad[]
   gastos: MantenimientoGasto[]
   proveedores: MantenimientoProveedor[]
+  gestion: {
+    novedades: Novedad[]
+    llantas: LlantaInspeccion[]
+    repuestos: Repuesto[]
+    ordenesCompra: OrdenCompra[]
+  }
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -368,6 +392,7 @@ export function MantenimientoClient({
   indisponibilidades,
   gastos,
   proveedores,
+  gestion,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -444,7 +469,7 @@ export function MantenimientoClient({
 
   // Costo total de las órdenes según los filtros aplicados.
   const costoFiltrado = useMemo(
-    () => mantenimientosFiltrados.reduce((a, m) => a + Number(m.costo || 0), 0),
+    () => mantenimientosFiltrados.reduce((a, m) => a + costoTotalOt(m), 0),
     [mantenimientosFiltrados]
   )
 
@@ -514,6 +539,7 @@ export function MantenimientoClient({
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           <TabsTrigger value="seguimiento">Seguimiento de flota</TabsTrigger>
           <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
+          <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
           <TabsTrigger value="gastos">Gastos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
@@ -606,6 +632,17 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
+        {/* ============ TAB: Repuestos (novedades, llantas, inventario y OC) ============ */}
+        <TabsContent value="repuestos" className="space-y-6">
+          <GestionMtto
+            dominios={unidades.map((u) => u.dominio)}
+            novedades={gestion.novedades}
+            llantas={gestion.llantas}
+            repuestos={gestion.repuestos}
+            ordenesCompra={gestion.ordenesCompra}
+            puedeEditar={puedeEditar}
+          />
+        </TabsContent>
 
         {/* ============ TAB: Órdenes de Trabajo ============ */}
         <TabsContent value="historial" className="space-y-4">
@@ -839,7 +876,7 @@ export function MantenimientoClient({
                         </TableCell>
                         <TableCell className="text-slate-600">{m.taller || "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
+                          {costoTotalOt(m) > 0 ? fmtMoney(costoTotalOt(m)) : "—"}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <DisponibilidadCell m={m} puedeEditar={puedeEditar} onChanged={refresh} />
