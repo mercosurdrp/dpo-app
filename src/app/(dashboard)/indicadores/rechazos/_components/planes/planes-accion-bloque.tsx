@@ -31,7 +31,7 @@ import {
   type EstadoRechazoPlan,
   type RechazoPlan,
 } from "@/actions/rechazos-planes"
-import { PlanFormDialog } from "./plan-form-dialog"
+import { PlanFormDialog, type PlanFocoInicial } from "./plan-form-dialog"
 import { PlanDetalleDialog } from "./plan-detalle-dialog"
 
 const ESTADO_LABELS: Record<EstadoRechazoPlan, string> = {
@@ -196,12 +196,18 @@ function PlanCard({
       )}
 
       {/* Foco del plan */}
-      {(plan.foco_motivo_ds || plan.foco_cliente_nombre) && (
+      {(plan.foco_motivo_ds || plan.foco_cliente_nombre || plan.foco_vendedor_ds) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {plan.foco_motivo_ds && (
             <span className="inline-flex max-w-full items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
               <Target className="h-3 w-3 shrink-0" />
               <span className="truncate">{plan.foco_motivo_ds}</span>
+            </span>
+          )}
+          {plan.foco_vendedor_ds && (
+            <span className="inline-flex max-w-full items-center gap-1 rounded bg-orange-100 px-1.5 py-0.5 text-[11px] font-semibold text-orange-800">
+              <User className="h-3 w-3 shrink-0" />
+              <span className="truncate">{plan.foco_vendedor_ds}</span>
             </span>
           )}
           {plan.foco_cliente_nombre && (
@@ -255,12 +261,20 @@ interface Props {
   planesIniciales: RechazoPlan[]
   motivos: { id_rechazo: number; ds_rechazo: string }[]
   clientes: { id_cliente: number; nombre_cliente: string }[]
+  vendedores: { id_vendedor: number | null; ds_vendedor: string }[]
+  /**
+   * Ref imperativa para abrir el formulario de nuevo plan con foco prellenado
+   * desde otro bloque de la página (p. ej. el ranking de preventistas).
+   */
+  abrirNuevoConFocoRef?: React.MutableRefObject<((foco: PlanFocoInicial) => void) | null>
 }
 
 export function PlanesAccionBloque({
   planesIniciales,
   motivos,
   clientes,
+  vendedores,
+  abrirNuevoConFocoRef,
 }: Props) {
   const [planes, setPlanes] = useState<RechazoPlan[]>(planesIniciales)
   const [responsables, setResponsables] = useState<
@@ -274,8 +288,21 @@ export function PlanesAccionBloque({
   const [formOpen, setFormOpen] = useState(false)
   const [planEditar, setPlanEditar] = useState<RechazoPlan | null>(null)
   const [planDetalle, setPlanDetalle] = useState<RechazoPlan | null>(null)
+  const [focoInicial, setFocoInicial] = useState<PlanFocoInicial | null>(null)
 
   const hoy = useMemo(() => hoyISO(), [])
+
+  // Apertura del form con foco pedida desde afuera (bloque preventa). Solo
+  // asigna la ref — la función se invoca desde el event handler del caller.
+  useEffect(() => {
+    if (!abrirNuevoConFocoRef) return
+    abrirNuevoConFocoRef.current = (foco: PlanFocoInicial) => {
+      setPlanEditar(null)
+      setFocoInicial(foco)
+      setFormOpen(true)
+    }
+    return () => { abrirNuevoConFocoRef.current = null }
+  }, [abrirNuevoConFocoRef])
 
   useEffect(() => {
     listResponsablesPosibles().then((r) => {
@@ -344,12 +371,14 @@ export function PlanesAccionBloque({
 
   function abrirNuevo() {
     setPlanEditar(null)
+    setFocoInicial(null)
     setFormOpen(true)
   }
 
   function abrirEditarDesdeDetalle() {
     if (!planDetalle) return
     setPlanEditar(planDetalle)
+    setFocoInicial(null)
     setFormOpen(true)
   }
 
@@ -595,8 +624,10 @@ export function PlanesAccionBloque({
         onOpenChange={setFormOpen}
         motivos={motivos}
         clientes={clientes}
+        vendedores={vendedores}
         responsables={responsables}
         planExistente={planEditar}
+        focoInicial={focoInicial}
         onSaved={refetch}
       />
 

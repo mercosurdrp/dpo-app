@@ -27,6 +27,8 @@ export interface RechazoPlan {
   foco_motivo_ds: string | null
   foco_cliente_id: number | null
   foco_cliente_nombre: string | null
+  foco_vendedor_id: number | null
+  foco_vendedor_ds: string | null
   prioridad: PrioridadRechazoPlan
   estado: EstadoRechazoPlan
   responsable_id: string | null
@@ -56,6 +58,7 @@ export interface RechazoPlanAvance {
 export interface RechazoPlanFiltro {
   foco_motivo_id?: number
   foco_cliente_id?: number
+  foco_vendedor_id?: number
   estado?: EstadoRechazoPlan
 }
 
@@ -92,6 +95,8 @@ export async function listarPlanesRechazos(
       q = q.eq("foco_motivo_id", filtro.foco_motivo_id)
     if (filtro?.foco_cliente_id != null)
       q = q.eq("foco_cliente_id", filtro.foco_cliente_id)
+    if (filtro?.foco_vendedor_id != null)
+      q = q.eq("foco_vendedor_id", filtro.foco_vendedor_id)
     if (filtro?.estado) q = q.eq("estado", filtro.estado)
 
     const { data, error } = await q
@@ -123,6 +128,8 @@ export async function listarPlanesRechazos(
         foco_motivo_ds: r.foco_motivo_ds ?? null,
         foco_cliente_id: r.foco_cliente_id ?? null,
         foco_cliente_nombre: r.foco_cliente_nombre ?? null,
+        foco_vendedor_id: r.foco_vendedor_id ?? null,
+        foco_vendedor_ds: r.foco_vendedor_ds ?? null,
         prioridad: (r.prioridad as PrioridadRechazoPlan) ?? "media",
         estado: (r.estado as EstadoRechazoPlan) ?? "pendiente",
         responsable_id: r.responsable_id ?? null,
@@ -174,6 +181,9 @@ export async function crearPlanRechazos(
     const focoClienteId = parseIntOrNull(formData.get("foco_cliente_id"))
     const focoClienteNombre =
       String(formData.get("foco_cliente_nombre") ?? "").trim() || null
+    const focoVendedorId = parseIntOrNull(formData.get("foco_vendedor_id"))
+    const focoVendedorDs =
+      String(formData.get("foco_vendedor_ds") ?? "").trim() || null
     const responsableId =
       String(formData.get("responsable_id") ?? "").trim() || null
     const fechaObjetivo =
@@ -190,6 +200,8 @@ export async function crearPlanRechazos(
         foco_motivo_ds: focoMotivoDs,
         foco_cliente_id: focoClienteId,
         foco_cliente_nombre: focoClienteNombre,
+        foco_vendedor_id: focoVendedorId,
+        foco_vendedor_ds: focoVendedorDs,
         responsable_id: responsableId,
         fecha_objetivo: fechaObjetivo,
         created_by: profile.id,
@@ -256,6 +268,21 @@ export async function actualizarPlanRechazos(
       if (!ESTADOS_VALIDOS.includes(es as EstadoRechazoPlan))
         return { error: "Estado inválido" }
       updates.estado = es
+    }
+    if (formData.has("foco_motivo_id")) {
+      updates.foco_motivo_id = parseIntOrNull(formData.get("foco_motivo_id"))
+      updates.foco_motivo_ds =
+        String(formData.get("foco_motivo_ds") ?? "").trim() || null
+    }
+    if (formData.has("foco_cliente_id")) {
+      updates.foco_cliente_id = parseIntOrNull(formData.get("foco_cliente_id"))
+      updates.foco_cliente_nombre =
+        String(formData.get("foco_cliente_nombre") ?? "").trim() || null
+    }
+    if (formData.has("foco_vendedor_id")) {
+      updates.foco_vendedor_id = parseIntOrNull(formData.get("foco_vendedor_id"))
+      updates.foco_vendedor_ds =
+        String(formData.get("foco_vendedor_ds") ?? "").trim() || null
     }
     if (formData.has("responsable_id"))
       updates.responsable_id =

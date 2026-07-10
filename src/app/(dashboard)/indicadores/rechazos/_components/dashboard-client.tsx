@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import type { RechazosComparado, TopVariacionDim, DrillDim } from "@/lib/types/rechazos"
 import type { RechazoPlan } from "@/actions/rechazos-planes"
 import { formatFecha } from "@/lib/format/rechazos"
@@ -18,7 +18,9 @@ import { RankingProductos } from "./ranking-productos"
 import { TopVariacionesBloque } from "./top-variaciones"
 import { DrillDownSheet, type DrillTo } from "./drill-down-sheet"
 import { EmptyState } from "./empty-state"
+import { PreventaBloque } from "./preventa-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
+import type { PlanFocoInicial } from "./planes/plan-form-dialog"
 
 export function DashboardClient({
   data,
@@ -29,6 +31,7 @@ export function DashboardClient({
 }) {
   const [drillTo, setDrillTo] = useState<DrillTo | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const abrirPlanConFocoRef = useRef<((foco: PlanFocoInicial) => void) | null>(null)
 
   const resolveLabel = useCallback((tipo: TopVariacionDim, id: string | number): string | undefined => {
     switch (tipo) {
@@ -85,6 +88,13 @@ export function DashboardClient({
               tasaPromedio={data.actual.tasa}
               onDrillTo={openDrill}
             />
+            <PreventaBloque
+              preventa={data.preventa}
+              labelActual={data.meta.actual.label}
+              labelPrevious={data.meta.previous.label}
+              onDrillTo={openDrill}
+              onCrearPlan={(foco) => abrirPlanConFocoRef.current?.(foco)}
+            />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <RankingClientes por_cliente={data.agg.por_cliente} onDrillTo={openDrill} />
               <RankingProductos por_producto={data.agg.por_producto} onDrillTo={openDrill} />
@@ -102,6 +112,11 @@ export function DashboardClient({
             id_cliente: c.id_cliente,
             nombre_cliente: c.nombre_cliente,
           }))}
+          vendedores={data.preventa.por_vendedor.map((v) => ({
+            id_vendedor: v.id_vendedor,
+            ds_vendedor: v.ds_vendedor,
+          }))}
+          abrirNuevoConFocoRef={abrirPlanConFocoRef}
         />
       </div>
 

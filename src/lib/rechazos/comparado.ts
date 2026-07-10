@@ -26,7 +26,12 @@ import type {
   RechazosDelta,
   RechazosFilters,
   RechazosFiltersResolved,
+  RechazosAggVendedor,
   RechazosKPI,
+  RechazosPreventa,
+  RechazosPreventaCliente,
+  RechazosPreventaKPI,
+  RechazosPreventaSemana,
   RechazosPuntoDia,
   RechazosPuntoSemana,
   SyncLogEntry,
@@ -55,6 +60,8 @@ interface RechazoRow {
   bultos_rechazados: number
   id_cliente: number | null
   nombre_cliente: string | null
+  id_vendedor: number | null
+  ds_vendedor: string | null
   monto_neto: number | null
   monto_bruto: number | null
   ds_canal_mkt: string | null
@@ -179,6 +186,10 @@ export async function getRechazosComparado(
       actualData, previousData, catalogoMap, mapeoMap, actualKPI, previousKPI,
     )
 
+    const preventa = computePreventa(
+      actualData.rechazos, previousData.rechazos, catalogoMap, actualKPI,
+    )
+
     const tendenciaEval: AlertEvaluation =
       previous2Data.rechazos.length === 0 ? "insufficient_history" : "available"
 
@@ -222,6 +233,7 @@ export async function getRechazosComparado(
       filter_options,
       alerts: { items: alertItems, tendencia_evaluation: tendenciaEval },
       series,
+      preventa,
       agg,
       top_variaciones,
     }
@@ -313,7 +325,7 @@ async function loadPeriodData(
   supa: SupaClient, desde: string, hasta: string, filters: RechazosFilters,
 ): Promise<PeriodData> {
   let q = supa.from("rechazos").select(
-    "fecha_venta,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,hl_rechazados,bultos_rechazados,id_cliente,nombre_cliente,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
+    "fecha_venta,id_articulo,ds_articulo,id_fletero_carga,ds_fletero_carga,id_rechazo,ds_rechazo,hl_rechazados,bultos_rechazados,id_cliente,nombre_cliente,id_vendedor,ds_vendedor,monto_neto,monto_bruto,ds_canal_mkt,ds_supervisor,ds_localidad"
   ).gte("fecha_venta", desde).lte("fecha_venta", hasta)
 
   if (filters.ds_fletero_carga?.length) q = q.in("ds_fletero_carga", filters.ds_fletero_carga)
@@ -897,6 +909,165 @@ function computeAggSupervisor(rows: RechazoRow[]): RechazosAggSupervisor[] {
     map.set(k, cur)
   }
   return [...map.values()].sort((a, b) => b.hl - a.hl)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Errores de preventa (categoría "Ventas" del catálogo)
+// ─────────────────────────────────────────────────────────────────────────
+
+const SIN_VENDEDOR = "(sin vendedor)"
+
+/**
+ * Bloque de seguimiento de errores de preventa: todo lo atribuible a la
+ * gestión del preventista según el catálogo (categoría "Ventas": ERROR DE
+ * PREVENTA, BEES, SIN ENVASES). Se computa sobre las mismas filas ya cargadas
+ * del período — no requiere queries adicionales. La dimensión clave es
+ * `ds_vendedor` (el preventista que tomó el pedido), que el resto del
+ * dashboard no explota.
+ */
+function computePreventa(
+  actualRows: RechazoRow[],
+  previousRows: RechazoRow[],
+  catalogo: Map<number, CatalogoMotivo>,
+  actualKPI: RechazosKPI,
+): RechazosPreventa {
+  const motivosIds = new Set<number>()
+  for (const c of catalogo.values()) {
+    if (c.categoria === "Ventas") motivosIds.add(c.id_rechazo)
+  }
+  const filas = actualRows.filter(r => motivosIds.has(r.id_rechazo))
+  const filasPrev = previousRows.filter(r => motivosIds.has(r.id_rechazo))
+
+  const kpi = (rows: RechazoRow[]): RechazosPreventaKPI => {
+    let hl = 0, bultos = 0, monto = 0
+    const clientes = new Set<number>()
+    for (const r of rows) {
+      hl += Number(r.hl_rechazados ?? 0)
+      bultos += Number(r.bultos_rechazados ?? 0)
+      monto += Number(r.monto_neto ?? 0)
+      if (r.id_cliente != null) clientes.add(r.id_cliente)
+    }
+    return { hl, bultos, eventos: rows.length, monto, clientes_afectados: clientes.size }
+  }
+  const actual = kpi(filas)
+  const previous = kpi(filasPrev)
+
+  // Por vendedor — con desglose por motivo, clientes distintos y baseline previous.
+  const porVendedor = new Map<string, RechazosAggVendedor & {
+    _clientes: Set<number>
+    _motivos: Map<number, { bultos: number; eventos: number }>
+    _supervisores: Map<string, number>
+  }>()
+  for (const r of filas) {
+    const key = r.ds_vendedor ?? SIN_VENDEDOR
+    let cur = porVendedor.get(key)
+    if (!cur) {
+      cur = {
+        id_vendedor: r.id_vendedor ?? null,
+        ds_vendedor: key,
+        ds_supervisor: null,
+        hl: 0, bultos: 0, eventos: 0, monto: 0,
+        clientes: 0, motivos_top: [],
+        previous_bultos: 0, previous_eventos: 0,
+        _clientes: new Set(), _motivos: new Map(), _supervisores: new Map(),
+      }
+      porVendedor.set(key, cur)
+    }
+    cur.hl += Number(r.hl_rechazados ?? 0)
+    cur.bultos += Number(r.bultos_rechazados ?? 0)
+    cur.eventos += 1
+    cur.monto += Number(r.monto_neto ?? 0)
+    if (r.id_cliente != null) cur._clientes.add(r.id_cliente)
+    if (r.ds_supervisor) {
+      cur._supervisores.set(r.ds_supervisor, (cur._supervisores.get(r.ds_supervisor) ?? 0) + 1)
+    }
+    const mot = cur._motivos.get(r.id_rechazo) ?? { bultos: 0, eventos: 0 }
+    mot.bultos += Number(r.bultos_rechazados ?? 0)
+    mot.eventos += 1
+    cur._motivos.set(r.id_rechazo, mot)
+  }
+  for (const r of filasPrev) {
+    const cur = porVendedor.get(r.ds_vendedor ?? SIN_VENDEDOR)
+    if (!cur) continue // vendedor sin rechazos en el período actual: no aparece en el ranking
+    cur.previous_bultos += Number(r.bultos_rechazados ?? 0)
+    cur.previous_eventos += 1
+  }
+  const por_vendedor: RechazosAggVendedor[] = [...porVendedor.values()]
+    .map(v => ({
+      id_vendedor: v.id_vendedor,
+      ds_vendedor: v.ds_vendedor,
+      ds_supervisor: [...v._supervisores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+      hl: v.hl, bultos: v.bultos, eventos: v.eventos, monto: v.monto,
+      clientes: v._clientes.size,
+      motivos_top: [...v._motivos.entries()]
+        .map(([id_rechazo, m]) => ({
+          id_rechazo,
+          ds_rechazo: catalogo.get(id_rechazo)?.ds_rechazo ?? `id_${id_rechazo}`,
+          bultos: m.bultos, eventos: m.eventos,
+        }))
+        .sort((a, b) => b.bultos - a.bultos),
+      previous_bultos: v.previous_bultos,
+      previous_eventos: v.previous_eventos,
+    }))
+    .sort((a, b) => b.bultos - a.bultos)
+
+  // Clientes reincidentes — reuso computeAggCliente + vendedores involucrados.
+  const vendedoresPorCliente = new Map<number, Set<string>>()
+  for (const r of filas) {
+    if (r.id_cliente == null) continue
+    let s = vendedoresPorCliente.get(r.id_cliente)
+    if (!s) { s = new Set(); vendedoresPorCliente.set(r.id_cliente, s) }
+    s.add(r.ds_vendedor ?? SIN_VENDEDOR)
+  }
+  const por_cliente: RechazosPreventaCliente[] = computeAggCliente(filas)
+    .map(c => ({ ...c, vendedores: [...(vendedoresPorCliente.get(c.id_cliente) ?? [])] }))
+    .sort((a, b) => b.eventos - a.eventos || b.bultos - a.bultos)
+
+  // Serie semanal apilada por motivo.
+  const semanas = new Map<string, {
+    desde: string; hasta: string
+    hl: number; bultos: number; eventos: number
+    motivos: Map<number, number>
+  }>()
+  for (const r of filas) {
+    const { isoYear, isoWeek } = isoYearWeek(parseISO(r.fecha_venta))
+    const key = `${isoYear}-W${String(isoWeek).padStart(2, "0")}`
+    let cur = semanas.get(key)
+    if (!cur) {
+      const monday = mondayOfIsoWeek(isoYear, isoWeek)
+      cur = { desde: toISO(monday), hasta: toISO(addDays(monday, 6)),
+              hl: 0, bultos: 0, eventos: 0, motivos: new Map() }
+      semanas.set(key, cur)
+    }
+    const b = Number(r.bultos_rechazados ?? 0)
+    cur.hl += Number(r.hl_rechazados ?? 0)
+    cur.bultos += b
+    cur.eventos += 1
+    cur.motivos.set(r.id_rechazo, (cur.motivos.get(r.id_rechazo) ?? 0) + b)
+  }
+  const serie_semana: RechazosPreventaSemana[] = [...semanas.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([semana, v]) => ({
+      semana, desde: v.desde, hasta: v.hasta,
+      hl: v.hl, bultos: v.bultos, eventos: v.eventos,
+      por_motivo: [...v.motivos.entries()].map(([id_rechazo, bultos]) => ({
+        id_rechazo,
+        ds_rechazo: catalogo.get(id_rechazo)?.ds_rechazo ?? `id_${id_rechazo}`,
+        bultos,
+      })),
+    }))
+
+  return {
+    motivos_ids: [...motivosIds].sort((a, b) => a - b),
+    actual,
+    previous,
+    pct_del_total_hl: actualKPI.hl > 0 ? (actual.hl / actualKPI.hl) * 100 : 0,
+    pct_del_total_bultos: actualKPI.bultos > 0 ? (actual.bultos / actualKPI.bultos) * 100 : 0,
+    por_motivo: computeAggMotivo(filas, catalogo, actual.hl),
+    por_vendedor,
+    por_cliente,
+    serie_semana,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

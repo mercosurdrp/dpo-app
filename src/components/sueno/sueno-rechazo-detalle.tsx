@@ -428,6 +428,7 @@ export function SuenoRechazoDetalle({ nodo }: { nodo: SuenoNodo }) {
           onOpenChange={setPlanOpen}
           motivos={opciones.motivos}
           clientes={planClientes}
+          vendedores={[]}
           responsables={opciones.responsables}
           focoInicial={foco}
           onSaved={() => toast.success("Plan de acción guardado")}

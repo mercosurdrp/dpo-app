@@ -240,6 +240,72 @@ export interface RechazosAggSupervisor {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+//  Errores de preventa (motivos de categoría "Ventas" del catálogo)
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Métricas del bloque preventa para un período (actual o anterior). */
+export interface RechazosPreventaKPI {
+  hl: number
+  bultos: number
+  eventos: number
+  monto: number              // monto_neto
+  clientes_afectados: number // distinct id_cliente
+}
+
+/**
+ * Agregación por vendedor de preventa (`ds_vendedor` de Chess). Los rechazos
+ * de origen "gestion" no traen vendedor → se agrupan como "(sin vendedor)".
+ */
+export interface RechazosAggVendedor {
+  id_vendedor: number | null
+  ds_vendedor: string           // "(sin vendedor)" si null
+  /** Supervisor más frecuente en las filas del vendedor. */
+  ds_supervisor: string | null
+  hl: number
+  bultos: number
+  eventos: number
+  monto: number
+  /** distinct id_cliente con rechazos de preventa de este vendedor. */
+  clientes: number
+  /** Desglose por motivo (categoría Ventas), ordenado por bultos desc. */
+  motivos_top: { id_rechazo: number; ds_rechazo: string; bultos: number; eventos: number }[]
+  /** Mismos totales en el período anterior — para la columna de variación. */
+  previous_bultos: number
+  previous_eventos: number
+}
+
+/** Punto semanal de la serie preventa, con desglose por motivo para apilar. */
+export interface RechazosPreventaSemana {
+  semana: string        // "YYYY-Www"
+  desde: string
+  hasta: string
+  hl: number
+  bultos: number
+  eventos: number
+  por_motivo: { id_rechazo: number; ds_rechazo: string; bultos: number }[]
+}
+
+/** Cliente reincidente en rechazos de preventa (con sus vendedores). */
+export interface RechazosPreventaCliente extends RechazosAggCliente {
+  vendedores: string[]
+}
+
+export interface RechazosPreventa {
+  /** IDs de motivos con categoría "Ventas" en el catálogo (activos o no). */
+  motivos_ids: number[]
+  actual: RechazosPreventaKPI
+  previous: RechazosPreventaKPI
+  /** Share de preventa sobre el TOTAL de rechazos del período actual (0–100). */
+  pct_del_total_hl: number
+  pct_del_total_bultos: number
+  /** Solo motivos de categoría Ventas; pct_del_total relativo al HL de preventa. */
+  por_motivo: RechazosAggMotivo[]
+  por_vendedor: RechazosAggVendedor[]
+  por_cliente: RechazosPreventaCliente[]
+  serie_semana: RechazosPreventaSemana[]
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 //  Mayores variaciones (highlights accionables)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -429,6 +495,9 @@ export interface RechazosComparado {
     por_dia: RechazosPuntoDia[]
     por_semana: RechazosPuntoSemana[]
   }
+
+  /** Bloque "Errores de preventa" — motivos de categoría Ventas. */
+  preventa: RechazosPreventa
 
   agg: {
     por_motivo: RechazosAggMotivo[]

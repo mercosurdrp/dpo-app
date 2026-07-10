@@ -30,21 +30,28 @@ import {
 
 const SIN_MOTIVO = "__sin_motivo__"
 const SIN_CLIENTE = "__sin_cliente__"
+const SIN_VENDEDOR = "__sin_vendedor__"
 const SIN_RESPONSABLE = "__sin_responsable__"
+
+export interface PlanFocoInicial {
+  foco_motivo_id?: number
+  foco_motivo_ds?: string
+  foco_cliente_id?: number
+  foco_cliente_nombre?: string
+  foco_vendedor_id?: number
+  foco_vendedor_ds?: string
+}
 
 interface Props {
   open: boolean
   onOpenChange: (o: boolean) => void
   motivos: { id_rechazo: number; ds_rechazo: string }[]
   clientes: { id_cliente: number; nombre_cliente: string }[]
+  /** Preventistas con rechazos en el período (para el foco de preventa). */
+  vendedores: { id_vendedor: number | null; ds_vendedor: string }[]
   responsables: { id: string; nombre: string }[]
   planExistente?: RechazoPlan | null
-  focoInicial?: {
-    foco_motivo_id?: number
-    foco_motivo_ds?: string
-    foco_cliente_id?: number
-    foco_cliente_nombre?: string
-  } | null
+  focoInicial?: PlanFocoInicial | null
   onSaved: () => void
 }
 
@@ -53,6 +60,7 @@ export function PlanFormDialog({
   onOpenChange,
   motivos,
   clientes,
+  vendedores,
   responsables,
   planExistente = null,
   focoInicial = null,
@@ -66,8 +74,23 @@ export function PlanFormDialog({
   const [prioridad, setPrioridad] = useState<PrioridadRechazoPlan>("media")
   const [motivoId, setMotivoId] = useState<string>(SIN_MOTIVO)
   const [clienteId, setClienteId] = useState<string>(SIN_CLIENTE)
+  const [vendedorDs, setVendedorDs] = useState<string>(SIN_VENDEDOR)
   const [responsableId, setResponsableId] = useState<string>(SIN_RESPONSABLE)
   const [fechaObjetivo, setFechaObjetivo] = useState("")
+
+  // Opciones de vendedor: los del período + el del plan/foco si no figura.
+  const vendedorOptions = (() => {
+    const base = vendedores.filter((v) => v.id_vendedor != null)
+    const extraDs = planExistente?.foco_vendedor_ds ?? focoInicial?.foco_vendedor_ds
+    if (extraDs && !base.some((v) => v.ds_vendedor === extraDs)) {
+      base.unshift({
+        id_vendedor:
+          planExistente?.foco_vendedor_id ?? focoInicial?.foco_vendedor_id ?? null,
+        ds_vendedor: extraDs,
+      })
+    }
+    return base
+  })()
 
   // Prefill al abrir (edición o foco inicial).
   useEffect(() => {
@@ -86,6 +109,7 @@ export function PlanFormDialog({
           ? String(planExistente.foco_cliente_id)
           : SIN_CLIENTE,
       )
+      setVendedorDs(planExistente.foco_vendedor_ds ?? SIN_VENDEDOR)
       setResponsableId(planExistente.responsable_id ?? SIN_RESPONSABLE)
       setFechaObjetivo(planExistente.fecha_objetivo ?? "")
     } else {
@@ -102,6 +126,7 @@ export function PlanFormDialog({
           ? String(focoInicial.foco_cliente_id)
           : SIN_CLIENTE,
       )
+      setVendedorDs(focoInicial?.foco_vendedor_ds ?? SIN_VENDEDOR)
       setResponsableId(SIN_RESPONSABLE)
       setFechaObjetivo("")
     }
@@ -134,6 +159,18 @@ export function PlanFormDialog({
     } else {
       fd.append("foco_cliente_id", "")
       fd.append("foco_cliente_nombre", "")
+    }
+
+    if (vendedorDs !== SIN_VENDEDOR) {
+      const v = vendedorOptions.find((x) => x.ds_vendedor === vendedorDs)
+      fd.append(
+        "foco_vendedor_id",
+        v?.id_vendedor != null ? String(v.id_vendedor) : "",
+      )
+      fd.append("foco_vendedor_ds", vendedorDs)
+    } else {
+      fd.append("foco_vendedor_id", "")
+      fd.append("foco_vendedor_ds", "")
     }
 
     fd.append(
@@ -271,6 +308,26 @@ export function PlanFormDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label>Foco · Preventista</Label>
+            <Select
+              value={vendedorDs}
+              onValueChange={(v) => v && setVendedorDs(v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Sin preventista" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SIN_VENDEDOR}>Sin preventista</SelectItem>
+                {vendedorOptions.map((v) => (
+                  <SelectItem key={v.ds_vendedor} value={v.ds_vendedor}>
+                    {v.ds_vendedor}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1">

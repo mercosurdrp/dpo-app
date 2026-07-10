@@ -292,12 +292,12 @@ export function PlanDetalleDialog({
         )}
 
         <div className="grid grid-cols-1 gap-2 text-sm text-slate-600 sm:grid-cols-2">
-          {(plan.foco_motivo_ds || plan.foco_cliente_nombre) && (
+          {(plan.foco_motivo_ds || plan.foco_cliente_nombre || plan.foco_vendedor_ds) && (
             <div className="flex items-start gap-2">
               <Target className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
               <span>
                 <span className="font-medium text-slate-700">Foco: </span>
-                {[plan.foco_motivo_ds, plan.foco_cliente_nombre]
+                {[plan.foco_motivo_ds, plan.foco_vendedor_ds, plan.foco_cliente_nombre]
                   .filter(Boolean)
                   .join(" · ")}
               </span>
