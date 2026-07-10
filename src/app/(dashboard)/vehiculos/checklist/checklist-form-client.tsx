@@ -35,6 +35,7 @@ import {
   LogIn,
   Camera,
   X,
+  Truck,
 } from "lucide-react"
 import { createChecklist } from "@/actions/checklist-vehiculos"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
@@ -323,7 +324,9 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             Checklist de Vehículo
           </h1>
           <p className="text-sm text-muted-foreground">
-            {esAutoelevador
+            {!vehiculoSel
+              ? "Elegí el vehículo para ver su checklist"
+              : esAutoelevador
               ? "Autoelevador — control de inicio de jornada"
               : esCamioneta
               ? "Camioneta — control básico con registro de km"
@@ -331,7 +334,22 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
           </p>
         </div>
 
-        {esAutoelevador ? (
+        {!vehiculoSel ? (
+          // Sin vehículo elegido todavía: no se muestra ningún checklist para no
+          // confundir (antes aparecía el de camiones por defecto y parecía que el
+          // control de camioneta/autoelevador "no existía").
+          <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-700 p-5 text-white shadow-sm sm:gap-5 sm:p-6">
+            <Truck className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl">
+                ¿QUÉ VEHÍCULO VAS A CONTROLAR?
+              </div>
+              <div className="mt-1 text-xs text-slate-200 sm:text-sm">
+                Seleccioná el vehículo acá abajo: camión, camioneta o autoelevador. El checklist aparece solo.
+              </div>
+            </div>
+          </div>
+        ) : esAutoelevador ? (
           <div className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-600 p-5 text-white shadow-sm sm:gap-5 sm:p-6">
             <ClipboardCheck className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden="true" />
             <div className="min-w-0">
@@ -413,6 +431,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
               </Select>
             </div>
 
+            {vehiculoSel && (
             <div className="space-y-2 sm:col-span-1 lg:col-span-2">
               <Label className="text-base font-semibold text-slate-800">
                 {esCamioneta ? "Conductor" : "Chofer"}
@@ -441,7 +460,9 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                 </Select>
               )}
             </div>
+            )}
 
+            {vehiculoSel && (
             <div className="space-y-2 sm:col-span-2 lg:col-span-2">
               <Label className="text-base font-semibold text-slate-800">
                 {esAutoelevador ? "Horómetro (horas)" : "Odómetro (km)"}
@@ -455,6 +476,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                 className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
               />
             </div>
+            )}
 
             <div className="space-y-2 sm:col-span-1 lg:col-span-2">
               <Label className="text-sm font-medium text-slate-600">Sector (filtro)</Label>
@@ -477,6 +499,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
               </Select>
             </div>
 
+            {vehiculoSel && (
             <div className="space-y-2 sm:col-span-2 lg:col-span-4">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium text-slate-600">Progreso del checklist</Label>
@@ -505,10 +528,13 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                 />
               </div>
             </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
+      {vehiculoSel && (
+      <>
       {/* Alert if rechazado */}
       {hayRechazo && (
         <div
@@ -782,6 +808,8 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
           </Button>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }
