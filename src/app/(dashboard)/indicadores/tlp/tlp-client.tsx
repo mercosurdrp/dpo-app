@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { TlpResumen } from "@/actions/tlp"
+import type { TlpEvolucionAnual, TlpEvolucionFila } from "@/lib/tlp/calc"
 import { TLP_META_GLOBAL, tlpMetaDe, type TlpMeta } from "@/lib/tlp/metas"
 import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import type { TlpPlan } from "@/actions/tlp-planes"
@@ -47,10 +48,12 @@ export function TlpClient({
   mes,
   data,
   planesIniciales,
+  evolucion,
 }: {
   mes: string
   data: TlpResumen
   planesIniciales: TlpPlan[]
+  evolucion: TlpEvolucionAnual | null
 }) {
   const router = useRouter()
   const t = data.total
@@ -156,6 +159,11 @@ export function TlpClient({
         conMeta
         onRow={(label) => setRutaFiltro({ tipo: "ciudad", valor: label, label })}
       />
+
+      {/* Objetivo por ciudad: evolución mensual del año */}
+      {evolucion && evolucion.meses.length > 0 && (
+        <EvolucionPorCiudad evolucion={evolucion} />
+      )}
 
       {/* Por camión */}
       <TablaTlp
@@ -304,6 +312,75 @@ function TablaTlp({
           </Table>
         </div>
       </div>
+    </div>
+  )
+}
+
+const MES_CORTO = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+function EvolucionPorCiudad({ evolucion }: { evolucion: TlpEvolucionAnual }) {
+  const filas: TlpEvolucionFila[] = [...evolucion.filas, evolucion.total]
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Objetivo por ciudad · evolución {evolucion.anio}
+        </h3>
+        <span className="text-xs text-muted-foreground">
+          verde ≥ meta · amarillo ≥ gatillo · rojo &lt; gatillo
+        </span>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ciudad</TableHead>
+                {evolucion.meses.map((m) => (
+                  <TableHead key={m} className="text-right">
+                    {MES_CORTO[m - 1]}
+                  </TableHead>
+                ))}
+                <TableHead className="text-right">YTD</TableHead>
+                <TableHead className="text-right">Meta</TableHead>
+                <TableHead className="text-right">Gatillo</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filas.map((f) => {
+                const esTotal = f.ciudad === "Total"
+                const meta = esTotal ? TLP_META_GLOBAL : tlpMetaDe(f.ciudad)
+                return (
+                  <TableRow key={f.ciudad} className={esTotal ? "bg-slate-50 font-semibold" : undefined}>
+                    <TableCell className="font-medium">
+                      {esTotal ? "Total Mercosur" : f.ciudad}
+                    </TableCell>
+                    {evolucion.meses.map((m) => {
+                      const v = f.meses[m] ?? null
+                      return (
+                        <TableCell
+                          key={m}
+                          className={`text-right tabular-nums ${tlpColor(v, meta)}`}
+                        >
+                          {v == null ? "—" : fmtN(v, 1)}
+                        </TableCell>
+                      )
+                    })}
+                    <TableCell className={`text-right font-semibold tabular-nums ${tlpColor(f.ytd, meta)}`}>
+                      {f.ytd == null ? "—" : fmtN(f.ytd, 1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-500">{meta.meta}</TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-400">{meta.gatillo}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        Meta = mejor mes completo ya logrado por la ciudad (abr–jun 2026) · Gatillo = piso demostrado (peor mes). El TLP varía por ciudad según sus horas en ruta: cada una mide contra su propio objetivo.
+      </p>
     </div>
   )
 }

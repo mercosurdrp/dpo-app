@@ -8,6 +8,8 @@ import {
   fteDeAyudantes,
   mapaCiudades,
   normPatente,
+  tlpEvolucionAnual,
+  type TlpEvolucionAnual,
 } from "@/lib/tlp/calc"
 
 // TLP (Transport Labor Productivity) = Cajas Equivalentes entregadas
@@ -354,5 +356,19 @@ export async function getTlpRutaDetalle(
     return { data: out }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error cargando el detalle de horas en ruta" }
+  }
+}
+
+/** Cuadro anual: TLP por ciudad × mes, para el bloque "Objetivo por ciudad". */
+export async function getTlpEvolucion(
+  anio: number,
+): Promise<{ data: TlpEvolucionAnual } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const data = await tlpEvolucionAnual(supabase, anio)
+    return { data }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error calculando la evolución del TLP" }
   }
 }

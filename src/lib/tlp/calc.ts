@@ -221,3 +221,89 @@ export async function tlpAnual(
 
   return { ytd: Math.round((ceq / hh) * 100) / 100, meses }
 }
+
+export interface TlpEvolucionFila {
+  ciudad: string
+  /** TLP de cada mes con datos (1..12); meses sin viajes no aparecen. */
+  meses: Record<number, number>
+  ytd: number | null
+}
+
+export interface TlpEvolucionAnual {
+  anio: number
+  /** Meses (1..12) donde al menos una ciudad tuvo viajes, ordenados. */
+  meses: number[]
+  filas: TlpEvolucionFila[]
+  total: TlpEvolucionFila
+}
+
+/**
+ * Evolución mensual del TLP por ciudad (cuadro ciudad × mes del año), con
+ * fila Total. Base del bloque "Objetivo por ciudad" de /indicadores/tlp.
+ */
+export async function tlpEvolucionAnual(
+  supabase: Supabase,
+  anio: number,
+): Promise<TlpEvolucionAnual> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+
+  type Acum = { ceq: number; hh: number }
+  const porCiudadMes = new Map<string, Map<number, Acum>>()
+  const porCiudadYtd = new Map<string, Acum>()
+  const totalMes = new Map<number, Acum>()
+  const totalYtd: Acum = { ceq: 0, hh: 0 }
+
+  const suma = (a: Acum, v: ViajeTlp) => {
+    a.ceq += v.ceq
+    a.hh += v.horasRuta * v.fte
+  }
+
+  for (const v of viajes) {
+    const mes = Number(v.fecha.slice(5, 7))
+    const mc = porCiudadMes.get(v.ciudad) ?? new Map<number, Acum>()
+    const am = mc.get(mes) ?? { ceq: 0, hh: 0 }
+    suma(am, v)
+    mc.set(mes, am)
+    porCiudadMes.set(v.ciudad, mc)
+
+    const ay = porCiudadYtd.get(v.ciudad) ?? { ceq: 0, hh: 0 }
+    suma(ay, v)
+    porCiudadYtd.set(v.ciudad, ay)
+
+    const tm = totalMes.get(mes) ?? { ceq: 0, hh: 0 }
+    suma(tm, v)
+    totalMes.set(mes, tm)
+    suma(totalYtd, v)
+  }
+
+  const tlpDe = (a: Acum | undefined): number | null =>
+    a && a.hh > 0 ? Math.round((a.ceq / a.hh) * 100) / 100 : null
+
+  const meses = [...totalMes.keys()].sort((a, b) => a - b)
+
+  const cerrarFila = (
+    ciudad: string,
+    mc: Map<number, Acum>,
+    ytd: Acum | undefined,
+  ): TlpEvolucionFila => {
+    const out: Record<number, number> = {}
+    for (const [mes, a] of mc) {
+      const t = tlpDe(a)
+      if (t != null) out[mes] = t
+    }
+    return { ciudad, meses: out, ytd: tlpDe(ytd) }
+  }
+
+  const filas = [...porCiudadMes.entries()]
+    .map(([ciudad, mc]) => cerrarFila(ciudad, mc, porCiudadYtd.get(ciudad)))
+    .sort((a, b) => (b.ytd ?? 0) - (a.ytd ?? 0))
+
+  return {
+    anio,
+    meses,
+    filas,
+    total: cerrarFila("Total", totalMes, totalYtd),
+  }
+}
