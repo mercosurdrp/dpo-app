@@ -41,13 +41,6 @@ function diffDias(a: string, b: string): number {
   return Math.round((db - da) / (24 * 60 * 60 * 1000))
 }
 
-/** Día siguiente a "YYYY-MM-DD". */
-function diaSiguiente(fecha: string): string {
-  const t = Date.parse(`${fecha}T00:00:00Z`) + 24 * 60 * 60 * 1000
-  const d = new Date(t)
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-}
-
 /** Cantidad de días hábiles (lun–vie) de un mes "YYYY-MM" hasta `corte` inclusive. */
 function diasHabilesHasta(mes: string, corte: string): number {
   let n = 0
@@ -597,8 +590,12 @@ export async function getCuadroMensualIndicadores(): Promise<
       const dias = diasDelMes(mes)
       const esActual = mes === mesActual
       // fechaReunion: mes en curso → hoy (enmascara hoy/futuro);
-      // mes cerrado → día siguiente al fin de mes (no enmascara ningún día).
-      const fechaRef = esActual ? hoy : diaSiguiente(dias[dias.length - 1])
+      // mes cerrado → último día del mes (como quedó en el pasado, no
+      // enmascara ningún día). OJO: tiene que caer DENTRO del mes — el
+      // endpoint serie-diaria del depósito consulta year/month de esta fecha
+      // (con "día siguiente al fin de mes" pedía el mes siguiente y la
+      // precisión de meses cerrados venía vacía).
+      const fechaRef = esActual ? hoy : dias[dias.length - 1]
       try {
         const serie = await buildWarehouseSerieDiaria(dias, fechaRef)
         // WQI: último MTD acumulado no nulo del mes (= WQI consolidado del mes).
@@ -611,11 +608,14 @@ export async function getCuadroMensualIndicadores(): Promise<
           .map((d) => serie.productividad[d])
           .filter((v): v is number => v !== null && Number.isFinite(v))
         const prod = prodVals.length > 0 ? avg(prodVals) : null
-        // Precisión: promedio de los valores DIARIOS (0..1) no nulos → %.
+        // Precisión: promedio de los valores DIARIOS no nulos. La serie ya
+        // viene en PORCENTAJE 0..100 (endpoint serie-diaria del depósito,
+        // igual que la reunión de logística) — multiplicarla ×100 mostraba
+        // "9.996,4%".
         const precVals = dias
           .map((d) => serie.precision[d])
           .filter((v): v is number => v !== null && Number.isFinite(v))
-        const prec = precVals.length > 0 ? avg(precVals) * 100 : null
+        const prec = precVals.length > 0 ? avg(precVals) : null
 
         celdas.wqi[mes] = {
           mes,
