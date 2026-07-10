@@ -973,8 +973,12 @@ async function fetchCargaSnapshot(): Promise<CargaSnapshot | null> {
 // Contrato del blob (POST /api/shared/save, module="sla-carga"):
 //   { generado_en: ISO, dias: { "YYYY-MM-DD" (día de REPARTO): {
 //       estado: "si"|"no"|"sd"|"na", esperados, a_tiempo, tarde, faltan,
-//       viajes: [{ viaje, patente, hora "HH:mm:ss", a_tiempo: bool }],
+//       viajes: [{ viaje, viaje_ext, patente, hora "HH:mm:ss", a_tiempo: bool,
+//                  override?: bool, override_motivo?: string }],
 //       faltantes: ["PATENTE", ...], nota?: string } } }
+// `viaje` = ViajesCodigo (nº interno del WMS); `viaje_ext` = nº externo / TMS, que es el
+// que reconoce distribución. Se muestra el externo y el interno queda como referencia.
+// `override` marca un viaje re-asignado a mano a su día de reparto real (ver el pusher).
 // Días aún no vencidos deben venir "sd" o directamente ausentes.
 // ===========================================================================
 
@@ -982,10 +986,13 @@ const SLA_CARGA_PRECOCIDO_URL =
   "https://deposito-esteban.vercel.app/api/shared/load?module=sla-carga"
 
 interface SlaCargaViajePre {
-  viaje: number | null
+  viaje: number | null // ViajesCodigo: nº interno del WMS
+  viajeExt: number | null // ViajesNroExterno / TMS: el nº que usa distribución
   patente: string
   hora: string | null // HH:mm:ss fin de carga real (escaneo Ev17)
   aTiempo: boolean
+  override: boolean // re-asignado a mano a su día de reparto real
+  overrideMotivo: string | null
 }
 
 interface SlaCargaDiaPre {
@@ -1012,6 +1019,12 @@ const ESTADOS_PRECOCIDOS = new Set<string>(["si", "no", "sd", "na"])
 // el estado del día. No cambia la lógica general; solo corrige casos puntuales.
 //   • 2026-06-22: día atípico, las cargas arrancaron antes de lo habitual; el
 //     viaje 1525 se cargó 10:27 para el reparto del día siguiente.
+//
+// PREFERIR el override del pusher (`$overridesReparto` en push_sla_carga.ps1) cuando se
+// puede probar a qué reparto pertenece el viaje: aquél lo REASIGNA al día correcto, con
+// lo que el día destino también deja de contarlo como faltante. Esta tabla solo fuerza
+// "a tiempo" en el día de origen, así que el destino sigue mostrando "faltan 1".
+// Caso 2026-07-07 / viaje 1636 (TMS 1591): resuelto en el pusher, por eso NO figura acá.
 const CARGA_EXCEPCIONES_A_TIEMPO: Record<string, Set<number>> = {
   "2026-06-22": new Set([1525]),
 }
@@ -1044,12 +1057,17 @@ async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
       let estado = ESTADOS_PRECOCIDOS.has(String(d.estado))
         ? (String(d.estado) as EstadoCumplimiento)
         : "sd"
+      const nroPositivo = (x: any): number | null =>
+        Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : null
       const viajes: SlaCargaViajePre[] = Array.isArray(d.viajes)
         ? d.viajes.map((v: any) => ({
-            viaje: Number.isFinite(Number(v?.viaje)) && Number(v?.viaje) > 0 ? Number(v.viaje) : null,
+            viaje: nroPositivo(v?.viaje),
+            viajeExt: nroPositivo(v?.viaje_ext),
             patente: v?.patente ? String(v.patente).trim().toUpperCase() : "",
             hora: v?.hora ? String(v.hora) : null,
             aTiempo: !!v?.a_tiempo,
+            override: !!v?.override,
+            overrideMotivo: v?.override_motivo ? String(v.override_motivo) : null,
           }))
         : []
       const faltantes: string[] = Array.isArray(d.faltantes)
@@ -1700,13 +1718,19 @@ export async function getDetalleDiaSla(
       if (diaPre) {
         const filas: { label: string; valor: string }[] = []
         for (const v of diaPre.viajes) {
-          const label =
-            (v.viaje ? `Viaje ${v.viaje}` : "Viaje s/nº") +
-            (v.patente ? ` · ${v.patente}` : "")
+          // Se muestra el nº externo/TMS (el que reconoce distribución); el interno del
+          // WMS queda entre paréntesis para poder rastrearlo en VIAJES.
+          const nroLabel = v.viajeExt
+            ? `Viaje ${v.viajeExt}` + (v.viaje ? ` (WMS ${v.viaje})` : "")
+            : v.viaje
+              ? `Viaje s/nº ext (WMS ${v.viaje})`
+              : "Viaje s/nº"
+          const label = nroLabel + (v.patente ? ` · ${v.patente}` : "")
           const hhmm = v.hora ? v.hora.slice(0, 5) : "—"
+          const marca = v.override ? " (reasignado)" : ""
           filas.push({
             label,
-            valor: v.aTiempo ? `${hhmm} ✓` : `${hhmm} (tarde) ✗`,
+            valor: v.aTiempo ? `${hhmm} ✓${marca}` : `${hhmm} (tarde) ✗${marca}`,
           })
         }
         if (diaPre.faltantes.length > 0) {
@@ -1728,6 +1752,18 @@ export async function getDetalleDiaSla(
         if (!nota && diaPre.estado === "na") nota = "Domingo: no hay reparto."
         if (!nota && diaPre.faltan > 0 && diaPre.tarde === 0)
           nota = `${diaPre.faltan} camión(es) ruteado(s) sin carga conciliada en el WMS.`
+        // Los viajes reasignados a mano se explican siempre: la corrección tiene que ser
+        // visible en el tablero, no un número pisado en silencio.
+        const reasignados = diaPre.viajes.filter((v) => v.override)
+        if (reasignados.length > 0) {
+          const detalle = reasignados
+            .map(
+              (v) =>
+                `Viaje ${v.viajeExt ?? v.viaje}: ${v.overrideMotivo ?? "reasignado a este día de reparto."}`,
+            )
+            .join(" ")
+          nota = nota ? `${detalle} ${nota}` : detalle
+        }
         return {
           data: {
             codigo,
