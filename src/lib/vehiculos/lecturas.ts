@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 
 // Helpers compartidos para reconstruir la actividad de la flota a partir de
@@ -68,12 +69,16 @@ export function toFecha(fecha: string | null | undefined, hora: string | null | 
   return today()
 }
 
-export async function fetchLecturas(filters?: {
-  dominio?: string
-  fechaDesde?: string
-  fechaHasta?: string
-}): Promise<Lectura[]> {
-  const supabase = await createClient()
+export async function fetchLecturas(
+  filters?: {
+    dominio?: string
+    fechaDesde?: string
+    fechaHasta?: string
+  },
+  // Client explícito para contextos sin sesión (cron con service role).
+  client?: SupabaseClient
+): Promise<Lectura[]> {
+  const supabase = client ?? (await createClient())
 
   // PostgREST topea cada request en 1000 filas. Sin paginar se pierden
   // SILENCIOSAMENTE las lecturas más nuevas (p. ej. los checks recientes de los

@@ -41,6 +41,7 @@ import {
   updateFlotaMeta,
   updateFlotaPlanItem,
   type FlotaKpi,
+  type FlotaKpiSnapshot,
   type FlotaMeta,
   type FlotaPlanConItems,
 } from "@/actions/flota-indicadores"
@@ -128,18 +129,24 @@ const KPI_DEFS: KpiDef[] = [
   {
     kpi: "cumplimiento_plan",
     label: "Cumplimiento del plan preventivo",
-    descripcion: "Tareas del plan al día ÷ tareas con datos (foto de hoy)",
+    descripcion:
+      "Tareas del plan al día ÷ tareas con datos. Meses cerrados: última foto diaria del mes",
     fmt: (v) => `${v.toFixed(0)}%`,
-    conSerie: false,
+    conSerie: true,
   },
   {
     kpi: "services_vencidos",
     label: "Services vencidos",
-    descripcion: "Unidades con service general vencido (foto de hoy)",
+    descripcion:
+      "Unidades con service general vencido. Meses cerrados: última foto diaria del mes",
     fmt: (v) => String(Math.round(v)),
-    conSerie: false,
+    conSerie: true,
   },
 ]
+
+// KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el
+// cron diario); el mes en curso se calcula en vivo.
+const KPIS_FOTO: FlotaKpi[] = ["cumplimiento_plan", "services_vencidos"]
 
 interface PuntoSerie {
   ym: string
@@ -157,6 +164,7 @@ interface Props {
   indisponibilidades: FlotaIndisponibilidad[]
   metas: FlotaMeta[]
   planes: FlotaPlanConItems[]
+  kpiSnapshots: FlotaKpiSnapshot[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -171,6 +179,7 @@ export function IndicadoresFlota({
   indisponibilidades,
   metas,
   planes,
+  kpiSnapshots,
   puedeEditar,
   esAdmin,
 }: Props) {
@@ -204,6 +213,25 @@ export function IndicadoresFlota({
     return out
   }, [])
   const mesActual = meses3[meses3.length - 1]
+
+  // Foto en vivo de los KPIs sin histórico: cumplimiento del plan y services
+  // vencidos (valor del mes en curso; los meses cerrados salen de snapshots).
+  const fotoActual = useMemo(() => {
+    let ok = 0
+    let noOk = 0
+    for (const e of estados) {
+      for (const c of e.celdas) {
+        if (c.estado === "ok") ok++
+        else if (c.estado === "proximo" || c.estado === "vencido") noOk++
+      }
+    }
+    const cumplimiento = ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+    const vencidos = programacion.filter((p) => p.estado === "vencido").length
+    return new Map<FlotaKpi, number | null>([
+      ["cumplimiento_plan", cumplimiento],
+      ["services_vencidos", vencidos],
+    ])
+  }, [estados, programacion])
 
   // Series por KPI para los 3 meses.
   const series = useMemo(() => {
@@ -248,31 +276,38 @@ export function IndicadoresFlota({
         parcial: ym === mesActual,
       }))
     )
-    return out
-  }, [meses3, mesActual, unidades, diasRuteo, costos, mantenimientos, indisponibilidades])
 
-  // KPIs de foto actual (sin histórico): cumplimiento del plan y services vencidos.
-  const snapshots = useMemo(() => {
-    let ok = 0
-    let noOk = 0
-    for (const e of estados) {
-      for (const c of e.celdas) {
-        if (c.estado === "ok") ok++
-        else if (c.estado === "proximo" || c.estado === "vencido") noOk++
-      }
+    // KPIs foto: meses cerrados desde snapshots, mes en curso en vivo.
+    const snapBy = new Map(
+      kpiSnapshots.map((s) => [`${s.kpi}|${s.year}-${pad(s.mes)}`, s.valor])
+    )
+    for (const kpi of KPIS_FOTO) {
+      out.set(
+        kpi,
+        meses3.map((ym) => {
+          const valor =
+            ym === mesActual
+              ? (fotoActual.get(kpi) ?? null)
+              : (snapBy.get(`${kpi}|${ym}`) ?? null)
+          return { ym, valor: valor != null ? Number(valor) : null, parcial: ym === mesActual }
+        })
+      )
     }
-    const cumplimiento = ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
-    const vencidos = programacion.filter((p) => p.estado === "vencido").length
-    return new Map<FlotaKpi, number | null>([
-      ["cumplimiento_plan", cumplimiento],
-      ["services_vencidos", vencidos],
-    ])
-  }, [estados, programacion])
+    return out
+  }, [
+    meses3,
+    mesActual,
+    unidades,
+    diasRuteo,
+    costos,
+    mantenimientos,
+    indisponibilidades,
+    kpiSnapshots,
+    fotoActual,
+  ])
 
   const valorActual = (def: KpiDef): number | null =>
-    def.conSerie
-      ? (series.get(def.kpi)?.find((p) => p.ym === mesActual)?.valor ?? null)
-      : (snapshots.get(def.kpi) ?? null)
+    series.get(def.kpi)?.find((p) => p.ym === mesActual)?.valor ?? null
 
   const planesOrdenados = useMemo(
     () =>

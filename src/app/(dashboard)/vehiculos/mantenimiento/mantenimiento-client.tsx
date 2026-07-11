@@ -92,7 +92,11 @@ import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
 import { IndicadoresFlota } from "./indicadores-flota"
-import type { FlotaMeta, FlotaPlanConItems } from "@/actions/flota-indicadores"
+import type {
+  FlotaKpiSnapshot,
+  FlotaMeta,
+  FlotaPlanConItems,
+} from "@/actions/flota-indicadores"
 import type {
   DocumentoVencimiento,
   ServiceGeneralUnidad,
@@ -370,6 +374,7 @@ interface MantenimientoClientProps {
   }
   flotaMetas: FlotaMeta[]
   flotaPlanes: FlotaPlanConItems[]
+  kpiSnapshots: FlotaKpiSnapshot[]
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -397,6 +402,7 @@ export function MantenimientoClient({
   gestion,
   flotaMetas,
   flotaPlanes,
+  kpiSnapshots,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -649,6 +655,7 @@ export function MantenimientoClient({
             indisponibilidades={indisponibilidades}
             metas={flotaMetas}
             planes={flotaPlanes}
+            kpiSnapshots={kpiSnapshots}
             puedeEditar={puedeEditar}
             esAdmin={esAdmin}
           />

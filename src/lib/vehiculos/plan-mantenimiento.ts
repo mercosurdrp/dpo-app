@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import {
   addMonths,
@@ -188,7 +189,7 @@ export function computeEstadoPlan(params: {
  * Carga todo lo necesario y computa el estado del plan de la flota activa.
  * Lanza Error ante fallos de query (los callers son actions con try/catch).
  */
-export async function loadEstadoPlan(): Promise<{
+export async function loadEstadoPlan(client?: SupabaseClient): Promise<{
   estados: EstadoPlanVehiculo[]
   tareas: MantenimientoPlanTarea[]
   overrides: MantenimientoPlanOverride[]
@@ -196,7 +197,7 @@ export async function loadEstadoPlan(): Promise<{
   ultimasLecturas: Record<string, LecturaSugerida[]>
   historialLecturas: Record<string, LecturaSugerida[]>
 }> {
-  const supabase = await createClient()
+  const supabase = client ?? (await createClient())
 
   const [vehRes, tareasRes, overridesRes, realizadosRes, lecturas] = await Promise.all([
     supabase.from("catalogo_vehiculos").select("*").eq("active", true).order("dominio"),
@@ -213,7 +214,7 @@ export async function loadEstadoPlan(): Promise<{
       )
       .eq("mantenimiento.estado", "completado")
       .not("tarea_id", "is", null),
-    fetchLecturas(),
+    fetchLecturas(undefined, supabase),
   ])
 
   if (vehRes.error) throw new Error(vehRes.error.message)

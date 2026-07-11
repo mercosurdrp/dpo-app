@@ -95,6 +95,34 @@ export async function updateFlotaMeta(input: {
   }
 }
 
+// ==================== SNAPSHOTS ====================
+
+// Fotos mensuales de los KPIs sin histórico (las escribe el cron
+// /api/vehiculos/flota-kpi-cron). El tablero las usa como serie de meses
+// cerrados; el mes en curso se calcula en vivo.
+export interface FlotaKpiSnapshot {
+  kpi: string
+  year: number
+  mes: number
+  valor: number | null
+}
+
+export async function getFlotaKpiSnapshots(): Promise<
+  { data: FlotaKpiSnapshot[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("flota_kpi_snapshots")
+      .select("kpi, year, mes, valor")
+    if (error) return { error: error.message }
+    return { data: (data || []) as FlotaKpiSnapshot[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ==================== PLANES ====================
 
 export async function getFlotaPlanes(): Promise<

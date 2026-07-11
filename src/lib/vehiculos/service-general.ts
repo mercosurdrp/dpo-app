@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import {
   addDays,
@@ -382,8 +383,10 @@ export function tasaUsoPorDominio(lecturas: Lectura[]): Map<string, { tasa: numb
 }
 
 /** Carga datos y computa el service general de la flota activa. */
-export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
-  const supabase = await createClient()
+export async function loadServiceGeneral(
+  client?: SupabaseClient
+): Promise<ServiceGeneralUnidad[]> {
+  const supabase = client ?? (await createClient())
 
   const [vehRes, prevRes, cfgRes, lecturas] = await Promise.all([
     supabase.from("catalogo_vehiculos").select("*").eq("active", true).order("dominio"),
@@ -393,7 +396,7 @@ export async function loadServiceGeneral(): Promise<ServiceGeneralUnidad[]> {
       .eq("estado", "completado")
       .order("fecha", { ascending: false }),
     supabase.from("mantenimiento_config_unidad").select("*"),
-    fetchLecturas(),
+    fetchLecturas(undefined, supabase),
   ])
 
   if (vehRes.error) throw new Error(vehRes.error.message)
