@@ -179,6 +179,22 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
   },
+  {
+    kpi: "combustible_kml",
+    label: "Rendimiento de combustible",
+    descripcion:
+      "Σ km recorridos ÷ Σ litros con medición del mes (mismo criterio que el módulo Combustible)",
+    fmt: (v) => `${v.toFixed(2)} km/l`,
+    conSerie: true,
+  },
+  {
+    kpi: "co2_flota",
+    label: "Huella de CO₂ de flota",
+    descripcion:
+      "Litros de gasoil cargados × 2,68 kg CO₂/l (estimación estándar; sostenibilidad DPO 4.3)",
+    fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${v.toFixed(0)} kg`),
+    conSerie: true,
+  },
 ]
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el

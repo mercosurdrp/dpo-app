@@ -18,6 +18,8 @@ export type FlotaKpi =
   | "checklist_resolucion"
   | "docs_conformidad"
   | "inventario_exactitud"
+  | "combustible_kml"
+  | "co2_flota"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -109,6 +111,9 @@ export interface PuntoSerieKpi {
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
 const DETECCION_VENTANA_DIAS = 15
 
+/** Factor de emisión gasoil (kg CO2 por litro), estándar ABI/GOP. */
+const CO2_KG_POR_LITRO = 2.68
+
 const pad2 = (n: number) => String(n).padStart(2, "0")
 
 /** Últimos 3 meses ARG como "YYYY-MM" (2 cerrados + el actual). */
@@ -171,7 +176,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (rows.length < PAGE) break
     }
 
-    const [otRes, planesRes, conteosRes] = await Promise.all([
+    const [otRes, planesRes, conteosRes, cargasRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha")
@@ -188,10 +193,15 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .select("id, fecha, items:mantenimiento_conteo_items(stock_sistema, stock_contado)")
         .gte("fecha", inicioVentana)
         .order("fecha", { ascending: true }),
+      supabase
+        .from("registro_combustible")
+        .select("fecha, litros, km_recorridos")
+        .gte("fecha", inicioVentana),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (planesRes.error) return { error: planesRes.error.message }
     if (conteosRes.error) return { error: conteosRes.error.message }
+    if (cargasRes.error) return { error: cargasRes.error.message }
 
     // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
     const defectosPorDominio = new Map<string, string[]>()
@@ -248,8 +258,41 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       exactitud.set(ym, (sinDif / c.items.length) * 100)
     }
 
+    // Combustible: km/l ponderado del mes (Σ km ÷ Σ litros de cargas con
+    // medición, mismo criterio que el módulo Combustible) + CO2 estimado
+    // sobre TODOS los litros cargados.
+    const combustible = new Map<
+      string,
+      { km: number; litrosConKm: number; litros: number }
+    >()
+    for (const c of (cargasRes.data || []) as Array<{
+      fecha: string
+      litros: number | null
+      km_recorridos: number | null
+    }>) {
+      const ym = String(c.fecha).slice(0, 7)
+      if (!meses.includes(ym)) continue
+      const acc = combustible.get(ym) ?? { km: 0, litrosConKm: 0, litros: 0 }
+      const litros = Number(c.litros ?? 0)
+      const km = Number(c.km_recorridos ?? 0)
+      acc.litros += litros
+      if (km > 0) {
+        acc.km += km
+        acc.litrosConKm += litros
+      }
+      combustible.set(ym, acc)
+    }
+
     return {
       data: {
+        combustible_kml: meses.map((ym) => {
+          const c = combustible.get(ym)
+          return { ym, valor: c && c.litrosConKm > 0 ? c.km / c.litrosConKm : null }
+        }),
+        co2_flota: meses.map((ym) => {
+          const c = combustible.get(ym)
+          return { ym, valor: c && c.litros > 0 ? c.litros * CO2_KG_POR_LITRO : null }
+        }),
         checklist_deteccion: meses.map((ym) => {
           const a = anticipadas.get(ym)
           return { ym, valor: a && a.total > 0 ? (a.conDefecto / a.total) * 100 : null }
