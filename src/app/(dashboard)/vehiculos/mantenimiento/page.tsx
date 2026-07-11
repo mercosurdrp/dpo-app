@@ -25,6 +25,7 @@ import {
   getFlotaMetas,
   getFlotaPlanes,
 } from "@/actions/flota-indicadores"
+import { getEstandaresFlota } from "@/actions/flota-estandares"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -62,6 +63,7 @@ export default async function MantenimientoPage() {
     kpiSnapshotsRes,
     kpiExtraRes,
     tareasCilRes,
+    estandaresRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -85,6 +87,7 @@ export default async function MantenimientoPage() {
     getFlotaKpiSnapshots(),
     getFlotaKpiSeriesExtra(),
     getTareasCil(),
+    getEstandaresFlota(),
     getProfile(),
   ])
 
@@ -154,6 +157,10 @@ export default async function MantenimientoPage() {
   const kpiSnapshots = "data" in kpiSnapshotsRes ? kpiSnapshotsRes.data : []
   const kpiExtraSeries = "data" in kpiExtraRes ? kpiExtraRes.data : {}
   const tareasCil = "data" in tareasCilRes ? tareasCilRes.data : []
+  const estandares =
+    "data" in estandaresRes
+      ? estandaresRes.data
+      : { items: [], cumplimiento: [], unidades: [], pct: null }
   const role = profile?.role ?? "viewer"
 
   return (
@@ -182,6 +189,7 @@ export default async function MantenimientoPage() {
       kpiSnapshots={kpiSnapshots}
       kpiExtraSeries={kpiExtraSeries}
       tareasCil={tareasCil}
+      estandares={estandares}
       rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}

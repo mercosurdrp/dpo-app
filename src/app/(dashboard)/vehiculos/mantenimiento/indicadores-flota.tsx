@@ -156,6 +156,14 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
   },
   {
+    kpi: "estandares_conformidad",
+    label: "Conformidad de estándares",
+    descripcion:
+      "Ítems OK ÷ evaluables en la matriz de Estándares de flota (GTS). Meses cerrados: última foto diaria",
+    fmt: (v) => `${v.toFixed(1)}%`,
+    conSerie: true,
+  },
+  {
     kpi: "checklist_deteccion",
     label: "Defectos anticipados por checklist",
     descripcion:
@@ -211,6 +219,7 @@ const KPIS_FOTO: FlotaKpi[] = [
   "cumplimiento_plan",
   "services_vencidos",
   "docs_conformidad",
+  "estandares_conformidad",
 ]
 
 interface PuntoSerie {
@@ -232,6 +241,7 @@ interface Props {
   planes: FlotaPlanConItems[]
   kpiSnapshots: FlotaKpiSnapshot[]
   extraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
+  estandaresPct: number | null
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -249,6 +259,7 @@ export function IndicadoresFlota({
   planes,
   kpiSnapshots,
   extraSeries,
+  estandaresPct,
   puedeEditar,
   esAdmin,
 }: Props) {
@@ -304,8 +315,9 @@ export function IndicadoresFlota({
       ["cumplimiento_plan", cumplimiento],
       ["services_vencidos", vencidos],
       ["docs_conformidad", docsConf],
+      ["estandares_conformidad", estandaresPct],
     ])
-  }, [estados, programacion, documentos, unidades])
+  }, [estados, programacion, documentos, unidades, estandaresPct])
 
   // Series por KPI para los 3 meses.
   const series = useMemo(() => {

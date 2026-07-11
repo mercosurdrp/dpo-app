@@ -92,6 +92,8 @@ import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
 import { IndicadoresFlota } from "./indicadores-flota"
+import { EstandaresFlota } from "./estandares-flota"
+import type { EstandaresFlota as EstandaresFlotaData } from "@/actions/flota-estandares"
 import type {
   FlotaKpi,
   FlotaKpiSnapshot,
@@ -384,6 +386,7 @@ interface MantenimientoClientProps {
   kpiSnapshots: FlotaKpiSnapshot[]
   kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   tareasCil: TareaCil[]
+  estandares: EstandaresFlotaData
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -414,6 +417,7 @@ export function MantenimientoClient({
   kpiSnapshots,
   kpiExtraSeries,
   tareasCil,
+  estandares,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -561,6 +565,7 @@ export function MantenimientoClient({
           <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
           <TabsTrigger value="seguimiento">Seguimiento de flota</TabsTrigger>
           <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
+          <TabsTrigger value="estandares">Estándares</TabsTrigger>
           <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
           <TabsTrigger value="gastos">Gastos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
@@ -672,8 +677,20 @@ export function MantenimientoClient({
             planes={flotaPlanes}
             kpiSnapshots={kpiSnapshots}
             extraSeries={kpiExtraSeries}
+            estandaresPct={estandares.pct}
             puedeEditar={puedeEditar}
             esAdmin={esAdmin}
+          />
+        </TabsContent>
+
+        {/* ============ TAB: Estándares de flota (DPO 1.2) ============ */}
+        <TabsContent value="estandares" className="space-y-6">
+          <EstandaresFlota
+            items={estandares.items}
+            cumplimiento={estandares.cumplimiento}
+            unidades={estandares.unidades}
+            pct={estandares.pct}
+            puedeEditar={puedeEditar}
           />
         </TabsContent>
 

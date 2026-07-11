@@ -17,6 +17,7 @@ export type FlotaKpi =
   | "checklist_deteccion"
   | "checklist_resolucion"
   | "docs_conformidad"
+  | "estandares_conformidad"
   | "inventario_exactitud"
   | "combustible_kml"
   | "co2_flota"

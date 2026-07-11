@@ -95,6 +95,44 @@ async function docsConformidadFlota(client: SupabaseClient): Promise<number | nu
   return conformidadDocumental(dominios, docs).pct
 }
 
+/** % de ítems OK sobre evaluables en la matriz de estándares (DPO 1.2). */
+async function estandaresConformidadFlota(
+  client: SupabaseClient
+): Promise<number | null> {
+  const [vehRes, itemsRes, cumplRes] = await Promise.all([
+    client
+      .from("catalogo_vehiculos")
+      .select("dominio")
+      .eq("active", true)
+      .in("tipo", ["camion", "autoelevador"]),
+    client.from("flota_estandar_items").select("id").eq("activo", true),
+    client
+      .from("flota_estandar_cumplimiento")
+      .select("dominio, item_id, estado")
+      .limit(5000),
+  ])
+  if (vehRes.error) throw new Error(vehRes.error.message)
+  if (itemsRes.error) throw new Error(itemsRes.error.message)
+  if (cumplRes.error) throw new Error(cumplRes.error.message)
+
+  const dominios = new Set(
+    ((vehRes.data || []) as Array<{ dominio: string }>).map((v) => v.dominio)
+  )
+  const itemIds = new Set(((itemsRes.data || []) as Array<{ id: string }>).map((i) => i.id))
+  let ok = 0
+  let noOk = 0
+  for (const c of (cumplRes.data || []) as Array<{
+    dominio: string
+    item_id: string
+    estado: string
+  }>) {
+    if (!dominios.has(c.dominio) || !itemIds.has(c.item_id)) continue
+    if (c.estado === "ok") ok++
+    else if (c.estado === "no_ok") noOk++
+  }
+  return ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+}
+
 /**
  * Calcula la foto del día de los KPIs sin histórico y la upserta en el mes
  * ARG en curso. Pensado para el cron diario con service role; también sirve
@@ -105,17 +143,20 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
   mes: number
   valores: Record<string, number | null>
 }> {
-  const [{ estados }, programacion, docsConformidad] = await Promise.all([
-    loadEstadoPlan(client),
-    loadServiceGeneral(client),
-    docsConformidadFlota(client),
-  ])
+  const [{ estados }, programacion, docsConformidad, estandaresConformidad] =
+    await Promise.all([
+      loadEstadoPlan(client),
+      loadServiceGeneral(client),
+      docsConformidadFlota(client),
+      estandaresConformidadFlota(client),
+    ])
 
   const { year, mes } = ymArgentina()
   const valores: Record<string, number | null> = {
     cumplimiento_plan: cumplimientoPlanDesdeEstados(estados),
     services_vencidos: servicesVencidosDesdeProgramacion(programacion),
     docs_conformidad: docsConformidad,
+    estandares_conformidad: estandaresConformidad,
   }
 
   const rows = Object.entries(valores).map(([kpi, valor]) => ({
