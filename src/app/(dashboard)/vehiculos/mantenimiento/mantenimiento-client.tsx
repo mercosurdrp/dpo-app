@@ -109,6 +109,7 @@ import type {
   Novedad,
   OrdenCompra,
   Repuesto,
+  Residuo,
   TableroResumen,
   UnidadBaja,
 } from "@/actions/mantenimiento-vehiculos"
@@ -373,6 +374,7 @@ interface MantenimientoClientProps {
     novedades: Novedad[]
     repuestos: Repuesto[]
     ordenesCompra: OrdenCompra[]
+    residuos: Residuo[]
   }
   flotaMetas: FlotaMeta[]
   flotaPlanes: FlotaPlanConItems[]
@@ -675,6 +677,7 @@ export function MantenimientoClient({
             novedades={gestion.novedades}
             repuestos={gestion.repuestos}
             ordenesCompra={gestion.ordenesCompra}
+            residuos={gestion.residuos}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

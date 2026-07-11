@@ -32,18 +32,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Plus, Trash2 } from "lucide-react"
+import { FileText, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   createNovedad,
   createOrdenCompra,
+  createResiduo,
   deleteGestionRow,
+  deleteResiduo,
   updateNovedadEstado,
   updateOrdenCompraEstado,
   upsertRepuesto,
   type Novedad,
   type OrdenCompra,
   type Repuesto,
+  type Residuo,
 } from "@/actions/mantenimiento-vehiculos"
 
 function hoyISO(): string {
@@ -76,11 +79,21 @@ const ESTADO_OC_BADGE: Record<string, string> = {
   anulada: "bg-slate-100 text-slate-500",
 }
 
+const MATERIAL_LABEL: Record<string, string> = {
+  neumaticos: "Neumáticos",
+  aceite: "Aceite usado",
+  filtros: "Filtros",
+  baterias: "Baterías",
+  chatarra: "Chatarra",
+  otros: "Otros",
+}
+
 interface Props {
   dominios: string[]
   novedades: Novedad[]
   repuestos: Repuesto[]
   ordenesCompra: OrdenCompra[]
+  residuos: Residuo[]
   puedeEditar: boolean
 }
 
@@ -89,6 +102,7 @@ export function GestionMtto({
   novedades,
   repuestos,
   ordenesCompra,
+  residuos,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -96,7 +110,7 @@ export function GestionMtto({
   const refresh = () => startTransition(() => router.refresh())
 
   const [dialog, setDialog] = useState<
-    null | "novedad" | "repuesto" | "oc"
+    null | "novedad" | "repuesto" | "oc" | "residuo"
   >(null)
   const [repuestoEdit, setRepuestoEdit] = useState<Repuesto | null>(null)
 
@@ -119,7 +133,105 @@ export function GestionMtto({
           <TabsTrigger value="repuestos">Inventario</TabsTrigger>
           <TabsTrigger value="oc">Órdenes de compra</TabsTrigger>
           <TabsTrigger value="novedades">Novedades</TabsTrigger>
+          <TabsTrigger value="residuos">Residuos</TabsTrigger>
         </TabsList>
+
+        {/* ===== Residuos de mantenimiento (DPO 1.4) ===== */}
+        <TabsContent value="residuos" className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">
+              Registro de disposición de residuos de mantenimiento (neumáticos, aceites,
+              filtros…) con proveedor y certificado de descarte.
+            </p>
+            {puedeEditar && (
+              <Button size="sm" onClick={() => setDialog("residuo")}>
+                <Plus className="mr-1 size-4" /> Registrar disposición
+              </Button>
+            )}
+          </div>
+          <Card>
+            <CardContent className="overflow-x-auto pt-6">
+              {residuos.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-500">
+                  Sin disposiciones registradas.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Material</TableHead>
+                      <TableHead>Detalle</TableHead>
+                      <TableHead className="text-right">Cantidad</TableHead>
+                      <TableHead>Proveedor</TableHead>
+                      <TableHead>N° de fuego</TableHead>
+                      <TableHead>Certificado</TableHead>
+                      {puedeEditar && <TableHead className="w-10" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {residuos.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="whitespace-nowrap">{fmtFecha(r.fecha)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-slate-100 text-slate-700">
+                            {MATERIAL_LABEL[r.material] ?? r.material}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-56 text-slate-600">
+                          {r.descripcion ?? "—"}
+                          {r.observaciones && (
+                            <span className="block text-xs text-slate-400">{r.observaciones}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          {r.cantidad != null ? `${fmtNum(r.cantidad)} ${r.unidad ?? ""}` : "—"}
+                        </TableCell>
+                        <TableCell className="text-slate-600">{r.proveedor}</TableCell>
+                        <TableCell className="max-w-40 text-xs text-slate-500">
+                          {r.numeros_fuego ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          {r.certificado_url ? (
+                            <a
+                              href={r.certificado_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+                            >
+                              <FileText className="size-3.5" /> Ver
+                            </a>
+                          ) : (
+                            <span className="text-xs italic text-amber-600">falta</span>
+                          )}
+                        </TableCell>
+                        {puedeEditar && (
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-red-500"
+                              onClick={async () => {
+                                const res = await deleteResiduo(r.id)
+                                if ("error" in res) toast.error(res.error)
+                                else {
+                                  toast.success("Eliminado")
+                                  refresh()
+                                }
+                              }}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* ===== Novedades ===== */}
         <TabsContent value="novedades" className="space-y-3">
@@ -412,11 +524,165 @@ export function GestionMtto({
           }}
         />
       )}
+      {dialog === "residuo" && (
+        <ResiduoDialog
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null)
+            refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
 
 // ---------- Dialogs ----------
+
+function ResiduoDialog({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [fecha, setFecha] = useState(hoyISO())
+  const [material, setMaterial] = useState("neumaticos")
+  const [descripcion, setDescripcion] = useState("")
+  const [cantidad, setCantidad] = useState("")
+  const [unidad, setUnidad] = useState("un")
+  const [proveedor, setProveedor] = useState("")
+  const [numerosFuego, setNumerosFuego] = useState("")
+  const [observaciones, setObservaciones] = useState("")
+  const [certificado, setCertificado] = useState<File | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!proveedor.trim()) return toast.error("Cargá el proveedor de la disposición")
+    setSaving(true)
+    const fd = new FormData()
+    fd.set("fecha", fecha)
+    fd.set("material", material)
+    fd.set("proveedor", proveedor)
+    fd.set("descripcion", descripcion)
+    fd.set("cantidad", cantidad)
+    fd.set("unidad", unidad)
+    fd.set("numeros_fuego", numerosFuego)
+    fd.set("observaciones", observaciones)
+    if (certificado) fd.set("certificado", certificado)
+    const res = await createResiduo(fd)
+    setSaving(false)
+    if ("error" in res) return toast.error(res.error)
+    toast.success("Disposición registrada")
+    onSaved()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Registrar disposición de residuos</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Fecha de eliminación</Label>
+              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+            <div>
+              <Label>Material</Label>
+              <Select value={material} onValueChange={(v) => v && setMaterial(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(MATERIAL_LABEL).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <Label>Proveedor de disposición</Label>
+              <Input
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                placeholder="Responsable del retiro/descarte"
+              />
+            </div>
+            <div>
+              <Label>Cantidad</Label>
+              <div className="flex gap-1.5">
+                <Input
+                  value={cantidad}
+                  onChange={(e) => setCantidad(e.target.value)}
+                  placeholder="0"
+                  className="flex-1"
+                />
+                <Select value={unidad} onValueChange={(v) => v && setUnidad(v)}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="un">un</SelectItem>
+                    <SelectItem value="lts">lts</SelectItem>
+                    <SelectItem value="kg">kg</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <div>
+            <Label>Detalle del material</Label>
+            <Input
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Ej: cubiertas 295/80 R22.5 fuera de uso"
+            />
+          </div>
+          {material === "neumaticos" && (
+            <div>
+              <Label>Números de fuego</Label>
+              <Input
+                value={numerosFuego}
+                onChange={(e) => setNumerosFuego(e.target.value)}
+                placeholder="Separados por coma"
+              />
+            </div>
+          )}
+          <div>
+            <Label>Certificado de descarte (PDF o foto)</Label>
+            <Input
+              type="file"
+              accept="application/pdf,image/*"
+              onChange={(e) => setCertificado(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div>
+            <Label>Observaciones</Label>
+            <Textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 function UnidadSelect({
   dominios,

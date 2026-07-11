@@ -1370,6 +1370,20 @@ export interface OrdenCompra {
   fecha: string
   estado: string
 }
+export interface Residuo {
+  id: string
+  fecha: string
+  material: string
+  descripcion: string | null
+  cantidad: number | null
+  unidad: string | null
+  proveedor: string
+  numeros_fuego: string | null
+  certificado_url: string | null
+  certificado_path: string | null
+  observaciones: string | null
+  created_at: string
+}
 
 export async function getGestionMtto(): Promise<
   | {
@@ -1377,6 +1391,7 @@ export async function getGestionMtto(): Promise<
         novedades: Novedad[]
         repuestos: Repuesto[]
         ordenesCompra: OrdenCompra[]
+        residuos: Residuo[]
       }
     }
   | { error: string }
@@ -1384,22 +1399,118 @@ export async function getGestionMtto(): Promise<
   try {
     await requireAuth()
     const supabase = await createClient()
-    const [nov, rep, oc] = await Promise.all([
+    const [nov, rep, oc, res] = await Promise.all([
       supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
       supabase.from("mantenimiento_repuestos").select("*").order("nombre"),
       supabase
         .from("mantenimiento_ordenes_compra")
         .select("*")
         .order("fecha", { ascending: false }),
+      supabase
+        .from("mantenimiento_residuos")
+        .select("*")
+        .order("fecha", { ascending: false })
+        .limit(500),
     ])
-    for (const r of [nov, rep, oc]) if (r.error) throw new Error(r.error.message)
+    for (const r of [nov, rep, oc, res]) if (r.error) throw new Error(r.error.message)
     return {
       data: {
         novedades: (nov.data || []) as Novedad[],
         repuestos: (rep.data || []) as Repuesto[],
         ordenesCompra: (oc.data || []) as OrdenCompra[],
+        residuos: (res.data || []) as Residuo[],
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Residuos de mantenimiento (DPO Flota 1.4) -----
+
+const RESIDUOS_BUCKET = "mantenimiento-evidencias"
+
+/**
+ * Registra una disposición de residuos. FormData: fecha, material, proveedor,
+ * descripcion?, cantidad?, unidad?, numeros_fuego?, observaciones? y
+ * certificado? (File con el certificado de descarte del proveedor).
+ */
+export async function createResiduo(
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const fecha = String(formData.get("fecha") || "").trim()
+    const material = String(formData.get("material") || "").trim()
+    const proveedor = String(formData.get("proveedor") || "").trim()
+    if (!fecha || !material || !proveedor)
+      return { error: "Completá fecha, material y proveedor" }
+
+    let certificadoUrl: string | null = null
+    let certificadoPath: string | null = null
+    const cert = formData.get("certificado")
+    if (cert instanceof File && cert.size > 0) {
+      const clean = cert.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = `residuos/${Date.now()}-${clean}`
+      const ab = await cert.arrayBuffer()
+      const { error: upErr } = await supabase.storage
+        .from(RESIDUOS_BUCKET)
+        .upload(path, ab, {
+          contentType: cert.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (upErr) return { error: upErr.message }
+      const { data: pub } = supabase.storage.from(RESIDUOS_BUCKET).getPublicUrl(path)
+      certificadoUrl = pub.publicUrl
+      certificadoPath = path
+    }
+
+    const cantidadRaw = String(formData.get("cantidad") || "").trim()
+    const cantidad = cantidadRaw ? Number(cantidadRaw.replace(",", ".")) : null
+    const { error } = await supabase.from("mantenimiento_residuos").insert({
+      fecha,
+      material,
+      proveedor,
+      descripcion: String(formData.get("descripcion") || "").trim() || null,
+      cantidad: cantidad != null && !isNaN(cantidad) ? cantidad : null,
+      unidad: String(formData.get("unidad") || "").trim() || null,
+      numeros_fuego: String(formData.get("numeros_fuego") || "").trim() || null,
+      observaciones: String(formData.get("observaciones") || "").trim() || null,
+      certificado_url: certificadoUrl,
+      certificado_path: certificadoPath,
+      created_by: profile.id,
+    })
+    if (error) {
+      if (certificadoPath) {
+        await supabase.storage.from(RESIDUOS_BUCKET).remove([certificadoPath])
+      }
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function deleteResiduo(
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { data: row } = await supabase
+      .from("mantenimiento_residuos")
+      .select("certificado_path")
+      .eq("id", id)
+      .single()
+    const { error } = await supabase.from("mantenimiento_residuos").delete().eq("id", id)
+    if (error) return { error: error.message }
+    if (row?.certificado_path) {
+      await supabase.storage.from(RESIDUOS_BUCKET).remove([row.certificado_path])
+    }
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
