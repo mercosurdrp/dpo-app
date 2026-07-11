@@ -1392,6 +1392,7 @@ export async function getGestionMtto(): Promise<
         repuestos: Repuesto[]
         ordenesCompra: OrdenCompra[]
         residuos: Residuo[]
+        conteos: ConteoResumen[]
       }
     }
   | { error: string }
@@ -1399,7 +1400,7 @@ export async function getGestionMtto(): Promise<
   try {
     await requireAuth()
     const supabase = await createClient()
-    const [nov, rep, oc, res] = await Promise.all([
+    const [nov, rep, oc, res, conteos] = await Promise.all([
       supabase.from("mantenimiento_novedades").select("*").order("fecha", { ascending: false }),
       supabase.from("mantenimiento_repuestos").select("*").order("nombre"),
       supabase
@@ -1411,6 +1412,7 @@ export async function getGestionMtto(): Promise<
         .select("*")
         .order("fecha", { ascending: false })
         .limit(500),
+      loadConteosResumen(supabase),
     ])
     for (const r of [nov, rep, oc, res]) if (r.error) throw new Error(r.error.message)
     return {
@@ -1419,6 +1421,7 @@ export async function getGestionMtto(): Promise<
         repuestos: (rep.data || []) as Repuesto[],
         ordenesCompra: (oc.data || []) as OrdenCompra[],
         residuos: (res.data || []) as Residuo[],
+        conteos,
       },
     }
   } catch (e) {
@@ -1488,6 +1491,192 @@ export async function createResiduo(
       }
       return { error: error.message }
     }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ----- Conteos físicos de stock (DPO Flota 2.3) -----
+
+export interface ConteoResumen {
+  id: string
+  fecha: string
+  realizado_por: string
+  observaciones: string | null
+  ajustado: boolean
+  items_total: number
+  items_con_diferencia: number
+  exactitud_pct: number | null
+  created_at: string
+}
+
+export interface ConteoItemDetalle {
+  repuesto_id: string
+  nombre: string
+  unidad: string | null
+  stock_sistema: number
+  stock_contado: number
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadConteosResumen(supabase: any): Promise<ConteoResumen[]> {
+  const [conteosRes, itemsRes] = await Promise.all([
+    supabase
+      .from("mantenimiento_conteos")
+      .select("*")
+      .order("fecha", { ascending: false })
+      .limit(100),
+    supabase
+      .from("mantenimiento_conteo_items")
+      .select("conteo_id, stock_sistema, stock_contado"),
+  ])
+  if (conteosRes.error) throw new Error(conteosRes.error.message)
+  if (itemsRes.error) throw new Error(itemsRes.error.message)
+
+  const acc = new Map<string, { total: number; conDif: number }>()
+  for (const it of (itemsRes.data || []) as Array<{
+    conteo_id: string
+    stock_sistema: number
+    stock_contado: number
+  }>) {
+    const a = acc.get(it.conteo_id) ?? { total: 0, conDif: 0 }
+    a.total++
+    if (Number(it.stock_sistema) !== Number(it.stock_contado)) a.conDif++
+    acc.set(it.conteo_id, a)
+  }
+
+  return ((conteosRes.data || []) as Array<Omit<
+    ConteoResumen,
+    "items_total" | "items_con_diferencia" | "exactitud_pct"
+  >>).map((c) => {
+    const a = acc.get(c.id) ?? { total: 0, conDif: 0 }
+    return {
+      ...c,
+      items_total: a.total,
+      items_con_diferencia: a.conDif,
+      exactitud_pct: a.total > 0 ? ((a.total - a.conDif) / a.total) * 100 : null,
+    }
+  })
+}
+
+export async function getConteoDetalle(
+  id: string
+): Promise<{ data: ConteoItemDetalle[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_conteo_items")
+      .select(
+        "repuesto_id, stock_sistema, stock_contado, repuesto:mantenimiento_repuestos(nombre, unidad)"
+      )
+      .eq("conteo_id", id)
+    if (error) return { error: error.message }
+    type Row = {
+      repuesto_id: string
+      stock_sistema: number
+      stock_contado: number
+      repuesto: { nombre: string; unidad: string | null } | null
+    }
+    const detalle = ((data || []) as unknown as Row[])
+      .map((r) => ({
+        repuesto_id: r.repuesto_id,
+        nombre: r.repuesto?.nombre ?? "(repuesto eliminado)",
+        unidad: r.repuesto?.unidad ?? null,
+        stock_sistema: Number(r.stock_sistema),
+        stock_contado: Number(r.stock_contado),
+      }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    return { data: detalle }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Registra un conteo físico. `items` trae lo contado por repuesto; el stock
+ * del sistema se congela acá (no confía en el que vio el cliente). Con
+ * `ajustar`, además pisa stock_actual con lo contado.
+ */
+export async function createConteo(input: {
+  fecha: string
+  realizadoPor: string
+  observaciones?: string
+  ajustar: boolean
+  items: Array<{ repuestoId: string; contado: number }>
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    if (!input.realizadoPor.trim()) return { error: "Indicá quién hizo el conteo" }
+    if (input.items.length === 0) return { error: "Cargá al menos un ítem contado" }
+    const supabase = await createClient()
+
+    const { data: repuestos, error: repErr } = await supabase
+      .from("mantenimiento_repuestos")
+      .select("id, stock_actual")
+      .in("id", input.items.map((i) => i.repuestoId))
+    if (repErr) return { error: repErr.message }
+    const stockById = new Map(
+      ((repuestos || []) as Array<{ id: string; stock_actual: number }>).map((r) => [
+        r.id,
+        Number(r.stock_actual),
+      ])
+    )
+
+    const { data: conteo, error: conteoErr } = await supabase
+      .from("mantenimiento_conteos")
+      .insert({
+        fecha: input.fecha,
+        realizado_por: input.realizadoPor.trim(),
+        observaciones: input.observaciones?.trim() || null,
+        ajustado: input.ajustar,
+        created_by: profile.id,
+      })
+      .select("id")
+      .single()
+    if (conteoErr) return { error: conteoErr.message }
+
+    const payload = input.items
+      .filter((i) => stockById.has(i.repuestoId))
+      .map((i) => ({
+        conteo_id: conteo.id,
+        repuesto_id: i.repuestoId,
+        stock_sistema: stockById.get(i.repuestoId)!,
+        stock_contado: i.contado,
+      }))
+    const { error: itemsErr } = await supabase
+      .from("mantenimiento_conteo_items")
+      .insert(payload)
+    if (itemsErr) {
+      await supabase.from("mantenimiento_conteos").delete().eq("id", conteo.id)
+      return { error: itemsErr.message }
+    }
+
+    if (input.ajustar) {
+      for (const i of payload) {
+        if (i.stock_sistema === i.stock_contado) continue
+        const { error: adjErr } = await supabase
+          .from("mantenimiento_repuestos")
+          .update({ stock_actual: i.stock_contado })
+          .eq("id", i.repuesto_id)
+        if (adjErr) return { error: `Conteo guardado pero falló el ajuste: ${adjErr.message}` }
+      }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function deleteConteo(
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    const supabase = await createClient()
+    const { error } = await supabase.from("mantenimiento_conteos").delete().eq("id", id)
+    if (error) return { error: error.message }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

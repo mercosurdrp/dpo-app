@@ -171,6 +171,14 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => `${v.toFixed(1)} d`,
     conSerie: true,
   },
+  {
+    kpi: "inventario_exactitud",
+    label: "Exactitud de inventario",
+    descripcion:
+      "Ítems sin diferencia en el último conteo físico del mes ÷ ítems contados (Repuestos → Conteo de stock)",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+  },
 ]
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el

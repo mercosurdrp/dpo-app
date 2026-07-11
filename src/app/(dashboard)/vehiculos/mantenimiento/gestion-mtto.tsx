@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -32,17 +32,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { FileText, Plus, Trash2 } from "lucide-react"
+import { ClipboardCheck, FileText, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  createConteo,
   createNovedad,
   createOrdenCompra,
   createResiduo,
+  deleteConteo,
   deleteGestionRow,
   deleteResiduo,
+  getConteoDetalle,
   updateNovedadEstado,
   updateOrdenCompraEstado,
   upsertRepuesto,
+  type ConteoItemDetalle,
+  type ConteoResumen,
   type Novedad,
   type OrdenCompra,
   type Repuesto,
@@ -94,6 +99,7 @@ interface Props {
   repuestos: Repuesto[]
   ordenesCompra: OrdenCompra[]
   residuos: Residuo[]
+  conteos: ConteoResumen[]
   puedeEditar: boolean
 }
 
@@ -103,6 +109,7 @@ export function GestionMtto({
   repuestos,
   ordenesCompra,
   residuos,
+  conteos,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -110,8 +117,9 @@ export function GestionMtto({
   const refresh = () => startTransition(() => router.refresh())
 
   const [dialog, setDialog] = useState<
-    null | "novedad" | "repuesto" | "oc" | "residuo"
+    null | "novedad" | "repuesto" | "oc" | "residuo" | "conteo"
   >(null)
+  const [conteoVer, setConteoVer] = useState<ConteoResumen | null>(null)
   const [repuestoEdit, setRepuestoEdit] = useState<Repuesto | null>(null)
 
   const borrar = async (
@@ -318,7 +326,10 @@ export function GestionMtto({
         {/* ===== Repuestos ===== */}
         <TabsContent value="repuestos" className="space-y-3">
           {puedeEditar && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
+                <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
+              </Button>
               <Button
                 size="sm"
                 onClick={() => {
@@ -405,6 +416,84 @@ export function GestionMtto({
               )}
             </CardContent>
           </Card>
+
+          {/* Historial de conteos físicos (DPO 2.3) */}
+          {conteos.length > 0 && (
+            <Card>
+              <CardContent className="overflow-x-auto pt-6">
+                <p className="mb-2 text-sm font-medium text-slate-700">
+                  Conteos de stock realizados
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Realizado por</TableHead>
+                      <TableHead className="text-right">Ítems</TableHead>
+                      <TableHead className="text-right">Con diferencia</TableHead>
+                      <TableHead className="text-right">Exactitud</TableHead>
+                      <TableHead>Ajuste</TableHead>
+                      {puedeEditar && <TableHead className="w-10" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {conteos.map((c) => (
+                      <TableRow
+                        key={c.id}
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => setConteoVer(c)}
+                      >
+                        <TableCell className="whitespace-nowrap">{fmtFecha(c.fecha)}</TableCell>
+                        <TableCell className="text-slate-600">{c.realizado_por}</TableCell>
+                        <TableCell className="text-right tabular-nums">{c.items_total}</TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right tabular-nums",
+                            c.items_con_diferencia > 0 ? "text-red-600" : "text-slate-500"
+                          )}
+                        >
+                          {c.items_con_diferencia}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {c.exactitud_pct != null ? `${c.exactitud_pct.toFixed(0)}%` : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {c.ajustado ? (
+                            <Badge variant="outline" className="bg-emerald-100 text-emerald-700">
+                              stock ajustado
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-slate-100 text-slate-500">
+                              sin ajuste
+                            </Badge>
+                          )}
+                        </TableCell>
+                        {puedeEditar && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-red-500"
+                              onClick={async () => {
+                                const res = await deleteConteo(c.id)
+                                if ("error" in res) toast.error(res.error)
+                                else {
+                                  toast.success("Conteo eliminado")
+                                  refresh()
+                                }
+                              }}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ===== Órdenes de compra ===== */}
@@ -533,11 +622,244 @@ export function GestionMtto({
           }}
         />
       )}
+      {dialog === "conteo" && (
+        <ConteoDialog
+          repuestos={repuestos}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null)
+            refresh()
+          }}
+        />
+      )}
+      {conteoVer && (
+        <ConteoDetalleDialog conteo={conteoVer} onClose={() => setConteoVer(null)} />
+      )}
     </div>
   )
 }
 
 // ---------- Dialogs ----------
+
+function ConteoDialog({
+  repuestos,
+  onClose,
+  onSaved,
+}: {
+  repuestos: Repuesto[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [fecha, setFecha] = useState(hoyISO())
+  const [realizadoPor, setRealizadoPor] = useState("")
+  const [observaciones, setObservaciones] = useState("")
+  // contado por repuesto: arranca vacío; vacío = no contado (no entra al conteo).
+  const [contados, setContados] = useState<Record<string, string>>({})
+  const [ajustar, setAjustar] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const items = repuestos
+    .map((r) => ({ r, raw: contados[r.id] ?? "" }))
+    .filter((x) => x.raw.trim() !== "")
+    .map((x) => ({ repuestoId: x.r.id, contado: parseNum(x.raw) }))
+
+  const submit = async () => {
+    if (!realizadoPor.trim()) return toast.error("Indicá quién hizo el conteo")
+    if (items.length === 0) return toast.error("Cargá al menos un ítem contado")
+    if (items.some((i) => i.contado == null || i.contado < 0))
+      return toast.error("Hay cantidades inválidas")
+    setSaving(true)
+    const res = await createConteo({
+      fecha,
+      realizadoPor,
+      observaciones,
+      ajustar,
+      items: items.map((i) => ({ repuestoId: i.repuestoId, contado: i.contado! })),
+    })
+    setSaving(false)
+    if ("error" in res) return toast.error(res.error)
+    toast.success(ajustar ? "Conteo guardado y stock ajustado" : "Conteo guardado")
+    onSaved()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Conteo físico de stock</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Fecha</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+          <div>
+            <Label>Realizado por</Label>
+            <Input
+              value={realizadoPor}
+              onChange={(e) => setRealizadoPor(e.target.value)}
+              placeholder="Nombre"
+            />
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Repuesto</TableHead>
+                <TableHead className="text-right">Sistema</TableHead>
+                <TableHead className="w-28 text-right">Contado</TableHead>
+                <TableHead className="w-24 text-right">Dif.</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {repuestos.map((r) => {
+                const raw = contados[r.id] ?? ""
+                const contado = raw.trim() === "" ? null : parseNum(raw)
+                const dif = contado != null ? contado - r.stock_actual : null
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      {r.nombre}
+                      {r.unidad && (
+                        <span className="ml-1 text-xs text-slate-400">({r.unidad})</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {fmtNum(r.stock_actual)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        value={raw}
+                        onChange={(e) =>
+                          setContados((prev) => ({ ...prev, [r.id]: e.target.value }))
+                        }
+                        placeholder="—"
+                        className="h-7 w-24 text-right text-sm"
+                      />
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right tabular-nums",
+                        dif == null
+                          ? "text-slate-300"
+                          : dif === 0
+                            ? "text-emerald-600"
+                            : "font-medium text-red-600"
+                      )}
+                    >
+                      {dif == null ? "—" : dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        <div>
+          <Label>Observaciones</Label>
+          <Input
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={ajustar}
+            onChange={(e) => setAjustar(e.target.checked)}
+            className="size-4"
+          />
+          Ajustar el stock del sistema a lo contado
+        </label>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Guardando…" : `Guardar conteo (${items.length} ítems)`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ConteoDetalleDialog({
+  conteo,
+  onClose,
+}: {
+  conteo: ConteoResumen
+  onClose: () => void
+}) {
+  const [detalle, setDetalle] = useState<ConteoItemDetalle[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getConteoDetalle(conteo.id).then((res) => {
+      if ("error" in res) setError(res.error)
+      else setDetalle(res.data)
+    })
+  }, [conteo.id])
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            Conteo del {fmtFecha(conteo.fecha)} · {conteo.realizado_por}
+          </DialogTitle>
+        </DialogHeader>
+        {conteo.observaciones && (
+          <p className="text-sm text-slate-500">{conteo.observaciones}</p>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {error ? (
+            <p className="py-4 text-sm text-red-500">{error}</p>
+          ) : detalle == null ? (
+            <p className="py-4 text-center text-sm text-slate-400">Cargando…</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Repuesto</TableHead>
+                  <TableHead className="text-right">Sistema</TableHead>
+                  <TableHead className="text-right">Contado</TableHead>
+                  <TableHead className="text-right">Dif.</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detalle.map((d) => {
+                  const dif = d.stock_contado - d.stock_sistema
+                  return (
+                    <TableRow key={d.repuesto_id}>
+                      <TableCell>{d.nombre}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmtNum(d.stock_sistema)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmtNum(d.stock_contado)}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right tabular-nums",
+                          dif === 0 ? "text-emerald-600" : "font-medium text-red-600"
+                        )}
+                      >
+                        {dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 function ResiduoDialog({
   onClose,

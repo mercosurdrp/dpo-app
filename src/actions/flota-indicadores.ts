@@ -17,6 +17,7 @@ export type FlotaKpi =
   | "checklist_deteccion"
   | "checklist_resolucion"
   | "docs_conformidad"
+  | "inventario_exactitud"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -170,7 +171,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (rows.length < PAGE) break
     }
 
-    const [otRes, planesRes] = await Promise.all([
+    const [otRes, planesRes, conteosRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha")
@@ -182,9 +183,15 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .select("created_at, updated_at")
         .eq("estado", "resuelto")
         .gte("updated_at", `${inicioVentana}T00:00:00`),
+      supabase
+        .from("mantenimiento_conteos")
+        .select("id, fecha, items:mantenimiento_conteo_items(stock_sistema, stock_contado)")
+        .gte("fecha", inicioVentana)
+        .order("fecha", { ascending: true }),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (planesRes.error) return { error: planesRes.error.message }
+    if (conteosRes.error) return { error: conteosRes.error.message }
 
     // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
     const defectosPorDominio = new Map<string, string[]>()
@@ -226,6 +233,21 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       resolucion.set(ym, acc)
     }
 
+    // Exactitud de inventario: el ÚLTIMO conteo de cada mes (viene ordenado asc,
+    // así que el último visto por mes pisa a los anteriores).
+    const exactitud = new Map<string, number | null>()
+    for (const c of (conteosRes.data || []) as unknown as Array<{
+      fecha: string
+      items: Array<{ stock_sistema: number; stock_contado: number }>
+    }>) {
+      const ym = c.fecha.slice(0, 7)
+      if (!meses.includes(ym) || c.items.length === 0) continue
+      const sinDif = c.items.filter(
+        (i) => Number(i.stock_sistema) === Number(i.stock_contado)
+      ).length
+      exactitud.set(ym, (sinDif / c.items.length) * 100)
+    }
+
     return {
       data: {
         checklist_deteccion: meses.map((ym) => {
@@ -236,6 +258,10 @@ export async function getFlotaKpiSeriesExtra(): Promise<
           const r = resolucion.get(ym)
           return { ym, valor: r && r.n > 0 ? r.dias / r.n : null }
         }),
+        inventario_exactitud: meses.map((ym) => ({
+          ym,
+          valor: exactitud.get(ym) ?? null,
+        })),
       },
     }
   } catch (e) {
