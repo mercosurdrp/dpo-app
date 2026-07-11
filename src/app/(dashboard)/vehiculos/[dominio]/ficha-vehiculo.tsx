@@ -138,7 +138,7 @@ export function FichaVehiculo({ dominio, ficha, documentos, canEdit }: Props) {
   const [docNombre, setDocNombre] = useState("")
   const [docTipo, setDocTipo] = useState<VehiculoDocumentoTipo>("cedula")
   const [docVencimiento, setDocVencimiento] = useState("")
-  const [docFile, setDocFile] = useState<File | null>(null)
+  const [docFiles, setDocFiles] = useState<File[]>([])
   const [docSaving, setDocSaving] = useState(false)
 
   const camposVacios = CAMPOS.filter(
@@ -230,41 +230,53 @@ export function FichaVehiculo({ dominio, ficha, documentos, canEdit }: Props) {
       toast.error("Poné un nombre al documento")
       return
     }
-    if (!docFile) {
+    if (docFiles.length === 0) {
       toast.error("Elegí el archivo (foto o PDF)")
       return
     }
-    if (docFile.size > MAX_DOC_BYTES) {
-      toast.error("El archivo supera 25MB")
+    if (docFiles.some((f) => f.size > MAX_DOC_BYTES)) {
+      toast.error("Alguno de los archivos supera 25MB")
       return
     }
     setDocSaving(true)
     try {
-      const archivo = docFile.type.startsWith("image/")
-        ? await comprimirImagen(docFile)
-        : docFile
-      const mime = archivo.type || "application/octet-stream"
-      const path = `${dominio}/docs/${crypto.randomUUID()}-${sanitizeFileName(archivo.name)}`
       const supabase = createClient()
-      const { error } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, archivo, { contentType: mime, upsert: false })
-      if (error) throw new Error(error.message)
-      const res = await crearDocumentoVehiculo({
-        dominio,
-        nombre: docNombre,
-        tipo: docTipo,
-        storagePath: path,
-        mimeType: mime,
-        vencimiento: docVencimiento || null,
-      })
-      if ("error" in res) throw new Error(res.error)
-      toast.success("Documento cargado")
+      // Un documento por archivo: sirve para cargar frente y dorso de la cédula
+      // en la misma operación (se numeran "nombre (1/2)", "nombre (2/2)").
+      for (const [i, file] of docFiles.entries()) {
+        const archivo = file.type.startsWith("image/")
+          ? await comprimirImagen(file)
+          : file
+        const mime = archivo.type || "application/octet-stream"
+        const path = `${dominio}/docs/${crypto.randomUUID()}-${sanitizeFileName(archivo.name)}`
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, archivo, { contentType: mime, upsert: false })
+        if (error) throw new Error(error.message)
+        const nombre =
+          docFiles.length > 1
+            ? `${docNombre} (${i + 1}/${docFiles.length})`
+            : docNombre
+        const res = await crearDocumentoVehiculo({
+          dominio,
+          nombre,
+          tipo: docTipo,
+          storagePath: path,
+          mimeType: mime,
+          vencimiento: docVencimiento || null,
+        })
+        if ("error" in res) throw new Error(res.error)
+      }
+      toast.success(
+        docFiles.length > 1
+          ? `${docFiles.length} archivos cargados`
+          : "Documento cargado"
+      )
       setDocOpen(false)
       setDocNombre("")
       setDocTipo("cedula")
       setDocVencimiento("")
-      setDocFile(null)
+      setDocFiles([])
       router.refresh()
     } catch (e) {
       toast.error(
@@ -582,12 +594,31 @@ export function FichaVehiculo({ dominio, ficha, documentos, canEdit }: Props) {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Archivo (foto o PDF)</Label>
+              <Label className="text-xs">Archivos (fotos o PDF)</Label>
               <Input
                 type="file"
+                multiple
                 accept="image/*,application/pdf"
-                onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                onChange={(e) =>
+                  setDocFiles(Array.from(e.target.files ?? []))
+                }
               />
+              <p className="text-[11px] text-muted-foreground">
+                Podés elegir varios a la vez (por ejemplo frente y dorso de la
+                cédula): se guarda uno por archivo.
+              </p>
+              {docFiles.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {docFiles.map((f, i) => (
+                    <li
+                      key={`${f.name}-${i}`}
+                      className="text-[11px] text-muted-foreground truncate"
+                    >
+                      {i + 1}. {f.name}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
           <DialogFooter>
