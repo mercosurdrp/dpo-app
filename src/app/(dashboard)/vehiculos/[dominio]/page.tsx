@@ -3,9 +3,11 @@ import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { getVehiculoDetalle } from "@/actions/vehiculos-analytics"
 import { getFichaVehiculo } from "@/actions/vehiculos-ficha"
+import { getChecklists } from "@/actions/checklist-vehiculos"
 import { getProfile } from "@/lib/session"
 import { VehiculoDetalleClient } from "./vehiculo-detalle-client"
 import { FichaVehiculo } from "./ficha-vehiculo"
+import { ChecklistsUnidad } from "./checklists-unidad"
 
 export default async function VehiculoDetallePage({
   params,
@@ -14,9 +16,10 @@ export default async function VehiculoDetallePage({
 }) {
   const { dominio } = await params
   const decoded = decodeURIComponent(dominio)
-  const [res, fichaRes, profile] = await Promise.all([
+  const [res, fichaRes, checklistsRes, profile] = await Promise.all([
     getVehiculoDetalle(decoded),
     getFichaVehiculo(decoded),
+    getChecklists({ dominio: decoded, limit: 100 }),
     getProfile(),
   ])
 
@@ -31,6 +34,7 @@ export default async function VehiculoDetallePage({
   }
 
   const fichaData = "data" in fichaRes ? fichaRes.data : { ficha: null, documentos: [] }
+  const checklists = "data" in checklistsRes ? checklistsRes.data : []
   const canEdit = profile?.role === "admin" || profile?.role === "supervisor"
 
   return (
@@ -48,6 +52,7 @@ export default async function VehiculoDetallePage({
           documentos={fichaData.documentos}
           canEdit={canEdit}
         />
+        <ChecklistsUnidad checklists={checklists} />
       </VehiculoDetalleClient>
     </div>
   )
