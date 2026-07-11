@@ -20,6 +20,7 @@ export type FlotaKpi =
   | "inventario_exactitud"
   | "combustible_kml"
   | "co2_flota"
+  | "cil_tareas"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -176,7 +177,7 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (rows.length < PAGE) break
     }
 
-    const [otRes, planesRes, conteosRes, cargasRes] = await Promise.all([
+    const [otRes, planesRes, conteosRes, cargasRes, cilRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha")
@@ -197,11 +198,13 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         .from("registro_combustible")
         .select("fecha, litros, km_recorridos")
         .gte("fecha", inicioVentana),
+      supabase.from("mantenimiento_cil").select("fecha").gte("fecha", inicioVentana),
     ])
     if (otRes.error) return { error: otRes.error.message }
     if (planesRes.error) return { error: planesRes.error.message }
     if (conteosRes.error) return { error: conteosRes.error.message }
     if (cargasRes.error) return { error: cargasRes.error.message }
+    if (cilRes.error) return { error: cilRes.error.message }
 
     // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
     const defectosPorDominio = new Map<string, string[]>()
@@ -283,8 +286,16 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       combustible.set(ym, acc)
     }
 
+    // Tareas CIL completadas por mes.
+    const cilPorMes = new Map<string, number>()
+    for (const t of (cilRes.data || []) as Array<{ fecha: string }>) {
+      const ym = String(t.fecha).slice(0, 7)
+      if (meses.includes(ym)) cilPorMes.set(ym, (cilPorMes.get(ym) ?? 0) + 1)
+    }
+
     return {
       data: {
+        cil_tareas: meses.map((ym) => ({ ym, valor: cilPorMes.get(ym) ?? null })),
         combustible_kml: meses.map((ym) => {
           const c = combustible.get(ym)
           return { ym, valor: c && c.litrosConKm > 0 ? c.km / c.litrosConKm : null }

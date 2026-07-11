@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table"
 import { ClipboardCheck, FileText, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
   createConteo,
   createNovedad,
@@ -891,7 +892,8 @@ function ResiduoDialog({
     fd.set("unidad", unidad)
     fd.set("numeros_fuego", numerosFuego)
     fd.set("observaciones", observaciones)
-    if (certificado) fd.set("certificado", certificado)
+    // Si es imagen (foto del certificado), se comprime; los PDF pasan tal cual.
+    if (certificado) fd.set("certificado", await comprimirImagen(certificado))
     const res = await createResiduo(fd)
     setSaving(false)
     if ("error" in res) return toast.error(res.error)

@@ -9,6 +9,7 @@ import {
   getMantenimientos,
   getSiguienteNumeroOt,
   getTableroOperativo,
+  getTareasCil,
 } from "@/actions/mantenimiento-vehiculos"
 import {
   getNeumaticos,
@@ -60,6 +61,7 @@ export default async function MantenimientoPage() {
     planesFlotaRes,
     kpiSnapshotsRes,
     kpiExtraRes,
+    tareasCilRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -82,6 +84,7 @@ export default async function MantenimientoPage() {
     getFlotaPlanes(),
     getFlotaKpiSnapshots(),
     getFlotaKpiSeriesExtra(),
+    getTareasCil(),
     getProfile(),
   ])
 
@@ -150,6 +153,7 @@ export default async function MantenimientoPage() {
   const flotaPlanes = "data" in planesFlotaRes ? planesFlotaRes.data : []
   const kpiSnapshots = "data" in kpiSnapshotsRes ? kpiSnapshotsRes.data : []
   const kpiExtraSeries = "data" in kpiExtraRes ? kpiExtraRes.data : {}
+  const tareasCil = "data" in tareasCilRes ? tareasCilRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -177,6 +181,7 @@ export default async function MantenimientoPage() {
       flotaPlanes={flotaPlanes}
       kpiSnapshots={kpiSnapshots}
       kpiExtraSeries={kpiExtraSeries}
+      tareasCil={tareasCil}
       rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}

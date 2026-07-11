@@ -108,6 +108,7 @@ import type {
   ChecklistItemNoOk,
   ConteoResumen,
   Novedad,
+  TareaCil,
   OrdenCompra,
   Repuesto,
   Residuo,
@@ -382,6 +383,7 @@ interface MantenimientoClientProps {
   flotaPlanes: FlotaPlanConItems[]
   kpiSnapshots: FlotaKpiSnapshot[]
   kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
+  tareasCil: TareaCil[]
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -411,6 +413,7 @@ export function MantenimientoClient({
   flotaPlanes,
   kpiSnapshots,
   kpiExtraSeries,
+  tareasCil,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -616,6 +619,8 @@ export function MantenimientoClient({
           <ChecklistsMtto
             itemsNoOk={checklists.itemsNoOk}
             comentarios={checklists.comentarios}
+            tareasCil={tareasCil}
+            dominiosFlota={unidades.map((u) => u.dominio)}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

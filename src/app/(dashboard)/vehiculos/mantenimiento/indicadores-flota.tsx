@@ -195,6 +195,14 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${v.toFixed(0)} kg`),
     conSerie: true,
   },
+  {
+    kpi: "cil_tareas",
+    label: "Tareas CIL / ATO completadas",
+    descripcion:
+      "Limpiezas, inspecciones y lubricaciones autónomas registradas en el mes (Check lists → Tareas CIL)",
+    fmt: (v) => String(Math.round(v)),
+    conSerie: true,
+  },
 ]
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el

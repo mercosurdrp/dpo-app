@@ -1497,6 +1497,119 @@ export async function createResiduo(
   }
 }
 
+// ----- Tareas CIL / ATO (DPO Flota 4.1) -----
+
+const CIL_BUCKET = "mantenimiento-evidencias"
+
+export interface TareaCil {
+  id: string
+  fecha: string
+  dominio: string
+  tarea: string
+  descripcion: string | null
+  operario: string
+  foto_url: string | null
+  foto_path: string | null
+  created_at: string
+}
+
+export async function getTareasCil(): Promise<
+  { data: TareaCil[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_cil")
+      .select("*")
+      .order("fecha", { ascending: false })
+      .limit(300)
+    if (error) return { error: error.message }
+    return { data: (data || []) as TareaCil[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Registra una tarea CIL. FormData: fecha, dominio, tarea, operario,
+ * descripcion? y foto? (evidencia opcional, comprimida en el cliente).
+ */
+export async function createTareaCil(
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+
+    const fecha = String(formData.get("fecha") || "").trim()
+    const dominio = String(formData.get("dominio") || "").trim().toUpperCase()
+    const tarea = String(formData.get("tarea") || "").trim()
+    const operario = String(formData.get("operario") || "").trim()
+    if (!fecha || !dominio || !tarea || !operario)
+      return { error: "Completá fecha, unidad, tarea y operario" }
+
+    let fotoUrl: string | null = null
+    let fotoPath: string | null = null
+    const foto = formData.get("foto")
+    if (foto instanceof File && foto.size > 0) {
+      const clean = foto.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = `cil/${dominio}/${Date.now()}-${clean}`
+      const ab = await foto.arrayBuffer()
+      const { error: upErr } = await supabase.storage
+        .from(CIL_BUCKET)
+        .upload(path, ab, {
+          contentType: foto.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (upErr) return { error: upErr.message }
+      const { data: pub } = supabase.storage.from(CIL_BUCKET).getPublicUrl(path)
+      fotoUrl = pub.publicUrl
+      fotoPath = path
+    }
+
+    const { error } = await supabase.from("mantenimiento_cil").insert({
+      fecha,
+      dominio,
+      tarea,
+      operario,
+      descripcion: String(formData.get("descripcion") || "").trim() || null,
+      foto_url: fotoUrl,
+      foto_path: fotoPath,
+      created_by: profile.id,
+    })
+    if (error) {
+      if (fotoPath) await supabase.storage.from(CIL_BUCKET).remove([fotoPath])
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function deleteTareaCil(
+  id: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { data: row } = await supabase
+      .from("mantenimiento_cil")
+      .select("foto_path")
+      .eq("id", id)
+      .single()
+    const { error } = await supabase.from("mantenimiento_cil").delete().eq("id", id)
+    if (error) return { error: error.message }
+    if (row?.foto_path) {
+      await supabase.storage.from(CIL_BUCKET).remove([row.foto_path])
+    }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ----- Conteos físicos de stock (DPO Flota 2.3) -----
 
 export interface ConteoResumen {

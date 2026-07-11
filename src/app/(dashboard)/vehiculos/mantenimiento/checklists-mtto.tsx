@@ -45,6 +45,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  createTareaCil,
+  deleteTareaCil,
   eliminarItemChecklist,
   eliminarPlanChecklist,
   upsertPlanChecklist,
@@ -52,7 +54,10 @@ import {
   type ChecklistItemNoOk,
   type ChecklistPlanEstado,
   type ChecklistPlanTipo,
+  type TareaCil,
 } from "@/actions/mantenimiento-vehiculos"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
+import { toast } from "sonner"
 
 function fmtFecha(f: string): string {
   return f.slice(0, 10).split("-").reverse().join("/")
@@ -178,10 +183,19 @@ function ScrollX({ children }: { children: ReactNode }) {
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
   comentarios: ChecklistComentario[]
+  tareasCil: TareaCil[]
+  /** Flota activa completa (para el alta de tareas CIL). */
+  dominiosFlota: string[]
   puedeEditar: boolean
 }
 
-export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
+export function ChecklistsMtto({
+  itemsNoOk,
+  comentarios,
+  tareasCil,
+  dominiosFlota,
+  puedeEditar,
+}: Props) {
   const router = useRouter()
   const [fDominio, setFDominio] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
@@ -489,7 +503,264 @@ export function ChecklistsMtto({ itemsNoOk, comentarios, puedeEditar }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Tareas CIL / ATO (DPO 4.1) ===== */}
+      <TareasCilSection
+        tareasCil={tareasCil}
+        dominios={dominiosFlota}
+        puedeEditar={puedeEditar}
+      />
     </div>
+  )
+}
+
+// ==================== Tareas CIL / ATO ====================
+
+const TAREA_CIL_LABEL: Record<string, string> = {
+  limpieza: "Limpieza",
+  limpieza_profunda: "Limpieza profunda",
+  inspeccion: "Inspección",
+  lubricacion: "Lubricación",
+}
+
+function TareasCilSection({
+  tareasCil,
+  dominios,
+  puedeEditar,
+}: {
+  tareasCil: TareaCil[]
+  dominios: string[]
+  puedeEditar: boolean
+}) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+  const refresh = () => startTransition(() => router.refresh())
+  const [abrirCarga, setAbrirCarga] = useState(false)
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ClipboardCheck className="size-4 text-slate-500" /> Tareas CIL / ATO
+          <Badge variant="outline" className="bg-slate-100 text-slate-600">
+            {tareasCil.length}
+          </Badge>
+        </CardTitle>
+        {puedeEditar && (
+          <Button size="sm" onClick={() => setAbrirCarga(true)}>
+            <Plus className="mr-1 size-4" /> Registrar tarea
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <p className="mb-3 text-sm text-slate-500">
+          Limpieza, inspección y lubricación autónomas hechas por los operarios
+          (incrementales al checklist diario).
+        </p>
+        {tareasCil.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-400">
+            Sin tareas CIL registradas.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Unidad</TableHead>
+                <TableHead>Tarea</TableHead>
+                <TableHead>Operario</TableHead>
+                <TableHead>Detalle</TableHead>
+                <TableHead>Evidencia</TableHead>
+                {puedeEditar && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tareasCil.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="whitespace-nowrap">{fmtFecha(t.fecha)}</TableCell>
+                  <TableCell className="font-medium">{t.dominio}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="bg-sky-50 text-sky-700">
+                      {TAREA_CIL_LABEL[t.tarea] ?? t.tarea}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-slate-600">{t.operario}</TableCell>
+                  <TableCell className="max-w-64 text-slate-600">
+                    {t.descripcion ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    {t.foto_url ? (
+                      <a
+                        href={t.foto_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+                      >
+                        <ImageIcon className="size-3.5" /> Ver
+                      </a>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </TableCell>
+                  {puedeEditar && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-red-500"
+                        onClick={async () => {
+                          const res = await deleteTareaCil(t.id)
+                          if ("error" in res) toast.error(res.error)
+                          else {
+                            toast.success("Eliminada")
+                            refresh()
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+      {abrirCarga && (
+        <TareaCilDialog
+          dominios={dominios}
+          onClose={() => setAbrirCarga(false)}
+          onSaved={() => {
+            setAbrirCarga(false)
+            refresh()
+          }}
+        />
+      )}
+    </Card>
+  )
+}
+
+function TareaCilDialog({
+  dominios,
+  onClose,
+  onSaved,
+}: {
+  dominios: string[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const [fecha, setFecha] = useState(hoy)
+  const [dominio, setDominio] = useState("")
+  const [tarea, setTarea] = useState("limpieza")
+  const [operario, setOperario] = useState("")
+  const [descripcion, setDescripcion] = useState("")
+  const [foto, setFoto] = useState<File | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!dominio) return toast.error("Elegí la unidad")
+    if (!operario.trim()) return toast.error("Indicá el operario")
+    setSaving(true)
+    try {
+      const fd = new FormData()
+      fd.set("fecha", fecha)
+      fd.set("dominio", dominio)
+      fd.set("tarea", tarea)
+      fd.set("operario", operario)
+      fd.set("descripcion", descripcion)
+      if (foto) fd.set("foto", await comprimirImagen(foto))
+      const res = await createTareaCil(fd)
+      if ("error" in res) return toast.error(res.error)
+      toast.success("Tarea CIL registrada")
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Registrar tarea CIL</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Fecha</Label>
+              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+            <div>
+              <Label>Unidad</Label>
+              <Select value={dominio || undefined} onValueChange={(v) => v && setDominio(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Elegir" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dominios.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Tarea</Label>
+              <Select value={tarea} onValueChange={(v) => v && setTarea(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(TAREA_CIL_LABEL).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Operario</Label>
+              <Input
+                value={operario}
+                onChange={(e) => setOperario(e.target.value)}
+                placeholder="Nombre"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Detalle</Label>
+            <Textarea
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              rows={2}
+              placeholder="Opcional: qué se hizo / qué se encontró"
+            />
+          </div>
+          <div>
+            <Label>Foto (opcional)</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
