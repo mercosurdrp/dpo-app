@@ -14,6 +14,8 @@ export type FlotaKpi =
   | "pct_preventivo"
   | "cumplimiento_plan"
   | "services_vencidos"
+  | "checklist_deteccion"
+  | "checklist_resolucion"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -90,6 +92,151 @@ export async function updateFlotaMeta(input: {
       .eq("kpi", input.kpi)
     if (error) return { error: error.message }
     return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+// ==================== SERIES EXTRA (PIs calculados) ====================
+
+export interface PuntoSerieKpi {
+  ym: string // "YYYY-MM"
+  valor: number | null
+}
+
+/** Ventana de matcheo defecto de checklist → OT correctiva (días). */
+const DETECCION_VENTANA_DIAS = 15
+
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
+/** Últimos 3 meses ARG como "YYYY-MM" (2 cerrados + el actual). */
+function meses3Argentina(): string[] {
+  const s = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date())
+  const year = Number(s.slice(0, 4))
+  const mes = Number(s.slice(5, 7))
+  const out: string[] = []
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(year, mes - 1 - i, 1)
+    out.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`)
+  }
+  return out
+}
+
+/**
+ * PIs del pilar Flota 1.3 calculados por mes (últimos 3):
+ *  - checklist_deteccion: % de OTs correctivas del mes con defecto detectado
+ *    en el checklist del mismo dominio dentro de los 15 días previos.
+ *  - checklist_resolucion: días promedio entre el defecto y su plan resuelto
+ *    (por mes de resolución; usa updated_at del plan al pasar a resuelto).
+ */
+export async function getFlotaKpiSeriesExtra(): Promise<
+  { data: Partial<Record<FlotaKpi, PuntoSerieKpi[]>> } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const meses = meses3Argentina()
+    const inicioVentana = `${meses[0]}-01`
+    // Los defectos previos a una correctiva de principios del 1er mes pueden
+    // caer hasta 15 días antes de la ventana.
+    const d0 = new Date(`${inicioVentana}T00:00:00`)
+    d0.setDate(d0.getDate() - DETECCION_VENTANA_DIAS)
+    const inicioDefectos = `${d0.getFullYear()}-${pad2(d0.getMonth() + 1)}-${pad2(d0.getDate())}`
+
+    // Defectos de checklist (paginado: PostgREST topea en 1000 filas).
+    const PAGE = 1000
+    const defectos: Array<{ fecha: string; dominio: string }> = []
+    for (let desde = 0; ; desde += PAGE) {
+      const { data, error } = await supabase
+        .from("checklist_respuestas")
+        .select("id, cv:checklist_vehiculos!inner(fecha, dominio)")
+        .not("valor", "in", '("ok","bueno")')
+        .gte("cv.fecha", inicioDefectos)
+        .order("id", { ascending: true })
+        .range(desde, desde + PAGE - 1)
+      if (error) return { error: error.message }
+      const rows = (data || []) as unknown as Array<{
+        cv: { fecha: string; dominio: string } | null
+      }>
+      for (const r of rows) {
+        if (r.cv) defectos.push({ fecha: r.cv.fecha, dominio: r.cv.dominio })
+      }
+      if (rows.length < PAGE) break
+    }
+
+    const [otRes, planesRes] = await Promise.all([
+      supabase
+        .from("mantenimiento_realizados")
+        .select("dominio, fecha")
+        .eq("tipo", "correctivo")
+        .neq("estado", "cancelado")
+        .gte("fecha", inicioVentana),
+      supabase
+        .from("checklist_planes_accion")
+        .select("created_at, updated_at")
+        .eq("estado", "resuelto")
+        .gte("updated_at", `${inicioVentana}T00:00:00`),
+    ])
+    if (otRes.error) return { error: otRes.error.message }
+    if (planesRes.error) return { error: planesRes.error.message }
+
+    // Fechas de defecto por dominio, ordenadas, para el matcheo por ventana.
+    const defectosPorDominio = new Map<string, string[]>()
+    for (const d of defectos) {
+      if (!defectosPorDominio.has(d.dominio)) defectosPorDominio.set(d.dominio, [])
+      defectosPorDominio.get(d.dominio)!.push(d.fecha)
+    }
+    for (const fechas of defectosPorDominio.values()) fechas.sort()
+
+    const MS_DIA = 86_400_000
+    const anticipadas = new Map<string, { conDefecto: number; total: number }>()
+    for (const ot of (otRes.data || []) as Array<{ dominio: string; fecha: string }>) {
+      const ym = ot.fecha.slice(0, 7)
+      if (!meses.includes(ym)) continue
+      const acc = anticipadas.get(ym) ?? { conDefecto: 0, total: 0 }
+      acc.total++
+      const tOt = new Date(`${ot.fecha}T00:00:00`).getTime()
+      const hubo = (defectosPorDominio.get(ot.dominio) ?? []).some((f) => {
+        const t = new Date(`${f}T00:00:00`).getTime()
+        return t <= tOt && tOt - t <= DETECCION_VENTANA_DIAS * MS_DIA
+      })
+      if (hubo) acc.conDefecto++
+      anticipadas.set(ym, acc)
+    }
+
+    const resolucion = new Map<string, { dias: number; n: number }>()
+    for (const p of (planesRes.data || []) as Array<{
+      created_at: string
+      updated_at: string
+    }>) {
+      const ym = p.updated_at.slice(0, 7)
+      if (!meses.includes(ym)) continue
+      const dias =
+        (new Date(p.updated_at).getTime() - new Date(p.created_at).getTime()) / MS_DIA
+      if (dias < 0) continue
+      const acc = resolucion.get(ym) ?? { dias: 0, n: 0 }
+      acc.dias += dias
+      acc.n++
+      resolucion.set(ym, acc)
+    }
+
+    return {
+      data: {
+        checklist_deteccion: meses.map((ym) => {
+          const a = anticipadas.get(ym)
+          return { ym, valor: a && a.total > 0 ? (a.conDefecto / a.total) * 100 : null }
+        }),
+        checklist_resolucion: meses.map((ym) => {
+          const r = resolucion.get(ym)
+          return { ym, valor: r && r.n > 0 ? r.dias / r.n : null }
+        }),
+      },
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

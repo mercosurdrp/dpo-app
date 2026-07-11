@@ -93,9 +93,11 @@ import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
 import { IndicadoresFlota } from "./indicadores-flota"
 import type {
+  FlotaKpi,
   FlotaKpiSnapshot,
   FlotaMeta,
   FlotaPlanConItems,
+  PuntoSerieKpi,
 } from "@/actions/flota-indicadores"
 import type {
   DocumentoVencimiento,
@@ -375,6 +377,7 @@ interface MantenimientoClientProps {
   flotaMetas: FlotaMeta[]
   flotaPlanes: FlotaPlanConItems[]
   kpiSnapshots: FlotaKpiSnapshot[]
+  kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -403,6 +406,7 @@ export function MantenimientoClient({
   flotaMetas,
   flotaPlanes,
   kpiSnapshots,
+  kpiExtraSeries,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -656,6 +660,7 @@ export function MantenimientoClient({
             metas={flotaMetas}
             planes={flotaPlanes}
             kpiSnapshots={kpiSnapshots}
+            extraSeries={kpiExtraSeries}
             puedeEditar={puedeEditar}
             esAdmin={esAdmin}
           />

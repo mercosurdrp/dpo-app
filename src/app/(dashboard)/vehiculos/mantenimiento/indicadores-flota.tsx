@@ -44,6 +44,7 @@ import {
   type FlotaKpiSnapshot,
   type FlotaMeta,
   type FlotaPlanConItems,
+  type PuntoSerieKpi,
 } from "@/actions/flota-indicadores"
 import {
   calcularDisponibilidadMes,
@@ -142,6 +143,22 @@ const KPI_DEFS: KpiDef[] = [
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
   },
+  {
+    kpi: "checklist_deteccion",
+    label: "Defectos anticipados por checklist",
+    descripcion:
+      "OTs correctivas del mes con defecto detectado en el checklist de la unidad en los 15 días previos ÷ OTs correctivas",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+  },
+  {
+    kpi: "checklist_resolucion",
+    label: "Resolución de defectos de checklist",
+    descripcion:
+      "Días promedio entre el defecto observado y su plan de acción resuelto (por mes de resolución)",
+    fmt: (v) => `${v.toFixed(1)} d`,
+    conSerie: true,
+  },
 ]
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el
@@ -165,6 +182,7 @@ interface Props {
   metas: FlotaMeta[]
   planes: FlotaPlanConItems[]
   kpiSnapshots: FlotaKpiSnapshot[]
+  extraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -180,6 +198,7 @@ export function IndicadoresFlota({
   metas,
   planes,
   kpiSnapshots,
+  extraSeries,
   puedeEditar,
   esAdmin,
 }: Props) {
@@ -293,6 +312,22 @@ export function IndicadoresFlota({
         })
       )
     }
+
+    // PIs calculados en el server (checklist, y a futuro combustible/CO2):
+    // llegan como serie {ym, valor}; el mes en curso siempre es parcial.
+    for (const [kpi, serie] of Object.entries(extraSeries) as Array<
+      [FlotaKpi, PuntoSerieKpi[]]
+    >) {
+      const byYm = new Map(serie.map((p) => [p.ym, p.valor]))
+      out.set(
+        kpi,
+        meses3.map((ym) => ({
+          ym,
+          valor: byYm.get(ym) != null ? Number(byYm.get(ym)) : null,
+          parcial: ym === mesActual,
+        }))
+      )
+    }
     return out
   }, [
     meses3,
@@ -304,6 +339,7 @@ export function IndicadoresFlota({
     indisponibilidades,
     kpiSnapshots,
     fotoActual,
+    extraSeries,
   ])
 
   const valorActual = (def: KpiDef): number | null =>
