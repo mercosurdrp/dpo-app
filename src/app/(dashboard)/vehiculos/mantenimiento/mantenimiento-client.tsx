@@ -599,6 +599,7 @@ export function MantenimientoClient({
 
           <TableroOperativo
             programacion={tablero.programacion}
+            documentos={tablero.documentos}
             otPendientes={otPendientes}
             unidadesBaja={tablero.unidadesBaja}
             puedeEditar={puedeEditar}
@@ -652,6 +653,7 @@ export function MantenimientoClient({
           <IndicadoresFlota
             estados={estados}
             programacion={tablero.programacion}
+            documentos={tablero.documentos}
             costos={costos}
             mantenimientos={mantenimientos}
             unidades={unidades}

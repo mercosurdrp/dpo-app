@@ -59,7 +59,11 @@ import type {
   FlotaIndisponibilidad,
   MantenimientoRealizado,
 } from "@/types/database"
-import type { ServiceGeneralUnidad } from "@/lib/vehiculos/service-general"
+import type {
+  DocumentoVencimiento,
+  ServiceGeneralUnidad,
+} from "@/lib/vehiculos/service-general"
+import { conformidadDocumental } from "@/lib/vehiculos/documentos-conformidad"
 
 const MESES_CORTO = [
   "ene", "feb", "mar", "abr", "may", "jun",
@@ -144,6 +148,14 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
   },
   {
+    kpi: "docs_conformidad",
+    label: "Conformidad documental",
+    descripcion:
+      "Unidades activas sin documentos vencidos ÷ flota activa. Un doc vencido deja la unidad fuera de servicio hasta regularizar",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+  },
+  {
     kpi: "checklist_deteccion",
     label: "Defectos anticipados por checklist",
     descripcion:
@@ -163,7 +175,11 @@ const KPI_DEFS: KpiDef[] = [
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el
 // cron diario); el mes en curso se calcula en vivo.
-const KPIS_FOTO: FlotaKpi[] = ["cumplimiento_plan", "services_vencidos"]
+const KPIS_FOTO: FlotaKpi[] = [
+  "cumplimiento_plan",
+  "services_vencidos",
+  "docs_conformidad",
+]
 
 interface PuntoSerie {
   ym: string
@@ -174,6 +190,7 @@ interface PuntoSerie {
 interface Props {
   estados: EstadoPlanVehiculo[]
   programacion: ServiceGeneralUnidad[]
+  documentos: DocumentoVencimiento[]
   costos: CostosMantenimiento
   mantenimientos: MantenimientoRealizado[]
   unidades: UnidadFlota[]
@@ -190,6 +207,7 @@ interface Props {
 export function IndicadoresFlota({
   estados,
   programacion,
+  documentos,
   costos,
   mantenimientos,
   unidades,
@@ -246,11 +264,16 @@ export function IndicadoresFlota({
     }
     const cumplimiento = ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
     const vencidos = programacion.filter((p) => p.estado === "vencido").length
+    const docsConf = conformidadDocumental(
+      unidades.map((u) => u.dominio),
+      documentos
+    ).pct
     return new Map<FlotaKpi, number | null>([
       ["cumplimiento_plan", cumplimiento],
       ["services_vencidos", vencidos],
+      ["docs_conformidad", docsConf],
     ])
-  }, [estados, programacion])
+  }, [estados, programacion, documentos, unidades])
 
   // Series por KPI para los 3 meses.
   const series = useMemo(() => {

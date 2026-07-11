@@ -16,6 +16,7 @@ export type FlotaKpi =
   | "services_vencidos"
   | "checklist_deteccion"
   | "checklist_resolucion"
+  | "docs_conformidad"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"

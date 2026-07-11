@@ -24,10 +24,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Archive, ClipboardList, Gauge, Loader2, Plus, Wrench } from "lucide-react"
+import {
+  Archive,
+  ClipboardList,
+  FileWarning,
+  Gauge,
+  Loader2,
+  Plus,
+  Wrench,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { registrarLecturaVehiculo } from "@/actions/mantenimiento-vehiculos"
 import type {
+  DocumentoVencimiento,
   EstadoServiceGeneral,
   ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
@@ -185,13 +194,14 @@ function CargarLecturaDialog({
 
 interface Props {
   programacion: ServiceGeneralUnidad[]
+  documentos: DocumentoVencimiento[]
   otPendientes: OTPendiente[]
   unidadesBaja: UnidadBaja[]
   puedeEditar: boolean
   onNavigate: (tab: string, dominio?: string) => void
 }
 
-export function TableroOperativo({ programacion, otPendientes, unidadesBaja, puedeEditar, onNavigate }: Props) {
+export function TableroOperativo({ programacion, documentos, otPendientes, unidadesBaja, puedeEditar, onNavigate }: Props) {
   const [resaltado, setResaltado] = useState<string | null>(null)
   const [lecturaDe, setLecturaDe] = useState<ServiceGeneralUnidad | null>(null)
 
@@ -214,8 +224,51 @@ export function TableroOperativo({ programacion, otPendientes, unidadesBaja, pue
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" })
   }
 
+  // Documentación vencida por unidad: la unidad queda fuera de servicio hasta
+  // regularizar (DPO Flota R1.1.4). Ordenado por el vencimiento más viejo.
+  const docsVencidos = documentos
+    .filter((d) => d.diasRestantes < 0)
+    .sort((a, b) => a.diasRestantes - b.diasRestantes)
+
   return (
     <div className="space-y-6">
+      {/* ===== Fuera de servicio por documentación vencida ===== */}
+      {docsVencidos.length > 0 && (
+        <Card className="border-red-300 bg-red-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base text-red-800">
+              <FileWarning className="size-4" /> Fuera de servicio por documentación
+              <Badge className="border-red-300 bg-red-100 text-red-700">
+                {new Set(docsVencidos.map((d) => d.dominio)).size}{" "}
+                {new Set(docsVencidos.map((d) => d.dominio)).size === 1
+                  ? "unidad"
+                  : "unidades"}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-2 text-xs text-red-700">
+              Estas unidades tienen documentación vencida y no deben salir a ruta hasta
+              regularizarla.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {docsVencidos.map((d) => (
+                <span
+                  key={d.id}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs"
+                >
+                  <span className="font-semibold text-slate-800">{d.dominio}</span>
+                  <span className="text-slate-600">{d.categoria}</span>
+                  <span className="font-medium text-red-600">
+                    venció hace {Math.abs(d.diasRestantes)} d
+                  </span>
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ===== Alertas: solo Service pendientes + Órdenes de trabajo ===== */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Service pendientes */}
