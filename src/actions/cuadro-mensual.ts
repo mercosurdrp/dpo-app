@@ -24,6 +24,7 @@ import {
   type DetalleRechazos,
   type DetalleRechazoItem,
 } from "@/lib/indicadores/cuadro-mensual-detalle"
+import { contarTripulacion } from "@/lib/tml/calculo"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -39,17 +40,6 @@ function diffDias(a: string, b: string): number {
   const da = Date.parse(`${a}T00:00:00Z`)
   const db = Date.parse(`${b}T00:00:00Z`)
   return Math.round((db - da) / (24 * 60 * 60 * 1000))
-}
-
-/** Cantidad de días hábiles (lun–vie) de un mes "YYYY-MM" hasta `corte` inclusive. */
-function diasHabilesHasta(mes: string, corte: string): number {
-  let n = 0
-  for (const d of diasDelMes(mes)) {
-    if (d > corte) break
-    const dow = new Date(`${d}T00:00:00Z`).getUTCDay()
-    if (dow >= 1 && dow <= 5) n++
-  }
-  return n
 }
 
 /**
@@ -154,19 +144,24 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
     return rows
   }
-  // Fichadas del biométrico para el FTE: ~600-700 filas/mes → paginar en
-  // rangos largos.
-  async function fichadasTodas() {
+  // Egresos de camión para el FTE de reparto (chofer + ayudantes por viaje):
+  // ~200 filas/mes, pero un rango de varios meses supera el tope de 1000 de
+  // PostgREST → paginar.
+  async function egresosTodos() {
     const PAGE = 1000
-    const rows: Array<{ fecha: string; horas_trabajadas: number | null }> = []
+    const rows: Array<{
+      fecha: string
+      ayudante1: string | null
+      ayudante2: string | null
+    }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
-        .from("asistencia_resumen_diario")
-        .select("fecha, horas_trabajadas")
+        .from("registros_vehiculos")
+        .select("fecha, ayudante1, ayudante2")
+        .eq("tipo", "egreso")
         .gte("fecha", desde)
         .lte("fecha", hasta)
-        .order("legajo", { ascending: true })
-        .order("fecha", { ascending: true })
+        .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
       rows.push(...data)
@@ -196,7 +191,7 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── Fetches de rango (en paralelo) ──
   // reportes_seguridad está muy por debajo de 1000 filas en el rango, así que
   // no necesita paginación.
-  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, fichadasRows] = await Promise.all([
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, egresosRows] = await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -208,7 +203,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     ventasNoDistribuidasTodas(),
     rechazosTodos(),
     foxtrotRoutesTodas(),
-    fichadasTodas(),
+    egresosTodos(),
   ])
 
   // ── SEGURIDAD ──
@@ -532,35 +527,23 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.mantenimiento[mes] = { mes, valor: null, parcial: esActual }
   }
 
-  // ── PERSONAS: FTE promedio (fichadas del biométrico) ──
-  // FTE del mes = horas fichadas / (8 hs × días hábiles L–V hasta el corte).
-  // Se exige cobertura mínima (fichadas en ≥ 50% de los días hábiles) para no
-  // mostrar un FTE engañoso en meses con biométrico incompleto (ej. marzo
-  // tiene un solo día cargado).
-  const fichadasPorMes: Record<string, { horas: number; dias: Set<string> }> = {}
-  for (const f of fichadasRows) {
-    const mes = f.fecha.slice(0, 7)
-    const acc = (fichadasPorMes[mes] ??= { horas: 0, dias: new Set() })
-    const h = Number(f.horas_trabajadas ?? 0)
-    if (Number.isFinite(h) && h > 0) {
-      acc.horas += h
-      acc.dias.add(f.fecha)
-    }
+  // ── ENTREGA: FTE promedio (personas por camión que sale a reparto) ──
+  // Chofer + ayudantes cargados, promediado sobre los egresos del mes. Misma
+  // base que el TML (registros_vehiculos). El chofer siempre suma 1: un egreso
+  // sin ayudantes vale 1, no 0.
+  const ftePorMes: Record<string, { personas: number; viajes: number }> = {}
+  for (const r of egresosRows) {
+    const mes = r.fecha.slice(0, 7)
+    const acc = (ftePorMes[mes] ??= { personas: 0, viajes: 0 })
+    acc.personas += contarTripulacion(r)
+    acc.viajes += 1
   }
   for (const mes of meses) {
-    const esActual = mes === mesActual
-    const dias = diasDelMes(mes)
-    const corte = esActual ? hoy : dias[dias.length - 1]
-    const habiles = diasHabilesHasta(mes, corte)
-    const acc = fichadasPorMes[mes]
-    const cobertura = acc && habiles > 0 ? acc.dias.size / habiles : 0
+    const acc = ftePorMes[mes]
     celdas.fte_prom[mes] = {
       mes,
-      valor:
-        acc && habiles > 0 && cobertura >= 0.5
-          ? acc.horas / (8 * habiles)
-          : null,
-      parcial: esActual,
+      valor: acc && acc.viajes > 0 ? acc.personas / acc.viajes : null,
+      parcial: mes === mesActual,
     }
   }
 

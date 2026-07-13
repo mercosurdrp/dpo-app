@@ -55,6 +55,7 @@ import type {
   TmlPlanResumen,
   TmlMesComparado,
 } from "@/types/database"
+import { franjaPorHoraSalida } from "@/lib/tml/calculo"
 import { TmlPlanAccionSection } from "./tml-plan-accion-section"
 import {
   Plus,
@@ -628,7 +629,10 @@ function RegistrosTable({
                 <Input
                   type="time"
                   value={editHora}
-                  onChange={(e) => setEditHora(e.target.value)}
+                  onChange={(e) => {
+                    setEditHora(e.target.value)
+                    if (e.target.value) setEditHoraEntrada(franjaPorHoraSalida(e.target.value))
+                  }}
                 />
               </div>
               <div className="space-y-1.5">

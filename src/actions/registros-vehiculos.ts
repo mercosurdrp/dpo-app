@@ -12,14 +12,14 @@ import type {
   TmlMesComparado,
 } from "@/types/database"
 
+import {
+  TML_META_MINUTOS,
+  calcTml,
+  contarTripulacion,
+  franjaPorHoraSalida,
+} from "@/lib/tml/calculo"
+
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-
-const TML_META_MINUTOS = 25
-
-function calcTml(hora: string, horaEntrada: number): number {
-  const [h, m] = hora.split(":").map(Number)
-  return h * 60 + m - horaEntrada * 60
-}
 
 // ==================== CREAR REGISTRO ====================
 
@@ -43,7 +43,7 @@ export async function createRegistroVehiculo(
     const profile = await requireAuth()
     const supabase = await createClient()
 
-    const horaEntrada = input.horaEntrada ?? 7
+    const horaEntrada = input.horaEntrada ?? franjaPorHoraSalida(input.hora)
     const tml = input.tipo === "egreso" ? calcTml(input.hora, horaEntrada) : null
 
     // Calculate week number
@@ -152,8 +152,10 @@ export async function updateRegistroVehiculo(
 
     if (input.hora !== undefined) {
       updates.hora = input.hora + ":00"
-      // Recalculate TML
-      const horaEntrada = input.horaEntrada ?? 7
+      // Sin horaEntrada explícita se deriva de la hora de salida. Antes caía a 7
+      // fijo, así que editar la hora de un registro del turno 06:00 lo movía en
+      // silencio al turno 07:00 y le sumaba 60 min de TML.
+      const horaEntrada = input.horaEntrada ?? franjaPorHoraSalida(input.hora)
       updates.tml_minutos = calcTml(input.hora, horaEntrada)
       updates.hora_entrada = horaEntrada
     } else if (input.horaEntrada !== undefined) {
@@ -267,10 +269,7 @@ export async function getTmlKpis(filters?: {
     const pctDentroMeta = Math.round((dentroMeta / totalEgresos) * 100)
 
     // FTE Promedio: 1 chofer + ayudantes por viaje, promediado sobre el total de viajes
-    const totalFte = registros.reduce(
-      (acc, r) => acc + 1 + (r.ayudante1 ? 1 : 0) + (r.ayudante2 ? 1 : 0),
-      0,
-    )
+    const totalFte = registros.reduce((acc, r) => acc + contarTripulacion(r), 0)
     const promedioFte = Math.round((totalFte / totalEgresos) * 100) / 100
 
     // Group by week

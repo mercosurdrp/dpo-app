@@ -2,17 +2,13 @@
 
 import { createClient } from "@supabase/supabase-js"
 import type { CatalogoChofer, CatalogoVehiculo } from "@/types/database"
+import { calcTml, franjaPorHoraSalida } from "@/lib/tml/calculo"
 
 function getServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
-}
-
-function calcTml(hora: string, horaEntrada: number): number {
-  const [h, m] = hora.split(":").map(Number)
-  return h * 60 + m - horaEntrada * 60
 }
 
 // ==================== CATÁLOGOS (público) ====================
@@ -57,7 +53,7 @@ export async function createRegistroPublic(
 ): Promise<{ success: true } | { error: string }> {
   try {
     const supabase = getServiceClient()
-    const horaEntrada = input.horaEntrada ?? 7
+    const horaEntrada = input.horaEntrada ?? franjaPorHoraSalida(input.hora)
     const tml = input.tipo === "egreso" ? calcTml(input.hora, horaEntrada) : null
 
     // Calculate week number

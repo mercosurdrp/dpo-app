@@ -15,6 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { createRegistroPublic } from "@/actions/seguridad"
+import { calcTml, franjaPorHoraSalida } from "@/lib/tml/calculo"
 import type { CatalogoChofer, CatalogoVehiculo } from "@/types/database"
 import { Truck, LogOut, Loader2, Check, Clock, ShieldCheck } from "lucide-react"
 
@@ -40,11 +41,13 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
   const personasOptions = choferes.map((c) => c.nombre)
 
   // TML preview
-  const tmlPreview = (() => {
-    if (!hora) return null
-    const [h, m] = hora.split(":").map(Number)
-    return h * 60 + m - horaEntrada * 60
-  })()
+  const tmlPreview = hora ? calcTml(hora, horaEntrada) : null
+
+  // La franja se sigue de la hora de salida: salir antes de las 07:00 es turno 06:00.
+  function handleHoraChange(nuevaHora: string) {
+    setHora(nuevaHora)
+    if (nuevaHora) setHoraEntrada(franjaPorHoraSalida(nuevaHora))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -195,7 +198,7 @@ export function SeguridadFormClient({ choferes, vehiculos }: Props) {
                 <Input
                   type="time"
                   value={hora}
-                  onChange={(e) => setHora(e.target.value)}
+                  onChange={(e) => handleHoraChange(e.target.value)}
                 />
               </div>
             </div>

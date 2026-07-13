@@ -42,6 +42,7 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "hl_rechazados", pilar: "Entrega", nombre: "HL rechazados", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Volumen total rechazado del mes en hectolitros (misma base que el % Rechazo)." },
   { id: "rechazo", pilar: "Entrega", nombre: "% Rechazo", unidad: "%", meta: 1.7, mejor_si: "menor", resumen: "promedio", nota: "HL rechazados / HL distribuidos del mes. Meta ≤ 1,7%." },
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
+  { id: "fte_prom", pilar: "Entrega", nombre: "FTE promedio", unidad: "personas", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Personas por camión que sale a reparto: chofer + ayudantes, promediado sobre los egresos del mes (registros_vehiculos, la misma base del TML)." },
 
   // ── Ventas (total facturado en Chess, el sistema madre, NETO) ──
   { id: "facturado_chess_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Total facturado en Chess (sistema madre), neto: Factura + Factura Presupuesto − Notas de Crédito − Devoluciones Presupuesto. No incluye Gestión." },
@@ -64,16 +65,15 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "productividad", pilar: "Almacén", nombre: "Productividad de picking", unidad: "HL/HH", meta: null, mejor_si: "mayor", resumen: "promedio", nota: "Hectolitros pickeados por hora-hombre (promedio diario del mes)." },
   { id: "precision", pilar: "Almacén", nombre: "Precisión de picking", unidad: "%", meta: 99, mejor_si: "mayor", resumen: "promedio", nota: "% de bultos pickeados sin error (promedio diario del mes). Meta ≥ 99%." },
 
-  // ── Personas ──
-  { id: "fte_prom", pilar: "Personas", nombre: "FTE promedio", unidad: "FTE", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Equivalentes a tiempo completo del mes: horas fichadas en el biométrico ÷ (8 hs × días hábiles L–V). Fichadas disponibles desde abril 2026; meses con cobertura insuficiente quedan sin dato." },
-
   // ── Costo Logístico (tabla costo_logistico_mensual, la misma que carga
   // el panel de Costo por Punto de Venta / Clusterización) ──
   { id: "costo_distribucion", pilar: "Costo Logístico", nombre: "Costo Distribución", unidad: "$", meta: null, mejor_si: "sin", resumen: "suma", nota: "Costo de distribución del mes, cargado por los admins en Planeamiento → Costo por Punto de Venta. Meses sin carga quedan sin dato." },
   { id: "costo_almacen", pilar: "Costo Logístico", nombre: "Costo Almacén", unidad: "$", meta: null, mejor_si: "sin", resumen: "suma", nota: "Costo de almacén del mes, cargado por los admins en Planeamiento → Costo por Punto de Venta. Meses sin carga quedan sin dato." },
 ]
 
-export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Personas", "Costo Logístico"]
+// "Personas" ya no tiene indicadores propios: el FTE pasó a Entrega (personas
+// por camión) en lugar del FTE de nómina que salía del biométrico.
+export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Costo Logístico"]
 
 /** Color del pilar para los encabezados de grupo (tailwind-ish, inline). */
 export const PILAR_COLOR: Record<Pilar, string> = {
@@ -208,6 +208,10 @@ export function formatValor(valor: number | null, unidad: string): string {
       return valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     case "FTE":
       return valor.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    // Tripulación por camión: 2 decimales, porque el rango útil es angosto
+    // (2,2–2,7) y con uno solo se pierden los movimientos de dotación.
+    case "personas":
+      return valor.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     case "u.":
       return valor.toLocaleString("es-AR", { maximumFractionDigits: 1 })
     case "casos":

@@ -16,6 +16,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { createRegistroVehiculo } from "@/actions/registros-vehiculos"
+import { calcTml, esAyudante, franjaPorHoraSalida } from "@/lib/tml/calculo"
 import type { CatalogoChofer, CatalogoVehiculo } from "@/types/database"
 import {
   ArrowLeft,
@@ -53,12 +54,21 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
   const personasOptions = choferes.map((c) => c.nombre)
 
   // Calculate TML preview
-  const tmlPreview = (() => {
-    if (tipo !== "egreso" || !hora) return null
-    const [h, m] = hora.split(":").map(Number)
-    const tml = h * 60 + m - horaEntrada * 60
-    return tml
-  })()
+  const tmlPreview = tipo === "egreso" && hora ? calcTml(hora, horaEntrada) : null
+
+  const franjaSugerida = hora ? franjaPorHoraSalida(hora) : null
+  const franjaDiscrepa = franjaSugerida !== null && franjaSugerida !== horaEntrada
+
+  const sinAyudante =
+    !esAyudante(ayudante1 === "SIN AYUDANTE" ? null : ayudante1) &&
+    !esAyudante(ayudante2 === "SIN AYUDANTE" ? null : ayudante2)
+
+  // La franja se sigue de la hora de salida: si el camión sale antes de las 07:00
+  // es del turno de las 06:00. Cargarlo en la franja 07 daba TML negativos.
+  function handleHoraChange(nuevaHora: string) {
+    setHora(nuevaHora)
+    if (nuevaHora) setHoraEntrada(franjaPorHoraSalida(nuevaHora))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -164,6 +174,17 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
               {/* Horario de entrada */}
               <div className="space-y-2">
                 <Label>Horario de entrada</Label>
+                <p className="text-xs text-muted-foreground">
+                  Se completa solo según la hora de salida. Cambialo únicamente si
+                  el turno del chofer fue otro.
+                </p>
+                {franjaDiscrepa && (
+                  <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    El camión salió {hora} hs, o sea que corresponde al turno de las{" "}
+                    {franjaSugerida === 6 ? "06:00" : "07:00"} hs. Con la franja
+                    elegida el TML queda en 0.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -205,7 +226,7 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                   <Input
                     type="time"
                     value={hora}
-                    onChange={(e) => setHora(e.target.value)}
+                    onChange={(e) => handleHoraChange(e.target.value)}
                   />
                 </div>
               </div>
@@ -280,6 +301,14 @@ export function RegistroFormClient({ choferes, vehiculos }: Props) {
                   </Select>
                 </div>
               </div>
+
+              {chofer && sinAyudante && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  Un camión de reparto no sale con una sola persona. Si va con
+                  ayudante, cargalo; si realmente salió solo, dejalo asentado en
+                  Observaciones.
+                </p>
+              )}
 
               {/* Odómetro */}
               <div className="space-y-2">
