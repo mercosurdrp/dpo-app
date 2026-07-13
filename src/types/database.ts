@@ -2358,6 +2358,34 @@ export interface S5AuditoriaConMeta extends S5Auditoria {
   vehiculo_dominio: string | null
   ayudante_nombre: string | null
   chofer_nombre_resuelto: string | null
+  /** Responsable del sector ese mes. Se deriva de s5_sector_responsables
+   *  (periodo + sector_numero); la auditoría no lo guarda. */
+  responsable_nombre: string | null
+}
+
+/**
+ * Legajos de los operarios de depósito que entran en el sorteo mensual de
+ * responsables de sector. Para sumar o sacar a alguien, editá esta lista.
+ */
+export const S5_LEGAJOS_ELEGIBLES = [
+  36467481, // RUBEN GALVEZ
+  107, // MARTINEZ PEDRO
+  30, // CERBIN DIEGO
+  43907801, // OVEJERO HUGO
+  112, // TROLI ALEJO JESUS
+  425283564, // PABLO SELENZO
+]
+
+/** Empleado candidato al sorteo mensual de responsables de sector. */
+export interface S5Elegible {
+  id: string
+  legajo: number
+  nombre: string
+  elegible: boolean
+  /** Veces que fue designado responsable de algún sector, histórico. */
+  veces_designado: number
+  /** Último período en que le tocó, o null si nunca. */
+  ultimo_periodo: string | null
 }
 
 export interface S5RankingAyudanteRow {

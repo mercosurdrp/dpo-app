@@ -1,7 +1,9 @@
 import { getProfile } from "@/lib/session"
 import {
   getAuditorias,
+  getElegibles5S,
   getEmpleadosActivos5S,
+  getHistorialResponsables,
   getPeriodoActual,
   getSectoresAlmacen,
   getSectorResponsables,
@@ -39,6 +41,8 @@ export default async function CincoSPage({
     vehiculosPendientes,
     empleados,
     sectoresAlmacen,
+    elegibles,
+    historialResponsables,
   ] = await Promise.all([
     getAuditorias({ tipo: "flota", periodo: periodoActual }),
     getAuditorias({ tipo: "almacen", limit: 500 }),
@@ -47,6 +51,8 @@ export default async function CincoSPage({
     getVehiculosPendientesMes(periodoActual),
     getEmpleadosActivos5S(),
     getSectoresAlmacen(),
+    getElegibles5S(),
+    getHistorialResponsables(),
   ])
 
   if ("error" in auditoriasFlota) {
@@ -80,6 +86,10 @@ export default async function CincoSPage({
       }
       empleados={"error" in empleados ? [] : empleados.data}
       sectoresAlmacen={"error" in sectoresAlmacen ? [] : sectoresAlmacen.data}
+      elegibles={"error" in elegibles ? [] : elegibles.data}
+      historialResponsables={
+        "error" in historialResponsables ? [] : historialResponsables.data
+      }
     />
   )
 }

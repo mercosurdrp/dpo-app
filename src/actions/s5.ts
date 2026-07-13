@@ -15,6 +15,7 @@ import type {
   S5ItemFoto,
   S5SectorAlmacen,
   S5SectorResponsableFull,
+  S5Elegible,
   S5VehiculoPendiente,
   S5KpisMes,
   S5TendenciaMes,
@@ -22,7 +23,11 @@ import type {
   S5RankingAyudanteRow,
   S5ItemCriticoRow,
 } from "@/types/database"
-import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
+import {
+  S5_CATEGORIA_ORDEN,
+  S5_MAX_PUNTAJE,
+  S5_LEGAJOS_ELEGIBLES,
+} from "@/types/database"
 
 const DASHBOARD_PATH = "/5s"
 
@@ -34,6 +39,31 @@ function firstDayOfMonth(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
   return `${y}-${m}-01`
+}
+
+/**
+ * Responsable de cada (periodo, sector) de almacén, indexado por
+ * `${periodo}:${sector}`. La auditoría no guarda al responsable: lo hereda
+ * del designado de su mes y sector.
+ */
+async function mapaResponsables(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any
+): Promise<Map<string, string>> {
+  const { data } = await supabase
+    .from("s5_sector_responsables")
+    .select(
+      "periodo, sector_numero, empleado:empleados!s5_sector_responsables_empleado_id_fkey(nombre)"
+    )
+
+  const m = new Map<string, string>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const r of (data ?? []) as any[]) {
+    if (r.empleado?.nombre) {
+      m.set(`${r.periodo}:${r.sector_numero}`, r.empleado.nombre)
+    }
+  }
+  return m
 }
 
 function assertAuditorOrAdmin(role: string) {
@@ -169,6 +199,51 @@ export async function getSectorResponsables(
   }
 }
 
+/**
+ * Todos los responsables designados, de todos los meses.
+ * Alimenta el historial editable: permite cargar a mano los meses viejos.
+ */
+export async function getHistorialResponsables(): Promise<
+  { data: S5SectorResponsableFull[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("s5_sector_responsables")
+      .select(
+        "*, empleado:empleados!s5_sector_responsables_empleado_id_fkey(id, legajo, nombre)"
+      )
+      .order("periodo", { ascending: false })
+      .order("sector_numero", { ascending: true })
+
+    if (error) return { error: error.message }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enriched: S5SectorResponsableFull[] = ((data ?? []) as any[]).map(
+      (row) => ({
+        id: row.id,
+        periodo: row.periodo,
+        sector_numero: row.sector_numero,
+        empleado_id: row.empleado_id,
+        nombre: row.nombre ?? null,
+        asignado_por: row.asignado_por,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        empleado_nombre: row.empleado?.nombre ?? "—",
+        empleado_legajo: row.empleado?.legajo ?? null,
+      })
+    )
+
+    return { data: enriched }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando historial",
+    }
+  }
+}
+
 export async function upsertSectorResponsable(
   periodo: string,
   sectorNumero: number,
@@ -225,6 +300,185 @@ export async function upsertSectorResponsable(
     return {
       error:
         err instanceof Error ? err.message : "Error asignando responsable",
+    }
+  }
+}
+
+// ===================================================
+// Sorteo mensual de responsables
+// ===================================================
+
+/**
+ * Empleados de depósito con su historial de designaciones.
+ * `elegible` marca quiénes entran en el sorteo mensual.
+ */
+export async function getElegibles5S(): Promise<
+  { data: S5Elegible[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: empleados, error: errEmp } = await supabase
+      .from("empleados")
+      .select("id, legajo, nombre")
+      .eq("activo", true)
+      .eq("sector", "Depósito")
+      .order("nombre", { ascending: true })
+    if (errEmp) return { error: errEmp.message }
+
+    const { data: historial, error: errHist } = await supabase
+      .from("s5_sector_responsables")
+      .select("empleado_id, periodo")
+    if (errHist) return { error: errHist.message }
+
+    const veces = new Map<string, number>()
+    const ultimo = new Map<string, string>()
+    for (const h of historial ?? []) {
+      veces.set(h.empleado_id, (veces.get(h.empleado_id) ?? 0) + 1)
+      const prev = ultimo.get(h.empleado_id)
+      if (!prev || h.periodo > prev) ultimo.set(h.empleado_id, h.periodo)
+    }
+
+    const rows: S5Elegible[] = (empleados ?? []).map((e) => ({
+      id: e.id,
+      legajo: e.legajo,
+      nombre: e.nombre,
+      elegible: S5_LEGAJOS_ELEGIBLES.includes(e.legajo),
+      veces_designado: veces.get(e.id) ?? 0,
+      ultimo_periodo: ultimo.get(e.id) ?? null,
+    }))
+
+    return { data: rows }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando elegibles",
+    }
+  }
+}
+
+function periodoAnterior(periodo: string): string {
+  const [y, m] = periodo.split("-").map(Number)
+  const d = new Date(y, m - 2, 1)
+  return firstDayOfMonth(d)
+}
+
+/**
+ * Sortea los 4 responsables de sector del mes.
+ *
+ * Equidad antes que azar: primero entran los que menos veces fueron
+ * designados; el azar sólo desempata. Entre iguales se evita repetir el
+ * sector del mes anterior y se prefiere un sector que la persona no haya
+ * tenido nunca.
+ *
+ * Las auditorías del mes quedan asociadas solas: su responsable se deriva
+ * del par (periodo, sector_numero), no se guarda en la auditoría.
+ */
+export async function sortearResponsablesMes(
+  periodo: string
+): Promise<
+  | { data: { sector: number; empleado_id: string; nombre: string }[] }
+  | { error: string }
+> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    const supabase = await createClient()
+
+    const { data: elegibles, error: errEmp } = await supabase
+      .from("empleados")
+      .select("id, nombre")
+      .eq("activo", true)
+      .in("legajo", S5_LEGAJOS_ELEGIBLES)
+    if (errEmp) return { error: errEmp.message }
+    if (!elegibles || elegibles.length < 4) {
+      return {
+        error: `Hacen falta al menos 4 operarios elegibles y activos (hay ${elegibles?.length ?? 0}).`,
+      }
+    }
+
+    // Historial previo al mes que se sortea: un re-sorteo del mismo mes no
+    // debe contarse a sí mismo.
+    const { data: historial, error: errHist } = await supabase
+      .from("s5_sector_responsables")
+      .select("empleado_id, periodo, sector_numero")
+      .lt("periodo", periodo)
+    if (errHist) return { error: errHist.message }
+
+    const mesAnterior = periodoAnterior(periodo)
+    const veces = new Map<string, number>()
+    const vecesEnSector = new Map<string, number>() // `${empleadoId}:${sector}`
+    const sectorMesAnterior = new Map<string, number>()
+    for (const h of historial ?? []) {
+      veces.set(h.empleado_id, (veces.get(h.empleado_id) ?? 0) + 1)
+      const k = `${h.empleado_id}:${h.sector_numero}`
+      vecesEnSector.set(k, (vecesEnSector.get(k) ?? 0) + 1)
+      if (h.periodo === mesAnterior) {
+        sectorMesAnterior.set(h.empleado_id, h.sector_numero)
+      }
+    }
+
+    const sectores = [1, 2, 3, 4]
+    // Barajar el orden en que se cubren los sectores: si siempre se empezara
+    // por el 1, el sector 1 se llevaría sistemáticamente al que menos veces
+    // salió.
+    for (let i = sectores.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[sectores[i], sectores[j]] = [sectores[j], sectores[i]]
+    }
+
+    const disponibles = [...elegibles]
+    const asignaciones: { sector: number; empleado_id: string; nombre: string }[] =
+      []
+
+    for (const sector of sectores) {
+      const ranked = disponibles
+        .map((e) => ({
+          e,
+          total: veces.get(e.id) ?? 0,
+          repiteSector: sectorMesAnterior.get(e.id) === sector ? 1 : 0,
+          enSector: vecesEnSector.get(`${e.id}:${sector}`) ?? 0,
+          azar: Math.random(),
+        }))
+        .sort(
+          (a, b) =>
+            a.total - b.total ||
+            a.repiteSector - b.repiteSector ||
+            a.enSector - b.enSector ||
+            a.azar - b.azar
+        )
+
+      const ganador = ranked[0].e
+      asignaciones.push({
+        sector,
+        empleado_id: ganador.id,
+        nombre: ganador.nombre,
+      })
+      disponibles.splice(
+        disponibles.findIndex((d) => d.id === ganador.id),
+        1
+      )
+    }
+
+    const { error: errUpsert } = await supabase
+      .from("s5_sector_responsables")
+      .upsert(
+        asignaciones.map((a) => ({
+          periodo,
+          sector_numero: a.sector,
+          empleado_id: a.empleado_id,
+          asignado_por: profile.id,
+        })),
+        { onConflict: "periodo,sector_numero" }
+      )
+    if (errUpsert) return { error: errUpsert.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { data: asignaciones.sort((a, b) => a.sector - b.sector) }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error sorteando responsables",
     }
   }
 }
@@ -373,6 +627,8 @@ export async function getAuditorias(
     const { data, error } = await query
     if (error) return { error: error.message }
 
+    const responsables = await mapaResponsables(supabase)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: S5AuditoriaConMeta[] = ((data ?? []) as any[]).map((row) => ({
       id: row.id,
@@ -400,6 +656,8 @@ export async function getAuditorias(
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
       ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
       chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
+      responsable_nombre:
+        responsables.get(`${row.periodo}:${row.sector_numero}`) ?? null,
     }))
 
     return { data: rows }
@@ -506,6 +764,10 @@ export async function getAuditoria(
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
       ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
       chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
+      responsable_nombre:
+        (await mapaResponsables(supabase)).get(
+          `${row.periodo}:${row.sector_numero}`
+        ) ?? null,
       items,
     }
 
