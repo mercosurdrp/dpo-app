@@ -17,7 +17,8 @@ import {
   esKpiExterno,
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
-import { tiempoPdvAnual, tiempoRutaAnual, tlpAnual } from "@/lib/tlp/calc"
+import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
+import { tiempoRutaAnualFlota } from "@/actions/tiempo-ruta-flota"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -45,13 +46,16 @@ async function resolverTiempoPdvVivo(
   }
 }
 
-/** Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida. */
+/**
+ * Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida, de las
+ * rutas limpias de Foxtrot — el mismo KPI de Indicadores → Flota.
+ */
 async function resolverTiempoRutaVivo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
-): Promise<Awaited<ReturnType<typeof tiempoRutaAnual>>> {
+): Promise<Awaited<ReturnType<typeof tiempoRutaAnualFlota>>> {
   try {
-    return await tiempoRutaAnual(supabase, year)
+    return await tiempoRutaAnualFlota(supabase, year)
   } catch {
     return null
   }
@@ -267,8 +271,8 @@ export async function getSuenoDetalle(
       const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
         mes: m.mes,
         etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
-        valor: m.valor,
-        detalle: m.viajes,
+        valor: m.horas,
+        detalle: m.rutas,
       }))
       return {
         data: {
@@ -277,10 +281,10 @@ export async function getSuenoDetalle(
           unidad: cfg.unidad,
           fuente: vivo ? "auto" : "manual",
           explicacion: vivo
-            ? "Tiempo en Ruta = horas que dura una salida, del checklist de retorno (retorno − liberación del camión). Es el insumo del TLP, que divide las CEq por estas horas × la dotación. El promedio es PONDERADO (Σ horas ÷ Σ viajes), no el promedio de los promedios de las ciudades: así una salida pesa igual venga de donde venga. Arranca en abril: el checklist no existe antes del 9-abr. Apertura por ciudad en Indicadores → TLP."
+            ? "Tiempo en Ruta = horas que dura una salida, medidas por Foxtrot (cierre − arranque de la ruta). Solo cuentan las RUTAS LIMPIAS, las que se cerraron el mismo día que arrancaron: cuando el chofer no finaliza la ruta en la app, Foxtrot la cierra horas o días después y esa duración ya no es tiempo de trabajo (tomando todas, enero daría 11,8 hs por ruta). El promedio es PONDERADO (Σ minutos ÷ Σ rutas), no el promedio de los promedios de las ciudades. Detalle en Indicadores → Flota → Tiempo promedio en ruta."
             : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
           meses,
-          detalleLabel: "Viajes",
+          detalleLabel: "Rutas limpias",
         },
       }
     }
