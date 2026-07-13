@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { validarLitros } from "@/lib/vehiculos/combustible-limites"
 import type {
   RegistroCombustible,
   RendimientoSemanal,
@@ -28,6 +29,8 @@ export async function createRegistroCombustible(
 ): Promise<{ data: RegistroCombustible } | { error: string }> {
   try {
     const profile = await requireAuth()
+    const errorLitros = validarLitros(input.litros)
+    if (errorLitros) return { error: errorLitros }
     const supabase = await createClient()
 
     // Find previous record for same vehicle to calculate km_recorridos
@@ -135,6 +138,8 @@ export async function updateRegistroCombustible(
 ): Promise<{ data: RegistroCombustible } | { error: string }> {
   try {
     await requireAuth()
+    const errorLitros = validarLitros(input.litros)
+    if (errorLitros) return { error: errorLitros }
     const supabase = await createClient()
 
     // Recalcular km_recorridos + rendimiento en base al registro previo del

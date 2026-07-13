@@ -20,6 +20,7 @@ import type {
   VehiculoSector,
 } from "@/types/database"
 import { VEHICULO_SECTOR_LABELS } from "@/types/database"
+import { LITROS_MAX, validarLitros } from "@/lib/vehiculos/combustible-limites"
 import { Fuel, Loader2, Gauge } from "lucide-react"
 import { createRegistroCombustible } from "@/actions/combustible"
 
@@ -50,6 +51,11 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
     }
     if (!odometro || !litros) {
       toast.error("Completá odómetro y litros")
+      return
+    }
+    const errorLitros = validarLitros(parseFloat(litros))
+    if (errorLitros) {
+      toast.error(errorLitros)
       return
     }
 
@@ -154,6 +160,8 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
                 type="number"
                 inputMode="decimal"
                 step="0.01"
+                min="0"
+                max={LITROS_MAX}
                 placeholder="Ej: 120.5"
                 value={litros}
                 onChange={(e) => setLitros(e.target.value)}
