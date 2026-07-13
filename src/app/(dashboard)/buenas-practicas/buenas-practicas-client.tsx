@@ -13,6 +13,10 @@ import {
   TrendingUp,
   Award,
   Copy,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  Paperclip,
   RefreshCw,
   Trash2,
   Users,
@@ -36,14 +40,18 @@ import {
   reconocerEnMatinal,
   registrarImpacto,
   actualizarReplicacion,
-  agregarComentario,
+  agregarAvance,
+  eliminarAvance,
   eliminarIdea,
+  getBpArchivoUrl,
   getIdeaDetalle,
   sincronizarEvidencia44,
   agregarAccion,
   actualizarAccion,
   eliminarAccion,
 } from "@/actions/buenas-practicas"
+import { AdjuntosInput } from "@/components/adjuntos-input"
+import { abrirArchivo } from "@/lib/abrir-archivo"
 import type {
   BpDashboard,
   BpIdea,
@@ -123,6 +131,13 @@ function soloFecha(iso: string | null): string {
 
 const ACCION_ESTADOS: BpAccionEstado[] = ["pendiente", "en_curso", "hecho"]
 
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic"]
+function esImagen(mime: string | null, nombre: string | null): boolean {
+  if (mime?.startsWith("image/")) return true
+  const ext = nombre?.split(".").pop()?.toLowerCase() ?? ""
+  return IMAGE_EXTS.includes(ext)
+}
+
 const NIVEL_COLOR: Record<number, string> = {
   0: "bg-red-100 text-red-700 border-red-200",
   1: "bg-amber-100 text-amber-700 border-amber-200",
@@ -160,6 +175,23 @@ export function BuenasPracticasClient({ dashboard, esEditor }: Props) {
       const r = await sincronizarEvidencia44()
       if ("error" in r) toast.error(r.error)
       else toast.success("Evidencia del punto 4.4 actualizada en auditoría")
+    })
+  }
+
+  function borrarIdea(idea: BpIdea) {
+    if (
+      !confirm(
+        `¿Eliminar "${idea.titulo}"? Se borran también sus avances, archivos y pasos del plan.`,
+      )
+    )
+      return
+    startTransition(async () => {
+      const r = await eliminarIdea(idea.id)
+      if ("error" in r) toast.error(r.error)
+      else {
+        toast.success("Buena práctica eliminada")
+        refrescar()
+      }
     })
   }
 
@@ -283,9 +315,14 @@ export function BuenasPracticasClient({ dashboard, esEditor }: Props) {
       ) : (
         <div className="space-y-2">
           {filtradas.map((idea) => (
-            <button
+            <div
               key={idea.id}
+              role="button"
+              tabIndex={0}
               onClick={() => setDetalleId(idea.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setDetalleId(idea.id)
+              }}
               className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3 text-left transition-colors hover:bg-slate-50"
             >
               <div className="min-w-0 flex-1">
@@ -308,12 +345,29 @@ export function BuenasPracticasClient({ dashboard, esEditor }: Props) {
                   {idea.autor_nombre} · {soloFecha(idea.created_at)}
                 </p>
               </div>
-              {idea.kpi_nombre && idea.kpi_logrado != null && (
-                <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
-                  <TrendingUp className="size-3.5" /> {idea.kpi_nombre}
-                </span>
-              )}
-            </button>
+              <div className="flex items-center gap-2">
+                {idea.kpi_nombre && idea.kpi_logrado != null && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+                    <TrendingUp className="size-3.5" /> {idea.kpi_nombre}
+                  </span>
+                )}
+                {esEditor && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      borrarIdea(idea)
+                    }}
+                    className="text-muted-foreground hover:text-red-600"
+                    aria-label={`Eliminar ${idea.titulo}`}
+                    title="Eliminar buena práctica"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -519,6 +573,10 @@ function DetalleDialog({
   const [revComentario, setRevComentario] = useState("")
   const [recoFecha, setRecoFecha] = useState("")
   const [comentario, setComentario] = useState("")
+  // Evidencia de la implementación: fotos/archivos del avance
+  const [adjuntos, setAdjuntos] = useState<File[]>([])
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(null)
   // KPI (valor de ahora vs. logrado)
   const [kpiNombre, setKpiNombre] = useState("")
   const [kpiUnidad, setKpiUnidad] = useState("")
@@ -551,6 +609,54 @@ function DetalleDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ideaId])
 
+  // Las miniaturas se firman por path: un avance puede traer varias imágenes.
+  useEffect(() => {
+    const pendientes = avances
+      .flatMap((a) => a.archivos)
+      .filter((arch) => esImagen(arch.mime, arch.nombre) && !imageUrls[arch.path])
+    if (pendientes.length === 0) return
+    let cancelado = false
+    ;(async () => {
+      const nuevas: Record<string, string> = {}
+      for (const arch of pendientes) {
+        const r = await getBpArchivoUrl(arch.path)
+        if ("data" in r) nuevas[arch.path] = r.data.url
+      }
+      if (!cancelado && Object.keys(nuevas).length > 0) {
+        setImageUrls((prev) => ({ ...prev, ...nuevas }))
+      }
+    })()
+    return () => {
+      cancelado = true
+    }
+  }, [avances, imageUrls])
+
+  async function handleAbrirArchivo(path: string) {
+    const r = await getBpArchivoUrl(path)
+    if ("error" in r) {
+      toast.error(r.error)
+      return
+    }
+    abrirArchivo(r.data.url)
+  }
+
+  function guardarAvance() {
+    if (!comentario.trim() && adjuntos.length === 0) {
+      toast.error("Escribí un comentario o adjuntá una foto/archivo")
+      return
+    }
+    startAct(async () => {
+      const fd = new FormData()
+      fd.append("comentario", comentario.trim())
+      fd.append("tipo", adjuntos.length > 0 ? "implementacion" : "comentario")
+      for (const f of adjuntos) fd.append("archivo", f)
+      if (tras(await agregarAvance(idea!.id, fd))) {
+        setComentario("")
+        setAdjuntos([])
+      }
+    })
+  }
+
   function tras<T>(r: { data: T } | { error: string } | { success: true }) {
     if ("error" in r) {
       toast.error(r.error)
@@ -582,6 +688,7 @@ function DetalleDialog({
   if (!idea) return null
 
   return (
+    <>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -933,46 +1040,113 @@ function DetalleDialog({
             )}
           </div>
 
-          {/* Comentario libre + timeline */}
-          <div className="space-y-2">
-            <Label className="text-xs">Seguimiento</Label>
-            <div className="flex gap-2">
-              <Input
-                value={comentario}
-                onChange={(e) => setComentario(e.target.value)}
-                placeholder="Agregar comentario / avance"
-                className="flex-1"
-              />
-              <Button
-                size="sm"
-                disabled={acting}
-                onClick={() =>
-                  startAct(async () => {
-                    if (tras(await agregarComentario(idea.id, comentario)))
-                      setComentario("")
-                  })
-                }
-              >
-                Comentar
+          {/* Seguimiento + evidencia de la implementación (fotos/archivos) */}
+          <div className="space-y-2 rounded-lg border p-3">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">
+              Seguimiento y evidencia
+            </Label>
+            <Textarea
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              placeholder="¿Qué se implementó? ¿Cómo quedó?"
+              rows={2}
+            />
+            <AdjuntosInput
+              archivos={adjuntos}
+              onChange={setAdjuntos}
+              activo
+              disabled={acting}
+            />
+            <div className="flex justify-end">
+              <Button size="sm" disabled={acting} onClick={guardarAvance}>
+                <Paperclip className="size-3.5" /> Guardar avance
               </Button>
             </div>
 
             {avances.length > 0 && (
-              <ul className="space-y-1.5 border-l-2 border-slate-200 pl-3">
+              <ul className="space-y-2 border-l-2 border-slate-200 pl-3">
                 {avances.map((a) => (
                   <li key={a.id} className="text-xs">
-                    <span className="font-medium text-slate-700">
-                      {BP_AVANCE_TIPO_LABEL[a.tipo]}
-                    </span>
-                    {a.estado_resultante ? (
-                      <span className="ml-1">→ {BP_ESTADO_LABEL[a.estado_resultante]}</span>
-                    ) : null}
-                    {a.descripcion ? (
-                      <span className="text-slate-600">: {a.descripcion}</span>
-                    ) : null}
-                    <span className="ml-1 text-muted-foreground">
-                      · {a.autor_nombre ?? "—"} · {fecha(a.created_at)}
-                    </span>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium text-slate-700">
+                          {BP_AVANCE_TIPO_LABEL[a.tipo]}
+                        </span>
+                        {a.estado_resultante ? (
+                          <span className="ml-1">
+                            → {BP_ESTADO_LABEL[a.estado_resultante]}
+                          </span>
+                        ) : null}
+                        {a.descripcion ? (
+                          <span className="text-slate-600">: {a.descripcion}</span>
+                        ) : null}
+                        <span className="ml-1 text-muted-foreground">
+                          · {a.autor_nombre ?? "—"} · {fecha(a.created_at)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={acting}
+                        onClick={() =>
+                          startAct(async () => {
+                            if (!confirm("¿Eliminar este avance y sus archivos?")) return
+                            const r = await eliminarAvance(a.id)
+                            if ("error" in r) toast.error(r.error)
+                            else {
+                              cargar()
+                              onChanged()
+                            }
+                          })
+                        }
+                        className="shrink-0 text-muted-foreground hover:text-red-600"
+                        aria-label="Eliminar avance"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+
+                    {a.archivos.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        {a.archivos.map((arch) => {
+                          const isImg = esImagen(arch.mime, arch.nombre)
+                          const thumb = imageUrls[arch.path]
+                          return isImg && thumb ? (
+                            <button
+                              key={arch.path}
+                              type="button"
+                              onClick={() =>
+                                setLightbox({ url: thumb, titulo: arch.nombre })
+                              }
+                              className="overflow-hidden rounded-md border transition-opacity hover:opacity-80"
+                              title={arch.nombre}
+                            >
+                              <img
+                                src={thumb}
+                                alt={arch.nombre}
+                                className="size-16 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <Button
+                              key={arch.path}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs"
+                              onClick={() => handleAbrirArchivo(arch.path)}
+                            >
+                              {isImg ? (
+                                <ImageIcon className="size-3.5" />
+                              ) : (
+                                <FileText className="size-3.5" />
+                              )}
+                              {arch.nombre}
+                              <Download className="size-3" />
+                            </Button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -981,5 +1155,21 @@ function DetalleDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={lightbox !== null} onOpenChange={(o) => !o && setLightbox(null)}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{lightbox?.titulo ?? "Vista previa"}</DialogTitle>
+        </DialogHeader>
+        {lightbox && (
+          <img
+            src={lightbox.url}
+            alt={lightbox.titulo}
+            className="h-auto max-h-[75vh] w-full rounded object-contain"
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

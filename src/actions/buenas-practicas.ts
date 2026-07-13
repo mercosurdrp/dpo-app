@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  archivosDeFila,
+  archivosDelForm,
+  columnasArchivos,
+  subirArchivosAvance,
+} from "@/lib/adjuntos-avance"
 import type {
   BpIdea,
   BpAvance,
@@ -14,7 +20,7 @@ import type {
   BpCumplimiento,
   BpRequisito,
 } from "@/types/buenas-practicas"
-import { PREGUNTA_44_ID } from "@/types/buenas-practicas"
+import { BP_BUCKET, PREGUNTA_44_ID } from "@/types/buenas-practicas"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -185,10 +191,15 @@ export async function getIdeaDetalle(
     ])
 
     if (ideaRes.error) return { error: ideaRes.error.message }
+    const avances = (avRes.data ?? []).map((row) => ({
+      ...row,
+      archivos: archivosDeFila(row),
+    })) as BpAvance[]
+
     return {
       data: {
         idea: ideaRes.data as BpIdea,
-        avances: (avRes.data ?? []) as BpAvance[],
+        avances,
         acciones: (accRes.data ?? []) as BpAccion[],
       },
     }
@@ -634,37 +645,119 @@ export async function elevarAMejorPractica(
   }
 }
 
-// Comentario/seguimiento libre en el timeline (editor o autor de la idea).
-export async function agregarComentario(
+/**
+ * Avance en el timeline: comentario y/o N fotos/archivos como evidencia de la
+ * implementación. El form manda el campo repetido "archivo" (input `multiple`).
+ * Puede cargarlo un editor o el autor de la idea.
+ */
+export async function agregarAvance(
   ideaId: string,
-  texto: string,
+  formData: FormData,
 ): Promise<Result<BpAvance>> {
   try {
     const profile = await requireAuth()
-    if (!texto?.trim()) return { error: "Escribí un comentario" }
     const supabase = await createClient()
+
+    const texto = (formData.get("comentario") as string | null)?.trim() ?? ""
+    const files = archivosDelForm(formData)
+    if (!texto && files.length === 0) {
+      return { error: "Escribí un comentario o adjuntá una foto/archivo" }
+    }
+
+    const tipo: BpAvance["tipo"] =
+      (formData.get("tipo") as BpAvance["tipo"] | null) ?? "comentario"
+
+    const subida = await subirArchivosAvance(supabase, BP_BUCKET, ideaId, files)
+    if ("error" in subida) return { error: subida.error }
 
     const { data, error } = await supabase
       .from("bp_avances")
       .insert({
         idea_id: ideaId,
-        tipo: "comentario",
-        descripcion: texto.trim(),
+        tipo,
+        descripcion: texto || null,
         autor_id: profile.id,
         autor_nombre: profile.nombre,
+        ...columnasArchivos(subida.archivos),
       })
       .select("*")
       .single()
 
-    if (error) return { error: error.message }
+    if (error) {
+      // No dejamos archivos huérfanos si falla el insert.
+      if (subida.archivos.length > 0) {
+        await supabase.storage
+          .from(BP_BUCKET)
+          .remove(subida.archivos.map((a) => a.path))
+      }
+      return { error: error.message }
+    }
+
     revalidatePath("/buenas-practicas")
     revalidatePath("/mis-buenas-practicas")
-    return { data: data as BpAvance }
+    return { data: { ...data, archivos: archivosDeFila(data) } as BpAvance }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
 }
 
+/** URL firmada (10 min) para ver/descargar un adjunto del bucket. */
+export async function getBpArchivoUrl(
+  path: string,
+): Promise<Result<{ url: string }>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase.storage
+      .from(BP_BUCKET)
+      .createSignedUrl(path, 60 * 10)
+
+    if (error || !data) return { error: error?.message ?? "No se pudo abrir el archivo" }
+    return { data: { url: data.signedUrl } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Borra un avance del timeline y sus adjuntos del bucket. */
+export async function eliminarAvance(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: fila } = await supabase
+      .from("bp_avances")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    // La RLS deja borrar al autor del avance y a los editores.
+    if (!fila) return { error: "El avance ya no existe" }
+    if (!esEditor(profile.role) && fila.autor_id !== profile.id) {
+      return { error: "Sin permiso" }
+    }
+
+    const { error } = await supabase.from("bp_avances").delete().eq("id", id)
+    if (error) return { error: error.message }
+
+    const paths = archivosDeFila(fila).map((a) => a.path)
+    if (paths.length > 0) await supabase.storage.from(BP_BUCKET).remove(paths)
+
+    revalidatePath("/buenas-practicas")
+    revalidatePath("/mis-buenas-practicas")
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Borra la buena práctica completa. Los avances y los pasos del plan caen por
+ * FK ON DELETE CASCADE; los adjuntos hay que sacarlos del bucket a mano.
+ */
 export async function eliminarIdea(
   id: string,
 ): Promise<{ success: true } | { error: string }> {
@@ -673,9 +766,19 @@ export async function eliminarIdea(
     if (!esEditor(profile.role)) return { error: "Sin permiso" }
     const supabase = await createClient()
 
+    const { data: avances } = await supabase
+      .from("bp_avances")
+      .select("*")
+      .eq("idea_id", id)
+
     const { error } = await supabase.from("bp_ideas").delete().eq("id", id)
     if (error) return { error: error.message }
+
+    const paths = (avances ?? []).flatMap((a) => archivosDeFila(a).map((x) => x.path))
+    if (paths.length > 0) await supabase.storage.from(BP_BUCKET).remove(paths)
+
     revalidatePath("/buenas-practicas")
+    revalidatePath("/mis-buenas-practicas")
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

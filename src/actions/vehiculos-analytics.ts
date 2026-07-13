@@ -8,6 +8,7 @@ import {
   daysBetween,
   fetchLecturas,
   normalizeHora,
+  resumenHorasHorometro,
   startOfMonth,
   startOfYear,
   toFecha,
@@ -187,17 +188,33 @@ export async function getVehiculoDetalle(
     if ("error" in kmMesRes) return { error: kmMesRes.error }
     if ("error" in km30Res) return { error: km30Res.error }
 
+    const esAutoelevador = vehiculo.tipo === "autoelevador"
+
     const kmAll = kmAllRes.data
-    const kmMes = kmMesRes.data.reduce((a, b) => a + b.km, 0)
-    const kmYTD = kmAll.filter((d) => d.fecha >= inicioAnio).reduce((a, b) => a + b.km, 0)
-    const kmHistorico = kmAll.reduce((a, b) => a + b.km, 0)
+    let kmMes = kmMesRes.data.reduce((a, b) => a + b.km, 0)
+    let kmYTD = kmAll.filter((d) => d.fecha >= inicioAnio).reduce((a, b) => a + b.km, 0)
+    let kmHistorico = kmAll.reduce((a, b) => a + b.km, 0)
 
     const km30Map = new Map<string, number>()
     for (let i = 29; i >= 0; i--) km30Map.set(addDays(hoy, -i), 0)
     for (const d of km30Res.data) {
       if (km30Map.has(d.fecha)) km30Map.set(d.fecha, d.km)
     }
-    const kmUltimos30Dias = Array.from(km30Map.entries()).map(([fecha, km]) => ({ fecha, km }))
+    let kmUltimos30Dias = Array.from(km30Map.entries()).map(([fecha, km]) => ({ fecha, km }))
+
+    // Autoelevadores: el "odómetro" es un HORÓMETRO acumulado con una lectura
+    // por día. El span intradía (max−min del día) da 0, así que las horas del
+    // período se calculan como delta del horómetro entre días. Reusamos los
+    // campos km* del tablero (el cliente los re-etiqueta a "horas").
+    let horasResumen: ReturnType<typeof resumenHorasHorometro> | null = null
+    if (esAutoelevador) {
+      const lecturasAE = await fetchLecturas({ dominio })
+      horasResumen = resumenHorasHorometro(lecturasAE, hoy, inicioMes, inicioAnio)
+      kmMes = horasResumen.horasMes
+      kmYTD = horasResumen.horasYTD
+      kmHistorico = horasResumen.horasHistorico
+      kmUltimos30Dias = horasResumen.porDia30
+    }
 
     const combustibles = (combRes.data || []) as Array<{
       id: string
@@ -258,12 +275,19 @@ export async function getVehiculoDetalle(
 
     let ultimoOdometro: number | null = null
     let ultimaActividad: string | null = null
-    for (const l of [...kmAll]) {
-      // kmAll already sorted desc by fecha
-      if (ultimoOdometro == null) {
-        ultimoOdometro = l.odometro_max
-        ultimaActividad = l.fecha
-        break
+    if (esAutoelevador && horasResumen) {
+      // kmAll está vacío para autoelevadores (span intradía = 0), así que el
+      // último horómetro sale del resumen de horas.
+      ultimoOdometro = horasResumen.ultimoHorometro
+      ultimaActividad = horasResumen.ultimaFecha
+    } else {
+      for (const l of [...kmAll]) {
+        // kmAll already sorted desc by fecha
+        if (ultimoOdometro == null) {
+          ultimoOdometro = l.odometro_max
+          ultimaActividad = l.fecha
+          break
+        }
       }
     }
 
@@ -368,6 +392,7 @@ export async function getVehiculoDetalle(
           ultimaActividad,
         },
         kmUltimos30Dias,
+        horasPorDia: horasResumen?.porDia ?? [],
         rendimientoUltimas10Cargas,
         timeline: timelineTrim,
         proximaAlerta,

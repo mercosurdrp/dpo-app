@@ -2,6 +2,13 @@
 // Vive fuera de cualquier archivo "use server" para no romper el build de
 // Turbopack (exportar type/const desde "use server" lo rompe).
 
+import type { ArchivoAvance } from "@/lib/adjuntos-avance"
+
+export type { ArchivoAvance }
+
+/** Bucket de los adjuntos del módulo. */
+export const BP_BUCKET = "buenas-practicas"
+
 export type BpArea =
   | "almacen"
   | "entrega"
@@ -74,6 +81,8 @@ export interface BpAvance {
   tipo: BpAvanceTipo
   descripcion: string | null
   estado_resultante: BpEstado | null
+  /** Adjuntos del avance (fotos/archivos de la implementación). */
+  archivos: ArchivoAvance[]
   archivo_path: string | null
   archivo_nombre: string | null
   archivo_mime: string | null

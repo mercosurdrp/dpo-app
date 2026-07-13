@@ -14,6 +14,7 @@ import {
   BarChart3,
   Users,
   ClipboardList,
+  Shuffle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -41,11 +42,13 @@ import {
   upsertSectorResponsable,
   eliminarAuditoria,
   actualizarNombreSectorAlmacen,
+  sortearResponsablesMes,
 } from "@/actions/s5"
 import {
   S5_AUDITORIA_ESTADO_COLORS,
   S5_AUDITORIA_ESTADO_LABELS,
   type S5AuditoriaConMeta,
+  type S5Elegible,
   type S5SectorAlmacen,
   type S5SectorResponsableFull,
   type S5Tipo,
@@ -74,6 +77,8 @@ export function CincoSClient({
   vehiculosPendientes,
   empleados,
   sectoresAlmacen,
+  elegibles,
+  historialResponsables,
 }: {
   periodoActual: string
   tipoInicial?: S5Tipo
@@ -85,6 +90,8 @@ export function CincoSClient({
   vehiculosPendientes: S5VehiculoPendiente[]
   empleados: { id: string; legajo: number; nombre: string; sector: string | null }[]
   sectoresAlmacen: S5SectorAlmacen[]
+  elegibles: S5Elegible[]
+  historialResponsables: S5SectorResponsableFull[]
 }) {
   const router = useRouter()
   const [openNuevaFlota, setOpenNuevaFlota] = useState(false)
@@ -136,6 +143,39 @@ export function CincoSClient({
     [empleados]
   )
 
+  const elegiblesActivos = useMemo(
+    () => elegibles.filter((e) => e.elegible),
+    [elegibles]
+  )
+
+  /** Un renglón por mes: los 4 sectores con su responsable, más los meses
+   *  que tienen auditorías pero a los que nunca se les cargó nadie. */
+  const historialPorMes = useMemo(() => {
+    const meses = new Set<string>()
+    for (const r of historialResponsables) meses.add(r.periodo)
+    for (const a of auditoriasAlmacen) meses.add(a.periodo)
+    meses.add(periodoActual)
+
+    const respByKey = new Map<string, S5SectorResponsableFull>()
+    for (const r of historialResponsables) {
+      respByKey.set(`${r.periodo}:${r.sector_numero}`, r)
+    }
+    const auditoriasPorMes = new Map<string, number>()
+    for (const a of auditoriasAlmacen) {
+      auditoriasPorMes.set(a.periodo, (auditoriasPorMes.get(a.periodo) ?? 0) + 1)
+    }
+
+    return [...meses]
+      .sort((a, b) => b.localeCompare(a))
+      .map((periodo) => ({
+        periodo,
+        auditorias: auditoriasPorMes.get(periodo) ?? 0,
+        sectores: [1, 2, 3, 4].map(
+          (sector) => respByKey.get(`${periodo}:${sector}`) ?? null
+        ),
+      }))
+  }, [historialResponsables, auditoriasAlmacen, periodoActual])
+
   const empleadosItems = useMemo(() => {
     const o: Record<string, string> = {}
     for (const e of empleadosDeposito) o[e.id] = e.nombre
@@ -169,19 +209,47 @@ export function CincoSClient({
     })
   }
 
-  function handleAsignarResponsable(sector: number, empleadoId: string) {
+  function handleAsignarResponsable(
+    sector: number,
+    empleadoId: string,
+    periodo: string = periodoActual
+  ) {
     if (!canEdit) return
     startTransition(async () => {
-      const res = await upsertSectorResponsable(
-        periodoActual,
-        sector,
-        empleadoId
-      )
+      const res = await upsertSectorResponsable(periodo, sector, empleadoId)
       if ("error" in res) {
         toast.error(res.error)
         return
       }
-      toast.success(`Sector ${sector} asignado a ${res.data.empleado_nombre}`)
+      toast.success(
+        `${formatMes(periodo)} · sector ${sector} → ${res.data.empleado_nombre}`
+      )
+      router.refresh()
+    })
+  }
+
+  function handleSortear() {
+    if (!canEdit) return
+    const yaHay = responsables.length > 0
+    if (
+      yaHay &&
+      !confirm(
+        `${formatMes(periodoActual)} ya tiene responsables asignados. ¿Volver a sortear? Se reemplazan los 4 y las auditorías del mes pasan al nuevo responsable de su sector.`
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const res = await sortearResponsablesMes(periodoActual)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(
+        `Sorteo listo: ${res.data
+          .map((a) => `S${a.sector} → ${a.nombre}`)
+          .join(" · ")}`
+      )
       router.refresh()
     })
   }
@@ -434,10 +502,26 @@ export function CincoSClient({
           {/* Responsables del mes */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">
-                Responsables del mes por sector
-              </CardTitle>
-              {!canEdit && (
+              <div>
+                <CardTitle className="text-base">
+                  Responsables del mes por sector
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  El sorteo reparte los 4 sectores entre los elegibles: primero
+                  entran los que menos veces les tocó, el azar sólo desempata.
+                </p>
+              </div>
+              {canEdit ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSortear}
+                  disabled={isPending}
+                >
+                  <Shuffle className="mr-1.5 size-4" />
+                  Sortear {formatMes(periodoActual)}
+                </Button>
+              ) : (
                 <span className="text-xs text-muted-foreground">
                   (sólo lectura)
                 </span>
@@ -505,6 +589,124 @@ export function CincoSClient({
                   )
                 })}
               </div>
+
+              {/* Elegibles del sorteo + historial */}
+              <div className="mt-4 rounded-lg border p-3">
+                <p className="text-sm font-semibold text-slate-800">
+                  Elegibles del sorteo
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {elegiblesActivos.length} de {elegibles.length} operarios de
+                    depósito · el número es cuántas veces le tocó
+                  </span>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {elegibles.map((e) => (
+                    <span
+                      key={e.id}
+                      title={
+                        e.ultimo_periodo
+                          ? `Última vez: ${formatMes(e.ultimo_periodo)}`
+                          : "Nunca fue designado"
+                      }
+                      className={
+                        e.elegible
+                          ? "rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                          : "rounded-full border bg-muted/30 px-3 py-1 text-xs text-muted-foreground line-through"
+                      }
+                    >
+                      {e.nombre}
+                      <span className="ml-1.5 opacity-70">
+                        · {e.veces_designado}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Historial de responsables por mes */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Historial de responsables por mes
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Los meses viejos se cargan a mano. Al elegir a alguien, las
+                auditorías de ese mes y sector quedan asociadas a esa persona.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Mes</TableHead>
+                      {[1, 2, 3, 4].map((s) => (
+                        <TableHead key={s}>{labelSector(s)}</TableHead>
+                      ))}
+                      <TableHead className="text-right">Auditorías</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historialPorMes.map((fila) => (
+                      <TableRow key={fila.periodo}>
+                        <TableCell className="font-medium capitalize">
+                          {formatMes(fila.periodo)}
+                        </TableCell>
+                        {fila.sectores.map((resp, i) => {
+                          const sector = i + 1
+                          return (
+                            <TableCell key={sector}>
+                              {canEdit ? (
+                                <Select
+                                  value={resp?.empleado_id ?? ""}
+                                  onValueChange={(v) =>
+                                    v &&
+                                    handleAsignarResponsable(
+                                      sector,
+                                      v,
+                                      fila.periodo
+                                    )
+                                  }
+                                  disabled={isPending}
+                                  items={empleadosItems}
+                                >
+                                  <SelectTrigger className="w-full min-w-40">
+                                    <SelectValue placeholder="Sin asignar" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {empleadosDeposito.map((e) => (
+                                      <SelectItem
+                                        key={e.id}
+                                        value={e.id}
+                                        label={e.nombre}
+                                      >
+                                        {e.nombre}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="text-sm">
+                                  {resp?.empleado_nombre ?? (
+                                    <span className="text-muted-foreground">
+                                      Sin asignar
+                                    </span>
+                                  )}
+                                </span>
+                              )}
+                            </TableCell>
+                          )
+                        })}
+                        <TableCell className="text-right text-sm text-muted-foreground">
+                          {fila.auditorias}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
 
@@ -536,6 +738,7 @@ export function CincoSClient({
                       <TableRow>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Sector</TableHead>
+                        <TableHead>Responsable</TableHead>
                         <TableHead>Auditor</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead className="text-right">Nota</TableHead>
@@ -548,6 +751,13 @@ export function CincoSClient({
                           <TableCell>{formatFecha(a.fecha)}</TableCell>
                           <TableCell className="font-medium">
                             {labelSector(a.sector_numero ?? 0)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {a.responsable_nombre ?? (
+                              <span className="text-muted-foreground">
+                                Sin asignar
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm">
                             {a.auditor_nombre}

@@ -17,7 +17,7 @@ import {
   esKpiExterno,
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
-import { tlpAnual } from "@/lib/tlp/calc"
+import { tiempoPdvAnual, tiempoRutaAnual, tlpAnual } from "@/lib/tlp/calc"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -29,6 +29,29 @@ async function resolverTlpVivo(
 ): Promise<Awaited<ReturnType<typeof tlpAnual>>> {
   try {
     return await tlpAnual(supabase, year)
+  } catch {
+    return null
+  }
+}
+
+async function resolverTiempoPdvVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof tiempoPdvAnual>>> {
+  try {
+    return await tiempoPdvAnual(supabase, year)
+  } catch {
+    return null
+  }
+}
+
+/** Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida. */
+async function resolverTiempoRutaVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof tiempoRutaAnual>>> {
+  try {
+    return await tiempoRutaAnual(supabase, year)
   } catch {
     return null
   }
@@ -107,14 +130,25 @@ export async function getSuenoArbol(
     // KPIs manuales con carga mensual: el YTD sale de los meses cargados.
     const mensuales = await fetchMensualesDelAnio(supabase, year)
 
-    // TLP en vivo (mismo cálculo que /indicadores/tlp); si falla, cae a la tabla.
-    const tlpVivo = await resolverTlpVivo(supabase, year)
+    // TLP, Tiempo en Ruta y Tiempo en PDV en vivo (mismo cálculo que
+    // /indicadores/tlp); si fallan, caen al valor de la tabla.
+    const [tlpVivo, pdvVivo, rutaVivo] = await Promise.all([
+      resolverTlpVivo(supabase, year),
+      resolverTiempoPdvVivo(supabase, year),
+      resolverTiempoRutaVivo(supabase, year),
+    ])
 
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
       const row = byKey.get(cfg.key)
       const meta = row?.meta ?? cfg.metaDefault
       const externoVal =
-        cfg.key === "tlp" ? (tlpVivo?.ytd ?? null) : externos.get(cfg.key)
+        cfg.key === "tlp"
+          ? (tlpVivo?.ytd ?? null)
+          : cfg.key === "tiempo_pdv"
+            ? (pdvVivo?.ytd ?? null)
+            : cfg.key === "tiempo_ruta"
+              ? (rutaVivo?.ytd ?? null)
+              : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
@@ -222,6 +256,56 @@ export async function getSuenoDetalle(
             : "No se pudo calcular el TLP en vivo en este momento.",
           meses,
           detalleLabel: "Viajes",
+        },
+      }
+    }
+
+    // Tiempo en Ruta: detalle mensual en vivo (las horas-hombre del TLP).
+    if (kpiKey === "tiempo_ruta") {
+      const supabaseRuta = await createClient()
+      const vivo = await resolverTiempoRutaVivo(supabaseRuta, year)
+      const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
+        mes: m.mes,
+        etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+        valor: m.valor,
+        detalle: m.viajes,
+      }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: vivo ? "auto" : "manual",
+          explicacion: vivo
+            ? "Tiempo en Ruta = horas que dura una salida, del checklist de retorno (retorno − liberación del camión). Es el insumo del TLP, que divide las CEq por estas horas × la dotación. El promedio es PONDERADO (Σ horas ÷ Σ viajes), no el promedio de los promedios de las ciudades: así una salida pesa igual venga de donde venga. Arranca en abril: el checklist no existe antes del 9-abr. Apertura por ciudad en Indicadores → TLP."
+            : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
+          meses,
+          detalleLabel: "Viajes",
+        },
+      }
+    }
+
+    // Tiempo en PDV: detalle mensual en vivo (mismo cálculo que el árbol del TLP).
+    if (kpiKey === "tiempo_pdv") {
+      const supabasePdv = await createClient()
+      const vivo = await resolverTiempoPdvVivo(supabasePdv, year)
+      const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
+        mes: m.mes,
+        etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+        valor: m.valor,
+        detalle: m.clientes,
+      }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: vivo ? "auto" : "manual",
+          explicacion: vivo
+            ? "Tiempo en PDV = minutos que el camión pasa en cada cliente. Foxtrot NO lo mide (las columnas de paradas salen del GPS y llegan vacías), así que se DESPEJA del tiempo en ruta: (tiempo en ruta del checklist − manejo planificado − tramos depósito↔ruta) ÷ clientes visitados. El manejo es el planificado por Foxtrot, no el real: si el camión tardó más en la calle o esperó, ese exceso queda imputado al PDV. Apertura por ciudad en Indicadores → TLP."
+            : "No se pudo calcular el tiempo en PDV en vivo en este momento.",
+          meses,
+          detalleLabel: "Clientes",
         },
       }
     }

@@ -16,6 +16,11 @@ export interface Lectura {
   fuente: Fuente
   tipo?: string | null
   chofer?: string | null
+  // Solo `mantenimiento_realizados` guarda odómetro y horómetro en columnas
+  // separadas. En autoelevadores el odómetro de esa tabla no representa las
+  // horas (se carga suelto), así que el cálculo de horas usa este campo cuando
+  // está. El resto de las fuentes guarda las horas del AE en `odometro`.
+  horometro?: number | null
 }
 
 export function today(): string {
@@ -202,6 +207,7 @@ export async function fetchLecturas(
       fuente: "mantenimiento",
       tipo: null,
       chofer: null,
+      horometro: r.horometro != null ? Number(r.horometro) : null,
     })
   }
 
@@ -337,6 +343,116 @@ export function historialLecturasPorDominio(
     result[dominio] = [...porDia.values()].sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
   }
   return result
+}
+
+export interface HorasResumen {
+  // Se reusan los nombres km* del resto del tablero para no duplicar tipos: en
+  // autoelevadores el "odómetro" es en realidad el HORÓMETRO (horas), así que
+  // estos valores son horas.
+  horasMes: number
+  horasYTD: number
+  horasHistorico: number
+  ultimoHorometro: number | null
+  ultimaFecha: string | null
+  // Horas trabajadas por día en los últimos 30 (delta del horómetro contra la
+  // lectura previa). Campo `km` para poder reusar el mismo chart que camiones.
+  porDia30: { fecha: string; km: number }[]
+  // Toda la serie de horas por día (solo los días con lectura), de la más vieja
+  // a la más nueva. El detalle la usa para el selector de mes: son pocas filas
+  // (una lectura por día de uso), así que viaja entera al cliente.
+  porDia: { fecha: string; km: number }[]
+}
+
+/**
+ * Resumen de HORAS para autoelevadores. A diferencia de los camiones (que
+ * registran varias lecturas por día y las horas/km del día salen del span
+ * intradía), el horómetro del autoelevador es un contador ACUMULADO con UNA
+ * lectura por día. Por eso las horas de un período = último horómetro del
+ * período − horómetro base al inicio (la última lectura anterior al período, o
+ * la primera del propio período si no hay historia previa). Descarta retrocesos
+ * quedándose con la secuencia monótona creciente.
+ */
+export function resumenHorasHorometro(
+  lecturas: Lectura[],
+  hoy: string,
+  inicioMes: string,
+  inicioAnio: string
+): HorasResumen {
+  // Valor en HORAS de la lectura. `mantenimiento_realizados` guarda odómetro y
+  // horómetro por separado y en los autoelevadores el odómetro de esa tabla
+  // trae cualquier cosa (el de HELI1 marcaba 68 el día que el horómetro real
+  // iba 42). Un valor adelantado envenena la serie: al descartar retrocesos se
+  // comía todas las lecturas buenas siguientes hasta superarlo.
+  const horas = (l: Lectura): number => l.horometro ?? l.odometro
+
+  const orden = [...lecturas].sort((a, b) => {
+    if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
+    return a.hora < b.hora ? -1 : 1
+  })
+  // Secuencia monótona creciente (descarta cargas erróneas más bajas).
+  const limpio: Lectura[] = []
+  let prev = -Infinity
+  for (const l of orden) {
+    if (horas(l) >= prev) {
+      limpio.push(l)
+      prev = horas(l)
+    }
+  }
+
+  if (limpio.length === 0) {
+    return {
+      horasMes: 0,
+      horasYTD: 0,
+      horasHistorico: 0,
+      ultimoHorometro: null,
+      ultimaFecha: null,
+      porDia30: [],
+      porDia: [],
+    }
+  }
+
+  const ultimo = limpio[limpio.length - 1]
+  const horasHistorico = horas(ultimo) - horas(limpio[0])
+
+  const horasDesde = (inicioPeriodo: string): number => {
+    const enPeriodo = limpio.filter((l) => l.fecha >= inicioPeriodo)
+    if (enPeriodo.length === 0) return 0
+    const anteriores = limpio.filter((l) => l.fecha < inicioPeriodo)
+    const base = anteriores.length
+      ? horas(anteriores[anteriores.length - 1])
+      : horas(enPeriodo[0])
+    const fin = horas(enPeriodo[enPeriodo.length - 1])
+    return Math.max(0, fin - base)
+  }
+
+  // Delta contra la lectura anterior. La primera lectura de la historia no tiene
+  // contra qué comparar, así que no aporta horas (arranca la serie).
+  const mapaDia = new Map<string, number>()
+  for (let i = 1; i < limpio.length; i++) {
+    const f = limpio[i].fecha
+    const delta = horas(limpio[i]) - horas(limpio[i - 1])
+    mapaDia.set(f, (mapaDia.get(f) || 0) + delta)
+  }
+  const porDia = Array.from(mapaDia.entries())
+    .map(([fecha, km]) => ({ fecha, km }))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1))
+
+  const mapa30 = new Map<string, number>()
+  for (let i = 29; i >= 0; i--) mapa30.set(addDays(hoy, -i), 0)
+  for (const d of porDia) {
+    if (mapa30.has(d.fecha)) mapa30.set(d.fecha, d.km)
+  }
+  const porDia30 = Array.from(mapa30.entries()).map(([fecha, km]) => ({ fecha, km }))
+
+  return {
+    horasMes: horasDesde(inicioMes),
+    horasYTD: horasDesde(inicioAnio),
+    horasHistorico,
+    ultimoHorometro: horas(ultimo),
+    ultimaFecha: ultimo.fecha,
+    porDia30,
+    porDia,
+  }
 }
 
 /**

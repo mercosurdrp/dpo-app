@@ -43,6 +43,8 @@ export interface TiempoPdvCiudad {
 
 export interface TiempoPdvResultado {
   porCiudad: Map<string, TiempoPdvCiudad>
+  /** Serie mensual (1..12) — la usa el detalle del Árbol del Sueño. */
+  porMes: Map<number, TiempoPdvCiudad>
   total: TiempoPdvCiudad | null
   /** Rutas de Foxtrot del rango que no se pudieron imputar a ninguna ciudad. */
   rutasSinCiudad: number
@@ -97,6 +99,7 @@ export async function tiempoPdvPorCiudad(
   type Acum = { minPdv: number; clientes: number; rutas: number }
   const nuevo = (): Acum => ({ minPdv: 0, clientes: 0, rutas: 0 })
   const porCiudad = new Map<string, Acum>()
+  const porMes = new Map<number, Acum>()
   const total = nuevo()
   let rutasSinCiudad = 0
 
@@ -119,13 +122,16 @@ export async function tiempoPdvPorCiudad(
     // dice nada (ruta cortísima, o planificación desalineada): se descarta.
     if (minPdv <= 0) continue
 
+    const mes = Number(r.fecha.slice(5, 7))
     const a = porCiudad.get(viaje.ciudad) ?? nuevo()
-    for (const acc of [a, total]) {
+    const m = porMes.get(mes) ?? nuevo()
+    for (const acc of [a, m, total]) {
       acc.minPdv += minPdv
       acc.clientes += clientes
       acc.rutas += 1
     }
     porCiudad.set(viaje.ciudad, a)
+    porMes.set(mes, m)
   }
 
   const cerrar = (a: Acum): TiempoPdvCiudad => ({
@@ -138,8 +144,14 @@ export async function tiempoPdvPorCiudad(
   const out = new Map<string, TiempoPdvCiudad>()
   for (const [ciudad, a] of porCiudad) if (a.clientes > 0) out.set(ciudad, cerrar(a))
 
+  const meses = new Map<number, TiempoPdvCiudad>()
+  for (const [mes, a] of [...porMes].sort((x, y) => x[0] - y[0])) {
+    if (a.clientes > 0) meses.set(mes, cerrar(a))
+  }
+
   return {
     porCiudad: out,
+    porMes: meses,
     total: total.clientes > 0 ? cerrar(total) : null,
     rutasSinCiudad,
   }

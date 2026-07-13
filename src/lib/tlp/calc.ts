@@ -1,6 +1,7 @@
 import type { createClient } from "@/lib/supabase/server"
 import { ceqGescomPorViaje } from "./ceq-gescom"
 import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } from "./tiempo-pdv"
+import { historicoEnRango } from "./historico"
 
 // Núcleo del cálculo del TLP (Transport Labor Productivity), compartido entre
 // la página /indicadores/tlp y el Árbol del Sueño.
@@ -18,6 +19,38 @@ import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } fro
 
 export const FTE_FALLBACK = 2
 
+/**
+ * Ventana en la que se ESTIMA el denominador: ABRIL entero, el mes en que arrancó
+ * el checklist de retorno (única fuente del tiempo en ruta) el día 9. Antes de esa
+ * fecha el proceso no existía y después tardó en tomar ritmo, así que el mes
+ * quedaba calculado sobre 3/4 de su volumen (87.509 de 116.445 CEq). En la ventana
+ * entran TODOS los viajes con CEq: al que le falta el checklist se le estima el
+ * tiempo con el promedio de su patente, y al que además le falta el egreso se le
+ * estima también el FTE. Así abril cubre el mes completo (206 viajes × 2,55 FTE ×
+ * 7,04 h ⇒ TLP ~31,5), el mismo criterio con el que Andy lo cierra.
+ *
+ * Fuera de esa ventana NO se estima nada:
+ *   - antes de abril no hay un solo checklist ⇒ el 100% de las horas sería
+ *     inventado (y Foxtrot no sirve de reemplazo: mide +37% y correlaciona 0,22);
+ *   - de mayo en adelante el proceso ya está consolidado: un viaje sin checklist
+ *     es un olvido puntual y se excluye como siempre (mayo da 26,94).
+ */
+const ESTIMAR_DESDE = "2026-04-01"
+const ESTIMAR_HASTA = "2026-04-30"
+
+/**
+ * Piso de CEq para ESTIMAR un viaje. Sin checklist no hay evidencia de que el
+ * camión haya salido a repartir, y hay camión-día con carga residual (2, 6, 10
+ * CEq — una entrega suelta, casi todos de la misma patente) a los que estimarles
+ * una jornada completa les regala 16 horas-hombre por nada: en abril eran 11
+ * "viajes" con 172 CEq (0,15% del mes) y 176 HH, y solos bajaban el TLP de 31,5
+ * a 30,1. Debajo del piso el camión-día no se cuenta como viaje.
+ *
+ * NO aplica a los viajes con checklist real: si el checklist está cargado, el
+ * camión salió, lleve la carga que lleve.
+ */
+const CEQ_MIN_ESTIMADO = 100
+
 const PAGE = 1000
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
@@ -32,6 +65,8 @@ export interface ViajeTlp {
   horasRuta: number
   fte: number
   fteFallback: boolean
+  /** El viaje no tiene checklist: las horas son el promedio de esa patente. */
+  horasEstimadas: boolean
 }
 
 export interface ViajesTlpResultado {
@@ -42,6 +77,8 @@ export interface ViajesTlpResultado {
   viajesConCeq: number
   /** CEq de Gestión que quedaron fuera por no tener checklist de retorno. */
   ceqGescomSinTiempo: number
+  /** Viajes cuyo tiempo en ruta se estimó con el promedio de su patente. */
+  viajesHorasEstimadas: number
 }
 
 async function fetchAll<T>(
@@ -185,17 +222,65 @@ export async function fetchViajesTlp(
     fte.set(key, Math.max(fte.get(key) ?? 0, fteDeAyudantes(r.ayudante1, r.ayudante2)))
   }
 
+  // Promedios para estimar los viajes de la ventana, calculados sobre los viajes
+  // que SÍ tienen dato (checklist para las horas, egreso para el FTE).
+  //
+  // Se promedia por patente Y MES: si el promedio dependiera del rango consultado,
+  // el TLP de abril daría distinto al filtrar el mes que al mirar el año.
+  const promedio = (datos: Map<string, number>) => {
+    const porPatenteMes = new Map<string, { suma: number; n: number }>()
+    const porMes = new Map<string, { suma: number; n: number }>()
+    for (const [key, valor] of datos) {
+      const [patente, fecha] = key.split("|")
+      const mes = fecha.slice(0, 7)
+      for (const [m, k] of [
+        [porPatenteMes, `${patente}|${mes}`],
+        [porMes, mes],
+      ] as [Map<string, { suma: number; n: number }>, string][]) {
+        const a = m.get(k) ?? { suma: 0, n: 0 }
+        a.suma += valor
+        a.n += 1
+        m.set(k, a)
+      }
+    }
+    // La patente en ese mes; si nunca salió, el promedio del mes.
+    return (patente: string, mes: string): number | null => {
+      const a = porPatenteMes.get(`${patente}|${mes}`) ?? porMes.get(mes)
+      return a && a.n > 0 ? a.suma / a.n : null
+    }
+  }
+  const minutosEstimados = promedio(tiempo)
+  const fteEstimadoDe = promedio(fte)
+  const fteEstimado = (patente: string, mes: string): number =>
+    fteEstimadoDe(patente, mes) ?? FTE_FALLBACK
+
   const viajes: ViajeTlp[] = []
   let viajesSinTiempo = 0
   let ceqGescomSinTiempo = 0
+  let viajesHorasEstimadas = 0
   for (const [key, v] of acum) {
     const [patente, fecha] = key.split("|")
-    const min = tiempo.get(key)
+    const fteReal0 = fte.get(key)
+    let min = tiempo.get(key)
+    let estimado = false
+
+    // Ventana previa al arranque del checklist: el viaje existe (tiene CEq), sólo
+    // falta con qué medirlo → se estima el tiempo con el promedio de su patente.
+    const enVentana = fecha >= ESTIMAR_DESDE && fecha <= ESTIMAR_HASTA
+    if (!min && enVentana) {
+      const est = minutosEstimados(patente, fecha.slice(0, 7))
+      if (est) {
+        min = est
+        estimado = true
+      }
+    }
+
     if (!min) {
       viajesSinTiempo++
       ceqGescomSinTiempo += v.ceqGescom
       continue // sin tiempo en ruta no hay denominador
     }
+    if (estimado) viajesHorasEstimadas++
     let ciudadPred = ""
     let maxCeq = -1
     for (const [c, ceq] of v.porCiudad) {
@@ -208,7 +293,14 @@ export async function fetchViajesTlp(
     // habitual de la patente.
     if (!ciudadPred) ciudadPred = ciudadHabitual(patente)
 
-    const fteReal = fte.get(key)
+    // Carga residual sin checklist: no fue un viaje (ver CEQ_MIN_ESTIMADO).
+    if (estimado && v.ceqTotal < CEQ_MIN_ESTIMADO) continue
+
+    // En la ventana, un viaje sin egreso tampoco tiene dotación: se estima con el
+    // FTE promedio de su patente (fuera de la ventana sigue el fallback de 2).
+    const fteUsado =
+      fteReal0 ?? (estimado ? fteEstimado(patente, fecha.slice(0, 7)) : FTE_FALLBACK)
+
     viajes.push({
       patente,
       fecha,
@@ -216,12 +308,19 @@ export async function fetchViajesTlp(
       ceq: v.ceqTotal,
       ceqGescom: v.ceqGescom,
       horasRuta: min / 60,
-      fte: fteReal ?? FTE_FALLBACK,
-      fteFallback: fteReal == null,
+      fte: fteUsado,
+      fteFallback: fteReal0 == null,
+      horasEstimadas: estimado,
     })
   }
 
-  return { viajes, viajesSinTiempo, viajesConCeq: acum.size, ceqGescomSinTiempo }
+  return {
+    viajes,
+    viajesSinTiempo,
+    viajesConCeq: acum.size,
+    ceqGescomSinTiempo,
+    viajesHorasEstimadas,
+  }
 }
 
 export interface TlpMensual {
@@ -234,6 +333,50 @@ export interface TlpMensual {
  * TLP anual para el Árbol del Sueño: YTD (CEq acumuladas ÷ horas-hombre
  * acumuladas del año) + apertura mensual. Devuelve null si no hay viajes.
  */
+/**
+ * Tiempo en ruta anual para el Árbol del Sueño: horas que dura una salida, para
+ * comparar contra la meta. Es un promedio PONDERADO — Σ horas ÷ Σ viajes, no el
+ * promedio de los promedios de las ciudades: así una salida de Arrecifes pesa lo
+ * mismo que una de San Nicolás, y no una ciudad chica como una grande (mismo
+ * criterio que la raíz del TLP).
+ *
+ * 🚨 Arranca en ABRIL: el tiempo en ruta sale del checklist de retorno, que no
+ * existe antes del 9-abr. Los meses de cierre (ene–mar) NO entran: lo que guarda
+ * Foxtrot es otra cosa (708 min por ruta en enero, casi 12 h) y promediarlo acá
+ * publicaría un número falso. El TLP sí los usa, porque ahí entran como
+ * horas-hombre de cierre y no como duración de una salida.
+ */
+export async function tiempoRutaAnual(
+  supabase: Supabase,
+  anio: number,
+): Promise<{ ytd: number; meses: { mes: number; valor: number; viajes: number }[] } | null> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+  if (viajes.length === 0) return null
+
+  let horas = 0
+  const porMes = new Map<number, { horas: number; viajes: number }>()
+  for (const v of viajes) {
+    horas += v.horasRuta
+    const mes = Number(v.fecha.slice(5, 7))
+    const m = porMes.get(mes) ?? { horas: 0, viajes: 0 }
+    m.horas += v.horasRuta
+    m.viajes += 1
+    porMes.set(mes, m)
+  }
+
+  const meses = [...porMes.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([mes, m]) => ({
+      mes,
+      valor: Math.round((m.horas / m.viajes) * 100) / 100,
+      viajes: m.viajes,
+    }))
+
+  return { ytd: Math.round((horas / viajes.length) * 100) / 100, meses }
+}
+
 export async function tlpAnual(
   supabase: Supabase,
   anio: number,
@@ -241,11 +384,16 @@ export async function tlpAnual(
   const hoy = new Date().toISOString().slice(0, 10)
   const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
   const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
-  if (viajes.length === 0) return null
+  const hist = historicoEnRango(`${anio}-01-01`, hasta)
+  if (viajes.length === 0 && hist.meses.size === 0) return null
 
-  let ceq = 0
-  let hh = 0
+  let ceq = hist.ceq
+  let hh = hist.hh
   const porMes = new Map<number, { ceq: number; hh: number; viajes: number }>()
+  // Meses cerrados a mano (ene–mar: sin checklist ⇒ sin cálculo viaje a viaje).
+  for (const [mes, h] of hist.meses) {
+    porMes.set(mes, { ceq: h.ceq, hh: h.hh, viajes: h.viajes })
+  }
   for (const v of viajes) {
     const horasHombre = v.horasRuta * v.fte
     ceq += v.ceq
@@ -296,6 +444,15 @@ export function evolucionDesdeViajes(viajes: ViajeTlp[], anio: number): TlpEvolu
   const porCiudadYtd = new Map<string, Acum>()
   const totalMes = new Map<number, Acum>()
   const totalYtd: Acum = { ceq: 0, hh: 0 }
+
+  // Meses históricos: solo tienen total (no hay desglose por ciudad) ⇒ la fila
+  // Total los muestra y las ciudades quedan en "—".
+  const hist = historicoEnRango(`${anio}-01-01`, `${anio}-12-31`)
+  for (const [mes, h] of hist.meses) {
+    totalMes.set(mes, { ceq: h.ceq, hh: h.hh })
+    totalYtd.ceq += h.ceq
+    totalYtd.hh += h.hh
+  }
 
   const suma = (a: Acum, v: ViajeTlp) => {
     a.ceq += v.ceq
@@ -395,6 +552,14 @@ export function arbolDesdeViajes(
   const porCiudad = new Map<string, Acum>()
   const total = nuevo()
 
+  // La raíz arranca con los meses cerrados a mano (ene–mar), que no tienen
+  // desglose por ciudad: así el TLP total sigue siendo el del Árbol del Sueño.
+  const hist = historicoEnRango(`${anio}-01-01`, hasta)
+  total.ceq += hist.ceq
+  total.horasRuta += hist.horasRuta
+  total.hh += hist.hh
+  total.viajes += hist.viajes
+
   const suma = (a: Acum, v: ViajeTlp) => {
     a.ceq += v.ceq
     a.horasRuta += v.horasRuta
@@ -449,5 +614,35 @@ export async function tlpAnualPorCiudad(
   return {
     evolucion: evolucionDesdeViajes(viajes, anio),
     arbol: arbolDesdeViajes(viajes, anio, hasta, pdv),
+  }
+}
+
+/**
+ * Tiempo en PDV anual para el Árbol del Sueño: YTD (Σ minutos en PDV ÷ Σ
+ * clientes visitados) + apertura mensual. Mismo cálculo que el nodo Tiempo en
+ * PDV del árbol de /indicadores/tlp — ver `lib/tlp/tiempo-pdv.ts` para por qué
+ * se despeja en vez de medirse.
+ */
+export async function tiempoPdvAnual(
+  supabase: Supabase,
+  anio: number,
+): Promise<{ ytd: number; meses: { mes: number; valor: number; clientes: number }[] } | null> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const desde = `${anio}-01-01`
+
+  const { viajes } = await fetchViajesTlp(supabase, desde, hasta)
+  if (viajes.length === 0) return null
+
+  const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
+  if (!pdv.total) return null
+
+  return {
+    ytd: pdv.total.minPorPdv,
+    meses: [...pdv.porMes].map(([mes, t]) => ({
+      mes,
+      valor: t.minPorPdv,
+      clientes: t.clientes,
+    })),
   }
 }
