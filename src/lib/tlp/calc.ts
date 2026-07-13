@@ -37,6 +37,19 @@ export const FTE_FALLBACK = 2
 const ESTIMAR_DESDE = "2026-04-01"
 const ESTIMAR_HASTA = "2026-04-30"
 
+/**
+ * Piso de CEq para ESTIMAR un viaje. Sin checklist no hay evidencia de que el
+ * camión haya salido a repartir, y hay camión-día con carga residual (2, 6, 10
+ * CEq — una entrega suelta, casi todos de la misma patente) a los que estimarles
+ * una jornada completa les regala 16 horas-hombre por nada: en abril eran 11
+ * "viajes" con 172 CEq (0,15% del mes) y 176 HH, y solos bajaban el TLP de 31,5
+ * a 30,1. Debajo del piso el camión-día no se cuenta como viaje.
+ *
+ * NO aplica a los viajes con checklist real: si el checklist está cargado, el
+ * camión salió, lleve la carga que lleve.
+ */
+const CEQ_MIN_ESTIMADO = 100
+
 const PAGE = 1000
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
@@ -286,6 +299,9 @@ export async function fetchViajesTlp(
     // Viaje sólo de Gestión (sin CEq de Chess ⇒ sin localidad): va a la ciudad
     // habitual de la patente.
     if (!ciudadPred) ciudadPred = ciudadHabitual(patente)
+
+    // Carga residual sin checklist: no fue un viaje (ver CEQ_MIN_ESTIMADO).
+    if (estimado && v.ceqTotal < CEQ_MIN_ESTIMADO) continue
 
     // En la ventana, un viaje sin egreso tampoco tiene dotación: se estima con el
     // FTE promedio de su patente (fuera de la ventana sigue el fallback de 2).
