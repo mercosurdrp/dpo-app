@@ -14,10 +14,10 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { requireAuth } from "@/lib/session"
 import {
   getRadarCriticos,
-  UMBRAL_CRITICO_DEFAULT,
   type RadarCriticoRow,
   type RadarCriticosData,
 } from "@/actions/radar-rechazos"
+import { UMBRAL_CRITICO_DEFAULT } from "@/lib/radar-rechazos/build"
 import {
   COLOR_ACCENT,
   COLOR_PRIMARY,

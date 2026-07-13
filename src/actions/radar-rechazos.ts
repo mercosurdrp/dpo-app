@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { UMBRAL_CRITICO_DEFAULT } from "@/lib/radar-rechazos/build"
 
 export interface RadarClienteView {
   id_cliente: number | null
@@ -112,13 +113,6 @@ export interface RadarCriticosData {
 
 const ID_CERRADO = 1
 const ID_SIN_DINERO = 6
-
-/**
- * Umbral por defecto de "cliente crítico": más de N VECES sin dinero en el año.
- * Calibrado en veces (no en líneas de producto): con 3, en 2026 quedan ~30
- * clientes críticos en toda la base; con 7 quedaban 7 y el PDF salía vacío.
- */
-export const UMBRAL_CRITICO_DEFAULT = 3
 
 /**
  * Clientes CRÍTICOS de la última foto del radar: los que tienen MÁS de `umbral`

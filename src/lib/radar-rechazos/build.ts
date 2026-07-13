@@ -23,6 +23,15 @@ import {
 export const ID_CERRADO = 1
 export const ID_SIN_DINERO = 6
 
+/**
+ * Umbral por defecto de "cliente crítico" del PDF de Ventas: más de N VECES sin
+ * dinero en el año. Calibrado en veces (no en líneas de producto): con 3, en 2026
+ * quedan ~30 clientes críticos en toda la base; con 7 quedaban 7 y el PDF salía
+ * vacío. Vive acá y no en actions/ porque un archivo "use server" solo puede
+ * exportar funciones async.
+ */
+export const UMBRAL_CRITICO_DEFAULT = 3
+
 export interface RadarClienteRow {
   id_cliente: number | null
   nombre_cliente: string | null
