@@ -392,6 +392,7 @@ export async function getVehiculoDetalle(
           ultimaActividad,
         },
         kmUltimos30Dias,
+        horasPorDia: horasResumen?.porDia ?? [],
         rendimientoUltimas10Cargas,
         timeline: timelineTrim,
         proximaAlerta,

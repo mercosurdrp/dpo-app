@@ -1266,6 +1266,10 @@ export interface VehiculoDetalle {
     ultimaActividad: string | null
   }
   kmUltimos30Dias: { fecha: string; km: number }[]
+  // Solo autoelevadores: horas por día de TODA la historia (una fila por día con
+  // lectura), para que el detalle pueda ofrecer un selector de mes sin volver al
+  // servidor. En camiones va vacío.
+  horasPorDia: { fecha: string; km: number }[]
   rendimientoUltimas10Cargas: { fecha: string; rendimiento: number; km: number; litros: number }[]
   timeline: VehiculoTimelineEvento[]
   proximaAlerta: AlertaVehiculo | null

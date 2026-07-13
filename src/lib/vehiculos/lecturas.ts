@@ -357,6 +357,10 @@ export interface HorasResumen {
   // Horas trabajadas por día en los últimos 30 (delta del horómetro contra la
   // lectura previa). Campo `km` para poder reusar el mismo chart que camiones.
   porDia30: { fecha: string; km: number }[]
+  // Toda la serie de horas por día (solo los días con lectura), de la más vieja
+  // a la más nueva. El detalle la usa para el selector de mes: son pocas filas
+  // (una lectura por día de uso), así que viaja entera al cliente.
+  porDia: { fecha: string; km: number }[]
 }
 
 /**
@@ -403,6 +407,7 @@ export function resumenHorasHorometro(
       ultimoHorometro: null,
       ultimaFecha: null,
       porDia30: [],
+      porDia: [],
     }
   }
 
@@ -420,13 +425,22 @@ export function resumenHorasHorometro(
     return Math.max(0, fin - base)
   }
 
-  const mapa30 = new Map<string, number>()
-  for (let i = 29; i >= 0; i--) mapa30.set(addDays(hoy, -i), 0)
+  // Delta contra la lectura anterior. La primera lectura de la historia no tiene
+  // contra qué comparar, así que no aporta horas (arranca la serie).
+  const mapaDia = new Map<string, number>()
   for (let i = 1; i < limpio.length; i++) {
     const f = limpio[i].fecha
-    if (!mapa30.has(f)) continue
     const delta = horas(limpio[i]) - horas(limpio[i - 1])
-    mapa30.set(f, (mapa30.get(f) || 0) + delta)
+    mapaDia.set(f, (mapaDia.get(f) || 0) + delta)
+  }
+  const porDia = Array.from(mapaDia.entries())
+    .map(([fecha, km]) => ({ fecha, km }))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1))
+
+  const mapa30 = new Map<string, number>()
+  for (let i = 29; i >= 0; i--) mapa30.set(addDays(hoy, -i), 0)
+  for (const d of porDia) {
+    if (mapa30.has(d.fecha)) mapa30.set(d.fecha, d.km)
   }
   const porDia30 = Array.from(mapa30.entries()).map(([fecha, km]) => ({ fecha, km }))
 
@@ -437,6 +451,7 @@ export function resumenHorasHorometro(
     ultimoHorometro: horas(ultimo),
     ultimaFecha: ultimo.fecha,
     porDia30,
+    porDia,
   }
 }
 

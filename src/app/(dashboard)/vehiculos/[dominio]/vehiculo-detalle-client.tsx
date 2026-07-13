@@ -1,8 +1,16 @@
 "use client"
 
 import Link from "next/link"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   BarChart,
   Bar,
@@ -77,19 +85,83 @@ function formatFechaCorta(fechaIso: string) {
   return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`
 }
 
+const MESES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
+
+// "2026-07" -> "Julio 2026"
+function formatMes(mes: string) {
+  const [anio, m] = mes.split("-")
+  const nombre = MESES[Number(m) - 1] ?? mes
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${anio}`
+}
+
+function diasDelMes(mes: string): number {
+  const [anio, m] = mes.split("-").map(Number)
+  return new Date(anio, m, 0).getDate()
+}
+
 export function VehiculoDetalleClient({ detalle, children }: Props) {
-  const { vehiculo, kpis, kmUltimos30Dias, rendimientoUltimas10Cargas, timeline, proximaAlerta } =
-    detalle
+  const {
+    vehiculo,
+    kpis,
+    kmUltimos30Dias,
+    horasPorDia,
+    rendimientoUltimas10Cargas,
+    timeline,
+    proximaAlerta,
+  } = detalle
 
   // Autoelevadores: el "odómetro" es un horómetro (horas). Se re-etiqueta toda
   // la vista a horas, ya que los km no aplican (no salen a ruta).
   const esAutoelevador = vehiculo.tipo === "autoelevador"
   const unidad = esAutoelevador ? "hs" : "km"
 
-  const kmChart = kmUltimos30Dias.map((d) => ({
-    fecha: formatFechaCorta(d.fecha),
-    km: d.km,
-  }))
+  // Meses con actividad, del más nuevo al más viejo. El mes en curso siempre
+  // está en la lista aunque el autoelevador todavía no haya trabajado.
+  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesesDisponibles = useMemo(() => {
+    const set = new Set(horasPorDia.map((d) => d.fecha.slice(0, 7)))
+    set.add(mesActual)
+    return [...set].sort((a, b) => (a < b ? 1 : -1))
+  }, [horasPorDia, mesActual])
+
+  const [mesSel, setMesSel] = useState(mesActual)
+
+  // Horas del mes elegido + una barra por día del mes (los días sin lectura van
+  // en cero, para que se lean los huecos).
+  const { horasMesSel, horasChart } = useMemo(() => {
+    const delMes = horasPorDia.filter((d) => d.fecha.startsWith(mesSel))
+    const porFecha = new Map(delMes.map((d) => [d.fecha, d.km]))
+    const hasta = mesSel === mesActual ? new Date().getDate() : diasDelMes(mesSel)
+    const chart = []
+    for (let dia = 1; dia <= hasta; dia++) {
+      const fecha = `${mesSel}-${dia.toString().padStart(2, "0")}`
+      chart.push({ fecha: formatFechaCorta(fecha), km: porFecha.get(fecha) ?? 0 })
+    }
+    return {
+      horasMesSel: delMes.reduce((a, d) => a + d.km, 0),
+      horasChart: chart,
+    }
+  }, [horasPorDia, mesSel, mesActual])
+
+  const kmChart = esAutoelevador
+    ? horasChart
+    : kmUltimos30Dias.map((d) => ({
+        fecha: formatFechaCorta(d.fecha),
+        km: d.km,
+      }))
 
   const rendChart = rendimientoUltimas10Cargas.map((c) => ({
     fecha: formatFechaCorta(c.fecha),
@@ -136,10 +208,10 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  {esAutoelevador ? "Horas del mes" : "Km del mes"}
+                  {esAutoelevador ? `Horas — ${formatMes(mesSel)}` : "Km del mes"}
                 </p>
                 <p className="text-3xl font-bold text-slate-900">
-                  {kpis.kmMes.toLocaleString("es-AR")}
+                  {(esAutoelevador ? horasMesSel : kpis.kmMes).toLocaleString("es-AR")}
                   {esAutoelevador && (
                     <span className="ml-1 text-base font-normal text-muted-foreground">hs</span>
                   )}
@@ -263,10 +335,26 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
       {/* Charts */}
       <div className={`grid gap-4 ${esAutoelevador ? "" : "lg:grid-cols-2"}`}>
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle className="text-base">
-              {esAutoelevador ? "Horas por día — últimos 30" : "Km por día — últimos 30"}
+              {esAutoelevador
+                ? `Horas por día — ${formatMes(mesSel)}`
+                : "Km por día — últimos 30"}
             </CardTitle>
+            {esAutoelevador && (
+              <Select value={mesSel} onValueChange={(v: string | null) => v && setMesSel(v)}>
+                <SelectTrigger className="h-8 w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {mesesDisponibles.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {formatMes(m)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </CardHeader>
           <CardContent>
             <div className="h-64">
