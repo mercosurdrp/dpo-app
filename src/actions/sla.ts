@@ -1041,6 +1041,13 @@ const CARGA_EXCEPCIONES_DIA_CUMPLE: Record<string, string> = {
     "Cumplido por revisión manual: los viajes tarde fueron despachos ficticios (regularización) que salieron al día siguiente.",
 }
 
+// Feriados sin reparto: el depósito no carga, así que el día no aplica (ni verde
+// ni rojo), igual que un domingo. Manda sobre lo que traiga el pusher: si el blob
+// publicara viajes en un feriado serían regularizaciones, no cargas del día.
+const CARGA_FERIADOS: Record<string, string> = {
+  "2026-07-09": "Feriado (Día de la Independencia): no hubo reparto.",
+}
+
 /** Lee el blob pre-cocinado del pusher. `null` si no existe o viene vacío. */
 async function fetchSlaCargaPrecocido(): Promise<SlaCargaPrecocido | null> {
   try {
@@ -1154,8 +1161,9 @@ function filaCargaPrecocida(
   for (let d = 1; d <= diasDelMes; d++) {
     const iso = `${year}-${mm}-${String(d).padStart(2, "0")}`
     const dia = pre.dias.get(iso)
-    const estado: EstadoCumplimiento =
-      dia?.estado ?? (dowFromISO(iso) === 0 ? "na" : "sd")
+    const estado: EstadoCumplimiento = CARGA_FERIADOS[iso]
+      ? "na"
+      : dia?.estado ?? (dowFromISO(iso) === 0 ? "na" : "sd")
     if (estado === "si" || estado === "no") {
       totalAplica++
       if (estado === "si") cumplidos++
@@ -1288,8 +1296,8 @@ async function filaCarga(
 
   for (let d = 1; d <= diasDelMes; d++) {
     const iso = `${year}-${mm}-${String(d).padStart(2, "0")}`
-    if (dowFromISO(iso) === 0) {
-      dias.push("na") // domingo: no hay reparto
+    if (dowFromISO(iso) === 0 || CARGA_FERIADOS[iso]) {
+      dias.push("na") // domingo o feriado: no hay reparto
       continue
     }
     const esp = esperados.get(d) ?? 0
@@ -1711,6 +1719,23 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "alm_carga") {
+      const feriado = CARGA_FERIADOS[fecha]
+      if (feriado) {
+        return {
+          data: {
+            codigo,
+            nombre: SLA_CARGA_NOMBRE,
+            fecha,
+            diaSemana,
+            estado: "na",
+            metaLabel: "Camiones ruteados cargados a tiempo (antes de 07:00 o desde 11:00)",
+            valorLabel: "—",
+            filas: [],
+            nota: feriado,
+          },
+        }
+      }
+
       // Primero el blob pre-cocinado del pusher: trae el día ya evaluado con
       // sus viajes (hora real Ev17) y faltantes. Fallback: modelo mixto.
       const pre = await fetchSlaCargaPrecocido()
