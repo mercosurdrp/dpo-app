@@ -244,7 +244,7 @@ export async function getSuenoDetalle(
             ? ext.explicacion
             : "No se pudo leer la productividad del depósito en este momento.",
           meses,
-          detalleLabel: "Registros",
+          detalleLabel: ext.detalleLabel ?? "Registros",
         },
       }
     }

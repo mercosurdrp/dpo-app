@@ -3,7 +3,8 @@
  * deposito-esteban / WMS). En vez de la RPC `sueno_kpi_detalle`, su valor
  * anual y su detalle mensual se traen por API del depósito.
  *
- * Hoy: `prod_picking` (Bul/HH) ← /api/productividad/picking-resumen.
+ * Hoy: `prod_picking` (Bul/HH) ← /api/productividad/picking-resumen
+ *      `wnp` (HL/HH)          ← /api/productividad/wnp-resumen
  *
  * Patrón calcado de `warehouse/auto-indicadores.ts`: fetch con timeout corto,
  * cache in-memory por proceso (1h) y tolerancia total a fallos (si el depósito
@@ -16,17 +17,18 @@ const DEPOSITO_API_BASE =
 const TIMEOUT_MS = 5000
 const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día
 
-export interface PickingResumenMes {
+export interface ResumenExternoMes {
   mes: number
   valor: number | null
+  /** Tamaño del mes: nº de registros (picking) u horas-hombre (WNP). */
   registros: number
 }
-export interface PickingResumen {
+export interface ResumenExterno {
   anio: number
   promedio_anual: number | null
   registros_anual: number
   generado_en: string | null
-  meses: PickingResumenMes[]
+  meses: ResumenExternoMes[]
 }
 
 /** key del KPI → cómo resolver su valor externo. */
@@ -34,9 +36,11 @@ export const KPI_EXTERNOS: Record<
   string,
   {
     /** Trae el resumen anual+mensual del depósito (o null si no disponible). */
-    resumen: (anio: number) => Promise<PickingResumen | null>
+    resumen: (anio: number) => Promise<ResumenExterno | null>
     /** Texto del popover. */
     explicacion: string
+    /** Encabezado de la columna "detalle" del popover (default: "Registros"). */
+    detalleLabel?: string
   }
 > = {
   prod_picking: {
@@ -46,6 +50,15 @@ export const KPI_EXTERNOS: Record<
       "promedio anual de los registros operario×día; el detalle muestra el " +
       "promedio de cada mes y cuántos registros lo componen. Fuente: depósito " +
       "(deposito-esteban /productividad).",
+  },
+  wnp: {
+    resumen: fetchWnpResumen,
+    explicacion:
+      "WNP = HL despachados ÷ horas-hombre del almacén (indicador #20). El número " +
+      "anual es la productividad ACUMULADA real (Σ HL ÷ Σ horas del año), no el " +
+      "promedio de los meses; el detalle muestra el WNP de cada mes y las horas que " +
+      "lo componen. Fuente: depósito (deposito-esteban /indicadores).",
+    detalleLabel: "Horas",
   },
 }
 
@@ -72,9 +85,15 @@ async function fetchJsonCached<T>(url: string): Promise<T | null> {
   }
 }
 
-async function fetchPickingResumen(anio: number): Promise<PickingResumen | null> {
-  return fetchJsonCached<PickingResumen>(
+async function fetchPickingResumen(anio: number): Promise<ResumenExterno | null> {
+  return fetchJsonCached<ResumenExterno>(
     `${DEPOSITO_API_BASE}/api/productividad/picking-resumen?anio=${anio}`,
+  )
+}
+
+async function fetchWnpResumen(anio: number): Promise<ResumenExterno | null> {
+  return fetchJsonCached<ResumenExterno>(
+    `${DEPOSITO_API_BASE}/api/productividad/wnp-resumen?anio=${anio}`,
   )
 }
 
