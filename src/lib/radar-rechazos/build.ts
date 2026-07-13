@@ -3,7 +3,8 @@
  *
  * Cruza los pedidos ruteados de MAÑANA (Chess) contra el historial de rechazos
  * por CERRADO (id_rechazo 1) y SIN DINERO (id_rechazo 6) de cada cliente, en dos
- * ventanas: últimos 365 días y últimos 30 días. Devuelve solo los clientes EN
+ * ventanas: últimos 365 días y últimos 30 días. Los rechazos se cuentan en VECES
+ * (cliente × fecha), no en filas de la tabla. Devuelve solo los clientes EN
  * RIESGO (los que se entregan mañana Y tienen historial en esos motivos),
  * agrupables por promotor, para que ventas avise al cliente y evite el rechazo.
  *
@@ -36,6 +37,7 @@ export interface RadarClienteRow {
   cerrado_mes: number
   sin_dinero_anio: number
   sin_dinero_mes: number
+  bultos_rechazados_anio: number
   riesgo_total: number
 }
 
@@ -121,48 +123,82 @@ interface MotivoCount {
   cerrado_mes: number
   sin_dinero_anio: number
   sin_dinero_mes: number
+  bultos_rechazados_anio: number
+}
+
+/** Acumulador: las fechas van en sets para poder contar VECES sin duplicar. */
+interface MotivoFechas {
+  cerrado: Set<string>
+  cerrado30: Set<string>
+  sin_dinero: Set<string>
+  sin_dinero30: Set<string>
+  bultos: number
 }
 
 /**
  * Trae los rechazos por CERRADO / SIN DINERO de los últimos 365 días (imputados
  * a fecha_venta) y los cuenta por cliente, separando además la sub-ventana de 30
  * días. Pagina para esquivar el tope de 1000 de PostgREST.
+ *
+ * 🚨 `rechazos` tiene UNA FILA POR ARTÍCULO rechazado, así que un `count(*)`
+ * cuenta líneas de producto, no rechazos. Acá se cuentan VECES = ocurrencias
+ * distintas de cliente × fecha_venta, el mismo criterio que el Árbol del Sueño
+ * (`sueno_kpi_refresh`). Los bultos rechazados sí se suman fila por fila.
  */
 async function contarRechazosPorCliente(
   supabase: SupabaseClient, hoy: string,
 ): Promise<Map<number, MotivoCount>> {
   const desdeAnio = restarDias(hoy, 365)
   const desdeMes = restarDias(hoy, 30)
-  const counts = new Map<number, MotivoCount>()
+  const acc = new Map<number, MotivoFechas>()
   const PAGE = 1000
   let from = 0
   while (true) {
     const { data, error } = await supabase
       .from("rechazos")
-      .select("id_cliente, id_rechazo, fecha_venta")
+      .select("id_cliente, id_rechazo, fecha_venta, bultos_rechazados")
       .in("id_rechazo", [ID_CERRADO, ID_SIN_DINERO])
       .gte("fecha_venta", desdeAnio)
       .lte("fecha_venta", hoy)
       .range(from, from + PAGE - 1)
     if (error) throw new Error(`rechazos: ${error.message}`)
     if (!data || data.length === 0) break
-    for (const r of data as { id_cliente: number | null; id_rechazo: number; fecha_venta: string | null }[]) {
-      if (r.id_cliente == null) continue
-      const c = counts.get(r.id_cliente) ?? {
-        cerrado_anio: 0, cerrado_mes: 0, sin_dinero_anio: 0, sin_dinero_mes: 0,
+    for (const r of data as {
+      id_cliente: number | null
+      id_rechazo: number
+      fecha_venta: string | null
+      bultos_rechazados: number | null
+    }[]) {
+      if (r.id_cliente == null || !r.fecha_venta) continue
+      const c = acc.get(r.id_cliente) ?? {
+        cerrado: new Set<string>(), cerrado30: new Set<string>(),
+        sin_dinero: new Set<string>(), sin_dinero30: new Set<string>(),
+        bultos: 0,
       }
-      const enMes = !!r.fecha_venta && r.fecha_venta >= desdeMes
+      const enMes = r.fecha_venta >= desdeMes
       if (r.id_rechazo === ID_CERRADO) {
-        c.cerrado_anio += 1
-        if (enMes) c.cerrado_mes += 1
+        c.cerrado.add(r.fecha_venta)
+        if (enMes) c.cerrado30.add(r.fecha_venta)
       } else if (r.id_rechazo === ID_SIN_DINERO) {
-        c.sin_dinero_anio += 1
-        if (enMes) c.sin_dinero_mes += 1
+        c.sin_dinero.add(r.fecha_venta)
+        if (enMes) c.sin_dinero30.add(r.fecha_venta)
       }
-      counts.set(r.id_cliente, c)
+      c.bultos += Number(r.bultos_rechazados ?? 0)
+      acc.set(r.id_cliente, c)
     }
     if (data.length < PAGE) break
     from += PAGE
+  }
+
+  const counts = new Map<number, MotivoCount>()
+  for (const [id, c] of acc) {
+    counts.set(id, {
+      cerrado_anio: c.cerrado.size,
+      cerrado_mes: c.cerrado30.size,
+      sin_dinero_anio: c.sin_dinero.size,
+      sin_dinero_mes: c.sin_dinero30.size,
+      bultos_rechazados_anio: Math.round(c.bultos),
+    })
   }
   return counts
 }
@@ -251,6 +287,7 @@ export async function buildRadarRechazos(
       cerrado_mes: rc.cerrado_mes,
       sin_dinero_anio: rc.sin_dinero_anio,
       sin_dinero_mes: rc.sin_dinero_mes,
+      bultos_rechazados_anio: rc.bultos_rechazados_anio,
       riesgo_total: riesgo,
     })
     bultosRiesgo += ped.bultos
