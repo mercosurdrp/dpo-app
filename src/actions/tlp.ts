@@ -8,7 +8,8 @@ import {
   fteDeAyudantes,
   mapaCiudades,
   normPatente,
-  tlpEvolucionAnual,
+  tlpAnualPorCiudad,
+  type TlpArbol,
   type TlpEvolucionAnual,
 } from "@/lib/tlp/calc"
 
@@ -359,16 +360,20 @@ export async function getTlpRutaDetalle(
   }
 }
 
-/** Cuadro anual: TLP por ciudad × mes, para el bloque "Objetivo por ciudad". */
-export async function getTlpEvolucion(
+/**
+ * Los dos bloques anuales de la página: el cuadro ciudad × mes ("Objetivo por
+ * ciudad") y el árbol del TLP. Van juntos porque salen del mismo barrido de
+ * viajes del año — la lectura más cara de la pantalla.
+ */
+export async function getTlpAnual(
   anio: number,
-): Promise<{ data: TlpEvolucionAnual } | { error: string }> {
+): Promise<{ data: { evolucion: TlpEvolucionAnual; arbol: TlpArbol } } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const data = await tlpEvolucionAnual(supabase, anio)
+    const data = await tlpAnualPorCiudad(supabase, anio)
     return { data }
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Error calculando la evolución del TLP" }
+    return { error: e instanceof Error ? e.message : "Error calculando el TLP anual" }
   }
 }

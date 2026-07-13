@@ -13,10 +13,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { TlpResumen } from "@/actions/tlp"
-import type { TlpEvolucionAnual, TlpEvolucionFila } from "@/lib/tlp/calc"
+import type { TlpArbol, TlpEvolucionAnual, TlpEvolucionFila } from "@/lib/tlp/calc"
 import { TLP_META_GLOBAL, tlpMetaDe, type TlpMeta } from "@/lib/tlp/metas"
 import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import type { TlpPlan } from "@/actions/tlp-planes"
+import { ArbolTlp } from "./_components/arbol-tlp"
 import { PlanesAccionBloque } from "./_components/planes/planes-accion-bloque"
 import { TlpRutaDetalleDialog, type RutaFiltro } from "./tlp-ruta-detalle-dialog"
 
@@ -49,16 +50,26 @@ export function TlpClient({
   data,
   planesIniciales,
   evolucion,
+  arbol,
 }: {
   mes: string
   data: TlpResumen
   planesIniciales: TlpPlan[]
   evolucion: TlpEvolucionAnual | null
+  arbol: TlpArbol | null
 }) {
   const router = useRouter()
   const t = data.total
   const { desde, hasta } = rangoMes(mes)
   const [rutaFiltro, setRutaFiltro] = useState<RutaFiltro | null>(null)
+  // El detalle de horas suele abrirse sobre el mes, pero el árbol es YTD:
+  // cada origen fija el rango con el que se abre el modal.
+  const [rutaRango, setRutaRango] = useState<{ desde: string; hasta: string } | null>(null)
+
+  const abrirRuta = (filtro: RutaFiltro, rango?: { desde: string; hasta: string }) => {
+    setRutaRango(rango ?? null)
+    setRutaFiltro(filtro)
+  }
 
   // Catálogos para el foco de los planes.
   const ciudades = data.por_ciudad.map((f) => f.ciudad)
@@ -143,7 +154,7 @@ export function TlpClient({
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={() => setRutaFiltro({ tipo: "all", label: "Todos los viajes" })}
+          onClick={() => abrirRuta({ tipo: "all", label: "Todos los viajes" })}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
         >
           <Info className="size-3.5" />
@@ -151,13 +162,26 @@ export function TlpClient({
         </button>
       </div>
 
+      {/* Árbol del TLP (YTD del año, como el Árbol del Sueño) */}
+      {arbol && arbol.ciudades.length > 0 && (
+        <ArbolTlp
+          arbol={arbol}
+          onCiudad={(ciudad) =>
+            abrirRuta(
+              { tipo: "ciudad", valor: ciudad, label: `${ciudad} · ${arbol.anio}` },
+              { desde: `${arbol.anio}-01-01`, hasta: arbol.hasta },
+            )
+          }
+        />
+      )}
+
       {/* Por ciudad */}
       <TablaTlp
         titulo="Por ciudad"
         labelCol="Ciudad"
         filas={data.por_ciudad.map((f) => ({ label: f.ciudad, meta: tlpMetaDe(f.ciudad), ...f }))}
         conMeta
-        onRow={(label) => setRutaFiltro({ tipo: "ciudad", valor: label, label })}
+        onRow={(label) => abrirRuta({ tipo: "ciudad", valor: label, label })}
       />
 
       {/* Objetivo por ciudad: evolución mensual del año */}
@@ -171,7 +195,7 @@ export function TlpClient({
         labelCol="Patente"
         mono
         filas={data.por_patente.map((f) => ({ label: f.patente, meta: TLP_META_GLOBAL, ...f }))}
-        onRow={(label) => setRutaFiltro({ tipo: "patente", valor: label, label })}
+        onRow={(label) => abrirRuta({ tipo: "patente", valor: label, label })}
       />
 
       {/* Planes de acción (foco ciudad / camión) */}
@@ -184,8 +208,8 @@ export function TlpClient({
       <TlpRutaDetalleDialog
         open={!!rutaFiltro}
         onClose={() => setRutaFiltro(null)}
-        desde={desde}
-        hasta={hasta}
+        desde={rutaRango?.desde ?? desde}
+        hasta={rutaRango?.hasta ?? hasta}
         filtro={rutaFiltro}
       />
     </div>

@@ -1,4 +1,4 @@
-import { getTlpEvolucion, getTlpMes } from "@/actions/tlp"
+import { getTlpAnual, getTlpMes } from "@/actions/tlp"
 import { listarPlanesTlp } from "@/actions/tlp-planes"
 import { TlpClient } from "./tlp-client"
 
@@ -21,10 +21,10 @@ export default async function TlpPage({
   const { desde, hasta } = rangoMes(mes)
 
   const anio = Number(mes.slice(0, 4))
-  const [tlpRes, planesRes, evolucionRes] = await Promise.all([
+  const [tlpRes, planesRes, anualRes] = await Promise.all([
     getTlpMes(desde, hasta),
     listarPlanesTlp(),
-    getTlpEvolucion(anio),
+    getTlpAnual(anio),
   ])
 
   if ("error" in tlpRes) {
@@ -37,13 +37,14 @@ export default async function TlpPage({
   }
 
   const planes = "data" in planesRes ? planesRes.data : []
-  const evolucion = "data" in evolucionRes ? evolucionRes.data : null
+  const anual = "data" in anualRes ? anualRes.data : null
   return (
     <TlpClient
       mes={mes}
       data={tlpRes.data}
       planesIniciales={planes}
-      evolucion={evolucion}
+      evolucion={anual?.evolucion ?? null}
+      arbol={anual?.arbol ?? null}
     />
   )
 }

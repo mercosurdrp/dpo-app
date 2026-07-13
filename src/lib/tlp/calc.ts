@@ -241,14 +241,7 @@ export interface TlpEvolucionAnual {
  * Evolución mensual del TLP por ciudad (cuadro ciudad × mes del año), con
  * fila Total. Base del bloque "Objetivo por ciudad" de /indicadores/tlp.
  */
-export async function tlpEvolucionAnual(
-  supabase: Supabase,
-  anio: number,
-): Promise<TlpEvolucionAnual> {
-  const hoy = new Date().toISOString().slice(0, 10)
-  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
-  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
-
+export function evolucionDesdeViajes(viajes: ViajeTlp[], anio: number): TlpEvolucionAnual {
   type Acum = { ceq: number; hh: number }
   const porCiudadMes = new Map<string, Map<number, Acum>>()
   const porCiudadYtd = new Map<string, Acum>()
@@ -305,5 +298,97 @@ export async function tlpEvolucionAnual(
     meses,
     filas,
     total: cerrarFila("Total", totalMes, totalYtd),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Árbol de TLP (bloque "Árbol del TLP" de /indicadores/tlp)
+// ---------------------------------------------------------------------------
+
+export interface TlpArbolNodo {
+  ciudad: string
+  ceq: number
+  horasRuta: number
+  horasHombre: number
+  /** Dotación promedio del viaje, ponderada por horas en ruta. */
+  fte: number | null
+  viajes: number
+  tlp: number | null
+}
+
+export interface TlpArbol {
+  anio: number
+  /** Último día incluido (hoy, o el 31-dic si el año ya cerró). */
+  hasta: string
+  /** Raíz: TLP YTD ponderado de toda la operación — el mismo del Árbol del Sueño. */
+  total: TlpArbolNodo
+  ciudades: TlpArbolNodo[]
+}
+
+/**
+ * Árbol del TLP: raíz (total) → una rama por ciudad → sus dos insumos.
+ *
+ * La raíz NO promedia los TLP de las ciudades: es Σ CEq ÷ Σ horas-hombre de
+ * todos los viajes del año, idéntico a `tlpAnual` (Árbol del Sueño). Cada
+ * ciudad pesa según su volumen y sus horas, no una ciudad = un voto.
+ */
+export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string): TlpArbol {
+  type Acum = { ceq: number; horasRuta: number; hh: number; viajes: number }
+  const nuevo = (): Acum => ({ ceq: 0, horasRuta: 0, hh: 0, viajes: 0 })
+
+  const porCiudad = new Map<string, Acum>()
+  const total = nuevo()
+
+  const suma = (a: Acum, v: ViajeTlp) => {
+    a.ceq += v.ceq
+    a.horasRuta += v.horasRuta
+    a.hh += v.horasRuta * v.fte
+    a.viajes += 1
+  }
+
+  for (const v of viajes) {
+    const a = porCiudad.get(v.ciudad) ?? nuevo()
+    suma(a, v)
+    porCiudad.set(v.ciudad, a)
+    suma(total, v)
+  }
+
+  const cerrar = (ciudad: string, a: Acum): TlpArbolNodo => ({
+    ciudad,
+    ceq: Math.round(a.ceq),
+    horasRuta: Math.round(a.horasRuta * 10) / 10,
+    horasHombre: Math.round(a.hh * 10) / 10,
+    // FTE ponderado por horas: hh = Σ (horas × FTE) ⇒ FTE = hh ÷ horas.
+    fte: a.horasRuta > 0 ? Math.round((a.hh / a.horasRuta) * 100) / 100 : null,
+    viajes: a.viajes,
+    tlp: a.hh > 0 ? Math.round((a.ceq / a.hh) * 100) / 100 : null,
+  })
+
+  return {
+    anio,
+    hasta,
+    total: cerrar("Total", total),
+    ciudades: [...porCiudad.entries()]
+      .map(([ciudad, a]) => cerrar(ciudad, a))
+      .sort((a, b) => b.ceq - a.ceq),
+  }
+}
+
+/**
+ * Un solo barrido anual para los dos bloques que miran el año completo
+ * (evolución mensual + árbol). `fetchViajesTlp` sobre un año es la lectura
+ * más cara de la página: no conviene repetirla.
+ */
+export async function tlpAnualPorCiudad(
+  supabase: Supabase,
+  anio: number,
+): Promise<{ evolucion: TlpEvolucionAnual; arbol: TlpArbol }> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+
+  return {
+    evolucion: evolucionDesdeViajes(viajes, anio),
+    arbol: arbolDesdeViajes(viajes, anio, hasta),
   }
 }
