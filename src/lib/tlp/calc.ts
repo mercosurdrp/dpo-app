@@ -451,3 +451,33 @@ export async function tlpAnualPorCiudad(
     arbol: arbolDesdeViajes(viajes, anio, hasta, pdv),
   }
 }
+
+/**
+ * Tiempo en PDV anual para el Árbol del Sueño: YTD (Σ minutos en PDV ÷ Σ
+ * clientes visitados) + apertura mensual. Mismo cálculo que el nodo Tiempo en
+ * PDV del árbol de /indicadores/tlp — ver `lib/tlp/tiempo-pdv.ts` para por qué
+ * se despeja en vez de medirse.
+ */
+export async function tiempoPdvAnual(
+  supabase: Supabase,
+  anio: number,
+): Promise<{ ytd: number; meses: { mes: number; valor: number; clientes: number }[] } | null> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const desde = `${anio}-01-01`
+
+  const { viajes } = await fetchViajesTlp(supabase, desde, hasta)
+  if (viajes.length === 0) return null
+
+  const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
+  if (!pdv.total) return null
+
+  return {
+    ytd: pdv.total.minPorPdv,
+    meses: [...pdv.porMes].map(([mes, t]) => ({
+      mes,
+      valor: t.minPorPdv,
+      clientes: t.clientes,
+    })),
+  }
+}

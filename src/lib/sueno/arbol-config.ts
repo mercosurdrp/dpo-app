@@ -94,8 +94,7 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
-  { key: "tiempo_pdv", label: "Tiempo en PDV", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "hs", mejorSi: "menor", metaDefault: 5.2 },
-  { key: "cantidad_pnp", label: "Cantidad PNP", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "%", mejorSi: "menor", metaDefault: 5 },
+  { key: "tiempo_pdv", label: "Tiempo en PDV", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "min", mejorSi: "menor", metaDefault: 8 },
   { key: "hs_extras", label: "HS Extras", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "hs", mejorSi: "menor", metaDefault: 5.6 },
   { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
   { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
@@ -118,8 +117,6 @@ export type AgregacionMensual = "promedio" | "suma"
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   wnp: "promedio",
   tiempo_ruta: "promedio",
-  tiempo_pdv: "promedio",
-  cantidad_pnp: "promedio",
   hs_extras: "promedio",
 }
 
