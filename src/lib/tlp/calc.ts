@@ -1,10 +1,17 @@
 import type { createClient } from "@/lib/supabase/server"
+import { ceqGescomPorViaje } from "./ceq-gescom"
+import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } from "./tiempo-pdv"
 
 // Núcleo del cálculo del TLP (Transport Labor Productivity), compartido entre
 // la página /indicadores/tlp y el Árbol del Sueño.
 //
 // TLP = CEq entregadas ÷ horas-hombre (horas en ruta × FTE del camión).
 // Viaje = patente + fecha, imputado a su ciudad PREDOMINANTE (más CEq).
+//
+// 🚨 Las CEq son Chess + GESTIÓN (GESCOM, sede 2) — la MISMA base que las "CEq
+// distribuidas" del cuadro de Indicadores (RPC `cuadro_ceq_mensual`). Contar
+// solo Chess subestimaba el TLP: en mayo 2026 tomaba 65.381 de 93.087 CEq
+// (TLP 18,95 en vez de 26,96). Ver `lib/tlp/ceq-gescom.ts`.
 //
 // Todas las lecturas paginan de a 1000 filas: PostgREST trunca en 1000 y un
 // rango anual (Sueño YTD) supera ese límite con comodidad.
@@ -20,6 +27,8 @@ export interface ViajeTlp {
   fecha: string
   ciudad: string // predominante
   ceq: number
+  /** Parte de `ceq` que vino de GESCOM (Gestión); el resto es Chess. */
+  ceqGescom: number
   horasRuta: number
   fte: number
   fteFallback: boolean
@@ -31,6 +40,8 @@ export interface ViajesTlpResultado {
   viajesSinTiempo: number
   /** Total de viajes con CEq (incluidos + excluidos). */
   viajesConCeq: number
+  /** CEq de Gestión que quedaron fuera por no tener checklist de retorno. */
+  ceqGescomSinTiempo: number
 }
 
 async function fetchAll<T>(
@@ -77,7 +88,7 @@ export async function fetchViajesTlp(
   desde: string,
   hasta: string,
 ): Promise<ViajesTlpResultado> {
-  const [locRows, retRows, egrRows, ciudades] = await Promise.all([
+  const [locRows, retRows, egrRows, ciudades, ceqGescom] = await Promise.all([
     fetchAll<{ patente: string; fecha: string; localidad: string; ceq_total: number }>(
       (from, to) =>
         supabase
@@ -112,19 +123,50 @@ export async function fetchViajesTlp(
           .range(from, to),
     ),
     mapaCiudades(supabase),
+    ceqGescomPorViaje(supabase, desde, hasta),
   ])
 
   // Viaje = patente|fecha. CEq total + CEq por ciudad.
-  const acum = new Map<string, { ceqTotal: number; porCiudad: Map<string, number> }>()
+  const acum = new Map<string, { ceqTotal: number; ceqGescom: number; porCiudad: Map<string, number> }>()
+  const nuevoAcum = () => ({ ceqTotal: 0, ceqGescom: 0, porCiudad: new Map<string, number>() })
   for (const r of locRows) {
     const ceq = Number(r.ceq_total) || 0
     if (ceq <= 0) continue
     const key = `${normPatente(r.patente)}|${r.fecha}`
     const ciudad = ciudades.get((r.localidad ?? "").trim().toUpperCase()) ?? "Otras"
-    const v = acum.get(key) ?? { ceqTotal: 0, porCiudad: new Map<string, number>() }
+    const v = acum.get(key) ?? nuevoAcum()
     v.ceqTotal += ceq
     v.porCiudad.set(ciudad, (v.porCiudad.get(ciudad) ?? 0) + ceq)
     acum.set(key, v)
+  }
+
+  // CEq de Gestión: van al MISMO viaje (el camión hace una sola ruta). GESCOM no
+  // trae localidad, así que no votan la ciudad predominante — la fija Chess. Un
+  // viaje que sólo llevó carga de Gestión no tiene ciudad propia: hereda la
+  // ciudad habitual de esa patente en el rango (abajo).
+  for (const [key, ceq] of ceqGescom) {
+    if (ceq <= 0) continue
+    const v = acum.get(key) ?? nuevoAcum()
+    v.ceqTotal += ceq
+    v.ceqGescom += ceq
+    acum.set(key, v)
+  }
+
+  // Ciudad habitual por patente (la que más CEq de Chess le entregó en el rango).
+  const ceqPatenteCiudad = new Map<string, Map<string, number>>()
+  for (const [key, v] of acum) {
+    const patente = key.split("|")[0]
+    const m = ceqPatenteCiudad.get(patente) ?? new Map<string, number>()
+    for (const [c, ceq] of v.porCiudad) m.set(c, (m.get(c) ?? 0) + ceq)
+    ceqPatenteCiudad.set(patente, m)
+  }
+  const ciudadHabitual = (patente: string): string => {
+    let mejor = "Otras"
+    let max = -1
+    for (const [c, ceq] of ceqPatenteCiudad.get(patente) ?? []) {
+      if (ceq > max) { max = ceq; mejor = c }
+    }
+    return mejor
   }
 
   // Tiempo en ruta (minutos) por viaje — el mayor del día si hubiera varios.
@@ -145,14 +187,16 @@ export async function fetchViajesTlp(
 
   const viajes: ViajeTlp[] = []
   let viajesSinTiempo = 0
+  let ceqGescomSinTiempo = 0
   for (const [key, v] of acum) {
     const [patente, fecha] = key.split("|")
     const min = tiempo.get(key)
     if (!min) {
       viajesSinTiempo++
+      ceqGescomSinTiempo += v.ceqGescom
       continue // sin tiempo en ruta no hay denominador
     }
-    let ciudadPred = "Otras"
+    let ciudadPred = ""
     let maxCeq = -1
     for (const [c, ceq] of v.porCiudad) {
       if (ceq > maxCeq) {
@@ -160,19 +204,24 @@ export async function fetchViajesTlp(
         ciudadPred = c
       }
     }
+    // Viaje sólo de Gestión (sin CEq de Chess ⇒ sin localidad): va a la ciudad
+    // habitual de la patente.
+    if (!ciudadPred) ciudadPred = ciudadHabitual(patente)
+
     const fteReal = fte.get(key)
     viajes.push({
       patente,
       fecha,
       ciudad: ciudadPred,
       ceq: v.ceqTotal,
+      ceqGescom: v.ceqGescom,
       horasRuta: min / 60,
       fte: fteReal ?? FTE_FALLBACK,
       fteFallback: fteReal == null,
     })
   }
 
-  return { viajes, viajesSinTiempo, viajesConCeq: acum.size }
+  return { viajes, viajesSinTiempo, viajesConCeq: acum.size, ceqGescomSinTiempo }
 }
 
 export interface TlpMensual {
@@ -314,6 +363,8 @@ export interface TlpArbolNodo {
   fte: number | null
   viajes: number
   tlp: number | null
+  /** Tiempo en PDV despejado del tiempo en ruta (ver lib/tlp/tiempo-pdv.ts). */
+  tiempoPdv: TiempoPdvCiudad | null
 }
 
 export interface TlpArbol {
@@ -332,7 +383,12 @@ export interface TlpArbol {
  * todos los viajes del año, idéntico a `tlpAnual` (Árbol del Sueño). Cada
  * ciudad pesa según su volumen y sus horas, no una ciudad = un voto.
  */
-export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string): TlpArbol {
+export function arbolDesdeViajes(
+  viajes: ViajeTlp[],
+  anio: number,
+  hasta: string,
+  pdv?: TiempoPdvResultado,
+): TlpArbol {
   type Acum = { ceq: number; horasRuta: number; hh: number; viajes: number }
   const nuevo = (): Acum => ({ ceq: 0, horasRuta: 0, hh: 0, viajes: 0 })
 
@@ -353,7 +409,7 @@ export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string
     suma(total, v)
   }
 
-  const cerrar = (ciudad: string, a: Acum): TlpArbolNodo => ({
+  const cerrar = (ciudad: string, a: Acum, tiempoPdv: TiempoPdvCiudad | null): TlpArbolNodo => ({
     ciudad,
     ceq: Math.round(a.ceq),
     horasRuta: Math.round(a.horasRuta * 10) / 10,
@@ -362,14 +418,15 @@ export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string
     fte: a.horasRuta > 0 ? Math.round((a.hh / a.horasRuta) * 100) / 100 : null,
     viajes: a.viajes,
     tlp: a.hh > 0 ? Math.round((a.ceq / a.hh) * 100) / 100 : null,
+    tiempoPdv,
   })
 
   return {
     anio,
     hasta,
-    total: cerrar("Total", total),
+    total: cerrar("Total", total, pdv?.total ?? null),
     ciudades: [...porCiudad.entries()]
-      .map(([ciudad, a]) => cerrar(ciudad, a))
+      .map(([ciudad, a]) => cerrar(ciudad, a, pdv?.porCiudad.get(ciudad) ?? null))
       .sort((a, b) => b.ceq - a.ceq),
   }
 }
@@ -385,10 +442,12 @@ export async function tlpAnualPorCiudad(
 ): Promise<{ evolucion: TlpEvolucionAnual; arbol: TlpArbol }> {
   const hoy = new Date().toISOString().slice(0, 10)
   const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
-  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+  const desde = `${anio}-01-01`
+  const { viajes } = await fetchViajesTlp(supabase, desde, hasta)
+  const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
 
   return {
     evolucion: evolucionDesdeViajes(viajes, anio),
-    arbol: arbolDesdeViajes(viajes, anio, hasta),
+    arbol: arbolDesdeViajes(viajes, anio, hasta, pdv),
   }
 }

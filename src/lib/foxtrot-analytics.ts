@@ -146,8 +146,15 @@ export async function syncFoxtrotRouteAnalytics(
     const idxRoute = header.indexOf("Route ID")
     const idxDep = header.indexOf("Actual Route Departure Time")
     // Tiempo por PDV: segundos de paradas autorizadas / clientes visitados.
+    // 🚨 Las columnas de paradas salen del GPS del camión y Foxtrot las manda
+    // VACÍAS (solo ~2% de las rutas las trae). El tiempo en PDV real se despeja
+    // del tiempo en ruta del checklist restando el manejo: por eso guardamos
+    // también el manejo PLANIFICADO y los stems (ver lib/tlp/tiempo-pdv.ts).
     const idxAuthSec = header.indexOf("Total Authorized Stops Seconds")
     const idxVisited = header.indexOf("Total Visited Customers Count")
+    const idxPlannedDrvSec = header.indexOf("Planned Foxtrot Driving Seconds")
+    const idxStemStartSec = header.indexOf("Stem Start Duration (Seconds)")
+    const idxStemEndSec = header.indexOf("Stem End Duration (Seconds)")
     // Calidad de conducción (digital route): click score y adherencia a la
     // secuencia sugerida por el resecuenciado en tiempo real. Vienen 0-1 en el
     // CSV; los persistimos como porcentaje 0-100.
@@ -183,6 +190,9 @@ export async function syncFoxtrotRouteAnalytics(
       departure?: string
       authStopsSec?: number
       visited?: number
+      plannedDrvSec?: number
+      stemStartSec?: number
+      stemEndSec?: number
       clickScore?: number
       seqAdherence?: number
       seqEnabled?: boolean
@@ -206,6 +216,9 @@ export async function syncFoxtrotRouteAnalytics(
       else sinDeparture++
       m.authStopsSec = numAt(row, idxAuthSec) ?? m.authStopsSec
       m.visited = numAt(row, idxVisited) ?? m.visited
+      m.plannedDrvSec = numAt(row, idxPlannedDrvSec) ?? m.plannedDrvSec
+      m.stemStartSec = numAt(row, idxStemStartSec) ?? m.stemStartSec
+      m.stemEndSec = numAt(row, idxStemEndSec) ?? m.stemEndSec
       // 0-1 → porcentaje 0-100
       const click = numAt(row, idxClick)
       if (click != null) m.clickScore = round2(click * 100)
@@ -256,6 +269,9 @@ export async function syncFoxtrotRouteAnalytics(
         if (m.departure) extra.tml_actual_departure = m.departure
         if (m.authStopsSec != null) extra.tml_authorized_stops_seconds = m.authStopsSec
         if (m.visited != null) extra.tml_visited_customers = m.visited
+        if (m.plannedDrvSec != null) extra.fx_planned_driving_sec = m.plannedDrvSec
+        if (m.stemStartSec != null) extra.fx_stem_start_sec = m.stemStartSec
+        if (m.stemEndSec != null) extra.fx_stem_end_sec = m.stemEndSec
         // Calidad de conducción + operativos extra (prefijo fx_*).
         if (m.clickScore != null) extra.fx_click_score = m.clickScore
         if (m.seqAdherence != null) extra.fx_seq_adherence = m.seqAdherence
