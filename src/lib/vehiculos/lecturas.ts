@@ -339,6 +339,95 @@ export function historialLecturasPorDominio(
   return result
 }
 
+export interface HorasResumen {
+  // Se reusan los nombres km* del resto del tablero para no duplicar tipos: en
+  // autoelevadores el "odómetro" es en realidad el HORÓMETRO (horas), así que
+  // estos valores son horas.
+  horasMes: number
+  horasYTD: number
+  horasHistorico: number
+  ultimoHorometro: number | null
+  ultimaFecha: string | null
+  // Horas trabajadas por día en los últimos 30 (delta del horómetro contra la
+  // lectura previa). Campo `km` para poder reusar el mismo chart que camiones.
+  porDia30: { fecha: string; km: number }[]
+}
+
+/**
+ * Resumen de HORAS para autoelevadores. A diferencia de los camiones (que
+ * registran varias lecturas por día y las horas/km del día salen del span
+ * intradía), el horómetro del autoelevador es un contador ACUMULADO con UNA
+ * lectura por día. Por eso las horas de un período = último horómetro del
+ * período − horómetro base al inicio (la última lectura anterior al período, o
+ * la primera del propio período si no hay historia previa). Descarta retrocesos
+ * quedándose con la secuencia monótona creciente.
+ */
+export function resumenHorasHorometro(
+  lecturas: Lectura[],
+  hoy: string,
+  inicioMes: string,
+  inicioAnio: string
+): HorasResumen {
+  const orden = [...lecturas].sort((a, b) => {
+    if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
+    return a.hora < b.hora ? -1 : 1
+  })
+  // Secuencia monótona creciente (descarta cargas erróneas más bajas).
+  const limpio: Lectura[] = []
+  let prev = -Infinity
+  for (const l of orden) {
+    if (l.odometro >= prev) {
+      limpio.push(l)
+      prev = l.odometro
+    }
+  }
+
+  if (limpio.length === 0) {
+    return {
+      horasMes: 0,
+      horasYTD: 0,
+      horasHistorico: 0,
+      ultimoHorometro: null,
+      ultimaFecha: null,
+      porDia30: [],
+    }
+  }
+
+  const ultimo = limpio[limpio.length - 1]
+  const horasHistorico = ultimo.odometro - limpio[0].odometro
+
+  const horasDesde = (inicioPeriodo: string): number => {
+    const enPeriodo = limpio.filter((l) => l.fecha >= inicioPeriodo)
+    if (enPeriodo.length === 0) return 0
+    const anteriores = limpio.filter((l) => l.fecha < inicioPeriodo)
+    const base = anteriores.length
+      ? anteriores[anteriores.length - 1].odometro
+      : enPeriodo[0].odometro
+    const fin = enPeriodo[enPeriodo.length - 1].odometro
+    return Math.max(0, fin - base)
+  }
+
+  const hace30 = addDays(hoy, -29)
+  const mapa30 = new Map<string, number>()
+  for (let i = 29; i >= 0; i--) mapa30.set(addDays(hoy, -i), 0)
+  for (let i = 1; i < limpio.length; i++) {
+    const f = limpio[i].fecha
+    if (!mapa30.has(f)) continue
+    const delta = limpio[i].odometro - limpio[i - 1].odometro
+    mapa30.set(f, (mapa30.get(f) || 0) + delta)
+  }
+  const porDia30 = Array.from(mapa30.entries()).map(([fecha, km]) => ({ fecha, km }))
+
+  return {
+    horasMes: horasDesde(inicioMes),
+    horasYTD: horasDesde(inicioAnio),
+    horasHistorico,
+    ultimoHorometro: ultimo.odometro,
+    ultimaFecha: ultimo.fecha,
+    porDia30,
+  }
+}
+
 /**
  * Km actual de cada dominio: odómetro máximo "limpio" (descarta retrocesos
  * tomando la secuencia cronológica y quedándose con el máximo creciente).

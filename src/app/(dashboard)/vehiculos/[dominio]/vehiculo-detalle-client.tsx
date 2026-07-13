@@ -81,6 +81,11 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
   const { vehiculo, kpis, kmUltimos30Dias, rendimientoUltimas10Cargas, timeline, proximaAlerta } =
     detalle
 
+  // Autoelevadores: el "odómetro" es un horómetro (horas). Se re-etiqueta toda
+  // la vista a horas, ya que los km no aplican (no salen a ruta).
+  const esAutoelevador = vehiculo.tipo === "autoelevador"
+  const unidad = esAutoelevador ? "hs" : "km"
+
   const kmChart = kmUltimos30Dias.map((d) => ({
     fecha: formatFechaCorta(d.fecha),
     km: d.km,
@@ -130,9 +135,14 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Km del mes</p>
+                <p className="text-sm text-muted-foreground">
+                  {esAutoelevador ? "Horas del mes" : "Km del mes"}
+                </p>
                 <p className="text-3xl font-bold text-slate-900">
                   {kpis.kmMes.toLocaleString("es-AR")}
+                  {esAutoelevador && (
+                    <span className="ml-1 text-base font-normal text-muted-foreground">hs</span>
+                  )}
                 </p>
               </div>
               <div className="rounded-full bg-indigo-100 p-3">
@@ -140,90 +150,103 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              YTD: {kpis.kmYTD.toLocaleString("es-AR")} km · Histórico:{" "}
-              {kpis.kmHistorico.toLocaleString("es-AR")} km
+              YTD: {kpis.kmYTD.toLocaleString("es-AR")} {unidad} · Histórico:{" "}
+              {kpis.kmHistorico.toLocaleString("es-AR")} {unidad}
             </p>
           </CardContent>
         </Card>
 
+        {!esAutoelevador && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Rendimiento</p>
+                  <p className="text-3xl font-bold text-slate-900">
+                    {kpis.rendimientoPromedio.toFixed(2)}
+                    <span className="ml-1 text-base font-normal text-muted-foreground">km/l</span>
+                  </p>
+                </div>
+                <div className="rounded-full bg-amber-100 p-3">
+                  <Fuel className="h-5 w-5 text-amber-600" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Promedio histórico</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {(!esAutoelevador || kpis.costoMes > 0) && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Costo combustible mes</p>
+                  <p className="text-3xl font-bold text-slate-900">
+                    $ {kpis.costoMes.toLocaleString("es-AR")}
+                  </p>
+                </div>
+                <div className="rounded-full bg-green-100 p-3">
+                  <DollarSign className="h-5 w-5 text-green-600" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Histórico: $ {kpis.costoTotalHistorico.toLocaleString("es-AR")}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!esAutoelevador && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">TML promedio</p>
+                  <p className="text-3xl font-bold text-slate-900">
+                    {kpis.tmlPromedio} <span className="text-base font-normal">min</span>
+                  </p>
+                </div>
+                <div className="rounded-full bg-cyan-100 p-3">
+                  <Clock className="h-5 w-5 text-cyan-600" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Tiempo medio liberación</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!esAutoelevador && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Egresos del mes</p>
+                  <p className="text-3xl font-bold text-slate-900">{kpis.totalEgresosMes}</p>
+                </div>
+                <div className="rounded-full bg-blue-100 p-3">
+                  <Truck className="h-5 w-5 text-blue-600" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Salidas a ruta</p>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Rendimiento</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kpis.rendimientoPromedio.toFixed(2)}
-                  <span className="ml-1 text-base font-normal text-muted-foreground">km/l</span>
+                <p className="text-sm text-muted-foreground">
+                  {esAutoelevador ? "Último horómetro" : "Último odómetro"}
                 </p>
-              </div>
-              <div className="rounded-full bg-amber-100 p-3">
-                <Fuel className="h-5 w-5 text-amber-600" />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">Promedio histórico</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Costo combustible mes</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  $ {kpis.costoMes.toLocaleString("es-AR")}
-                </p>
-              </div>
-              <div className="rounded-full bg-green-100 p-3">
-                <DollarSign className="h-5 w-5 text-green-600" />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Histórico: $ {kpis.costoTotalHistorico.toLocaleString("es-AR")}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">TML promedio</p>
-                <p className="text-3xl font-bold text-slate-900">
-                  {kpis.tmlPromedio} <span className="text-base font-normal">min</span>
-                </p>
-              </div>
-              <div className="rounded-full bg-cyan-100 p-3">
-                <Clock className="h-5 w-5 text-cyan-600" />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">Tiempo medio liberación</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Egresos del mes</p>
-                <p className="text-3xl font-bold text-slate-900">{kpis.totalEgresosMes}</p>
-              </div>
-              <div className="rounded-full bg-blue-100 p-3">
-                <Truck className="h-5 w-5 text-blue-600" />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">Salidas a ruta</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Último odómetro</p>
                 <p className="text-3xl font-bold text-slate-900">
                   {kpis.ultimoOdometro != null
                     ? kpis.ultimoOdometro.toLocaleString("es-AR")
                     : "—"}
+                  {esAutoelevador && kpis.ultimoOdometro != null && (
+                    <span className="ml-1 text-base font-normal text-muted-foreground">hs</span>
+                  )}
                 </p>
               </div>
               <div className="rounded-full bg-slate-100 p-3">
@@ -238,10 +261,12 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
       </div>
 
       {/* Charts */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={`grid gap-4 ${esAutoelevador ? "" : "lg:grid-cols-2"}`}>
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Km por día — últimos 30</CardTitle>
+            <CardTitle className="text-base">
+              {esAutoelevador ? "Horas por día — últimos 30" : "Km por día — últimos 30"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64">
@@ -254,9 +279,12 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
                   <BarChart data={kmChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="fecha" fontSize={11} />
-                    <YAxis fontSize={11} unit=" km" />
+                    <YAxis fontSize={11} unit={` ${unidad}`} />
                     <RechartsTooltip
-                      formatter={(v) => [`${Number(v).toLocaleString("es-AR")} km`, "Km"]}
+                      formatter={(v) => [
+                        `${Number(v).toLocaleString("es-AR")} ${unidad}`,
+                        esAutoelevador ? "Horas" : "Km",
+                      ]}
                     />
                     <Bar dataKey="km" fill="#3B82F6" radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -266,6 +294,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
           </CardContent>
         </Card>
 
+        {!esAutoelevador && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Rendimiento últimas 10 cargas</CardTitle>
@@ -298,6 +327,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Timeline */}
@@ -331,7 +361,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
                         </Badge>
                         {ev.chofer && <span>{ev.chofer}</span>}
                         {ev.odometro != null && (
-                          <span className="font-mono">{ev.odometro.toLocaleString("es-AR")} km</span>
+                          <span className="font-mono">{ev.odometro.toLocaleString("es-AR")} {unidad}</span>
                         )}
                       </div>
                     </div>

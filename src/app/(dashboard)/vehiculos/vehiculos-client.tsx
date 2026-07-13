@@ -275,6 +275,20 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
     startTransition(() => router.refresh())
   }
 
+  // Filtro del historial de checklists por vehículo.
+  const [histDominio, setHistDominio] = useState("todos")
+  // Tipo por dominio para etiquetar el valor cargado: horómetro (hs) en
+  // autoelevadores, odómetro (km) en el resto.
+  const tipoPorDominio = new Map(vehiculos.map((v) => [v.dominio, v.tipo]))
+  const esAutoelevadorDominio = (dominio: string) =>
+    tipoPorDominio.get(dominio) === "autoelevador"
+  const checklistsFiltrados =
+    histDominio === "todos"
+      ? checklists
+      : checklists.filter((c) => c.dominio === histDominio)
+  // Dominios presentes en el historial (para poblar el filtro).
+  const dominiosHistorial = Array.from(new Set(checklists.map((c) => c.dominio))).sort()
+
   const personasOpts = choferes.map((c) => c.nombre)
 
   const enBase = estadoVehiculos.filter((v) => v.estado === "en_base").length
@@ -703,18 +717,39 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         {/* Tab: Historial */}
         <TabsContent value="historial">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle className="text-base">Últimos Checklists</CardTitle>
-              <Link href="/vehiculos/checklist">
-                <Button variant="outline" size="sm">
-                  <ClipboardCheck className="mr-1 h-4 w-4" /> Nuevo
-                </Button>
-              </Link>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">Vehículo</Label>
+                  <Select value={histDominio} onValueChange={(v: string | null) => setHistDominio(v ?? "todos")}>
+                    <SelectTrigger className="h-8 w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      {dominiosHistorial.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                          {esAutoelevadorDominio(d) ? " (autoelev.)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Link href="/vehiculos/checklist">
+                  <Button variant="outline" size="sm">
+                    <ClipboardCheck className="mr-1 h-4 w-4" /> Nuevo
+                  </Button>
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
-              {checklists.length === 0 ? (
+              {checklistsFiltrados.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
-                  No hay checklists registrados.
+                  {checklists.length === 0
+                    ? "No hay checklists registrados."
+                    : "No hay checklists para el vehículo seleccionado."}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -726,6 +761,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                         <TableHead>Tipo</TableHead>
                         <TableHead>Dominio</TableHead>
                         <TableHead>Chofer</TableHead>
+                        <TableHead className="text-right">Odóm./Horóm.</TableHead>
                         <TableHead>Resultado</TableHead>
                         <TableHead className="text-right">T. Ruta</TableHead>
                         <TableHead className="text-right">Duración</TableHead>
@@ -733,7 +769,7 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {checklists.map((c) => (
+                      {checklistsFiltrados.map((c) => (
                         <TableRow key={c.id}>
                           <TableCell className="text-sm">{c.fecha}</TableCell>
                           <TableCell className="text-sm font-mono">{formatHora(c.hora)}</TableCell>
@@ -755,6 +791,13 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                             </Link>
                           </TableCell>
                           <TableCell className="text-sm">{c.chofer}</TableCell>
+                          <TableCell className="text-right font-mono text-sm tabular-nums">
+                            {c.odometro != null
+                              ? `${c.odometro.toLocaleString("es-AR")} ${
+                                  esAutoelevadorDominio(c.dominio) ? "hs" : "km"
+                                }`
+                              : "—"}
+                          </TableCell>
                           <TableCell>
                             <ResultadoBadge resultado={c.resultado} />
                           </TableCell>
@@ -988,10 +1031,10 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Odómetro</Label>
+                <Label>{esAutoelevadorDominio(editDominio) ? "Horómetro (hs)" : "Odómetro (km)"}</Label>
                 <Input
                   type="number"
-                  placeholder="Km"
+                  placeholder={esAutoelevadorDominio(editDominio) ? "Horas" : "Km"}
                   value={editOdometro}
                   onChange={(e) => setEditOdometro(e.target.value)}
                 />
