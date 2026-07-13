@@ -25,6 +25,7 @@ import {
   type DetalleRechazoItem,
 } from "@/lib/indicadores/cuadro-mensual-detalle"
 import { contarTripulacion } from "@/lib/tml/calculo"
+import { esRutaLimpia } from "@/lib/foxtrot/tiempo-ruta-limpias"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -129,11 +130,12 @@ export async function getCuadroMensualIndicadores(): Promise<
       fecha: string
       is_finalized: boolean | null
       tiempo_ruta_minutos: number | null
+      raw_data: { started_timestamp?: string | null; finalized_timestamp?: string | null } | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("foxtrot_routes")
-        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
+        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos, raw_data")
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("route_id", { ascending: true })
@@ -491,7 +493,13 @@ export async function getCuadroMensualIndicadores(): Promise<
     acc.rutas++
     acc.fechas.add(r.fecha)
     const t = Number(r.tiempo_ruta_minutos ?? 0)
-    if (r.is_finalized && Number.isFinite(t) && t > 0) acc.tiempos.push(t)
+    // 🚨 Solo RUTAS LIMPIAS (cerradas el mismo día que arrancaron): las que el
+    // chofer no finalizó en la app las cierra Foxtrot horas o días después y su
+    // duración ya no es tiempo de trabajo. Contándolas, enero daba 11,8 hs
+    // promedio por ruta en vez de 7,4 — ver lib/foxtrot/tiempo-ruta-limpias.ts.
+    if (r.is_finalized && Number.isFinite(t) && t > 0 && esRutaLimpia(r.raw_data)) {
+      acc.tiempos.push(t)
+    }
   }
   for (const mes of meses) {
     const esActual = mes === mesActual

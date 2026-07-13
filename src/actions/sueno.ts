@@ -18,7 +18,7 @@ import {
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
-import { tiempoRutaAnualFlota } from "@/actions/tiempo-ruta-flota"
+import { tiempoRutaAnualLimpias } from "@/lib/foxtrot/tiempo-ruta-limpias"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -53,9 +53,9 @@ async function resolverTiempoPdvVivo(
 async function resolverTiempoRutaVivo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
-): Promise<Awaited<ReturnType<typeof tiempoRutaAnualFlota>>> {
+): Promise<Awaited<ReturnType<typeof tiempoRutaAnualLimpias>>> {
   try {
-    return await tiempoRutaAnualFlota(supabase, year)
+    return await tiempoRutaAnualLimpias(supabase, year)
   } catch {
     return null
   }
@@ -281,7 +281,7 @@ export async function getSuenoDetalle(
           unidad: cfg.unidad,
           fuente: vivo ? "auto" : "manual",
           explicacion: vivo
-            ? "Tiempo en Ruta = horas que dura una salida, medidas por Foxtrot (cierre − arranque de la ruta). Solo cuentan las RUTAS LIMPIAS, las que se cerraron el mismo día que arrancaron: cuando el chofer no finaliza la ruta en la app, Foxtrot la cierra horas o días después y esa duración ya no es tiempo de trabajo (tomando todas, enero daría 11,8 hs por ruta). El promedio es PONDERADO (Σ minutos ÷ Σ rutas), no el promedio de los promedios de las ciudades. Detalle en Indicadores → Flota → Tiempo promedio en ruta."
+            ? "Tiempo en Ruta = horas que dura una salida, medidas por Foxtrot (cierre − arranque de la ruta). Solo cuentan las RUTAS LIMPIAS, las que se cerraron el mismo día que arrancaron: cuando el chofer no finaliza la ruta en la app, Foxtrot la cierra horas o días después y esa duración ya no es tiempo de trabajo (tomando todas, enero daría 11,8 hs por ruta). El promedio es PONDERADO (Σ minutos ÷ Σ rutas), no el promedio de los promedios de las ciudades. Es el mismo número del cuadro mensual (pilar Flota)."
             : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
           meses,
           detalleLabel: "Rutas limpias",

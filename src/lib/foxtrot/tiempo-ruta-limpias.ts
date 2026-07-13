@@ -22,6 +22,10 @@ type Supabase = Awaited<ReturnType<typeof createClient>>
 
 const PAGE = 1000
 
+/** Meta del KPI (horas por salida) y su gatillo. */
+export const TIEMPO_RUTA_META = 8
+export const TIEMPO_RUTA_GATILLO = 8.5
+
 export interface TiempoRutaAcum {
   /** Horas promedio por ruta (ponderado). */
   horas: number
@@ -53,6 +57,15 @@ export function esRutaLimpia(raw: RutaRow["raw_data"]): boolean {
   const fin = raw?.finalized_timestamp
   if (!inicio || !fin) return false
   return dia(inicio) === dia(fin)
+}
+
+export interface TiempoRutaResumen {
+  anio: number
+  /** Promedio ponderado del año: Σ minutos ÷ Σ rutas limpias. */
+  ytd: number | null
+  rutas: number
+  descartadas: number
+  meses: { mes: number; horas: number; rutas: number }[]
 }
 
 export async function tiempoRutaLimpias(
@@ -109,5 +122,24 @@ export async function tiempoRutaLimpias(
     total: total.rutas > 0 ? cerrar(total) : null,
     porMes: meses,
     descartadas,
+  }
+}
+
+/** Promedio del año con apertura mensual (Árbol del Sueño + cuadro mensual). */
+export async function tiempoRutaAnualLimpias(
+  supabase: Supabase,
+  anio: number,
+): Promise<TiempoRutaResumen | null> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const r = await tiempoRutaLimpias(supabase, `${anio}-01-01`, hasta)
+  if (!r.total) return null
+
+  return {
+    anio,
+    ytd: r.total.horas,
+    rutas: r.total.rutas,
+    descartadas: r.descartadas,
+    meses: [...r.porMes].map(([mes, a]) => ({ mes, horas: a.horas, rutas: a.rutas })),
   }
 }
