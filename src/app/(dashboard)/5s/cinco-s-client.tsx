@@ -43,6 +43,7 @@ import {
   eliminarAuditoria,
   actualizarNombreSectorAlmacen,
   sortearResponsablesMes,
+  setElegible5S,
 } from "@/actions/s5"
 import {
   S5_AUDITORIA_ESTADO_COLORS,
@@ -223,6 +224,32 @@ export function CincoSClient({
       }
       toast.success(
         `${formatMes(periodo)} · sector ${sector} → ${res.data.empleado_nombre}`
+      )
+      router.refresh()
+    })
+  }
+
+  function handleToggleElegible(e: S5Elegible) {
+    if (!canEdit) return
+    if (
+      e.elegible &&
+      elegiblesActivos.length <= 4 &&
+      !confirm(
+        `Quedarían ${elegiblesActivos.length - 1} elegibles y el sorteo necesita 4. ¿Sacar igual a ${e.nombre}?`
+      )
+    ) {
+      return
+    }
+    startTransition(async () => {
+      const res = await setElegible5S(e.id, !e.elegible)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(
+        e.elegible
+          ? `${e.nombre} sale del sorteo`
+          : `${e.nombre} entra al sorteo`
       )
       router.refresh()
     })
@@ -600,26 +627,45 @@ export function CincoSClient({
                   </span>
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {elegibles.map((e) => (
-                    <span
-                      key={e.id}
-                      title={
-                        e.ultimo_periodo
-                          ? `Última vez: ${formatMes(e.ultimo_periodo)}`
-                          : "Nunca fue designado"
-                      }
-                      className={
-                        e.elegible
-                          ? "rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
-                          : "rounded-full border bg-muted/30 px-3 py-1 text-xs text-muted-foreground line-through"
-                      }
-                    >
-                      {e.nombre}
-                      <span className="ml-1.5 opacity-70">
-                        · {e.veces_designado}
-                      </span>
-                    </span>
-                  ))}
+                  {elegibles.map((e) => {
+                    const historia = e.ultimo_periodo
+                      ? `Última vez: ${formatMes(e.ultimo_periodo)}`
+                      : "Nunca fue designado"
+                    const clase = e.elegible
+                      ? "rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                      : "rounded-full border bg-muted/30 px-3 py-1 text-xs text-muted-foreground line-through"
+                    const contenido = (
+                      <>
+                        {e.nombre}
+                        <span className="ml-1.5 opacity-70">
+                          · {e.veces_designado}
+                        </span>
+                      </>
+                    )
+
+                    if (!canEdit) {
+                      return (
+                        <span key={e.id} title={historia} className={clase}>
+                          {contenido}
+                        </span>
+                      )
+                    }
+
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => handleToggleElegible(e)}
+                        disabled={isPending}
+                        title={`${historia} · click para ${
+                          e.elegible ? "sacarlo del" : "sumarlo al"
+                        } sorteo`}
+                        className={`${clase} transition hover:opacity-80 disabled:opacity-50`}
+                      >
+                        {contenido}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </CardContent>

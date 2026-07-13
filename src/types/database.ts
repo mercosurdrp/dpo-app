@@ -2325,6 +2325,7 @@ export interface S5Auditoria {
   ayudante_id: string | null
   ayudante_2: string | null
   sector_numero: number | null
+  responsable_id: string | null
   estado: S5AuditoriaEstado
   nota_total: number | null
   notas_por_s: Record<S5Categoria, number> | null
@@ -2362,23 +2363,9 @@ export interface S5AuditoriaConMeta extends S5Auditoria {
   vehiculo_dominio: string | null
   ayudante_nombre: string | null
   chofer_nombre_resuelto: string | null
-  /** Responsable del sector ese mes. Se deriva de s5_sector_responsables
-   *  (periodo + sector_numero); la auditoría no lo guarda. */
+  /** Responsable del sector, guardado en la auditoría al crearla. */
   responsable_nombre: string | null
 }
-
-/**
- * Legajos de los operarios de depósito que entran en el sorteo mensual de
- * responsables de sector. Para sumar o sacar a alguien, editá esta lista.
- */
-export const S5_LEGAJOS_ELEGIBLES = [
-  36467481, // RUBEN GALVEZ
-  107, // MARTINEZ PEDRO
-  30, // CERBIN DIEGO
-  43907801, // OVEJERO HUGO
-  112, // TROLI ALEJO JESUS
-  425283564, // PABLO SELENZO
-]
 
 /** Empleado candidato al sorteo mensual de responsables de sector. */
 export interface S5Elegible {

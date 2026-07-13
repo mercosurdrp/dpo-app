@@ -23,11 +23,7 @@ import type {
   S5RankingAyudanteRow,
   S5ItemCriticoRow,
 } from "@/types/database"
-import {
-  S5_CATEGORIA_ORDEN,
-  S5_MAX_PUNTAJE,
-  S5_LEGAJOS_ELEGIBLES,
-} from "@/types/database"
+import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
 
 const DASHBOARD_PATH = "/5s"
 
@@ -41,29 +37,46 @@ function firstDayOfMonth(d: Date): string {
   return `${y}-${m}-01`
 }
 
+/** Select con el responsable ya resuelto: la auditoría lo guarda (snapshot). */
+const AUDITORIA_SELECT =
+  "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio), ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre), chofer:empleados!s5_auditorias_chofer_id_fkey(id, nombre), responsable:empleados!s5_auditorias_responsable_id_fkey(id, nombre)"
+
 /**
- * Responsable de cada (periodo, sector) de almacén, indexado por
- * `${periodo}:${sector}`. La auditoría no guarda al responsable: lo hereda
- * del designado de su mes y sector.
+ * Designado de un (periodo, sector), o null si ese mes no tiene responsable.
  */
-async function mapaResponsables(
+async function responsableDeSector(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any
-): Promise<Map<string, string>> {
+  supabase: any,
+  periodo: string,
+  sectorNumero: number
+): Promise<string | null> {
   const { data } = await supabase
     .from("s5_sector_responsables")
-    .select(
-      "periodo, sector_numero, empleado:empleados!s5_sector_responsables_empleado_id_fkey(nombre)"
-    )
+    .select("empleado_id")
+    .eq("periodo", periodo)
+    .eq("sector_numero", sectorNumero)
+    .maybeSingle()
+  return data?.empleado_id ?? null
+}
 
-  const m = new Map<string, string>()
+/**
+ * Sincroniza las auditorías de almacén de un (periodo, sector) con su nuevo
+ * designado. Corregir el responsable de un mes —o re-sortearlo— arrastra las
+ * auditorías de ESE mes; las de los demás meses no se tocan.
+ */
+async function propagarResponsable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const r of (data ?? []) as any[]) {
-    if (r.empleado?.nombre) {
-      m.set(`${r.periodo}:${r.sector_numero}`, r.empleado.nombre)
-    }
-  }
-  return m
+  supabase: any,
+  periodo: string,
+  sectorNumero: number,
+  empleadoId: string
+): Promise<void> {
+  await supabase
+    .from("s5_auditorias")
+    .update({ responsable_id: empleadoId })
+    .eq("tipo", "almacen")
+    .eq("periodo", periodo)
+    .eq("sector_numero", sectorNumero)
 }
 
 function assertAuditorOrAdmin(role: string) {
@@ -281,6 +294,8 @@ export async function upsertSectorResponsable(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = data as any
 
+    await propagarResponsable(supabase, periodo, sectorNumero, empleadoId)
+
     const enriched: S5SectorResponsableFull = {
       id: row.id,
       periodo: row.periodo,
@@ -321,7 +336,7 @@ export async function getElegibles5S(): Promise<
 
     const { data: empleados, error: errEmp } = await supabase
       .from("empleados")
-      .select("id, legajo, nombre")
+      .select("id, legajo, nombre, s5_elegible")
       .eq("activo", true)
       .eq("sector", "Depósito")
       .order("nombre", { ascending: true })
@@ -344,7 +359,7 @@ export async function getElegibles5S(): Promise<
       id: e.id,
       legajo: e.legajo,
       nombre: e.nombre,
-      elegible: S5_LEGAJOS_ELEGIBLES.includes(e.legajo),
+      elegible: e.s5_elegible === true,
       veces_designado: veces.get(e.id) ?? 0,
       ultimo_periodo: ultimo.get(e.id) ?? null,
     }))
@@ -353,6 +368,31 @@ export async function getElegibles5S(): Promise<
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando elegibles",
+    }
+  }
+}
+
+/** Suma o saca a un operario del sorteo mensual. */
+export async function setElegible5S(
+  empleadoId: string,
+  elegible: boolean
+): Promise<{ data: { id: string; elegible: boolean } } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    assertAuditorOrAdmin(profile.role)
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("empleados")
+      .update({ s5_elegible: elegible })
+      .eq("id", empleadoId)
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { data: { id: empleadoId, elegible } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cambiando elegible",
     }
   }
 }
@@ -384,13 +424,21 @@ export async function sortearResponsablesMes(
     const profile = await requireAuth()
     assertAuditorOrAdmin(profile.role)
 
+    // Los meses cerrados se corrigen a mano, sabiendo quién estuvo. El sorteo
+    // es sólo para el mes en curso o los que vienen.
+    if (periodo < firstDayOfMonth(new Date())) {
+      return {
+        error: `${periodo.slice(0, 7)} ya pasó: los meses anteriores se cargan a mano, no se sortean.`,
+      }
+    }
+
     const supabase = await createClient()
 
     const { data: elegibles, error: errEmp } = await supabase
       .from("empleados")
       .select("id, nombre")
       .eq("activo", true)
-      .in("legajo", S5_LEGAJOS_ELEGIBLES)
+      .eq("s5_elegible", true)
     if (errEmp) return { error: errEmp.message }
     if (!elegibles || elegibles.length < 4) {
       return {
@@ -473,6 +521,10 @@ export async function sortearResponsablesMes(
         { onConflict: "periodo,sector_numero" }
       )
     if (errUpsert) return { error: errUpsert.message }
+
+    for (const a of asignaciones) {
+      await propagarResponsable(supabase, periodo, a.sector, a.empleado_id)
+    }
 
     revalidatePath(DASHBOARD_PATH)
     return { data: asignaciones.sort((a, b) => a.sector - b.sector) }
@@ -615,9 +667,7 @@ export async function getAuditorias(
 
     let query = supabase
       .from("s5_auditorias")
-      .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio), ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre), chofer:empleados!s5_auditorias_chofer_id_fkey(id, nombre)"
-      )
+      .select(AUDITORIA_SELECT)
       .order("created_at", { ascending: false })
       .limit(filters.limit ?? 50)
 
@@ -626,8 +676,6 @@ export async function getAuditorias(
 
     const { data, error } = await query
     if (error) return { error: error.message }
-
-    const responsables = await mapaResponsables(supabase)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: S5AuditoriaConMeta[] = ((data ?? []) as any[]).map((row) => ({
@@ -644,6 +692,7 @@ export async function getAuditorias(
       ayudante_id: row.ayudante_id,
       ayudante_2: row.ayudante_2,
       sector_numero: row.sector_numero,
+      responsable_id: row.responsable_id ?? null,
       estado: row.estado,
       nota_total: row.nota_total !== null ? Number(row.nota_total) : null,
       notas_por_s: row.notas_por_s,
@@ -656,8 +705,7 @@ export async function getAuditorias(
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
       ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
       chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
-      responsable_nombre:
-        responsables.get(`${row.periodo}:${row.sector_numero}`) ?? null,
+      responsable_nombre: row.responsable?.nombre ?? null,
     }))
 
     return { data: rows }
@@ -683,7 +731,7 @@ export async function getAuditoria(
     const { data, error } = await supabase
       .from("s5_auditorias")
       .select(
-        "*, auditor:profiles!s5_auditorias_auditor_id_fkey(id, nombre), auditor_externo:s5_auditores!s5_auditorias_auditor_externo_id_fkey(id, nombre), vehiculo:catalogo_vehiculos!s5_auditorias_vehiculo_id_fkey(id, dominio), ayudante:empleados!s5_auditorias_ayudante_id_fkey(id, nombre), chofer:empleados!s5_auditorias_chofer_id_fkey(id, nombre)"
+        AUDITORIA_SELECT
       )
       .eq("id", id)
       .single()
@@ -752,6 +800,7 @@ export async function getAuditoria(
       ayudante_id: row.ayudante_id,
       ayudante_2: row.ayudante_2,
       sector_numero: row.sector_numero,
+      responsable_id: row.responsable_id ?? null,
       estado: row.estado,
       nota_total: row.nota_total !== null ? Number(row.nota_total) : null,
       notas_por_s: row.notas_por_s,
@@ -764,10 +813,7 @@ export async function getAuditoria(
       vehiculo_dominio: row.vehiculo?.dominio ?? null,
       ayudante_nombre: row.ayudante?.nombre ?? row.ayudante_1 ?? null,
       chofer_nombre_resuelto: row.chofer?.nombre ?? row.chofer_nombre ?? null,
-      responsable_nombre:
-        (await mapaResponsables(supabase)).get(
-          `${row.periodo}:${row.sector_numero}`
-        ) ?? null,
+      responsable_nombre: row.responsable?.nombre ?? null,
       items,
     }
 
@@ -886,6 +932,14 @@ export async function crearAuditoriaAlmacen(
     const supabase = await createClient()
     const periodo = firstDayOfMonth(new Date(input.fecha))
 
+    // El responsable queda guardado en la auditoría (no derivado): así el
+    // dueño no cambia si más adelante se reasigna otro mes.
+    const responsableId = await responsableDeSector(
+      supabase,
+      periodo,
+      input.sectorNumero
+    )
+
     const { data, error } = await supabase
       .from("s5_auditorias")
       .insert({
@@ -894,6 +948,7 @@ export async function crearAuditoriaAlmacen(
         fecha: input.fecha,
         auditor_id: profile.id,
         sector_numero: input.sectorNumero,
+        responsable_id: responsableId,
         estado: "borrador",
       })
       .select()
