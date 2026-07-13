@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  archivosDeFila,
+  archivosDelForm,
+  columnasArchivos,
+  subirArchivosAvance,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
 
 const BUCKET = "rmd-planes"
 const RMD_PATH = "/rmd"
@@ -59,6 +66,8 @@ export interface RmdPlanAvance {
   id: string
   plan_id: string
   comentario: string | null
+  /** Todos los adjuntos del avance. Los avances viejos traen acá su único archivo. */
+  archivos: ArchivoAvance[]
   archivo_path: string | null
   archivo_nombre: string | null
   archivo_mime: string | null
@@ -71,14 +80,6 @@ export interface RmdPlanAvance {
 
 function isEditorRole(role: string): boolean {
   return ["admin", "supervisor", "admin_rrhh"].includes(role)
-}
-
-function cleanFileName(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(0, 80)
 }
 
 // ------------------------------------------------------------------
@@ -418,14 +419,18 @@ export async function eliminarPlanRmd(
       return { error: "No tenés permiso para eliminar este plan" }
     }
 
+    // Un avance puede tener varios archivos (columna `archivos`); los viejos
+    // sólo tienen archivo_path. archivosDeFila() cubre los dos casos.
     const { data: avs } = await supabase
       .from("rmd_planes_avances")
-      .select("archivo_path")
+      .select("archivos, archivo_path, archivo_nombre, archivo_mime, archivo_bytes")
       .eq("plan_id", planId)
-      .not("archivo_path", "is", null)
-    const paths = ((avs ?? []) as Array<{ archivo_path: string | null }>)
-      .map((a) => a.archivo_path)
-      .filter((x): x is string => !!x)
+    const paths = (
+      (avs ?? []) as Array<{
+        archivos: unknown
+        archivo_path: string | null
+      }>
+    ).flatMap((a) => archivosDeFila(a).map((x) => x.path))
 
     const { error } = await supabase
       .from("rmd_planes")
@@ -473,6 +478,7 @@ export async function listarAvancesPlanRmd(
         id: r.id,
         plan_id: r.plan_id,
         comentario: r.comentario ?? null,
+        archivos: archivosDeFila(r),
         archivo_path: r.archivo_path ?? null,
         archivo_nombre: r.archivo_nombre ?? null,
         archivo_mime: r.archivo_mime ?? null,
@@ -520,9 +526,9 @@ export async function agregarAvancePlanRmd(
     }
 
     const comentario = String(formData.get("comentario") ?? "").trim() || null
-    const file = formData.get("archivo") as File | null
+    const files = archivosDelForm(formData)
     const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
-    const tieneArchivo = file && file instanceof File && file.size > 0
+    const tieneArchivo = files.length > 0
 
     let nuevoEstado: EstadoRmdPlan | null = null
     if (nuevoEstadoRaw) {
@@ -535,32 +541,20 @@ export async function agregarAvancePlanRmd(
       return { error: "Cargá un comentario o adjuntá un archivo de evidencia" }
     }
 
-    let archivoPath: string | null = null
-    let archivoNombre: string | null = null
+    let archivos: ArchivoAvance[] = []
     if (tieneArchivo) {
-      const cleanName = cleanFileName(file.name)
-      const path = `${planId}/v${Date.now()}-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
-      archivoPath = path
-      archivoNombre = file.name
+      const subida = await subirArchivosAvance(supabase, BUCKET, planId, files)
+      if ("error" in subida) return { error: subida.error }
+      archivos = subida.archivos
     }
+    const paths = archivos.map((a) => a.path)
 
     const { data: avance, error: errAv } = await supabase
       .from("rmd_planes_avances")
       .insert({
         plan_id: planId,
         comentario,
-        archivo_path: archivoPath,
-        archivo_nombre: archivoNombre,
-        archivo_mime: tieneArchivo ? file.type || null : null,
-        archivo_bytes: tieneArchivo ? file.size : null,
+        ...columnasArchivos(archivos),
         estado_resultante: nuevoEstado,
         autor_id: profile.id,
       })
@@ -568,7 +562,7 @@ export async function agregarAvancePlanRmd(
       .single()
 
     if (errAv || !avance) {
-      if (archivoPath) await supabase.storage.from(BUCKET).remove([archivoPath])
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
       return { error: errAv?.message ?? "No se pudo registrar el avance" }
     }
 
@@ -582,8 +576,7 @@ export async function agregarAvancePlanRmd(
           .from("rmd_planes_avances")
           .delete()
           .eq("id", (avance as { id: string }).id)
-        if (archivoPath)
-          await supabase.storage.from(BUCKET).remove([archivoPath])
+        if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
         return { error: errUpd.message }
       }
     }
@@ -597,6 +590,7 @@ export async function agregarAvancePlanRmd(
         id: r.id,
         plan_id: r.plan_id,
         comentario: r.comentario ?? null,
+        archivos: archivosDeFila(r),
         archivo_path: r.archivo_path ?? null,
         archivo_nombre: r.archivo_nombre ?? null,
         archivo_mime: r.archivo_mime ?? null,
@@ -624,13 +618,16 @@ export async function eliminarAvancePlanRmd(
 
     const { data: avance, error: errA } = await supabase
       .from("rmd_planes_avances")
-      .select("id, autor_id, archivo_path")
+      .select(
+        "id, autor_id, archivos, archivo_path, archivo_nombre, archivo_mime, archivo_bytes",
+      )
       .eq("id", avanceId)
       .single()
     if (errA || !avance)
       return { error: errA?.message ?? "Avance no encontrado" }
     const row = avance as {
       autor_id: string | null
+      archivos: unknown
       archivo_path: string | null
     }
     if (!isEditorRole(profile.role) && row.autor_id !== profile.id) {
@@ -643,8 +640,8 @@ export async function eliminarAvancePlanRmd(
       .eq("id", avanceId)
     if (errDel) return { error: errDel.message }
 
-    if (row.archivo_path)
-      await supabase.storage.from(BUCKET).remove([row.archivo_path])
+    const paths = archivosDeFila(row).map((a) => a.path)
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
 
     revalidatePath(RMD_PATH)
     return { data: { ok: true } }

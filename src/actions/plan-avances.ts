@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  archivosDeFila,
+  archivosDelForm,
+  columnasArchivos,
+  subirArchivosAvance,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
 import type { EstadoPlan } from "@/types/database"
 
 const BUCKET = "planes-avances"
@@ -13,6 +20,8 @@ export interface PlanAvance {
   id: string
   plan_id: string
   comentario: string | null
+  /** Todos los adjuntos del avance. Los avances viejos traen acá su único archivo. */
+  archivos: ArchivoAvance[]
   archivo_path: string | null
   archivo_nombre: string | null
   archivo_mime: string | null
@@ -30,14 +39,6 @@ const ESTADOS_VALIDOS: EstadoPlan[] = ["pendiente", "en_progreso", "completado"]
 
 function isEditorRole(role: string): boolean {
   return ["admin", "supervisor", "admin_rrhh"].includes(role)
-}
-
-function cleanFileName(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(0, 80)
 }
 
 async function puedeIntervenirEnPlan(
@@ -102,6 +103,7 @@ export async function listarAvancesPlan(
         id: r.id,
         plan_id: r.plan_id,
         comentario: r.comentario ?? null,
+        archivos: archivosDeFila(r),
         archivo_path: r.archivo_path ?? null,
         archivo_nombre: r.archivo_nombre ?? null,
         archivo_mime: r.archivo_mime ?? null,
@@ -170,7 +172,7 @@ export async function listarArchivosDeRespuestas(
           await supabase
             .from("planes_accion_avances")
             .select(
-              "id, plan_id, archivo_path, archivo_nombre, archivo_mime, archivo_bytes, autor_id, created_at",
+              "id, plan_id, archivos, archivo_path, archivo_nombre, archivo_mime, archivo_bytes, autor_id, created_at",
             )
             .in("plan_id", planIds)
             .not("archivo_path", "is", null)
@@ -178,6 +180,7 @@ export async function listarArchivosDeRespuestas(
         ).data ?? []) as Array<{
           id: string
           plan_id: string
+          archivos: unknown
           archivo_path: string
           archivo_nombre: string | null
           archivo_mime: string | null
@@ -186,6 +189,11 @@ export async function listarArchivosDeRespuestas(
           created_at: string
         }>)
       : []
+
+    // Un avance puede traer varios archivos: cada uno es un ítem del historial.
+    const avArchivos = avList.flatMap((a) =>
+      archivosDeFila(a).map((arch, i) => ({ avance: a, arch, i })),
+    )
 
     // 3) evidencias cargadas manualmente para el punto (legacy, no se borran)
     const { data: evRows } = await supabase
@@ -226,11 +234,11 @@ export async function listarArchivosDeRespuestas(
 
     // 5) firmar URLs de los avances (bucket privado)
     const urlMap = new Map<string, string>()
-    if (avList.length) {
+    if (avArchivos.length) {
       const { data: signed } = await supabase.storage
         .from(BUCKET)
         .createSignedUrls(
-          avList.map((a) => a.archivo_path),
+          avArchivos.map(({ arch }) => arch.path),
           60 * 30,
         )
       for (const s of (signed ?? []) as Array<{
@@ -241,18 +249,20 @@ export async function listarArchivosDeRespuestas(
       }
     }
 
-    const itemsAvances: ArchivoRespuesta[] = avList.map((a) => ({
-      id: `av-${a.id}`,
-      archivo_nombre: a.archivo_nombre,
-      archivo_mime: a.archivo_mime,
-      archivo_bytes: a.archivo_bytes,
-      url: urlMap.get(a.archivo_path) ?? "",
-      autor_nombre: a.autor_id ? autorMap.get(a.autor_id) ?? "Usuario" : null,
-      created_at: a.created_at,
-      fuente: "respuesta",
-      plan_id: a.plan_id,
-      plan_titulo: planMap.get(a.plan_id) ?? "",
-    }))
+    const itemsAvances: ArchivoRespuesta[] = avArchivos.map(
+      ({ avance: a, arch, i }) => ({
+        id: `av-${a.id}-${i}`,
+        archivo_nombre: arch.nombre,
+        archivo_mime: arch.mime,
+        archivo_bytes: arch.bytes,
+        url: urlMap.get(arch.path) ?? "",
+        autor_nombre: a.autor_id ? autorMap.get(a.autor_id) ?? "Usuario" : null,
+        created_at: a.created_at,
+        fuente: "respuesta",
+        plan_id: a.plan_id,
+        plan_titulo: planMap.get(a.plan_id) ?? "",
+      }),
+    )
 
     const itemsManual: ArchivoRespuesta[] = evList.map((e) => {
       let url = e.url ?? ""
@@ -388,11 +398,11 @@ export async function agregarAvancePlan(
 
     const comentarioRaw = String(formData.get("comentario") ?? "").trim()
     const comentario = comentarioRaw || null
-    const file = formData.get("archivo") as File | null
+    const files = archivosDelForm(formData)
     const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
     const seguimientoFecha =
       String(formData.get("seguimiento_fecha") ?? "").trim() || null
-    const tieneArchivo = file && file instanceof File && file.size > 0
+    const tieneArchivo = files.length > 0
 
     let nuevoEstado: EstadoPlan | null = null
     if (nuevoEstadoRaw) {
@@ -408,33 +418,20 @@ export async function agregarAvancePlan(
       return { error: "Respondé con un comentario o adjuntá un archivo" }
     }
 
-    let archivoPath: string | null = null
-    let archivoNombre: string | null = null
-
+    let archivos: ArchivoAvance[] = []
     if (tieneArchivo) {
-      const cleanName = cleanFileName(file.name)
-      const path = `${planId}/v${Date.now()}-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
-      archivoPath = path
-      archivoNombre = file.name
+      const subida = await subirArchivosAvance(supabase, BUCKET, planId, files)
+      if ("error" in subida) return { error: subida.error }
+      archivos = subida.archivos
     }
+    const paths = archivos.map((a) => a.path)
 
     const { data: avance, error: errAv } = await supabase
       .from("planes_accion_avances")
       .insert({
         plan_id: planId,
         comentario,
-        archivo_path: archivoPath,
-        archivo_nombre: archivoNombre,
-        archivo_mime: tieneArchivo ? file.type || null : null,
-        archivo_bytes: tieneArchivo ? file.size : null,
+        ...columnasArchivos(archivos),
         estado_resultante: nuevoEstado,
         autor_id: profile.id,
       })
@@ -442,9 +439,7 @@ export async function agregarAvancePlan(
       .single()
 
     if (errAv || !avance) {
-      if (archivoPath) {
-        await supabase.storage.from(BUCKET).remove([archivoPath])
-      }
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
       return {
         error: errAv?.message ?? "No se pudo registrar el avance",
       }
@@ -464,9 +459,7 @@ export async function agregarAvancePlan(
           .from("planes_accion_avances")
           .delete()
           .eq("id", (avance as { id: string }).id)
-        if (archivoPath) {
-          await supabase.storage.from(BUCKET).remove([archivoPath])
-        }
+        if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
         return { error: errUpd.message }
       }
 
@@ -544,7 +537,7 @@ export async function eliminarAvancePlan(
 
     const { data: avance, error: errA } = await supabase
       .from("planes_accion_avances")
-      .select("id, plan_id, autor_id, archivo_path")
+      .select("id, plan_id, autor_id, archivo_path, archivos")
       .eq("id", avanceId)
       .single()
     if (errA || !avance) {
@@ -556,6 +549,7 @@ export async function eliminarAvancePlan(
       plan_id: string
       autor_id: string | null
       archivo_path: string | null
+      archivos: unknown
     }
 
     if (!isEditorRole(profile.role) && row.autor_id !== profile.id) {
@@ -568,9 +562,8 @@ export async function eliminarAvancePlan(
       .eq("id", avanceId)
     if (errDel) return { error: errDel.message }
 
-    if (row.archivo_path) {
-      await supabase.storage.from(BUCKET).remove([row.archivo_path])
-    }
+    const paths = archivosDeFila(row).map((a) => a.path)
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
 
     revalidatePath(`/planes/${row.plan_id}`)
     return { data: { ok: true } }

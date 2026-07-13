@@ -15,12 +15,9 @@ import {
   Image as ImageIcon,
   Loader2,
   MessageSquare,
-  Paperclip,
   Plus,
   Trash2,
-  Upload,
   Wrench,
-  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -43,6 +40,7 @@ import {
   listarAvancesPlan,
   type PlanAvanceConAutor,
 } from "@/actions/plan-avances"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import { ESTADO_PLAN_COLORS, ESTADO_PLAN_LABELS } from "@/lib/constants"
 import type {
   EstadoPlan,
@@ -141,7 +139,7 @@ export function AvancesSection({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, startSubmit] = useTransition()
   const [comentario, setComentario] = useState("")
-  const [archivo, setArchivo] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
   const [resultado, setResultado] = useState<Resultado>("igual")
   const [tipoCierre, setTipoCierre] = useState<TipoCierre>("definitivo")
   const [repetPreset, setRepetPreset] = useState<RepetPreset>("15d")
@@ -210,20 +208,17 @@ export function AvancesSection({
   }, [avances, comentarios, historial, reprogramaciones])
 
   useEffect(() => {
-    const pendientes = avances.filter(
-      (a) =>
-        a.archivo_path &&
-        esImagen(a.archivo_mime, a.archivo_nombre) &&
-        !imageUrls[a.id],
-    )
+    // Las miniaturas se firman por path: un avance puede traer varias imágenes.
+    const pendientes = avances
+      .flatMap((a) => a.archivos)
+      .filter((arch) => esImagen(arch.mime, arch.nombre) && !imageUrls[arch.path])
     if (pendientes.length === 0) return
     let cancelled = false
     ;(async () => {
       const updates: Record<string, string> = {}
-      for (const a of pendientes) {
-        if (!a.archivo_path) continue
-        const r = await getAvancePlanSignedUrl(a.archivo_path)
-        if ("data" in r) updates[a.id] = r.data.url
+      for (const arch of pendientes) {
+        const r = await getAvancePlanSignedUrl(arch.path)
+        if ("data" in r) updates[arch.path] = r.data.url
       }
       if (!cancelled && Object.keys(updates).length > 0) {
         setImageUrls((prev) => ({ ...prev, ...updates }))
@@ -234,27 +229,6 @@ export function AvancesSection({
     }
   }, [avances, imageUrls])
 
-  useEffect(() => {
-    if (!dialogOpen) return
-    const onPaste = (e: ClipboardEvent) => {
-      if (!e.clipboardData) return
-      const items = Array.from(e.clipboardData.items)
-      const img = items.find((it) => it.type.startsWith("image/"))
-      if (!img) return
-      const blob = img.getAsFile()
-      if (!blob) return
-      const ext = blob.type.split("/")[1] || "png"
-      const file = new File([blob], `captura-${Date.now()}.${ext}`, {
-        type: blob.type,
-      })
-      setArchivo(file)
-      toast.success("Captura pegada como archivo")
-      e.preventDefault()
-    }
-    window.addEventListener("paste", onPaste)
-    return () => window.removeEventListener("paste", onPaste)
-  }, [dialogOpen])
-
   const fechaSeguimiento =
     repetPreset === "15d"
       ? plusDays(15)
@@ -264,7 +238,7 @@ export function AvancesSection({
 
   function resetForm() {
     setComentario("")
-    setArchivo(null)
+    setArchivos([])
     setResultado("igual")
     setTipoCierre("definitivo")
     setRepetPreset("15d")
@@ -286,7 +260,7 @@ export function AvancesSection({
   }
 
   async function handleSubmit() {
-    if (!comentario.trim() && !archivo) {
+    if (!comentario.trim() && archivos.length === 0) {
       toast.error("Respondé con un comentario o adjuntá un archivo")
       return
     }
@@ -296,7 +270,7 @@ export function AvancesSection({
     }
     const fd = new FormData()
     fd.append("comentario", comentario.trim())
-    if (archivo) fd.append("archivo", archivo)
+    for (const f of archivos) fd.append("archivo", f)
     if (resultado !== "igual") fd.append("nuevo_estado", resultado)
     if (resultado === "completado" && tipoCierre === "reprogramar" && fechaSeguimiento) {
       fd.append("seguimiento_fecha", fechaSeguimiento)
@@ -418,8 +392,6 @@ export function AvancesSection({
             {timeline.map((item) => {
               if (item.type === "avance") {
                 const a = item.a
-                const isImg = esImagen(a.archivo_mime, a.archivo_nombre)
-                const thumbUrl = imageUrls[a.id]
                 return (
                   <li key={item.key} className="flex gap-3">
                     <Avatar className="h-9 w-9 shrink-0">
@@ -478,49 +450,49 @@ export function AvancesSection({
                           {a.comentario}
                         </p>
                       )}
-                      {a.archivo_path && (
-                        <div className="mt-2 flex items-center gap-2">
-                          {isImg && thumbUrl ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setLightbox({
-                                  url: thumbUrl,
-                                  titulo: a.archivo_nombre ?? "Imagen",
-                                })
-                              }
-                              className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
-                              title="Ver imagen"
-                            >
-                              <img
-                                src={thumbUrl}
-                                alt={a.archivo_nombre ?? ""}
-                                className="h-20 w-20 object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              onClick={() => handleAbrirArchivo(a.archivo_path!)}
-                            >
-                              {isImg ? (
-                                <ImageIcon className="h-3.5 w-3.5" />
-                              ) : (
-                                <FileText className="h-3.5 w-3.5" />
-                              )}
-                              {a.archivo_nombre ?? "Descargar archivo"}
-                              <Download className="ml-1 h-3 w-3" />
-                            </Button>
-                          )}
-                          {isImg && thumbUrl && (
-                            <div className="text-xs text-slate-500">
-                              <p className="truncate">{a.archivo_nombre}</p>
-                              <p>{formatBytes(a.archivo_bytes)}</p>
-                            </div>
-                          )}
+                      {a.archivos.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {a.archivos.map((arch) => {
+                            const isImg = esImagen(arch.mime, arch.nombre)
+                            const thumbUrl = imageUrls[arch.path]
+                            return isImg && thumbUrl ? (
+                              <button
+                                key={arch.path}
+                                type="button"
+                                onClick={() =>
+                                  setLightbox({
+                                    url: thumbUrl,
+                                    titulo: arch.nombre,
+                                  })
+                                }
+                                className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                                title={`${arch.nombre} · ${formatBytes(arch.bytes)}`}
+                              >
+                                <img
+                                  src={thumbUrl}
+                                  alt={arch.nombre}
+                                  className="h-20 w-20 object-cover"
+                                />
+                              </button>
+                            ) : (
+                              <Button
+                                key={arch.path}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => handleAbrirArchivo(arch.path)}
+                              >
+                                {isImg ? (
+                                  <ImageIcon className="h-3.5 w-3.5" />
+                                ) : (
+                                  <FileText className="h-3.5 w-3.5" />
+                                )}
+                                {arch.nombre}
+                                <Download className="ml-1 h-3 w-3" />
+                              </Button>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -670,38 +642,14 @@ export function AvancesSection({
               />
             </div>
             <div>
-              <Label>Archivo o foto (opcional — podés pegar con Ctrl+V)</Label>
-              {archivo ? (
-                <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-sm">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
-                    <span className="truncate">{archivo.name}</span>
-                    <span className="shrink-0 text-xs text-slate-500">
-                      {formatBytes(archivo.size)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setArchivo(null)}
-                    className="text-slate-400 hover:text-red-500"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <label className="mt-1 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 py-4 text-sm text-slate-500 hover:bg-slate-100">
-                  <Upload className="h-4 w-4" />
-                  Elegí un archivo o pegá una captura
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (f) setArchivo(f)
-                    }}
-                  />
-                </label>
-              )}
+              <Label>Archivos o fotos (opcional — podés pegar con Ctrl+V)</Label>
+              <div className="mt-1">
+                <AdjuntosInput
+                  archivos={archivos}
+                  onChange={setArchivos}
+                  activo={dialogOpen}
+                />
+              </div>
             </div>
             {/* Resultado: cambia el estado y, si cierra, definitivo o reprogramar */}
             <div className="space-y-2">

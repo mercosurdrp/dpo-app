@@ -10,9 +10,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import {
   Select,
   SelectContent,
@@ -53,6 +53,7 @@ export function ResponderTareaDialog({
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
   const [nuevoEstado, setNuevoEstado] = useState<
     "en_progreso" | "completada"
   >(tarea.estado === "completada" ? "completada" : "en_progreso")
@@ -60,6 +61,7 @@ export function ResponderTareaDialog({
   useEffect(() => {
     if (open) {
       setError(null)
+      setArchivos([])
       setNuevoEstado(
         tarea.estado === "completada" ? "completada" : "en_progreso",
       )
@@ -73,17 +75,16 @@ export function ResponderTareaDialog({
     const formData = new FormData(e.currentTarget)
     formData.set("nuevo_estado", nuevoEstado)
 
-    const file = formData.get("archivo") as File | null
     const justificacion = (formData.get("justificacion") as string | null) ?? ""
 
-    const tieneArchivo = !!(file && file.size > 0)
+    const tieneArchivo = archivos.length > 0
     const tieneJustif = justificacion.trim().length > 0
     if (!tieneArchivo && !tieneJustif) {
       setError("Adjuntá un archivo o escribí una justificación (al menos uno).")
       return
     }
 
-    if (!tieneArchivo) formData.delete("archivo")
+    for (const f of archivos) formData.append("archivo", f)
 
     startTransition(async () => {
       const result = await responderTarea(tarea.id, formData)
@@ -118,15 +119,17 @@ export function ResponderTareaDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="resp_archivo">Evidencia (archivo)</Label>
-            <Input
-              id="resp_archivo"
-              name="archivo"
-              type="file"
+            <Label>Evidencia (varios archivos o fotos, Ctrl+V para pegar)</Label>
+            <AdjuntosInput
+              archivos={archivos}
+              onChange={setArchivos}
+              activo={open}
+              disabled={pending}
               accept=".pdf,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.doc,.docx"
             />
             <p className="text-xs text-muted-foreground">
-              Opcional si dejás una justificación.
+              Opcional si dejás una justificación. Los archivos se suman a los
+              que ya tenía la tarea.
             </p>
           </div>
 

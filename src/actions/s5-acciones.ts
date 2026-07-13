@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
+import {
+  archivosDeFila,
+  columnasArchivos,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
 import type {
   S5Tipo,
   S5Accion,
@@ -13,6 +18,44 @@ import type {
 } from "@/types/database"
 
 const DASHBOARD_PATH = "/5s"
+
+/**
+ * Evidencia con la lista completa de adjuntos (columna jsonb `archivos`).
+ * Las columnas singulares archivo_* siguen trayendo el PRIMER archivo para
+ * no romper lectores viejos.
+ */
+export interface S5AccionEvidenciaConArchivos extends S5AccionEvidencia {
+  archivos: ArchivoAvance[]
+}
+
+/**
+ * Normaliza los adjuntos de un input que puede venir con la lista nueva
+ * (`archivos`) o con los campos singulares viejos.
+ */
+function archivosDeInput(
+  archivos: ArchivoAvance[] | null | undefined,
+  singular: {
+    path?: string | null
+    nombre?: string | null
+    mime?: string | null
+    bytes?: number | null
+  },
+): ArchivoAvance[] {
+  if (archivos && archivos.length > 0) {
+    return archivos.filter((a) => a?.path)
+  }
+  if (singular.path) {
+    return [
+      {
+        path: singular.path,
+        nombre: singular.nombre ?? "Archivo",
+        mime: singular.mime ?? null,
+        bytes: singular.bytes ?? null,
+      },
+    ]
+  }
+  return []
+}
 
 function assertAuditorOrAdmin(role: string) {
   if (role !== "admin" && role !== "auditor") {
@@ -183,7 +226,10 @@ export async function listarAcciones(
 // ===================================================
 export async function getAccionDetalle(id: string): Promise<
   | {
-      data: { accion: S5AccionConMeta; evidencias: S5AccionEvidencia[] }
+      data: {
+        accion: S5AccionConMeta
+        evidencias: S5AccionEvidenciaConArchivos[]
+      }
     }
   | { error: string }
 > {
@@ -211,21 +257,27 @@ export async function getAccionDetalle(id: string): Promise<
     if (evErr) return { error: evErr.message }
 
     const evidenciasArr = (evidenciasRaw ?? []) as unknown as Array<
-      S5AccionEvidencia & { autor: { id: string; nombre: string } | null }
+      S5AccionEvidencia & {
+        archivos?: unknown
+        autor: { id: string; nombre: string } | null
+      }
     >
 
-    const evidencias: S5AccionEvidencia[] = evidenciasArr.map((e) => ({
-      id: e.id,
-      accion_id: e.accion_id,
-      comentario: e.comentario,
-      archivo_path: e.archivo_path,
-      archivo_nombre: e.archivo_nombre,
-      archivo_mime: e.archivo_mime,
-      archivo_bytes: e.archivo_bytes,
-      autor_id: e.autor_id,
-      autor_nombre: e.autor?.nombre ?? null,
-      created_at: e.created_at,
-    }))
+    const evidencias: S5AccionEvidenciaConArchivos[] = evidenciasArr.map(
+      (e) => ({
+        id: e.id,
+        accion_id: e.accion_id,
+        comentario: e.comentario,
+        archivo_path: e.archivo_path,
+        archivo_nombre: e.archivo_nombre,
+        archivo_mime: e.archivo_mime,
+        archivo_bytes: e.archivo_bytes,
+        archivos: archivosDeFila(e),
+        autor_id: e.autor_id,
+        autor_nombre: e.autor?.nombre ?? null,
+        created_at: e.created_at,
+      })
+    )
 
     const accion = enrichAccion(
       accionRaw as unknown as AccionRawRow,
@@ -257,6 +309,9 @@ export interface CrearAccionInput {
   fechaCompromiso?: string | null
   origenAuditoriaId?: string | null
   evidenciaInicialComentario?: string | null
+  /** Lista completa de adjuntos de la evidencia inicial (multiarchivo). */
+  evidenciaInicialArchivos?: ArchivoAvance[]
+  // Campos singulares: compatibilidad con llamadores viejos (1 solo archivo).
   evidenciaInicialArchivoPath?: string | null
   evidenciaInicialArchivoNombre?: string | null
   evidenciaInicialArchivoMime?: string | null
@@ -312,17 +367,19 @@ export async function crearAccion(
 
     // Si vino evidencia inicial, insertarla SIN promover estado.
     const comentarioIni = input.evidenciaInicialComentario?.trim() || null
-    const hasArchivoIni = !!input.evidenciaInicialArchivoPath
-    if (comentarioIni || hasArchivoIni) {
+    const archivosIni = archivosDeInput(input.evidenciaInicialArchivos, {
+      path: input.evidenciaInicialArchivoPath,
+      nombre: input.evidenciaInicialArchivoNombre,
+      mime: input.evidenciaInicialArchivoMime,
+      bytes: input.evidenciaInicialArchivoBytes,
+    })
+    if (comentarioIni || archivosIni.length > 0) {
       const { error: evErr } = await supabase
         .from("s5_acciones_evidencias")
         .insert({
           accion_id: accion.id,
           comentario: comentarioIni,
-          archivo_path: input.evidenciaInicialArchivoPath ?? null,
-          archivo_nombre: input.evidenciaInicialArchivoNombre ?? null,
-          archivo_mime: input.evidenciaInicialArchivoMime ?? null,
-          archivo_bytes: input.evidenciaInicialArchivoBytes ?? null,
+          ...columnasArchivos(archivosIni),
           autor_id: profile.id,
         })
       if (evErr) {
@@ -481,6 +538,9 @@ export async function actualizarAccion(
 export interface AgregarEvidenciaInput {
   accionId: string
   comentario?: string | null
+  /** Lista completa de adjuntos (multiarchivo). */
+  archivos?: ArchivoAvance[]
+  // Campos singulares: compatibilidad con llamadores viejos (1 solo archivo).
   archivoPath?: string | null
   archivoNombre?: string | null
   archivoMime?: string | null
@@ -489,15 +549,20 @@ export interface AgregarEvidenciaInput {
 
 export async function agregarEvidencia(
   input: AgregarEvidenciaInput
-): Promise<{ data: S5AccionEvidencia } | { error: string }> {
+): Promise<{ data: S5AccionEvidenciaConArchivos } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
     const comentario = input.comentario?.trim() || null
-    const hasArchivo = !!input.archivoPath
+    const archivos = archivosDeInput(input.archivos, {
+      path: input.archivoPath,
+      nombre: input.archivoNombre,
+      mime: input.archivoMime,
+      bytes: input.archivoBytes,
+    })
 
-    if (!comentario && !hasArchivo) {
+    if (!comentario && archivos.length === 0) {
       return { error: "Debe incluir un comentario o un archivo" }
     }
 
@@ -530,10 +595,7 @@ export async function agregarEvidencia(
       .insert({
         accion_id: input.accionId,
         comentario,
-        archivo_path: input.archivoPath ?? null,
-        archivo_nombre: input.archivoNombre ?? null,
-        archivo_mime: input.archivoMime ?? null,
-        archivo_bytes: input.archivoBytes ?? null,
+        ...columnasArchivos(archivos),
         autor_id: profile.id,
       })
       .select("*")
@@ -554,9 +616,10 @@ export async function agregarEvidencia(
     if (accion.origen_reunion_actividad_id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const actividadUpdate: Record<string, any> = {}
-      if (input.archivoPath) {
-        actividadUpdate.evidencia_url = input.archivoPath
-        actividadUpdate.evidencia_nombre = input.archivoNombre ?? null
+      const principal = archivos[0]
+      if (principal) {
+        actividadUpdate.evidencia_url = principal.path
+        actividadUpdate.evidencia_nombre = principal.nombre
       }
       if (comentario) {
         actividadUpdate.observaciones = comentario
@@ -578,8 +641,9 @@ export async function agregarEvidencia(
     return {
       data: {
         ...(data as Omit<S5AccionEvidencia, "autor_nombre">),
+        archivos,
         autor_nombre: profile.nombre ?? null,
-      } as S5AccionEvidencia,
+      } as S5AccionEvidenciaConArchivos,
     }
   } catch (err) {
     return {

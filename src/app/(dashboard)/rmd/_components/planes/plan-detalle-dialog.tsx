@@ -10,13 +10,10 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
-  Paperclip,
   Pencil,
   Target,
   Trash2,
-  Upload,
   User,
-  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +43,7 @@ import {
   type RmdPlan,
   type RmdPlanAvance,
 } from "@/actions/rmd-planes"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 
 const ESTADO_LABELS: Record<EstadoRmdPlan, string> = {
   pendiente: "Pendiente",
@@ -141,7 +139,7 @@ export function PlanDetalleDialog({
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
 
   const [comentario, setComentario] = useState("")
-  const [archivo, setArchivo] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
   const [nuevoEstado, setNuevoEstado] = useState<string>(SIN_CAMBIO)
 
   const [submitting, startSubmit] = useTransition()
@@ -164,22 +162,21 @@ export function PlanDetalleDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, plan.id])
 
-  // Preview de imágenes con signed URL.
+  // Preview de imágenes con signed URL. Se cachean POR PATH: un avance puede
+  // traer varias imágenes.
   useEffect(() => {
-    const pendientes = avances.filter(
-      (a) =>
-        a.archivo_path &&
-        esImagen(a.archivo_mime, a.archivo_nombre) &&
-        !imageUrls[a.id],
-    )
+    const pendientes = avances
+      .flatMap((a) => a.archivos)
+      .filter(
+        (arch) => esImagen(arch.mime, arch.nombre) && !imageUrls[arch.path],
+      )
     if (pendientes.length === 0) return
     let cancelled = false
     ;(async () => {
       const updates: Record<string, string> = {}
-      for (const a of pendientes) {
-        if (!a.archivo_path) continue
-        const r = await getAvanceRmdSignedUrl(a.archivo_path)
-        if ("data" in r) updates[a.id] = r.data.url
+      for (const arch of pendientes) {
+        const r = await getAvanceRmdSignedUrl(arch.path)
+        if ("data" in r) updates[arch.path] = r.data.url
       }
       if (!cancelled && Object.keys(updates).length > 0) {
         setImageUrls((prev) => ({ ...prev, ...updates }))
@@ -192,7 +189,7 @@ export function PlanDetalleDialog({
 
   function resetForm() {
     setComentario("")
-    setArchivo(null)
+    setArchivos([])
     setNuevoEstado(SIN_CAMBIO)
   }
 
@@ -206,13 +203,13 @@ export function PlanDetalleDialog({
   }
 
   function handleAgregarAvance() {
-    if (!comentario.trim() && !archivo) {
+    if (!comentario.trim() && archivos.length === 0) {
       toast.error("Cargá un comentario o adjuntá un archivo de evidencia")
       return
     }
     const fd = new FormData()
     fd.append("comentario", comentario.trim())
-    if (archivo) fd.append("archivo", archivo)
+    for (const f of archivos) fd.append("archivo", f)
     if (nuevoEstado !== SIN_CAMBIO) fd.append("nuevo_estado", nuevoEstado)
 
     startSubmit(async () => {
@@ -428,8 +425,6 @@ export function PlanDetalleDialog({
           ) : (
             <ol className="space-y-4">
               {avances.map((a) => {
-                const isImg = esImagen(a.archivo_mime, a.archivo_nombre)
-                const thumbUrl = imageUrls[a.id]
                 return (
                   <li
                     key={a.id}
@@ -469,53 +464,52 @@ export function PlanDetalleDialog({
                       </p>
                     )}
 
-                    {a.archivo_path && (
-                      <div className="mt-2 flex items-center gap-2">
-                        {isImg && thumbUrl ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleAbrirArchivo(
-                                a.archivo_path!,
-                                a.archivo_nombre,
-                              )
-                            }
-                            className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
-                            title="Ver evidencia"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={thumbUrl}
-                              alt={a.archivo_nombre ?? ""}
-                              className="h-20 w-20 object-cover"
-                            />
-                          </button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="gap-1.5"
-                            onClick={() =>
-                              handleAbrirArchivo(
-                                a.archivo_path!,
-                                a.archivo_nombre,
-                              )
-                            }
-                          >
-                            {isImg ? (
-                              <ImageIcon className="h-3.5 w-3.5" />
-                            ) : (
-                              <FileText className="h-3.5 w-3.5" />
-                            )}
-                            Ver evidencia
-                            <Download className="ml-1 h-3 w-3" />
-                          </Button>
-                        )}
-                        <div className="min-w-0 text-xs text-slate-500">
-                          <p className="truncate">{a.archivo_nombre}</p>
-                          <p>{formatBytes(a.archivo_bytes)}</p>
-                        </div>
+                    {a.archivos.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        {a.archivos.map((arch) => {
+                          const isImg = esImagen(arch.mime, arch.nombre)
+                          const thumbUrl = imageUrls[arch.path]
+                          return isImg && thumbUrl ? (
+                            <button
+                              key={arch.path}
+                              type="button"
+                              onClick={() =>
+                                handleAbrirArchivo(arch.path, arch.nombre)
+                              }
+                              className="overflow-hidden rounded-md border border-slate-200 transition-opacity hover:opacity-80"
+                              title={`${arch.nombre} · ${formatBytes(arch.bytes)}`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={thumbUrl}
+                                alt={arch.nombre}
+                                className="h-20 w-20 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <Button
+                              key={arch.path}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={() =>
+                                handleAbrirArchivo(arch.path, arch.nombre)
+                              }
+                              title={formatBytes(arch.bytes)}
+                            >
+                              {isImg ? (
+                                <ImageIcon className="h-3.5 w-3.5" />
+                              ) : (
+                                <FileText className="h-3.5 w-3.5" />
+                              )}
+                              <span className="max-w-[16rem] truncate">
+                                {arch.nombre}
+                              </span>
+                              <Download className="ml-1 h-3 w-3" />
+                            </Button>
+                          )
+                        })}
                       </div>
                     )}
                   </li>
@@ -541,38 +535,12 @@ export function PlanDetalleDialog({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label>Evidencia (opcional)</Label>
-                {archivo ? (
-                  <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white p-2 text-sm">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="truncate">{archivo.name}</span>
-                      <span className="shrink-0 text-xs text-slate-500">
-                        {formatBytes(archivo.size)}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setArchivo(null)}
-                      className="text-slate-400 hover:text-red-500"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-white py-3 text-sm text-slate-500 hover:bg-slate-100">
-                    <Upload className="h-4 w-4" />
-                    Adjuntar archivo o foto
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setArchivo(f)
-                      }}
-                    />
-                  </label>
-                )}
+                <Label>Evidencia (opcional — podés pegar con Ctrl+V)</Label>
+                <AdjuntosInput
+                  archivos={archivos}
+                  onChange={setArchivos}
+                  activo={open}
+                />
               </div>
 
               <div className="space-y-1">

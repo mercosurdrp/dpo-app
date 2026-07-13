@@ -8,7 +8,6 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
-  Paperclip,
   RotateCcw,
 } from "lucide-react"
 import {
@@ -24,18 +23,20 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import {
   agregarEvidencia,
   cerrarAccion,
   getAccionDetalle,
   getEvidenciaSignedUrl,
   reabrirAccion,
+  type S5AccionEvidenciaConArchivos,
 } from "@/actions/s5-acciones"
+import type { ArchivoAvance } from "@/lib/adjuntos-avance"
 import {
   S5_ACCION_ESTADO_COLORS,
   S5_ACCION_ESTADO_LABELS,
   type S5AccionConMeta,
-  type S5AccionEvidencia,
   type UserRole,
 } from "@/types/database"
 
@@ -84,10 +85,12 @@ export function ResponderAccionDialog({
   const [error, setError] = useState<string | null>(null)
 
   const [accion, setAccion] = useState<S5AccionConMeta | null>(null)
-  const [evidencias, setEvidencias] = useState<S5AccionEvidencia[]>([])
+  const [evidencias, setEvidencias] = useState<S5AccionEvidenciaConArchivos[]>(
+    []
+  )
 
   const [comentario, setComentario] = useState("")
-  const [file, setFile] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -131,24 +134,22 @@ export function ResponderAccionDialog({
 
   async function handleAgregarEvidencia() {
     if (!accion) return
-    if (!comentario.trim() && !file) {
+    if (!comentario.trim() && archivos.length === 0) {
       setError("Agregá un comentario o un archivo.")
+      return
+    }
+    const pesado = archivos.find((f) => f.size > MAX_BYTES)
+    if (pesado) {
+      setError(`El archivo "${pesado.name}" supera 15MB`)
       return
     }
     setError(null)
 
     startSubmit(async () => {
-      let archivoPath: string | null = null
-      let archivoNombre: string | null = null
-      let archivoMime: string | null = null
-      let archivoBytes: number | null = null
+      const supabase = createBrowserSupabase()
+      const subidos: ArchivoAvance[] = []
 
-      if (file) {
-        if (file.size > MAX_BYTES) {
-          setError("El archivo supera 15MB")
-          return
-        }
-        const supabase = createBrowserSupabase()
+      for (const file of archivos) {
         const safe = sanitizeFileName(file.name || "evidencia")
         const path = `acciones/${accion.id}/${crypto.randomUUID()}-${safe}`
         const { error: upErr } = await supabase.storage
@@ -158,22 +159,27 @@ export function ResponderAccionDialog({
             upsert: false,
           })
         if (upErr) {
-          setError(`Error subiendo archivo: ${upErr.message}`)
+          // Limpiar los ya subidos para no dejar huérfanos.
+          if (subidos.length > 0) {
+            await supabase.storage
+              .from(BUCKET)
+              .remove(subidos.map((a) => a.path))
+          }
+          setError(`Error subiendo ${file.name}: ${upErr.message}`)
           return
         }
-        archivoPath = path
-        archivoNombre = file.name
-        archivoMime = file.type || null
-        archivoBytes = file.size
+        subidos.push({
+          path,
+          nombre: file.name,
+          mime: file.type || null,
+          bytes: file.size,
+        })
       }
 
       const res = await agregarEvidencia({
         accionId: accion.id,
         comentario: comentario.trim() || null,
-        archivoPath,
-        archivoNombre,
-        archivoMime,
-        archivoBytes,
+        archivos: subidos,
       })
       if ("error" in res) {
         setError(res.error)
@@ -188,7 +194,7 @@ export function ResponderAccionDialog({
         setEvidencias(refreshed.data.evidencias)
       }
       setComentario("")
-      setFile(null)
+      setArchivos([])
       onSaved()
     })
   }
@@ -296,19 +302,24 @@ export function ResponderAccionDialog({
                           {e.comentario}
                         </p>
                       )}
-                      {e.archivo_path && (
-                        <button
-                          type="button"
-                          onClick={() => handleAbrirArchivo(e.archivo_path!)}
-                          className="mt-2 inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                        >
-                          {e.archivo_mime?.startsWith("image/") ? (
-                            <ImageIcon className="size-3.5" />
-                          ) : (
-                            <FileText className="size-3.5" />
-                          )}
-                          {e.archivo_nombre ?? "Archivo"}
-                        </button>
+                      {e.archivos.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {e.archivos.map((arch) => (
+                            <button
+                              key={arch.path}
+                              type="button"
+                              onClick={() => handleAbrirArchivo(arch.path)}
+                              className="inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs hover:bg-slate-50"
+                            >
+                              {arch.mime?.startsWith("image/") ? (
+                                <ImageIcon className="size-3.5" />
+                              ) : (
+                                <FileText className="size-3.5" />
+                              )}
+                              {arch.nombre || "Archivo"}
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </li>
                   ))}
@@ -334,28 +345,15 @@ export function ResponderAccionDialog({
                   </div>
                   <div>
                     <Label className="mb-1.5 text-xs">
-                      Archivo (foto o documento, hasta 15MB)
+                      Archivos (fotos o documentos, hasta 15MB cada uno)
                     </Label>
-                    <div className="flex items-center gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
-                        <Paperclip className="size-3.5" />
-                        {file ? "Cambiar" : "Seleccionar"}
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*,application/pdf"
-                          onChange={(e) =>
-                            setFile(e.target.files?.[0] ?? null)
-                          }
-                        />
-                      </label>
-                      {file && (
-                        <span className="text-xs text-muted-foreground">
-                          {file.name} (
-                          {(file.size / 1024 / 1024).toFixed(2)} MB)
-                        </span>
-                      )}
-                    </div>
+                    <AdjuntosInput
+                      archivos={archivos}
+                      onChange={setArchivos}
+                      activo={open}
+                      disabled={submitting}
+                      accept="image/*,application/pdf"
+                    />
                   </div>
                 </div>
               </>

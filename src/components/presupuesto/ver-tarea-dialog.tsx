@@ -141,6 +141,22 @@ export function VerTareaDialog({
   tarea,
   onAbrirArchivo,
 }: Props) {
+  // Las tareas viejas (una sola evidencia) solo tienen las columnas singulares.
+  const evidencias: Array<{ url: string; nombre: string }> =
+    tarea.evidencia_urls?.length
+      ? tarea.evidencia_urls.map((url, i) => ({
+          url,
+          nombre: tarea.evidencia_nombres?.[i] ?? "Descargar archivo",
+        }))
+      : tarea.evidencia_url
+        ? [
+            {
+              url: tarea.evidencia_url,
+              nombre: tarea.evidencia_nombre ?? "Descargar archivo",
+            },
+          ]
+        : []
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -193,17 +209,22 @@ export function VerTareaDialog({
         </Campo>
 
         <Campo label="Evidencia">
-          {tarea.evidencia_url ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => onAbrirArchivo(tarea.evidencia_url)}
-            >
-              <FileDown className="size-3.5" />
-              {tarea.evidencia_nombre ?? "Descargar archivo"}
-            </Button>
+          {evidencias.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {evidencias.map((ev) => (
+                <Button
+                  key={ev.url}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => onAbrirArchivo(ev.url)}
+                >
+                  <FileDown className="size-3.5" />
+                  {ev.nombre}
+                </Button>
+              ))}
+            </div>
           ) : (
             <span className="italic text-muted-foreground">
               Sin evidencia adjunta

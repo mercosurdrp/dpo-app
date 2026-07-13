@@ -5,6 +5,13 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
+  archivosDeFila,
+  archivosDelForm,
+  columnasArchivos,
+  subirArchivosAvance,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
+import {
   crearPdaEnMantenimiento,
   actualizarPdaEnMantenimiento,
   eliminarPdaEnMantenimiento,
@@ -1484,6 +1491,7 @@ export async function getHistorialActividad(
         id: r.id,
         actividad_id: r.actividad_id,
         comentario: r.comentario ?? null,
+        archivos: archivosDeFila(r),
         archivo_path: r.archivo_path ?? null,
         archivo_nombre: r.archivo_nombre ?? null,
         archivo_mime: r.archivo_mime ?? null,
@@ -1545,10 +1553,10 @@ export async function agregarAvanceActividad(
 
     const observacionesRaw = String(formData.get("observaciones") ?? "").trim()
     const observaciones = observacionesRaw || null
-    const file = formData.get("archivo") as File | null
+    const files = archivosDelForm(formData)
     const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
 
-    const tieneArchivo = file && file instanceof File && file.size > 0
+    const tieneArchivo = files.length > 0
 
     if (!nuevoEstadoRaw) {
       return { error: "Indicá el estado de la actividad" }
@@ -1568,35 +1576,32 @@ export async function agregarAvanceActividad(
       return { error: "Adjuntá un archivo o escribí un comentario" }
     }
 
-    let nuevaEvidenciaUrl: string | null = null
-    let nuevaEvidenciaNombre: string | null = null
-
+    // Un avance puede traer varios archivos. Las columnas singulares siguen
+    // guardando el primero (lectores viejos + evidencia_url de la actividad).
+    let archivos: ArchivoAvance[] = []
     if (tieneArchivo) {
-      const cleanName = cleanFileName(file.name)
-      const path = `actividades/${id}/v${Date.now()}-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
-      nuevaEvidenciaUrl = path
-      nuevaEvidenciaNombre = file.name
+      const subida = await subirArchivosAvance(
+        supabase,
+        BUCKET,
+        `actividades/${id}`,
+        files,
+      )
+      if ("error" in subida) return { error: subida.error }
+      archivos = subida.archivos
     }
+    const paths = archivos.map((a) => a.path)
+    const primero = archivos[0] ?? null
+    const nuevaEvidenciaUrl = primero?.path ?? null
+    const nuevaEvidenciaNombre = primero?.nombre ?? null
 
-    // Entrada en el historial de avances. Cada avance conserva su propio
-    // archivo: no se borran las evidencias previas.
+    // Entrada en el historial de avances. Cada avance conserva sus propios
+    // archivos: no se borran las evidencias previas.
     const { data: evidenciaRow, error: errEvid } = await supabase
       .from("reuniones_actividades_evidencias")
       .insert({
         actividad_id: id,
         comentario: observaciones,
-        archivo_path: nuevaEvidenciaUrl,
-        archivo_nombre: nuevaEvidenciaNombre,
-        archivo_mime: tieneArchivo ? file.type || null : null,
-        archivo_bytes: tieneArchivo ? file.size : null,
+        ...columnasArchivos(archivos),
         estado_resultante: nuevoEstado,
         autor_id: profile.id,
       })
@@ -1604,9 +1609,7 @@ export async function agregarAvanceActividad(
       .single()
 
     if (errEvid || !evidenciaRow) {
-      if (nuevaEvidenciaUrl) {
-        await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
-      }
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
       return {
         error: errEvid?.message ?? "No se pudo registrar el avance",
       }
@@ -1646,9 +1649,7 @@ export async function agregarAvanceActividad(
         .from("reuniones_actividades_evidencias")
         .delete()
         .eq("id", (evidenciaRow as { id: string }).id)
-      if (nuevaEvidenciaUrl) {
-        await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
-      }
+      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
       return { error: error.message }
     }
 
@@ -1678,10 +1679,7 @@ export async function agregarAvanceActividad(
           await admin.from("s5_acciones_evidencias").insert({
             accion_id: e.id,
             comentario: observaciones ?? null,
-            archivo_path: nuevaEvidenciaUrl,
-            archivo_nombre: nuevaEvidenciaNombre,
-            archivo_mime: tieneArchivo ? file.type || null : null,
-            archivo_bytes: tieneArchivo ? file.size : null,
+            ...columnasArchivos(archivos),
             autor_id: profile.id,
           })
         }
@@ -1727,16 +1725,16 @@ export async function agregarAvanceActividad(
           estado: estadoMant,
         })
 
-        // Si subimos archivo, replicarlo al PDA.
-        if (tieneArchivo && nuevaEvidenciaUrl) {
+        // Si subimos archivos, replicarlos al PDA (todos, no solo el primero).
+        for (const arch of archivos) {
           const { data: blob } = await supabase.storage
             .from(BUCKET)
-            .download(nuevaEvidenciaUrl)
+            .download(arch.path)
           if (blob) {
             await subirEvidenciaPda({
               externalId: id,
               archivoBlob: blob,
-              archivoNombre: nuevaEvidenciaNombre || "evidencia",
+              archivoNombre: arch.nombre || "evidencia",
               descripcion: observaciones,
             })
           }
@@ -1775,7 +1773,7 @@ export async function eliminarActividad(
     // caen solas por ON DELETE CASCADE al eliminar la actividad).
     const { data: evidenciasRows } = await supabase
       .from("reuniones_actividades_evidencias")
-      .select("archivo_path")
+      .select("archivos, archivo_path, archivo_nombre, archivo_mime, archivo_bytes")
       .eq("actividad_id", id)
 
     const { error } = await supabase
@@ -1792,9 +1790,10 @@ export async function eliminarActividad(
     } | null)?.evidencia_url
     if (evidenciaUrl) pathsABorrar.add(evidenciaUrl)
     for (const row of (evidenciasRows ?? []) as Array<{
+      archivos: unknown
       archivo_path: string | null
     }>) {
-      if (row.archivo_path) pathsABorrar.add(row.archivo_path)
+      for (const arch of archivosDeFila(row)) pathsABorrar.add(arch.path)
     }
     if (pathsABorrar.size > 0) {
       await supabase.storage.from(BUCKET).remove([...pathsABorrar])

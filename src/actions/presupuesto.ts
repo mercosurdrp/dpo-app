@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, getProfile } from "@/lib/session"
+import {
+  archivosDelForm,
+  subirArchivosAvance,
+  type ArchivoAvance,
+} from "@/lib/adjuntos-avance"
 import type {
   Profile,
   PresupuestoAnual,
@@ -178,6 +183,8 @@ export async function listTareas(
           estado: r.estado as EstadoPresupuestoTarea,
           evidencia_url: r.evidencia_url,
           evidencia_nombre: r.evidencia_nombre,
+          evidencia_urls: (r.evidencia_urls as string[] | null) ?? [],
+          evidencia_nombres: (r.evidencia_nombres as string[] | null) ?? [],
           justificacion: r.justificacion,
           completada_at: r.completada_at,
           created_by: r.created_by,
@@ -635,7 +642,9 @@ export async function responderTarea(
 
     const { data: actual, error: errActual } = await supabase
       .from("presupuestos_tareas")
-      .select("evidencia_url, responsable_id")
+      .select(
+        "evidencia_url, evidencia_nombre, evidencia_urls, evidencia_nombres, responsable_id",
+      )
       .eq("id", id)
       .single()
     if (errActual) return { error: errActual.message }
@@ -651,10 +660,10 @@ export async function responderTarea(
       formData.get("justificacion") ?? "",
     ).trim()
     const justificacion = justificacionRaw || null
-    const file = formData.get("archivo") as File | null
+    const files = archivosDelForm(formData)
     const nuevoEstadoRaw = String(formData.get("nuevo_estado") ?? "").trim()
 
-    const tieneArchivo = file && file instanceof File && file.size > 0
+    const tieneArchivo = files.length > 0
 
     if (!tieneArchivo && !justificacion) {
       return {
@@ -670,32 +679,47 @@ export async function responderTarea(
       nuevoEstado = nuevoEstadoRaw as EstadoPresupuestoTarea
     }
 
-    let nuevaEvidenciaUrl: string | null = null
-    let nuevaEvidenciaNombre: string | null = null
-
+    let nuevos: ArchivoAvance[] = []
     if (tieneArchivo) {
-      const cleanName = cleanFileName(file.name)
-      const path = `tareas/${id}/v${Date.now()}-${cleanName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, {
-          contentType: file.type || "application/octet-stream",
-          upsert: false,
-        })
-      if (upErr) return { error: `Subiendo archivo: ${upErr.message}` }
-      nuevaEvidenciaUrl = path
-      nuevaEvidenciaNombre = file.name
+      const subida = await subirArchivosAvance(
+        supabase,
+        BUCKET,
+        `tareas/${id}`,
+        files,
+      )
+      if ("error" in subida) return { error: subida.error }
+      nuevos = subida.archivos
     }
+    const nuevosPaths = nuevos.map((a) => a.path)
+
+    // Las evidencias se ACUMULAN: responder de nuevo no borra las anteriores.
+    // Fallback a la columna singular para tareas viejas sin backfillear.
+    const urlsPrevias: string[] =
+      (actual?.evidencia_urls as string[] | null)?.length
+        ? (actual.evidencia_urls as string[])
+        : actual?.evidencia_url
+          ? [actual.evidencia_url as string]
+          : []
+    const nombresPrevios: string[] =
+      (actual?.evidencia_nombres as string[] | null)?.length
+        ? (actual.evidencia_nombres as string[])
+        : actual?.evidencia_url
+          ? [(actual.evidencia_nombre as string | null) ?? "Archivo"]
+          : []
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const update: Record<string, any> = {}
     if (justificacion !== null) {
       update.justificacion = justificacion
     }
-    if (nuevaEvidenciaUrl) {
-      update.evidencia_url = nuevaEvidenciaUrl
-      update.evidencia_nombre = nuevaEvidenciaNombre
+    if (nuevos.length > 0) {
+      const urls = [...urlsPrevias, ...nuevosPaths]
+      const nombres = [...nombresPrevios, ...nuevos.map((a) => a.nombre)]
+      update.evidencia_urls = urls
+      update.evidencia_nombres = nombres
+      // Las singulares apuntan al PRIMER archivo (lectores viejos).
+      update.evidencia_url = urls[0] ?? null
+      update.evidencia_nombre = nombres[0] ?? null
     }
     if (nuevoEstado) {
       update.estado = nuevoEstado
@@ -715,15 +739,10 @@ export async function responderTarea(
       .single()
 
     if (error) {
-      if (nuevaEvidenciaUrl) {
-        await supabase.storage.from(BUCKET).remove([nuevaEvidenciaUrl])
+      if (nuevosPaths.length) {
+        await supabase.storage.from(BUCKET).remove(nuevosPaths)
       }
       return { error: error.message }
-    }
-
-    // Borrar evidencia anterior si subimos una nueva
-    if (nuevaEvidenciaUrl && actual?.evidencia_url) {
-      await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
     }
 
     revalidatePath(REVALIDATE_PATH)
@@ -746,7 +765,7 @@ export async function eliminarTarea(
 
     const { data: actual } = await supabase
       .from("presupuestos_tareas")
-      .select("evidencia_url")
+      .select("evidencia_url, evidencia_urls")
       .eq("id", id)
       .maybeSingle()
 
@@ -757,8 +776,14 @@ export async function eliminarTarea(
 
     if (error) return { error: error.message }
 
-    if (actual?.evidencia_url) {
-      await supabase.storage.from(BUCKET).remove([actual.evidencia_url])
+    // Todas las evidencias de la tarea (las viejas solo tienen la singular).
+    const paths = new Set<string>()
+    for (const p of (actual?.evidencia_urls as string[] | null) ?? []) {
+      if (p) paths.add(p)
+    }
+    if (actual?.evidencia_url) paths.add(actual.evidencia_url as string)
+    if (paths.size > 0) {
+      await supabase.storage.from(BUCKET).remove([...paths])
     }
 
     revalidatePath(REVALIDATE_PATH)

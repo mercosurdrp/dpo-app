@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Loader2, Paperclip } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import { crearAccion } from "@/actions/s5-acciones"
+import type { ArchivoAvance } from "@/lib/adjuntos-avance"
 import {
   S5_TIPO_LABELS,
   type S5SectorAlmacen,
@@ -82,7 +84,7 @@ export function CrearAccionDialog({
   const [responsableId, setResponsableId] = useState<string>("")
   const [fechaCompromiso, setFechaCompromiso] = useState<string>("")
   const [comentarioInicial, setComentarioInicial] = useState("")
-  const [fileInicial, setFileInicial] = useState<File | null>(null)
+  const [archivosIniciales, setArchivosIniciales] = useState<File[]>([])
 
   function reset() {
     setError(null)
@@ -92,7 +94,7 @@ export function CrearAccionDialog({
     setResponsableId("")
     setFechaCompromiso("")
     setComentarioInicial("")
-    setFileInicial(null)
+    setArchivosIniciales([])
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -107,38 +109,44 @@ export function CrearAccionDialog({
       setError("Asigná un responsable.")
       return
     }
-    if (fileInicial && fileInicial.size > MAX_BYTES) {
-      setError("El archivo inicial supera 15MB.")
+    const pesado = archivosIniciales.find((f) => f.size > MAX_BYTES)
+    if (pesado) {
+      setError(`El archivo "${pesado.name}" supera 15MB.`)
       return
     }
 
     startTransition(async () => {
-      // Generamos el id client-side para usarlo como folder del archivo.
+      // Generamos el id client-side para usarlo como folder de los archivos.
       const accionId = crypto.randomUUID()
 
-      let archivoPath: string | null = null
-      let archivoNombre: string | null = null
-      let archivoMime: string | null = null
-      let archivoBytes: number | null = null
+      const supabase = createBrowserSupabase()
+      const subidos: ArchivoAvance[] = []
 
-      if (fileInicial) {
-        const supabase = createBrowserSupabase()
-        const safe = sanitizeFileName(fileInicial.name || "estado-inicial")
+      for (const file of archivosIniciales) {
+        const safe = sanitizeFileName(file.name || "estado-inicial")
         const path = `acciones/${accionId}/${crypto.randomUUID()}-${safe}`
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
-          .upload(path, fileInicial, {
-            contentType: fileInicial.type || "application/octet-stream",
+          .upload(path, file, {
+            contentType: file.type || "application/octet-stream",
             upsert: false,
           })
         if (upErr) {
-          setError(`Error subiendo archivo: ${upErr.message}`)
+          // Limpiar los ya subidos para no dejar huérfanos.
+          if (subidos.length > 0) {
+            await supabase.storage
+              .from(BUCKET)
+              .remove(subidos.map((a) => a.path))
+          }
+          setError(`Error subiendo ${file.name}: ${upErr.message}`)
           return
         }
-        archivoPath = path
-        archivoNombre = fileInicial.name
-        archivoMime = fileInicial.type || null
-        archivoBytes = fileInicial.size
+        subidos.push({
+          path,
+          nombre: file.name,
+          mime: file.type || null,
+          bytes: file.size,
+        })
       }
 
       const res = await crearAccion({
@@ -152,10 +160,7 @@ export function CrearAccionDialog({
         responsableId,
         fechaCompromiso: fechaCompromiso || null,
         evidenciaInicialComentario: comentarioInicial.trim() || null,
-        evidenciaInicialArchivoPath: archivoPath,
-        evidenciaInicialArchivoNombre: archivoNombre,
-        evidenciaInicialArchivoMime: archivoMime,
-        evidenciaInicialArchivoBytes: archivoBytes,
+        evidenciaInicialArchivos: subidos,
       })
       if ("error" in res) {
         setError(res.error)
@@ -273,7 +278,7 @@ export function CrearAccionDialog({
                 Estado inicial (opcional)
               </h3>
               <p className="text-xs text-muted-foreground">
-                Foto + comentario para registrar cómo está la situación
+                Fotos + comentario para registrar cómo está la situación
                 antes de empezar. Se guarda como primera fila del historial
                 de evidencia.
               </p>
@@ -289,28 +294,15 @@ export function CrearAccionDialog({
             </div>
             <div>
               <Label className="mb-1.5 text-xs">
-                Foto del estado inicial (hasta 15MB)
+                Fotos del estado inicial (hasta 15MB cada una)
               </Label>
-              <div className="flex items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
-                  <Paperclip className="size-3.5" />
-                  {fileInicial ? "Cambiar" : "Seleccionar"}
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept="image/*,application/pdf"
-                    onChange={(e) =>
-                      setFileInicial(e.target.files?.[0] ?? null)
-                    }
-                  />
-                </label>
-                {fileInicial && (
-                  <span className="text-xs text-muted-foreground">
-                    {fileInicial.name} (
-                    {(fileInicial.size / 1024 / 1024).toFixed(2)} MB)
-                  </span>
-                )}
-              </div>
+              <AdjuntosInput
+                archivos={archivosIniciales}
+                onChange={setArchivosIniciales}
+                activo={open}
+                disabled={pending}
+                accept="image/*,application/pdf"
+              />
             </div>
           </div>
 

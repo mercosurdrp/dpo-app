@@ -18,9 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { AdjuntosInput } from "@/components/adjuntos-input"
 import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
 import {
   Select,
@@ -115,6 +115,7 @@ export function DetalleActividadDialog({
   const [histError, setHistError] = useState<string | null>(null)
 
   const [comentario, setComentario] = useState("")
+  const [archivos, setArchivos] = useState<File[]>([])
   const [nuevoEstado, setNuevoEstado] = useState<EstadoReunionActividad>(
     estadoInicial ?? actividad.estado,
   )
@@ -157,8 +158,7 @@ export function DetalleActividadDialog({
     const formData = new FormData(form)
     formData.set("nuevo_estado", nuevoEstado)
 
-    const file = formData.get("archivo") as File | null
-    const tieneArchivo = !!(file && file.size > 0)
+    const tieneArchivo = archivos.length > 0
     const tieneComentario = comentario.trim().length > 0
 
     if (nuevoEstado === "cerrada" && !tieneComentario) {
@@ -169,7 +169,7 @@ export function DetalleActividadDialog({
       setError("Adjuntá un archivo o escribí un comentario.")
       return
     }
-    if (!tieneArchivo) formData.delete("archivo")
+    for (const f of archivos) formData.append("archivo", f)
 
     startTransition(async () => {
       const result = await agregarAvanceActividad(actividad.id, formData)
@@ -186,6 +186,7 @@ export function DetalleActividadDialog({
       }
       // Si sigue abierto, limpiamos el formulario y refrescamos el historial.
       setComentario("")
+      setArchivos([])
       form.reset()
       const refrescado = await getHistorialActividad(actividad.id)
       if (!("error" in refrescado)) {
@@ -272,18 +273,19 @@ export function DetalleActividadDialog({
                     </p>
                   )}
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    {ev.archivo_path && (
+                    {ev.archivos.map((arch) => (
                       <Button
+                        key={arch.path}
                         type="button"
                         variant="outline"
                         size="sm"
                         className="h-7 gap-1 px-2 text-xs"
-                        onClick={() => abrirArchivo(ev.archivo_path)}
+                        onClick={() => abrirArchivo(arch.path)}
                       >
                         <FileDown className="size-3.5" />
-                        {ev.archivo_nombre ?? "Archivo"}
+                        {arch.nombre || "Archivo"}
                       </Button>
-                    )}
+                    ))}
                     {ev.estado_resultante === "cerrada" && (
                       <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
                         <CheckCircle2 className="size-3.5" />
@@ -327,17 +329,15 @@ export function DetalleActividadDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label
-                htmlFor="det_act_archivo"
-                className="flex items-center gap-1.5"
-              >
+              <Label className="flex items-center gap-1.5">
                 <Paperclip className="size-3.5" />
-                Adjuntar archivo (foto, Excel, PPT…)
+                Adjuntar archivos o fotos (podés pegar con Ctrl+V)
               </Label>
-              <Input
-                id="det_act_archivo"
-                name="archivo"
-                type="file"
+              <AdjuntosInput
+                archivos={archivos}
+                onChange={setArchivos}
+                activo={open}
+                disabled={pending}
                 accept=".pdf,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.ppt,.pptx"
               />
             </div>

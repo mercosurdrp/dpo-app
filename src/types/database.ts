@@ -1,3 +1,5 @@
+import type { ArchivoAvance } from "@/lib/adjuntos-avance"
+
 // Enum types
 export type UserRole =
   | "admin"
@@ -2906,8 +2908,12 @@ export interface PresupuestoTarea {
   responsable_id: string | null
   fecha_limite: string | null
   estado: EstadoPresupuestoTarea
+  /** Primer archivo de la evidencia (compatibilidad con lectores viejos). */
   evidencia_url: string | null
   evidencia_nombre: string | null
+  /** Todas las evidencias de la tarea. Se acumulan: responder no pisa las anteriores. */
+  evidencia_urls: string[]
+  evidencia_nombres: string[]
   justificacion: string | null
   completada_at: string | null
   created_by: string | null
@@ -3278,6 +3284,8 @@ export interface ReunionActividadEvidencia {
   id: string
   actividad_id: string
   comentario: string | null
+  /** Todos los adjuntos del avance. Los avances viejos traen acá su único archivo. */
+  archivos: ArchivoAvance[]
   archivo_path: string | null
   archivo_nombre: string | null
   archivo_mime: string | null
