@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Gauge, Package, Clock, Truck, AlertTriangle, Info, ChevronRight } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,12 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { TlpResumen } from "@/actions/tlp"
-import type { TlpArbol, TlpEvolucionAnual, TlpEvolucionFila } from "@/lib/tlp/calc"
+import type { TlpFila, TlpResumen } from "@/actions/tlp"
+import type { TlpArbol, TlpArbolNodo, TlpEvolucionAnual, TlpEvolucionFila } from "@/lib/tlp/calc"
 import { TLP_META_GLOBAL, tlpMetaDe, type TlpMeta } from "@/lib/tlp/metas"
 import { estadoSemaforo } from "@/lib/sueno/semaforo"
 import type { TlpPlan } from "@/actions/tlp-planes"
-import { ArbolTlp } from "./_components/arbol-tlp"
+import { ArbolTlp, type ModoArbol } from "./_components/arbol-tlp"
 import { PlanesAccionBloque } from "./_components/planes/planes-accion-bloque"
 import { TlpRutaDetalleDialog, type RutaFiltro } from "./tlp-ruta-detalle-dialog"
 
@@ -26,6 +26,35 @@ function rangoMes(mes: string): { desde: string; hasta: string } {
   return {
     desde: `${mes}-01`,
     hasta: new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10),
+  }
+}
+
+const MES_LARGO = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+/**
+ * Árbol del mes: mismos nodos que el YTD pero con las filas que `getTlpMes` ya
+ * trajo, así el toggle Mes/YTD no dispara otra lectura de viajes.
+ */
+function arbolDelMes(data: TlpResumen, mes: string): TlpArbol {
+  const nodo = (f: TlpFila | TlpResumen["total"]): TlpArbolNodo => ({
+    ciudad: f.ciudad,
+    ceq: f.ceq,
+    horasRuta: f.horas_ruta,
+    horasHombre: f.horas_hombre,
+    // hs-hombre = Σ (hs × FTE) ⇒ FTE ponderado por horas.
+    fte: f.horas_ruta > 0 ? Math.round((f.horas_hombre / f.horas_ruta) * 100) / 100 : null,
+    viajes: f.viajes,
+    tlp: f.tlp,
+  })
+
+  return {
+    anio: Number(mes.slice(0, 4)),
+    hasta: rangoMes(mes).hasta,
+    total: nodo(data.total),
+    ciudades: [...data.por_ciudad].sort((a, b) => b.ceq - a.ceq).map(nodo),
   }
 }
 
@@ -65,11 +94,24 @@ export function TlpClient({
   // El detalle de horas suele abrirse sobre el mes, pero el árbol es YTD:
   // cada origen fija el rango con el que se abre el modal.
   const [rutaRango, setRutaRango] = useState<{ desde: string; hasta: string } | null>(null)
+  const [modoArbol, setModoArbol] = useState<ModoArbol>("mes")
 
   const abrirRuta = (filtro: RutaFiltro, rango?: { desde: string; hasta: string }) => {
     setRutaRango(rango ?? null)
     setRutaFiltro(filtro)
   }
+
+  // El árbol arranca en el mes del filtro; el YTD sale del barrido anual que ya
+  // hace la página (y es el número que muestra el Árbol del Sueño).
+  const arbolMes = useMemo(() => arbolDelMes(data, mes), [data, mes])
+  const ytdDisponible = modoArbol === "ytd" && arbol != null
+  const arbolVisible = ytdDisponible ? arbol : arbolMes
+  const periodoArbol = ytdDisponible
+    ? `${arbol!.anio} acumulado`
+    : `${MES_LARGO[Number(mes.slice(5, 7)) - 1]} ${mes.slice(0, 4)}`
+  const rangoArbol = ytdDisponible
+    ? { desde: `${arbol!.anio}-01-01`, hasta: arbol!.hasta }
+    : { desde, hasta }
 
   // Catálogos para el foco de los planes.
   const ciudades = data.por_ciudad.map((f) => f.ciudad)
@@ -162,14 +204,17 @@ export function TlpClient({
         </button>
       </div>
 
-      {/* Árbol del TLP (YTD del año, como el Árbol del Sueño) */}
-      {arbol && arbol.ciudades.length > 0 && (
+      {/* Árbol del TLP: el mes del filtro, o el YTD (el del Árbol del Sueño) */}
+      {arbolVisible && arbolVisible.ciudades.length > 0 && (
         <ArbolTlp
-          arbol={arbol}
+          arbol={arbolVisible}
+          modo={modoArbol}
+          onModo={setModoArbol}
+          periodoLabel={periodoArbol}
           onCiudad={(ciudad) =>
             abrirRuta(
-              { tipo: "ciudad", valor: ciudad, label: `${ciudad} · ${arbol.anio}` },
-              { desde: `${arbol.anio}-01-01`, hasta: arbol.hasta },
+              { tipo: "ciudad", valor: ciudad, label: `${ciudad} · ${periodoArbol}` },
+              rangoArbol,
             )
           }
         />
