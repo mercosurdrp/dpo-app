@@ -376,25 +376,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/indicadores/flota">
-            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-sky-300">
-              <CardContent className="flex items-center gap-4 pt-6">
-                <div className="rounded-xl p-3 bg-sky-100 text-sky-600 group-hover:bg-sky-200 transition-colors">
-                  <Truck className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    Indicadores de Flota
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {IS_MISIONES
-                      ? "Disponibilidad, MTBF, MTTR y prob. de falla — vivo de Cloudfleet"
-                      : "Tiempo promedio en ruta — Foxtrot, rutas cerradas en el día"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+          {IS_MISIONES && (
+            <Link href="/indicadores/flota">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-sky-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-sky-100 text-sky-600 group-hover:bg-sky-200 transition-colors">
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Indicadores de Flota
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Disponibilidad, MTBF, MTTR y prob. de falla — vivo de Cloudfleet
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
         </div>
       </div>
 

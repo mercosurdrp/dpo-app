@@ -25,9 +25,6 @@ import {
   type DetalleRechazoItem,
 } from "@/lib/indicadores/cuadro-mensual-detalle"
 import { contarTripulacion } from "@/lib/tml/calculo"
-import { esRutaLimpia } from "@/lib/foxtrot/tiempo-ruta-limpias"
-import { TIEMPO_RUTA_CHECKLIST_DESDE } from "@/lib/tlp/tiempo-ruta"
-import { fetchViajesTlp } from "@/lib/tlp/calc"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -132,12 +129,11 @@ export async function getCuadroMensualIndicadores(): Promise<
       fecha: string
       is_finalized: boolean | null
       tiempo_ruta_minutos: number | null
-      raw_data: { started_timestamp?: string | null; finalized_timestamp?: string | null } | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("foxtrot_routes")
-        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos, raw_data")
+        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("route_id", { ascending: true })
@@ -495,40 +491,24 @@ export async function getCuadroMensualIndicadores(): Promise<
     acc.rutas++
     acc.fechas.add(r.fecha)
     const t = Number(r.tiempo_ruta_minutos ?? 0)
-    // 🚨 Solo RUTAS LIMPIAS (cerradas el mismo día que arrancaron): las que el
-    // chofer no finalizó en la app las cierra Foxtrot horas o días después y su
-    // duración ya no es tiempo de trabajo. Contándolas, enero daba 11,8 hs
-    // promedio por ruta en vez de 7,4 — ver lib/foxtrot/tiempo-ruta-limpias.ts.
-    if (r.is_finalized && Number.isFinite(t) && t > 0 && esRutaLimpia(r.raw_data)) {
-      acc.tiempos.push(t)
-    }
+    if (r.is_finalized && Number.isFinite(t) && t > 0) acc.tiempos.push(t)
   }
-  // 🚨 Desde abril el tiempo en ruta sale del CHECKLIST de retorno, no de Foxtrot:
-  // es el mismo tiempo que el TLP usa como denominador y no puede medirse distinto
-  // en un lado y en el otro. Antes de abril el checklist no existía (arrancó el
-  // 9-abr) ⇒ ahí manda Foxtrot. Ver lib/tlp/tiempo-ruta.ts.
-  const { viajes: viajesTlp } = await fetchViajesTlp(supabase, desde, hasta)
-  const ckPorMes: Record<string, number[]> = {}
-  for (const v of viajesTlp) {
-    const mes = v.fecha.slice(0, 7)
-    if (mes < TIEMPO_RUTA_CHECKLIST_DESDE) continue
-    ;(ckPorMes[mes] ??= []).push(v.horasRuta * 60)
-  }
-
   for (const mes of meses) {
     const esActual = mes === mesActual
     const acc = foxPorMes[mes]
-    // Minutos por viaje del mes: checklist si el mes lo tiene, si no Foxtrot.
-    const tiempos = ckPorMes[mes]?.length ? ckPorMes[mes] : (acc?.tiempos ?? [])
     celdas.tiempo_ruta[mes] = {
       mes,
-      valor: tiempos.length > 0 ? avg(tiempos) / 60 : null,
+      valor: acc && acc.tiempos.length > 0 ? avg(acc.tiempos) / 60 : null,
       parcial: esActual,
     }
-    // Horas en ruta del mes: suma de las duraciones (misma base que el promedio).
+    // Horas en ruta del mes: suma de las duraciones de las rutas finalizadas
+    // (misma base que el promedio de arriba).
     celdas.horas_ruta[mes] = {
       mes,
-      valor: tiempos.length > 0 ? tiempos.reduce((a, b) => a + b, 0) / 60 : null,
+      valor:
+        acc && acc.tiempos.length > 0
+          ? acc.tiempos.reduce((a, b) => a + b, 0) / 60
+          : null,
       parcial: esActual,
     }
     celdas.camiones_dia[mes] = {

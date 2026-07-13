@@ -18,7 +18,6 @@ import {
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
-import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -41,21 +40,6 @@ async function resolverTiempoPdvVivo(
 ): Promise<Awaited<ReturnType<typeof tiempoPdvAnual>>> {
   try {
     return await tiempoPdvAnual(supabase, year)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida, de las
- * rutas limpias de Foxtrot — el mismo KPI de Indicadores → Flota.
- */
-async function resolverTiempoRutaVivo(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  year: number,
-): Promise<Awaited<ReturnType<typeof tiempoRutaAnual>>> {
-  try {
-    return await tiempoRutaAnual(supabase, year)
   } catch {
     return null
   }
@@ -134,12 +118,11 @@ export async function getSuenoArbol(
     // KPIs manuales con carga mensual: el YTD sale de los meses cargados.
     const mensuales = await fetchMensualesDelAnio(supabase, year)
 
-    // TLP, Tiempo en Ruta y Tiempo en PDV en vivo (mismo cálculo que
-    // /indicadores/tlp); si fallan, caen al valor de la tabla.
-    const [tlpVivo, pdvVivo, rutaVivo] = await Promise.all([
+    // TLP y Tiempo en PDV en vivo (mismo cálculo que /indicadores/tlp); si
+    // fallan, caen al valor de la tabla.
+    const [tlpVivo, pdvVivo] = await Promise.all([
       resolverTlpVivo(supabase, year),
       resolverTiempoPdvVivo(supabase, year),
-      resolverTiempoRutaVivo(supabase, year),
     ])
 
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
@@ -150,9 +133,7 @@ export async function getSuenoArbol(
           ? (tlpVivo?.ytd ?? null)
           : cfg.key === "tiempo_pdv"
             ? (pdvVivo?.ytd ?? null)
-            : cfg.key === "tiempo_ruta"
-              ? (rutaVivo?.ytd ?? null)
-              : externos.get(cfg.key)
+            : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
@@ -260,31 +241,6 @@ export async function getSuenoDetalle(
             : "No se pudo calcular el TLP en vivo en este momento.",
           meses,
           detalleLabel: "Viajes",
-        },
-      }
-    }
-
-    // Tiempo en Ruta: detalle mensual en vivo (las horas-hombre del TLP).
-    if (kpiKey === "tiempo_ruta") {
-      const supabaseRuta = await createClient()
-      const vivo = await resolverTiempoRutaVivo(supabaseRuta, year)
-      const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
-        mes: m.mes,
-        etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
-        valor: m.horas,
-        detalle: m.viajes,
-      }))
-      return {
-        data: {
-          kpiKey,
-          label: cfg.label,
-          unidad: cfg.unidad,
-          fuente: vivo ? "auto" : "manual",
-          explicacion: vivo
-            ? "Tiempo en Ruta = horas que dura una salida. Es EL MISMO tiempo que el TLP usa como denominador: desde abril sale del CHECKLIST de retorno (retorno − liberación del camión), que arrancó el 9-abr; antes de abril sale de FOXTROT, contando solo las rutas limpias (las cerradas el mismo día que arrancaron), que es con lo que se cerraron enero, febrero y marzo. El promedio es PONDERADO (Σ horas ÷ Σ viajes), no el promedio de los promedios de las ciudades. Mismo número que el cuadro mensual (pilar Flota)."
-            : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
-          meses,
-          detalleLabel: "Rutas limpias",
         },
       }
     }
