@@ -154,6 +154,8 @@ const EXPLICACION: Record<string, string> = {
   otif: "OTIF = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle mensual con los bultos rechazados de cada mes.",
   rechazo: "Rechazo = bultos rechazados ÷ bultos entregados (%). Por mes, con los bultos rechazados.",
   in_full: "In-Full = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle por mes.",
+  tri: "TRI = accidentes REGISTRABLES del año (FAT + LTI + MDI + MTI), tomados de los reportes de seguridad cargados como accidente. Los FAI (primeros auxilios) no son registrables: por eso el detalle muestra también los accidentes totales del mes.",
+  lti: "LTI = accidentes con días perdidos, tomados de los reportes de seguridad cargados como accidente. El detalle muestra además los accidentes totales de cada mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
   sin_dinero:
@@ -166,6 +168,8 @@ const EXPLICACION: Record<string, string> = {
  *  cuyo dato acompañante no son bultos rechazados. */
 const DETALLE_LABEL: Record<string, string> = {
   vlc_hl: "HL vendidos",
+  tri: "Accidentes del mes",
+  lti: "Accidentes del mes",
 }
 
 export interface SuenoDetalleMes {

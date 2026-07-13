@@ -116,8 +116,6 @@ export type AgregacionMensual = "promedio" | "suma"
  * detalle automático (RPC `sueno_kpi_detalle`) o externo (deposito-esteban).
  */
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
-  tri: "suma",
-  lti: "suma",
   wnp: "promedio",
   tiempo_ruta: "promedio",
   tiempo_pdv: "promedio",
