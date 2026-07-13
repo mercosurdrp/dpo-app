@@ -17,6 +17,7 @@ export interface RadarClienteView {
   cerrado_mes: number
   sin_dinero_anio: number
   sin_dinero_mes: number
+  bultos_rechazados_anio: number
   riesgo_total: number
 }
 
@@ -56,7 +57,7 @@ export async function getRadarRechazos(): Promise<
     const { data: clientes, error: cErr } = await supa
       .from("radar_rechazos_cliente")
       .select(
-        "id_cliente, nombre_cliente, localidad, telefono, id_promotor, nombre_promotor, reparto, bultos_pedido, monto_pedido, cerrado_anio, cerrado_mes, sin_dinero_anio, sin_dinero_mes, riesgo_total",
+        "id_cliente, nombre_cliente, localidad, telefono, id_promotor, nombre_promotor, reparto, bultos_pedido, monto_pedido, cerrado_anio, cerrado_mes, sin_dinero_anio, sin_dinero_mes, bultos_rechazados_anio, riesgo_total",
       )
       .eq("snapshot_id", header.id)
       .order("riesgo_total", { ascending: false })
@@ -74,6 +75,7 @@ export async function getRadarRechazos(): Promise<
           ...c,
           bultos_pedido: Number(c.bultos_pedido ?? 0),
           monto_pedido: Number(c.monto_pedido ?? 0),
+          bultos_rechazados_anio: Number(c.bultos_rechazados_anio ?? 0),
         })) as RadarClienteView[],
       },
     }
@@ -96,6 +98,7 @@ export interface RadarCriticoRow {
   monto_pedido: number
   sin_dinero_calendario: number
   cerrado_calendario: number
+  bultos_rechazados_calendario: number
 }
 
 export interface RadarCriticosData {
@@ -111,13 +114,23 @@ const ID_CERRADO = 1
 const ID_SIN_DINERO = 6
 
 /**
+ * Umbral por defecto de "cliente crítico": más de N VECES sin dinero en el año.
+ * Calibrado en veces (no en líneas de producto): con 3, en 2026 quedan ~30
+ * clientes críticos en toda la base; con 7 quedaban 7 y el PDF salía vacío.
+ */
+export const UMBRAL_CRITICO_DEFAULT = 3
+
+/**
  * Clientes CRÍTICOS de la última foto del radar: los que tienen MÁS de `umbral`
- * rechazos por SIN DINERO en el AÑO CALENDARIO de la entrega (recontado desde el
- * 1-ene, no la ventana de 365 días que guarda el snapshot). Ordenados por
- * promotor y, dentro, por cantidad de sin dinero desc. Para el PDF de Ventas.
+ * VECES de rechazo por SIN DINERO en el AÑO CALENDARIO de la entrega (recontado
+ * desde el 1-ene, no la ventana de 365 días que guarda el snapshot). Ordenados
+ * por promotor y, dentro, por cantidad de sin dinero desc. Para el PDF de Ventas.
+ *
+ * 🚨 VECES = cliente × fecha_venta distinta; `rechazos` tiene una fila por
+ * artículo, así que contar filas infla el número (ver build.ts).
  */
 export async function getRadarCriticos(
-  umbral: number = 7,
+  umbral: number = UMBRAL_CRITICO_DEFAULT,
 ): Promise<{ data: RadarCriticosData | null } | { error: string }> {
   try {
     await requireAuth()
@@ -146,26 +159,38 @@ export async function getRadarCriticos(
       .map((c) => c.id_cliente)
       .filter((id): id is number => id != null)
 
-    // Conteo calendario (sin dinero / cerrado) de los clientes en riesgo
-    const calen = new Map<number, { sd: number; ce: number }>()
+    // Conteo calendario (sin dinero / cerrado) de los clientes en riesgo, en
+    // VECES: las fechas van a un Set para que los N artículos de un mismo
+    // rechazo cuenten 1. Los bultos rechazados sí se suman fila por fila.
+    const calen = new Map<
+      number, { sd: Set<string>; ce: Set<string>; bultos: number }
+    >()
     if (ids.length > 0) {
       const PAGE = 1000
       let from = 0
       while (true) {
         const { data, error } = await supa
           .from("rechazos")
-          .select("id_cliente, id_rechazo")
+          .select("id_cliente, id_rechazo, fecha_venta, bultos_rechazados")
           .in("id_cliente", ids)
           .in("id_rechazo", [ID_CERRADO, ID_SIN_DINERO])
           .gte("fecha_venta", desde)
           .range(from, from + PAGE - 1)
         if (error) return { error: error.message }
         if (!data || data.length === 0) break
-        for (const r of data as { id_cliente: number | null; id_rechazo: number }[]) {
-          if (r.id_cliente == null) continue
-          const c = calen.get(r.id_cliente) ?? { sd: 0, ce: 0 }
-          if (r.id_rechazo === ID_SIN_DINERO) c.sd += 1
-          else if (r.id_rechazo === ID_CERRADO) c.ce += 1
+        for (const r of data as {
+          id_cliente: number | null
+          id_rechazo: number
+          fecha_venta: string | null
+          bultos_rechazados: number | null
+        }[]) {
+          if (r.id_cliente == null || !r.fecha_venta) continue
+          const c = calen.get(r.id_cliente) ?? {
+            sd: new Set<string>(), ce: new Set<string>(), bultos: 0,
+          }
+          if (r.id_rechazo === ID_SIN_DINERO) c.sd.add(r.fecha_venta)
+          else if (r.id_rechazo === ID_CERRADO) c.ce.add(r.fecha_venta)
+          c.bultos += Number(r.bultos_rechazados ?? 0)
           calen.set(r.id_cliente, c)
         }
         if (data.length < PAGE) break
@@ -184,8 +209,9 @@ export async function getRadarCriticos(
           nombre_promotor: c.nombre_promotor,
           bultos_pedido: Number(c.bultos_pedido ?? 0),
           monto_pedido: Number(c.monto_pedido ?? 0),
-          sin_dinero_calendario: cc?.sd ?? 0,
-          cerrado_calendario: cc?.ce ?? 0,
+          sin_dinero_calendario: cc?.sd.size ?? 0,
+          cerrado_calendario: cc?.ce.size ?? 0,
+          bultos_rechazados_calendario: Math.round(cc?.bultos ?? 0),
         }
       })
       .filter((c) => c.sin_dinero_calendario > umbral)

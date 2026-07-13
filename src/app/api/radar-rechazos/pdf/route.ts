@@ -14,6 +14,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { requireAuth } from "@/lib/session"
 import {
   getRadarCriticos,
+  UMBRAL_CRITICO_DEFAULT,
   type RadarCriticoRow,
   type RadarCriticosData,
 } from "@/actions/radar-rechazos"
@@ -35,8 +36,8 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-// Umbral por defecto de "cliente crítico": más de N sin dinero en el año.
-const UMBRAL_DEFAULT = 7
+// Umbral por defecto de "cliente crítico": más de N VECES sin dinero en el año.
+const UMBRAL_DEFAULT = UMBRAL_CRITICO_DEFAULT
 
 export async function GET(req: NextRequest) {
   if (IS_MISIONES) {
@@ -146,9 +147,10 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
     .font("Helvetica")
     .fontSize(8.5)
     .text(
-      `Criterio: clientes a entregar pasado mañana con más de ${umbral} rechazos por SIN DINERO en ${anio}. ` +
+      `Criterio: clientes a entregar pasado mañana rechazados más de ${umbral} VECES por SIN DINERO en ${anio}. ` +
         `Avisarles hoy para coordinar el pago y evitar el rechazo. ` +
-        `Las columnas "S/Dinero" (sin dinero) y "Cerr." (cerrado) cuentan los rechazos del año ${anio}.`,
+        `"S/Dinero" y "Cerr." cuentan VECES (cliente × fecha) del año ${anio}, no artículos: un rechazo de 13 productos cuenta 1. ` +
+        `"Blt rech." son los bultos que ese cliente rechazó por esos dos motivos en ${anio}.`,
       doc.page.margins.left,
       doc.y,
       { width: doc.page.width - doc.page.margins.left * 2 },
@@ -177,19 +179,20 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
     s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 
   const cols = [
-    { header: "Cliente", width: 200, get: (r: RadarCriticoRow) => clip(r.nombre_cliente ?? `Cliente ${r.id_cliente ?? "?"}`, 32) },
-    { header: "Localidad", width: 130, get: (r: RadarCriticoRow) => clip(r.localidad ? titulo(r.localidad) : "—", 22) },
-    { header: "Bultos", width: 48, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
+    { header: "Cliente", width: 175, get: (r: RadarCriticoRow) => clip(r.nombre_cliente ?? `Cliente ${r.id_cliente ?? "?"}`, 30) },
+    { header: "Localidad", width: 105, get: (r: RadarCriticoRow) => clip(r.localidad ? titulo(r.localidad) : "—", 18) },
+    { header: "Blt ped.", width: 48, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
     { header: "Pedido $", width: 82, align: "right" as const, get: (r: RadarCriticoRow) => (r.monto_pedido ? formatMoneyFull(r.monto_pedido) : "—") },
-    { header: "S/Dinero", width: 58, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.sin_dinero_calendario) },
-    { header: "Cerr.", width: 52, align: "right" as const, get: (r: RadarCriticoRow) => (r.cerrado_calendario ? formatInt(r.cerrado_calendario) : "—") },
+    { header: "S/Dinero", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.sin_dinero_calendario) },
+    { header: "Cerr.", width: 45, align: "right" as const, get: (r: RadarCriticoRow) => (r.cerrado_calendario ? formatInt(r.cerrado_calendario) : "—") },
+    { header: "Blt rech.", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => (r.bultos_rechazados_calendario ? formatInt(r.bultos_rechazados_calendario) : "—") },
   ]
 
   for (const g of agruparPorPromotor(criticos)) {
     const sdGrupo = g.rows.reduce((a, c) => a + c.sin_dinero_calendario, 0)
     drawSectionTitle(
       doc,
-      `${g.promotor}  ·  ${g.rows.length} cliente${g.rows.length === 1 ? "" : "s"}  ·  ${sdGrupo} sin dinero acum.`,
+      `${g.promotor}  ·  ${g.rows.length} cliente${g.rows.length === 1 ? "" : "s"}  ·  ${sdGrupo} veces sin dinero acum.`,
     )
     drawTable(doc, g.rows, cols)
   }

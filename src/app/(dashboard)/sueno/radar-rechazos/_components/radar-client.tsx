@@ -20,9 +20,9 @@ import type { RadarClienteView, RadarView } from "@/actions/radar-rechazos"
 
 type MotivoFiltro = "todos" | "cerrado" | "sin_dinero"
 
-// Umbral de "cliente crítico" para el PDF de Ventas: más de N rechazos por sin
-// dinero en el año calendario. (El cálculo real vive en getRadarCriticos.)
-const UMBRAL_CRITICO = 7
+// Umbral de "cliente crítico" para el PDF de Ventas: más de N VECES rechazado
+// por sin dinero en el año calendario. (El cálculo real vive en getRadarCriticos.)
+const UMBRAL_CRITICO = 3
 
 const nf = new Intl.NumberFormat("es-AR")
 const nfMoney = new Intl.NumberFormat("es-AR", {
@@ -111,15 +111,16 @@ export function RadarClient({
     if (filtrados.length === 0) return
     const headers = [
       "Promotor", "Cliente", "Localidad", "Telefono", "Reparto",
-      "Cerrado (año)", "Cerrado (mes)", "Sin dinero (año)", "Sin dinero (mes)",
-      "Bultos pedido", "Riesgo total",
+      "Cerrado veces (año)", "Cerrado veces (mes)",
+      "Sin dinero veces (año)", "Sin dinero veces (mes)",
+      "Bultos rechazados (año)", "Bultos pedido", "Riesgo total (veces)",
     ]
     const lines = filtrados.map((c) =>
       [
         c.nombre_promotor ?? "", c.nombre_cliente ?? "", c.localidad ?? "",
         c.telefono ?? "", c.reparto ?? "",
         c.cerrado_anio, c.cerrado_mes, c.sin_dinero_anio, c.sin_dinero_mes,
-        c.bultos_pedido, c.riesgo_total,
+        c.bultos_rechazados_anio, c.bultos_pedido, c.riesgo_total,
       ]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
@@ -162,7 +163,7 @@ export function RadarClient({
               window.open(`/api/radar-rechazos/pdf?umbral=${UMBRAL_CRITICO}`, "_blank")
             }
             disabled={!data}
-            title={`PDF para Ventas: clientes con más de ${UMBRAL_CRITICO} sin dinero en el año`}
+            title={`PDF para Ventas: clientes rechazados más de ${UMBRAL_CRITICO} veces por sin dinero en el año`}
           >
             <FileText className="size-4" /> PDF críticos
           </Button>
@@ -269,9 +270,10 @@ export function RadarClient({
                           <th className="px-4 py-2 font-medium">Cliente</th>
                           <th className="px-3 py-2 font-medium">Localidad</th>
                           <th className="px-3 py-2 font-medium">Reparto</th>
-                          <th className="px-3 py-2 text-right font-medium">Cerrado<br />año / mes</th>
-                          <th className="px-3 py-2 text-right font-medium">Sin dinero<br />año / mes</th>
-                          <th className="px-3 py-2 text-right font-medium">Bultos</th>
+                          <th className="px-3 py-2 text-right font-medium" title="Veces que rechazó por cerrado (últimos 365 días / últimos 30 días)">Cerrado<br />veces año / mes</th>
+                          <th className="px-3 py-2 text-right font-medium" title="Veces que rechazó por sin dinero (últimos 365 días / últimos 30 días)">Sin dinero<br />veces año / mes</th>
+                          <th className="px-3 py-2 text-right font-medium" title="Bultos que rechazó por cerrado + sin dinero en los últimos 365 días">Bultos<br />rechazados</th>
+                          <th className="px-3 py-2 text-right font-medium" title="Bultos del pedido que se le entrega pasado mañana">Bultos<br />pedido</th>
                           <th className="px-3 py-2 font-medium">Contacto</th>
                         </tr>
                       </thead>
@@ -298,6 +300,11 @@ export function RadarClient({
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums">
                               <Conteo anio={c.sin_dinero_anio} mes={c.sin_dinero_mes} color="rose" />
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                              {c.bultos_rechazados_anio > 0
+                                ? nf.format(c.bultos_rechazados_anio)
+                                : <span className="text-muted-foreground">—</span>}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                               {nf.format(c.bultos_pedido)}
@@ -328,6 +335,8 @@ export function RadarClient({
             Foto generada el{" "}
             {new Date(data.generado_at).toLocaleString("es-AR")}. “Cerrado” lo
             previene ventas avisando al cliente; “sin dinero” coordinando el pago.
+            Los rechazos se cuentan en <strong>veces</strong> (cliente × fecha), no
+            en artículos: un rechazo de 13 productos cuenta 1.
           </p>
         </>
       )}

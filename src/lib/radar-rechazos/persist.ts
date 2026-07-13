@@ -49,6 +49,7 @@ export async function persistRadarSnapshot(
     cerrado_mes: c.cerrado_mes,
     sin_dinero_anio: c.sin_dinero_anio,
     sin_dinero_mes: c.sin_dinero_mes,
+    bultos_rechazados_anio: c.bultos_rechazados_anio,
     riesgo_total: c.riesgo_total,
   }))
   const CHUNK = 500
