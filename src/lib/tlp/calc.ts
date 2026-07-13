@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server"
+import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } from "./tiempo-pdv"
 
 // Núcleo del cálculo del TLP (Transport Labor Productivity), compartido entre
 // la página /indicadores/tlp y el Árbol del Sueño.
@@ -314,6 +315,8 @@ export interface TlpArbolNodo {
   fte: number | null
   viajes: number
   tlp: number | null
+  /** Tiempo en PDV despejado del tiempo en ruta (ver lib/tlp/tiempo-pdv.ts). */
+  tiempoPdv: TiempoPdvCiudad | null
 }
 
 export interface TlpArbol {
@@ -332,7 +335,12 @@ export interface TlpArbol {
  * todos los viajes del año, idéntico a `tlpAnual` (Árbol del Sueño). Cada
  * ciudad pesa según su volumen y sus horas, no una ciudad = un voto.
  */
-export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string): TlpArbol {
+export function arbolDesdeViajes(
+  viajes: ViajeTlp[],
+  anio: number,
+  hasta: string,
+  pdv?: TiempoPdvResultado,
+): TlpArbol {
   type Acum = { ceq: number; horasRuta: number; hh: number; viajes: number }
   const nuevo = (): Acum => ({ ceq: 0, horasRuta: 0, hh: 0, viajes: 0 })
 
@@ -353,7 +361,7 @@ export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string
     suma(total, v)
   }
 
-  const cerrar = (ciudad: string, a: Acum): TlpArbolNodo => ({
+  const cerrar = (ciudad: string, a: Acum, tiempoPdv: TiempoPdvCiudad | null): TlpArbolNodo => ({
     ciudad,
     ceq: Math.round(a.ceq),
     horasRuta: Math.round(a.horasRuta * 10) / 10,
@@ -362,14 +370,15 @@ export function arbolDesdeViajes(viajes: ViajeTlp[], anio: number, hasta: string
     fte: a.horasRuta > 0 ? Math.round((a.hh / a.horasRuta) * 100) / 100 : null,
     viajes: a.viajes,
     tlp: a.hh > 0 ? Math.round((a.ceq / a.hh) * 100) / 100 : null,
+    tiempoPdv,
   })
 
   return {
     anio,
     hasta,
-    total: cerrar("Total", total),
+    total: cerrar("Total", total, pdv?.total ?? null),
     ciudades: [...porCiudad.entries()]
-      .map(([ciudad, a]) => cerrar(ciudad, a))
+      .map(([ciudad, a]) => cerrar(ciudad, a, pdv?.porCiudad.get(ciudad) ?? null))
       .sort((a, b) => b.ceq - a.ceq),
   }
 }
@@ -385,10 +394,12 @@ export async function tlpAnualPorCiudad(
 ): Promise<{ evolucion: TlpEvolucionAnual; arbol: TlpArbol }> {
   const hoy = new Date().toISOString().slice(0, 10)
   const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
-  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+  const desde = `${anio}-01-01`
+  const { viajes } = await fetchViajesTlp(supabase, desde, hasta)
+  const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
 
   return {
     evolucion: evolucionDesdeViajes(viajes, anio),
-    arbol: arbolDesdeViajes(viajes, anio, hasta),
+    arbol: arbolDesdeViajes(viajes, anio, hasta, pdv),
   }
 }

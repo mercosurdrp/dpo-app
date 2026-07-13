@@ -12,6 +12,7 @@ import {
   type TlpArbol,
   type TlpEvolucionAnual,
 } from "@/lib/tlp/calc"
+import { tiempoPdvPorCiudad, type TiempoPdvCiudad } from "@/lib/tlp/tiempo-pdv"
 
 // TLP (Transport Labor Productivity) = Cajas Equivalentes entregadas
 //   ────────────────────────────────────────────────────────────────
@@ -31,6 +32,8 @@ export interface TlpFila {
   horas_hombre: number
   viajes: number
   tlp: number | null // CEq por hora-hombre
+  /** Tiempo en PDV del período (min/cliente), despejado del tiempo en ruta. */
+  tiempo_pdv: TiempoPdvCiudad | null
 }
 
 export interface TlpPatenteFila {
@@ -54,7 +57,7 @@ export interface TlpResumen {
 }
 
 function nuevaFila(ciudad: string): TlpFila {
-  return { ciudad, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null }
+  return { ciudad, ceq: 0, horas_ruta: 0, horas_hombre: 0, viajes: 0, tlp: null, tiempo_pdv: null }
 }
 
 function cerrarTlp<
@@ -82,6 +85,7 @@ export async function getTlpMes(
       desde,
       hasta,
     )
+    const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
 
     const total = nuevaFila("Total")
     const porCiudad = new Map<string, TlpFila>()
@@ -114,6 +118,7 @@ export async function getTlpMes(
 
     const filas = [...porCiudad.values()]
       .map(cerrarTlp)
+      .map((f) => ({ ...f, tiempo_pdv: pdv.porCiudad.get(f.ciudad) ?? null }))
       .sort((a, b) => b.ceq - a.ceq)
     const filasPatente = [...porPatente.values()]
       .map(cerrarTlp)
@@ -123,7 +128,7 @@ export async function getTlpMes(
       data: {
         desde,
         hasta,
-        total: cerrarTlp(total),
+        total: { ...cerrarTlp(total), tiempo_pdv: pdv.total },
         por_ciudad: filas,
         por_patente: filasPatente,
         viajes_con_ceq: viajesConCeq,

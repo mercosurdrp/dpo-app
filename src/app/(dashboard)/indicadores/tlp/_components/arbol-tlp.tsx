@@ -138,6 +138,27 @@ export function ArbolTlp({
                               />
                             </div>
                           </div>
+
+                          {/* Tiempo en PDV: se despeja del tiempo en ruta (Foxtrot no lo mide). */}
+                          <ul>
+                            <li>
+                              <div className="sueno-node">
+                                <span className="sueno-arrow" aria-hidden />
+                                <div className="w-32">
+                                  <InsumoCard
+                                    label="Tiempo en PDV"
+                                    valor={c.tiempoPdv ? fmt(c.tiempoPdv.minPorPdv, 1) : "—"}
+                                    unidad="min/cliente"
+                                    sub={
+                                      c.tiempoPdv
+                                        ? `${fmt(c.tiempoPdv.clientes)} clientes · ${fmt(c.tiempoPdv.rutas)} rutas`
+                                        : "sin rutas de Foxtrot"
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </li>
+                          </ul>
                         </li>
                       </ul>
                     </li>
@@ -153,6 +174,14 @@ export function ArbolTlp({
         TLP = CEq ÷ hs-hombre (hs en ruta × dotación del camión). El TLP Total no promedia las
         ciudades: es la suma de CEq dividida por la suma de hs-hombre, así cada ciudad pesa por su
         volumen y sus horas. Cada ciudad mide contra su propia meta.
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        <strong>Tiempo en PDV</strong>: Foxtrot no mide la permanencia en el cliente (las columnas de
+        paradas salen del GPS del camión y llegan vacías), así que se despeja del tiempo en ruta:
+        (hs en ruta − manejo planificado − tramos depósito↔ruta) ÷ clientes visitados. El manejo es el{" "}
+        <strong>planificado</strong> por Foxtrot, no el real: si el camión tardó más en la calle o
+        esperó, ese exceso queda imputado al PDV. Solo entran las rutas de Foxtrot que se pueden
+        cruzar a un viaje del TLP (por chofer → patente → ciudad).
       </p>
     </div>
   )

@@ -48,6 +48,7 @@ function arbolDelMes(data: TlpResumen, mes: string): TlpArbol {
     fte: f.horas_ruta > 0 ? Math.round((f.horas_hombre / f.horas_ruta) * 100) / 100 : null,
     viajes: f.viajes,
     tlp: f.tlp,
+    tiempoPdv: f.tiempo_pdv,
   })
 
   return {
