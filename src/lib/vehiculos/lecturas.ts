@@ -16,6 +16,11 @@ export interface Lectura {
   fuente: Fuente
   tipo?: string | null
   chofer?: string | null
+  // Solo `mantenimiento_realizados` guarda odómetro y horómetro en columnas
+  // separadas. En autoelevadores el odómetro de esa tabla no representa las
+  // horas (se carga suelto), así que el cálculo de horas usa este campo cuando
+  // está. El resto de las fuentes guarda las horas del AE en `odometro`.
+  horometro?: number | null
 }
 
 export function today(): string {
@@ -202,6 +207,7 @@ export async function fetchLecturas(
       fuente: "mantenimiento",
       tipo: null,
       chofer: null,
+      horometro: r.horometro != null ? Number(r.horometro) : null,
     })
   }
 
@@ -368,6 +374,13 @@ export function resumenHorasHorometro(
   inicioMes: string,
   inicioAnio: string
 ): HorasResumen {
+  // Valor en HORAS de la lectura. `mantenimiento_realizados` guarda odómetro y
+  // horómetro por separado y en los autoelevadores el odómetro de esa tabla
+  // trae cualquier cosa (el de HELI1 marcaba 68 el día que el horómetro real
+  // iba 42). Un valor adelantado envenena la serie: al descartar retrocesos se
+  // comía todas las lecturas buenas siguientes hasta superarlo.
+  const horas = (l: Lectura): number => l.horometro ?? l.odometro
+
   const orden = [...lecturas].sort((a, b) => {
     if (a.fecha !== b.fecha) return a.fecha < b.fecha ? -1 : 1
     return a.hora < b.hora ? -1 : 1
@@ -376,9 +389,9 @@ export function resumenHorasHorometro(
   const limpio: Lectura[] = []
   let prev = -Infinity
   for (const l of orden) {
-    if (l.odometro >= prev) {
+    if (horas(l) >= prev) {
       limpio.push(l)
-      prev = l.odometro
+      prev = horas(l)
     }
   }
 
@@ -394,26 +407,25 @@ export function resumenHorasHorometro(
   }
 
   const ultimo = limpio[limpio.length - 1]
-  const horasHistorico = ultimo.odometro - limpio[0].odometro
+  const horasHistorico = horas(ultimo) - horas(limpio[0])
 
   const horasDesde = (inicioPeriodo: string): number => {
     const enPeriodo = limpio.filter((l) => l.fecha >= inicioPeriodo)
     if (enPeriodo.length === 0) return 0
     const anteriores = limpio.filter((l) => l.fecha < inicioPeriodo)
     const base = anteriores.length
-      ? anteriores[anteriores.length - 1].odometro
-      : enPeriodo[0].odometro
-    const fin = enPeriodo[enPeriodo.length - 1].odometro
+      ? horas(anteriores[anteriores.length - 1])
+      : horas(enPeriodo[0])
+    const fin = horas(enPeriodo[enPeriodo.length - 1])
     return Math.max(0, fin - base)
   }
 
-  const hace30 = addDays(hoy, -29)
   const mapa30 = new Map<string, number>()
   for (let i = 29; i >= 0; i--) mapa30.set(addDays(hoy, -i), 0)
   for (let i = 1; i < limpio.length; i++) {
     const f = limpio[i].fecha
     if (!mapa30.has(f)) continue
-    const delta = limpio[i].odometro - limpio[i - 1].odometro
+    const delta = horas(limpio[i]) - horas(limpio[i - 1])
     mapa30.set(f, (mapa30.get(f) || 0) + delta)
   }
   const porDia30 = Array.from(mapa30.entries()).map(([fecha, km]) => ({ fecha, km }))
@@ -422,7 +434,7 @@ export function resumenHorasHorometro(
     horasMes: horasDesde(inicioMes),
     horasYTD: horasDesde(inicioAnio),
     horasHistorico,
-    ultimoHorometro: ultimo.odometro,
+    ultimoHorometro: horas(ultimo),
     ultimaFecha: ultimo.fecha,
     porDia30,
   }
