@@ -19,23 +19,23 @@ import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } fro
 export const FTE_FALLBACK = 2
 
 /**
- * Ventana en la que se ESTIMA el denominador: los viajes de abril anteriores al
- * 2026-04-09, el día que arrancó el checklist de retorno (única fuente del tiempo
- * en ruta). En esos días el proceso todavía no existía, así que abril quedaba
- * calculado sobre 3/4 del mes (87.509 de 116.445 CEq). Ahí entran TODOS los
- * viajes con CEq: al que le falta el checklist se le estima el tiempo con el
- * promedio de su patente, y al que además le falta el egreso se le estima también
- * el FTE (mismo criterio con el que Andy cierra el mes: 206 viajes × 2,55 FTE ×
- * 7,04 h ⇒ TLP 31,49).
+ * Ventana en la que se ESTIMA el denominador: ABRIL entero, el mes en que arrancó
+ * el checklist de retorno (única fuente del tiempo en ruta) el día 9. Antes de esa
+ * fecha el proceso no existía y después tardó en tomar ritmo, así que el mes
+ * quedaba calculado sobre 3/4 de su volumen (87.509 de 116.445 CEq). En la ventana
+ * entran TODOS los viajes con CEq: al que le falta el checklist se le estima el
+ * tiempo con el promedio de su patente, y al que además le falta el egreso se le
+ * estima también el FTE. Así abril cubre el mes completo (206 viajes × 2,55 FTE ×
+ * 7,04 h ⇒ TLP ~31,5), el mismo criterio con el que Andy lo cierra.
  *
  * Fuera de esa ventana NO se estima nada:
  *   - antes de abril no hay un solo checklist ⇒ el 100% de las horas sería
  *     inventado (y Foxtrot no sirve de reemplazo: mide +37% y correlaciona 0,22);
- *   - de mayo en adelante, un viaje sin checklist es un olvido puntual y se
- *     excluye como siempre (mayo tiene que seguir dando 26,94).
+ *   - de mayo en adelante el proceso ya está consolidado: un viaje sin checklist
+ *     es un olvido puntual y se excluye como siempre (mayo da 26,94).
  */
 const ESTIMAR_DESDE = "2026-04-01"
-const ESTIMAR_HASTA = "2026-04-08"
+const ESTIMAR_HASTA = "2026-04-30"
 
 const PAGE = 1000
 
