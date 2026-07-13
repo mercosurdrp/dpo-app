@@ -2,8 +2,9 @@
 -- la card vacía) y pasan a salir de `reportes_seguridad`, que ya guarda cada
 -- accidente clasificado en `tipo_accidente` (FAT/LTI/MDI/MTI/FAI/SIO/SHO).
 --
---   TRI = registrables = FAT + LTI + MDI + MTI  (el FAI, primeros auxilios, NO
---         es registrable; SIO/SHO son observaciones, no accidentes)
+--   TRI = registrables = LTI + MDI + MTI  (el FAI, primeros auxilios, NO es
+--         registrable; SIO/SHO son observaciones, no accidentes; el FAT se
+--         reporta aparte)
 --   LTI = accidentes con días perdidos
 --
 -- Solo se cuentan los reportes de tipo 'accidente': el mismo `tipo_accidente`
@@ -40,7 +41,7 @@ BEGIN
   UPDATE sueno_kpi_valores SET valor_ytd = (
     SELECT count(*) FROM reportes_seguridad
     WHERE tipo = 'accidente'
-      AND tipo_accidente IN ('fat', 'lti', 'mdi', 'mti')
+      AND tipo_accidente IN ('lti', 'mdi', 'mti')
       AND extract(year FROM fecha) = p_anio
   ), updated_at = now() WHERE kpi_key = 'tri' AND anio = p_anio;
 
@@ -113,7 +114,7 @@ BEGIN
   ELSIF p_kpi = 'tri' THEN
     RETURN QUERY
     SELECT extract(month FROM fecha)::int,
-           count(*) FILTER (WHERE tipo_accidente IN ('fat', 'lti', 'mdi', 'mti'))::numeric,
+           count(*) FILTER (WHERE tipo_accidente IN ('lti', 'mdi', 'mti'))::numeric,
            count(*)::numeric
     FROM reportes_seguridad
     WHERE tipo = 'accidente' AND extract(year FROM fecha) = p_anio
