@@ -176,6 +176,12 @@ export function ArbolTlp({
         volumen y sus horas. Cada ciudad mide contra su propia meta.
       </p>
       <p className="mt-1 text-[11px] text-muted-foreground">
+        <strong>Enero, febrero y marzo</strong> se cierran a mano: el checklist de retorno arrancó el
+        9 de abril, así que esos meses no tienen tiempo en ruta ni dotación por viaje. Entran con las
+        hs-hombre del cierre (Foxtrot) y las CEq distribuidas del mes, y suman en el TLP Total, pero
+        no abren por ciudad.
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground">
         <strong>Tiempo en PDV</strong>: Foxtrot no mide la permanencia en el cliente (las columnas de
         paradas salen del GPS del camión y llegan vacías), así que se despeja del tiempo en ruta:
         (hs en ruta − manejo planificado − tramos depósito↔ruta) ÷ clientes visitados. El manejo es el{" "}

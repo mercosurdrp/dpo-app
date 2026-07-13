@@ -1,6 +1,7 @@
 import type { createClient } from "@/lib/supabase/server"
 import { ceqGescomPorViaje } from "./ceq-gescom"
 import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } from "./tiempo-pdv"
+import { historicoEnRango } from "./historico"
 
 // Núcleo del cálculo del TLP (Transport Labor Productivity), compartido entre
 // la página /indicadores/tlp y el Árbol del Sueño.
@@ -221,45 +222,37 @@ export async function fetchViajesTlp(
     fte.set(key, Math.max(fte.get(key) ?? 0, fteDeAyudantes(r.ayudante1, r.ayudante2)))
   }
 
-  // Promedio de horas en ruta por patente (sobre los viajes que SÍ tienen
-  // checklist), para estimar el tiempo de los que no lo tienen.
-  const horasPorPatente = new Map<string, { suma: number; n: number }>()
-  let horasSuma = 0
-  let horasN = 0
-  for (const [key, min] of tiempo) {
-    const patente = key.split("|")[0]
-    const a = horasPorPatente.get(patente) ?? { suma: 0, n: 0 }
-    a.suma += min
-    a.n += 1
-    horasPorPatente.set(patente, a)
-    horasSuma += min
-    horasN += 1
+  // Promedios para estimar los viajes de la ventana, calculados sobre los viajes
+  // que SÍ tienen dato (checklist para las horas, egreso para el FTE).
+  //
+  // Se promedia por patente Y MES: si el promedio dependiera del rango consultado,
+  // el TLP de abril daría distinto al filtrar el mes que al mirar el año.
+  const promedio = (datos: Map<string, number>) => {
+    const porPatenteMes = new Map<string, { suma: number; n: number }>()
+    const porMes = new Map<string, { suma: number; n: number }>()
+    for (const [key, valor] of datos) {
+      const [patente, fecha] = key.split("|")
+      const mes = fecha.slice(0, 7)
+      for (const [m, k] of [
+        [porPatenteMes, `${patente}|${mes}`],
+        [porMes, mes],
+      ] as [Map<string, { suma: number; n: number }>, string][]) {
+        const a = m.get(k) ?? { suma: 0, n: 0 }
+        a.suma += valor
+        a.n += 1
+        m.set(k, a)
+      }
+    }
+    // La patente en ese mes; si nunca salió, el promedio del mes.
+    return (patente: string, mes: string): number | null => {
+      const a = porPatenteMes.get(`${patente}|${mes}`) ?? porMes.get(mes)
+      return a && a.n > 0 ? a.suma / a.n : null
+    }
   }
-  const minutosEstimados = (patente: string): number | null => {
-    const a = horasPorPatente.get(patente)
-    if (a && a.n > 0) return a.suma / a.n
-    return horasN > 0 ? horasSuma / horasN : null
-  }
-
-  // Promedio de FTE por patente (sobre los egresos reales), para los viajes de la
-  // ventana que tampoco tienen egreso.
-  const ftePorPatente = new Map<string, { suma: number; n: number }>()
-  let fteSuma = 0
-  let fteN = 0
-  for (const [key, f] of fte) {
-    const patente = key.split("|")[0]
-    const a = ftePorPatente.get(patente) ?? { suma: 0, n: 0 }
-    a.suma += f
-    a.n += 1
-    ftePorPatente.set(patente, a)
-    fteSuma += f
-    fteN += 1
-  }
-  const fteEstimado = (patente: string): number => {
-    const a = ftePorPatente.get(patente)
-    if (a && a.n > 0) return a.suma / a.n
-    return fteN > 0 ? fteSuma / fteN : FTE_FALLBACK
-  }
+  const minutosEstimados = promedio(tiempo)
+  const fteEstimadoDe = promedio(fte)
+  const fteEstimado = (patente: string, mes: string): number =>
+    fteEstimadoDe(patente, mes) ?? FTE_FALLBACK
 
   const viajes: ViajeTlp[] = []
   let viajesSinTiempo = 0
@@ -275,7 +268,7 @@ export async function fetchViajesTlp(
     // falta con qué medirlo → se estima el tiempo con el promedio de su patente.
     const enVentana = fecha >= ESTIMAR_DESDE && fecha <= ESTIMAR_HASTA
     if (!min && enVentana) {
-      const est = minutosEstimados(patente)
+      const est = minutosEstimados(patente, fecha.slice(0, 7))
       if (est) {
         min = est
         estimado = true
@@ -305,7 +298,8 @@ export async function fetchViajesTlp(
 
     // En la ventana, un viaje sin egreso tampoco tiene dotación: se estima con el
     // FTE promedio de su patente (fuera de la ventana sigue el fallback de 2).
-    const fteUsado = fteReal0 ?? (estimado ? fteEstimado(patente) : FTE_FALLBACK)
+    const fteUsado =
+      fteReal0 ?? (estimado ? fteEstimado(patente, fecha.slice(0, 7)) : FTE_FALLBACK)
 
     viajes.push({
       patente,
@@ -346,11 +340,16 @@ export async function tlpAnual(
   const hoy = new Date().toISOString().slice(0, 10)
   const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
   const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
-  if (viajes.length === 0) return null
+  const hist = historicoEnRango(`${anio}-01-01`, hasta)
+  if (viajes.length === 0 && hist.meses.size === 0) return null
 
-  let ceq = 0
-  let hh = 0
+  let ceq = hist.ceq
+  let hh = hist.hh
   const porMes = new Map<number, { ceq: number; hh: number; viajes: number }>()
+  // Meses cerrados a mano (ene–mar: sin checklist ⇒ sin cálculo viaje a viaje).
+  for (const [mes, h] of hist.meses) {
+    porMes.set(mes, { ceq: h.ceq, hh: h.hh, viajes: h.viajes })
+  }
   for (const v of viajes) {
     const horasHombre = v.horasRuta * v.fte
     ceq += v.ceq
@@ -401,6 +400,15 @@ export function evolucionDesdeViajes(viajes: ViajeTlp[], anio: number): TlpEvolu
   const porCiudadYtd = new Map<string, Acum>()
   const totalMes = new Map<number, Acum>()
   const totalYtd: Acum = { ceq: 0, hh: 0 }
+
+  // Meses históricos: solo tienen total (no hay desglose por ciudad) ⇒ la fila
+  // Total los muestra y las ciudades quedan en "—".
+  const hist = historicoEnRango(`${anio}-01-01`, `${anio}-12-31`)
+  for (const [mes, h] of hist.meses) {
+    totalMes.set(mes, { ceq: h.ceq, hh: h.hh })
+    totalYtd.ceq += h.ceq
+    totalYtd.hh += h.hh
+  }
 
   const suma = (a: Acum, v: ViajeTlp) => {
     a.ceq += v.ceq
@@ -499,6 +507,14 @@ export function arbolDesdeViajes(
 
   const porCiudad = new Map<string, Acum>()
   const total = nuevo()
+
+  // La raíz arranca con los meses cerrados a mano (ene–mar), que no tienen
+  // desglose por ciudad: así el TLP total sigue siendo el del Árbol del Sueño.
+  const hist = historicoEnRango(`${anio}-01-01`, hasta)
+  total.ceq += hist.ceq
+  total.horasRuta += hist.horasRuta
+  total.hh += hist.hh
+  total.viajes += hist.viajes
 
   const suma = (a: Acum, v: ViajeTlp) => {
     a.ceq += v.ceq

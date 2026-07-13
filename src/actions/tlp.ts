@@ -13,6 +13,7 @@ import {
   type TlpEvolucionAnual,
 } from "@/lib/tlp/calc"
 import { tiempoPdvPorCiudad, type TiempoPdvCiudad } from "@/lib/tlp/tiempo-pdv"
+import { historicoEnRango } from "@/lib/tlp/historico"
 
 // TLP (Transport Labor Productivity) = Cajas Equivalentes entregadas
 //   ────────────────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ export interface TlpResumen {
   viajes_sin_tiempo: number // tienen CEq pero no checklist de retorno → excluidos
   viajes_fte_fallback: number // usaron FTE=2 por falta de registro de egreso
   viajes_horas_estimadas: number // sin checklist: tiempo estimado con el promedio de su patente
+  /** El período es un mes cerrado a mano (ene–mar): total sin desglose por ciudad. */
+  historico: boolean
 }
 
 function nuevaFila(ciudad: string): TlpFila {
@@ -114,6 +117,14 @@ export async function getTlpMes(
       porPatente.set(v.patente, fp)
     }
 
+    // Meses cerrados a mano (ene–mar): no hay viajes que sumar, el total sale del
+    // cierre (ver lib/tlp/historico.ts) y no hay desglose por ciudad ni patente.
+    const hist = historicoEnRango(desde, hasta)
+    total.ceq += hist.ceq
+    total.horas_ruta += hist.horasRuta
+    total.horas_hombre += hist.hh
+    total.viajes += hist.viajes
+
     const filas = [...porCiudad.values()]
       .map(cerrarTlp)
       .map((f) => ({ ...f, tiempo_pdv: pdv.porCiudad.get(f.ciudad) ?? null }))
@@ -133,6 +144,7 @@ export async function getTlpMes(
         viajes_sin_tiempo: viajesSinTiempo,
         viajes_fte_fallback: viajesFteFallback,
         viajes_horas_estimadas: viajesHorasEstimadas,
+        historico: hist.meses.size > 0,
       },
     }
   } catch (e) {
