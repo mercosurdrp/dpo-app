@@ -54,6 +54,7 @@ export interface TlpResumen {
   viajes_con_ceq: number
   viajes_sin_tiempo: number // tienen CEq pero no checklist de retorno → excluidos
   viajes_fte_fallback: number // usaron FTE=2 por falta de registro de egreso
+  viajes_horas_estimadas: number // sin checklist: tiempo estimado con el promedio de su patente
 }
 
 function nuevaFila(ciudad: string): TlpFila {
@@ -80,11 +81,8 @@ export async function getTlpMes(
     await requireAuth()
     const supabase = await createClient()
 
-    const { viajes, viajesSinTiempo, viajesConCeq } = await fetchViajesTlp(
-      supabase,
-      desde,
-      hasta,
-    )
+    const { viajes, viajesSinTiempo, viajesConCeq, viajesHorasEstimadas } =
+      await fetchViajesTlp(supabase, desde, hasta)
     const pdv = await tiempoPdvPorCiudad(supabase, viajes, desde, hasta)
 
     const total = nuevaFila("Total")
@@ -134,6 +132,7 @@ export async function getTlpMes(
         viajes_con_ceq: viajesConCeq,
         viajes_sin_tiempo: viajesSinTiempo,
         viajes_fte_fallback: viajesFteFallback,
+        viajes_horas_estimadas: viajesHorasEstimadas,
       },
     }
   } catch (e) {

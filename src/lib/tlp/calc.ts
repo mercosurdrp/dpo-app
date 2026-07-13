@@ -18,6 +18,16 @@ import { tiempoPdvPorCiudad, type TiempoPdvCiudad, type TiempoPdvResultado } fro
 
 export const FTE_FALLBACK = 2
 
+/**
+ * El checklist de retorno (única fuente del tiempo en ruta) arranca el
+ * 2026-04-09. Antes de abril NO hay un solo registro, así que esos meses no
+ * tienen denominador y quedan sin TLP: estimarlos sería inventar el 100% de las
+ * horas. Desde abril sí se estima el tiempo del viaje que no tiene checklist,
+ * siempre que haya egreso (evidencia de que el camión salió) — ver
+ * `horasEstimadas`.
+ */
+export const TLP_DESDE = "2026-04-01"
+
 const PAGE = 1000
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
@@ -32,6 +42,8 @@ export interface ViajeTlp {
   horasRuta: number
   fte: number
   fteFallback: boolean
+  /** El viaje no tiene checklist: las horas son el promedio de esa patente. */
+  horasEstimadas: boolean
 }
 
 export interface ViajesTlpResultado {
@@ -42,6 +54,8 @@ export interface ViajesTlpResultado {
   viajesConCeq: number
   /** CEq de Gestión que quedaron fuera por no tener checklist de retorno. */
   ceqGescomSinTiempo: number
+  /** Viajes cuyo tiempo en ruta se estimó con el promedio de su patente. */
+  viajesHorasEstimadas: number
 }
 
 async function fetchAll<T>(
@@ -185,17 +199,53 @@ export async function fetchViajesTlp(
     fte.set(key, Math.max(fte.get(key) ?? 0, fteDeAyudantes(r.ayudante1, r.ayudante2)))
   }
 
+  // Promedio de horas en ruta por patente (sobre los viajes que SÍ tienen
+  // checklist), para estimar el tiempo de los que no lo tienen.
+  const horasPorPatente = new Map<string, { suma: number; n: number }>()
+  let horasSuma = 0
+  let horasN = 0
+  for (const [key, min] of tiempo) {
+    const patente = key.split("|")[0]
+    const a = horasPorPatente.get(patente) ?? { suma: 0, n: 0 }
+    a.suma += min
+    a.n += 1
+    horasPorPatente.set(patente, a)
+    horasSuma += min
+    horasN += 1
+  }
+  const minutosEstimados = (patente: string): number | null => {
+    const a = horasPorPatente.get(patente)
+    if (a && a.n > 0) return a.suma / a.n
+    return horasN > 0 ? horasSuma / horasN : null
+  }
+
   const viajes: ViajeTlp[] = []
   let viajesSinTiempo = 0
   let ceqGescomSinTiempo = 0
+  let viajesHorasEstimadas = 0
   for (const [key, v] of acum) {
     const [patente, fecha] = key.split("|")
-    const min = tiempo.get(key)
+    const fteReal0 = fte.get(key)
+    let min = tiempo.get(key)
+    let estimado = false
+
+    // Sin checklist: si hay egreso, el camión SALIÓ y sabemos su dotación, así
+    // que sólo falta el reloj → se estima con el promedio de esa patente. Sin
+    // egreso no hay evidencia del viaje: se descarta como antes.
+    if (!min && fteReal0 != null && fecha >= TLP_DESDE) {
+      const est = minutosEstimados(patente)
+      if (est) {
+        min = est
+        estimado = true
+      }
+    }
+
     if (!min) {
       viajesSinTiempo++
       ceqGescomSinTiempo += v.ceqGescom
       continue // sin tiempo en ruta no hay denominador
     }
+    if (estimado) viajesHorasEstimadas++
     let ciudadPred = ""
     let maxCeq = -1
     for (const [c, ceq] of v.porCiudad) {
@@ -208,7 +258,6 @@ export async function fetchViajesTlp(
     // habitual de la patente.
     if (!ciudadPred) ciudadPred = ciudadHabitual(patente)
 
-    const fteReal = fte.get(key)
     viajes.push({
       patente,
       fecha,
@@ -216,12 +265,19 @@ export async function fetchViajesTlp(
       ceq: v.ceqTotal,
       ceqGescom: v.ceqGescom,
       horasRuta: min / 60,
-      fte: fteReal ?? FTE_FALLBACK,
-      fteFallback: fteReal == null,
+      fte: fteReal0 ?? FTE_FALLBACK,
+      fteFallback: fteReal0 == null,
+      horasEstimadas: estimado,
     })
   }
 
-  return { viajes, viajesSinTiempo, viajesConCeq: acum.size, ceqGescomSinTiempo }
+  return {
+    viajes,
+    viajesSinTiempo,
+    viajesConCeq: acum.size,
+    ceqGescomSinTiempo,
+    viajesHorasEstimadas,
+  }
 }
 
 export interface TlpMensual {

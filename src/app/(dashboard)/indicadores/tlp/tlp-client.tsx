@@ -172,7 +172,7 @@ export function TlpClient({
         />
       </div>
 
-      {(data.viajes_sin_tiempo > 0 || data.viajes_fte_fallback > 0) && (
+      {(data.viajes_sin_tiempo > 0 || data.viajes_fte_fallback > 0 || data.viajes_horas_estimadas > 0) && (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span>
@@ -187,7 +187,14 @@ export function TlpClient({
               <>
                 <strong>{fmtN(data.viajes_fte_fallback)}</strong> viaje
                 {data.viajes_fte_fallback === 1 ? "" : "s"} usaron FTE=2 por falta de
-                registro de egreso.
+                registro de egreso.{" "}
+              </>
+            )}
+            {data.viajes_horas_estimadas > 0 && (
+              <>
+                <strong>{fmtN(data.viajes_horas_estimadas)}</strong> viaje
+                {data.viajes_horas_estimadas === 1 ? "" : "s"} sin checklist de retorno pero
+                con egreso: el tiempo en ruta se estimó con el promedio de esa patente.
               </>
             )}
           </span>
