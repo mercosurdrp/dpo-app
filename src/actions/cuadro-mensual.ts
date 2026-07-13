@@ -26,6 +26,8 @@ import {
 } from "@/lib/indicadores/cuadro-mensual-detalle"
 import { contarTripulacion } from "@/lib/tml/calculo"
 import { esRutaLimpia } from "@/lib/foxtrot/tiempo-ruta-limpias"
+import { TIEMPO_RUTA_CHECKLIST_DESDE } from "@/lib/tlp/tiempo-ruta"
+import { fetchViajesTlp } from "@/lib/tlp/calc"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -501,22 +503,32 @@ export async function getCuadroMensualIndicadores(): Promise<
       acc.tiempos.push(t)
     }
   }
+  // 🚨 Desde abril el tiempo en ruta sale del CHECKLIST de retorno, no de Foxtrot:
+  // es el mismo tiempo que el TLP usa como denominador y no puede medirse distinto
+  // en un lado y en el otro. Antes de abril el checklist no existía (arrancó el
+  // 9-abr) ⇒ ahí manda Foxtrot. Ver lib/tlp/tiempo-ruta.ts.
+  const { viajes: viajesTlp } = await fetchViajesTlp(supabase, desde, hasta)
+  const ckPorMes: Record<string, number[]> = {}
+  for (const v of viajesTlp) {
+    const mes = v.fecha.slice(0, 7)
+    if (mes < TIEMPO_RUTA_CHECKLIST_DESDE) continue
+    ;(ckPorMes[mes] ??= []).push(v.horasRuta * 60)
+  }
+
   for (const mes of meses) {
     const esActual = mes === mesActual
     const acc = foxPorMes[mes]
+    // Minutos por viaje del mes: checklist si el mes lo tiene, si no Foxtrot.
+    const tiempos = ckPorMes[mes]?.length ? ckPorMes[mes] : (acc?.tiempos ?? [])
     celdas.tiempo_ruta[mes] = {
       mes,
-      valor: acc && acc.tiempos.length > 0 ? avg(acc.tiempos) / 60 : null,
+      valor: tiempos.length > 0 ? avg(tiempos) / 60 : null,
       parcial: esActual,
     }
-    // Horas en ruta del mes: suma de las duraciones de las rutas finalizadas
-    // (misma base que el promedio de arriba).
+    // Horas en ruta del mes: suma de las duraciones (misma base que el promedio).
     celdas.horas_ruta[mes] = {
       mes,
-      valor:
-        acc && acc.tiempos.length > 0
-          ? acc.tiempos.reduce((a, b) => a + b, 0) / 60
-          : null,
+      valor: tiempos.length > 0 ? tiempos.reduce((a, b) => a + b, 0) / 60 : null,
       parcial: esActual,
     }
     celdas.camiones_dia[mes] = {

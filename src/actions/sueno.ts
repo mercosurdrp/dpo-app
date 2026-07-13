@@ -18,7 +18,7 @@ import {
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
-import { tiempoRutaAnualLimpias } from "@/lib/foxtrot/tiempo-ruta-limpias"
+import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -53,9 +53,9 @@ async function resolverTiempoPdvVivo(
 async function resolverTiempoRutaVivo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
-): Promise<Awaited<ReturnType<typeof tiempoRutaAnualLimpias>>> {
+): Promise<Awaited<ReturnType<typeof tiempoRutaAnual>>> {
   try {
-    return await tiempoRutaAnualLimpias(supabase, year)
+    return await tiempoRutaAnual(supabase, year)
   } catch {
     return null
   }
@@ -272,7 +272,7 @@ export async function getSuenoDetalle(
         mes: m.mes,
         etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
         valor: m.horas,
-        detalle: m.rutas,
+        detalle: m.viajes,
       }))
       return {
         data: {
@@ -281,7 +281,7 @@ export async function getSuenoDetalle(
           unidad: cfg.unidad,
           fuente: vivo ? "auto" : "manual",
           explicacion: vivo
-            ? "Tiempo en Ruta = horas que dura una salida, medidas por Foxtrot (cierre − arranque de la ruta). Solo cuentan las RUTAS LIMPIAS, las que se cerraron el mismo día que arrancaron: cuando el chofer no finaliza la ruta en la app, Foxtrot la cierra horas o días después y esa duración ya no es tiempo de trabajo (tomando todas, enero daría 11,8 hs por ruta). El promedio es PONDERADO (Σ minutos ÷ Σ rutas), no el promedio de los promedios de las ciudades. Es el mismo número del cuadro mensual (pilar Flota)."
+            ? "Tiempo en Ruta = horas que dura una salida. Es EL MISMO tiempo que el TLP usa como denominador: desde abril sale del CHECKLIST de retorno (retorno − liberación del camión), que arrancó el 9-abr; antes de abril sale de FOXTROT, contando solo las rutas limpias (las cerradas el mismo día que arrancaron), que es con lo que se cerraron enero, febrero y marzo. El promedio es PONDERADO (Σ horas ÷ Σ viajes), no el promedio de los promedios de las ciudades. Mismo número que el cuadro mensual (pilar Flota)."
             : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
           meses,
           detalleLabel: "Rutas limpias",
