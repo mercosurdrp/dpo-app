@@ -45,7 +45,7 @@ async function resolverTiempoPdvVivo(
   }
 }
 
-/** Tiempo en ruta vivo: horas-hombre acumuladas del año (denominador del TLP). */
+/** Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida. */
 async function resolverTiempoRutaVivo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   year: number,
@@ -277,7 +277,7 @@ export async function getSuenoDetalle(
           unidad: cfg.unidad,
           fuente: vivo ? "auto" : "manual",
           explicacion: vivo
-            ? "Tiempo en Ruta = horas-hombre acumuladas (horas en ruta del checklist de retorno × dotación del camión), o sea el DENOMINADOR del TLP: TLP = CEq ÷ estas horas. El YTD es la suma del año, no un promedio. Enero, febrero y marzo entran con las horas del cierre (el checklist arrancó el 9-abr). Apertura por ciudad en Indicadores → TLP."
+            ? "Tiempo en Ruta = horas que dura una salida, del checklist de retorno (retorno − liberación del camión). Es el insumo del TLP, que divide las CEq por estas horas × la dotación. El promedio es PONDERADO (Σ horas ÷ Σ viajes), no el promedio de los promedios de las ciudades: así una salida pesa igual venga de donde venga. Arranca en abril: el checklist no existe antes del 9-abr. Apertura por ciudad en Indicadores → TLP."
             : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
           meses,
           detalleLabel: "Viajes",

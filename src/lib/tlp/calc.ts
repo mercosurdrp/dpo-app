@@ -334,10 +334,17 @@ export interface TlpMensual {
  * acumuladas del año) + apertura mensual. Devuelve null si no hay viajes.
  */
 /**
- * Tiempo en ruta anual para el Árbol del Sueño: las HORAS-HOMBRE acumuladas
- * (horas en ruta × dotación), o sea el DENOMINADOR del TLP — no un promedio por
- * viaje. YTD + apertura mensual. Incluye los meses de cierre (ene–mar), igual que
- * el TLP: si no, el TLP publicado no cerraría contra su propio denominador.
+ * Tiempo en ruta anual para el Árbol del Sueño: horas que dura una salida, para
+ * comparar contra la meta. Es un promedio PONDERADO — Σ horas ÷ Σ viajes, no el
+ * promedio de los promedios de las ciudades: así una salida de Arrecifes pesa lo
+ * mismo que una de San Nicolás, y no una ciudad chica como una grande (mismo
+ * criterio que la raíz del TLP).
+ *
+ * 🚨 Arranca en ABRIL: el tiempo en ruta sale del checklist de retorno, que no
+ * existe antes del 9-abr. Los meses de cierre (ene–mar) NO entran: lo que guarda
+ * Foxtrot es otra cosa (708 min por ruta en enero, casi 12 h) y promediarlo acá
+ * publicaría un número falso. El TLP sí los usa, porque ahí entran como
+ * horas-hombre de cierre y no como duración de una salida.
  */
 export async function tiempoRutaAnual(
   supabase: Supabase,
@@ -346,19 +353,15 @@ export async function tiempoRutaAnual(
   const hoy = new Date().toISOString().slice(0, 10)
   const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
   const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
-  const hist = historicoEnRango(`${anio}-01-01`, hasta)
-  if (viajes.length === 0 && hist.meses.size === 0) return null
+  if (viajes.length === 0) return null
 
-  let hh = hist.hh
-  const porMes = new Map<number, { hh: number; viajes: number }>()
-  for (const [mes, h] of hist.meses) porMes.set(mes, { hh: h.hh, viajes: h.viajes })
-
+  let horas = 0
+  const porMes = new Map<number, { horas: number; viajes: number }>()
   for (const v of viajes) {
-    const horasHombre = v.horasRuta * v.fte
-    hh += horasHombre
+    horas += v.horasRuta
     const mes = Number(v.fecha.slice(5, 7))
-    const m = porMes.get(mes) ?? { hh: 0, viajes: 0 }
-    m.hh += horasHombre
+    const m = porMes.get(mes) ?? { horas: 0, viajes: 0 }
+    m.horas += v.horasRuta
     m.viajes += 1
     porMes.set(mes, m)
   }
@@ -367,11 +370,11 @@ export async function tiempoRutaAnual(
     .sort((a, b) => a[0] - b[0])
     .map(([mes, m]) => ({
       mes,
-      valor: Math.round(m.hh),
+      valor: Math.round((m.horas / m.viajes) * 100) / 100,
       viajes: m.viajes,
     }))
 
-  return { ytd: Math.round(hh), meses }
+  return { ytd: Math.round((horas / viajes.length) * 100) / 100, meses }
 }
 
 export async function tlpAnual(

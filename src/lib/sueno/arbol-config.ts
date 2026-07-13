@@ -89,9 +89,8 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // ---- Operacional ----
   { key: "n_incidentes", label: "N° Incidentes", nivel: "operacional", rama: "seguridad", parentKey: "lti", unidad: "cant.", mejorSi: "menor", metaDefault: 20 },
   { key: "comportamientos", label: "Comportamientos Inseguros", nivel: "operacional", rama: "seguridad", parentKey: "n_incidentes", unidad: "cant.", mejorSi: "mayor", metaDefault: 100 },
-  // Insumo del TLP: las horas-hombre acumuladas (su denominador), no un promedio
-  // por viaje ⇒ no lleva meta, un total no es "mejor" ni "peor" por sí solo.
-  { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs-hombre", mejorSi: "menor", metaDefault: null },
+  // Horas que dura una salida (promedio PONDERADO: Σ horas ÷ Σ viajes).
+  { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs", mejorSi: "menor", metaDefault: 8 },
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 300 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
