@@ -333,6 +333,47 @@ export interface TlpMensual {
  * TLP anual para el Árbol del Sueño: YTD (CEq acumuladas ÷ horas-hombre
  * acumuladas del año) + apertura mensual. Devuelve null si no hay viajes.
  */
+/**
+ * Tiempo en ruta anual para el Árbol del Sueño: las HORAS-HOMBRE acumuladas
+ * (horas en ruta × dotación), o sea el DENOMINADOR del TLP — no un promedio por
+ * viaje. YTD + apertura mensual. Incluye los meses de cierre (ene–mar), igual que
+ * el TLP: si no, el TLP publicado no cerraría contra su propio denominador.
+ */
+export async function tiempoRutaAnual(
+  supabase: Supabase,
+  anio: number,
+): Promise<{ ytd: number; meses: { mes: number; valor: number; viajes: number }[] } | null> {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const hasta = hoy < `${anio}-12-31` ? hoy : `${anio}-12-31`
+  const { viajes } = await fetchViajesTlp(supabase, `${anio}-01-01`, hasta)
+  const hist = historicoEnRango(`${anio}-01-01`, hasta)
+  if (viajes.length === 0 && hist.meses.size === 0) return null
+
+  let hh = hist.hh
+  const porMes = new Map<number, { hh: number; viajes: number }>()
+  for (const [mes, h] of hist.meses) porMes.set(mes, { hh: h.hh, viajes: h.viajes })
+
+  for (const v of viajes) {
+    const horasHombre = v.horasRuta * v.fte
+    hh += horasHombre
+    const mes = Number(v.fecha.slice(5, 7))
+    const m = porMes.get(mes) ?? { hh: 0, viajes: 0 }
+    m.hh += horasHombre
+    m.viajes += 1
+    porMes.set(mes, m)
+  }
+
+  const meses = [...porMes.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([mes, m]) => ({
+      mes,
+      valor: Math.round(m.hh),
+      viajes: m.viajes,
+    }))
+
+  return { ytd: Math.round(hh), meses }
+}
+
 export async function tlpAnual(
   supabase: Supabase,
   anio: number,
