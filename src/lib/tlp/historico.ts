@@ -1,39 +1,47 @@
 // Meses del TLP que NO se pueden calcular viaje a viaje: enero, febrero y marzo
-// de 2026.
+// de 2026. El checklist de retorno —única fuente del tiempo en ruta por viaje—
+// arrancó el 9 de abril.
 //
-// El checklist de retorno —única fuente del tiempo en ruta— arrancó el 9 de abril,
-// y en esos tres meses tampoco hay egresos cargados (sin egreso no hay dotación,
-// o sea no hay FTE). Con lo único que hay, Foxtrot, el tiempo en ruta sale muy
-// largo (708 min promedio en enero, casi 12 h) y no reproduce el cierre: Foxtrot
-// × FTE 2 daría 4.696 horas-hombre en enero contra las 3.945 del cierre.
+// Se cierran con el MISMO criterio que usa el cuadro de Indicadores de abril en
+// adelante, así el año es comparable de punta a punta:
 //
-// Así que estos meses entran con el DATO DE CIERRE de Andy:
-//   - horas-hombre: las que cerró él (de Foxtrot, con su propio criterio de FTE);
-//   - CEq: las distribuidas del mes (Chess + Gestión), tal cual las publica el
-//     cuadro de Indicadores (RPC `cuadro_ceq_mensual`) — coinciden al 100% con
-//     las que implican sus TLP;
-//   - horas de ruta y viajes: los de Foxtrot, para poder mostrar el FTE implícito.
+//   TLP = CEq del mes ÷ (viajes × FTE promedio × horas promedio)
 //
-// 🚨 NO tienen desglose por ciudad: Foxtrot no trae patente en esos meses (43 a 55
-// rutas ni siquiera resuelven el chofer), así que estos meses suman en el TOTAL —
-// evolución, YTD y raíz del árbol— pero no en las ramas por ciudad.
+//   - CEq:    RPC `cuadro_ceq_mensual` (Chess + Gestión)
+//   - viajes: CAMIÓN-DÍA con carga + segundas vueltas (fila "Camiones a la calle")
+//   - FTE:    chofer + ayudantes promediado sobre los egresos del mes
+//   - horas:  promedio de las RUTAS LIMPIAS de Foxtrot (las cerradas en el día);
+//             tomando todas daría 11,8 hs por ruta en enero, un número falso.
+//
+// 🚨 El cierre anterior (38,12 · 39,54 · 44,01) contaba los viajes con las RUTAS de
+// Foxtrot: 199 en enero contra los 234 camión-día reales. Menos viajes ⇒ menos
+// horas-hombre ⇒ TLP inflado. Corregido el 14-jul-2026: enero 33,73 · febrero
+// 32,87 · marzo 35,18, y desaparece el escalón contra abril–julio (27 a 31), que
+// no era una caída de productividad sino una diferencia de medición.
+//
+// 🚨 NO tienen desglose por ciudad: en esos meses Foxtrot no resuelve la patente
+// (43 a 55 rutas ni siquiera identifican al chofer), así que suman en el TOTAL
+// —evolución, YTD y raíz del árbol— pero no en las ramas por ciudad.
 //
 // A partir de abril NO se usa esto: el TLP se calcula viaje a viaje.
 
 export interface TlpHistoricoMes {
   ceq: number
-  /** Horas-hombre del mes (horas en ruta × FTE), cerradas sobre Foxtrot. */
+  /** Horas-hombre del mes: viajes × FTE × horas promedio. */
   hh: number
-  /** Horas en ruta de Foxtrot (sin FTE) — solo para mostrar el FTE implícito. */
+  /** Horas en ruta del mes (sin FTE): viajes × horas promedio. */
   horasRuta: number
-  /** Rutas de Foxtrot del mes. */
+  /** Camión-día con carga + segundas vueltas. */
   viajes: number
 }
 
+// enero:   150.418 CEq ÷ (234 viajes × 2,58 FTE × 7,38 hs) = 33,73
+// febrero: 129.094 CEq ÷ (201 viajes × 2,72 FTE × 7,18 hs) = 32,87
+// marzo:   127.453 CEq ÷ (229 viajes × 2,42 FTE × 6,53 hs) = 35,18
 export const TLP_HISTORICO: Record<string, TlpHistoricoMes> = {
-  "2026-01": { ceq: 150365, hh: 3945, horasRuta: 2348, viajes: 199 },
-  "2026-02": { ceq: 129094, hh: 3265, horasRuta: 1728, viajes: 157 },
-  "2026-03": { ceq: 127453, hh: 2896, horasRuta: 1693, viajes: 175 },
+  "2026-01": { ceq: 150418, hh: 4459, horasRuta: 1727, viajes: 234 },
+  "2026-02": { ceq: 129094, hh: 3927, horasRuta: 1443, viajes: 201 },
+  "2026-03": { ceq: 127453, hh: 3623, horasRuta: 1495, viajes: 229 },
 }
 
 export interface TlpHistoricoRango extends TlpHistoricoMes {
