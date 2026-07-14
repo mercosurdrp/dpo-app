@@ -1,0 +1,2979 @@
+{
+ "roles": {
+  "pickero": [
+   {
+    "orden": 1,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+    "estandar": 3
+   },
+   {
+    "orden": 2,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CLASIFICACIÓN DE ENVASES",
+    "estandar": 3
+   },
+   {
+    "orden": 3,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+    "estandar": 3
+   },
+   {
+    "orden": 4,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+    "estandar": 3
+   },
+   {
+    "orden": 5,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "ORDENAMIENTO DE CANCHAS",
+    "estandar": 3
+   },
+   {
+    "orden": 6,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONDUCCION DE ZORRA",
+    "estandar": 3
+   },
+   {
+    "orden": 7,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "B",
+    "habilidad": "CONDUCCION DE AUTOELEVADORES",
+    "estandar": 2
+   },
+   {
+    "orden": 8,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+    "estandar": 2
+   },
+   {
+    "orden": 9,
+    "bloque": "Gestión",
+    "criticidad": "A",
+    "habilidad": "GESTION DE ROTURAS",
+    "estandar": 3
+   },
+   {
+    "orden": 10,
+    "bloque": "Gestión",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+    "estandar": 3
+   },
+   {
+    "orden": 11,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+    "estandar": 3
+   },
+   {
+    "orden": 12,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+    "estandar": 3
+   },
+   {
+    "orden": 13,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+    "estandar": 3
+   },
+   {
+    "orden": 14,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+    "estandar": 3
+   },
+   {
+    "orden": 15,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 16,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 17,
+    "bloque": "Calidad",
+    "criticidad": "B",
+    "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+    "estandar": 2
+   },
+   {
+    "orden": 18,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+    "estandar": 3
+   }
+  ],
+  "autoelevadorista": [
+   {
+    "orden": 1,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE",
+    "estandar": 3
+   },
+   {
+    "orden": 2,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONDUCCION DE AUTOELEVADORES DOBLE",
+    "estandar": 3
+   },
+   {
+    "orden": 3,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONDUCCION DE LAYER PICKER",
+    "estandar": 3
+   },
+   {
+    "orden": 4,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+    "estandar": 3
+   },
+   {
+    "orden": 5,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES",
+    "estandar": 3
+   },
+   {
+    "orden": 6,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "ORDENAMIENTO DE CANCHAS",
+    "estandar": 3
+   },
+   {
+    "orden": 7,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA",
+    "estandar": 3
+   },
+   {
+    "orden": 8,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CORRECTO USO DE EPPS",
+    "estandar": 3
+   },
+   {
+    "orden": 9,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+    "estandar": 2
+   },
+   {
+    "orden": 10,
+    "bloque": "Gestión",
+    "criticidad": "A",
+    "habilidad": "GESTION DE ROTURAS",
+    "estandar": 3
+   },
+   {
+    "orden": 11,
+    "bloque": "Gestión",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO",
+    "estandar": 3
+   },
+   {
+    "orden": 12,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+    "estandar": 2
+   },
+   {
+    "orden": 13,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+    "estandar": 3
+   },
+   {
+    "orden": 14,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+    "estandar": 3
+   },
+   {
+    "orden": 15,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+    "estandar": 3
+   },
+   {
+    "orden": 16,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 17,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 18,
+    "bloque": "Calidad",
+    "criticidad": "B",
+    "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+    "estandar": 2
+   },
+   {
+    "orden": 19,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+    "estandar": 3
+   },
+   {
+    "orden": 20,
+    "bloque": "Mantenimiento General",
+    "criticidad": "A",
+    "habilidad": "FUNCIONAMIENTO DE LA MÁQUINA",
+    "estandar": 3
+   },
+   {
+    "orden": 21,
+    "bloque": "Mantenimiento General",
+    "criticidad": "B",
+    "habilidad": "EJECUCIÓN DEL PLAN DE LUBRICACIÓN",
+    "estandar": 2
+   }
+  ],
+  "mantenimiento": [
+   {
+    "orden": 1,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONCEPTOS DE LUBRICACIÓN DE EQUIPOS",
+    "estandar": 3
+   },
+   {
+    "orden": 2,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DE TIPOS DE RUTINA DEL PLAN DE MANTENIMIENTO",
+    "estandar": 3
+   },
+   {
+    "orden": 3,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DEL FUNCIONAMIENTO MECANICO, HIDRAULICO Y NEUMATICO INTEGRAL DE LOS EQUIPOS E INSTALACIONES",
+    "estandar": 3
+   },
+   {
+    "orden": 4,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "GESTIÓN DE MANTENIMIENTO",
+    "estandar": 3
+   },
+   {
+    "orden": 5,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "INTERPRETAR Y ANALIZAR MANUALES, CATALOGOS, PLANOS Y CIRCUITOS NEUMATICOS E HIDRAULICOS.",
+    "estandar": 3
+   },
+   {
+    "orden": 6,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+    "estandar": 3
+   },
+   {
+    "orden": 7,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "A",
+    "habilidad": "CONOCER Y OPERAR EQUIPOS PORTATILES, MAQUINAS, HERRAMIENTAS Y TECNICAS DE OFICIO.",
+    "estandar": 3
+   },
+   {
+    "orden": 8,
+    "bloque": "Conocimientos Generales y Especificos",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+    "estandar": 2
+   },
+   {
+    "orden": 9,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTO Y APLICACIÓN DE UTILITARIOS",
+    "estandar": 2
+   },
+   {
+    "orden": 10,
+    "bloque": "Gestión",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA DPO",
+    "estandar": 3
+   },
+   {
+    "orden": 11,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+    "estandar": 2
+   },
+   {
+    "orden": 12,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+    "estandar": 3
+   },
+   {
+    "orden": 13,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+    "estandar": 3
+   },
+   {
+    "orden": 14,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+    "estandar": 3
+   },
+   {
+    "orden": 15,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 16,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+    "estandar": 3
+   }
+  ],
+  "chofer": [
+   {
+    "orden": 1,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO Y GESTIÓN DE LOS OBJETIVOS DEL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 2,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS GENERALES DE LA OPERACIÓN DEL DISTRIBUIDOR",
+    "estandar": 3
+   },
+   {
+    "orden": 3,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "B",
+    "habilidad": "GESTIÓN DE 5S",
+    "estandar": 3
+   },
+   {
+    "orden": 4,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "ENTREGA DEL PRODUCTO EN RUTA",
+    "estandar": 3
+   },
+   {
+    "orden": 5,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "B",
+    "habilidad": "CONTROL DEL ESTADO GENERAL DEL CAMIÓN ANTES DE SALIR A RUTA (CHECKLIST DE SALIDA)",
+    "estandar": 3
+   },
+   {
+    "orden": 6,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "FOXTROT",
+    "estandar": 3
+   },
+   {
+    "orden": 7,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "MANEJO DE LA DOCUMENTACIÓN QUE ACOMPAÑA A LA CARGA",
+    "estandar": 3
+   },
+   {
+    "orden": 8,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "COBRANZA DE PRODUCTOS ENTREGADOS",
+    "estandar": 3
+   },
+   {
+    "orden": 9,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "RENDICIÓN DE DOCUMENTACIÓN Y DINERO",
+    "estandar": 3
+   },
+   {
+    "orden": 10,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "B",
+    "habilidad": "CLASIFICACIÓN DE ENVASES",
+    "estandar": 3
+   },
+   {
+    "orden": 11,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+    "estandar": 3
+   },
+   {
+    "orden": 12,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGAS Y TROPEZONES, RESBALONES Y CAIDAS.",
+    "estandar": 3
+   },
+   {
+    "orden": 13,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER",
+    "estandar": 3
+   },
+   {
+    "orden": 14,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "ACCIONES BASICAS ANTE EMERGENCIAS",
+    "estandar": 3
+   },
+   {
+    "orden": 15,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS DE LOS EPP REQUERIDOS PARA EL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 16,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "CONOCMIENTOS DE LA CALIDAD DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 17,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PRÁCTICA - LONAS CERRADAS EN RUTA",
+    "estandar": 3
+   },
+   {
+    "orden": 18,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PROCEDIMIENTO ANTE ROTURA DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 19,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "GESTIÓN DE RECHAZOS",
+    "estandar": 3
+   }
+  ],
+  "ayudante": [
+   {
+    "orden": 1,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO Y GESTIÓN DE LOS OBJETIVOS DEL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 2,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS GENERALES DE LA OPERACIÓN DEL DISTRIBUIDOR",
+    "estandar": 3
+   },
+   {
+    "orden": 3,
+    "bloque": "Habilidades y conocimientos Generales",
+    "criticidad": "B",
+    "habilidad": "GESTIÓN DE 5S",
+    "estandar": 3
+   },
+   {
+    "orden": 4,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "ENTREGA DEL PRODUCTO EN RUTA",
+    "estandar": 3
+   },
+   {
+    "orden": 5,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "B",
+    "habilidad": "CONTROL DEL ESTADO GENERAL DEL CAMIÓN ANTES DE SALIR A RUTA (CHECKLIST DE SALIDA)",
+    "estandar": 3
+   },
+   {
+    "orden": 6,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "FOXTROT",
+    "estandar": 3
+   },
+   {
+    "orden": 7,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "A",
+    "habilidad": "MANEJO DE LA DOCUMENTACIÓN QUE ACOMPAÑA A LA CARGA",
+    "estandar": 3
+   },
+   {
+    "orden": 8,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "B",
+    "habilidad": "RENDICIÓN DE DOCUMENTACIÓN Y DINERO",
+    "estandar": 3
+   },
+   {
+    "orden": 9,
+    "bloque": "Habilidades Especificas",
+    "criticidad": "B",
+    "habilidad": "CLASIFICACIÓN DE ENVASES",
+    "estandar": 3
+   },
+   {
+    "orden": 10,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+    "estandar": 3
+   },
+   {
+    "orden": 11,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGAS Y TROPEZONES, RESBALONES Y CAIDAS.",
+    "estandar": 3
+   },
+   {
+    "orden": 12,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER",
+    "estandar": 3
+   },
+   {
+    "orden": 13,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "ACCIONES BASICAS ANTE EMERGENCIAS",
+    "estandar": 3
+   },
+   {
+    "orden": 14,
+    "bloque": "Seguridad General",
+    "criticidad": "A",
+    "habilidad": "CONOCIMIENTOS DE LOS EPP REQUERIDOS PARA EL PUESTO",
+    "estandar": 3
+   },
+   {
+    "orden": 15,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "CONOCMIENTOS DE LA CALIDAD DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 16,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PRÁCTICA - LONAS CERRADAS EN RUTA",
+    "estandar": 3
+   },
+   {
+    "orden": 17,
+    "bloque": "Calidad",
+    "criticidad": "A",
+    "habilidad": "PROCEDIMIENTO ANTE ROTURA DE PRODUCTOS",
+    "estandar": 3
+   },
+   {
+    "orden": 18,
+    "bloque": "Gestión",
+    "criticidad": "B",
+    "habilidad": "GESTIÓN DE RECHAZOS",
+    "estandar": 3
+   }
+  ]
+ },
+ "planes": [
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "1 - ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "alcance": "Conoce todos los procesos de picking (armado, lectura de collarines, etc.). Conoce y puede explicar los principales indicadores de desempeño del área.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "2 - CLASIFICACIÓN DE ENVASES",
+   "alcance": "Conoce todos los procesos en la clasificación de envases (Litro, 1, 25 y Mediana). Conoce el lugar de trabajo y respecta la señalización.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CLASIFICACIÓN DE ENVASES"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "3 - CLASIFICACIÓN DE CHAPADUR",
+   "alcance": "Conoce todos los procesos en la clasificación de chapadur (Identificación de Sanos y No Sanos). Conoce el lugar de trabajo y respecta la señalización.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "4 - CLASIFICACION DE RETORNOS ( PT)",
+   "alcance": "Comprende la complejidad de la competencia, estado y fechas de los productos.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "5 - ORDENAMIENTO DE CANCHAS",
+   "alcance": "Trabaja de forma límpia y ordenada. Conoce los resposables de la limpieza e informa cuando detecta suciedad (roturas, derrames, etc.). Sabe el lugar donde arrojar cada tipo de resíduo. Al detectar cualquier tipo de suciedad, toma la iniciativa de levantarla.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "ORDENAMIENTO DE CANCHAS"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "6 - CONDUCCION DE ZORRA ELÉCTRICA",
+   "alcance": "Conoce todas las funciones que pueda desarrollar el trabajo con las mismas e informa cualquier novedad. Maneja de forma preventiva. Respecta el peso máximo permitido. Tiene un mínimo conocimiento del cambio de baterías. Realiza un checklist antes de empezar a trabajar.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Juan Manuel Fernandez",
+   "instructor": "Juan Manuel Fernandez",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONDUCCION DE ZORRA"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "7 - CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "alcance": "Conocimientos generales del programa 5 S. Capaz de identificar, seleccionar y mantener solo lo necesario en su puesto de trabajo y en las demás áreas. Ordena los elementos clasificados como necesarios de modo que se puedan encontrar con facilidad. Elimina toda la suciedad de todos los elementos, equipos, máquinas e instalaciones.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "8 - CONDUCCION DE AUTOELEVADORES",
+   "alcance": "Conoce todas las funciones que pueda desarrollar el trabajo con las mismas e informa cualquier novedad. Maneja de forma preventiva. Respecta el peso máximo permitido. Tiene un mínimo conocimiento de mecánica de Autoelevadores. Realiza un checklist antes de empezar a trabajar.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "9 - CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL CD",
+   "alcance": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico). Conoce los clientes internos/externos de la Cía. (Organigrama). Conoce los principales indicadores del CD.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Coordinador Depósito",
+   "instructor": "Coordinador Depósito",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Gestión",
+   "criticidad": "A",
+   "competencia": "10 - GESTION DE ROTURAS",
+   "alcance": "Conocimientos básicos de indicadores/histórico de roturas e inventarios. Detecta e informa todas las anomalías (roturas, derrames, prodcutos vencidos, etc.) al responsable de área.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "GESTION DE ROTURAS"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Gestión",
+   "criticidad": "B",
+   "competencia": "11 - MANEJO DE INFORMACIÓN DEL PUESTO",
+   "alcance": "Conocimiento de indicadores de gestión en el área.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": null
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "12 - CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "alcance": "Conocimiento de los Elementos de Protección necesario a tarea respectando la matriz establecida por el CD.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "13 - CONOCIMIENTOS ESPECÍFICOS EN SEGURIDAD Y MEDIO AMBIENTE",
+   "alcance": "Conocimiento de las políticas de Higiene y Seguridad Ocupacional establecidos por AbInbev. Conocimiento de las políticas de Medio Ambiente establecidos por AbInbev. Cumple con el plan de circulación establecido en el sítio respectando las sendas peatonales,  la señalización (Uso obligatório de cinturón de seguridad, respecto a velocidad máxima, no uso de MP3 y Celulares dentro de depósito,  etc.). Conducción de forma preventiva su máquina. Cumplimiento de los dispositivos responsables por segregar los autoelevadores de los peatones. Cumple con los dispositivos responsables por evitar el arranque repentino de camiones. Respecta las zonas de seguridad. Detiene e informa a la supervisión personal ajeno que ingresa al depósito. Conocimientos generales de AROS. Conoce los pasos de la tarea, los riesgos asociados y las medidas requeridas para su control. Conoce e identifica los diferentes riesgos del puesto de trabajo y las medidas requeridas para su control. Participa activamente de las capacitaciones, reuniones y charlas de seguridad.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "HSMA",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "14 - ACCIONES BASICAS ANTE EMERGENCIAS",
+   "alcance": "Conoce como proceder ante una emergencia o un simulacro de evacuación. Tiene conocimientos de primeros auxílios, como usar un matafuego, etc. . Participa de la Brigada de Emergéncias de forma activa junto a los demás integrantes.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA y Brigadistas",
+   "instructor": "HSMA y Brigadistas",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": null
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "15 - CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "alcance": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "D Diaz y G Helguera",
+   "instructor": "D Diaz y G Helguera",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS"
+  },
+  {
+   "rol": "pickero",
+   "bloque": "Calidad",
+   "criticidad": "B",
+   "competencia": "16 - CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "alcance": "Conocimiento de PG QA 13 01_Tratamiento y Control de PRI Conocimiento de Políticas de Frescura - Planillas de Relevamiento e identificacion de Estibas",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "D Diaz y G Helguera",
+   "instructor": "D Diaz y G Helguera",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "CONDUCCION DE AUTOELEVADORES SIMPLE",
+   "alcance": "Habilidades de Manejo en: \n- Circulación en espacios reducidos / tramos con pendientes\n - Todo tipo de terrenos\n - Traslado y manipuleo de la carga (barriles / Producto Terminado / Vacíos / Paletas) y  estibado en altura\n - Atención de lineas de producción\n - Carga y descarga de camiones\n - Abastecimiento y descarga de docks",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "CONDUCCION DE LAYER PICKER",
+   "alcance": "",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "CONDUCCION DE LAYER PICKER"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+   "alcance": "Conoce el lugar de trabajo y respecta la señalización.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES",
+   "alcance": "Conoce todos los procesos en la clasificación de chapadur (Identificación de Sanos y No Sanos).",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "ORDENAMIENTO DE CANCHAS",
+   "alcance": "Conoce el lugar de trabajo y respecta la señalización.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "ORDENAMIENTO DE CANCHAS"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "CONDUCCION DE ZORRA ELÉCTRICA",
+   "alcance": "Comprende la complejidad de la competencia, estado y fechas de los productos.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO",
+   "alcance": "Trabaja de forma límpia y ordenada.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "alcance": "Conoce los resposables de la limpieza e informa cuando detecta suciedad (roturas, derrames, etc.). Sabe el lugar donde arrojar cada tipo de resíduo. Al detectar cualquier tipo de suciedad, toma la iniciativa de levantarla.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "Operario AE",
+   "instructor": "Operario AE",
+   "tutor": "Sup. Depósito",
+   "metodo": "",
+   "criterio": "",
+   "material": "",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "A",
+   "competencia": "6 - CONDUCCION DE ZORRA ELÉCTRICA",
+   "alcance": "Conoce todas las funciones que pueda desarrollar el trabajo con las mismas e informa cualquier novedad. Maneja de forma preventiva. Respecta el peso máximo permitido. Tiene un mínimo conocimiento del cambio de baterías. Realiza un checklist antes de empezar a trabajar.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Juan Manuel Fernandez",
+   "instructor": "Juan Manuel Fernandez",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "7 - CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "alcance": "Conocimientos generales del programa 5 S. Capaz de identificar, seleccionar y mantener solo lo necesario en su puesto de trabajo y en las demás áreas. Ordena los elementos clasificados como necesarios de modo que se puedan encontrar con facilidad. Elimina toda la suciedad de todos los elementos, equipos, máquinas e instalaciones.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "8 - CONDUCCION DE AUTOELEVADORES",
+   "alcance": "Conoce todas las funciones que pueda desarrollar el trabajo con las mismas e informa cualquier novedad. Maneja de forma preventiva. Respecta el peso máximo permitido. Tiene un mínimo conocimiento de mecánica de Autoelevadores. Realiza un checklist antes de empezar a trabajar.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Conocimientos Generales y Especificos",
+   "criticidad": "B",
+   "competencia": "9 - CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL CD",
+   "alcance": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico). Conoce los clientes internos/externos de la Cía. (Organigrama). Conoce los principales indicadores del CD.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Coordinador Depósito",
+   "instructor": "Coordinador Depósito",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Gestión",
+   "criticidad": "A",
+   "competencia": "10 - GESTION DE ROTURAS",
+   "alcance": "Conocimientos básicos de indicadores/histórico de roturas e inventarios. Detecta e informa todas las anomalías (roturas, derrames, prodcutos vencidos, etc.) al responsable de área.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "GESTION DE ROTURAS"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Gestión",
+   "criticidad": "B",
+   "competencia": "11 - MANEJO DE INFORMACIÓN DEL PUESTO",
+   "alcance": "Conocimiento de indicadores de gestión en el área.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "Sup. Depósito",
+   "instructor": "Sup. Depósito",
+   "tutor": "Lider",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "EJECUCIÓN DEL PLAN DE LUBRICACIÓN"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "12 - CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "alcance": "Conocimiento de los Elementos de Protección necesario a tarea respectando la matriz establecida por el CD.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "13 - CONOCIMIENTOS ESPECÍFICOS EN SEGURIDAD Y MEDIO AMBIENTE",
+   "alcance": "Conocimiento de las políticas de Higiene y Seguridad Ocupacional establecidos por AbInbev. Conocimiento de las políticas de Medio Ambiente establecidos por AbInbev. Cumple con el plan de circulación establecido en el sítio respectando las sendas peatonales,  la señalización (Uso obligatório de cinturón de seguridad, respecto a velocidad máxima, no uso de MP3 y Celulares dentro de depósito,  etc.). Conducción de forma preventiva su máquina. Cumplimiento de los dispositivos responsables por segregar los autoelevadores de los peatones. Cumple con los dispositivos responsables por evitar el arranque repentino de camiones. Respecta las zonas de seguridad. Detiene e informa a la supervisión personal ajeno que ingresa al depósito. Conocimientos generales de AROS. Conoce los pasos de la tarea, los riesgos asociados y las medidas requeridas para su control. Conoce e identifica los diferentes riesgos del puesto de trabajo y las medidas requeridas para su control. Participa activamente de las capacitaciones, reuniones y charlas de seguridad.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA",
+   "instructor": "HSMA",
+   "tutor": "HSMA",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Seguridad General",
+   "criticidad": "A",
+   "competencia": "14 - ACCIONES BASICAS ANTE EMERGENCIAS",
+   "alcance": "Conoce como proceder ante una emergencia o un simulacro de evacuación. Tiene conocimientos de primeros auxílios, como usar un matafuego, etc. . Participa de la Brigada de Emergéncias de forma activa junto a los demás integrantes.",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "HSMA y Brigadistas",
+   "instructor": "HSMA y Brigadistas",
+   "tutor": "Sup. Depósito y Líderes",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "Presentaciones y Videos",
+   "habilidad": null
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "15 - CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "alcance": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "D Diaz y G Helguera",
+   "instructor": "D Diaz y G Helguera",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS"
+  },
+  {
+   "rol": "autoelevadorista",
+   "bloque": "Calidad",
+   "criticidad": "B",
+   "competencia": "16 - CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "alcance": "Conocimiento de PG QA 13 01_Tratamiento y Control de PRI Conocimiento de Políticas de Frescura - Planillas de Relevamiento e identificacion de Estibas",
+   "hs_teoricas": 1,
+   "hs_practicas": 1,
+   "experto": "D Diaz y G Helguera",
+   "instructor": "D Diaz y G Helguera",
+   "tutor": "Sup. Depósito",
+   "metodo": "Aula y Entrenamiento en el Puesto",
+   "criterio": "Observación en puesto",
+   "material": "PPT y Book del Pikero",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "A",
+   "competencia": "Conocimiento Programa DPO",
+   "alcance": "Conoce la rutina relacionada con su función.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce la rutina relacionada con su función.",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "B",
+   "competencia": "Conocimientos generales de la operación del CD",
+   "alcance": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico).Conoce los clientes internos/externos de la Cía. (Organigrama).Conoce los principales indicadores del CD.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico).Conoce los clientes internos/externos de la Cía. (Organigrama).Conoce los principales indicadores del CD.",
+   "habilidad": "CONOCIMIENTOS GENERALES DE LA OPERACIÓN DEL DISTRIBUIDOR"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "B",
+   "competencia": "Utilización de Herramientas de 5S",
+   "alcance": "Conoce, aplica y gestiona el concepto de un lugar para cada cosa y cada cosa tiene un lugar y un dueño. Es capaz de manejar el sistema de gestiòn del orden y la limpieza del area.Conocimiento del Target y status 5S del Camion",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce, aplica y gestiona el concepto de un lugar para cada cosa y cada cosa tiene un lugar y un dueño. Es capaz de manejar el sistema de gestiòn del orden y la limpieza del area.Conocimiento del Target y status 5S del Camion",
+   "habilidad": "GESTIÓN DE 5S"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Entrega del producto en ruta",
+   "alcance": "Conocimiento del procedimiento correspondiente para el entrega del producto en el punto de venta de manera eficiente y efectiva.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del procedimiento correspondiente para el entrega del producto en el punto de venta de manera eficiente y efectiva.",
+   "habilidad": "ENTREGA DEL PRODUCTO EN RUTA"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Control del estado general del camión antes de salir a ruta",
+   "alcance": "Conocimiento del check list previo a la salida ruta. Recorrida 360°.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del check list previo a la salida ruta. Recorrida 360°.",
+   "habilidad": "CONTROL DEL ESTADO GENERAL DEL CAMIÓN ANTES DE SALIR A RUTA (CHECKLIST DE SALIDA)"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Utilización de Foxtrot",
+   "alcance": "Conocimiento de la ventana horaria de los mismos. Optimización del tiempo.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento de la ventana horaria de los mismos. Optimización del tiempo.",
+   "habilidad": "FOXTROT"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Manejo de documentación que acompaña la carga",
+   "alcance": "Conocimiento y entendimiento de los diferentes comprobantes asociados a la carga. Tiene conciencia de la importancia de los mismos.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento y entendimiento de los diferentes comprobantes asociados a la carga. Tiene conciencia de la importancia de los mismos.",
+   "habilidad": "MANEJO DE LA DOCUMENTACIÓN QUE ACOMPAÑA A LA CARGA"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Cobranza de productos entregados",
+   "alcance": "Conocimiento de las modalidades de pago. Control del dinero/ valores recibidos",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento de las modalidades de pago. Control del dinero/ valores recibidos",
+   "habilidad": "COBRANZA DE PRODUCTOS ENTREGADOS"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Rendición de documentación y dinero",
+   "alcance": "Control de comprobantes asociados a la planilla de carga Conocimiento del circuito de pedidos. Rendición de dinero en forma clara y ordenada",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Control de comprobantes asociados a la planilla de carga Conocimiento del circuito de pedidos. Rendición de dinero en forma clara y ordenada",
+   "habilidad": "RENDICIÓN DE DOCUMENTACIÓN Y DINERO"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Clasificación de envases",
+   "alcance": "Conoce todos los procesos en la clasificación de envases (Litro, 1, 25, Mediana; 1/3).",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce todos los procesos en la clasificación de envases (Litro, 1, 25, Mediana; 1/3).",
+   "habilidad": "CLASIFICACIÓN DE ENVASES"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "Conocimientos de calidad de productos",
+   "alcance": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "habilidad": "CONOCMIENTOS DE LA CALIDAD DE PRODUCTOS"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "Procedimiento ante rotura de productos",
+   "alcance": "Conocimiento del procedimiento que se debe realizar cuando el producto no se encuentra en condiciones para su respectiva entrega en el punto de venta",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del procedimiento que se debe realizar cuando el producto no se encuentra en condiciones para su respectiva entrega en el punto de venta",
+   "habilidad": "PROCEDIMIENTO ANTE ROTURA DE PRODUCTOS"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento del Pilar Safety DPO.",
+   "alcance": "Conocimiento de los conceptos foco del Pilar",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento de los conceptos foco del Pilar",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento Manejo defensivo",
+   "alcance": "Conocimiento sobre Acciones de Manejo Defensivo en el CD",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento sobre Acciones de Manejo Defensivo en el CD",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento Manejo Manual de Cargas",
+   "alcance": "Conocer las normas basicas de manejo manual de carga y estandares",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocer las normas basicas de manejo manual de carga y estandares",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGAS Y TROPEZONES, RESBALONES Y CAIDAS."
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento y Aplicación de Evaluacion de Riesgos",
+   "alcance": "Conocer la metodologia de aplicación y evaluacion de riesgos",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocer la metodologia de aplicación y evaluacion de riesgos",
+   "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento de los aspectos Ambientales y medidas de control",
+   "alcance": "Conocimientos basicos sobre normas y procedimientos ambientales",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimientos basicos sobre normas y procedimientos ambientales",
+   "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Seguridad \nGeneral",
+   "criticidad": "A",
+   "competencia": "Conocimiento de los EPP requeridos para Distribución",
+   "alcance": "Conocimiento de los EPP´s aplicables a cada Sector",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento de los EPP´s aplicables a cada Sector",
+   "habilidad": "CONOCIMIENTOS DE LOS EPP REQUERIDOS PARA EL PUESTO"
+  },
+  {
+   "rol": "chofer",
+   "bloque": "Gestion",
+   "criticidad": "B",
+   "competencia": "Gestión de Rechazos",
+   "alcance": "Conocimientos básicos de indicadores de rechazo. Detecta e informa todas las anomalías generadas en la ruta, modula el 100%  Conocimiento y procesamiento de modulaciones",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimientos básicos de indicadores de rechazo. Detecta e informa todas las anomalías generadas en la ruta, modula el 100%  Conocimiento y procesamiento de modulaciones",
+   "habilidad": "GESTIÓN DE RECHAZOS"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "A",
+   "competencia": "Conocimiento Programa DPO",
+   "alcance": "Conoce la rutina relacionada con su función.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce la rutina relacionada con su función.",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "B",
+   "competencia": "Conocimientos generales de la operación del CD",
+   "alcance": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico).Conoce los clientes internos/externos de la Cía. (Organigrama).Conoce los principales indicadores del CD.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Tiene el conocimiento  de la circulación de camiones dentro del CD (Trafico).Conoce los clientes internos/externos de la Cía. (Organigrama).Conoce los principales indicadores del CD.",
+   "habilidad": "CONOCIMIENTOS GENERALES DE LA OPERACIÓN DEL DISTRIBUIDOR"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades y Conocimientos Generales",
+   "criticidad": "B",
+   "competencia": "Utilización de Herramientas de 5S",
+   "alcance": "Conoce, aplica y gestiona el concepto de un lugar para cada cosa y cada cosa tiene un lugar y un dueño. Es capaz de manejar el sistema de gestiòn del orden y la limpieza del area.Conocimiento del Target y status 5S del Camion",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce, aplica y gestiona el concepto de un lugar para cada cosa y cada cosa tiene un lugar y un dueño. Es capaz de manejar el sistema de gestiòn del orden y la limpieza del area.Conocimiento del Target y status 5S del Camion",
+   "habilidad": "GESTIÓN DE 5S"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Entrega del producto en ruta",
+   "alcance": "Conocimiento del procedimiento correspondiente para el entrega del producto en el punto de venta de manera eficiente y efectiva.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del procedimiento correspondiente para el entrega del producto en el punto de venta de manera eficiente y efectiva.",
+   "habilidad": "ENTREGA DEL PRODUCTO EN RUTA"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Control del estado general del camión antes de salir a ruta",
+   "alcance": "Conocimiento del check list previo a la salida ruta. Recorrida 360°.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del check list previo a la salida ruta. Recorrida 360°.",
+   "habilidad": "CONTROL DEL ESTADO GENERAL DEL CAMIÓN ANTES DE SALIR A RUTA (CHECKLIST DE SALIDA)"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "A",
+   "competencia": "Manejo de documentación que acompaña la carga",
+   "alcance": "Conocimiento y entendimiento de los diferentes comprobantes asociados a la carga. Tiene conciencia de la importancia de los mismos.",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento y entendimiento de los diferentes comprobantes asociados a la carga. Tiene conciencia de la importancia de los mismos.",
+   "habilidad": "MANEJO DE LA DOCUMENTACIÓN QUE ACOMPAÑA A LA CARGA"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Rendición de documentación y dinero",
+   "alcance": "Control de comprobantes asociados a la planilla de carga Conocimiento del circuito de pedidos. Rendición de dinero en forma clara y ordenada",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Control de comprobantes asociados a la planilla de carga Conocimiento del circuito de pedidos. Rendición de dinero en forma clara y ordenada",
+   "habilidad": "RENDICIÓN DE DOCUMENTACIÓN Y DINERO"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Habilidades Especificas",
+   "criticidad": "B",
+   "competencia": "Clasificación de envases",
+   "alcance": "Conoce todos los procesos en la clasificación de envases (Litro, 1, 25, Mediana; 1/3).",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conoce todos los procesos en la clasificación de envases (Litro, 1, 25, Mediana; 1/3).",
+   "habilidad": "CLASIFICACIÓN DE ENVASES"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "Conocimientos de calidad de productos",
+   "alcance": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del concepto de Frescura. Limpieza del Producto",
+   "habilidad": "CONOCMIENTOS DE LA CALIDAD DE PRODUCTOS"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Calidad",
+   "criticidad": "A",
+   "competencia": "Procedimiento ante rotura de productos",
+   "alcance": "Conocimiento del procedimiento que se debe realizar cuando el producto no se encuentra en condiciones para su respectiva entrega en el punto de venta",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento del procedimiento que se debe realizar cuando el producto no se encuentra en condiciones para su respectiva entrega en el punto de venta",
+   "habilidad": "PROCEDIMIENTO ANTE ROTURA DE PRODUCTOS"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Seguridad",
+   "criticidad": "A",
+   "competencia": "Conocimiento Manejo defensivo",
+   "alcance": "Conocimiento sobre Acciones de Manejo Defensivo en el CD",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento sobre Acciones de Manejo Defensivo en el CD",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Seguridad",
+   "criticidad": "A",
+   "competencia": "Conocimiento Manejo Manual de Cargas",
+   "alcance": "Conocer las normas basicas de manejo manual de carga y estandares",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocer las normas basicas de manejo manual de carga y estandares",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGAS Y TROPEZONES, RESBALONES Y CAIDAS."
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Seguridad",
+   "criticidad": "A",
+   "competencia": "Conocimiento y Aplicación de Evaluacion de Riesgos",
+   "alcance": "Conocer la metodologia de aplicación y evaluacion de riesgos",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocer la metodologia de aplicación y evaluacion de riesgos",
+   "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Seguridad",
+   "criticidad": "A",
+   "competencia": "Conocimiento de los aspectos Ambientales y medidas de control",
+   "alcance": "Conocimientos basicos sobre normas y procedimientos ambientales",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimientos basicos sobre normas y procedimientos ambientales",
+   "habilidad": "CONOCIMIENTO Y APLICACIÓN DE ER"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Seguridad",
+   "criticidad": "A",
+   "competencia": "Conocimiento de los EPP requeridos para Distribución",
+   "alcance": "Conocimiento de los EPP´s aplicables a cada Sector",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimiento de los EPP´s aplicables a cada Sector",
+   "habilidad": "CONOCIMIENTOS DE LOS EPP REQUERIDOS PARA EL PUESTO"
+  },
+  {
+   "rol": "ayudante",
+   "bloque": "Gestion",
+   "criticidad": "B",
+   "competencia": "Gestión de Rechazos",
+   "alcance": "Conocimientos básicos de indicadores de rechazo. Detecta e informa todas las anomalías generadas en la ruta, modula el 100%  Conocimiento y procesamiento de modulaciones",
+   "hs_teoricas": null,
+   "hs_practicas": null,
+   "experto": "",
+   "instructor": "",
+   "tutor": "",
+   "metodo": "",
+   "criterio": "",
+   "material": "Conocimientos básicos de indicadores de rechazo. Detecta e informa todas las anomalías generadas en la ruta, modula el 100%  Conocimiento y procesamiento de modulaciones",
+   "habilidad": "GESTIÓN DE RECHAZOS"
+  }
+ ],
+ "evaluaciones": [
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "ARMADO DE PICKING (ARMADO DE PALETAS, ORDEN CANCHAS)",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 4
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CLASIFICACIÓN DE ENVASES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 4
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CLASIFICACIÓN DE CHAPADUR",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CLASIFICACION DE RETORNOS ( PT)",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONDUCCION DE ZORRA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 0
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 0
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES",
+   "std_individual": 2,
+   "evaluacion": 0
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTOS GENERALES EN EL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "pickero",
+   "persona": "VEIDOSKI, GERMAN",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SALA, MARCOS",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "SELENZO, PABLO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "GALVEZ,  RUBEN",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "pickero",
+   "persona": "TROLI, ALEJO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "pickero",
+   "persona": "OVEJERO, HUGO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES SIMPLE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES DOBLE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES DOBLE",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONDUCCION DE AUTOELEVADORES DOBLE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONDUCCION DE LAYER PICKER",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONDUCCION DE LAYER PICKER",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONDUCCION DE LAYER PICKER",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "OPERACIÓN DE CARGA DE GLP / SUSTANCIAS PELIGROSAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTO DE POLÍTICAS Y PROCEDIMIENTO DE OPERACIONES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "ORDENAMIENTO DE CANCHAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONDUCCION DE ZORRA ELÉCTRICA",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CORRECTO USO DE EPPS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CORRECTO USO DE EPPS",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CORRECTO USO DE EPPS",
+   "std_individual": 3,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTOS GENERALES SOBRE LA OPERACIÓN DEL DISTRIBUIDOR",
+   "std_individual": 2,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "GESTION DE ROTURAS",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTOS GENERALES DEL PROGRAMA DPO",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTOS ESPECÍFICOS EN EL PROGRAMA 5 S",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTO MANEJO DEFENSIVO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTO MANEJO MANUAL DE CARGA Y TROPEZONES, RESBALONES Y CAIDAS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTO REPORTE DE ACCIDENTES",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTO DE LOS EPP QUE REQUIERE  EL PUESTO",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONOCIMIENTOS DE CALIDAD DE PRODUCTOS",
+   "std_individual": 3,
+   "evaluacion": 3
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "CONTROL DE FRESCURA. TRATAMIENTO Y CONTROL DE PRODUCTO NO CONFORME PRI",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "PROCEDIMIENTO DE REEMPAQUE",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "FUNCIONAMIENTO DE LA MÁQUINA",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "FUNCIONAMIENTO DE LA MÁQUINA",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "FUNCIONAMIENTO DE LA MÁQUINA",
+   "std_individual": 3,
+   "evaluacion": 2
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "CERBIN, DIEGO",
+   "habilidad": "EJECUCIÓN DEL PLAN DE LUBRICACIÓN",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "MARTINEZ, PEDRO",
+   "habilidad": "EJECUCIÓN DEL PLAN DE LUBRICACIÓN",
+   "std_individual": 2,
+   "evaluacion": 1
+  },
+  {
+   "rol": "autoelevadorista",
+   "persona": "PABLO, SELENZO",
+   "habilidad": "EJECUCIÓN DEL PLAN DE LUBRICACIÓN",
+   "std_individual": 2,
+   "evaluacion": 1
+  }
+ ]
+}
