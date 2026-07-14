@@ -30,7 +30,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { NpsClienteDP } from "@/actions/nps"
-import type { EstadoNpsPlan, NpsPlan } from "@/actions/nps-planes"
+import type { NpsPlan } from "@/actions/nps-planes"
+import {
+  ESTADO_PLAN,
+  PlanBadge,
+  planesPorClienteFoco,
+} from "@/components/plan-badge"
 
 const TODOS = "__todos__"
 
@@ -48,42 +53,6 @@ function catBadge(categoria: "Detractor" | "Passive"): string {
   return categoria === "Detractor"
     ? "bg-red-100 text-red-800 border-red-200"
     : "bg-amber-100 text-amber-800 border-amber-200"
-}
-
-const ESTADO_PLAN: Record<EstadoNpsPlan, string> = {
-  pendiente: "pendiente",
-  en_progreso: "en progreso",
-  completado: "completado",
-}
-
-/**
- * Marca al cliente que ya tiene un plan de acción creado abajo, para no
- * duplicarlo. Un plan cerrado se muestra distinto de uno todavía abierto.
- */
-function PlanBadge({ planes }: { planes: NpsPlan[] }) {
-  if (planes.length === 0) return null
-
-  const abiertos = planes.filter((p) => p.estado !== "completado")
-  const cerrado = abiertos.length === 0
-  const detalle = planes
-    .map((p) => `${p.titulo} (${ESTADO_PLAN[p.estado]})`)
-    .join(" · ")
-
-  return (
-    <Badge
-      variant="outline"
-      title={`Ya tiene ${planes.length === 1 ? "un plan de acción" : `${planes.length} planes de acción`}: ${detalle}`}
-      className={`shrink-0 gap-1 px-1.5 py-0 text-[10px] font-medium ${
-        cerrado
-          ? "border-slate-200 bg-slate-100 text-slate-600"
-          : "border-emerald-200 bg-emerald-50 text-emerald-700"
-      }`}
-    >
-      <ClipboardCheck className="h-3 w-3" />
-      {cerrado ? "Plan cerrado" : "Con plan"}
-      {planes.length > 1 && ` (${planes.length})`}
-    </Badge>
-  )
 }
 
 interface Props {
@@ -105,16 +74,7 @@ export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
   const [clienteModal, setClienteModal] = useState<NpsClienteDP | null>(null)
 
   /** Planes de acción por cliente foco (un cliente puede tener más de uno). */
-  const planesPorCliente = useMemo(() => {
-    const m = new Map<number, NpsPlan[]>()
-    for (const p of planes) {
-      if (p.foco_cliente_id == null) continue
-      const ps = m.get(p.foco_cliente_id)
-      if (ps) ps.push(p)
-      else m.set(p.foco_cliente_id, [p])
-    }
-    return m
-  }, [planes])
+  const planesPorCliente = useMemo(() => planesPorClienteFoco(planes), [planes])
 
   const promotores = useMemo(
     () =>

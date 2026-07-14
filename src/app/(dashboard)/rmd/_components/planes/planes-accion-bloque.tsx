@@ -404,6 +404,8 @@ function PlanCard({
 
 interface Props {
   planesIniciales: RmdPlan[]
+  /** Avisa la lista al día para que el explorador marque los clientes con plan. */
+  onPlanesChange?: (planes: RmdPlan[]) => void
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
   choferes: string[]
@@ -415,6 +417,7 @@ interface Props {
 
 export function PlanesAccionBloque({
   planesIniciales,
+  onPlanesChange,
   motivos,
   clientes,
   choferes,
@@ -456,6 +459,7 @@ export function PlanesAccionBloque({
     const r = await listarPlanesRmd()
     if ("data" in r) {
       setPlanes(r.data)
+      onPlanesChange?.(r.data)
       // Mantener sincronizado el plan abierto en el detalle.
       setPlanDetalle((prev) =>
         prev ? (r.data.find((p) => p.id === prev.id) ?? null) : prev,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
 import type { RmdPlan } from "@/actions/rmd-planes"
 import { SyncAviso } from "@/components/sync-aviso"
+import { planesPorClienteFoco } from "@/components/plan-badge"
 import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
@@ -75,6 +76,12 @@ interface Props {
 export function RmdClient({ data, planesIniciales }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
+
+  // Lista viva de planes: el bloque de abajo la refresca al crear o editar uno,
+  // y el explorador la usa para marcar qué clientes ya tienen plan.
+  const [planes, setPlanes] = useState<RmdPlan[]>(planesIniciales)
+  useEffect(() => setPlanes(planesIniciales), [planesIniciales])
+  const planesPorCliente = useMemo(() => planesPorClienteFoco(planes), [planes])
 
   // Foco prellenado al crear un plan desde la tabla de clientes.
   const [focoPlan, setFocoPlan] = useState<{
@@ -409,7 +416,11 @@ export function RmdClient({ data, planesIniciales }: Props) {
       </div>
 
       {/* Explorador de toda la base */}
-      <ClientesExplorador clientes={clientes} onCrearPlan={planParaCliente} />
+      <ClientesExplorador
+        clientes={clientes}
+        planes={planes}
+        onCrearPlan={planParaCliente}
+      />
 
       {/* Clientes recuperados: puntuaron bajo (1-3) y volvieron al máximo (5) */}
       <Card>
@@ -518,6 +529,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
       {/* Planes de acción sobre RMD */}
       <PlanesAccionBloque
         planesIniciales={planesIniciales}
+        onPlanesChange={setPlanes}
         motivos={motivos.map((m) => m.motivo)}
         clientes={clientes.map((c) => ({
           cod_cliente: c.cod_cliente,
@@ -562,6 +574,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
       {recupModal && (
         <ClienteModal
           cliente={recupModal}
+          planesCliente={planesPorCliente.get(recupModal.cod_cliente) ?? []}
           onClose={() => setRecupModal(null)}
           onCrearPlan={(c) => {
             setRecupModal(null)

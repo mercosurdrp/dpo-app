@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   FilterX,
   Loader2,
   MapPin,
@@ -35,6 +36,12 @@ import {
   type RmdCliente,
   type RmdPunto,
 } from "@/actions/rmd"
+import type { RmdPlan } from "@/actions/rmd-planes"
+import {
+  ESTADO_PLAN,
+  PlanBadge,
+  planesPorClienteFoco,
+} from "@/components/plan-badge"
 
 const TODOS = "__todos__"
 
@@ -62,10 +69,12 @@ function puntBadge(p: number): string {
 
 interface Props {
   clientes: RmdCliente[]
+  /** Planes de acción vivos: los que tienen foco en un cliente lo marcan acá. */
+  planes: RmdPlan[]
   onCrearPlan: (c: RmdCliente) => void
 }
 
-export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
+export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
   const [busqueda, setBusqueda] = useState("")
   const [fChofer, setFChofer] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
@@ -76,6 +85,9 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("fecha")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
   const [clienteModal, setClienteModal] = useState<RmdCliente | null>(null)
+
+  /** Planes de acción por cliente foco (un cliente puede tener más de uno). */
+  const planesPorCliente = useMemo(() => planesPorClienteFoco(planes), [planes])
 
   const choferes = useMemo(
     () =>
@@ -181,6 +193,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   }
 
   function filaCliente(c: RmdCliente) {
+    const planesCli = planesPorCliente.get(c.cod_cliente) ?? []
     return (
       <div
         key={`${c.cod_cliente}`}
@@ -193,8 +206,11 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
         className="grid w-full cursor-pointer grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
         <span className="col-span-4 min-w-0">
-          <span className="block truncate font-medium text-slate-800">
-            {c.nombre_cliente}
+          <span className="flex items-center gap-1.5">
+            <span className="truncate font-medium text-slate-800">
+              {c.nombre_cliente}
+            </span>
+            <PlanBadge planes={planesCli} />
           </span>
           <span className="block truncate text-xs text-slate-400">
             #{c.cod_cliente} · {c.localidad ?? "—"} · últ.{" "}
@@ -402,6 +418,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
       {clienteModal && (
         <ClienteModal
           cliente={clienteModal}
+          planesCliente={planesPorCliente.get(clienteModal.cod_cliente) ?? []}
           onClose={() => setClienteModal(null)}
           onCrearPlan={(c) => {
             setClienteModal(null)
@@ -415,10 +432,13 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
 
 export function ClienteModal({
   cliente,
+  planesCliente = [],
   onClose,
   onCrearPlan,
 }: {
   cliente: RmdCliente
+  /** Planes de acción que ya enfocan a este cliente. */
+  planesCliente?: RmdPlan[]
   onClose: () => void
   onCrearPlan: (c: RmdCliente) => void
 }) {
@@ -573,10 +593,35 @@ export function ClienteModal({
           )}
         </div>
 
+        {planesCliente.length > 0 && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm">
+            <p className="flex items-center gap-1.5 font-medium text-emerald-800">
+              <ClipboardCheck className="h-4 w-4" />
+              Este cliente ya tiene{" "}
+              {planesCliente.length === 1
+                ? "un plan de acción"
+                : `${planesCliente.length} planes de acción`}
+            </p>
+            <ul className="mt-1 space-y-0.5 text-emerald-900">
+              {planesCliente.map((p) => (
+                <li key={p.id}>
+                  {p.titulo} — {ESTADO_PLAN[p.estado]}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="flex justify-end">
-          <Button size="sm" onClick={() => onCrearPlan(cliente)}>
+          <Button
+            size="sm"
+            variant={planesCliente.length > 0 ? "outline" : "default"}
+            onClick={() => onCrearPlan(cliente)}
+          >
             <Target className="mr-1 h-4 w-4" />
-            Crear plan para este cliente
+            {planesCliente.length > 0
+              ? "Crear otro plan"
+              : "Crear plan para este cliente"}
           </Button>
         </div>
       </DialogContent>
