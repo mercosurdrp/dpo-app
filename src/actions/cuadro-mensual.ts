@@ -25,6 +25,8 @@ import {
   type DetalleRechazoItem,
 } from "@/lib/indicadores/cuadro-mensual-detalle"
 import { contarTripulacion } from "@/lib/tml/calculo"
+import { SELECT_RUTA_LIMPIA, esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
+import { SEGUNDAS_VUELTAS } from "@/lib/tlp/segundas-vueltas"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -129,11 +131,15 @@ export async function getCuadroMensualIndicadores(): Promise<
       fecha: string
       is_finalized: boolean | null
       tiempo_ruta_minutos: number | null
+      // Solo los dos timestamps: traer `raw_data` entero tumba la query
+      // (~100 KB por ruta) — ver lib/foxtrot/ruta-limpia.ts.
+      ini: string | null
+      fin: string | null
     }> = []
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from("foxtrot_routes")
-        .select("route_id, fecha, is_finalized, tiempo_ruta_minutos")
+        .select(`route_id, fecha, is_finalized, tiempo_ruta_minutos, ${SELECT_RUTA_LIMPIA}`)
         .gte("fecha", desde)
         .lte("fecha", hasta)
         .order("route_id", { ascending: true })
@@ -491,7 +497,12 @@ export async function getCuadroMensualIndicadores(): Promise<
     acc.rutas++
     acc.fechas.add(r.fecha)
     const t = Number(r.tiempo_ruta_minutos ?? 0)
-    if (r.is_finalized && Number.isFinite(t) && t > 0) acc.tiempos.push(t)
+    // 🚨 Solo RUTAS LIMPIAS: la ruta que el chofer no cerró en la app la finaliza
+    // Foxtrot horas o días después y esa duración ya no es tiempo de trabajo.
+    // Contándolas, enero publicaba 11,80 hs por ruta en vez de 7,38.
+    if (r.is_finalized && Number.isFinite(t) && t > 0 && esRutaLimpia(r.ini, r.fin)) {
+      acc.tiempos.push(t)
+    }
   }
   for (const mes of meses) {
     const esActual = mes === mesActual
@@ -521,6 +532,12 @@ export async function getCuadroMensualIndicadores(): Promise<
     celdas.viajes_mes[mes] = {
       mes,
       valor: acc && acc.rutas > 0 ? acc.rutas : null,
+      parcial: esActual,
+    }
+    // Segundas vueltas: carga manual (Chess no las imputa a ningún camión).
+    celdas.segundas_vueltas[mes] = {
+      mes,
+      valor: SEGUNDAS_VUELTAS[mes] ?? null,
       parcial: esActual,
     }
     // Mantenimiento: sin histórico mensual disponible → siempre gris.
