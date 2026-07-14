@@ -1,7 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2, Package, ShoppingCart } from "lucide-react"
+import {
+  AlertTriangle,
+  Loader2,
+  Package,
+  ShoppingCart,
+  Truck,
+  Warehouse,
+} from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -91,6 +98,18 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
 
   const sinRoturas = data != null && (data.roturas_hl ?? 0) === 0
 
+  // Apertura almacén / calle: sólo se muestra si hubo roturas y el backend
+  // (o el detalle) permitió separarlas.
+  const rotAlmacen = data?.roturas_almacen_hl ?? null
+  const rotDistribucion = data?.roturas_distribucion_hl ?? null
+  const hayApertura =
+    !sinRoturas && (rotAlmacen != null || rotDistribucion != null)
+  const totalApertura = (rotAlmacen ?? 0) + (rotDistribucion ?? 0)
+  const pctAlmacen =
+    totalApertura > 0 ? ((rotAlmacen ?? 0) / totalApertura) * 100 : null
+  const pctDistribucion =
+    totalApertura > 0 ? ((rotDistribucion ?? 0) / totalApertura) * 100 : null
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[760px] overflow-y-auto">
@@ -105,8 +124,9 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
           </DialogTitle>
           <DialogDescription>
             Bultos vendidos y qué se perdió ese día, con el detalle de cada
-            rotura por SKU (bultos, unidades y HL). El WQI es PPM = HL de roturas
-            ÷ HL vendidos × 1.000.000.
+            rotura por SKU (bultos, unidades y HL) y si se rompió en el almacén o
+            en la calle. El WQI es PPM = HL de roturas ÷ HL vendidos × 1.000.000,
+            e incluye las dos.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,6 +188,64 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
               </Card>
             </div>
 
+            {/* Dónde se rompió: almacén vs calle. Las dos suman las roturas del
+                día — la distribución YA está contada dentro del WQI. */}
+            {hayApertura && (
+              <Card>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-muted-foreground">
+                    Dónde se rompió
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                      <Warehouse className="size-5 shrink-0 text-slate-500" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Almacén</p>
+                        <p className="text-xl font-bold tabular-nums">
+                          {fmt(data.roturas_almacen_hl, 4)}{" "}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            HL
+                          </span>
+                        </p>
+                        {pctAlmacen != null && (
+                          <p className="text-xs text-muted-foreground">
+                            {fmt(pctAlmacen, 0)}% del día
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                      <Truck className="size-5 shrink-0 text-amber-600" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Distribución (calle)
+                        </p>
+                        <p className="text-xl font-bold tabular-nums text-amber-800">
+                          {fmt(data.roturas_distribucion_hl, 4)}{" "}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            HL
+                          </span>
+                        </p>
+                        {pctDistribucion != null && (
+                          <p className="text-xs text-muted-foreground">
+                            {fmt(pctDistribucion, 0)}% del día
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {(data.roturas_distribucion_hl ?? 0) > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Las roturas de distribución <strong>están incluidas</strong>{" "}
+                      en el WQI, igual que en el reporte a auditoría. Sin ellas el
+                      WQI del día sería{" "}
+                      <strong>{fmt(data.wqi_almacen_dia, 1)} PPM</strong>.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* WQI: día vs MTD */}
             <Card>
               <CardContent className="flex items-center justify-between pt-4">
@@ -194,13 +272,17 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                       <TableRow>
                         <TableHead>SKU</TableHead>
                         <TableHead>Descripción</TableHead>
+                        <TableHead>Dónde</TableHead>
                         <TableHead className="text-right">Bultos</TableHead>
                         <TableHead className="text-right">HL</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.roturas_detalle.map((r) => (
-                        <TableRow key={r.sku}>
+                      {data.roturas_detalle.map((r) => {
+                        const esDistribucion = r.origen === "distribucion"
+                        const patentes = r.patentes ?? []
+                        return (
+                        <TableRow key={`${r.sku}-${r.origen ?? "almacen"}`}>
                           <TableCell className="font-mono font-medium">
                             {r.sku}
                           </TableCell>
@@ -210,6 +292,32 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                           >
                             {r.descripcion || "—"}
                           </TableCell>
+                          <TableCell>
+                            <span
+                              className={
+                                esDistribucion
+                                  ? "inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                                  : "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
+                              }
+                              title={
+                                esDistribucion && patentes.length > 0
+                                  ? `Camión ${patentes.join(", ")}`
+                                  : undefined
+                              }
+                            >
+                              {esDistribucion ? (
+                                <Truck className="size-3" />
+                              ) : (
+                                <Warehouse className="size-3" />
+                              )}
+                              {esDistribucion ? "Distribución" : "Almacén"}
+                            </span>
+                            {esDistribucion && patentes.length > 0 && (
+                              <span className="ml-1 font-mono text-xs text-muted-foreground">
+                                {patentes.join(", ")}
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {fmt(r.bultos_eq ?? r.bultos, 2)}
                           </TableCell>
@@ -217,7 +325,8 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                             {fmt(r.hl, 4)}
                           </TableCell>
                         </TableRow>
-                      ))}
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>

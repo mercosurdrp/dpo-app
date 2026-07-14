@@ -592,11 +592,20 @@ interface DepositoIndicadoresSerieDiaria {
   targets?: Partial<WarehouseTargets>
 }
 
-/** Una pérdida del día agregada por SKU (popover de FGLI/WQI en la reunión).
- *  Vale para roturas, faltantes y vencidos. `valor` = $ sin IVA. */
+/** Dónde ocurrió la pérdida: en el almacén o arriba del camión (en la calle).
+ *  Sale de la categoría del Excel de pérdidas ("ROTURA DISTRIBUCIÓN"). */
+export type OrigenPerdida = "almacen" | "distribucion"
+
+/** Una pérdida del día agregada por SKU y origen (popover de FGLI/WQI en la
+ *  reunión). Vale para roturas, faltantes y vencidos. `valor` = $ sin IVA. */
 export interface RoturaDetalleSku {
   sku: string
   descripcion: string
+  /** Un mismo SKU puede venir dos veces el mismo día, una por origen. */
+  origen?: OrigenPerdida
+  /** Patentes de los camiones involucrados (sólo en las de distribución, y
+   *  únicamente cuando el Excel las informa). */
+  patentes?: string[]
   bultos: number
   unidades: number
   /** Bultos equivalentes = bultos + unidades/un_bulto (un solo número). */

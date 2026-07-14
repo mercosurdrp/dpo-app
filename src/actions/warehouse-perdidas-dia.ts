@@ -38,7 +38,14 @@ export interface WarehousePerdidasDia {
   roturas_val: number | null
   wqi_dia: number | null
   wqi_mtd: number | null
-  /** Qué se rompió ese día, agregado por SKU (ordenado por HL desc). */
+  /** HL de roturas del día ocurridas EN EL ALMACÉN. */
+  roturas_almacen_hl: number | null
+  /** HL de roturas del día ocurridas EN LA CALLE (distribución). Van INCLUIDAS
+   *  en `roturas_hl` y en el WQI, igual que en el reporte a auditoría. */
+  roturas_distribucion_hl: number | null
+  /** WQI del día dejando afuera la distribución (informativo). */
+  wqi_almacen_dia: number | null
+  /** Qué se rompió ese día, agregado por SKU y origen (ordenado por HL desc). */
   roturas_detalle: RoturaDetalleSku[]
 }
 
@@ -49,6 +56,10 @@ interface SerieDiariaResp {
   roturas?: Record<string, number | null>
   /** Detalle de roturas por SKU de cada día. */
   roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
+  /** Apertura de `roturas_dia` por dónde ocurrió la rotura. */
+  roturas_almacen_dia?: Record<string, number | null>
+  roturas_distribucion_dia?: Record<string, number | null>
+  wqi_almacen_dia?: Record<string, number | null>
   faltantes_dia?: Record<string, number | null>
   /** $ de pérdidas del día (SCL diario). */
   scl_dia?: Record<string, number | null>
@@ -90,6 +101,19 @@ export async function getWarehousePerdidasDia(
       (s, r) => s + (typeof r.valor === "number" && Number.isFinite(r.valor) ? r.valor : 0),
       0,
     )
+
+    // Apertura almacén / calle. Si el backend todavía no la emite (cache viejo),
+    // se reconstruye sumando el detalle por origen: mismo total, sin romper.
+    const hlPorOrigen = (o: "almacen" | "distribucion") =>
+      roturasDetalle
+        .filter((r) => (r.origen ?? "almacen") === o)
+        .reduce((s, r) => s + (Number.isFinite(r.hl) ? r.hl : 0), 0)
+    const roturasAlmacenHl =
+      num(serie.roturas_almacen_dia?.[fecha]) ??
+      (roturasDetalle.length > 0 ? hlPorOrigen("almacen") : null)
+    const roturasDistribucionHl =
+      num(serie.roturas_distribucion_dia?.[fecha]) ??
+      (roturasDetalle.length > 0 ? hlPorOrigen("distribucion") : null)
 
     // 2) Bultos + HL vendidos del TABLERO (ventas_diarias), por día del mes.
     const supabase = await createClient()
@@ -149,6 +173,19 @@ export async function getWarehousePerdidasDia(
         roturas_val: Math.round(roturasVal * 100) / 100,
         wqi_dia: wqiDia,
         wqi_mtd: wqiMtd,
+        roturas_almacen_hl:
+          roturasAlmacenHl != null
+            ? Math.round(roturasAlmacenHl * 10000) / 10000
+            : null,
+        roturas_distribucion_hl:
+          roturasDistribucionHl != null
+            ? Math.round(roturasDistribucionHl * 10000) / 10000
+            : null,
+        wqi_almacen_dia:
+          num(serie.wqi_almacen_dia?.[fecha]) ??
+          (roturasAlmacenHl != null && hlVendidoDia > 0
+            ? Math.round((roturasAlmacenHl / hlVendidoDia) * 1_000_000 * 10) / 10
+            : null),
         roturas_detalle: roturasDetalle,
       },
     }
