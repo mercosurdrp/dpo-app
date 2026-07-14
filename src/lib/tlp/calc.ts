@@ -20,35 +20,18 @@ import { historicoEnRango } from "./historico"
 export const FTE_FALLBACK = 2
 
 /**
- * Ventana en la que se ESTIMA el denominador: ABRIL entero, el mes en que arrancó
- * el checklist de retorno (única fuente del tiempo en ruta) el día 9. Antes de esa
- * fecha el proceso no existía y después tardó en tomar ritmo, así que el mes
- * quedaba calculado sobre 3/4 de su volumen (87.509 de 116.445 CEq). En la ventana
- * entran TODOS los viajes con CEq: al que le falta el checklist se le estima el
- * tiempo con el promedio de su patente, y al que además le falta el egreso se le
- * estima también el FTE. Así abril cubre el mes completo (206 viajes × 2,55 FTE ×
- * 7,04 h ⇒ TLP ~31,5), el mismo criterio con el que Andy lo cierra.
+ * Desde esta fecha se ESTIMA el viaje al que le falta el checklist de retorno, en
+ * vez de descartarlo. El checklist arrancó el 9-abr-2026: antes de abril no hay
+ * uno solo, así que el 100% de las horas sería inventado (y Foxtrot no sirve de
+ * reemplazo: mide +37% y correlaciona 0,22) — esos meses van con el cierre a mano
+ * (ver ./historico.ts).
  *
- * Fuera de esa ventana NO se estima nada:
- *   - antes de abril no hay un solo checklist ⇒ el 100% de las horas sería
- *     inventado (y Foxtrot no sirve de reemplazo: mide +37% y correlaciona 0,22);
- *   - de mayo en adelante el proceso ya está consolidado: un viaje sin checklist
- *     es un olvido puntual y se excluye como siempre (mayo da 26,94).
+ * De abril en adelante, el camión SALIÓ y entregó (tiene CEq); lo único que falta
+ * es que alguien cargue el checklist. Descartarlo se llevaba puesta también su
+ * carga: en junio dejaba afuera el 7% de las CEq del mes.
  */
 const ESTIMAR_DESDE = "2026-04-01"
-const ESTIMAR_HASTA = "2026-04-30"
 
-/**
- * Piso de CEq para ESTIMAR un viaje. Sin checklist no hay evidencia de que el
- * camión haya salido a repartir, y hay camión-día con carga residual (2, 6, 10
- * CEq — una entrega suelta, casi todos de la misma patente) a los que estimarles
- * una jornada completa les regala 16 horas-hombre por nada: en abril eran 11
- * "viajes" con 172 CEq (0,15% del mes) y 176 HH, y solos bajaban el TLP de 31,5
- * a 30,1. Debajo del piso el camión-día no se cuenta como viaje.
- *
- * NO aplica a los viajes con checklist real: si el checklist está cargado, el
- * camión salió, lleve la carga que lleve.
- */
 const CEQ_MIN_ESTIMADO = 100
 
 const PAGE = 1000
@@ -222,14 +205,16 @@ export async function fetchViajesTlp(
     fte.set(key, Math.max(fte.get(key) ?? 0, fteDeAyudantes(r.ayudante1, r.ayudante2)))
   }
 
-  // Promedios para estimar los viajes de la ventana, calculados sobre los viajes
-  // que SÍ tienen dato (checklist para las horas, egreso para el FTE).
+  // Promedios para estimar lo que falta, calculados sobre los viajes que SÍ tienen
+  // el dato (checklist para las horas, egreso para el FTE).
   //
-  // Se promedia por patente Y MES: si el promedio dependiera del rango consultado,
-  // el TLP de abril daría distinto al filtrar el mes que al mirar el año.
+  // Siempre por patente Y MES: si el promedio dependiera del rango consultado, el
+  // TLP de un mes daría distinto al filtrarlo que al mirar el año entero.
   const promedio = (datos: Map<string, number>) => {
     const porPatenteMes = new Map<string, { suma: number; n: number }>()
     const porMes = new Map<string, { suma: number; n: number }>()
+    let suma = 0
+    let n = 0
     for (const [key, valor] of datos) {
       const [patente, fecha] = key.split("|")
       const mes = fecha.slice(0, 7)
@@ -242,17 +227,58 @@ export async function fetchViajesTlp(
         a.n += 1
         m.set(k, a)
       }
+      suma += valor
+      n += 1
     }
-    // La patente en ese mes; si nunca salió, el promedio del mes.
+    // La patente en ese mes → el mes → todo lo que haya.
     return (patente: string, mes: string): number | null => {
       const a = porPatenteMes.get(`${patente}|${mes}`) ?? porMes.get(mes)
-      return a && a.n > 0 ? a.suma / a.n : null
+      if (a && a.n > 0) return a.suma / a.n
+      return n > 0 ? suma / n : null
     }
   }
-  const minutosEstimados = promedio(tiempo)
-  const fteEstimadoDe = promedio(fte)
+  const minutosDePatente = promedio(tiempo)
+  const ftePromedio = promedio(fte)
+
+  /**
+   * Tiempo estimado de un viaje sin checklist. Un camión tarda distinto según lo
+   * que lleve, así que se busca entre los viajes MEDIDOS los que se le parecen:
+   *
+   *   1. misma patente, ese mes, con CEq parecida (±25%)  ← lo más comparable
+   *   2. cualquier patente del mes con CEq parecida       ← si esa patente no repitió carga así
+   *   3. el promedio de la patente en el mes              ← última red
+   *
+   * El paso 3 lo cubre `minutosDePatente` (patente → mes → global).
+   */
+  const medidos = [...tiempo].map(([key, min]) => {
+    const [patente, fecha] = key.split("|")
+    return { patente, mes: fecha.slice(0, 7), ceq: acum.get(key)?.ceqTotal ?? 0, min }
+  })
+  const TOLERANCIA_CEQ = 0.25
+
+  const minutosEstimados = (patente: string, mes: string, ceq: number): number | null => {
+    if (ceq > 0) {
+      const parecidos = (mismaPatente: boolean) =>
+        medidos.filter(
+          (m) =>
+            m.mes === mes &&
+            m.ceq > 0 &&
+            (!mismaPatente || m.patente === patente) &&
+            Math.abs(m.ceq - ceq) / ceq <= TOLERANCIA_CEQ,
+        )
+      for (const cand of [parecidos(true), parecidos(false)]) {
+        if (cand.length > 0) {
+          return cand.reduce((s, m) => s + m.min, 0) / cand.length
+        }
+      }
+    }
+    return minutosDePatente(patente, mes)
+  }
+
+  // 🚨 Sin egreso NO se usa FTE = 2: un 2 fijo subestima la dotación real (2,5 en
+  // promedio) y le regala productividad al viaje. Va el promedio de la patente.
   const fteEstimado = (patente: string, mes: string): number =>
-    fteEstimadoDe(patente, mes) ?? FTE_FALLBACK
+    ftePromedio(patente, mes) ?? FTE_FALLBACK
 
   const viajes: ViajeTlp[] = []
   let viajesSinTiempo = 0
@@ -264,11 +290,10 @@ export async function fetchViajesTlp(
     let min = tiempo.get(key)
     let estimado = false
 
-    // Ventana previa al arranque del checklist: el viaje existe (tiene CEq), sólo
-    // falta con qué medirlo → se estima el tiempo con el promedio de su patente.
-    const enVentana = fecha >= ESTIMAR_DESDE && fecha <= ESTIMAR_HASTA
-    if (!min && enVentana) {
-      const est = minutosEstimados(patente, fecha.slice(0, 7))
+    // El viaje existe (entregó CEq) pero nadie cargó el checklist: se le estima el
+    // tiempo con los viajes medidos que se le parecen (misma patente y CEq similar).
+    if (!min && fecha >= ESTIMAR_DESDE) {
+      const est = minutosEstimados(patente, fecha.slice(0, 7), v.ceqTotal)
       if (est) {
         min = est
         estimado = true
@@ -296,10 +321,8 @@ export async function fetchViajesTlp(
     // Carga residual sin checklist: no fue un viaje (ver CEQ_MIN_ESTIMADO).
     if (estimado && v.ceqTotal < CEQ_MIN_ESTIMADO) continue
 
-    // En la ventana, un viaje sin egreso tampoco tiene dotación: se estima con el
-    // FTE promedio de su patente (fuera de la ventana sigue el fallback de 2).
-    const fteUsado =
-      fteReal0 ?? (estimado ? fteEstimado(patente, fecha.slice(0, 7)) : FTE_FALLBACK)
+    // Sin egreso no hay dotación cargada → el FTE promedio de la patente en el mes.
+    const fteUsado = fteReal0 ?? fteEstimado(patente, fecha.slice(0, 7))
 
     viajes.push({
       patente,
