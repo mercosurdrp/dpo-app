@@ -21,8 +21,12 @@ import { historicoEnRango } from "@/lib/tlp/historico"
 //
 // Por viaje (patente + fecha):
 //   - CEq:      ocupacion_bodega_localidad_diaria (desglosado por localidad → ciudad)
-//   - horas:    checklist_vehiculos retorno (tiempo_ruta_minutos = retorno − liberación)
-//   - FTE:      registros_vehiculos egreso (1 chofer + ayudantes); fallback 2 si falta
+//   - horas:    checklist_vehiculos retorno (tiempo_ruta_minutos = retorno − liberación).
+//               Si falta, se ESTIMA con los viajes medidos de esa patente que llevaron
+//               una carga parecida (CEq ±25%): el viaje no se descarta, porque
+//               descartarlo se llevaba también su carga.
+//   - FTE:      registros_vehiculos egreso (1 chofer + ayudantes). Si falta, el FTE
+//               promedio de esa patente en el mes (nunca un 2 fijo: subestima).
 // Cada viaje se imputa a su ciudad PREDOMINANTE (donde entregó más CEq).
 // El núcleo del cálculo vive en `@/lib/tlp/calc` (compartido con el Sueño).
 
@@ -53,10 +57,10 @@ export interface TlpResumen {
   por_ciudad: TlpFila[]
   por_patente: TlpPatenteFila[]
   viajes_con_ceq: number
-  viajes_sin_tiempo: number // tienen CEq pero no checklist de retorno → excluidos
-  viajes_fte_fallback: number // usaron FTE=2 por falta de registro de egreso
-  viajes_horas_estimadas: number // sin checklist: tiempo estimado con el promedio de su patente
-  /** El período es un mes cerrado a mano (ene–mar): total sin desglose por ciudad. */
+  viajes_sin_tiempo: number // sin tiempo en ruta ni forma de estimarlo (solo antes de abril)
+  viajes_fte_fallback: number // sin egreso: dotación estimada con el FTE promedio de la patente
+  viajes_horas_estimadas: number // sin checklist: tiempo estimado con viajes de CEq similar
+  /** Mes de CIERRE (ene–mar): sin checklist ⇒ total del mes, sin desglose por ciudad. */
   historico: boolean
 }
 
@@ -120,6 +124,7 @@ export async function getTlpMes(
     // Meses cerrados a mano (ene–mar): no hay viajes que sumar, el total sale del
     // cierre (ver lib/tlp/historico.ts) y no hay desglose por ciudad ni patente.
     const hist = historicoEnRango(desde, hasta)
+    const esHistorico = hist.meses.size > 0
     total.ceq += hist.ceq
     total.horas_ruta += hist.horasRuta
     total.horas_hombre += hist.hh
@@ -140,11 +145,14 @@ export async function getTlpMes(
         total: { ...cerrarTlp(total), tiempo_pdv: pdv.total },
         por_ciudad: filas,
         por_patente: filasPatente,
-        viajes_con_ceq: viajesConCeq,
-        viajes_sin_tiempo: viajesSinTiempo,
-        viajes_fte_fallback: viajesFteFallback,
-        viajes_horas_estimadas: viajesHorasEstimadas,
-        historico: hist.meses.size > 0,
+        // En un mes de cierre no hay checklist (el proceso arrancó el 9-abr): los
+        // camión-día "sin tiempo" son TODOS, y avisarlo sería ruido — el mes se
+        // calcula igual, con el cierre.
+        viajes_con_ceq: esHistorico ? hist.viajes : viajesConCeq,
+        viajes_sin_tiempo: esHistorico ? 0 : viajesSinTiempo,
+        viajes_fte_fallback: esHistorico ? 0 : viajesFteFallback,
+        viajes_horas_estimadas: esHistorico ? 0 : viajesHorasEstimadas,
+        historico: esHistorico,
       },
     }
   } catch (e) {

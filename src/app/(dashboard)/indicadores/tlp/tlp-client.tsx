@@ -166,35 +166,52 @@ export function TlpClient({
         />
         <Kpi
           icon={<Truck className="size-5 text-slate-400" />}
-          label="Viajes con CEq"
+          label="Viajes"
           value={fmtN(data.viajes_con_ceq)}
-          sub={`${fmtN(data.viajes_sin_tiempo)} sin tiempo de ruta`}
+          sub={
+            data.viajes_horas_estimadas > 0
+              ? `${fmtN(data.viajes_horas_estimadas)} con tiempo estimado`
+              : "todos con checklist de retorno"
+          }
         />
       </div>
+
+      {data.historico && (
+        <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Mes de <strong>cierre</strong>: el checklist de retorno arrancó el 9 de abril, así que
+            este mes no se calcula viaje a viaje. El TLP sale de las CEq del mes ÷ (camiones a la
+            calle × dotación promedio × horas promedio de las rutas limpias de Foxtrot), y por eso
+            no abre por ciudad.
+          </span>
+        </div>
+      )}
 
       {(data.viajes_sin_tiempo > 0 || data.viajes_fte_fallback > 0 || data.viajes_horas_estimadas > 0) && (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span>
-            {data.viajes_sin_tiempo > 0 && (
+            {data.viajes_horas_estimadas > 0 && (
               <>
-                <strong>{fmtN(data.viajes_sin_tiempo)}</strong> viaje
-                {data.viajes_sin_tiempo === 1 ? "" : "s"} con CEq pero sin checklist
-                de retorno (excluidos del denominador).{" "}
+                <strong>{fmtN(data.viajes_horas_estimadas)}</strong> viaje
+                {data.viajes_horas_estimadas === 1 ? "" : "s"} sin checklist de retorno: el
+                tiempo en ruta se estimó con los viajes medidos de esa misma patente que
+                llevaron una carga parecida (CEq ±25%).{" "}
               </>
             )}
             {data.viajes_fte_fallback > 0 && (
               <>
                 <strong>{fmtN(data.viajes_fte_fallback)}</strong> viaje
-                {data.viajes_fte_fallback === 1 ? "" : "s"} usaron FTE=2 por falta de
-                registro de egreso.{" "}
+                {data.viajes_fte_fallback === 1 ? "" : "s"} sin registro de egreso: la
+                dotación se estimó con el FTE promedio de esa patente en el mes.{" "}
               </>
             )}
-            {data.viajes_horas_estimadas > 0 && (
+            {data.viajes_sin_tiempo > 0 && (
               <>
-                <strong>{fmtN(data.viajes_horas_estimadas)}</strong> viaje
-                {data.viajes_horas_estimadas === 1 ? "" : "s"} sin checklist de retorno pero
-                con egreso: el tiempo en ruta se estimó con el promedio de esa patente.
+                <strong>{fmtN(data.viajes_sin_tiempo)}</strong> viaje
+                {data.viajes_sin_tiempo === 1 ? "" : "s"} quedaron sin tiempo en ruta y no
+                entran al cálculo.
               </>
             )}
           </span>
