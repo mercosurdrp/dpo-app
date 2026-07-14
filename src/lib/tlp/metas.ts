@@ -5,6 +5,8 @@
 //   gatillo = 85% de esa meta (`gatilloDe`), regla pareja para todas: debajo de
 //             eso, rojo. Se prefirió al "promedio propio" porque no depende de la
 //             historia de cada ciudad y se explica en una línea.
+//             Pergamino y Arrecifes llevan un gatillo fijado a mano por Andy
+//             (2026-07-14): el 85% les quedaba alto para el piso que se les pide.
 //
 // Recalibradas 2026-07-14 sobre abr–jul, después de dos correcciones que movieron
 // el piso: ya no se descarta el viaje sin checklist (antes se iba con su carga
@@ -41,10 +43,11 @@ export const TLP_META_GLOBAL: TlpMeta = conGatillo(34)
 
 export const TLP_METAS_CIUDAD: Record<string, TlpMeta> = {
   "San Nicolás": conGatillo(34),
-  Pergamino: conGatillo(27),
   Ramallo: conGatillo(51),
   Colón: conGatillo(27),
-  Arrecifes: conGatillo(41),
+  // Gatillos fijados por Andy, más bajos que el 85% (23 y 35).
+  Pergamino: { meta: 27, gatillo: 22.5 },
+  Arrecifes: { meta: 41, gatillo: 33 },
 }
 
 /** Meta de una ciudad; ciudades sin meta propia miden contra la global. */
