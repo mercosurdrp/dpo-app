@@ -125,8 +125,8 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
           <DialogDescription>
             Bultos vendidos y qué se perdió ese día, con el detalle de cada
             rotura por SKU (bultos, unidades y HL) y si se rompió en el almacén o
-            en la calle. El WQI es PPM = HL de roturas ÷ HL vendidos × 1.000.000,
-            e incluye las dos.
+            en la calle. El WQI es PPM = HL de roturas <strong>de almacén</strong>{" "}
+            ÷ HL vendidos × 1.000.000 — las roturas de distribución van al DQI.
           </DialogDescription>
         </DialogHeader>
 
@@ -176,7 +176,9 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                     <Package className="size-4 text-slate-400" />
                   </div>
                   <p className="text-2xl font-bold text-red-700">{fmt(data.roturas_hl, 2)}</p>
-                  <p className="text-xs text-muted-foreground">HL</p>
+                  <p className="text-xs text-muted-foreground">
+                    HL — almacén + calle (el WQI cuenta sólo el almacén)
+                  </p>
                 </CardContent>
               </Card>
               <Card>
@@ -236,10 +238,10 @@ export function WarehousePerdidasDetalleDiaDialog({ open, onOpenChange, fecha }:
                   </div>
                   {(data.roturas_distribucion_hl ?? 0) > 0 && (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Las roturas de distribución <strong>están incluidas</strong>{" "}
-                      en el WQI, igual que en el reporte a auditoría. Sin ellas el
-                      WQI del día sería{" "}
-                      <strong>{fmt(data.wqi_almacen_dia, 1)} PPM</strong>.
+                      Las roturas de distribución <strong>no entran</strong> en el
+                      WQI: el WQI mide el almacén y las de la calle van al DQI
+                      (pilar Entrega). Sí están contadas en el FGLI y en el SCL,
+                      que miden la pérdida total.
                     </p>
                   )}
                 </CardContent>
