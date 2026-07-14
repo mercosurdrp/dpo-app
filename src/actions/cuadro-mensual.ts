@@ -27,6 +27,8 @@ import {
 import { contarTripulacion } from "@/lib/tml/calculo"
 import { SELECT_RUTA_LIMPIA, esRutaLimpia } from "@/lib/foxtrot/ruta-limpia"
 import { SEGUNDAS_VUELTAS } from "@/lib/tlp/segundas-vueltas"
+import { ceqGescomPorViaje } from "@/lib/tlp/ceq-gescom"
+import { normPatente } from "@/lib/tlp/calc"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -150,6 +152,69 @@ export async function getCuadroMensualIndicadores(): Promise<
     }
     return rows
   }
+  // Camiones a la calle = CAMIÓN-DÍA únicos con carga (patente + fecha), los
+  // mismos viajes que cuenta el TLP.
+  //
+  // 🚨 NO son las rutas de Foxtrot: esa tabla cuenta hojas de ruta, no camiones.
+  // En mayo daba 210 "viajes" contra 187 reales — contaba dos veces al mismo
+  // camión en el mismo día, y traía 50 rutas (junio) cuyo chofer no tiene egreso
+  // que, al resolverlas por el checklist, resultaron ser viajes YA contados.
+  //
+  // Chess pone la patente en la ocupación de bodega; Gestión no la expone y se
+  // resuelve por chofer (`ceqGescomPorViaje`). El camión que solo llevó carga de
+  // Gestión también salió a la calle.
+  async function camionesDiaPorMes() {
+    const PAGE = 1000
+    const ceqPorViaje = new Map<string, number>()
+    const conChecklist = new Set<string>()
+    const sumar = (fecha: string, patente: string, ceq: number) => {
+      const k = `${normPatente(patente)}|${fecha}`
+      ceqPorViaje.set(k, (ceqPorViaje.get(k) ?? 0) + ceq)
+    }
+
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("ocupacion_bodega_localidad_diaria")
+        .select("fecha, patente, ceq_total")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      for (const r of data) if (r.patente) sumar(r.fecha, r.patente, Number(r.ceq_total ?? 0))
+      if (data.length < PAGE) break
+    }
+
+    for (const [clave, ceq] of await ceqGescomPorViaje(supabase, desde, hasta)) {
+      const [patente, fecha] = clave.split("|")
+      sumar(fecha, patente, ceq)
+    }
+
+    // Checklist de retorno del camión: prueba de que salió, lleve lo que lleve.
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("checklist_vehiculos")
+        .select("fecha, dominio")
+        .eq("tipo", "retorno")
+        .gte("fecha", desde)
+        .lte("fecha", hasta)
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      for (const r of data) if (r.dominio) conChecklist.add(`${normPatente(r.dominio)}|${r.fecha}`)
+      if (data.length < PAGE) break
+    }
+
+    // Mismo criterio de "viaje" que el TLP: el camión-día sin checklist y con
+    // carga residual (< 100 CEq: una entrega suelta) no es un viaje — ver
+    // CEQ_MIN_ESTIMADO en lib/tlp/calc.ts.
+    const porMes: Record<string, Set<string>> = {}
+    for (const [clave, ceq] of ceqPorViaje) {
+      if (!conChecklist.has(clave) && ceq < 100) continue
+      const fecha = clave.split("|")[1]
+      ;(porMes[fecha.slice(0, 7)] ??= new Set()).add(clave)
+    }
+    return porMes
+  }
+
   // Egresos de camión para el FTE de reparto (chofer + ayudantes por viaje):
   // ~200 filas/mes, pero un rango de varios meses supera el tope de 1000 de
   // PostgREST → paginar.
@@ -197,7 +262,8 @@ export async function getCuadroMensualIndicadores(): Promise<
   // ── Fetches de rango (en paralelo) ──
   // reportes_seguridad está muy por debajo de 1000 filas en el rango, así que
   // no necesita paginación.
-  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, egresosRows] = await Promise.all([
+  const [repRes, ventasRows, mostradorRows, rechazosRows, foxRows, egresosRows, camionesPorMes] =
+    await Promise.all([
     // Seguridad: traigo TODO el histórico ≤ hasta (sin gte) para poder calcular
     // "días sin accidentes" mirando hacia atrás de cada mes.
     supabase
@@ -210,6 +276,7 @@ export async function getCuadroMensualIndicadores(): Promise<
     rechazosTodos(),
     foxtrotRoutesTodas(),
     egresosTodos(),
+    camionesDiaPorMes(),
   ])
 
   // ── SEGURIDAD ──
@@ -527,11 +594,12 @@ export async function getCuadroMensualIndicadores(): Promise<
       valor: acc && acc.fechas.size > 0 ? acc.rutas / acc.fechas.size : null,
       parcial: esActual,
     }
-    // Entrega: viajes del mes = total de rutas Foxtrot (suma de camiones
-    // que salieron por día; un camión con viaje un día cuenta 1).
+    // Entrega: camiones a la calle = camión-día únicos con carga (los viajes del
+    // TLP), no las rutas de Foxtrot.
+    const camionesDia = camionesPorMes[mes]?.size ?? 0
     celdas.viajes_mes[mes] = {
       mes,
-      valor: acc && acc.rutas > 0 ? acc.rutas : null,
+      valor: camionesDia > 0 ? camionesDia : null,
       parcial: esActual,
     }
     // Segundas vueltas: carga manual (Chess no las imputa a ningún camión).
