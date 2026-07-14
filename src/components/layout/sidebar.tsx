@@ -12,6 +12,7 @@ import {
   BarChart3,
   Fingerprint,
   GraduationCap,
+  Grid3x3,
   Truck,
   Users,
   Link2,
@@ -225,6 +226,12 @@ export const navItems: NavItem[] = [
     label: "Capacitaciones",
     href: "/capacitaciones",
     icon: <GraduationCap className="size-5" />,
+  },
+  {
+    label: "Matriz SKAP",
+    href: "/gente/matriz-skap",
+    icon: <Grid3x3 className="size-5" />,
+    hideForEmpleado: true,
   },
   {
     label: "Mis Capacitaciones",

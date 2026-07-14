@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
 import type { NpsPlan } from "@/actions/nps-planes"
+import type { PlanMarcable } from "@/components/plan-badge"
 import { SyncAviso } from "@/components/sync-aviso"
 import { ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
@@ -95,6 +96,15 @@ export function NpsClient({ data, planesIniciales }: Props) {
     foco_promotor?: string
   } | null>(null)
   const [abrirPlanNonce, setAbrirPlanNonce] = useState(0)
+
+  // Clic en "Con plan" del explorador → abrir ese plan en el bloque de abajo.
+  const [verPlanId, setVerPlanId] = useState<string | null>(null)
+  const [verPlanNonce, setVerPlanNonce] = useState(0)
+
+  function verPlan(plan: PlanMarcable) {
+    setVerPlanId(plan.id)
+    setVerPlanNonce((n) => n + 1)
+  }
 
   function planParaCliente(c: NpsClienteDP) {
     setFocoPlan({
@@ -470,6 +480,7 @@ export function NpsClient({ data, planesIniciales }: Props) {
         clientes={clientes_dp}
         planes={planes}
         onCrearPlan={planParaCliente}
+        onVerPlan={verPlan}
       />
 
       {/* Clientes recuperados (evidencia R4.1.4: NPS mejorando) */}
@@ -537,6 +548,8 @@ export function NpsClient({ data, planesIniciales }: Props) {
       <PlanesAccionBloque
         planesIniciales={planesIniciales}
         onPlanesChange={setPlanes}
+        verPlanId={verPlanId}
+        verPlanNonce={verPlanNonce}
         drivers={drivers_dp.map((d) => d.driver)}
         clientes={clientes_dp.map((c) => ({
           cod_cliente: c.cod_cliente,

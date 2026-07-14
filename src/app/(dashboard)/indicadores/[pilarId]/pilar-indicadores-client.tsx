@@ -233,6 +233,42 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
         </Card>
       )}
 
+      {/* Priorización de Entrega — el corte del día cuando la capacidad no alcanza.
+          Vive aparte de la clusterización (que es semestral y pesada) porque esto se
+          abre todos los días al rutear. Solo Pampeana. */}
+      {!IS_MISIONES && pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <Truck className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Priorización de Entrega
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Cuando la capacidad no alcanza: a quién se le entrega y a quién se le
+                    reprograma. Ranking por ciudad según comportamiento del cliente.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/priorizacion-entrega"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Acceso a Períodos Críticos (R3.4), pilar Planeamiento */}
       {pilar.nombre === "Planeamiento" && (
         <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>

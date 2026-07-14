@@ -35,6 +35,7 @@ import {
   ESTADO_PLAN,
   PlanBadge,
   planesPorClienteFoco,
+  type PlanMarcable,
 } from "@/components/plan-badge"
 
 const TODOS = "__todos__"
@@ -60,9 +61,16 @@ interface Props {
   /** Planes de acción vivos: los que tienen foco en un cliente lo marcan acá. */
   planes: NpsPlan[]
   onCrearPlan: (c: NpsClienteDP) => void
+  /** Abre el plan del cliente en el bloque de planes de abajo. */
+  onVerPlan: (plan: PlanMarcable) => void
 }
 
-export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
+export function ClientesExplorador({
+  clientes,
+  planes,
+  onCrearPlan,
+  onVerPlan,
+}: Props) {
   // Arranca donde se mira primero: los detractores, los más recientes arriba.
   const [fCategoria, setFCategoria] = useState<string>("Detractor")
   const [fPromotor, setFPromotor] = useState<string>(TODOS)
@@ -198,11 +206,8 @@ export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
         className="grid w-full cursor-pointer grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
         <span className="col-span-4 min-w-0">
-          <span className="flex items-center gap-1.5">
-            <span className="truncate font-medium text-slate-800">
-              {c.nombre_cliente}
-            </span>
-            <PlanBadge planes={planesCli} />
+          <span className="block truncate font-medium text-slate-800">
+            {c.nombre_cliente}
           </span>
           <span className="block truncate text-xs text-slate-400">
             #{c.cod_cliente} · {c.localidad ?? "—"} ·{" "}
@@ -221,18 +226,22 @@ export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
           {c.promotor ?? "—"}
         </span>
         <span className="col-span-1 text-right">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onCrearPlan(c)
-            }}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-100"
-            title="Crear plan de acción para este cliente"
-          >
-            <Target className="h-3.5 w-3.5" />
-            Plan
-          </button>
+          {planesCli.length > 0 ? (
+            <PlanBadge planes={planesCli} onVerPlan={onVerPlan} />
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCrearPlan(c)
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+              title="Crear plan de acción para este cliente"
+            >
+              <Target className="h-3.5 w-3.5" />
+              Plan
+            </button>
+          )}
         </span>
       </div>
     )
@@ -532,7 +541,16 @@ export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
                       <ul className="mt-1 space-y-0.5 text-emerald-900">
                         {planesCli.map((p) => (
                           <li key={p.id}>
-                            {p.titulo} — {ESTADO_PLAN[p.estado]}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClienteModal(null)
+                                onVerPlan(p)
+                              }}
+                              className="text-left underline decoration-emerald-300 underline-offset-2 hover:decoration-emerald-600"
+                            >
+                              {p.titulo} — {ESTADO_PLAN[p.estado]}
+                            </button>
                           </li>
                         ))}
                       </ul>

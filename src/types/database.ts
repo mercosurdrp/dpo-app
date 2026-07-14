@@ -4005,3 +4005,112 @@ export const SG_ESTADO_ORDEN: SgEstado[] = [
   "resuelto",
   "cerrado",
 ]
+
+// ============================================
+// Matriz de Habilidades (Matriz SKAP) — Pilar GENTE 4.4
+// OJO: distinto de SkapMatriz/sop_certificaciones, que es la certificación
+// de SOPs (vigente/vencida). Acá se mide habilidad vs estándar y el gap.
+// ============================================
+
+export type SkapRol =
+  | "chofer"
+  | "ayudante"
+  | "pickero"
+  | "autoelevadorista"
+  | "mantenimiento"
+  | "administrativo"
+
+export type SkapCriticidad = "A" | "B" | "C"
+
+/** Semáforo del gap = nivel - estándar (según el instructivo del Excel). */
+export type SkapEstadoGap =
+  | "critico" // gap <= -2
+  | "brecha" // gap == -1
+  | "cumple" // gap >= 0
+  | "sin_evaluar" // todavía no se evaluó
+  | "no_aplica" // NA
+
+export interface SkapHabilidad {
+  id: string
+  rol: SkapRol
+  bloque: string
+  criticidad: SkapCriticidad
+  habilidad: string
+  estandar: number
+  orden: number
+  activo: boolean
+}
+
+export interface SkapPlanFormacion {
+  id: string
+  habilidad_id: string
+  alcance: string | null
+  hs_teoricas: number | null
+  hs_practicas: number | null
+  experto: string | null
+  instructor: string | null
+  tutor: string | null
+  metodo: string | null
+  criterio_evaluacion: string | null
+  material: string | null
+}
+
+export interface SkapEvaluacion {
+  id: string
+  empleado_id: string
+  habilidad_id: string
+  fecha_evaluacion: string
+  nivel: number | null
+  estandar_individual: number | null
+  observaciones: string | null
+  evaluador_id: string | null
+}
+
+export type SkapEstadoAccion = "pendiente" | "programada" | "realizada" | "cerrada"
+
+export interface SkapAccion {
+  id: string
+  empleado_id: string
+  habilidad_id: string
+  estado: SkapEstadoAccion
+  fecha_programada: string | null
+  fecha_realizada: string | null
+  responsable: string | null
+  nivel_origen: number | null
+  observaciones: string | null
+}
+
+/** Una celda de la grilla: persona × habilidad. */
+export interface SkapCelda {
+  habilidad_id: string
+  nivel: number | null
+  estandar: number // el individual si existe, si no el general
+  gap: number | null
+  estado: SkapEstadoGap
+  fecha_evaluacion: string | null
+}
+
+export interface SkapPersonaRow {
+  empleado_id: string
+  legajo: number
+  nombre: string
+  celdas: SkapCelda[]
+  /** % de habilidades CRÍTICAS (A) que llegan al estándar. Es el KPI del 4.4. */
+  pct_criticas: number | null
+  pct_general: number | null
+  gaps_criticos: number
+}
+
+export interface SkapMatrizRol {
+  rol: SkapRol
+  habilidades: SkapHabilidad[]
+  personas: SkapPersonaRow[]
+  kpis: {
+    personas: number
+    evaluadas: number
+    pct_cobertura_criticas: number | null
+    gaps_criticos: number
+    gaps_brecha: number
+    acciones_abiertas: number
+  }
+}

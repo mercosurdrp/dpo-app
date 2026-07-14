@@ -89,7 +89,9 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // ---- Operacional ----
   { key: "n_incidentes", label: "N° Incidentes", nivel: "operacional", rama: "seguridad", parentKey: "lti", unidad: "cant.", mejorSi: "menor", metaDefault: 20 },
   { key: "comportamientos", label: "Comportamientos Inseguros", nivel: "operacional", rama: "seguridad", parentKey: "n_incidentes", unidad: "cant.", mejorSi: "mayor", metaDefault: 100 },
-  { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs", mejorSi: "menor", metaDefault: 8 },
+  // Meta 6,5 = el mejor mes ya logrado (mar y jul). 🚨 Leerlo contra el TLP: si los
+  // viajes se acortan repartiendo menos, este número baja y el TLP no mejora.
+  { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs", mejorSi: "menor", metaDefault: 6.5 },
   { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 300 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
@@ -116,7 +118,6 @@ export type AgregacionMensual = "promedio" | "suma"
  */
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   wnp: "promedio",
-  tiempo_ruta: "promedio",
   hs_extras: "promedio",
 }
 

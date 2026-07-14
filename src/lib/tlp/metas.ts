@@ -2,9 +2,11 @@
 //
 // Metodología:
 //   meta    = mejor mes ya logrado por esa ciudad (repetir lo que ya se pudo)
-//   gatillo = su propio promedio del año, redondeado hacia abajo (si empeora
-//             respecto de sí misma, rojo). Ojo: el gatillo NO puede ser igual al
-//             promedio, o la ciudad que está justo EN su promedio da rojo.
+//   gatillo = 85% de esa meta (`gatilloDe`), regla pareja para todas: debajo de
+//             eso, rojo. Se prefirió al "promedio propio" porque no depende de la
+//             historia de cada ciudad y se explica en una línea.
+//             Pergamino y Arrecifes llevan un gatillo fijado a mano por Andy
+//             (2026-07-14): el 85% les quedaba alto para el piso que se les pide.
 //
 // Recalibradas 2026-07-14 sobre abr–jul, después de dos correcciones que movieron
 // el piso: ya no se descarta el viaje sin checklist (antes se iba con su carga
@@ -28,17 +30,23 @@ export interface TlpMeta {
   gatillo: number
 }
 
+/** Gatillo = 85% de la meta, redondeado. Debajo de eso, rojo. */
+const GATILLO_PCT = 0.85
+const gatilloDe = (meta: number): number => Math.round(meta * GATILLO_PCT)
+const conGatillo = (meta: number): TlpMeta => ({ meta, gatillo: gatilloDe(meta) })
+
 /**
  * Meta global Mercosur (nodo TLP del Árbol del Sueño). El año cerró en 31,8 y el
  * mejor mes fue 35,2 (marzo).
  */
-export const TLP_META_GLOBAL: TlpMeta = { meta: 34, gatillo: 30 }
+export const TLP_META_GLOBAL: TlpMeta = conGatillo(34)
 
 export const TLP_METAS_CIUDAD: Record<string, TlpMeta> = {
-  "San Nicolás": { meta: 34, gatillo: 31 },
-  Pergamino: { meta: 27, gatillo: 22 },
-  Ramallo: { meta: 51, gatillo: 43 },
-  Colón: { meta: 27, gatillo: 24 },
+  "San Nicolás": conGatillo(34),
+  Ramallo: conGatillo(51),
+  Colón: conGatillo(27),
+  // Gatillos fijados por Andy, más bajos que el 85% (23 y 35).
+  Pergamino: { meta: 27, gatillo: 22.5 },
   Arrecifes: { meta: 41, gatillo: 33 },
 }
 

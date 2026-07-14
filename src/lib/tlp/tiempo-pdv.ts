@@ -83,6 +83,7 @@ export async function tiempoPdvPorCiudad(
       .in("dc_id", foxtrotDcIds())
       .gte("fecha", desde)
       .lte("fecha", hasta)
+      .order("route_id")
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
     const rows = (data ?? []) as RutaFoxtrot[]

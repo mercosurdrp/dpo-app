@@ -406,6 +406,10 @@ interface Props {
   planesIniciales: RmdPlan[]
   /** Avisa la lista al día para que el explorador marque los clientes con plan. */
   onPlanesChange?: (planes: RmdPlan[]) => void
+  /** Plan a abrir en el detalle (clic en "Con plan" del explorador). */
+  verPlanId?: string | null
+  /** Cambia cada vez que hay que abrir `verPlanId`. */
+  verPlanNonce?: number
   motivos: string[]
   clientes: { cod_cliente: number; nombre_cliente: string }[]
   choferes: string[]
@@ -418,6 +422,8 @@ interface Props {
 export function PlanesAccionBloque({
   planesIniciales,
   onPlanesChange,
+  verPlanId = null,
+  verPlanNonce = 0,
   motivos,
   clientes,
   choferes,
@@ -446,6 +452,16 @@ export function PlanesAccionBloque({
       }
     })
   }, [])
+
+  // Abrir el detalle del plan que se clickeó en el explorador de clientes.
+  useEffect(() => {
+    if (verPlanNonce > 0 && verPlanId) {
+      const p = planes.find((x) => x.id === verPlanId)
+      if (p) setPlanDetalle(p)
+    }
+    // planes queda fuera a propósito: sólo reaccionamos al clic, no a un refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verPlanNonce, verPlanId])
 
   // Abrir el form con foco prellenado (botón "Plan" de la tabla de clientes).
   useEffect(() => {

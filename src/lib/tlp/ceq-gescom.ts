@@ -44,6 +44,7 @@ export async function ceqGescomPorViaje(
       .eq("origen", "gestion")
       .gte("fecha", desde)
       .lte("fecha", hasta)
+      .order("id")
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
     const rows = (data ?? []) as {
@@ -86,6 +87,7 @@ async function ceqFactores(supabase: SupabaseClient): Promise<Map<number, number
       .from("chess_articulos")
       .select("id_articulo, ceq_factor")
       .not("ceq_factor", "is", null)
+      .order("id_articulo")
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
     const rows = (data ?? []) as { id_articulo: number; ceq_factor: number }[]

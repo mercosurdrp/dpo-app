@@ -116,7 +116,11 @@ export async function fetchViajesTlp(
           .select("patente, fecha, localidad, ceq_total")
           .gte("fecha", desde)
           .lte("fecha", hasta)
-          .order("fecha")
+          // 🚨 Ordenar por una clave ÚNICA, no por `fecha`: hay ~10 viajes por día
+          // y PostgREST devuelve los empates en orden arbitrario ⇒ las páginas se
+          // pisan y el TLP sale distinto en cada corrida (abril llegó a saltar de
+          // 31,4 a 39,4). Ver [[feedback_supabase_max_rows]].
+          .order("id")
           .range(from, to),
     ),
     fetchAll<{ dominio: string; fecha: string; tiempo_ruta_minutos: number }>(
@@ -128,7 +132,7 @@ export async function fetchViajesTlp(
           .not("tiempo_ruta_minutos", "is", null)
           .gte("fecha", desde)
           .lte("fecha", hasta)
-          .order("fecha")
+          .order("id")
           .range(from, to),
     ),
     fetchAll<{ dominio: string; fecha: string; ayudante1: string | null; ayudante2: string | null }>(
@@ -139,7 +143,7 @@ export async function fetchViajesTlp(
           .eq("tipo", "egreso")
           .gte("fecha", desde)
           .lte("fecha", hasta)
-          .order("fecha")
+          .order("id")
           .range(from, to),
     ),
     mapaCiudades(supabase),
