@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { diasSinSync } from "@/lib/sync-estado"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -17,6 +18,8 @@ export interface NpsResumen {
   ultima_encuesta: string | null
   /** Última corrida OK del sync con el Power BI (nps_sync_log). */
   actualizado_en: string | null
+  /** Días transcurridos desde esa corrida (se calcula acá para no depender del reloj del navegador). */
+  dias_sin_sync: number | null
 }
 
 export interface NpsMes {
@@ -134,6 +137,9 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
 
     if (encRes.error) return { error: encRes.error.message }
     const encuestas = (encRes.data ?? []) as unknown as EncuestaRow[]
+    const ultimoSync =
+      ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
+        ?.ejecutado_en ?? null
 
     const rmdPorMes = new Map<number, { rmd: number | null; n: number }>()
     for (const m of (metRes.data ?? []) as Array<{
@@ -181,9 +187,8 @@ export async function getNpsDashboard(): Promise<Result<NpsDashboardData>> {
       ultima_encuesta: encuestas.length
         ? encuestas[encuestas.length - 1].fecha_enc
         : null,
-      actualizado_en:
-        ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
-          ?.ejecutado_en ?? null,
+      actualizado_en: ultimoSync,
+      dias_sin_sync: diasSinSync(ultimoSync),
     }
 
     // ---- por mes ----

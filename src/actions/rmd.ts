@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { diasSinSync } from "@/lib/sync-estado"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -23,6 +24,8 @@ export interface RmdResumen {
   ultima_puntuacion: string | null
   /** Última corrida OK del sync con el Power BI (nps_sync_log). */
   actualizado_en: string | null
+  /** Días transcurridos desde esa corrida (se calcula acá para no depender del reloj del navegador). */
+  dias_sin_sync: number | null
 }
 
 export interface RmdMes {
@@ -157,6 +160,10 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
         .limit(1),
     ])
 
+    const ultimoSync =
+      ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
+        ?.ejecutado_en ?? null
+
     const otifPorMes = new Map<number, number | null>()
     for (const r of (rechRes.data ?? []) as Array<{
       mes: number
@@ -183,9 +190,8 @@ export async function getRmdDashboard(): Promise<Result<RmdDashboardData>> {
       pct_detractores: total ? round1((detractores / total) * 100) : null,
       clientes: clientesSet.size,
       ultima_puntuacion: total ? filas[total - 1].fecha_puntuacion : null,
-      actualizado_en:
-        ((syncRes.data ?? []) as Array<{ ejecutado_en: string }>)[0]
-          ?.ejecutado_en ?? null,
+      actualizado_en: ultimoSync,
+      dias_sin_sync: diasSinSync(ultimoSync),
     }
 
     // ---- por mes ----

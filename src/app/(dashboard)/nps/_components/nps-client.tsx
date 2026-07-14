@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
 import type { NpsPlan } from "@/actions/nps-planes"
+import { SyncAviso } from "@/components/sync-aviso"
 import { ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
@@ -133,11 +134,16 @@ export function NpsClient({ data, planesIniciales }: Props) {
             <span className="ml-1 text-slate-400">
               Datos actualizados el{" "}
               {FMT_DIA_HORA.format(new Date(resumen.actualizado_en))} hs
-              (sincronización automática cada 15 días).
+              (sincronización automática todos los lunes).
             </span>
           )}
         </p>
       </div>
+
+      <SyncAviso
+        actualizadoEn={resumen.actualizado_en}
+        diasSinSync={resumen.dias_sin_sync}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
