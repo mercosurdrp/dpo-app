@@ -27,15 +27,6 @@ const SECTOR_DE_ROL: Record<SkapRol, string> = {
   administrativo: "Distribución",
 }
 
-export const ROLES_SKAP: { rol: SkapRol; label: string; sector: string }[] = [
-  { rol: "chofer", label: "Chofer", sector: "Distribución" },
-  { rol: "ayudante", label: "Ayudante", sector: "Distribución" },
-  { rol: "pickero", label: "Pickero", sector: "Depósito" },
-  { rol: "autoelevadorista", label: "Autoelevadorista", sector: "Depósito" },
-  { rol: "mantenimiento", label: "Mantenimiento", sector: "Depósito" },
-  { rol: "administrativo", label: "Administrativo", sector: "Distribución" },
-]
-
 /**
  * Semáforo del gap, tal cual el instructivo del Excel:
  *   gap <= -2  crítico | gap == -1  brecha | gap >= 0  cumple

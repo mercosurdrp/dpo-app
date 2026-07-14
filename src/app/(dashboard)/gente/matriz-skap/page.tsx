@@ -1,4 +1,5 @@
-import { getMatrizRol, getAcciones, puedeEditarRol, ROLES_SKAP } from "@/actions/skap-habilidades"
+import { getMatrizRol, getAcciones, puedeEditarRol } from "@/actions/skap-habilidades"
+import { ROLES_SKAP } from "@/lib/skap/roles"
 import type { SkapRol } from "@/types/database"
 import { MatrizHabilidadesClient } from "./matriz-habilidades-client"
 
