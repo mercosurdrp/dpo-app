@@ -38,6 +38,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { DqiPorPatenteCard } from "./_components/dqi-por-patente-card"
 import { getDqi, crearPlanDqi, type DqiData } from "@/actions/dqi"
 import { ROTURA_MOTIVO_LABELS, ROTURA_ESTADO_LABELS, ROTURA_TIPO_LABELS } from "@/types/roturas"
 
@@ -444,6 +445,9 @@ export function DqiClient({ initial, initialYear, initialMonth }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* DQI por camión: el mismo PPM, repartido por patente */}
+      <DqiPorPatenteCard year={year} month={month} target={data.target} />
 
       {/* Roturas reportadas por choferes desde la app (registro, no recalcula el PPM) */}
       <Card>

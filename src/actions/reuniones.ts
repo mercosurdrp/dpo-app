@@ -35,6 +35,7 @@ import {
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
+import { getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
   Profile,
@@ -3699,6 +3700,30 @@ async function getIndicadoresMesCore(
           fteEgresosMtd > 0
             ? Math.round((ftePersonasMtd / fteEgresosMtd) * 100) / 100
             : null,
+        auto: true,
+      })
+    }
+
+    // 7c-bis. Fila "DQI · roturas en ruta" (PPM) — punto DPO Entrega 1.4.
+    //   Va SOLO en el MTD: el denominador del DQI (HL entregados) es mensual, así
+    //   que no hay valor por día que poner en las celdas. El detalle por camión
+    //   del mes se abre desde el MTD (celda clickeable → DqiPatentesDialog).
+    //   El PPM viene ya calculado del tablero de pérdidas: acá no se recalcula.
+    //   Tolerante a fallos: si el tablero no responde, mtd queda null (la fila se
+    //   ve con "—") y la matinal sigue funcionando.
+    if ((tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES) {
+      const dqiPpm = await getDqiPpmMes(anio, mes)
+      const dqiValores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
+      for (const f of fechas) dqiValores[f] = null
+      indicadoresAuto.push({
+        id: "auto_dqi",
+        nombre: "DQI · roturas en ruta",
+        unidad: "PPM",
+        meta: null,
+        orden: -1,
+        agregacion: "promedio",
+        valores: dqiValores,
+        mtd: dqiPpm,
         auto: true,
       })
     }

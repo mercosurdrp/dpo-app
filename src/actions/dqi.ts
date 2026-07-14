@@ -285,3 +285,265 @@ export async function getDqiPorPatente(
     }
   }
 }
+
+// ===== DQI por patente, en PPM =====
+// El desglose de arriba es sólo el numerador (HL rotos por camión): con eso, el
+// camión que más carga siempre parece el peor. Para rankear hace falta dividir
+// por el volumen de cada uno.
+//
+// El DQI NO se recalcula: se REPARTE el que ya se publica. El denominador de una
+// patente es su parte del HL entregado del mes, prorrateada por lo que despachó:
+//
+//   denom(p) = HL_entregados_del_mes × (HL_despachados(p) ÷ Σ HL_despachados)
+//   ppm(p)   = HL_rotos(p) ÷ denom(p) × 1.000.000
+//
+// Así la suma ponderada de las patentes da EXACTO el DQI general publicado
+// (verificado jun'26: Σ roturas por patente = 1,2477 HL = el hl_mes de /api/dqi,
+// sobre 9.523,62 HL entregados = 131 PPM = el que publica /api/dqi).
+//
+// Supuesto (rotulado en la UI): los HL entregados se reparten entre camiones
+// igual que los despachados. Difieren sólo por rechazos/devoluciones, que son
+// chicos y no se imputan por patente en ninguna fuente.
+//
+// Sólo ROTURAS entran al PPM: el DQI del punto 1.4 es roturas en ruta. Los
+// faltantes viajan en el mismo desglose pero quedan como dato de gestión aparte.
+
+/** HL despachados por patente — tabla `ocupacion_bodega_diaria` (fecha, patente, hl_total). */
+interface HlDespachado {
+  patente: string
+  hl_total: number | string | null
+}
+
+/** PostgREST corta en 1000 filas: un año son ~2.100 y el corte es SILENCIOSO
+ * (dejaría camiones sin volumen → PPM inflado). Paginar siempre. */
+const PAGE = 1000
+
+async function getHlDespachadosPorPatente(
+  desde: string,
+  hasta: string,
+): Promise<Record<string, number>> {
+  const supabase = await createClient()
+  const acum: Record<string, number> = {}
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("ocupacion_bodega_diaria")
+      .select("patente, hl_total")
+      .gte("fecha", desde)
+      .lte("fecha", hasta)
+      .range(offset, offset + PAGE - 1)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as HlDespachado[]
+    for (const r of rows) {
+      const p = (r.patente ?? "").trim()
+      if (!p) continue
+      acum[p] = (acum[p] ?? 0) + Number(r.hl_total ?? 0)
+    }
+    if (rows.length < PAGE) break
+  }
+  return acum
+}
+
+/** Cache in-process del HL entregado (dato mensual, se mueve lento). En Next 16
+ * el fetch no se cachea salvo force-cache, y dentro de un server action eso no
+ * es confiable — con esto la matinal no paga los ~5s del tablero en cada carga. */
+const HL_TTL_MS = 15 * 60 * 1000
+let hlMovidosCache: { t: number; v: Record<string, Record<string, { entregados?: number }>> } | null =
+  null
+
+/** HL entregados del período (mes, o año entero si month es null) — la MISMA
+ * fuente que usa el DQI general: deposito-esteban /api/hl-movidos. */
+async function getHlEntregados(
+  year: number,
+  month?: number | null,
+): Promise<number | null> {
+  let hm = hlMovidosCache && Date.now() - hlMovidosCache.t < HL_TTL_MS ? hlMovidosCache.v : null
+  if (!hm) {
+    const res = await fetch(`${DEPOSITO_API_BASE}/api/hl-movidos`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    const j = (await res.json()) as {
+      hl_movidos?: Record<string, Record<string, { entregados?: number }>>
+    }
+    hm = j?.hl_movidos ?? {}
+    hlMovidosCache = { t: Date.now(), v: hm }
+  }
+  const anio = hm[String(year)]
+  if (!anio) return null
+  const meses = month != null ? [String(month)] : Object.keys(anio)
+  let total = 0
+  for (const m of meses) total += Number(anio[m]?.entregados ?? 0)
+  return total > 0 ? total : null
+}
+
+/** Cache in-process del PPM mensual, por el mismo motivo que el de HL entregados:
+ * lo consume el tablero de la matinal en cada carga y el endpoint tarda ~5s. */
+const dqiPpmCache = new Map<string, { t: number; v: number | null }>()
+
+/** DQI del mes en PPM — el número que ya se publica, sin recalcular nada.
+ * Devuelve null (nunca tira) si el tablero de pérdidas no responde: la fila de
+ * la matinal cae a "—" en vez de romper el tablero entero. */
+export async function getDqiPpmMes(
+  year: number,
+  month: number,
+): Promise<number | null> {
+  await requireAuth()
+  const key = `${year}-${month}`
+  const hit = dqiPpmCache.get(key)
+  if (hit && Date.now() - hit.t < HL_TTL_MS) return hit.v
+  let ppm: number | null = null
+  try {
+    const res = await fetch(`${DEPOSITO_API_BASE}/api/dqi?year=${year}&month=${month}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (res.ok) {
+      const j = (await res.json()) as { indicadores?: { dqi?: { mes?: number | null } } }
+      const v = j?.indicadores?.dqi?.mes
+      ppm = typeof v === "number" ? v : null
+    }
+  } catch {
+    ppm = null
+  }
+  dqiPpmCache.set(key, { t: Date.now(), v: ppm })
+  return ppm
+}
+
+export interface DqiPatenteRanking extends DqiPatente {
+  /** HL que despachó ese camión en el período (ocupacion_bodega_diaria). */
+  hl_despachados: number | null
+  /** Denominador prorrateado: su parte del HL entregado del período. */
+  hl_entregados_prorrateado: number | null
+  /** DQI del camión en PPM. null = sin volumen registrado ⇒ se muestra "s/d",
+   * NUNCA 0 (un 0 se leería como "camión impecable"). */
+  ppm: number | null
+  /** Participación del camión en los HL rotos del período (0-100). */
+  pct_roturas: number
+  /** Despachó muy poco para el período ⇒ su PPM se dispara con una sola rotura y
+   * no es comparable con el resto (may'26: AF469UR movió 57 HL contra ~500 de los
+   * demás y encabezaba el ranking con 1.279 PPM). Se avisa en la UI. */
+  base_chica: boolean
+}
+
+export interface DqiRankingData {
+  year: number
+  month: number | null
+  patentes: DqiPatenteRanking[]
+  /** DQI general del período en PPM (el publicado): Σ rotos ÷ HL entregados. */
+  dqi_ppm: number | null
+  hl_rotos_total: number
+  hl_entregados: number | null
+  filas_sin_patente: number
+  /** true si no se pudo traer el volumen: la tabla sale sin PPM, sólo numerador. */
+  sin_volumen: boolean
+}
+
+function rangoFechas(year: number, month?: number | null): [string, string] {
+  if (month == null) return [`${year}-01-01`, `${year}-12-31`]
+  const mm = String(month).padStart(2, "0")
+  // Día 0 del mes siguiente = último del mes. Se arma en UTC para que no se
+  // corra un día por timezone.
+  const ultimo = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return [`${year}-${mm}-01`, `${year}-${mm}-${String(ultimo).padStart(2, "0")}`]
+}
+
+/** DQI desglosado por camión, en PPM. Ranking accionable: quién rompe más por
+ * HL que mueve, no en términos absolutos.
+ * @param month mes 1-12; omitir (o null) para el año entero. */
+export async function getDqiPorPatenteRanking(
+  year: number,
+  month?: number | null,
+): Promise<{ data: DqiRankingData } | { error: string }> {
+  await requireAuth()
+
+  const base = await getDqiPorPatente(year, month)
+  if ("error" in base) return base
+
+  const [desde, hasta] = rangoFechas(year, month)
+  let despachados: Record<string, number> = {}
+  let hlEntregados: number | null = null
+  try {
+    ;[despachados, hlEntregados] = await Promise.all([
+      getHlDespachadosPorPatente(desde, hasta),
+      getHlEntregados(year, month),
+    ])
+  } catch {
+    // Sin volumen la tabla sigue sirviendo (numerador desglosado), sólo que sin PPM.
+    despachados = {}
+  }
+
+  const totalDespachado = Object.values(despachados).reduce((a, b) => a + b, 0)
+  const hlRotosTotal = base.data.total.roturas.hl
+  const sinVolumen = totalDespachado <= 0 || hlEntregados == null
+
+  // Un camión que despachó y NO rompió nada NO viene en el desglose de pérdidas
+  // (ahí sólo hay filas de rotura/faltante). Hay que sumarlo igual, por dos motivos:
+  //   1. Es la información más útil de la tabla: DQI 0, el camión que mejor entrega.
+  //   2. Si no, su volumen queda fuera del reparto y el denominador de TODOS los
+  //      demás sale chico ⇒ PPM inflado y la suma ponderada no cierra con el DQI
+  //      general (jun'26: daba 147 PPM contra los 131 publicados, porque AE591EI
+  //      despachó 557 HL sin roturas y no estaba en la lista).
+  const VACIO: DqiPatenteMagnitud = { bultos: 0, unidades: 0, hl: 0 }
+  const conRoturas = new Set(base.data.patentes.map((p) => p.patente))
+  const soloVolumen: DqiPatente[] = Object.keys(despachados)
+    .filter((pat) => !conRoturas.has(pat))
+    .map((pat) => ({
+      patente: pat,
+      movil: null,
+      roturas: { ...VACIO },
+      faltantes: { ...VACIO },
+      hl_total: 0,
+      detalle: [],
+    }))
+
+  // Umbral de "base chica": menos de un tercio de lo que despachó el camión medio.
+  const nCamiones = Object.keys(despachados).length
+  const promedioDespachado = nCamiones > 0 ? totalDespachado / nCamiones : 0
+  const UMBRAL_BASE_CHICA = promedioDespachado / 3
+
+  const patentes: DqiPatenteRanking[] = [...base.data.patentes, ...soloVolumen].map((p) => {
+    const hlDesp = despachados[p.patente] ?? null
+    const prorrateado =
+      !sinVolumen && hlDesp != null && hlDesp > 0
+        ? (hlEntregados as number) * (hlDesp / totalDespachado)
+        : null
+    return {
+      ...p,
+      hl_despachados: hlDesp,
+      hl_entregados_prorrateado: prorrateado,
+      ppm:
+        prorrateado != null && prorrateado > 0
+          ? Math.round((p.roturas.hl / prorrateado) * 1e6)
+          : null,
+      pct_roturas:
+        hlRotosTotal > 0 ? Math.round((p.roturas.hl / hlRotosTotal) * 1000) / 10 : 0,
+      base_chica:
+        hlDesp != null && UMBRAL_BASE_CHICA > 0 && hlDesp < UMBRAL_BASE_CHICA,
+    }
+  })
+
+  // Peor camión primero; los que no tienen volumen ("(sin patente)") van al final.
+  patentes.sort((a, b) => {
+    if (a.ppm == null && b.ppm == null) return b.roturas.hl - a.roturas.hl
+    if (a.ppm == null) return 1
+    if (b.ppm == null) return -1
+    return b.ppm - a.ppm
+  })
+
+  return {
+    data: {
+      year,
+      month: month ?? null,
+      patentes,
+      dqi_ppm:
+        hlEntregados != null && hlEntregados > 0
+          ? Math.round((hlRotosTotal / hlEntregados) * 1e6 * 10) / 10
+          : null,
+      hl_rotos_total: Math.round(hlRotosTotal * 10000) / 10000,
+      hl_entregados: hlEntregados,
+      filas_sin_patente: base.data.filas_sin_patente,
+      sin_volumen: sinVolumen,
+    },
+  }
+}

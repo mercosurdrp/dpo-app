@@ -81,6 +81,7 @@ import { AperturaMaquinistasDetalleDiaDialog } from "@/components/reuniones/aper
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
+import { DqiPatentesDialog } from "@/components/reuniones/dqi-patentes-dialog"
 import { FoxtrotKpiDetalleDiaDialog } from "@/components/reuniones/foxtrot-kpi-detalle-dia-dialog"
 import type { FoxtrotKpiId } from "@/lib/foxtrot/matinal-kpi-types"
 import { HorasCalleDetalleDiaDialog } from "@/components/reuniones/horas-calle-detalle-dia-dialog"
@@ -897,6 +898,7 @@ export function ReunionDetallePageClient({
   // Detalle del día al hacer click en la celda del indicador Km recorridos:
   // km por camión (odómetro de retorno − odómetro de liberación).
   const [kmDetalleFecha, setKmDetalleFecha] = useState<string | null>(null)
+  const [openDqiPatentes, setOpenDqiPatentes] = useState(false)
 
   // Detalle del día de un KPI de Foxtrot (matinal Pampeana): valor del día +
   // desglose por patente (cruce chofer↔egreso TML).
@@ -1730,11 +1732,24 @@ export function ReunionDetallePageClient({
                         {ind.gatillo == null ? "—" : formatearValor(ind.gatillo)}
                       </td>
                       <td className="sticky left-[340px] w-[70px] min-w-[70px] max-w-[70px] border-r bg-white px-2 py-2 text-right align-middle text-sm font-bold tabular-nums text-blue-700">
-                        {ind.mtd_texto != null
-                          ? ind.mtd_texto
-                          : ind.mtd == null
-                            ? "—"
-                            : formatearValor(ind.mtd)}
+                        {/* El DQI no tiene valor por día (su denominador es mensual):
+                            el detalle por camión se abre desde el MTD. */}
+                        {ind.id === "auto_dqi" && ind.mtd != null ? (
+                          <button
+                            type="button"
+                            onClick={() => setOpenDqiPatentes(true)}
+                            className="underline decoration-dotted underline-offset-2 hover:text-blue-900"
+                            title="Ver detalle por camión"
+                          >
+                            {formatearValor(ind.mtd)}
+                          </button>
+                        ) : ind.mtd_texto != null ? (
+                          ind.mtd_texto
+                        ) : ind.mtd == null ? (
+                          "—"
+                        ) : (
+                          formatearValor(ind.mtd)
+                        )}
                       </td>
                       {fechasFiltradas.map((f) => {
                         const cell = ind.valores[f] ?? null
@@ -2167,6 +2182,15 @@ export function ReunionDetallePageClient({
         }}
         fecha={kmDetalleFecha}
       />
+
+      {indicadoresMes && (
+        <DqiPatentesDialog
+          open={openDqiPatentes}
+          onOpenChange={setOpenDqiPatentes}
+          anio={indicadoresMes.anio}
+          mes={indicadoresMes.mes}
+        />
+      )}
 
       <FoxtrotKpiDetalleDiaDialog
         open={fxKpiDetalle !== null}
