@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   FilterX,
   MapPin,
   MessageSquareQuote,
@@ -29,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { NpsClienteDP } from "@/actions/nps"
+import type { EstadoNpsPlan, NpsPlan } from "@/actions/nps-planes"
 
 const TODOS = "__todos__"
 
@@ -48,20 +50,71 @@ function catBadge(categoria: "Detractor" | "Passive"): string {
     : "bg-amber-100 text-amber-800 border-amber-200"
 }
 
+const ESTADO_PLAN: Record<EstadoNpsPlan, string> = {
+  pendiente: "pendiente",
+  en_progreso: "en progreso",
+  completado: "completado",
+}
+
+/**
+ * Marca al cliente que ya tiene un plan de acción creado abajo, para no
+ * duplicarlo. Un plan cerrado se muestra distinto de uno todavía abierto.
+ */
+function PlanBadge({ planes }: { planes: NpsPlan[] }) {
+  if (planes.length === 0) return null
+
+  const abiertos = planes.filter((p) => p.estado !== "completado")
+  const cerrado = abiertos.length === 0
+  const detalle = planes
+    .map((p) => `${p.titulo} (${ESTADO_PLAN[p.estado]})`)
+    .join(" · ")
+
+  return (
+    <Badge
+      variant="outline"
+      title={`Ya tiene ${planes.length === 1 ? "un plan de acción" : `${planes.length} planes de acción`}: ${detalle}`}
+      className={`shrink-0 gap-1 px-1.5 py-0 text-[10px] font-medium ${
+        cerrado
+          ? "border-slate-200 bg-slate-100 text-slate-600"
+          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+      }`}
+    >
+      <ClipboardCheck className="h-3 w-3" />
+      {cerrado ? "Plan cerrado" : "Con plan"}
+      {planes.length > 1 && ` (${planes.length})`}
+    </Badge>
+  )
+}
+
 interface Props {
   clientes: NpsClienteDP[]
+  /** Planes de acción vivos: los que tienen foco en un cliente lo marcan acá. */
+  planes: NpsPlan[]
   onCrearPlan: (c: NpsClienteDP) => void
 }
 
-export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
-  const [fCategoria, setFCategoria] = useState<string>(TODOS)
+export function ClientesExplorador({ clientes, planes, onCrearPlan }: Props) {
+  // Arranca donde se mira primero: los detractores, los más recientes arriba.
+  const [fCategoria, setFCategoria] = useState<string>("Detractor")
   const [fPromotor, setFPromotor] = useState<string>(TODOS)
   const [fLocalidad, setFLocalidad] = useState<string>(TODOS)
   const [fDriver, setFDriver] = useState<string>(TODOS)
   const [agruparPor, setAgruparPor] = useState<AgruparPor>("ninguno")
-  const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("score")
+  const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("fecha")
   const [colapsados, setColapsados] = useState<Set<string>>(new Set())
   const [clienteModal, setClienteModal] = useState<NpsClienteDP | null>(null)
+
+  /** Planes de acción por cliente foco (un cliente puede tener más de uno). */
+  const planesPorCliente = useMemo(() => {
+    const m = new Map<number, NpsPlan[]>()
+    for (const p of planes) {
+      if (p.foco_cliente_id == null) continue
+      const ps = m.get(p.foco_cliente_id)
+      if (ps) ps.push(p)
+      else m.set(p.foco_cliente_id, [p])
+    }
+    return m
+  }, [planes])
 
   const promotores = useMemo(
     () =>
@@ -172,6 +225,7 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
   }
 
   function filaCliente(c: NpsClienteDP) {
+    const planesCli = planesPorCliente.get(c.cod_cliente) ?? []
     return (
       <div
         key={`${c.cod_cliente}`}
@@ -184,8 +238,11 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
         className="grid w-full cursor-pointer grid-cols-12 items-center gap-2 rounded-md border border-slate-100 bg-white px-2 py-1.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
       >
         <span className="col-span-4 min-w-0">
-          <span className="block truncate font-medium text-slate-800">
-            {c.nombre_cliente}
+          <span className="flex items-center gap-1.5">
+            <span className="truncate font-medium text-slate-800">
+              {c.nombre_cliente}
+            </span>
+            <PlanBadge planes={planesCli} />
           </span>
           <span className="block truncate text-xs text-slate-400">
             #{c.cod_cliente} · {c.localidad ?? "—"} ·{" "}
@@ -497,19 +554,49 @@ export function ClientesExplorador({ clientes, onCrearPlan }: Props) {
               )}
             </div>
 
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={() => {
-                  const c = clienteModal
-                  setClienteModal(null)
-                  onCrearPlan(c)
-                }}
-              >
-                <Target className="mr-1 h-4 w-4" />
-                Crear plan para este cliente
-              </Button>
-            </div>
+            {(() => {
+              const planesCli =
+                planesPorCliente.get(clienteModal.cod_cliente) ?? []
+              const yaTiene = planesCli.length > 0
+              return (
+                <>
+                  {yaTiene && (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                      <p className="flex items-center gap-1.5 font-medium text-emerald-800">
+                        <ClipboardCheck className="h-4 w-4" />
+                        Este cliente ya tiene{" "}
+                        {planesCli.length === 1
+                          ? "un plan de acción"
+                          : `${planesCli.length} planes de acción`}
+                      </p>
+                      <ul className="mt-1 space-y-0.5 text-emerald-900">
+                        {planesCli.map((p) => (
+                          <li key={p.id}>
+                            {p.titulo} — {ESTADO_PLAN[p.estado]}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant={yaTiene ? "outline" : "default"}
+                      onClick={() => {
+                        const c = clienteModal
+                        setClienteModal(null)
+                        onCrearPlan(c)
+                      }}
+                    >
+                      <Target className="mr-1 h-4 w-4" />
+                      {yaTiene
+                        ? "Crear otro plan"
+                        : "Crear plan para este cliente"}
+                    </Button>
+                  </div>
+                </>
+              )
+            })()}
           </DialogContent>
         </Dialog>
       )}

@@ -403,6 +403,8 @@ interface Props {
   focoInicial?: FocoInicial | null
   /** Cambia cada vez que hay que abrir el form con el foco actual. */
   abrirNonce?: number
+  /** Avisa la lista al día para que el explorador marque los clientes con plan. */
+  onPlanesChange?: (planes: NpsPlan[]) => void
 }
 
 export function PlanesAccionBloque({
@@ -412,6 +414,7 @@ export function PlanesAccionBloque({
   promotores,
   focoInicial = null,
   abrirNonce = 0,
+  onPlanesChange,
 }: Props) {
   const [planes, setPlanes] = useState<NpsPlan[]>(planesIniciales)
   const [responsables, setResponsables] = useState<
@@ -448,6 +451,7 @@ export function PlanesAccionBloque({
     const r = await listarPlanesNps()
     if ("data" in r) {
       setPlanes(r.data)
+      onPlanesChange?.(r.data)
       setPlanDetalle((prev) =>
         prev ? (r.data.find((p) => p.id === prev.id) ?? null) : prev,
       )

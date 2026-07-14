@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -73,9 +73,14 @@ export function NpsClient({ data, planesIniciales }: Props) {
   const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
     data
 
+  // Lista viva de planes: el bloque de abajo la refresca al crear o editar uno,
+  // y el explorador la usa para marcar qué clientes ya tienen plan.
+  const [planes, setPlanes] = useState<NpsPlan[]>(planesIniciales)
+  useEffect(() => setPlanes(planesIniciales), [planesIniciales])
+
   // Efectividad de los planes: de los que ya tuvieron re-encuesta, cuántos
   // terminaron con el cliente como promotor.
-  const planesReencuestados = planesIniciales.filter(
+  const planesReencuestados = planes.filter(
     (p) => p.recuperacion && p.recuperacion !== "sin_reencuesta",
   )
   const planesRecuperados = planesReencuestados.filter(
@@ -461,7 +466,11 @@ export function NpsClient({ data, planesIniciales }: Props) {
       </div>
 
       {/* Clientes detractores y pasivos — explorador con modal de detalle */}
-      <ClientesExplorador clientes={clientes_dp} onCrearPlan={planParaCliente} />
+      <ClientesExplorador
+        clientes={clientes_dp}
+        planes={planes}
+        onCrearPlan={planParaCliente}
+      />
 
       {/* Clientes recuperados (evidencia R4.1.4: NPS mejorando) */}
       <Card>
@@ -527,6 +536,7 @@ export function NpsClient({ data, planesIniciales }: Props) {
       {/* Planes de acción (R4.1.2) */}
       <PlanesAccionBloque
         planesIniciales={planesIniciales}
+        onPlanesChange={setPlanes}
         drivers={drivers_dp.map((d) => d.driver)}
         clientes={clientes_dp.map((c) => ({
           cod_cliente: c.cod_cliente,
