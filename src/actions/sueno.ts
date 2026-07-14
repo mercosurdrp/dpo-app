@@ -18,6 +18,7 @@ import {
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
+import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
 
 /**
  * TLP vivo para el árbol: mismo cálculo que /indicadores/tlp, YTD del año.
@@ -29,6 +30,18 @@ async function resolverTlpVivo(
 ): Promise<Awaited<ReturnType<typeof tlpAnual>>> {
   try {
     return await tlpAnual(supabase, year)
+  } catch {
+    return null
+  }
+}
+
+/** Tiempo en ruta vivo: horas promedio (ponderadas) que dura una salida. */
+async function resolverTiempoRutaVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof tiempoRutaAnual>>> {
+  try {
+    return await tiempoRutaAnual(supabase, year)
   } catch {
     return null
   }
@@ -120,9 +133,10 @@ export async function getSuenoArbol(
 
     // TLP y Tiempo en PDV en vivo (mismo cálculo que /indicadores/tlp); si
     // fallan, caen al valor de la tabla.
-    const [tlpVivo, pdvVivo] = await Promise.all([
+    const [tlpVivo, pdvVivo, rutaVivo] = await Promise.all([
       resolverTlpVivo(supabase, year),
       resolverTiempoPdvVivo(supabase, year),
+      resolverTiempoRutaVivo(supabase, year),
     ])
 
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
@@ -133,7 +147,9 @@ export async function getSuenoArbol(
           ? (tlpVivo?.ytd ?? null)
           : cfg.key === "tiempo_pdv"
             ? (pdvVivo?.ytd ?? null)
-            : externos.get(cfg.key)
+            : cfg.key === "tiempo_ruta"
+              ? (rutaVivo?.ytd ?? null)
+              : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
@@ -239,6 +255,31 @@ export async function getSuenoDetalle(
           explicacion: vivo
             ? "TLP = cajas equivalentes entregadas ÷ horas-hombre en ruta (horas del checklist de retorno × dotación del camión). Mismo cálculo que Indicadores → TLP; el YTD acumula CEq y horas-hombre del año. Metas por ciudad en /indicadores/tlp."
             : "No se pudo calcular el TLP en vivo en este momento.",
+          meses,
+          detalleLabel: "Viajes",
+        },
+      }
+    }
+
+    // Tiempo en Ruta: detalle mensual en vivo (el insumo del TLP).
+    if (kpiKey === "tiempo_ruta") {
+      const supabaseRuta = await createClient()
+      const vivo = await resolverTiempoRutaVivo(supabaseRuta, year)
+      const meses: SuenoDetalleMes[] = (vivo?.meses ?? []).map((m) => ({
+        mes: m.mes,
+        etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+        valor: m.horas,
+        detalle: m.viajes,
+      }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: vivo ? "auto" : "manual",
+          explicacion: vivo
+            ? "Tiempo en Ruta = horas que dura una salida, el insumo del TLP (que las multiplica por la dotación). Mide lo mismo que el TLP: desde abril sale del CHECKLIST de retorno (retorno − liberación del camión, que arrancó el 9-abr); antes de abril, de FOXTROT contando solo las rutas limpias, las que se cerraron el mismo día que arrancaron (con todas, enero daría 11,8 hs por salida, un número falso). El promedio es PONDERADO: Σ horas ÷ Σ viajes, así una salida pesa igual venga de la ciudad que venga. Apertura por ciudad en Indicadores → TLP."
+            : "No se pudo calcular el tiempo en ruta en vivo en este momento.",
           meses,
           detalleLabel: "Viajes",
         },

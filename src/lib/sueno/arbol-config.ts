@@ -116,7 +116,6 @@ export type AgregacionMensual = "promedio" | "suma"
  */
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   wnp: "promedio",
-  tiempo_ruta: "promedio",
   hs_extras: "promedio",
 }
 
