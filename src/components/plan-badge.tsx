@@ -1,5 +1,6 @@
+"use client"
+
 import { ClipboardCheck } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 
 export type PlanEstado = "pendiente" | "en_progreso" | "completado"
 
@@ -32,10 +33,24 @@ export function planesPorClienteFoco<T extends PlanMarcable>(
 }
 
 /**
- * Marca al cliente que ya tiene un plan de acción creado abajo, para no
- * duplicarlo. Un plan cerrado se muestra distinto de uno todavía abierto.
+ * El plan que se abre al clickear el botón: el primero que sigue abierto, o el
+ * último si ya están todos completados.
  */
-export function PlanBadge({ planes }: { planes: PlanMarcable[] }) {
+export function planAAbrir<T extends PlanMarcable>(planes: T[]): T {
+  return planes.find((p) => p.estado !== "completado") ?? planes[planes.length - 1]
+}
+
+/**
+ * Va en la columna "Acción" del explorador, en lugar del botón de crear: marca
+ * que el cliente ya tiene plan (para no duplicarlo) y lleva a verlo.
+ */
+export function PlanBadge({
+  planes,
+  onVerPlan,
+}: {
+  planes: PlanMarcable[]
+  onVerPlan: (plan: PlanMarcable) => void
+}) {
   if (planes.length === 0) return null
 
   const cerrado = planes.every((p) => p.estado === "completado")
@@ -44,18 +59,22 @@ export function PlanBadge({ planes }: { planes: PlanMarcable[] }) {
     .join(" · ")
 
   return (
-    <Badge
-      variant="outline"
-      title={`Ya tiene ${planes.length === 1 ? "un plan de acción" : `${planes.length} planes de acción`}: ${detalle}`}
-      className={`shrink-0 gap-1 px-1.5 py-0 text-[10px] font-medium ${
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onVerPlan(planAAbrir(planes))
+      }}
+      title={`Ya tiene ${planes.length === 1 ? "un plan de acción" : `${planes.length} planes de acción`}: ${detalle}. Clic para verlo.`}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
         cerrado
-          ? "border-slate-200 bg-slate-100 text-slate-600"
-          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          ? "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+          : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
       }`}
     >
-      <ClipboardCheck className="h-3 w-3" />
+      <ClipboardCheck className="h-3.5 w-3.5" />
       {cerrado ? "Plan cerrado" : "Con plan"}
       {planes.length > 1 && ` (${planes.length})`}
-    </Badge>
+    </button>
   )
 }

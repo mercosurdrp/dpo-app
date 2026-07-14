@@ -18,7 +18,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
 import type { RmdPlan } from "@/actions/rmd-planes"
 import { SyncAviso } from "@/components/sync-aviso"
-import { planesPorClienteFoco } from "@/components/plan-badge"
+import {
+  planesPorClienteFoco,
+  type PlanMarcable,
+} from "@/components/plan-badge"
 import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
@@ -91,6 +94,15 @@ export function RmdClient({ data, planesIniciales }: Props) {
     foco_chofer?: string
   } | null>(null)
   const [abrirPlanNonce, setAbrirPlanNonce] = useState(0)
+
+  // Clic en "Con plan" del explorador → abrir ese plan en el bloque de abajo.
+  const [verPlanId, setVerPlanId] = useState<string | null>(null)
+  const [verPlanNonce, setVerPlanNonce] = useState(0)
+
+  function verPlan(plan: PlanMarcable) {
+    setVerPlanId(plan.id)
+    setVerPlanNonce((n) => n + 1)
+  }
   // Cliente abierto en el modal de detalle desde la vitrina de recuperados.
   const [recupModal, setRecupModal] = useState<RmdCliente | null>(null)
 
@@ -420,6 +432,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
         clientes={clientes}
         planes={planes}
         onCrearPlan={planParaCliente}
+        onVerPlan={verPlan}
       />
 
       {/* Clientes recuperados: puntuaron bajo (1-3) y volvieron al máximo (5) */}
@@ -530,6 +543,8 @@ export function RmdClient({ data, planesIniciales }: Props) {
       <PlanesAccionBloque
         planesIniciales={planesIniciales}
         onPlanesChange={setPlanes}
+        verPlanId={verPlanId}
+        verPlanNonce={verPlanNonce}
         motivos={motivos.map((m) => m.motivo)}
         clientes={clientes.map((c) => ({
           cod_cliente: c.cod_cliente,
@@ -576,6 +591,7 @@ export function RmdClient({ data, planesIniciales }: Props) {
           cliente={recupModal}
           planesCliente={planesPorCliente.get(recupModal.cod_cliente) ?? []}
           onClose={() => setRecupModal(null)}
+          onVerPlan={verPlan}
           onCrearPlan={(c) => {
             setRecupModal(null)
             planParaCliente(c)
