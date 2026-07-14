@@ -70,6 +70,7 @@ import {
   SLA_CODIGOS_REUNION_OPERATIVA,
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
+import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -872,6 +873,7 @@ export function ReunionDetallePageClient({
   const [tmlDetalleFecha, setTmlDetalleFecha] = useState<string | null>(null)
   const [obDetalleFecha, setObDetalleFecha] = useState<string | null>(null)
   const [tlpDetalleFecha, setTlpDetalleFecha] = useState<string | null>(null)
+  const [wnpDetalleFecha, setWnpDetalleFecha] = useState<string | null>(null)
   // Detalle del día al hacer click en la celda Productividad de picking:
   // abre el sub-cuadro con los 3 operadores Troli/Galvez/Ovejero. La fila
   // Precisión de picking NO abre este detalle (es un valor global del día).
@@ -1892,6 +1894,10 @@ export function ReunionDetallePageClient({
                             ind.id === "auto_wqi" ||
                             ind.id === "auto_roturas" ||
                             ind.id === "auto_faltantes"
+                          // WNP: drill al detalle del día (HL vendidos, horas y
+                          // de dónde salió cada hora). Avisa cuándo el día se
+                          // apoyó en jornada teórica por falta de fichaje.
+                          const esWnp = ind.id === "auto_wnp"
                           // KPIs de Foxtrot (matinal Pampeana): drill por día con
                           // detalle por patente. Todos los id arrancan con auto_fx_.
                           const esFoxtrotKpi = ind.id.startsWith("auto_fx_")
@@ -1909,6 +1915,7 @@ export function ReunionDetallePageClient({
                               esOB ||
                               esTlp ||
                               esWqiPerdidas ||
+                              esWnp ||
                               esFoxtrotKpi) &&
                             muestra
                           const onCellClick = () => {
@@ -1926,6 +1933,7 @@ export function ReunionDetallePageClient({
                             else if (esOB) setObDetalleFecha(f)
                             else if (esTlp) setTlpDetalleFecha(f)
                             else if (esWqiPerdidas) setWqiDetalleFecha(f)
+                            else if (esWnp) setWnpDetalleFecha(f)
                             else if (esFoxtrotKpi)
                               setFxKpiDetalle({ fecha: f, kpiId: ind.id as FoxtrotKpiId })
                           }
@@ -2137,6 +2145,14 @@ export function ReunionDetallePageClient({
           if (!o) setTlpDetalleFecha(null)
         }}
         fecha={tlpDetalleFecha}
+      />
+
+      <WnpDetalleDiaDialog
+        open={wnpDetalleFecha !== null}
+        onOpenChange={(o) => {
+          if (!o) setWnpDetalleFecha(null)
+        }}
+        fecha={wnpDetalleFecha}
       />
 
       <AperturaPickingDetalleDiaDialog

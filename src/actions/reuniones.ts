@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { cargarSerieWnp } from "@/lib/wnp/datos"
 import { requireAuth, getProfile } from "@/lib/session"
 import {
   archivosDeFila,
@@ -4109,6 +4110,8 @@ async function getIndicadoresMesCore(
         porFechaMtd: Record<string, number | null>,
         meta: number | null,
         mejorSi: "menor" | "mayor" | undefined,
+        // Nota por día (ej. el WNP avisa cuándo se apoyó en horas estimadas).
+        porFechaObs?: Record<string, string | null>,
       ): ReunionIndicadoresMes["indicadores"][number] {
         const valoresPorFecha: Record<
           string,
@@ -4118,7 +4121,7 @@ async function getIndicadoresMesCore(
           valoresPorFecha[f] = {
             reunion_id: "auto",
             valor: porFechaDia[f] ?? null,
-            observacion: null,
+            observacion: porFechaObs?.[f] ?? null,
           }
         }
         let mtd: number | null = null
@@ -4202,47 +4205,44 @@ async function getIndicadoresMesCore(
             wqiMtdTablero[f] = null
           }
         }
-        // WNP (productividad del depósito, HL/HH) recalculado con la MISMA
-        // fuente de HL que el WQI y la fila "HL vendidos": el HL DESPACHADO de
-        // `ventas_diarias` (Chess+Gestión, por fecha de carga) — NO el HL
-        // facturado de deposito-esteban (serie.wnp). Denominador: HORAS REALES
-        // del fichaje biométrico del personal de Depósito (legajos abajo), en
-        // lugar de las horas fijas 72/32 de serie.wnp. Gestión se incluye porque
-        // también sale del depósito Esteban. Pedido de Leonardo 2026-06-25 — el
-        // día que cambie el equipo se actualiza la lista de legajos.
-        const LEGAJOS_WNP = [30, 107, 110, 112, 135, 36467481, 43907801, 425283564]
-        const { data: fichajeRaw } = await supabase
-          .from("asistencia_resumen_diario")
-          .select("fecha, horas_trabajadas")
-          .in("legajo", LEGAJOS_WNP)
-          .gte("fecha", fechaDesde)
-          .lte("fecha", fechaHasta)
-        const horasFichajeDia: Record<string, number> = {}
-        for (const r of (fichajeRaw ?? []) as Array<{
-          fecha: string
-          horas_trabajadas: number | null
-        }>) {
-          const h = Number(r.horas_trabajadas ?? 0)
-          if (Number.isFinite(h) && h > 0) {
-            horasFichajeDia[r.fecha] = (horasFichajeDia[r.fecha] ?? 0) + h
-          }
-        }
-        // WNP día = HL despachado del día / horas fichadas del día.
-        // WNP MTD = Σ HL / Σ horas (solo días cerrados con venta Y fichaje;
-        // un día sin uno de los dos queda vacío y fuera del MTD). Se enmascara
-        // el día de la reunión y futuros (f < fecha), igual que el resto de los
-        // indicadores auto: al matinal el día de hoy todavía no está cerrado.
+        // WNP (productividad del depósito, HL/HH). Numerador = "HL vendidos",
+        // igual que la pestaña Ventas del cuadro mensual: distribuido
+        // (`ventas_diarias`) + mostrador (`ventas_mostrador_diarias`), con el
+        // mostrador prorrateado dentro del mes. Denominador = horas del personal
+        // de Depósito: fichaje real, ausencias en 0 y jornada teórica donde el
+        // reloj falló, más el supervisor (que no ficha). Toda la lógica y el
+        // porqué de cada regla están en `src/lib/wnp/calculo.ts`.
+        // Pedido del usuario 2026-07-14.
+        const serieWnp = await cargarSerieWnp(supabase, fechaDesde, fechaHasta)
+        // WNP día = HL vendidos del día / horas-hombre del día.
+        // WNP MTD = Σ HL / Σ horas (solo días cerrados con venta Y horas). Se
+        // enmascara el día de la reunión y futuros (f < fecha), igual que el
+        // resto de los indicadores auto: al matinal el día de hoy no está cerrado.
         const wnpDiaTablero: Record<string, number | null> = {}
         const wnpMtdTablero: Record<string, number | null> = {}
+        const wnpObsDia: Record<string, string | null> = {}
         let accHlWnp = 0
         let accHorasWnp = 0
         for (const f of fechas) {
-          const hlDia = hlVendidoDia[f] ?? 0
-          const horasDia = horasFichajeDia[f] ?? 0
+          const dia = serieWnp.porFecha[f]
+          const hlDia = dia?.hl ?? 0
+          const horasDia = dia?.horas ?? 0
           const okDia = f < fecha && hlDia > 0 && horasDia > 0
           wnpDiaTablero[f] = okDia
             ? Math.round((hlDia / horasDia) * 100) / 100
             : null
+          // Aviso en la celda cuando el día se apoyó en horas estimadas: el
+          // reloj no registró a alguien y tampoco tiene ausencia cargada.
+          if (okDia && dia?.incompleto) {
+            const faltan = dia.personas
+              .filter((p) => p.estado === "estimado")
+              .map((p) => p.nombre)
+            wnpObsDia[f] =
+              `Sin fichaje ni ausencia cargada: ${faltan.join(", ")}. ` +
+              `Se les computó la jornada teórica (${dia.horasEstimadas} hs estimadas de ${Math.round(dia.horas * 10) / 10}).`
+          } else {
+            wnpObsDia[f] = null
+          }
           if (okDia) {
             accHlWnp += hlDia
             accHorasWnp += horasDia
@@ -4270,6 +4270,7 @@ async function getIndicadoresMesCore(
             wnpMtdTablero,
             serie.targets.wnp,
             "mayor",
+            wnpObsDia,
           ),
           buildSerieRow(
             "auto_productividad_picking",
