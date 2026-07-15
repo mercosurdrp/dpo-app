@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useTransition, useEffect, type CSSProperties } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import {
   Search,
@@ -144,6 +145,7 @@ export function PlanesListClient({
   admins: Array<{ id: string; nombre: string }>
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [planes, setPlanes] = useState(initialPlanes)
   const [estadoFilter, setEstadoFilter] = useState<"all" | EstadoPlan>("all")
   const [prioridadFilter, setPrioridadFilter] = useState<"all" | PrioridadPlan>("all")
@@ -230,7 +232,7 @@ export function PlanesListClient({
       const res = await updatePlanEstado(id, nuevo)
       if ("error" in res) toast.error(res.error)
       else toast.success(`Estado: ${ESTADO_PLAN_LABELS[nuevo]}`)
-      router.refresh()
+      refrescarConScroll()
     })
   }
 

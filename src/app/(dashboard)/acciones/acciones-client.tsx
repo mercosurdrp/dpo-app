@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useOptimistic, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import {
   ListTodo,
@@ -83,6 +84,7 @@ export function AccionesClient({
   acciones: AccionEnriquecida[]
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all")
   const [search, setSearch] = useState("")
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -137,7 +139,7 @@ export function AccionesClient({
       } else {
         toast.success(`Estado actualizado a ${ESTADO_ACCION_LABELS[newEstado]}`)
       }
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -150,7 +152,7 @@ export function AccionesClient({
       toast.error(result.error)
     } else {
       toast.success("Accion eliminada")
-      router.refresh()
+      refrescarConScroll()
     }
     setDeleting(null)
   }

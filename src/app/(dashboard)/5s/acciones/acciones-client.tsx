@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -171,6 +172,7 @@ export function AccionesClient({
   sectoresAlmacen,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
 
   const now = toArDate(new Date().toISOString())
@@ -265,7 +267,7 @@ export function AccionesClient({
         return
       }
       toast.success("Acción eliminada")
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -566,7 +568,7 @@ export function AccionesClient({
         vehiculos={vehiculos}
         sectoresAlmacen={sectoresAlmacen}
         onSaved={() => {
-          router.refresh()
+          refrescarConScroll()
         }}
       />
 
@@ -581,7 +583,7 @@ export function AccionesClient({
           vehiculos={vehiculos}
           sectoresAlmacen={sectoresAlmacen}
           onSaved={() => {
-            router.refresh()
+            refrescarConScroll()
           }}
         />
       )}
@@ -596,7 +598,7 @@ export function AccionesClient({
           currentUserId={currentUserId}
           currentRole={currentRole}
           onSaved={() => {
-            router.refresh()
+            refrescarConScroll()
           }}
         />
       )}

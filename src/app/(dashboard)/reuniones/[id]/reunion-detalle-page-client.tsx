@@ -10,6 +10,7 @@ import {
 } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import {
   ArrowLeft,
   BarChart3,
@@ -759,6 +760,7 @@ export function ReunionDetallePageClient({
   currentRole,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [, startTransition] = useTransition()
 
   // Indicadores como state — se refetchan al cambiar el filtro de sucursal
@@ -804,7 +806,7 @@ export function ReunionDetallePageClient({
       // Refrescar el tablero con la sucursal actual.
       const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
       if ("data" in ind) setIndicadoresMes(ind.data)
-      router.refresh()
+      refrescarConScroll()
     } catch (e) {
       setSyncMsg(
         `Error: ${e instanceof Error ? e.message : "no se pudo sincronizar"}`,
@@ -828,7 +830,7 @@ export function ReunionDetallePageClient({
       const res = await refreshIndicadoresLogistica(detalle.id)
       if ("data" in res) {
         setIndicadoresMes(res.data)
-        router.refresh()
+        refrescarConScroll()
       } else {
         setActualizarMsg(`Error: ${res.error}`)
       }
@@ -1069,7 +1071,7 @@ export function ReunionDetallePageClient({
 
   function refrescar() {
     // Re-fetch del server component (todo el árbol de la página)
-    router.refresh()
+    refrescarConScroll()
   }
 
   async function abrirArchivo(url: string | null) {

@@ -3,6 +3,7 @@
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import {
   Wallet,
   FileText,
@@ -201,6 +202,7 @@ export function PresupuestoClient({
   inversiones,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [, startTransition] = useTransition()
 
   // Lista de años a mostrar en el selector: los que existen en BD + el actual
@@ -238,7 +240,7 @@ export function PresupuestoClient({
   const [filtroEstado, setFiltroEstado] = useState<string>("todos")
 
   function refrescar() {
-    router.refresh()
+    refrescarConScroll()
   }
 
   function cambiarAnio(nuevo: string | null) {

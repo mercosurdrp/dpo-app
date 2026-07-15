@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import { Loader2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -52,6 +53,7 @@ function EditarPlanForm({
   onSaved,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
 
   const [titulo, setTitulo] = useState(plan.titulo ?? "")
@@ -83,7 +85,7 @@ function EditarPlanForm({
       }
       toast.success("Plan actualizado")
       onSaved?.()
-      router.refresh()
+      refrescarConScroll()
       onOpenChange(false)
     })
   }
@@ -191,7 +193,7 @@ function EditarPlanForm({
             planId={plan.id}
             responsables={plan.responsables ?? []}
             canEdit={canEditResponsables}
-            onChange={() => router.refresh()}
+            onChange={() => refrescarConScroll()}
           />
           {!canEditResponsables && (
             <p className="text-[11px] text-muted-foreground">

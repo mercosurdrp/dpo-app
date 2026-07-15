@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import { Crown, Loader2, Plus, Search, Star, UserPlus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,7 @@ export function ResponsablesMultiPicker({
   onChange,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -107,7 +109,7 @@ export function ResponsablesMultiPicker({
       setQuery("")
       setOpen(false)
       onChange?.()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -123,7 +125,7 @@ export function ResponsablesMultiPicker({
       }
       toast.success("Responsable removido")
       onChange?.()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -138,7 +140,7 @@ export function ResponsablesMultiPicker({
       }
       toast.success(`${nombre} ahora es el responsable principal`)
       onChange?.()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 

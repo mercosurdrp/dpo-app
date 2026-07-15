@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import {
   CheckCircle2,
@@ -71,6 +72,7 @@ export function PlanAccionSection({
   onChanged: () => void
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [editing, setEditing] = useState(!plan && isAdmin)
   const [isPending, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -146,7 +148,7 @@ export function PlanAccionSection({
         setFoto(null)
         setQuitarFoto(false)
         onChanged()
-        router.refresh()
+        refrescarConScroll()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error guardando plan")
       }
@@ -163,7 +165,7 @@ export function PlanAccionSection({
       }
       toast.success(completado ? "Plan reabierto" : "Plan marcado como terminado")
       onChanged()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -178,7 +180,7 @@ export function PlanAccionSection({
       }
       toast.success("Plan eliminado")
       onChanged()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -437,6 +439,7 @@ function EvidenciaCierreSection({
   onChanged: () => void
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [isPending, startTransition] = useTransition()
   const [uploading, setUploading] = useState(false)
   const evidenciaInputRef = useRef<HTMLInputElement | null>(null)
@@ -458,7 +461,7 @@ function EvidenciaCierreSection({
       }
       toast.success("Comentario guardado")
       onChanged()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -503,7 +506,7 @@ function EvidenciaCierreSection({
         list.length === 1 ? "Evidencia agregada" : "Evidencias agregadas"
       )
       onChanged()
-      router.refresh()
+      refrescarConScroll()
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Error subiendo la evidencia"
@@ -523,7 +526,7 @@ function EvidenciaCierreSection({
       }
       toast.success("Evidencia eliminada")
       onChanged()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
