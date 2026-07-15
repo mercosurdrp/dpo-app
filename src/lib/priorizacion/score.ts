@@ -140,6 +140,33 @@ export interface CiudadPriorizada {
   filas: FilaPriorizada[]
 }
 
+/**
+ * Localidades que se rutean en el MISMO camión ⇒ se muestran como una sola ciudad.
+ * (Confirmado con Fausto 2026-07-15; las claves son la ortografía SIN acento de
+ * `comprobantes.ds_localidad`.) Ojo: "Sánchez" figura como "VILLA GRAL SAVIO EX SANCHEZ".
+ */
+const ALIAS_CIUDAD: Record<string, string> = {
+  RAMALLO: "RAMALLO",
+  "VILLA RAMALLO": "RAMALLO",
+  "PEREZ MILLAN": "RAMALLO",
+  "LA VIOLETA": "RAMALLO",
+  "SAN NICOLAS DE LOS ARROYOS": "SAN NICOLÁS",
+  "SAN NICOLAS": "SAN NICOLÁS",
+  "VILLA GRAL SAVIO EX SANCHEZ": "SAN NICOLÁS",
+  SANCHEZ: "SAN NICOLÁS",
+}
+
+/**
+ * Ciudad de ruteo de una localidad: agrupa las localidades que van en el mismo camión.
+ * Si no está en el alias, devuelve la localidad tal cual (mayúsculas). El match ignora
+ * acentos y espacios de más; el label mostrado sí puede llevar acento.
+ */
+export function ciudadDeLocalidad(localidad: string | null): string {
+  const raw = (localidad ?? "SIN LOCALIDAD").trim().toUpperCase().replace(/\s+/g, " ")
+  const norm = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  return ALIAS_CIUDAD[norm] ?? raw
+}
+
 /** Comportamiento 0-100 a partir de los rechazos por causa del cliente. */
 export function calcularComportamiento(
   rechazosPesados: number,
@@ -188,7 +215,7 @@ export function priorizarPorCiudad(
 
   const porCiudad = new Map<string, FilaPriorizada[]>()
   for (const f of calculadas) {
-    const c = (f.localidad ?? "SIN LOCALIDAD").trim().toUpperCase()
+    const c = ciudadDeLocalidad(f.localidad)
     if (!porCiudad.has(c)) porCiudad.set(c, [])
     porCiudad.get(c)!.push(f)
   }
