@@ -4,7 +4,7 @@
 // fuentes (Supabase, deposito-esteban, foxtrot, etc.) vive en
 // src/actions/cuadro-mensual.ts.
 
-export type Pilar = "Seguridad" | "Entrega" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén" | "Personas" | "Costo Logístico"
+export type Pilar = "Seguridad" | "Entrega" | "Ruteo" | "Ventas" | "Venta mostrador" | "Flota" | "Almacén" | "Personas" | "Costo Logístico"
 
 /** Polaridad del indicador para el semáforo. "sin" = informativo, sin color. */
 export type MejorSi = "mayor" | "menor" | "sin"
@@ -45,6 +45,10 @@ export const INDICADORES: IndicadorDef[] = [
   { id: "sla", pilar: "Entrega", nombre: "Cumplimiento SLA", unidad: "%", meta: 95, mejor_si: "mayor", resumen: "promedio", nota: "Días cumplidos / días medibles del mes, agregando todos los SLA operativos." },
   { id: "fte_prom", pilar: "Entrega", nombre: "FTE promedio", unidad: "personas", meta: null, mejor_si: "sin", resumen: "promedio", nota: "Personas por camión que sale a reparto: chofer + ayudantes, promediado sobre los egresos del mes (registros_vehiculos, la misma base del TML)." },
 
+  // ── Ruteo ──
+  { id: "vrl", pilar: "Ruteo", nombre: "Volumen Reprogramado Logístico (VRL)", unidad: "HL", meta: null, mejor_si: "menor", resumen: "suma", nota: "HL de pedidos reprogramados por falta de CAPACIDAD DE REPARTO (ruteo), acumulado del mes. Se alimenta al registrar el corte en Planeamiento → Priorización de Entrega (tabla entrega_cortes)." },
+  { id: "vrc", pilar: "Ruteo", nombre: "Volumen Reprogramado Comercial (VRC)", unidad: "HL", meta: null, mejor_si: "menor", resumen: "suma", nota: "HL de pedidos reprogramados por CRÉDITO / motivo comercial, acumulado del mes. Viene del dashboard Mercosur (vol_reprog_com_pedido), por mes de la fecha de entrega original." },
+
   // ── Ventas (total facturado en Chess, el sistema madre, NETO) ──
   { id: "facturado_chess_bultos", pilar: "Ventas", nombre: "Bultos vendidos", unidad: "bultos", meta: null, mejor_si: "sin", resumen: "suma", nota: "Total facturado en Chess (sistema madre), neto: Factura + Factura Presupuesto − Notas de Crédito − Devoluciones Presupuesto. No incluye Gestión." },
   { id: "facturado_chess_hl", pilar: "Ventas", nombre: "HL vendidos", unidad: "HL", meta: null, mejor_si: "sin", resumen: "suma", nota: "Hectolitros netos facturados en Chess: Factura + Factura Presupuesto − Notas de Crédito − Devoluciones Presupuesto. No incluye Gestión." },
@@ -74,12 +78,13 @@ export const INDICADORES: IndicadorDef[] = [
 
 // "Personas" ya no tiene indicadores propios: el FTE pasó a Entrega (personas
 // por camión) en lugar del FTE de nómina que salía del biométrico.
-export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ventas", "Venta mostrador", "Flota", "Almacén", "Costo Logístico"]
+export const PILARES_ORDEN: Pilar[] = ["Seguridad", "Entrega", "Ruteo", "Ventas", "Venta mostrador", "Flota", "Almacén", "Costo Logístico"]
 
 /** Color del pilar para los encabezados de grupo (tailwind-ish, inline). */
 export const PILAR_COLOR: Record<Pilar, string> = {
   Seguridad: "#dc2626", // rojo
   Entrega: "#2563eb", // azul
+  Ruteo: "#0d9488", // teal
   Ventas: "#16a34a", // verde
   "Venta mostrador": "#d97706", // ámbar
   Flota: "#7c3aed", // violeta

@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { getPool } from "@/lib/mercosur-dashboard"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getCumplimientoMes } from "@/actions/sla"
@@ -700,6 +701,46 @@ export async function getCuadroMensualIndicadores(): Promise<
       }
     }),
   )
+
+  // ── RUTEO: Volumen Reprogramado Logístico (VRL) + Comercial (VRC) ──
+  // VRL: HL reprogramados por falta de capacidad de reparto, del cuadro
+  // v_vrl_mensual (Supabase, se alimenta al registrar el corte en Priorización).
+  const vrlHlPorMes: Record<string, number> = {}
+  try {
+    const { data } = await supabase.from("v_vrl_mensual").select("anio_mes, hl")
+    for (const r of (data ?? []) as Array<{ anio_mes: string; hl: number | null }>) {
+      const hl = Number(r.hl ?? 0)
+      if (Number.isFinite(hl)) vrlHlPorMes[r.anio_mes] = hl
+    }
+  } catch {
+    /* sin VRL: celdas en gris */
+  }
+  // VRC: HL reprogramados por crédito/comercial. Vive en la Railway del dashboard
+  // Mercosur (misma base que dpo-app usa para comprobantes). Se agrupa por mes de
+  // la fecha de entrega ORIGINAL, igual criterio que el VRL (fecha_entrega).
+  const vrcHlPorMes: Record<string, number> = {}
+  try {
+    const pool = getPool()
+    const { rows } = await pool.query<{ mes: string; hl: string | null }>(
+      `select to_char(fecha_entrega_original, 'YYYY-MM') as mes, sum(hl) as hl
+         from vol_reprog_com_pedido
+        where lower(region) = 'pampeana' and fecha_entrega_original is not null
+        group by 1`,
+    )
+    for (const r of rows) {
+      const hl = Number(r.hl ?? 0)
+      if (Number.isFinite(hl)) vrcHlPorMes[r.mes] = hl
+    }
+  } catch {
+    /* dashboard Mercosur no disponible: celdas en gris */
+  }
+  for (const mes of meses) {
+    const esActual = mes === mesActual
+    const vrl = vrlHlPorMes[mes]
+    const vrc = vrcHlPorMes[mes]
+    celdas.vrl[mes] = { mes, valor: vrl !== undefined ? vrl : null, parcial: esActual }
+    celdas.vrc[mes] = { mes, valor: vrc !== undefined ? vrc : null, parcial: esActual }
+  }
 
   // ── Ensamblar filas ──
   const filas: FilaIndicador[] = INDICADORES.map((def) => ({
