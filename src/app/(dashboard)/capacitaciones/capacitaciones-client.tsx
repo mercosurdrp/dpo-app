@@ -47,6 +47,7 @@ import {
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
 import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 
 interface Props {
   capacitaciones: CapacitacionConResumen[]
@@ -510,6 +511,9 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
           )}
         </Card>
       )}
+
+      {/* Calendario de programación (respeta los filtros activos) */}
+      <CapacitacionesCalendario capacitaciones={filtered} />
 
       {/* Dialog: lista de capacitaciones realizadas */}
       <Dialog open={realizadasOpen} onOpenChange={setRealizadasOpen}>
