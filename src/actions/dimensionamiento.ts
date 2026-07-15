@@ -13,6 +13,11 @@ import { createClient } from "@/lib/supabase/server"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import { requireAuth, requireRole } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
+import {
+  hlRetornablePorDia,
+  diasHabilesDelMes,
+  HL_POR_PALETA_RETORNABLE,
+} from "@/lib/dimensionamiento/retornable"
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 
@@ -138,7 +143,7 @@ export interface RolFte {
 export interface AlmacenData {
   mes: string
   pickeros: RolFte
-  clasificadores: RolFte       // envases; se dimensiona sobre el PICO de paletas/día
+  clasificadores: RolFte & { prodRealPalHH: number | null } // envases retornables; demanda en HL/día del presupuesto de Quilmes
   reempaque: RolFte            // tareas generales
   maquinistas: RolFte & { palAcarreoProm: number; palCargaProm: number; factorRetorno: number }
 }
@@ -434,9 +439,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         bultosPorDia.set(k, (bultosPorDia.get(k) ?? 0) + Number(r.bultos_total ?? 0))
       }
       const pk = statsPorDia(bultosPorDia)
-      const capPicker = config.prod_bul_hh * config.horas_turno * config.util_pickeros
+      // Productividad de picking = valor YTD del Árbol del Sueño (Prod Picking, Bul/HH),
+      // que vive en deposito-esteban. Fallback al override de config si el depósito no responde.
+      const pickResumen = await fetchDepositoJson(`/api/productividad/picking-resumen?anio=${hoy.getFullYear()}`)
+      const prodPicking = Number(pickResumen?.promedio_anual) || config.prod_bul_hh
+      const capPicker = prodPicking * config.horas_turno * config.util_pickeros
       const pickeros: RolFte = {
-        volumenProm: Math.round(pk.prom), volumenPico: Math.round(pk.pico), productividad: config.prod_bul_hh,
+        volumenProm: Math.round(pk.prom), volumenPico: Math.round(pk.pico), productividad: prodPicking,
         diasConDatos: pk.dias,
         fteNecesariosProm: capPicker > 0 ? Math.ceil(pk.prom / capPicker) : 0,
         fteNecesariosPico: capPicker > 0 ? Math.ceil(pk.pico / capPicker) : 0,
@@ -490,25 +499,37 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         factorRetorno: config.factor_retorno_distrib,
       }
 
-      // Clasificadores: paletas/día de clasificacion_envases. Se dimensiona sobre el PICO.
-      const { data: clz } = await supabase.from("clasificacion_envases").select("fecha, pallets_total").gte("fecha", desde)
-      const palClasifPorDia = new Map<string, number>()
+      // Clasificadores (envases retornables). Demanda = presupuesto de retiros de
+      // Quilmes en HL (acarreo-rdf), repartido uniforme entre días hábiles → HL/día.
+      // NO es auto-reportado: reemplaza al pallets_total manual de clasificacion_envases.
+      // Todo en HL: la productividad (config, en pal/HH) se convierte con 6 HL/paleta.
+      const hlClasifDia = hlRetornablePorDia(hoy.getMonth() + 1, hoy.getFullYear())
+      const prodClasifHlHh = config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE
+      const capClasif = prodClasifHlHh * config.horas_turno * config.util_clasif
+      // Productividad REAL medida del mes (pal/HH), solo como control/referencia en la UI.
+      const { data: clz } = await supabase
+        .from("clasificacion_envases")
+        .select("hora_inicio, hora_fin, pallets_total, pallets_rotos")
+        .gte("fecha", desde)
+      let horasClasif = 0, palClasifReal = 0
       for (const r of clz ?? []) {
-        const k = r.fecha as string
-        palClasifPorDia.set(k, (palClasifPorDia.get(k) ?? 0) + Number(r.pallets_total ?? 0))
+        horasClasif += horasEntre(r.hora_inicio as string, r.hora_fin as string)
+        palClasifReal += Number(r.pallets_total ?? 0) - Number(r.pallets_rotos ?? 0)
       }
-      const cl = statsPorDia(palClasifPorDia)
-      const capClasif = config.prod_clasif_pal_h * config.horas_turno * config.util_clasif
-      const clasificadores: RolFte = {
-        volumenProm: Math.round(cl.prom), volumenPico: Math.round(cl.pico), productividad: config.prod_clasif_pal_h,
-        diasConDatos: cl.dias,
-        // dimensiona contra el pico (pedido del usuario): prom y pico usan el pico.
-        fteNecesariosProm: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
-        fteNecesariosPico: capClasif > 0 ? Math.ceil(cl.pico / capClasif) : 0,
+      const prodRealPalHH = horasClasif > 0 ? Math.round((palClasifReal / horasClasif) * 100) / 100 : null
+      const fteClasif = capClasif > 0 && hlClasifDia > 0 ? Math.ceil(hlClasifDia / capClasif) : 0
+      const clasificadores: RolFte & { prodRealPalHH: number | null } = {
+        // reparto uniforme → promedio = pico
+        volumenProm: Math.round(hlClasifDia), volumenPico: Math.round(hlClasifDia),
+        productividad: Math.round(prodClasifHlHh * 10) / 10,
+        diasConDatos: diasHabilesDelMes(hoy.getFullYear(), hoy.getMonth() + 1),
+        fteNecesariosProm: fteClasif,
+        fteNecesariosPico: fteClasif,
         dotacion: config.dotacion_clasif,
         dotacionEfectiva: efAlmacen(config.dotacion_clasif),
         utilizacion: config.util_clasif,
         capDiariaFte: Math.round(capClasif),
+        prodRealPalHH,
       }
 
       // Reempaque (tareas generales): bultos/día de deposito-esteban /api/reempaque/diario.
@@ -531,7 +552,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         capDiariaFte: Math.round(capReempaque),
       }
 
-      if (pk.dias > 0 || mq.dias > 0 || cl.dias > 0 || re.dias > 0)
+      if (pk.dias > 0 || mq.dias > 0 || hlClasifDia > 0 || re.dias > 0)
         almacen = { mes: mesAA, pickeros, clasificadores, reempaque, maquinistas }
     } catch (e) {
       almacenError = e instanceof Error ? e.message : "Error almacén"
@@ -641,7 +662,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           // Base = volumen PROMEDIO diario; el pico del día lo genera el peso del día de semana (jue/vie ×1,5).
           const rolesAlm: Array<{ rol: string; rolFte?: RolFte; prodH: number; dotacion: number; unidad: string }> = [
             { rol: "Pickeros", rolFte: almacen?.pickeros, prodH: config.prod_bul_hh, dotacion: config.dotacion_almacen, unidad: "bultos" },
-            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h, dotacion: config.dotacion_clasif, unidad: "paletas" },
+            { rol: "Clasificadores", rolFte: almacen?.clasificadores, prodH: config.prod_clasif_pal_h * HL_POR_PALETA_RETORNABLE, dotacion: config.dotacion_clasif, unidad: "HL" },
             { rol: "Tareas grales (reempaque)", rolFte: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dotacion: config.dotacion_reempaque, unidad: "bultos" },
             { rol: "Maquinistas", rolFte: almacen?.maquinistas, prodH: config.prod_pal_h, dotacion: config.dotacion_maquinistas, unidad: "pallets" },
           ]
@@ -652,6 +673,20 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             const capDiaria = (r.rolFte?.capDiariaFte ?? 0) * dotEfectiva         // dotación efectiva
             const capPersona = r.rolFte?.capDiariaFte ?? 0                        // por persona
             const horasExtra: number[] = [], faltanPico: number[] = [], volPicoDia: number[] = []
+            // Clasificadores: la demanda es el presupuesto retornable del mes (HL) repartido
+            // uniforme entre días hábiles → no escala por índice ni tiene pico por día de semana.
+            if (r.rol === "Clasificadores") {
+              for (const mm of meses) {
+                const mesN = Number(mm.mes.split("-")[1])
+                const volDia = hlRetornablePorDia(mesN, anioActual)
+                const diasHab = diasHabilesDelMes(anioActual, mesN)
+                const hh = volDia > capDiaria && r.prodH > 0 ? ((volDia - capDiaria) / r.prodH) * diasHab : 0
+                horasExtra.push(Math.round(hh * 10) / 10)
+                volPicoDia.push(Math.round(volDia))
+                faltanPico.push(capPersona > 0 ? Math.max(0, Math.round((volDia - capDiaria) / capPersona)) : 0)
+              }
+              return { rol: r.rol, dotacion: r.dotacion, dotacionEfectiva: dotEfectiva, capDiaria: Math.round(capDiaria), capPersona: Math.round(capPersona), unidadVol: r.unidad, horasExtra, faltanPico, volPicoDia, volPromBase: Math.round(volBase), prodH: r.prodH }
+            }
             for (const mm of meses) {
               const volMes = volBase * mm.indice
               let hh = 0

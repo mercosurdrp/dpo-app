@@ -466,8 +466,25 @@ const PARAM_ROLES = [
 const DIAS_SEM = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 
 // Modal por celda (rol + mes): explica el "por qué" de ESE mes — volumen por día de semana vs capacidad.
-function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes }: { rol: ProyeccionAlmacenRol; mes: ProyeccionMes; pesos: number[]; horasExtraMes: number }) {
+function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes, volDiaMes }: { rol: ProyeccionAlmacenRol; mes: ProyeccionMes; pesos: number[]; horasExtraMes: number; volDiaMes: number }) {
   const cap = rol.capDiaria
+  // Clasificadores: demanda uniforme en HL (presupuesto retornable ÷ días hábiles), sin pico por día de semana.
+  if (rol.unidadVol === "HL") {
+    const supera = volDiaMes > cap
+    return (
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{rol.rol} — {mesLabel(mes.mes)}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Capacidad: <b>{fmt(cap)} HL/día</b> ({fmt(Math.round(cap / 6))} pal · dotación efectiva {rol.dotacionEfectiva} × {fmt(rol.prodH)} HL/HH). Demanda uniforme del mes (presupuesto retornable ÷ días hábiles): <b>{fmt(volDiaMes)} HL/día</b> ({fmt(Math.round(volDiaMes / 6))} pal/día).
+        </p>
+        <p className="text-sm">
+          {supera
+            ? <>La demanda diaria (<b>{fmt(volDiaMes)}</b>) supera la capacidad de <b>{fmt(cap)}</b> → <b className="text-red-700">{fmt(horasExtraMes)} h extra</b> en el mes (todos los días hábiles).</>
+            : <>La demanda diaria (<b>{fmt(volDiaMes)}</b>) queda por debajo de la capacidad (<b>{fmt(cap)}</b>) → <b className="text-emerald-700">cubre sin horas extra</b>.</>}
+        </p>
+      </DialogContent>
+    )
+  }
   const volProm = rol.volPromBase * mes.indice
   const vals = DIAS_SEM.map((_, d) => Math.round(volProm * 6 * (pesos[d] ?? 0)))
   const pico = Math.max(...vals), bajo = Math.min(...vals)
@@ -543,10 +560,10 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
   }), "Datos de almacén guardados")
 
   const rolesHoy = a ? [
-    { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false },
-    { n: "Clasificadores", r: a.clasificadores, u: "paletas", pico: true },
-    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false },
-    { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false },
+    { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false, hl: false, real: null as number | null },
+    { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH },
+    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false, hl: false, real: null as number | null },
+    { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null },
   ] : []
   // Compara contra la dotación EFECTIVA (descontado el ausentismo).
   const estadoHoy = (r: RolFte) =>
@@ -618,17 +635,33 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 <TableHead className="text-right">Vol/día</TableHead><TableHead className="text-right">Necesarios</TableHead><TableHead>Estado</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {rolesHoy.map(({ n, r, u, pico }) => {
+                {rolesHoy.map(({ n, r, u, pico, hl, real }) => {
                   const e = estadoHoy(r)
-                  const unidadProd = (u === "paletas" || u === "pallets") ? "pal/HH" : "bul/HH"
+                  const unidadProd = hl ? "HL/HH" : (u === "paletas" || u === "pallets") ? "pal/HH" : "bul/HH"
+                  const paletas = (v: number) => fmt(Math.round(v / 6)) // 6 HL/paleta retornable
+                  const capTotal = Math.round(r.capDiariaFte * r.dotacionEfectiva)
+                  const vol = pico ? r.volumenPico : r.volumenProm
                   return (
                     <TableRow key={n}>
                       <TableCell className="font-medium">{n}</TableCell>
                       <TableCell className="text-right">{fmt(r.dotacion)}{r.dotacionEfectiva < r.dotacion ? <span className="block text-[10px] text-muted-foreground">ef. {fmt(r.dotacionEfectiva)}</span> : null}</TableCell>
-                      <TableCell className="text-right">{fmt(r.productividad)} {unidadProd}</TableCell>
+                      <TableCell className="text-right">
+                        {fmt(r.productividad)} {unidadProd}
+                        {hl && real != null && (
+                          <span className="block text-xs text-muted-foreground">real {a!.mes.slice(5)}: {fmt(real)} pal/HH</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{Math.round(r.utilizacion * 100)}%</TableCell>
-                      <TableCell className="text-right">{fmt(Math.round(r.capDiariaFte * r.dotacionEfectiva))} {u}</TableCell>
-                      <TableCell className="text-right">{fmt(pico ? r.volumenPico : r.volumenProm)} <span className="text-xs text-muted-foreground">(pico {fmt(r.volumenPico)})</span></TableCell>
+                      <TableCell className="text-right">
+                        {fmt(capTotal)} {u}
+                        {hl && <span className="text-xs text-muted-foreground"> ({paletas(capTotal)} pal)</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {fmt(vol)} {hl ? "HL" : ""}
+                        {hl
+                          ? <span className="text-xs text-muted-foreground"> ({paletas(vol)} pal/día)</span>
+                          : <span className="text-xs text-muted-foreground"> (pico {fmt(r.volumenPico)})</span>}
+                      </TableCell>
                       <TableCell className="text-right font-semibold">{r.fteNecesariosProm}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${r.fteNecesariosPico})` : ""}</TableCell>
                       <TableCell className={e.cls}>{e.txt}</TableCell>
                     </TableRow>
@@ -636,7 +669,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores se evalúa sobre el día pico de paletas. «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
           </CardContent>
         </Card>
       )}
@@ -661,7 +694,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                               {hh > 0 ? `${fmt(hh)} h` : "✓"}
                               {falta > 0 ? <span className="block text-[10px] font-normal">falta {falta}</span> : null}
                             </DialogTrigger>
-                            <DetalleCeldaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} horasExtraMes={hh} />
+                            <DetalleCeldaModal rol={r} mes={proy.meses[i]} pesos={proy.pesos} horasExtraMes={hh} volDiaMes={r.volPicoDia[i]} />
                           </Dialog>
                         </TableCell>
                       )
