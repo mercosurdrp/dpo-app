@@ -312,8 +312,8 @@ export function AvancesSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center justify-between text-sm">
-          <span className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+        <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="flex min-w-0 items-center gap-2 text-[15px] font-semibold text-slate-900">
             <MessageSquare className="h-4 w-4 text-slate-400" />
             Avances y respuestas
             <span
@@ -324,7 +324,7 @@ export function AvancesSection({
             </span>
           </span>
           {puedeIntervenir && !planCerrado && (
-            <span className="flex items-center gap-2">
+            <span className="flex flex-wrap items-center justify-end gap-2">
               {!IS_MISIONES && (
                 <Button
                   size="sm"
