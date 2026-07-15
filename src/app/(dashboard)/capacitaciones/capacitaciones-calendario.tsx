@@ -36,6 +36,10 @@ const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
+const MESES_CORTOS = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
 const pad = (n: number) => String(n).padStart(2, "0")
@@ -80,6 +84,24 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
     }
     return { celdas: arr, enElMes: total }
   }, [cursor, porFecha])
+
+  // Cantidad de capacitaciones por mes (YYYY-MM), ordenado cronológicamente
+  const porMes = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const c of capacitaciones) {
+      if (!c.fecha) continue
+      const ym = c.fecha.slice(0, 7)
+      map.set(ym, (map.get(ym) ?? 0) + 1)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([ym, total]) => {
+        const [y, m] = ym.split("-").map(Number)
+        return { ym, y, m: m - 1, total }
+      })
+  }, [capacitaciones])
+
+  const cursorYm = `${cursor.y}-${pad(cursor.m + 1)}`
 
   const irMes = (delta: number) =>
     setCursor((c) => {
@@ -131,6 +153,35 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
       </CardHeader>
       {abierto && (
       <CardContent>
+        {porMes.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {porMes.map((r) => {
+              const activo = r.ym === cursorYm
+              return (
+                <button
+                  key={r.ym}
+                  type="button"
+                  onClick={() => setCursor({ y: r.y, m: r.m })}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    activo
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title={`Ver ${MESES[r.m]} ${r.y}`}
+                >
+                  <span className="font-medium">{MESES_CORTOS[r.m]} {r.y}</span>
+                  <span
+                    className={`min-w-4 rounded-full px-1 text-center text-[10px] font-semibold ${
+                      activo ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {r.total}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div className="grid grid-cols-7 gap-px border-b text-center text-xs font-medium uppercase tracking-wide text-slate-500">
           {DIAS.map((d) => (
             <div key={d} className="pb-2">{d}</div>
