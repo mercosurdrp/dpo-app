@@ -1,14 +1,16 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition, type CSSProperties } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertTriangle, Truck, Scissors, Clock, ShieldCheck, PackageX, Info } from "lucide-react"
+import { AlertTriangle, Truck, Scissors, Clock, ShieldCheck, PackageX, Info, FileDown } from "lucide-react"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
@@ -16,6 +18,40 @@ import type { FilaPriorizada } from "@/lib/priorizacion/score"
 
 const money = (n: number) =>
   "$" + Math.round(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })
+
+/** Fila ya resuelta (entra/sale) que se muestra en la tabla. */
+type FilaVista = FilaPriorizada & { entra: boolean; cae_por_volumen: boolean }
+
+/** Criterios de orden dentro de cada ciudad. */
+type Orden = "reprogramar" | "bultos_desc" | "bultos_asc" | "score"
+const ORDENES: { id: Orden; label: string }[] = [
+  { id: "reprogramar", label: "A reprogramar primero" },
+  { id: "bultos_desc", label: "Bultos ↓" },
+  { id: "bultos_asc", label: "Bultos ↑" },
+  { id: "score", label: "Prioridad (score)" },
+]
+
+/** Ordena una copia de las filas según el criterio elegido. NO altera el corte. */
+function ordenarFilas(filas: FilaVista[], orden: Orden): FilaVista[] {
+  const arr = [...filas]
+  switch (orden) {
+    case "bultos_desc":
+      return arr.sort((a, b) => b.bultos - a.bultos)
+    case "bultos_asc":
+      return arr.sort((a, b) => a.bultos - b.bultos)
+    case "score":
+      return arr // ya viene en orden de prioridad (score desc)
+    case "reprogramar":
+    default:
+      // Los que se caen ARRIBA, y entre ellos el de más bultos primero.
+      return arr.sort((a, b) => {
+        const af = a.entra ? 1 : 0
+        const bf = b.entra ? 1 : 0
+        if (af !== bf) return af - bf
+        return b.bultos - a.bultos
+      })
+  }
+}
 
 /** Color del comportamiento: verde impecable → rojo el que hace perder el viaje. */
 function colorComportamiento(c: number): string {
@@ -33,6 +69,11 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
   const [cupos, setCupos] = useState<Record<string, string>>({})
   /** Clientes que el usuario sacó/rescató a mano (override de la línea). */
   const [forzados, setForzados] = useState<Record<number, "entra" | "sale">>({})
+  /** Orden de la tabla dentro de cada ciudad. */
+  const [orden, setOrden] = useState<Orden>("reprogramar")
+  /** Para portalizar el PDF sólo en cliente. */
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const setCupo = (ciudad: string, v: string) =>
     setCupos((p) => ({ ...p, [ciudad]: v }))
@@ -43,15 +84,14 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
       const cupo = Number(cupos[c.ciudad] ?? "")
       const hayCupo = Number.isFinite(cupo) && cupo > 0
       let acum = 0
-      const filas = c.filas.map((f) => {
+      // 🚨 El corte (entra/sale) se resuelve SIEMPRE en orden de prioridad (score),
+      //    sin importar cómo después se ordene la tabla en pantalla.
+      const filas: FilaVista[] = c.filas.map((f) => {
         const forzado = forzados[f.id_cliente]
-        // Sin cupo cargado no se corta a nadie: la lista es sólo el orden.
         let entra = !hayCupo || f.intocable
         if (hayCupo && !f.intocable) entra = acum + f.bultos <= cupo
         if (forzado) entra = forzado === "entra"
         if (entra) acum += f.bultos
-        // Score alto pero no entra SÓLO porque el pedido es grande: no es un juicio
-        // sobre el cliente, es la mochila. Se marca aparte para que lo decida un humano.
         const cae_por_volumen =
           hayCupo && !entra && !forzado && f.comportamiento >= 80 && f.bultos > cupo * 0.1
         return { ...f, entra, cae_por_volumen }
@@ -71,6 +111,21 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
 
   const totalCortados = ciudades.reduce((a, c) => a + c.cortados, 0)
   const hayAlgunCupo = ciudades.some((c) => c.hayCupo)
+
+  /** Reprogramados agrupados por ciudad, para el PDF (más bultos arriba). */
+  const grupos = useMemo(
+    () =>
+      ciudades
+        .map((c) => ({
+          ciudad: c.ciudad,
+          filas: c.filas.filter((f) => !f.entra).sort((a, b) => b.bultos - a.bultos),
+          bultos: c.bultos_cortados,
+          hl: c.hl_cortados,
+          monto: c.monto_cortado,
+        }))
+        .filter((g) => g.filas.length),
+    [ciudades],
+  )
 
   /** VRL que se generaría con el corte actual (todavía sin registrar). */
   const vrlHoy = useMemo(() => ({
@@ -117,6 +172,8 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
     })
   }
 
+  const ciudadInicial = ciudades[0]?.ciudad ?? ""
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -126,7 +183,7 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
           </h1>
           <p className="text-sm text-muted-foreground">
             Pedidos a entregar el <strong>{data.fecha_entrega}</strong> — se rutea y prepara hoy.
-            El orden es por ciudad: <strong>se corta desde abajo</strong> hasta donde alcance el camión.
+            Cargá los bultos del camión de cada ciudad: <strong>se reprograma lo de menor prioridad</strong>.
           </p>
         </div>
         <div className="flex items-end gap-2">
@@ -184,11 +241,12 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
       <Card className="border-slate-200 bg-slate-50">
         <CardContent className="pt-4 text-xs text-slate-600 space-y-1">
           <p className="flex items-center gap-1 font-medium text-slate-800">
-            <Info className="h-3.5 w-3.5" /> Cómo se ordena
+            <Info className="h-3.5 w-3.5" /> Cómo se decide el corte
           </p>
           <p>
             <strong>Score = 50% comportamiento + 35% importancia del cliente + 15% valor del pedido</strong>,
-            más {data.pesos.puntos_por_postergacion} puntos por cada vez que ya se le pospuso.
+            más {data.pesos.puntos_por_postergacion} puntos por cada vez que ya se le pospuso. El corte se
+            decide con el score; el orden de la tabla es sólo para leerla más cómodo.
           </p>
           <p>
             <strong>Comportamiento</strong> = entregas rechazadas <em>por causa del cliente</em> (sin dinero,
@@ -206,79 +264,138 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
         </CardContent>
       </Card>
 
-      {/* Una tabla por ciudad */}
-      {ciudades.map((c) => (
-        <Card key={c.ciudad}>
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-base">
+      {/* Barra de orden + PDF */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Ordenar por</span>
+          <div className="inline-flex rounded-lg border bg-muted p-0.5">
+            {ORDENES.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => setOrden(o.id)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  orden === o.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={totalCortados === 0}
+          onClick={() => window.print()}
+        >
+          <FileDown className="mr-1 h-4 w-4" />
+          Descargar PDF reprogramados ({totalCortados})
+        </Button>
+      </div>
+
+      {/* Solapas por ciudad */}
+      {ciudadInicial && (
+        <Tabs defaultValue={ciudadInicial} className="w-full">
+          <TabsList className="h-auto flex-wrap justify-start">
+            {ciudades.map((c) => (
+              <TabsTrigger key={c.ciudad} value={c.ciudad} className="flex-none gap-1.5">
                 {c.ciudad}
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {c.clientes} clientes · {c.bultos.toLocaleString("es-AR")} bultos · {c.hl.toFixed(1)} HL · {money(c.monto)}
-                </span>
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground">Bultos del camión</label>
-                <Input
-                  type="number" min={0} placeholder="sin límite" className="w-32"
-                  value={cupos[c.ciudad] ?? ""}
-                  onChange={(e) => setCupo(c.ciudad, e.target.value)}
-                />
-                {c.hayCupo && (
-                  <Badge variant={c.cortados ? "destructive" : "secondary"}>
-                    {c.cortados
-                      ? `${c.cortados} se caen · VRL ${c.bultos_cortados} bultos / ${c.hl_cortados.toFixed(1)} HL`
-                      : "entran todos"}
-                  </Badge>
+                {c.hayCupo && c.cortados > 0 && (
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-100 px-1 text-[10px] font-bold text-red-700">
+                    {c.cortados}
+                  </span>
                 )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">#</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Clase</TableHead>
-                  <TableHead className="text-right">Bultos</TableHead>
-                  <TableHead className="text-right">HL</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead className="text-center">Comportamiento</TableHead>
-                  <TableHead>Por qué</TableHead>
-                  <TableHead className="text-right">Score</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {c.filas.map((f, i) => {
-                  const anterior = c.filas[i - 1]
-                  const cruzaLinea = c.hayCupo && anterior?.entra && !f.entra
-                  return (
-                    <Fila
-                      key={f.id_cliente}
-                      f={f}
-                      cruzaLinea={!!cruzaLinea}
-                      cupo={c.cupo}
-                      onForzar={(modo) =>
-                        setForzados((p) => ({ ...p, [f.id_cliente]: modo }))
-                      }
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {ciudades.map((c) => {
+            const filasVista = ordenarFilas(c.filas, orden)
+            return (
+              <TabsContent key={c.ciudad} value={c.ciudad} className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    <strong className="text-slate-900">{c.ciudad}</strong> · {c.clientes} clientes ·{" "}
+                    {c.bultos.toLocaleString("es-AR")} bultos · {c.hl.toFixed(1)} HL · {money(c.monto)}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground">Bultos del camión</label>
+                    <Input
+                      type="number" min={0} placeholder="sin límite" className="w-32"
+                      value={cupos[c.ciudad] ?? ""}
+                      onChange={(e) => setCupo(c.ciudad, e.target.value)}
                     />
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ))}
+                    {c.hayCupo && (
+                      <Badge variant={c.cortados ? "destructive" : "secondary"}>
+                        {c.cortados
+                          ? `${c.cortados} se caen · VRL ${c.bultos_cortados} bultos / ${c.hl_cortados.toFixed(1)} HL`
+                          : "entran todos"}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">#</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Clase</TableHead>
+                      <TableHead className="text-right">Bultos</TableHead>
+                      <TableHead className="text-right">HL</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-center">Comportamiento</TableHead>
+                      <TableHead>Por qué</TableHead>
+                      <TableHead className="text-right">Score</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filasVista.map((f, i) => {
+                      const anterior = filasVista[i - 1]
+                      // La línea de corte sólo tiene sentido cuando la tabla va en
+                      // orden de prioridad: ahí el corte es contiguo.
+                      const cruzaLinea =
+                        orden === "score" && c.hayCupo && anterior?.entra && !f.entra
+                      return (
+                        <Fila
+                          key={f.id_cliente}
+                          f={f}
+                          hayCupo={c.hayCupo}
+                          cruzaLinea={cruzaLinea}
+                          cupo={c.cupo}
+                          onForzar={(modo) =>
+                            setForzados((p) => ({ ...p, [f.id_cliente]: modo }))
+                          }
+                        />
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            )
+          })}
+        </Tabs>
+      )}
+
+      {/* PDF imprimible de reprogramados (oculto en pantalla) */}
+      {mounted && totalCortados > 0 &&
+        createPortal(
+          <ReprogramadosPrint
+            fecha={data.fecha_entrega}
+            grupos={grupos}
+            total={{ ...vrlHoy, clientes: totalCortados }}
+          />,
+          document.body,
+        )}
     </div>
   )
 }
 
 function Fila({
-  f, cruzaLinea, cupo, onForzar,
+  f, hayCupo, cruzaLinea, cupo, onForzar,
 }: {
-  f: FilaPriorizada & { entra: boolean; cae_por_volumen: boolean }
+  f: FilaVista
+  hayCupo: boolean
   cruzaLinea: boolean
   cupo: number
   onForzar: (modo: "entra" | "sale") => void
@@ -335,6 +452,9 @@ function Fila({
         <TableCell className="text-right text-sm font-semibold tabular-nums">{f.score.toFixed(0)}</TableCell>
         <TableCell className="text-center">
           <div className="flex items-center justify-center gap-1">
+            {hayCupo && !f.entra && (
+              <Badge className="border-0 bg-red-600 text-white">Fuera</Badge>
+            )}
             {f.intocable && (
               <Tooltip>
                 <TooltipTrigger
@@ -397,4 +517,104 @@ function Fila({
       </TableRow>
     </>
   )
+}
+
+/** Listado imprimible de los clientes que se reprograman (VRL del día). */
+function ReprogramadosPrint({
+  fecha, grupos, total,
+}: {
+  fecha: string
+  grupos: { ciudad: string; filas: FilaVista[]; bultos: number; hl: number; monto: number }[]
+  total: { bultos: number; hl: number; monto: number; clientes: number }
+}) {
+  return (
+    <>
+      <style>{`
+        @media print {
+          body > *:not(#print-reprogramados) { display: none !important; }
+          #print-reprogramados { display: block !important; }
+          @page { size: A4 portrait; margin: 12mm; }
+        }
+      `}</style>
+      <div
+        id="print-reprogramados"
+        className="hidden"
+        style={{ color: "#111", fontFamily: "system-ui, sans-serif", fontSize: 11 }}
+      >
+        <div style={{ borderBottom: "2px solid #111", paddingBottom: 8, marginBottom: 12 }}>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>Volumen Reprogramado Logístico (VRL)</div>
+          <div style={{ fontSize: 12 }}>
+            Clientes reprogramados para la entrega del <strong>{fecha}</strong>
+          </div>
+          <div style={{ fontSize: 12, marginTop: 2 }}>
+            Total: <strong>{total.clientes}</strong> clientes ·{" "}
+            <strong>{total.bultos.toLocaleString("es-AR")}</strong> bultos ·{" "}
+            <strong>{total.hl.toFixed(1)}</strong> HL · {money(total.monto)}
+          </div>
+        </div>
+
+        {grupos.map((g) => (
+          <div key={g.ciudad} style={{ marginBottom: 14, breakInside: "avoid" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+              {g.ciudad}
+              <span style={{ fontWeight: 400, fontSize: 11 }}>
+                {" "}— {g.filas.length} clientes · {g.bultos.toLocaleString("es-AR")} bultos ·{" "}
+                {g.hl.toFixed(1)} HL · {money(g.monto)}
+              </span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
+              <thead>
+                <tr style={{ background: "#eee" }}>
+                  {["#", "Cliente", "Localidad", "Bultos", "HL", "Monto", "Score", "Comp.", "Posp.", "Motivo"].map(
+                    (h, i) => (
+                      <th
+                        key={h}
+                        style={{
+                          border: "1px solid #bbb",
+                          padding: "3px 5px",
+                          textAlign: i >= 3 && i <= 8 ? "right" : "left",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {g.filas.map((f) => (
+                  <tr key={f.id_cliente}>
+                    <td style={cell()}>{f.posicion}</td>
+                    <td style={cell()}>
+                      {f.nombre ?? `Cliente ${f.id_cliente}`}{" "}
+                      <span style={{ color: "#666" }}>#{f.id_cliente}</span>
+                    </td>
+                    <td style={cell()}>{f.localidad ?? "—"}</td>
+                    <td style={cell("right")}>{f.bultos}</td>
+                    <td style={cell("right")}>{f.hl.toFixed(1)}</td>
+                    <td style={cell("right")}>{money(f.monto)}</td>
+                    <td style={cell("right")}>{f.score.toFixed(0)}</td>
+                    <td style={cell("right")}>{f.comportamiento.toFixed(0)}</td>
+                    <td style={cell("right")}>{f.veces_pospuesto || "—"}</td>
+                    <td style={cell()}>
+                      {f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        <div style={{ marginTop: 10, fontSize: 9, color: "#666" }}>
+          Generado desde Priorización de Entrega · dpo-app · El corte se decide por score (50%
+          comportamiento + 35% importancia + 15% valor). Los rechazos por falla interna no cuentan.
+        </div>
+      </div>
+    </>
+  )
+}
+
+function cell(align: "left" | "right" = "left"): CSSProperties {
+  return { border: "1px solid #ccc", padding: "3px 5px", textAlign: align }
 }
