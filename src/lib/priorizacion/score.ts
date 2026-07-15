@@ -82,6 +82,12 @@ export const PESO_MOTIVO: Record<string, number> = {
 /** Ventana de comportamiento. A 45 días casi no hay señal (17 clientes); a 180, hay 71. */
 export const VENTANA_DIAS = 180
 
+/**
+ * Ventana corta para la BANDERA "rechazó hace poco". Es una señal reciente que se
+ * MUESTRA en la fila; NO entra al score (el score usa la ventana larga de 180 días).
+ */
+export const VENTANA_RECIENTE_DIAS = 45
+
 // ── Entrada / salida ─────────────────────────────────────────────────────────
 
 export interface EntradaPriorizacion {
@@ -103,6 +109,8 @@ export interface EntradaPriorizacion {
   rechazos_pesados: number
   /** Detalle "SIN DINERO×3, CERRADO×1" para mostrar el porqué en la fila. */
   motivos: string
+  /** Rechazos por causa del cliente en los últimos 45 días (bandera reciente). NO entra al score. */
+  rechazos_45d: number
   /** Veces que ya le pospusimos este pedido (de `entrega_cortes`). */
   veces_pospuesto: number
   /** Banderas informativas: NO entran al score (medidos: no discriminan). */

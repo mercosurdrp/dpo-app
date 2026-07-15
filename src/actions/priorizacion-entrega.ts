@@ -6,6 +6,7 @@ import {
   priorizarPorCiudad,
   PESOS_DEFAULT,
   VENTANA_DIAS,
+  VENTANA_RECIENTE_DIAS,
   type EntradaPriorizacion,
   type PesosPriorizacion,
   type CiudadPriorizada,
@@ -160,11 +161,13 @@ export async function getPriorizacionEntrega(
   try {
     const hasta = restarDias(fechaEntrega, 1)          // el comportamiento se mide hasta ayer
     const desde = restarDias(hasta, VENTANA_DIAS)
+    const desdeReciente = restarDias(hasta, VENTANA_RECIENTE_DIAS)  // bandera "rechazó hace poco"
 
-    const [pedidos, perfiles, rechazos, banderas, pospuestos] = await Promise.all([
+    const [pedidos, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] = await Promise.all([
       getPedidosPendientes(fechaEntrega),
       getPerfilClientes(desde, hasta),
       getRechazosPorCliente(desde, hasta),
+      getRechazosPorCliente(desdeReciente, hasta),
       getBanderas(desde),
       getPospuestos(fechaEntrega),
     ])
@@ -189,6 +192,7 @@ export async function getPriorizacionEntrega(
         rechazos: r?.eventos ?? 0,
         rechazos_pesados: r?.pesados ?? 0,
         motivos: r?.motivos ?? "",
+        rechazos_45d: rechazosRecientes.get(p.id_cliente)?.eventos ?? 0,
         veces_pospuesto: pospuestos.get(p.id_cliente) ?? 0,
         rmd_prom: rmd ? rmd.suma / rmd.n : null,
         nps_categoria: banderas.nps.get(p.id_cliente) ?? null,

@@ -23,12 +23,13 @@ const money = (n: number) =>
 type FilaVista = FilaPriorizada & { entra: boolean; cae_por_volumen: boolean }
 
 /** Criterios de orden dentro de cada ciudad. */
-type Orden = "reprogramar" | "bultos_desc" | "bultos_asc" | "score"
+type Orden = "reprogramar" | "bultos_desc" | "bultos_asc" | "score" | "score_bultos"
 const ORDENES: { id: Orden; label: string }[] = [
   { id: "reprogramar", label: "A reprogramar primero" },
+  { id: "score", label: "Prioridad (score)" },
+  { id: "score_bultos", label: "Score + bultos" },
   { id: "bultos_desc", label: "Bultos ↓" },
   { id: "bultos_asc", label: "Bultos ↑" },
-  { id: "score", label: "Prioridad (score)" },
 ]
 
 /** Ordena una copia de las filas según el criterio elegido. NO altera el corte. */
@@ -41,6 +42,9 @@ function ordenarFilas(filas: FilaVista[], orden: Orden): FilaVista[] {
       return arr.sort((a, b) => a.bultos - b.bultos)
     case "score":
       return arr // ya viene en orden de prioridad (score desc)
+    case "score_bultos":
+      // Combinado: primero por score, y a igualdad de peso, el de más bultos.
+      return arr.sort((a, b) => b.score - a.score || b.bultos - a.bultos)
     case "reprogramar":
     default:
       // Los que se caen ARRIBA, y entre ellos el de más bultos primero.
@@ -51,6 +55,14 @@ function ordenarFilas(filas: FilaVista[], orden: Orden): FilaVista[] {
         return b.bultos - a.bultos
       })
   }
+}
+
+/** Color del RMD (1-5): verde ok, rojo el que puntúa bajo. null = sin dato. */
+function colorRmd(v: number | null): string {
+  if (v === null) return "text-muted-foreground"
+  if (v >= 4.5) return "text-emerald-700"
+  if (v >= 4) return "text-amber-700"
+  return "text-red-700 font-semibold"
 }
 
 /** Color del comportamiento: verde impecable → rojo el que hace perder el viaje. */
@@ -258,6 +270,11 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
             (0,2% de notas bajas) y el NPS cubre el 17% de los clientes. Se muestran como bandera en la fila.
           </p>
           <p>
+            La bandera <strong>“Rechazó hace poco”</strong> marca al cliente que rechazó por su culpa en los
+            <strong> últimos 45 días</strong> (señal reciente). No cambia el score: el comportamiento se mide
+            sobre la ventana larga de <strong>180 días</strong>, porque a 45 casi no hay señal.
+          </p>
+          <p>
             A las <strong>{data.pesos.pospuesto_intocable} postergaciones</strong> el cliente pasa a
             INTOCABLE: entra sí o sí, no compite. Es lo que evita postergar siempre al mismo.
           </p>
@@ -344,6 +361,7 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                       <TableHead className="text-right">HL</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
                       <TableHead className="text-center">Comportamiento</TableHead>
+                      <TableHead className="text-center">RMD</TableHead>
                       <TableHead>Por qué</TableHead>
                       <TableHead className="text-right">Score</TableHead>
                       <TableHead className="text-center">Estado</TableHead>
@@ -404,7 +422,7 @@ function Fila({
     <>
       {cruzaLinea && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={10} className="p-0">
+          <TableCell colSpan={11} className="p-0">
             <div className="flex items-center gap-2 border-t-2 border-dashed border-red-400 py-1.5 text-xs font-semibold text-red-600">
               <Scissors className="h-3.5 w-3.5" />
               LÍNEA DE CORTE — de acá para abajo se reprograma ({cupo} bultos de camión)
@@ -418,9 +436,6 @@ function Fila({
           <div className="font-medium text-sm">{f.nombre ?? `Cliente ${f.id_cliente}`}</div>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             #{f.id_cliente}
-            {f.rmd_prom !== null && f.rmd_prom < 4.5 && (
-              <Badge variant="outline" className="h-4 px-1 text-[10px] text-amber-700">RMD {f.rmd_prom.toFixed(1)}</Badge>
-            )}
             {f.nps_categoria === "Detractor" && (
               <Badge variant="outline" className="h-4 px-1 text-[10px] text-red-700">Detractor</Badge>
             )}
@@ -441,13 +456,45 @@ function Fila({
             />
             <TooltipContent>
               {f.entregas > 0
-                ? `${f.rechazos} entregas rechazadas por su culpa sobre ${f.entregas} entregas (${(f.tasa_rechazo * 100).toFixed(0)}%)`
+                ? `${f.rechazos} entregas rechazadas por su culpa sobre ${f.entregas} entregas (${(f.tasa_rechazo * 100).toFixed(0)}%) — ventana de 180 días`
                 : "Sin historia de entregas en la ventana"}
             </TooltipContent>
           </Tooltip>
         </TableCell>
+        <TableCell className="text-center">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className={`text-sm tabular-nums ${colorRmd(f.rmd_prom)}`}>
+                  {f.rmd_prom !== null ? f.rmd_prom.toFixed(1) : "—"}
+                </span>
+              }
+            />
+            <TooltipContent>
+              {f.rmd_prom !== null
+                ? `RMD promedio ${f.rmd_prom.toFixed(2)} (bandera, no suma al score)`
+                : "Sin RMD cargado"}
+            </TooltipContent>
+          </Tooltip>
+        </TableCell>
         <TableCell className="text-xs text-muted-foreground">
-          {f.motivos || (f.entregas > 0 ? `sin rechazos · ${f.entregas} entregas` : "cliente nuevo")}
+          <div className="flex flex-col gap-0.5">
+            {f.rechazos_45d > 0 && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Badge className="w-fit border-0 bg-red-100 text-red-800">
+                      <Clock className="mr-0.5 h-3 w-3" /> Rechazó hace poco ×{f.rechazos_45d}
+                    </Badge>
+                  }
+                />
+                <TooltipContent>
+                  Rechazó por su culpa {f.rechazos_45d} vez/veces en los últimos 45 días.
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <span>{f.motivos || (f.entregas > 0 ? `sin rechazos · ${f.entregas} entregas` : "cliente nuevo")}</span>
+          </div>
         </TableCell>
         <TableCell className="text-right text-sm font-semibold tabular-nums">{f.score.toFixed(0)}</TableCell>
         <TableCell className="text-center">
@@ -565,14 +612,14 @@ function ReprogramadosPrint({
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
               <thead>
                 <tr style={{ background: "#eee" }}>
-                  {["#", "Cliente", "Localidad", "Bultos", "HL", "Monto", "Score", "Comp.", "Posp.", "Motivo"].map(
+                  {["#", "Cliente", "Localidad", "Bultos", "HL", "Monto", "Score", "Comp.", "RMD", "45d", "Posp.", "Motivo"].map(
                     (h, i) => (
                       <th
                         key={h}
                         style={{
                           border: "1px solid #bbb",
                           padding: "3px 5px",
-                          textAlign: i >= 3 && i <= 8 ? "right" : "left",
+                          textAlign: i >= 3 && i <= 10 ? "right" : "left",
                         }}
                       >
                         {h}
@@ -595,6 +642,8 @@ function ReprogramadosPrint({
                     <td style={cell("right")}>{money(f.monto)}</td>
                     <td style={cell("right")}>{f.score.toFixed(0)}</td>
                     <td style={cell("right")}>{f.comportamiento.toFixed(0)}</td>
+                    <td style={cell("right")}>{f.rmd_prom !== null ? f.rmd_prom.toFixed(1) : "—"}</td>
+                    <td style={cell("right")}>{f.rechazos_45d || "—"}</td>
                     <td style={cell("right")}>{f.veces_pospuesto || "—"}</td>
                     <td style={cell()}>
                       {f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad"}
@@ -609,6 +658,9 @@ function ReprogramadosPrint({
         <div style={{ marginTop: 10, fontSize: 9, color: "#666" }}>
           Generado desde Priorización de Entrega · dpo-app · El corte se decide por score (50%
           comportamiento + 35% importancia + 15% valor). Los rechazos por falla interna no cuentan.
+          <br />
+          <strong>Comp.</strong> = comportamiento (rechazos por su culpa en 180 días). <strong>45d</strong> =
+          rechazos por su culpa en los últimos 45 días. <strong>RMD</strong> y NPS son banderas: no suman al score.
         </div>
       </div>
     </>
