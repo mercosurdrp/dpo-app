@@ -61,6 +61,30 @@ const LABEL_GAP: Record<SkapEstadoGap, string> = {
 
 const ESTADOS_ACCION: SkapEstadoAccion[] = ["pendiente", "programada", "realizada", "cerrada"]
 
+/** Identidad visual por bloque (se cicla si hubiera más de 5). */
+const BLOQUE_STYLE = [
+  { bar: "bg-indigo-600", soft: "bg-indigo-50/70", divide: "border-indigo-300" },
+  { bar: "bg-sky-600", soft: "bg-sky-50/70", divide: "border-sky-300" },
+  { bar: "bg-violet-600", soft: "bg-violet-50/70", divide: "border-violet-300" },
+  { bar: "bg-teal-600", soft: "bg-teal-50/70", divide: "border-teal-300" },
+  { bar: "bg-fuchsia-600", soft: "bg-fuchsia-50/70", divide: "border-fuchsia-300" },
+]
+const bloqueStyle = (i: number) => BLOQUE_STYLE[i % BLOQUE_STYLE.length]
+
+/** Chip de criticidad: A destaca en rojo, B/C atenuados. */
+function CritChip({ c }: { c: string }) {
+  const critA = c === "A"
+  return (
+    <span
+      className={`inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-bold leading-none ${
+        critA ? "bg-red-100 text-red-700 ring-1 ring-red-200" : "bg-slate-200 text-slate-500"
+      }`}
+    >
+      {c}
+    </span>
+  )
+}
+
 function pct(v: number | null): string {
   return v === null ? "—" : `${v.toFixed(0)}%`
 }
@@ -86,6 +110,19 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
     const m = new Map<string, number>()
     for (const h of habilidades) m.set(h.bloque, (m.get(h.bloque) ?? 0) + 1)
     return [...m.entries()]
+  }, [habilidades])
+
+  // Metadata por columna: índice de bloque y si es la primera columna de su bloque
+  const cols = useMemo(() => {
+    const order: string[] = []
+    for (const h of habilidades) if (!order.includes(h.bloque)) order.push(h.bloque)
+    const idx = new Map(order.map((b, i) => [b, i]))
+    let prev: string | null = null
+    return habilidades.map((h) => {
+      const first = h.bloque !== prev
+      prev = h.bloque
+      return { h, first, blockIdx: idx.get(h.bloque)! }
+    })
   }, [habilidades])
 
   function cambiarRol(rol: SkapRol | null) {
@@ -194,96 +231,140 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
               </CardContent>
             </Card>
           ) : (
-            <Card>
+            <Card className="overflow-hidden py-0">
               <CardContent className="overflow-x-auto p-0">
-                <table className="w-full border-collapse text-sm">
+                <table className="w-max table-fixed border-collapse text-sm">
+                  <colgroup>
+                    <col style={{ width: 224 }} />
+                    {habilidades.map((h) => (
+                      <col key={h.id} style={{ width: 150 }} />
+                    ))}
+                    <col style={{ width: 92 }} />
+                  </colgroup>
                   <thead>
+                    {/* Fila de grupos: una banda de color por bloque */}
                     <tr>
-                      <th className="sticky left-0 z-10 border-b bg-white p-2 text-left font-medium">
+                      <th
+                        rowSpan={2}
+                        className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white px-3 py-2 text-left align-bottom text-sm font-semibold text-slate-700 shadow-[6px_0_6px_-4px_rgba(15,23,42,0.08)]"
+                      >
                         Persona
                       </th>
-                      {bloques.map(([bloque, n]) => (
+                      {bloques.map(([bloque, n], bi) => (
                         <th
                           key={bloque}
                           colSpan={n}
-                          className="border-b border-l bg-slate-50 p-2 text-center text-xs font-semibold text-slate-600"
+                          className={`border-b border-l-2 border-white px-2 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-white ${bloqueStyle(bi).bar}`}
                         >
                           {bloque}
                         </th>
                       ))}
-                      <th className="border-b border-l bg-slate-50 p-2 text-center text-xs">Críticas</th>
+                      <th
+                        rowSpan={2}
+                        className="border-b border-l-2 border-white bg-slate-700 px-2 py-2 text-center align-bottom text-[11px] font-bold uppercase tracking-wide text-white"
+                      >
+                        Críticas
+                      </th>
                     </tr>
+                    {/* Fila de habilidades: nombre horizontal + chip de criticidad */}
                     <tr>
-                      <th className="sticky left-0 z-10 border-b bg-white p-2" />
-                      {habilidades.map((h) => (
-                        <th key={h.id} className="border-b p-0 align-bottom">
-                          <button
-                            onClick={() => abrirPlan(h.id, h.habilidad)}
-                            title={`${h.habilidad} · criticidad ${h.criticidad} · estándar ${h.estandar} — ver plan de formación`}
-                            className="mx-auto flex h-36 w-8 items-center justify-center hover:bg-slate-50"
+                      {cols.map(({ h, first, blockIdx }) => {
+                        const st = bloqueStyle(blockIdx)
+                        return (
+                          <th
+                            key={h.id}
+                            className={`border-b border-slate-200 p-0 align-top ${st.soft} ${
+                              first ? `border-l-2 ${st.divide}` : "border-l border-slate-200/60"
+                            }`}
                           >
-                            <span
-                              className="whitespace-nowrap text-[11px] text-slate-600"
-                              style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+                            <button
+                              onClick={() => abrirPlan(h.id, h.habilidad)}
+                              title={`${h.habilidad} · criticidad ${h.criticidad} · estándar ${h.estandar} — ver plan de formación`}
+                              className="flex h-full min-h-[7.5rem] w-full flex-col items-center gap-1.5 px-2 pt-2 pb-2.5 transition-colors hover:bg-white/70"
                             >
-                              <span
-                                className={`mr-1 font-bold ${
-                                  h.criticidad === "A" ? "text-red-600" : "text-slate-400"
-                                }`}
-                              >
-                                {h.criticidad}
+                              <CritChip c={h.criticidad} />
+                              <span className="text-center text-[11px] font-semibold uppercase leading-tight tracking-tight text-slate-700">
+                                {h.habilidad}
                               </span>
-                              {h.habilidad.length > 34 ? h.habilidad.slice(0, 33) + "…" : h.habilidad}
-                            </span>
-                          </button>
-                        </th>
-                      ))}
-                      <th className="border-b border-l bg-slate-50" />
+                            </button>
+                          </th>
+                        )
+                      })}
                     </tr>
-                    <tr className="bg-slate-50/60">
-                      <th className="sticky left-0 z-10 border-b bg-slate-50/60 p-2 text-left text-xs font-normal text-slate-500">
+                    {/* Fila de estándar requerido */}
+                    <tr>
+                      <th className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-100 px-3 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500 shadow-[6px_0_6px_-4px_rgba(15,23,42,0.08)]">
                         Estándar requerido
                       </th>
-                      {habilidades.map((h) => (
-                        <th key={h.id} className="border-b p-1 text-center text-xs font-bold text-slate-700">
-                          {h.estandar}
+                      {cols.map(({ h, first, blockIdx }) => (
+                        <th
+                          key={h.id}
+                          className={`border-b border-slate-200 bg-slate-100 py-1.5 text-center ${
+                            first ? `border-l-2 ${bloqueStyle(blockIdx).divide}` : "border-l border-slate-200/60"
+                          }`}
+                        >
+                          <span className="inline-flex size-6 items-center justify-center rounded-md bg-white text-xs font-bold text-slate-600 ring-1 ring-slate-300">
+                            {h.estandar}
+                          </span>
                         </th>
                       ))}
-                      <th className="border-b border-l bg-slate-50" />
+                      <th className="border-b border-l-2 border-white bg-slate-100" />
                     </tr>
                   </thead>
                   <tbody>
-                    {personas.map((p) => (
-                      <tr key={p.empleado_id} className="hover:bg-slate-50/50">
-                        <td className="sticky left-0 z-10 border-b bg-white p-2 whitespace-nowrap">
-                          <button
-                            className="text-left disabled:cursor-default"
-                            disabled={!canEdit}
-                            onClick={() => setEvaluando(p)}
+                    {personas.map((p, ri) => {
+                      const rowBg = ri % 2 === 0 ? "bg-white" : "bg-slate-50"
+                      const cp = p.pct_criticas
+                      const critColor =
+                        cp === null
+                          ? "text-slate-400"
+                          : cp >= 80
+                            ? "text-emerald-600"
+                            : cp >= 50
+                              ? "text-slate-700"
+                              : "text-red-600"
+                      return (
+                        <tr key={p.empleado_id} className={rowBg}>
+                          <td
+                            className={`sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-2 align-middle shadow-[6px_0_6px_-4px_rgba(15,23,42,0.08)] ${rowBg}`}
                           >
-                            <span className="font-medium">{p.nombre}</span>
-                            <span className="ml-2 text-xs text-slate-400">#{p.legajo}</span>
-                          </button>
-                        </td>
-                        {p.celdas.map((c) => (
-                          <td key={c.habilidad_id} className="border-b p-0.5">
-                            <div
-                              title={`${LABEL_GAP[c.estado]} · estándar ${c.estandar}${
-                                c.fecha_evaluacion ? ` · evaluado ${c.fecha_evaluacion}` : ""
-                              }`}
-                              className={`mx-auto flex size-7 items-center justify-center rounded text-xs font-bold ${
-                                COLOR_GAP[c.estado]
-                              }`}
+                            <button
+                              className="block text-left leading-tight disabled:cursor-default"
+                              disabled={!canEdit}
+                              onClick={() => setEvaluando(p)}
                             >
-                              {c.estado === "sin_evaluar" ? "" : c.estado === "no_aplica" ? "NA" : c.nivel}
-                            </div>
+                              <span className="block font-semibold text-slate-800">{p.nombre}</span>
+                              <span className="text-xs font-normal text-slate-400">#{p.legajo}</span>
+                            </button>
                           </td>
-                        ))}
-                        <td className="border-b border-l p-2 text-center text-xs font-semibold">
-                          {pct(p.pct_criticas)}
-                        </td>
-                      </tr>
-                    ))}
+                          {p.celdas.map((c, ci) => {
+                            const meta = cols[ci]
+                            return (
+                              <td
+                                key={c.habilidad_id}
+                                className={`border-b border-slate-100 px-1 py-1 ${
+                                  meta.first
+                                    ? `border-l-2 ${bloqueStyle(meta.blockIdx).divide}`
+                                    : "border-l border-slate-100"
+                                }`}
+                              >
+                                <div
+                                  title={`${LABEL_GAP[c.estado]} · estándar ${c.estandar}${
+                                    c.fecha_evaluacion ? ` · evaluado ${c.fecha_evaluacion}` : ""
+                                  }`}
+                                  className={`mx-auto flex size-8 items-center justify-center rounded-md text-[13px] font-bold shadow-sm ${COLOR_GAP[c.estado]}`}
+                                >
+                                  {c.estado === "sin_evaluar" ? "" : c.estado === "no_aplica" ? "NA" : c.nivel}
+                                </div>
+                              </td>
+                            )
+                          })}
+                          <td className="border-b border-l-2 border-slate-200 px-2 py-2 text-center">
+                            <span className={`text-sm font-bold ${critColor}`}>{pct(cp)}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </CardContent>
