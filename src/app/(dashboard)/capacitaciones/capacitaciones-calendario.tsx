@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronDown, CalendarDays } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
@@ -46,6 +46,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
   const hoyStr = `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}-${pad(hoy.getDate())}`
 
   const [cursor, setCursor] = useState({ y: hoy.getFullYear(), m: hoy.getMonth() })
+  const [abierto, setAbierto] = useState(true)
 
   // Agrupa por fecha (YYYY-MM-DD) para evitar problemas de zona horaria
   const porFecha = useMemo(() => {
@@ -90,10 +91,20 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarDays className="size-4 text-slate-400" />
-            Calendario de Programación
-          </CardTitle>
+          <button
+            type="button"
+            onClick={() => setAbierto((v) => !v)}
+            className="flex items-center gap-2 text-left outline-none"
+            title={abierto ? "Ocultar calendario" : "Ver calendario"}
+          >
+            <ChevronDown
+              className={`size-4 text-slate-400 transition-transform ${abierto ? "" : "-rotate-90"}`}
+            />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="size-4 text-slate-400" />
+              Calendario de Programación
+            </CardTitle>
+          </button>
           <div className="flex items-center gap-1">
             <span className="mr-1 text-xs text-slate-500">
               {enElMes} {enElMes === 1 ? "capacitación" : "capacitaciones"}
@@ -118,6 +129,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
           </div>
         </div>
       </CardHeader>
+      {abierto && (
       <CardContent>
         <div className="grid grid-cols-7 gap-px border-b text-center text-xs font-medium uppercase tracking-wide text-slate-500">
           {DIAS.map((d) => (
@@ -170,6 +182,7 @@ export function CapacitacionesCalendario({ capacitaciones }: Props) {
           })}
         </div>
       </CardContent>
+      )}
     </Card>
   )
 }
