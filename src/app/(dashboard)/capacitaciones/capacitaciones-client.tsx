@@ -183,7 +183,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
   }, [withDerived])
 
   const [expandedPilar, setExpandedPilar] = useState<string | null>(null)
-  const [avanceOpen, setAvanceOpen] = useState(true)
+  const [avanceOpen, setAvanceOpen] = useState(false)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
 
