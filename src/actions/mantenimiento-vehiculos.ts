@@ -1905,6 +1905,115 @@ export async function upsertRepuesto(input: {
   }
 }
 
+// ----- Movimientos de stock de repuestos (ingreso / egreso) -----
+
+export interface MovimientoRepuesto {
+  id: string
+  repuesto_id: string
+  tipo: "ingreso" | "egreso"
+  cantidad: number
+  motivo: string | null
+  stock_resultante: number
+  fecha: string
+  created_at: string
+  /** Nombre de quien registró el movimiento (null si no se pudo resolver). */
+  autor: string | null
+}
+
+/**
+ * Registra un movimiento de stock (ingreso o egreso) de un repuesto y ajusta
+ * el stock_actual atómicamente vía la función registrar_movimiento_repuesto.
+ * El mensaje de error de "Stock insuficiente…" viene de la función y se
+ * devuelve tal cual para mostrarlo al usuario.
+ */
+export async function registrarMovimientoRepuesto(input: {
+  repuestoId: string
+  tipo: "ingreso" | "egreso"
+  cantidad: number
+  motivo?: string
+  fecha?: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    if (!input.repuestoId) return { error: "Falta el repuesto" }
+    if (input.tipo !== "ingreso" && input.tipo !== "egreso")
+      return { error: "Tipo de movimiento inválido" }
+    if (!(input.cantidad > 0)) return { error: "La cantidad debe ser mayor a 0" }
+    const supabase = await createClient()
+    const { error } = await supabase.rpc("registrar_movimiento_repuesto", {
+      p_repuesto_id: input.repuestoId,
+      p_tipo: input.tipo,
+      p_cantidad: input.cantidad,
+      p_motivo: input.motivo?.trim() || null,
+      p_fecha: input.fecha || null,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Historial de movimientos de un repuesto (más recientes primero). */
+export async function getMovimientosRepuesto(
+  repuestoId: string
+): Promise<{ data: MovimientoRepuesto[] } | { error: string }> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_repuestos_movimientos")
+      .select(
+        "id, repuesto_id, tipo, cantidad, motivo, stock_resultante, fecha, created_by, created_at"
+      )
+      .eq("repuesto_id", repuestoId)
+      .order("created_at", { ascending: false })
+    if (error) return { error: error.message }
+
+    type Row = {
+      id: string
+      repuesto_id: string
+      tipo: "ingreso" | "egreso"
+      cantidad: number
+      motivo: string | null
+      stock_resultante: number
+      fecha: string
+      created_by: string | null
+      created_at: string
+    }
+    const rows = (data || []) as Row[]
+
+    // Nombre del autor: se resuelve en una segunda consulta a profiles para no
+    // depender del nombre del FK en el embed.
+    const autorById = new Map<string, string>()
+    const ids = [...new Set(rows.map((r) => r.created_by).filter((x): x is string => !!x))]
+    if (ids.length > 0) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, nombre")
+        .in("id", ids)
+      for (const p of (profs || []) as Array<{ id: string; nombre: string }>) {
+        autorById.set(p.id, p.nombre)
+      }
+    }
+
+    const movimientos: MovimientoRepuesto[] = rows.map((r) => ({
+      id: r.id,
+      repuesto_id: r.repuesto_id,
+      tipo: r.tipo,
+      cantidad: Number(r.cantidad),
+      motivo: r.motivo,
+      stock_resultante: Number(r.stock_resultante),
+      fecha: r.fecha,
+      created_at: r.created_at,
+      autor: r.created_by ? (autorById.get(r.created_by) ?? null) : null,
+    }))
+    return { data: movimientos }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
 // ----- Órdenes de compra -----
 export async function createOrdenCompra(input: {
   numero?: string

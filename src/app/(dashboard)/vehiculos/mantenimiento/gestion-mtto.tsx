@@ -32,7 +32,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ClipboardCheck, FileText, Plus, Trash2 } from "lucide-react"
+import {
+  ClipboardCheck,
+  FileText,
+  History,
+  Minus,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
@@ -44,11 +51,14 @@ import {
   deleteGestionRow,
   deleteResiduo,
   getConteoDetalle,
+  getMovimientosRepuesto,
+  registrarMovimientoRepuesto,
   updateNovedadEstado,
   updateOrdenCompraEstado,
   upsertRepuesto,
   type ConteoItemDetalle,
   type ConteoResumen,
+  type MovimientoRepuesto,
   type Novedad,
   type OrdenCompra,
   type Repuesto,
@@ -122,6 +132,13 @@ export function GestionMtto({
   >(null)
   const [conteoVer, setConteoVer] = useState<ConteoResumen | null>(null)
   const [repuestoEdit, setRepuestoEdit] = useState<Repuesto | null>(null)
+  // Movimiento de stock: repuesto + tipo inicial (ingreso/egreso) del botón.
+  const [movimiento, setMovimiento] = useState<{
+    repuesto: Repuesto
+    tipo: "ingreso" | "egreso"
+  } | null>(null)
+  // Historial de movimientos del repuesto seleccionado.
+  const [historialRep, setHistorialRep] = useState<Repuesto | null>(null)
 
   const borrar = async (
     tabla: "novedades" | "repuestos" | "ordenes_compra",
@@ -358,7 +375,7 @@ export function GestionMtto({
                       <TableHead className="text-right">Mín</TableHead>
                       <TableHead className="text-right">Máx</TableHead>
                       <TableHead>Ubicación</TableHead>
-                      {puedeEditar && <TableHead className="w-12" />}
+                      {puedeEditar && <TableHead className="w-40" />}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -399,14 +416,48 @@ export function GestionMtto({
                           <TableCell className="text-slate-600">{r.ubicacion || "—"}</TableCell>
                           {puedeEditar && (
                             <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-red-500"
-                                onClick={() => borrar("repuestos", r.id)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-emerald-600"
+                                  title="Registrar ingreso"
+                                  onClick={() =>
+                                    setMovimiento({ repuesto: r, tipo: "ingreso" })
+                                  }
+                                >
+                                  <Plus className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-amber-600"
+                                  title="Registrar egreso"
+                                  onClick={() =>
+                                    setMovimiento({ repuesto: r, tipo: "egreso" })
+                                  }
+                                >
+                                  <Minus className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-slate-500"
+                                  title="Ver movimientos"
+                                  onClick={() => setHistorialRep(r)}
+                                >
+                                  <History className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-red-500"
+                                  title="Eliminar repuesto"
+                                  onClick={() => borrar("repuestos", r.id)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -636,6 +687,23 @@ export function GestionMtto({
       {conteoVer && (
         <ConteoDetalleDialog conteo={conteoVer} onClose={() => setConteoVer(null)} />
       )}
+      {movimiento && (
+        <MovimientoDialog
+          repuesto={movimiento.repuesto}
+          tipoInicial={movimiento.tipo}
+          onClose={() => setMovimiento(null)}
+          onSaved={() => {
+            setMovimiento(null)
+            refresh()
+          }}
+        />
+      )}
+      {historialRep && (
+        <HistorialMovimientosDialog
+          repuesto={historialRep}
+          onClose={() => setHistorialRep(null)}
+        />
+      )}
     </div>
   )
 }
@@ -853,6 +921,193 @@ function ConteoDetalleDialog({
                     </TableRow>
                   )
                 })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MovimientoDialog({
+  repuesto,
+  tipoInicial,
+  onClose,
+  onSaved,
+}: {
+  repuesto: Repuesto
+  tipoInicial: "ingreso" | "egreso"
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [tipo, setTipo] = useState<"ingreso" | "egreso">(tipoInicial)
+  const [cantidad, setCantidad] = useState("")
+  const [motivo, setMotivo] = useState("")
+  const [fecha, setFecha] = useState(hoyISO())
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    const cant = parseNum(cantidad)
+    if (cant == null || cant <= 0) return toast.error("Ingresá una cantidad mayor a 0")
+    setSaving(true)
+    const res = await registrarMovimientoRepuesto({
+      repuestoId: repuesto.id,
+      tipo,
+      cantidad: cant,
+      motivo,
+      fecha,
+    })
+    setSaving(false)
+    // El error de "Stock insuficiente…" viene de la función y se muestra tal cual.
+    if ("error" in res) return toast.error(res.error)
+    toast.success(tipo === "ingreso" ? "Ingreso registrado" : "Egreso registrado")
+    onSaved()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Movimiento de stock · {repuesto.nombre}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-slate-500">
+          Stock actual: <span className="font-medium tabular-nums">{fmtNum(repuesto.stock_actual)}</span>
+          {repuesto.unidad && <span className="text-slate-400"> {repuesto.unidad}</span>}
+        </p>
+        <div className="space-y-3">
+          <div>
+            <Label>Tipo de movimiento</Label>
+            <Select value={tipo} onValueChange={(v) => v && setTipo(v as "ingreso" | "egreso")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ingreso">Ingreso (+)</SelectItem>
+                <SelectItem value="egreso">Egreso (−)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Cantidad</Label>
+              <Input
+                type="number"
+                min={1}
+                value={cantidad}
+                onChange={(e) => setCantidad(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <Label>Fecha</Label>
+              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label>Motivo</Label>
+            <Input
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder={
+                tipo === "ingreso"
+                  ? "compra / reposición"
+                  : "uso en OT / reparación"
+              }
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Guardando…" : "Registrar movimiento"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function HistorialMovimientosDialog({
+  repuesto,
+  onClose,
+}: {
+  repuesto: Repuesto
+  onClose: () => void
+}) {
+  const [movimientos, setMovimientos] = useState<MovimientoRepuesto[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getMovimientosRepuesto(repuesto.id).then((res) => {
+      if ("error" in res) setError(res.error)
+      else setMovimientos(res.data)
+    })
+  }, [repuesto.id])
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Movimientos · {repuesto.nombre}</DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {error ? (
+            <p className="py-4 text-sm text-red-500">{error}</p>
+          ) : movimientos == null ? (
+            <p className="py-4 text-center text-sm text-slate-400">Cargando…</p>
+          ) : movimientos.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">Sin movimientos</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Cantidad</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead className="text-right">Stock después</TableHead>
+                  <TableHead>Registró</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movimientos.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="whitespace-nowrap">{fmtFecha(m.fecha)}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          m.tipo === "ingreso"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-red-100 text-red-700"
+                        }
+                      >
+                        {m.tipo === "ingreso" ? "Ingreso" : "Egreso"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right font-medium tabular-nums",
+                        m.tipo === "ingreso" ? "text-emerald-600" : "text-red-600"
+                      )}
+                    >
+                      {m.tipo === "ingreso" ? "+" : "−"}
+                      {fmtNum(m.cantidad)}
+                    </TableCell>
+                    <TableCell className="max-w-56 text-slate-600">
+                      {m.motivo ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-700">
+                      {fmtNum(m.stock_resultante)}
+                    </TableCell>
+                    <TableCell className="text-slate-500">{m.autor ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           )}
