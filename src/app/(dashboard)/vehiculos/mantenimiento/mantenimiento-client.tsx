@@ -91,6 +91,8 @@ import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
+import { HerramientasTab } from "./herramientas-tab"
+import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
 import { EstandaresFlota } from "./estandares-flota"
 import type { EstandaresFlota as EstandaresFlotaData } from "@/actions/flota-estandares"
@@ -387,6 +389,7 @@ interface MantenimientoClientProps {
   kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   tareasCil: TareaCil[]
   estandares: EstandaresFlotaData
+  herramientas: Herramienta[]
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -418,6 +421,7 @@ export function MantenimientoClient({
   kpiExtraSeries,
   tareasCil,
   estandares,
+  herramientas,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -567,6 +571,7 @@ export function MantenimientoClient({
           <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
           <TabsTrigger value="estandares">Estándares</TabsTrigger>
           <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
+          <TabsTrigger value="herramientas">Herramientas</TabsTrigger>
           <TabsTrigger value="gastos">Gastos</TabsTrigger>
           {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
         </TabsList>
@@ -705,6 +710,11 @@ export function MantenimientoClient({
             conteos={gestion.conteos}
             puedeEditar={puedeEditar}
           />
+        </TabsContent>
+
+        {/* ============ TAB: Herramientas (registro de pañol) ============ */}
+        <TabsContent value="herramientas" className="space-y-6">
+          <HerramientasTab herramientas={herramientas} puedeEditar={puedeEditar} />
         </TabsContent>
 
         {/* ============ TAB: Órdenes de Trabajo ============ */}
