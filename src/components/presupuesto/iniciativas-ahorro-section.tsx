@@ -112,6 +112,72 @@ function barColor(frac: number | null): string {
   return "bg-red-500"
 }
 
+/**
+ * Trimestres ya CERRADOS del año, a hoy. Es el denominador del ritmo: el ahorro
+ * comprometido es anual, así que compararlo contra el año completo a mitad de
+ * año da una lectura falsa (una iniciativa que rindió todo su compromiso en un
+ * trimestre muestra la barra llena, como si ya no hubiera nada que hacer, cuando
+ * lo que pasó es que el compromiso quedó corto).
+ */
+function trimestresCerrados(anio: number, hoy = new Date()): number {
+  if (anio < hoy.getFullYear()) return 4
+  if (anio > hoy.getFullYear()) return 0
+  return Math.floor(hoy.getMonth() / 3) // ene-mar → 0 cerrados; jul → 2
+}
+
+/** Ahorro que debería llevar acumulado a esta altura del año, prorrateado. */
+function esperadoALaFecha(
+  comprometidoAnual: number | null,
+  qCerrados: number,
+): number | null {
+  if (comprometidoAnual === null || comprometidoAnual <= 0) return null
+  return (comprometidoAnual * qCerrados) / 4
+}
+
+/** Cómo viene el ahorro contra el ritmo, no contra el año entero. */
+function RitmoBadge({
+  frac,
+  qCerrados,
+}: {
+  frac: number | null
+  qCerrados: number
+}) {
+  if (qCerrados === 0) {
+    return <span className="text-xs text-muted-foreground">Sin trimestre cerrado</span>
+  }
+  if (frac === null) {
+    return <span className="text-xs text-muted-foreground">Sin ahorro cargado</span>
+  }
+  const pct = Math.round(frac * 100)
+  const detalle = `${pct}% del ritmo · ${qCerrados} de 4 Q`
+  if (frac >= 1.25) {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        Por encima del ritmo · {detalle}
+      </Badge>
+    )
+  }
+  if (frac >= 0.9) {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+        En ritmo · {detalle}
+      </Badge>
+    )
+  }
+  if (frac >= 0.5) {
+    return (
+      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+        Atrasada · {detalle}
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
+      Muy atrasada · {detalle}
+    </Badge>
+  )
+}
+
 export function IniciativasAhorroSection({
   anio,
   iniciativas,
@@ -315,12 +381,26 @@ export function IniciativasAhorroSection({
               .filter((s) => s.kpi_valor !== null)
               .sort((a, b) => b.trimestre - a.trimestre)
             const ultimoKpi = conKpi.length > 0 ? conKpi[0].kpi_valor : null
+            const ultimoKpiQ = conKpi.length > 0 ? conKpi[0].trimestre : null
             const kpiFrac = cumplimientoKpi(
               ini.kpi_linea_base,
               ini.kpi_objetivo,
               ultimoKpi,
               ini.kpi_mejor_si,
             )
+            // Ritmo: lo acumulado contra lo que debería llevar a esta altura,
+            // no contra el compromiso anual entero.
+            const qCerrados = trimestresCerrados(ini.anio)
+            const esperado = esperadoALaFecha(
+              ini.ahorro_comprometido_anual,
+              qCerrados,
+            )
+            const ritmoFrac = esperado && esperado > 0 ? realAcum / esperado : null
+            // El último comentario cargado es el análisis de la iniciativa: es lo
+            // más valioso que se carga y estaba escondido dentro del diálogo.
+            const ultimoSeg = [...ini.seguimientos]
+              .filter((s) => (s.comentario ?? "").trim() !== "")
+              .sort((a, b) => b.trimestre - a.trimestre)[0]
             const tipoLabel =
               ini.tipo === "otro" && ini.tipo_otro
                 ? ini.tipo_otro
@@ -401,56 +481,80 @@ export function IniciativasAhorroSection({
                     </div>
                   </div>
 
-                  {/* Ahorro + KPI */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {/* Ahorro */}
-                    <div className="rounded-lg border bg-slate-50 p-3">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Ahorro (real acum. / comprometido)</span>
-                      </div>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        {formatMoney(realAcum)} /{" "}
-                        {formatMoney(ini.ahorro_comprometido_anual)}
-                      </p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full ${barColor(ahorroFrac)}`}
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (ahorroFrac ?? 0) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                  {/* Ahorro: una sola barra, contra el RITMO esperado a esta
+                      altura del año. El KPI va como línea de texto: es la causa,
+                      el ahorro es el efecto — dos barras iguales no dejaban ver
+                      cuál manda. */}
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>Ahorro real acumulado</span>
+                      {esperado !== null && (
+                        <RitmoBadge frac={ritmoFrac} qCerrados={qCerrados} />
+                      )}
                     </div>
-
-                    {/* KPI */}
-                    <div className="rounded-lg border bg-slate-50 p-3">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {ini.kpi_nombre
-                            ? ini.kpi_nombre +
-                              (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
-                            : "KPI comprometido"}
-                        </span>
-                        <SemaforoBadge frac={kpiFrac} />
-                      </div>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        Base {formatNum(ini.kpi_linea_base)} → Obj{" "}
-                        {formatNum(ini.kpi_objetivo)}
-                        <span className="text-muted-foreground">
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {formatMoney(realAcum)}
+                      {esperado !== null && (
+                        <span className="font-normal text-muted-foreground">
                           {" "}
-                          · Últ. {formatNum(ultimoKpi)}
+                          de {formatMoney(esperado)} esperados a esta altura
                         </span>
-                      </p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full ${barColor(kpiFrac)}`}
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (kpiFrac ?? 0) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                      )}
+                    </p>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full ${barColor(ritmoFrac)}`}
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (ritmoFrac ?? 0) * 100))}%`,
+                        }}
+                      />
                     </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Compromiso anual {formatMoney(ini.ahorro_comprometido_anual)}
+                      {ahorroFrac !== null &&
+                        ` · ${Math.round(ahorroFrac * 100)}% del año cubierto`}
+                      {qCerrados === 0 && " · el año todavía no cerró un trimestre"}
+                    </p>
                   </div>
+
+                  {/* KPI comprometido: la métrica que mueve el ahorro. */}
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+                    <span className="text-muted-foreground">
+                      {ini.kpi_nombre
+                        ? ini.kpi_nombre +
+                          (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
+                        : "KPI comprometido"}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-slate-900">
+                        {formatNum(ini.kpi_linea_base)} →{" "}
+                        {formatNum(ini.kpi_objetivo)}
+                        {ultimoKpi !== null && (
+                          <>
+                            <span className="text-muted-foreground"> · hoy </span>
+                            <strong>{formatNum(ultimoKpi)}</strong>
+                            {ultimoKpiQ !== null && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                (Q{ultimoKpiQ})
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                      <SemaforoBadge frac={kpiFrac} />
+                    </span>
+                  </div>
+
+                  {/* El análisis del último trimestre cargado. */}
+                  {ultimoSeg && (
+                    <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-medium text-slate-700">
+                        Q{ultimoSeg.trimestre}:
+                      </span>{" "}
+                      {ultimoSeg.comentario}
+                    </p>
+                  )}
 
                   {/* Tira de trimestres */}
                   <div className="grid grid-cols-4 gap-2">

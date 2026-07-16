@@ -147,6 +147,13 @@ export function SeguimientoIniciativaDialog({
                 defaultValue={existente?.kpi_valor ?? ""}
                 placeholder="0"
               />
+              {/* El seguimiento es trimestral pero los KPI suelen ser mensuales
+                  ("$ vencidos por mes"): sin esta aclaración no se sabe si va el
+                  total del Q o el promedio, y hoy se venía cargando el promedio. */}
+              <p className="text-xs text-muted-foreground">
+                Si la métrica es mensual, cargá el promedio de los 3 meses del
+                trimestre.
+              </p>
             </div>
           </div>
 
