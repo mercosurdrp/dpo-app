@@ -82,6 +82,105 @@ function parseHojaPresupuestoAnual(buffer: ArrayBuffer): Map<string, number> {
   return out
 }
 
+export interface EjecucionMes {
+  /** 1-12 */
+  mes: number
+  presup: number
+  real: number
+}
+
+export interface EjecucionRubro {
+  /**
+   * Un item por mes CERRADO (el EERR se sube con el mes cerrado). Va mes a mes y
+   * no como total porque una iniciativa puede arrancar a mitad de año: lo gastado
+   * antes de implementarla no es mérito ni culpa suya. Ej.: Roturas arranca en
+   * marzo, y enero (la rotura de depósito de $1,3M) no le corresponde.
+   */
+  porMes: EjecucionMes[]
+}
+
+/**
+ * Ejecución acumulada por rubro: presupuestado vs real de los meses cerrados.
+ *
+ * De acá sale el ahorro REAL de una iniciativa (presup − real), con la misma vara
+ * que su compromiso (% del presupuesto). Antes el ahorro se cargaba a mano y
+ * medido contra el gasto del año anterior, así que no era comparable: "Roturas"
+ * declaraba $1,12M de ahorro contra la línea base 2025 cuando contra el
+ * presupuesto venía $1,81M POR ENCIMA.
+ *
+ * Lee la hoja DESVIOS (la que tiene real, no sólo presupuesto): sólo trae los
+ * meses cerrados, y eso es justamente lo que se quiere acumular.
+ */
+function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
+  const wb = XLSX.read(buffer, { type: "array" })
+  const ws = wb.Sheets[SHEET_DESVIOS]
+  if (!ws) throw new Error(`El Excel no tiene la hoja "${SHEET_DESVIOS}"`)
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  const out = new Map<string, EjecucionRubro>()
+  for (let i = 3; i < aoa.length; i++) {
+    const row = aoa[i]
+    if (!row) continue
+    const sub = row[1]
+    if (typeof sub !== "string") continue
+    const subNorm = normalizar(sub)
+    if (!subNorm || subNorm === "TOTAL" || subNorm === "RUBRO") continue
+
+    const porMes: EjecucionMes[] = []
+    for (let mes = 1; mes <= 12; mes++) {
+      const p = row[2 + 4 * (mes - 1)]
+      const r = row[3 + 4 * (mes - 1)]
+      const hayP = typeof p === "number" && Number.isFinite(p)
+      const hayR = typeof r === "number" && Number.isFinite(r)
+      if (!hayP && !hayR) continue
+      porMes.push({ mes, presup: hayP ? p : 0, real: hayR ? r : 0 })
+    }
+    if (porMes.length === 0) continue
+    out.set(subNorm, { porMes })
+  }
+  return out
+}
+
+/** Ejecución (presupuesto vs real acumulado) de cada rubro del EERR del año. */
+export async function getEjecucionPorRubro(
+  anio: number,
+): Promise<Result<Record<string, EjecucionRubro>>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    return { data: Object.fromEntries(parseEjecucion(await blob.arrayBuffer())) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo la ejecución por rubro",
+    }
+  }
+}
+
 /** Presupuesto anual de cada rubro del EERR del año. Clave: rubro normalizado. */
 export async function getPresupuestoAnualPorRubro(
   anio: number,

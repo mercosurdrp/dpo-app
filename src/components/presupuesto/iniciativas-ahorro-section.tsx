@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
+import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -38,6 +39,8 @@ interface ResponsableOpt {
 interface Props {
   anio: number
   iniciativas: IniciativaAhorroConDetalle[]
+  /** Presupuestado vs real acumulado por rubro del EERR (rubro normalizado). */
+  ejecucionRubros: Record<string, EjecucionRubro>
   responsables: ResponsableOpt[]
   puedeEditar: boolean
 }
@@ -112,44 +115,144 @@ function barColor(frac: number | null): string {
   return "bg-red-500"
 }
 
+/** Índice 1-12 (el 0 queda sin usar para no restar en cada lectura). */
+const MES_NOMBRE = [
+  "",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
+
 /**
- * Trimestres ya CERRADOS del año, a hoy. Es el denominador del ritmo: el ahorro
- * comprometido es anual, así que compararlo contra el año completo a mitad de
- * año da una lectura falsa (una iniciativa que rindió todo su compromiso en un
- * trimestre muestra la barra llena, como si ya no hubiera nada que hacer, cuando
- * lo que pasó es que el compromiso quedó corto).
+ * Primer mes del año en que la iniciativa está vigente. Antes de esa fecha el
+ * rubro gastaba lo que gastaba sin ella, así que ese gasto no es ni mérito ni
+ * culpa de la iniciativa. Sin fecha, se asume vigente todo el año.
  */
+function mesInicioDe(ini: IniciativaAhorroConDetalle): number {
+  if (!ini.fecha_implementacion) return 1
+  const d = new Date(`${ini.fecha_implementacion}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return 1
+  if (d.getFullYear() < ini.anio) return 1
+  if (d.getFullYear() > ini.anio) return 13 // arranca después de este año
+  return d.getMonth() + 1
+}
+
+/**
+ * Ahorro REAL de una iniciativa y contra qué se lo mide.
+ *
+ * Con rubro, sale del EERR: presupuestado − gasto real, sumando SÓLO los meses
+ * cerrados desde que la iniciativa está vigente. Es la misma vara con la que se
+ * fijó el compromiso (% del presupuesto), así que se pueden comparar. Antes el
+ * ahorro se cargaba a mano y contra el gasto del año ANTERIOR: "Roturas"
+ * declaraba $1,12M ahorrados cuando contra el presupuesto venía $1,81M por
+ * encima — dos varas distintas en la misma barra.
+ *
+ * Sin rubro (iniciativas cuyo ahorro no sale de un rubro del EERR) se mantiene la
+ * suma de lo cargado a mano en los seguimientos.
+ */
+function ahorroDe(
+  ini: IniciativaAhorroConDetalle,
+  ejecucion: EjecucionRubro | undefined,
+): {
+  real: number
+  /** Meses cerrados COMPUTADOS (los vigentes), no los del año. */
+  meses: number | null
+  mesInicio: number
+  /** Meses que la iniciativa está vigente en el año: la base del prorrateo. */
+  mesesVigentes: number
+  /** Presupuestado y gastado de los meses computados (para explicar el número). */
+  presupComputado: number
+  gastoComputado: number
+  fuente: "eerr" | "manual"
+} {
+  const mesInicio = mesInicioDe(ini)
+  const mesesVigentes = Math.max(0, 13 - mesInicio)
+  if (ini.rubro && ejecucion) {
+    const computados = ejecucion.porMes.filter((m) => m.mes >= mesInicio)
+    const presupComputado = computados.reduce((acc, m) => acc + m.presup, 0)
+    const gastoComputado = computados.reduce((acc, m) => acc + m.real, 0)
+    return {
+      real: presupComputado - gastoComputado,
+      meses: computados.length,
+      mesInicio,
+      mesesVigentes,
+      presupComputado,
+      gastoComputado,
+      fuente: "eerr",
+    }
+  }
+  return {
+    real: ini.seguimientos.reduce((acc, s) => acc + (s.ahorro_real ?? 0), 0),
+    meses: null,
+    mesInicio,
+    mesesVigentes,
+    presupComputado: 0,
+    gastoComputado: 0,
+    fuente: "manual",
+  }
+}
+
+/** Trimestres ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. */
 function trimestresCerrados(anio: number, hoy = new Date()): number {
   if (anio < hoy.getFullYear()) return 4
   if (anio > hoy.getFullYear()) return 0
   return Math.floor(hoy.getMonth() / 3) // ene-mar → 0 cerrados; jul → 2
 }
 
-/** Ahorro que debería llevar acumulado a esta altura del año, prorrateado. */
+/**
+ * Ahorro que debería llevar acumulado a esta altura, prorrateado por los meses
+ * transcurridos sobre los VIGENTES. Compararlo contra el compromiso ANUAL a
+ * mitad de año da la lectura al revés: una iniciativa que rindió todo su
+ * compromiso en un trimestre muestra la barra llena, como si no quedara nada por
+ * hacer, cuando lo que pasó es que el compromiso quedó corto.
+ *
+ * La base son los meses vigentes y no 12: si arranca en marzo, el compromiso
+ * anual tiene que rendirse en 10 meses, no en 12.
+ */
 function esperadoALaFecha(
   comprometidoAnual: number | null,
-  qCerrados: number,
+  mesesTranscurridos: number,
+  mesesVigentes: number,
 ): number | null {
   if (comprometidoAnual === null || comprometidoAnual <= 0) return null
-  return (comprometidoAnual * qCerrados) / 4
+  if (mesesVigentes <= 0) return null
+  return (comprometidoAnual * mesesTranscurridos) / mesesVigentes
 }
 
 /** Cómo viene el ahorro contra el ritmo, no contra el año entero. */
 function RitmoBadge({
   frac,
-  qCerrados,
+  meses,
+  mesesVigentes,
 }: {
   frac: number | null
-  qCerrados: number
+  meses: number
+  mesesVigentes: number
 }) {
-  if (qCerrados === 0) {
-    return <span className="text-xs text-muted-foreground">Sin trimestre cerrado</span>
+  if (meses === 0) {
+    return <span className="text-xs text-muted-foreground">Sin meses cerrados</span>
   }
   if (frac === null) {
     return <span className="text-xs text-muted-foreground">Sin ahorro cargado</span>
   }
   const pct = Math.round(frac * 100)
-  const detalle = `${pct}% del ritmo · ${qCerrados} de 4 Q`
+  const detalle = `${pct}% del ritmo · ${meses} de ${mesesVigentes} meses`
+  if (frac < 0) {
+    return (
+      <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
+        Gastando de más · {detalle}
+      </Badge>
+    )
+  }
   if (frac >= 1.25) {
     return (
       <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
@@ -181,6 +284,7 @@ function RitmoBadge({
 export function IniciativasAhorroSection({
   anio,
   iniciativas,
+  ejecucionRubros,
   responsables,
   puedeEditar,
 }: Props) {
@@ -238,11 +342,17 @@ export function IniciativasAhorroSection({
     let implementadas = 0
     for (const ini of iniciativas) {
       comprometido += ini.ahorro_comprometido_anual ?? 0
-      for (const s of ini.seguimientos) realAcum += s.ahorro_real ?? 0
+      // Por la MISMA vía que la tarjeta de cada iniciativa (EERR si hay rubro,
+      // seguimientos si no): sumar acá los seguimientos a mano daba un total que
+      // no coincidía con lo que mostraban las tarjetas de abajo.
+      realAcum += ahorroDe(
+        ini,
+        ini.rubro ? ejecucionRubros[ini.rubro.trim().toUpperCase()] : undefined,
+      ).real
       if (ini.estado === "implementada") implementadas++
     }
     return { comprometido, realAcum, implementadas }
-  }, [iniciativas])
+  }, [iniciativas, ejecucionRubros])
 
   return (
     <div className="space-y-5">
@@ -368,10 +478,18 @@ export function IniciativasAhorroSection({
       ) : (
         <div className="space-y-4">
           {iniciativas.map((ini) => {
-            const realAcum = ini.seguimientos.reduce(
-              (acc, s) => acc + (s.ahorro_real ?? 0),
-              0,
-            )
+            const ejec = ini.rubro
+              ? ejecucionRubros[ini.rubro.trim().toUpperCase()]
+              : undefined
+            const {
+              real: realAcum,
+              meses: mesesEerr,
+              mesInicio,
+              mesesVigentes,
+              presupComputado,
+              gastoComputado,
+              fuente,
+            } = ahorroDe(ini, ejec)
             const ahorroFrac =
               ini.ahorro_comprometido_anual && ini.ahorro_comprometido_anual > 0
                 ? realAcum / ini.ahorro_comprometido_anual
@@ -389,11 +507,16 @@ export function IniciativasAhorroSection({
               ini.kpi_mejor_si,
             )
             // Ritmo: lo acumulado contra lo que debería llevar a esta altura,
-            // no contra el compromiso anual entero.
+            // no contra el compromiso anual entero. La ventana son los meses que
+            // el EERR tiene cerrados (o los trimestres del calendario si el
+            // ahorro es manual).
             const qCerrados = trimestresCerrados(ini.anio)
+            const mesesTranscurridos =
+              mesesEerr ?? Math.max(0, qCerrados * 3 - (mesInicio - 1))
             const esperado = esperadoALaFecha(
               ini.ahorro_comprometido_anual,
-              qCerrados,
+              mesesTranscurridos,
+              mesesVigentes,
             )
             const ritmoFrac = esperado && esperado > 0 ? realAcum / esperado : null
             // El último comentario cargado es el análisis de la iniciativa: es lo
@@ -487,12 +610,30 @@ export function IniciativasAhorroSection({
                       cuál manda. */}
                   <div className="rounded-lg border bg-slate-50 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>Ahorro real acumulado</span>
+                      <span>
+                        Ahorro real acumulado
+                        {fuente === "eerr" && ejec && (
+                          <>
+                            {" "}
+                            · presupuesto − real del rubro, {mesesEerr}{" "}
+                            {mesesEerr === 1 ? "mes" : "meses"} del EERR
+                            {/* Si arranca a mitad de año, decir desde cuándo se
+                                cuenta: el gasto previo no es de la iniciativa. */}
+                            {mesInicio > 1 && ` desde ${MES_NOMBRE[mesInicio]}`}
+                          </>
+                        )}
+                      </span>
                       {esperado !== null && (
-                        <RitmoBadge frac={ritmoFrac} qCerrados={qCerrados} />
+                        <RitmoBadge
+                          frac={ritmoFrac}
+                          meses={mesesTranscurridos}
+                          mesesVigentes={mesesVigentes}
+                        />
                       )}
                     </div>
-                    <p className="mt-1 text-sm font-medium text-slate-900">
+                    <p
+                      className={`mt-1 text-sm font-medium ${realAcum < 0 ? "text-red-600" : "text-slate-900"}`}
+                    >
                       {formatMoney(realAcum)}
                       {esperado !== null && (
                         <span className="font-normal text-muted-foreground">
@@ -501,6 +642,16 @@ export function IniciativasAhorroSection({
                         </span>
                       )}
                     </p>
+                    {/* Un ahorro negativo no es "poco ahorro": es gasto de más. */}
+                    {realAcum < 0 && fuente === "eerr" && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Va {formatMoney(Math.abs(realAcum))} POR ENCIMA del
+                        presupuesto del rubro ({formatMoney(gastoComputado)}{" "}
+                        gastados contra {formatMoney(presupComputado)}{" "}
+                        presupuestados
+                        {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}).
+                      </p>
+                    )}
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
                       <div
                         className={`h-full ${barColor(ritmoFrac)}`}

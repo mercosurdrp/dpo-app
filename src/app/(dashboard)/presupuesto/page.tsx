@@ -7,6 +7,10 @@ import {
   puedeEditarPresupuesto,
 } from "@/actions/presupuesto"
 import { listIniciativas } from "@/actions/presupuesto-iniciativas"
+import {
+  getEjecucionPorRubro,
+  type EjecucionRubro,
+} from "@/actions/presupuesto-generador"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { listInversiones } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
@@ -69,6 +73,7 @@ export default async function PresupuestoPage({
     iniciativasRes,
     planesAccionRes,
     inversionesRes,
+    ejecucionRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -84,6 +89,11 @@ export default async function PresupuestoPage({
     mostrarInversiones
       ? listInversiones(anioActivo)
       : Promise.resolve<{ data: InversionConDetalle[] }>({ data: [] }),
+    // Ejecución por rubro (EERR): de acá sale el ahorro REAL de las iniciativas
+    // que tienen rubro, con la misma vara que su compromiso.
+    mostrarIniciativas
+      ? getEjecucionPorRubro(anioActivo)
+      : Promise.resolve<{ data: Record<string, EjecucionRubro> }>({ data: {} }),
   ])
 
   if ("error" in tareasRes) {
@@ -107,6 +117,7 @@ export default async function PresupuestoPage({
       currentProfileId={profile?.id ?? null}
       mostrarIniciativas={mostrarIniciativas}
       iniciativas={"data" in iniciativasRes ? iniciativasRes.data : []}
+      ejecucionRubros={"data" in ejecucionRes ? ejecucionRes.data : {}}
       mostrarPlanesAccion={mostrarPlanesAccion}
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}

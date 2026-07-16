@@ -57,6 +57,7 @@ import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
 import { GenerarTareasDialog } from "@/components/presupuesto/generar-tareas-dialog"
 import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-dialog"
 import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
+import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
@@ -84,6 +85,8 @@ interface Props {
   currentProfileId: string | null
   mostrarIniciativas: boolean
   iniciativas: IniciativaAhorroConDetalle[]
+  /** Ejecución (presup. vs real) por rubro del EERR: de acá sale el ahorro real. */
+  ejecucionRubros: Record<string, EjecucionRubro>
   mostrarPlanesAccion: boolean
   planesAccion: PlanAccionPresupuestoConDetalle[]
   mostrarInversiones: boolean
@@ -167,6 +170,7 @@ export function PresupuestoClient({
   currentProfileId,
   mostrarIniciativas,
   iniciativas,
+  ejecucionRubros,
   mostrarPlanesAccion,
   planesAccion,
   mostrarInversiones,
@@ -788,6 +792,7 @@ export function PresupuestoClient({
             <IniciativasAhorroSection
               anio={anioActivo}
               iniciativas={iniciativas}
+              ejecucionRubros={ejecucionRubros}
               responsables={responsables}
               puedeEditar={puedeEditar}
             />
