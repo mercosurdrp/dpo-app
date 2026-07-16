@@ -152,6 +152,18 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
 const EXTERNAL_FETCH_TTL_MS = 5 * 60 * 1000
 const SNAPSHOT_TTL_MS = 60 * 60 * 1000
 const EXTERNAL_FETCH_TIMEOUT_MS = 5000
+/**
+ * Cuánto recordamos que una fuente FALLÓ (timeout, 5xx, red caída).
+ *
+ * Sin esto, un fallo no se cachea y cada render vuelve a pagar los 5s de
+ * timeout, por cada fuente: con deposito-esteban caído, abrir la reunión
+ * costaba ~15s a CADA persona, indefinidamente. Recordar el fallo un rato
+ * corto convierte eso en 15s para el primero y respuesta inmediata (con las
+ * filas vacías, como ya pasaba) para los demás.
+ *
+ * Corto a propósito: es lo que tarda en recuperarse solo cuando la fuente vuelve.
+ */
+const FAILURE_CACHE_TTL_MS = 30 * 1000
 
 type CacheEntry = { value: unknown; expiresAt: number }
 const externalCache = new Map<string, CacheEntry>()
@@ -181,11 +193,15 @@ async function fetchJsonSafe<T>(url: string, ttlMs?: number): Promise<T | null> 
       cache: "no-store",
       signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      writeCache(url, null, FAILURE_CACHE_TTL_MS)
+      return null
+    }
     const data = (await res.json()) as T
     writeCache(url, data, ttlMs)
     return data
   } catch {
+    writeCache(url, null, FAILURE_CACHE_TTL_MS)
     return null
   }
 }
@@ -198,11 +214,15 @@ async function fetchTextSafe(url: string): Promise<string | null> {
       cache: "no-store",
       signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      writeCache(url, null, FAILURE_CACHE_TTL_MS)
+      return null
+    }
     const text = await res.text()
     writeCache(url, text)
     return text
   } catch {
+    writeCache(url, null, FAILURE_CACHE_TTL_MS)
     return null
   }
 }
@@ -924,11 +944,15 @@ async function fetchSerieExtra(
   const month = partes[1]
   // El conteo de errores sale del Sheet directo (fresco a los 5 min); el resto
   // de las series sigue viniendo de serie-diaria, que las necesita calcular.
-  const [res, erroresSheet] = await Promise.all([
+  // El objetivo de venta va acá aunque sólo se use al final (target de WQI):
+  // no depende de `res`, y esperarlo después agregaba un round-trip entero a
+  // chess-dashboard a la ruta crítica del render (hasta 5s si está frío).
+  const [res, erroresSheet, objetivoVentaHl] = await Promise.all([
     fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
     ),
     fetchErroresCountDelSheet(year, month),
+    fetchObjetivoVentaHl(year, month),
   ])
 
   const roturas: Record<string, number | null> = {}
@@ -989,7 +1013,7 @@ async function fetchSerieExtra(
   // presupuesto.
   const roturasTarget = res?.targets?.roturas ?? null
   const ventasHl = VENTAS_HL_PRESUPUESTO[year]?.[month] ?? null
-  const ventasHlWqi = (await fetchObjetivoVentaHl(year, month)) ?? ventasHl
+  const ventasHlWqi = objetivoVentaHl ?? ventasHl
   const wqiTarget =
     roturasTarget !== null && ventasHlWqi
       ? Math.round((roturasTarget / ventasHlWqi) * 1_000_000)
