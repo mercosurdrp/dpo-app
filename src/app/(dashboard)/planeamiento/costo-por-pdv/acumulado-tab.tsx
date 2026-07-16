@@ -425,8 +425,18 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
                             {kmPorCiudad.has(ciudad) ? `${fmtNum(kmPorCiudad.get(ciudad)!)} km` : "—"}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(d.pdv)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{fmtMoney(d.venta)}</TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.costo)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmtMoney(d.venta)}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({fmtNum(kpis.venta ? (100 * d.venta) / kpis.venta : 0, 1)}%)
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium">
+                            {fmtMoney(d.costo)}
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              ({fmtNum(kpis.costoTotal ? (100 * d.costo) / kpis.costoTotal : 0, 1)}%)
+                            </span>
+                          </TableCell>
                           <TableCell className="text-right tabular-nums">{fmtNum(pct, 1)}%</TableCell>
                           <TableCell className="text-right tabular-nums font-medium">{fmtMoney(d.hl ? d.costo / d.hl : 0)}</TableCell>
                           <TableCell className="text-right tabular-nums">{fmtMoney(d.bultos ? d.costo / d.bultos : 0)}</TableCell>
@@ -447,6 +457,10 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
                 ) : (
                   "Clic en una ciudad para filtrar el detalle por PDV de abajo."
                 )}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                El % entre paréntesis es la <strong>participación</strong> de la ciudad sobre la venta y el costo
+                totales del acumulado del año.
               </p>
             </CardContent>
           </Card>

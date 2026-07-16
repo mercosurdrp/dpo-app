@@ -22,16 +22,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  ClipboardList,
-  Minus,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react"
+import { ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { KpiCard, type EstadoKpi } from "./_components/kpi-card"
 import {
   addFlotaPlanItem,
   cerrarFlotaPlan,
@@ -100,6 +94,8 @@ interface KpiDef {
   fmt: (v: number) => string
   /** true = con serie mensual (tendencia); false = solo foto actual. */
   conSerie: boolean
+  /** Punto del pilar Flota de DPO que este PI evidencia (ej. "2.1"). */
+  dpo?: string
 }
 
 const KPI_DEFS: KpiDef[] = [
@@ -109,6 +105,7 @@ const KPI_DEFS: KpiDef[] = [
     descripcion: "Días disponibles ÷ días del período (unidades de ruta)",
     fmt: (v) => `${v.toFixed(1)}%`,
     conSerie: true,
+    dpo: "2.1",
   },
   {
     kpi: "utilizacion",
@@ -116,6 +113,7 @@ const KPI_DEFS: KpiDef[] = [
     descripcion: "Días ruteados ÷ días laborales disponibles (unidades en servicio)",
     fmt: (v) => `${v.toFixed(1)}%`,
     conSerie: true,
+    dpo: "2.1",
   },
   {
     kpi: "costo_total",
@@ -123,6 +121,7 @@ const KPI_DEFS: KpiDef[] = [
     descripcion: "Costo mensual de OT: tareas + mano de obra + repuestos",
     fmt: fmtMoney,
     conSerie: true,
+    dpo: "3.2",
   },
   {
     kpi: "pct_preventivo",
@@ -130,6 +129,7 @@ const KPI_DEFS: KpiDef[] = [
     descripcion: "Costo preventivo + proactivo ÷ costo total del mes",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
+    dpo: "3.2",
   },
   {
     kpi: "cumplimiento_plan",
@@ -138,6 +138,7 @@ const KPI_DEFS: KpiDef[] = [
       "Tareas del plan al día ÷ tareas con datos. Meses cerrados: última foto diaria del mes",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
+    dpo: "2.2",
   },
   {
     kpi: "services_vencidos",
@@ -146,6 +147,7 @@ const KPI_DEFS: KpiDef[] = [
       "Unidades con service general vencido. Meses cerrados: última foto diaria del mes",
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
+    dpo: "2.2",
   },
   {
     kpi: "docs_conformidad",
@@ -154,6 +156,7 @@ const KPI_DEFS: KpiDef[] = [
       "Unidades activas sin documentos vencidos ÷ flota activa. Un doc vencido deja la unidad fuera de servicio hasta regularizar",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
+    dpo: "1.1",
   },
   {
     kpi: "estandares_conformidad",
@@ -162,6 +165,7 @@ const KPI_DEFS: KpiDef[] = [
       "Ítems OK ÷ evaluables en la matriz de Estándares de flota (GTS). Meses cerrados: última foto diaria",
     fmt: (v) => `${v.toFixed(1)}%`,
     conSerie: true,
+    dpo: "1.2",
   },
   {
     kpi: "checklist_deteccion",
@@ -170,6 +174,7 @@ const KPI_DEFS: KpiDef[] = [
       "OTs correctivas del mes con defecto detectado en el checklist de la unidad en los 15 días previos ÷ OTs correctivas",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
+    dpo: "1.3",
   },
   {
     kpi: "checklist_resolucion",
@@ -178,6 +183,7 @@ const KPI_DEFS: KpiDef[] = [
       "Días promedio entre el defecto observado y su plan de acción resuelto (por mes de resolución)",
     fmt: (v) => `${v.toFixed(1)} d`,
     conSerie: true,
+    dpo: "1.3",
   },
   {
     kpi: "inventario_exactitud",
@@ -186,6 +192,7 @@ const KPI_DEFS: KpiDef[] = [
       "Ítems sin diferencia en el último conteo físico del mes ÷ ítems contados (Repuestos → Conteo de stock)",
     fmt: (v) => `${v.toFixed(0)}%`,
     conSerie: true,
+    dpo: "2.3",
   },
   {
     kpi: "combustible_kml",
@@ -194,6 +201,7 @@ const KPI_DEFS: KpiDef[] = [
       "Σ km recorridos ÷ Σ litros con medición del mes (mismo criterio que el módulo Combustible)",
     fmt: (v) => `${v.toFixed(2)} km/l`,
     conSerie: true,
+    dpo: "3.3",
   },
   {
     kpi: "co2_flota",
@@ -202,6 +210,7 @@ const KPI_DEFS: KpiDef[] = [
       "Litros de gasoil cargados × 2,68 kg CO₂/l (estimación estándar; sostenibilidad DPO 4.3)",
     fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${v.toFixed(0)} kg`),
     conSerie: true,
+    dpo: "4.3",
   },
   {
     kpi: "cil_tareas",
@@ -210,6 +219,7 @@ const KPI_DEFS: KpiDef[] = [
       "Limpiezas, inspecciones y lubricaciones autónomas registradas en el mes (Check lists → Tareas CIL)",
     fmt: (v) => String(Math.round(v)),
     conSerie: true,
+    dpo: "4.1",
   },
 ]
 
@@ -426,14 +436,17 @@ export function IndicadoresFlota({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-500">
-        Cada indicador contra su meta, con la tendencia de los últimos 3 meses. Un mes
-        fuera de meta pide un plan de acción con causa raíz y acciones con responsable.
-      </p>
+      <div className="space-y-3">
+        <DpoSeccionCinta seccionId="indicadores" />
+        <p className="text-sm text-muted-foreground">
+          Cada indicador contra su meta, con la tendencia de los últimos 3 meses. Un mes
+          fuera de meta pide un plan de acción con causa raíz y acciones con responsable.
+        </p>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {KPI_DEFS.map((def) => (
-          <KpiCard
+          <KpiIndicadorCard
             key={def.kpi}
             def={def}
             meta={metaBy.get(def.kpi) ?? null}
@@ -452,19 +465,19 @@ export function IndicadoresFlota({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardList className="size-4 text-slate-400" /> Planes de acción de flota
+            <ClipboardList className="size-4 text-muted-foreground" /> Planes de acción de flota
           </CardTitle>
         </CardHeader>
         <CardContent>
           {planesOrdenados.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               Sin planes cargados. Se crean desde cada indicador cuando un mes queda
               fuera de meta.
             </p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-slate-500">
+                <tr className="border-b border-border text-left text-muted-foreground">
                   <th className="py-2">Indicador</th>
                   <th>Mes</th>
                   <th className="text-right">Valor</th>
@@ -481,23 +494,23 @@ export function IndicadoresFlota({
                   return (
                     <tr
                       key={p.id}
-                      className="cursor-pointer border-b last:border-0 hover:bg-slate-50"
+                      className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
                       onClick={() => setPlanVer(p)}
                     >
-                      <td className="py-2 font-medium text-slate-800">
+                      <td className="py-2 font-medium text-foreground">
                         {def?.label ?? p.kpi}
                       </td>
-                      <td className="capitalize text-slate-600">
+                      <td className="capitalize text-muted-foreground">
                         {fmtMesLargo(`${p.year}-${pad(p.mes)}`)}
                       </td>
-                      <td className="text-right tabular-nums text-slate-600">
+                      <td className="text-right tabular-nums text-muted-foreground">
                         {p.valor_mes != null && def ? def.fmt(Number(p.valor_mes)) : "—"}
                       </td>
-                      <td className="text-right tabular-nums text-slate-600">
+                      <td className="text-right tabular-nums text-muted-foreground">
                         {p.meta_mes != null && def ? def.fmt(Number(p.meta_mes)) : "—"}
                       </td>
-                      <td className="max-w-64 truncate pl-4 text-slate-600">{p.causa_raiz}</td>
-                      <td className="text-center tabular-nums text-slate-600">
+                      <td className="max-w-64 truncate pl-4 text-muted-foreground">{p.causa_raiz}</td>
+                      <td className="text-center tabular-nums text-muted-foreground">
                         {done}/{p.items.length}
                       </td>
                       <td className="text-center">
@@ -546,7 +559,12 @@ function cumpleMeta(valor: number, meta: FlotaMeta | null): boolean | null {
   return meta.comparador === "<=" ? valor <= Number(meta.meta) : valor >= Number(meta.meta)
 }
 
-function KpiCard({
+/**
+ * Card de un PI de flota: usa la <KpiCard> del módulo como contenedor (label,
+ * valor, semáforo, delta y badge DPO) y le cuelga lo propio de esta sección —
+ * editor de meta y tendencia de 3 meses con su plan de acción.
+ */
+function KpiIndicadorCard({
   def,
   meta,
   serie,
@@ -570,8 +588,7 @@ function KpiCard({
   const [editMeta, setEditMeta] = useState(false)
 
   const ok = valor == null ? null : cumpleMeta(valor, meta)
-  const colorValor =
-    ok == null ? "text-slate-900" : ok ? "text-emerald-600" : "text-red-600"
+  const estado: EstadoKpi = ok == null ? "neutro" : ok ? "ok" : "critico"
 
   // Tendencia: compara los dos últimos puntos con dato.
   const conDato = serie.filter((p) => p.valor != null)
@@ -583,41 +600,26 @@ function KpiCard({
   const mejora = delta == null ? null : meta?.comparador === "<=" ? delta <= 0 : delta >= 0
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-slate-500">{def.label}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-end justify-between gap-2">
-          <p className={cn("text-2xl font-bold tabular-nums", colorValor)}>
-            {valor == null ? "—" : def.fmt(valor)}
-            {def.conSerie && (
-              <span className="ml-1 align-middle text-xs font-normal text-slate-400">
-                mes en curso
-              </span>
-            )}
-          </p>
-          {delta != null && (
-            <span
-              className={cn(
-                "flex items-center gap-0.5 text-xs font-medium",
-                mejora ? "text-emerald-600" : "text-red-600"
-              )}
-            >
-              {delta === 0 ? (
-                <Minus className="size-3.5" />
-              ) : delta > 0 ? (
-                <ArrowUpRight className="size-3.5" />
-              ) : (
-                <ArrowDownRight className="size-3.5" />
-              )}
-              vs mes anterior
+    <KpiCard
+      label={def.label}
+      dpo={def.dpo}
+      estado={estado}
+      delta={delta}
+      mejora={mejora ?? undefined}
+      valor={
+        <>
+          {valor == null ? "—" : def.fmt(valor)}
+          {def.conSerie && (
+            <span className="ml-1 align-middle text-xs font-normal text-muted-foreground">
+              mes en curso
             </span>
           )}
-        </div>
-
+        </>
+      }
+    >
+      <div className="space-y-3">
         {/* Meta */}
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {editMeta ? (
             <MetaEditor
               def={def}
@@ -633,9 +635,9 @@ function KpiCard({
               <span>
                 Meta:{" "}
                 {meta?.meta == null ? (
-                  <span className="italic text-slate-400">sin definir</span>
+                  <span className="italic text-muted-foreground">sin definir</span>
                 ) : (
-                  <span className="font-medium text-slate-700">
+                  <span className="font-medium text-foreground">
                     {meta.comparador === "<=" ? "≤ " : "≥ "}
                     {def.fmt(Number(meta.meta))}
                   </span>
@@ -643,7 +645,7 @@ function KpiCard({
               </span>
               {puedeEditar && (
                 <button
-                  className="text-slate-400 hover:text-slate-600"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => setEditMeta(true)}
                   title="Editar meta"
                 >
@@ -656,13 +658,13 @@ function KpiCard({
 
         {/* Tendencia 3 meses (o foto actual) + plan por mes fuera de meta */}
         {def.conSerie ? (
-          <div className="grid grid-cols-3 gap-2 border-t pt-2">
+          <div className="grid grid-cols-3 gap-2 border-t border-border pt-2">
             {serie.map((p) => {
               const okMes = p.valor == null ? null : cumpleMeta(p.valor, meta)
               const plan = planBy.get(`${def.kpi}|${p.ym}`)
               return (
                 <div key={p.ym} className="text-center">
-                  <p className="text-[11px] uppercase text-slate-400">
+                  <p className="text-[11px] uppercase text-muted-foreground">
                     {fmtMesCorto(p.ym)}
                     {p.parcial && "*"}
                   </p>
@@ -670,24 +672,24 @@ function KpiCard({
                     className={cn(
                       "text-sm font-semibold tabular-nums",
                       okMes == null
-                        ? "text-slate-400"
+                        ? "text-muted-foreground"
                         : okMes
-                          ? "text-emerald-600"
-                          : "text-red-600"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-destructive"
                     )}
                   >
                     {p.valor == null ? "—" : def.fmt(p.valor)}
                   </p>
                   {plan ? (
                     <button
-                      className="mt-0.5 text-[11px] font-medium text-sky-600 hover:underline"
+                      className="mt-0.5 text-[11px] font-medium text-primary hover:underline"
                       onClick={() => onVerPlan(plan)}
                     >
                       Ver plan
                     </button>
                   ) : okMes === false && puedeEditar ? (
                     <button
-                      className="mt-0.5 text-[11px] font-medium text-amber-600 hover:underline"
+                      className="mt-0.5 text-[11px] font-medium text-amber-600 hover:underline dark:text-amber-400"
                       onClick={() => onCrearPlan(p.ym, p.valor, meta?.meta ?? null)}
                     >
                       + Plan
@@ -698,7 +700,7 @@ function KpiCard({
             })}
           </div>
         ) : (
-          <div className="flex items-center justify-between border-t pt-2 text-xs text-slate-500">
+          <div className="flex items-center justify-between border-t border-border pt-2 text-xs text-muted-foreground">
             <span>{def.descripcion}</span>
             {ok === false && puedeEditar && (
               <PlanFotoActualBtn def={def} valor={valor} meta={meta} planBy={planBy}
@@ -707,10 +709,10 @@ function KpiCard({
           </div>
         )}
         {def.conSerie && (
-          <p className="text-[11px] leading-tight text-slate-400">{def.descripcion}</p>
+          <p className="text-[11px] leading-tight text-muted-foreground">{def.descripcion}</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </KpiCard>
   )
 }
 
@@ -729,14 +731,14 @@ function PlanFotoActualBtn({
   const plan = planBy.get(`${def.kpi}|${ym}`)
   return plan ? (
     <button
-      className="shrink-0 text-[11px] font-medium text-sky-600 hover:underline"
+      className="shrink-0 text-[11px] font-medium text-primary hover:underline"
       onClick={() => onVerPlan(plan)}
     >
       Ver plan
     </button>
   ) : (
     <button
-      className="shrink-0 text-[11px] font-medium text-amber-600 hover:underline"
+      className="shrink-0 text-[11px] font-medium text-amber-600 hover:underline dark:text-amber-400"
       onClick={() => onCrearPlan(ym, valor, meta?.meta ?? null)}
     >
       + Plan
@@ -798,9 +800,9 @@ function MetaEditor({
 
 function EstadoPlanBadge({ estado }: { estado: FlotaPlanConItems["estado"] }) {
   const map: Record<string, string> = {
-    abierto: "bg-amber-100 text-amber-700",
-    en_progreso: "bg-sky-100 text-sky-700",
-    cerrado: "bg-emerald-100 text-emerald-700",
+    abierto: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
+    en_progreso: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400",
+    cerrado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
   }
   const label: Record<string, string> = {
     abierto: "Abierto",
@@ -931,7 +933,7 @@ function CrearPlanDialog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-slate-400 hover:text-red-600"
+                    className="size-8 text-muted-foreground hover:text-destructive"
                     onClick={() => setItems(items.filter((_, j) => j !== i))}
                     disabled={items.length === 1}
                   >
@@ -1067,18 +1069,18 @@ function DetallePlanDialog({
 
         <div className="space-y-4">
           <div>
-            <p className="text-xs font-medium uppercase text-slate-400">Causa raíz</p>
-            <p className="mt-0.5 text-sm text-slate-700">{plan.causa_raiz}</p>
+            <p className="text-xs font-medium uppercase text-muted-foreground">Causa raíz</p>
+            <p className="mt-0.5 text-sm text-foreground">{plan.causa_raiz}</p>
           </div>
 
           <div>
-            <p className="text-xs font-medium uppercase text-slate-400">Acciones</p>
+            <p className="text-xs font-medium uppercase text-muted-foreground">Acciones</p>
             <div className="mt-1.5 space-y-1.5">
               {plan.items.length === 0 && (
-                <p className="text-sm text-slate-400">Sin acciones cargadas.</p>
+                <p className="text-sm text-muted-foreground">Sin acciones cargadas.</p>
               )}
               {plan.items.map((it) => (
-                <div key={it.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
+                <div key={it.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
                   <Checkbox
                     checked={it.estado === "completado"}
                     disabled={!puedeEditar || cerrado}
@@ -1087,13 +1089,13 @@ function DetallePlanDialog({
                   <div className="min-w-0 flex-1">
                     <p
                       className={cn(
-                        "text-sm text-slate-800",
-                        it.estado === "completado" && "text-slate-400 line-through"
+                        "text-sm text-foreground",
+                        it.estado === "completado" && "text-muted-foreground line-through"
                       )}
                     >
                       {it.accion}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-muted-foreground">
                       {it.responsable} · compromiso{" "}
                       {it.fecha_compromiso.slice(0, 10).split("-").reverse().join("/")}
                       {it.fecha_completado &&
@@ -1104,7 +1106,7 @@ function DetallePlanDialog({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-7 text-slate-400 hover:text-red-600"
+                      className="size-7 text-muted-foreground hover:text-destructive"
                       onClick={async () => {
                         const res = await deleteFlotaPlanItem(it.id)
                         if ("error" in res) toast.error(res.error)
@@ -1149,8 +1151,8 @@ function DetallePlanDialog({
           </div>
 
           {cerrado ? (
-            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-              <p className="text-xs font-medium uppercase text-emerald-600">
+            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
+              <p className="text-xs font-medium uppercase text-emerald-600 dark:text-emerald-400">
                 Cerrado{" "}
                 {plan.fecha_cierre &&
                   `el ${plan.fecha_cierre.slice(0, 10).split("-").reverse().join("/")}`}
@@ -1160,7 +1162,7 @@ function DetallePlanDialog({
           ) : (
             puedeEditar &&
             (cerrando ? (
-              <div className="space-y-2 rounded-md border bg-slate-50 p-3">
+              <div className="space-y-2 rounded-md border border-border bg-muted p-3">
                 <Label>Resultado del cierre</Label>
                 <Textarea
                   value={resultado}
@@ -1183,7 +1185,7 @@ function DetallePlanDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-red-600 hover:text-red-700"
+                    className="text-destructive hover:text-destructive"
                     onClick={borrarPlan}
                   >
                     <Trash2 className="mr-1 size-4" /> Eliminar

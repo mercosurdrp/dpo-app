@@ -11,7 +11,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { AlertTriangle, Truck, Scissors, Clock, ShieldCheck, PackageX, Info, Eye, Download } from "lucide-react"
+import {
+  AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Truck, Scissors, Clock,
+  ShieldCheck, PackageX, Info, Eye, Download,
+} from "lucide-react"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
@@ -23,24 +26,58 @@ const money = (n: number) =>
 /** Fila ya resuelta (entra/sale) que se muestra en la tabla. */
 type FilaVista = FilaPriorizada & { entra: boolean; cae_por_volumen: boolean }
 
-/** Criterios de orden dentro de cada ciudad. */
-type Orden = "reprogramar" | "bultos_desc" | "bultos_asc" | "score" | "score_bultos"
-const ORDENES: { id: Orden; label: string }[] = [
+/** Vistas armadas: combinan varios criterios, no son una sola columna. */
+type Preset = "reprogramar" | "score" | "score_bultos"
+const PRESETS: { id: Preset; label: string }[] = [
   { id: "reprogramar", label: "A reprogramar primero" },
   { id: "score", label: "Prioridad (score)" },
   { id: "score_bultos", label: "Score + bultos" },
-  { id: "bultos_desc", label: "Bultos ↓" },
-  { id: "bultos_asc", label: "Bultos ↑" },
 ]
+
+/** Columnas que se pueden ordenar haciendo clic en su encabezado. */
+type ColOrden =
+  | "posicion" | "nombre" | "cluster" | "bultos" | "hl" | "monto"
+  | "comportamiento" | "rmd" | "score" | "estado"
+type Dir = "desc" | "asc"
+
+/** Orden de la tabla: o una vista armada, o una columna clickeada. */
+type Orden = { tipo: "preset"; id: Preset } | { tipo: "col"; col: ColOrden; dir: Dir }
+
+/** Valor comparable de la columna. `null` = sin dato: va al fondo en los dos sentidos. */
+function valorCol(f: FilaVista, col: ColOrden): number | string | null {
+  switch (col) {
+    case "posicion": return f.posicion
+    case "nombre": return f.nombre ?? `Cliente ${f.id_cliente}`
+    case "cluster": return f.cluster ? CLUSTER_LABELS[f.cluster] : null
+    case "bultos": return f.bultos
+    case "hl": return f.hl
+    case "monto": return f.monto
+    case "comportamiento": return f.comportamiento
+    case "rmd": return f.rmd_prom
+    case "score": return f.score
+    case "estado": return f.entra ? 0 : 1   // de mayor a menor = los que se caen arriba
+  }
+}
 
 /** Ordena una copia de las filas según el criterio elegido. NO altera el corte. */
 function ordenarFilas(filas: FilaVista[], orden: Orden): FilaVista[] {
   const arr = [...filas]
-  switch (orden) {
-    case "bultos_desc":
-      return arr.sort((a, b) => b.bultos - a.bultos)
-    case "bultos_asc":
-      return arr.sort((a, b) => a.bultos - b.bultos)
+  if (orden.tipo === "col") {
+    const signo = orden.dir === "desc" ? -1 : 1
+    return arr.sort((a, b) => {
+      const va = valorCol(a, orden.col)
+      const vb = valorCol(b, orden.col)
+      if (va === null || vb === null) {
+        if (va === null && vb === null) return 0
+        return va === null ? 1 : -1
+      }
+      if (typeof va === "string" && typeof vb === "string") {
+        return signo * va.localeCompare(vb, "es-AR")
+      }
+      return signo * ((va as number) - (vb as number))
+    })
+  }
+  switch (orden.id) {
     case "score":
       return arr // ya viene en orden de prioridad (score desc)
     case "score_bultos":
@@ -56,6 +93,44 @@ function ordenarFilas(filas: FilaVista[], orden: Orden): FilaVista[] {
         return b.bultos - a.bultos
       })
   }
+}
+
+/** Encabezado que ordena la tabla al clic. Primer clic: de mayor a menor. */
+function HeadOrden({
+  col, orden, onOrden, align = "left", className, children,
+}: {
+  col: ColOrden
+  orden: Orden
+  onOrden: (o: Orden) => void
+  align?: "left" | "right" | "center"
+  className?: string
+  children: React.ReactNode
+}) {
+  const activa = orden.tipo === "col" && orden.col === col
+  const dir = activa ? orden.dir : null
+  const justify =
+    align === "right" ? "w-full justify-end" : align === "center" ? "w-full justify-center" : ""
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onOrden({ tipo: "col", col, dir: dir === "desc" ? "asc" : "desc" })}
+        title={dir === "desc" ? "Ordenado de mayor a menor — clic para invertir" : "Ordenar de mayor a menor"}
+        className={`group inline-flex items-center gap-1 hover:text-foreground ${justify} ${
+          activa ? "font-semibold text-foreground" : ""
+        }`}
+      >
+        {children}
+        {dir === "desc" ? (
+          <ArrowDown className="h-3.5 w-3.5" />
+        ) : dir === "asc" ? (
+          <ArrowUp className="h-3.5 w-3.5" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
 }
 
 /** Color del RMD (1-5): verde ok, rojo el que puntúa bajo. null = sin dato. */
@@ -82,8 +157,8 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
   const [cupos, setCupos] = useState<Record<string, string>>({})
   /** Clientes que el usuario sacó/rescató a mano (override de la línea). */
   const [forzados, setForzados] = useState<Record<number, "entra" | "sale">>({})
-  /** Orden de la tabla dentro de cada ciudad. */
-  const [orden, setOrden] = useState<Orden>("reprogramar")
+  /** Orden de la tabla dentro de cada ciudad (vista armada o columna clickeada). */
+  const [orden, setOrden] = useState<Orden>({ tipo: "preset", id: "reprogramar" })
   /** Vista previa de los reprogramados (modal) antes de bajar el PDF. */
   const [preview, setPreview] = useState(false)
   /** Confirmación del corte, donde se escribe el comentario. */
@@ -291,18 +366,23 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Ordenar por</span>
           <div className="inline-flex rounded-lg border bg-muted p-0.5">
-            {ORDENES.map((o) => (
+            {PRESETS.map((o) => (
               <button
                 key={o.id}
-                onClick={() => setOrden(o.id)}
+                onClick={() => setOrden({ tipo: "preset", id: o.id })}
                 className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  orden === o.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  orden.tipo === "preset" && orden.id === o.id
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {o.label}
               </button>
             ))}
           </div>
+          <span className="text-xs text-muted-foreground">
+            o hacé clic en una columna
+          </span>
         </div>
         <Button
           variant="outline"
@@ -359,17 +439,17 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-10">#</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Clase</TableHead>
-                      <TableHead className="text-right">Bultos</TableHead>
-                      <TableHead className="text-right">HL</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
-                      <TableHead className="text-center">Comportamiento</TableHead>
-                      <TableHead className="text-center">RMD</TableHead>
+                      <HeadOrden col="posicion" orden={orden} onOrden={setOrden} className="w-10">#</HeadOrden>
+                      <HeadOrden col="nombre" orden={orden} onOrden={setOrden}>Cliente</HeadOrden>
+                      <HeadOrden col="cluster" orden={orden} onOrden={setOrden}>Clase</HeadOrden>
+                      <HeadOrden col="bultos" orden={orden} onOrden={setOrden} align="right" className="text-right">Bultos</HeadOrden>
+                      <HeadOrden col="hl" orden={orden} onOrden={setOrden} align="right" className="text-right">HL</HeadOrden>
+                      <HeadOrden col="monto" orden={orden} onOrden={setOrden} align="right" className="text-right">Monto</HeadOrden>
+                      <HeadOrden col="comportamiento" orden={orden} onOrden={setOrden} align="center" className="text-center">Comportamiento</HeadOrden>
+                      <HeadOrden col="rmd" orden={orden} onOrden={setOrden} align="center" className="text-center">RMD</HeadOrden>
                       <TableHead>Por qué</TableHead>
-                      <TableHead className="text-right">Score</TableHead>
-                      <TableHead className="text-center">Estado</TableHead>
+                      <HeadOrden col="score" orden={orden} onOrden={setOrden} align="right" className="text-right">Score</HeadOrden>
+                      <HeadOrden col="estado" orden={orden} onOrden={setOrden} align="center" className="text-center">Estado</HeadOrden>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -378,7 +458,8 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                       // La línea de corte sólo tiene sentido cuando la tabla va en
                       // orden de prioridad: ahí el corte es contiguo.
                       const cruzaLinea =
-                        orden === "score" && c.hayCupo && anterior?.entra && !f.entra
+                        orden.tipo === "preset" && orden.id === "score" &&
+                        c.hayCupo && anterior?.entra && !f.entra
                       return (
                         <Fila
                           key={f.id_cliente}

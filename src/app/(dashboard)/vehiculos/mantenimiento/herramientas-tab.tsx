@@ -30,6 +30,8 @@ import {
   type Herramienta,
 } from "@/actions/mantenimiento-herramientas"
 
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+
 const fmtNum = (v: number | null) =>
   v == null ? "—" : new Intl.NumberFormat("es-AR").format(v)
 
@@ -60,8 +62,9 @@ export function HerramientasTab({ herramientas, puedeEditar }: Props) {
 
   return (
     <div className="space-y-3">
+      <DpoSeccionCinta seccionId="herramientas" />
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           Registro de herramientas del taller/pañol de mantenimiento.
         </p>
         {puedeEditar && (
@@ -79,7 +82,7 @@ export function HerramientasTab({ herramientas, puedeEditar }: Props) {
       <Card>
         <CardContent className="overflow-x-auto pt-6">
           {herramientas.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               Sin herramientas cargadas.
             </p>
           ) : (
@@ -115,15 +118,17 @@ export function HerramientasTab({ herramientas, puedeEditar }: Props) {
                     <TableCell className="text-right tabular-nums">
                       {fmtNum(h.cantidad)}
                     </TableCell>
-                    <TableCell className="text-slate-600">{h.estado || "—"}</TableCell>
-                    <TableCell className="text-slate-600">{h.ubicacion || "—"}</TableCell>
-                    <TableCell className="max-w-56 text-slate-500">{h.notas || "—"}</TableCell>
+                    <TableCell className="text-foreground">{h.estado || "—"}</TableCell>
+                    <TableCell className="text-foreground">{h.ubicacion || "—"}</TableCell>
+                    <TableCell className="max-w-56 text-muted-foreground">
+                      {h.notas || "—"}
+                    </TableCell>
                     {puedeEditar && (
                       <TableCell>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 text-red-500"
+                          className="size-7 text-destructive"
                           onClick={() => borrar(h.id)}
                         >
                           <Trash2 className="size-3.5" />
