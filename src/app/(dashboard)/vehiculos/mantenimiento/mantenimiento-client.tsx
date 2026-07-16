@@ -527,6 +527,7 @@ export function MantenimientoClient({
       estados.map((e) => ({
         dominio: e.vehiculo.dominio,
         tipo: e.vehiculo.tipo,
+        sector: e.vehiculo.sector,
         modelo: e.vehiculo.modelo,
         anio: e.vehiculo.anio,
       })),

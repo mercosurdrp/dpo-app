@@ -6,6 +6,7 @@ import type {
   DiaRuteo,
   FlotaIndisponibilidad,
   MantenimientoRealizado,
+  VehiculoSector,
   VehiculoTipo,
 } from "@/types/database"
 
@@ -15,6 +16,7 @@ export const TARGET_DISP = 98
 export interface UnidadFlota {
   dominio: string
   tipo: VehiculoTipo | null
+  sector?: VehiculoSector | null
   modelo?: string | null
   anio?: number | null
 }
@@ -53,10 +55,18 @@ export interface CalcDisponibilidadMes {
 
 const pad = (n: number) => String(n).padStart(2, "0")
 
-/** Unidades que rutean: excluye autoelevadores (se miden distinto) y acoplados
- *  (no rutean solos, van remolcados). */
+/** Unidades que rutean: solo flota de DISTRIBUCIÓN. Quedan afuera todo lo de
+ *  depósito (autoelevadores y camionetas internas, que nunca salen a reparto y
+ *  por lo tanto diluían la disponibilidad) y los acoplados (no rutean solos, van
+ *  remolcados). El sector manda sobre el tipo: un alta nueva de depósito se
+ *  excluye sola, sin tocar este código. */
 export function flotaDeRuta(unidades: UnidadFlota[]): UnidadFlota[] {
-  return unidades.filter((u) => u.tipo !== "autoelevador" && u.tipo !== "acoplado")
+  return unidades.filter(
+    (u) =>
+      u.sector !== "deposito" &&
+      u.tipo !== "autoelevador" &&
+      u.tipo !== "acoplado"
+  )
 }
 
 export function ruteoSetDe(diasRuteo: DiaRuteo[]): Set<string> {
