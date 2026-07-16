@@ -231,6 +231,11 @@ export async function registrarCorte(
 ): Promise<Result<{ registrados: number }>> {
   const perfil = await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+  // Mismo alcance que la RLS de entrega_cortes: si el código pidiera menos que
+  // la policy, el corte fallaría con un error opaco de la base en vez de éste.
+  if (perfil.role !== "admin" && perfil.role !== "supervisor") {
+    return { error: "Solo un admin o un supervisor puede registrar el corte." }
+  }
   if (cortados.length === 0) return { error: "No hay clientes cortados para registrar." }
 
   const supabase = await createClient()

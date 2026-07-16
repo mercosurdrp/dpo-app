@@ -72,6 +72,10 @@ import {
 } from "@/components/reuniones/seccion-sla"
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
+import {
+  SeccionFlotaRuteo,
+  SECCION_FLOTA_RUTEO,
+} from "@/components/reuniones/seccion-flota-ruteo"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
@@ -237,6 +241,10 @@ function esFinDeSemana(iso: string): boolean {
   const d = new Date(iso + "T12:00:00")
   const g = d.getDay()
   return g === 0 || g === 6
+}
+
+function esLunes(iso: string): boolean {
+  return new Date(iso + "T12:00:00").getDay() === 1
 }
 
 function formatearValor(n: number): string {
@@ -1024,6 +1032,10 @@ export function ReunionDetallePageClient({
   )
   const actividadesAccCom = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
+    [actividadesAll],
+  )
+  const actividadesFlotaRuteo = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_FLOTA_RUTEO),
     [actividadesAll],
   )
   const actividadesRmd = useMemo(
@@ -2039,6 +2051,21 @@ export function ReunionDetallePageClient({
           titulo="Etapa 4 — Cumplimiento de SLA"
           codigos={SLA_CODIGOS_REUNION_OPERATIVA}
           actividades={actividadesSla}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Los lunes la reunión de logística suma los temas de flota y ruteo.
+          Sólo Pampeana: el VRL/VRC y el módulo de mantenimiento no existen en
+          Misiones, donde la flota se gestiona en Cloudfleet. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && esLunes(detalle.fecha) && (
+        <SeccionFlotaRuteo
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          reunionTipo={detalle.tipo}
+          actividades={actividadesFlotaRuteo}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
