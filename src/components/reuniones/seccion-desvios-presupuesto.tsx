@@ -5,7 +5,7 @@ import { Loader2, TrendingUp } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { DesvioBadge } from "@/components/presupuesto/desvio-badge"
-import { listTareasCargadasEnMes } from "@/actions/presupuesto"
+import { listTareasDelPeriodo } from "@/actions/presupuesto"
 import type { PresupuestoTareaConResponsable } from "@/types/database"
 
 const MESES = [
@@ -24,9 +24,13 @@ function formatFechaCorta(iso: string | null): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
-/** Período que analiza el desvío (≠ el mes en que se cargó). */
-function periodo(t: PresupuestoTareaConResponsable): string {
-  return `${MESES[t.mes - 1]?.slice(0, 3) ?? "?"} ${t.anio}`
+/** Mes anterior al de la reunión: el cierre que se revisa. "YYYY-MM". */
+function mesAnterior(fechaISO: string): string {
+  const anio = Number(fechaISO.slice(0, 4))
+  const mes = Number(fechaISO.slice(5, 7))
+  return mes === 1
+    ? `${anio - 1}-12`
+    : `${anio}-${String(mes - 1).padStart(2, "0")}`
 }
 
 function pesos(v: number | null): string {
@@ -45,20 +49,21 @@ const ESTADO_BADGE: Record<string, string> = {
 }
 
 /**
- * Desvíos cargados en el mes de la reunión de presupuesto.
+ * Desvíos del mes ANTERIOR al de la reunión de presupuesto: el cierre que se
+ * viene a revisar (la reunión de julio mira junio).
  *
- * 🚨 "Cargados en el mes" va por `created_at`, NO por el campo `mes` de la
- * tarea, que es el período analizado: el cierre de un mes se carga al mes
- * siguiente. En julio 2026 los 8 desvíos cargados analizaban mayo y junio, así
- * que filtrar por `mes` habría mostrado la reunión vacía. Por eso cada fila
- * muestra las dos fechas: qué período analiza y cuándo se cargó.
+ * 🚨 El filtro va por el PERÍODO que analiza el desvío (`anio`/`mes`), NO por
+ * `created_at`: el cierre de un mes se carga al siguiente. Los desvíos de junio
+ * 2026 se cargaron el 16/07 y en junio no se cargó ninguno, así que filtrar por
+ * fecha de carga dejaría la reunión vacía. La columna "Cargado" queda a la vista
+ * para que se note cuándo entró cada uno.
  */
 export function SeccionDesviosPresupuesto({
   fechaReunion,
 }: {
   fechaReunion: string
 }) {
-  const mes = fechaReunion.slice(0, 7)
+  const mes = mesAnterior(fechaReunion)
   const [tareas, setTareas] = useState<PresupuestoTareaConResponsable[] | null>(
     null,
   )
@@ -69,7 +74,7 @@ export function SeccionDesviosPresupuesto({
     let cancel = false
     setLoading(true)
     setError(null)
-    void listTareasCargadasEnMes(mes).then((r) => {
+    void listTareasDelPeriodo(mes).then((r) => {
       if (cancel) return
       if ("error" in r) {
         setError(r.error)
@@ -89,7 +94,7 @@ export function SeccionDesviosPresupuesto({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="size-5 text-slate-500" />
-          Desvíos cargados en {nombreMes(mes)}
+          Desvíos de {nombreMes(mes)}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -109,14 +114,13 @@ export function SeccionDesviosPresupuesto({
         {tareas && !loading && (
           <>
             <p className="text-xs text-slate-500">
-              Los que se cargaron este mes, sin importar qué período analizan (el
-              cierre de un mes se carga al mes siguiente). Desvío ={" "}
-              (real − presupuestado) / presupuestado.
+              El cierre del mes anterior a esta reunión, sin importar cuándo se
+              cargó cada uno. Desvío = (real − presupuestado) / presupuestado.
             </p>
 
             {tareas.length === 0 ? (
               <p className="mt-3 rounded-md bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
-                No se cargó ningún desvío en {nombreMes(mes)}.
+                No hay desvíos cargados para {nombreMes(mes)}.
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
@@ -124,7 +128,6 @@ export function SeccionDesviosPresupuesto({
                   <thead>
                     <tr className="border-b border-slate-200 text-xs text-slate-500">
                       <th className="py-1.5 text-left font-medium">Rubro</th>
-                      <th className="py-1.5 text-left font-medium">Analiza</th>
                       <th className="py-1.5 text-right font-medium">Presupuestado</th>
                       <th className="py-1.5 text-right font-medium">Real</th>
                       <th className="py-1.5 text-center font-medium">Desvío</th>
@@ -139,7 +142,6 @@ export function SeccionDesviosPresupuesto({
                         <td className="py-2 font-medium text-slate-800">
                           {t.rubro}
                         </td>
-                        <td className="py-2 text-slate-500">{periodo(t)}</td>
                         <td className="py-2 text-right tabular-nums">
                           {pesos(t.monto_presupuestado)}
                         </td>

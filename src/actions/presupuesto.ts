@@ -205,21 +205,17 @@ export async function listTareas(
 }
 
 /**
- * Desvíos CARGADOS dentro de un mes calendario, sin importar qué período
- * analizan. Es lo que se revisa en la reunión de presupuesto: "qué se cargó
- * desde la última vez".
+ * Desvíos de un PERÍODO (el mes que analizan), sin importar cuándo se cargaron.
+ * Es lo que revisa la reunión de presupuesto: el cierre del mes anterior.
  *
- * 🚨 Filtra por `created_at` (cuándo se cargó la fila) y NO por la columna
- * `mes`, que es el período ANALIZADO. Los dos casi nunca coinciden: el cierre de
- * un mes se carga al mes siguiente. Medido en julio 2026: 8 desvíos cargados, y
- * todos analizaban mayo o junio — filtrar por `mes` habría mostrado CERO.
+ * 🚨 Filtra por (`anio`, `mes`) = período ANALIZADO, NO por `created_at`. Los dos
+ * no coinciden: el cierre de un mes se carga al siguiente. Medido en la base: los
+ * desvíos de junio 2026 se cargaron el 16/07, y en junio no se cargó ninguno —
+ * filtrar por fecha de carga habría mostrado la reunión vacía.
  *
- * Tampoco filtra por `anio` (que es el del período): un desvío de diciembre
- * cargado en enero tiene que salir en la reunión de enero.
- *
- * @param mes mes calendario "YYYY-MM" en el que se cargaron.
+ * @param mes período "YYYY-MM" que analizan los desvíos.
  */
-export async function listTareasCargadasEnMes(
+export async function listTareasDelPeriodo(
   mes: string,
 ): Promise<Result<PresupuestoTareaConResponsable[]>> {
   try {
@@ -227,22 +223,14 @@ export async function listTareasCargadasEnMes(
     if (!/^\d{4}-\d{2}$/.test(mes)) return { error: "Mes inválido (YYYY-MM)" }
     const supabase = await createClient()
 
-    // Bordes en hora argentina (-03:00): con UTC, lo cargado el día 1 antes de
-    // las 3 AM caería en el mes anterior.
     const [anio, mm] = mes.split("-").map(Number)
-    const desde = `${mes}-01T00:00:00-03:00`
-    const siguiente =
-      mm === 12
-        ? `${anio + 1}-01`
-        : `${anio}-${String(mm + 1).padStart(2, "0")}`
-    const hasta = `${siguiente}-01T00:00:00-03:00`
 
     const { data, error } = await supabase
       .from("presupuestos_tareas")
       .select(SELECT_TAREA_CON_RESPONSABLE)
-      .gte("created_at", desde)
-      .lt("created_at", hasta)
-      .order("created_at", { ascending: false })
+      .eq("anio", anio)
+      .eq("mes", mm)
+      .order("rubro", { ascending: true })
 
     if (error) return { error: error.message }
 
@@ -250,7 +238,9 @@ export async function listTareasCargadasEnMes(
   } catch (err) {
     return {
       error:
-        err instanceof Error ? err.message : "Error cargando los desvíos del mes",
+        err instanceof Error
+          ? err.message
+          : "Error cargando los desvíos del período",
     }
   }
 }
