@@ -301,6 +301,12 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
           <p className="text-xs text-muted-foreground">Pedidos del día</p>
           <p className="text-2xl font-bold">{data.total_clientes}</p>
           <p className="text-xs text-muted-foreground">{data.total_bultos.toLocaleString("es-AR")} bultos · {money(data.total_monto)}</p>
+          {data.gestion.clientes > 0 && (
+            <p className="text-xs text-teal-700">
+              incluye {data.gestion.clientes} de Gestión ({data.gestion.bultos.toLocaleString("es-AR")} bultos ·{" "}
+              {data.gestion.hl.toFixed(1)} HL)
+            </p>
+          )}
         </CardContent></Card>
         <Card className={totalCortados ? "border-red-200" : ""}><CardContent className="pt-4">
           <p className="text-xs text-muted-foreground">VRL a reprogramar hoy</p>
@@ -594,7 +600,8 @@ function ReprogramadosPreview({
             monto: g.monto,
             filas: g.filas.map((f) => ({
               id_cliente: f.id_cliente,
-              nombre: f.nombre,
+              // El que reprograma tiene que saber por qué canal entró el pedido.
+              nombre: f.bultos_gestion > 0 ? `${f.nombre ?? `Cliente ${f.id_cliente}`} [Gestión]` : f.nombre,
               localidad: f.localidad,
               bultos: f.bultos,
               hl: f.hl,
@@ -753,6 +760,22 @@ function Fila({
           <div className="font-medium text-sm">{f.nombre ?? `Cliente ${f.id_cliente}`}</div>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             #{f.id_cliente}
+            {f.bultos_gestion > 0 && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Badge variant="outline" className="h-4 px-1 text-[10px] text-teal-700">
+                      Gestión
+                    </Badge>
+                  }
+                />
+                <TooltipContent>
+                  {f.bultos_gestion === f.bultos
+                    ? `Pedido de Gestión (GESCOM): ${f.bultos} bultos. Va en el mismo camión, compite por el mismo cupo.`
+                    : `${f.bultos_gestion} de los ${f.bultos} bultos son de Gestión (GESCOM); el resto, de Chess.`}
+                </TooltipContent>
+              </Tooltip>
+            )}
             {f.nps_categoria === "Detractor" && (
               <Badge variant="outline" className="h-4 px-1 text-[10px] text-red-700">Detractor</Badge>
             )}
