@@ -301,6 +301,13 @@ export function SeccionFlotaRuteo({
               </div>
 
               {/* Próximos services: proyección por tasa de uso real (km/día). */}
+              {data.flota.servicesAlDia !== fechaReunion && (
+                <p className="mt-3 text-xs text-slate-500">
+                  Próximos services al {formatFecha(data.flota.servicesAlDia)}: se
+                  proyectan desde el kilometraje de hoy de cada unidad, así que en
+                  una reunión pasada son la foto actual y no la de ese día.
+                </p>
+              )}
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <thead>

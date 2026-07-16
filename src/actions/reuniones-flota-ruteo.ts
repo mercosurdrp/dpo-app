@@ -16,6 +16,7 @@ import {
   type ServiceGeneralUnidad,
 } from "@/lib/vehiculos/service-general"
 import { servicesVencidosDesdeProgramacion } from "@/lib/vehiculos/flota-kpis"
+import { today } from "@/lib/vehiculos/lecturas"
 import type {
   DiaRuteo,
   FlotaIndisponibilidad,
@@ -65,6 +66,14 @@ export interface FlotaRuteoReunion {
     servicesVencidos: number
     servicesTarget: number | null
     proximosServices: ServiceGeneralUnidad[]
+    /**
+     * Fecha a la que están calculados los services. Es HOY, no la fecha de la
+     * reunión: la proyección parte del km actual de cada unidad, que sale de su
+     * última lectura, y no hay estado histórico para reconstruirlo a una fecha
+     * pasada. En una reunión retroactiva (ej. el lunes 6 abierto el 16) la UI lo
+     * aclara, en vez de hacer pasar la foto de hoy por la de ese día.
+     */
+    servicesAlDia: string
   }
 }
 
@@ -292,6 +301,7 @@ export async function getFlotaRuteoReunion(
         servicesVencidos: servicesVencidosDesdeProgramacion(programacion),
         servicesTarget: metaDe("services_vencidos"),
         proximosServices,
+        servicesAlDia: today(),
       },
     },
   }
