@@ -442,7 +442,9 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                     )}
                   </div>
                 </div>
-                <Table>
+                {/* text-xs: con 11 columnas, a 14px la tabla no entra en una notebook y el
+                    navegador manda la columna Estado (sacar/subir) al scroll horizontal. */}
+                <Table className="text-xs">
                   <TableHeader>
                     <TableRow>
                       <HeadOrden col="posicion" orden={orden} onOrden={setOrden} className="w-10">#</HeadOrden>
@@ -451,7 +453,10 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                       <HeadOrden col="bultos" orden={orden} onOrden={setOrden} align="right" className="text-right">Bultos</HeadOrden>
                       <HeadOrden col="hl" orden={orden} onOrden={setOrden} align="right" className="text-right">HL</HeadOrden>
                       <HeadOrden col="monto" orden={orden} onOrden={setOrden} align="right" className="text-right">Monto</HeadOrden>
-                      <HeadOrden col="comportamiento" orden={orden} onOrden={setOrden} align="center" className="text-center">Comportamiento</HeadOrden>
+                      {/* "Comport." y no "Comportamiento": el encabezado largo fijaba 168px de
+                          ancho y empujaba la columna Estado (con el botón sacar) fuera de vista
+                          en una notebook de 1366. El tooltip de cada celda explica qué es. */}
+                      <HeadOrden col="comportamiento" orden={orden} onOrden={setOrden} align="center" className="text-center">Comport.</HeadOrden>
                       <HeadOrden col="rmd" orden={orden} onOrden={setOrden} align="center" className="text-center">RMD</HeadOrden>
                       <TableHead>Por qué</TableHead>
                       <HeadOrden col="score" orden={orden} onOrden={setOrden} align="right" className="text-right">Score</HeadOrden>
@@ -757,25 +762,14 @@ function Fila({
       <TableRow className={f.entra ? "" : "bg-red-50/60 opacity-90"}>
         <TableCell className="text-xs text-muted-foreground">{f.posicion}</TableCell>
         <TableCell>
-          <div className="font-medium text-sm">{f.nombre ?? `Cliente ${f.id_cliente}`}</div>
+          <div
+            className="max-w-[170px] truncate font-medium"
+            title={f.nombre ?? `Cliente ${f.id_cliente}`}
+          >
+            {f.nombre ?? `Cliente ${f.id_cliente}`}
+          </div>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             #{f.id_cliente}
-            {f.bultos_gestion > 0 && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Badge variant="outline" className="h-4 px-1 text-[10px] text-teal-700">
-                      Gestión
-                    </Badge>
-                  }
-                />
-                <TooltipContent>
-                  {f.bultos_gestion === f.bultos
-                    ? `Pedido de Gestión (GESCOM): ${f.bultos} bultos. Va en el mismo camión, compite por el mismo cupo.`
-                    : `${f.bultos_gestion} de los ${f.bultos} bultos son de Gestión (GESCOM); el resto, de Chess.`}
-                </TooltipContent>
-              </Tooltip>
-            )}
             {f.nps_categoria === "Detractor" && (
               <Badge variant="outline" className="h-4 px-1 text-[10px] text-red-700">Detractor</Badge>
             )}
@@ -823,8 +817,10 @@ function Fila({
               <Tooltip>
                 <TooltipTrigger
                   render={
+                    // Compacta ("hace poco ×N" en vez de "Rechazó hace poco ×N"): el texto
+                    // completo ensanchaba la columna. El tooltip lo dice entero.
                     <Badge className="w-fit border-0 bg-red-100 text-red-800">
-                      <Clock className="mr-0.5 h-3 w-3" /> Rechazó hace poco ×{f.rechazos_45d}
+                      <Clock className="mr-0.5 h-3 w-3" /> hace poco ×{f.rechazos_45d}
                     </Badge>
                   }
                 />
@@ -833,12 +829,16 @@ function Fila({
                 </TooltipContent>
               </Tooltip>
             )}
-            <span>{f.motivos || (f.entregas > 0 ? `sin rechazos · ${f.entregas} entregas` : "cliente nuevo")}</span>
+            <span className="block max-w-[130px] truncate" title={f.motivos || undefined}>
+              {f.motivos || (f.entregas > 0 ? `sin rechazos · ${f.entregas} entregas` : "cliente nuevo")}
+            </span>
           </div>
         </TableCell>
         <TableCell className="text-right text-sm font-semibold tabular-nums">{f.score.toFixed(0)}</TableCell>
         <TableCell className="text-center">
-          <div className="flex items-center justify-center gap-1">
+          {/* flex-wrap: con Fuera + Intocable + Por volumen + Reincidente juntas, en una sola
+              línea la columna se ensancha y empuja el botón sacar fuera de la pantalla. */}
+          <div className="flex flex-wrap items-center justify-center gap-1">
             {hayCupo && !f.entra && (
               <Badge className="border-0 bg-red-600 text-white">Fuera</Badge>
             )}
