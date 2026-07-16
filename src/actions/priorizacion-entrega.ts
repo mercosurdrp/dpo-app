@@ -228,6 +228,8 @@ export async function registrarCorte(
     bultos: number; hl: number; monto: number; score: number; posicion: number
     comportamiento: number; cluster: string | null; veces_previas: number; motivo: string
   }[],
+  /** Comentario del que hace el corte (por qué se cortó así). Se guarda en cada fila. */
+  nota = "",
 ): Promise<Result<{ registrados: number }>> {
   const perfil = await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
@@ -239,6 +241,7 @@ export async function registrarCorte(
   if (cortados.length === 0) return { error: "No hay clientes cortados para registrar." }
 
   const supabase = await createClient()
+  const comentario = nota.trim().slice(0, 2000) || null
   // 🚨 PostgREST exige claves IDÉNTICAS en un insert múltiple (PGRST102): armamos las
   // filas con exactamente las mismas columnas.
   const filas = cortados.map((c) => ({
@@ -255,7 +258,7 @@ export async function registrarCorte(
     cluster: c.cluster,
     veces_previas: c.veces_previas,
     motivo: c.motivo,
-    nota: null as string | null,
+    nota: comentario,
     cortado_por: perfil.email,
   }))
 

@@ -1,17 +1,17 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition, type CSSProperties } from "react"
-import { createPortal } from "react-dom"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { AlertTriangle, Truck, Scissors, Clock, ShieldCheck, PackageX, Info, Eye, Printer } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { AlertTriangle, Truck, Scissors, Clock, ShieldCheck, PackageX, Info, Eye, Download } from "lucide-react"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
@@ -84,11 +84,12 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
   const [forzados, setForzados] = useState<Record<number, "entra" | "sale">>({})
   /** Orden de la tabla dentro de cada ciudad. */
   const [orden, setOrden] = useState<Orden>("reprogramar")
-  /** Vista previa de los reprogramados (modal) antes de imprimir. */
+  /** Vista previa de los reprogramados (modal) antes de bajar el PDF. */
   const [preview, setPreview] = useState(false)
-  /** Para portalizar el PDF sólo en cliente. */
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  /** Confirmación del corte, donde se escribe el comentario. */
+  const [confirmar, setConfirmar] = useState(false)
+  /** Comentario del corte: por qué se cortó así. Va a la base y al PDF. */
+  const [nota, setNota] = useState("")
 
   const setCupo = (ciudad: string, v: string) =>
     setCupos((p) => ({ ...p, [ciudad]: v }))
@@ -176,12 +177,13 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
       return
     }
     startTransition(async () => {
-      const r = await registrarCorte(data.fecha_entrega, cortados)
+      const r = await registrarCorte(data.fecha_entrega, cortados, nota)
       if ("error" in r) toast.error(r.error)
       else {
         toast.success(
           `Corte registrado: ${r.data.registrados} clientes reprogramados. Mañana suben en el ranking.`,
         )
+        setConfirmar(false)
         router.refresh()
       }
     })
@@ -211,7 +213,7 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
               onChange={(e) => e.target.value && router.push(`?fecha=${e.target.value}`)}
             />
           </div>
-          <Button onClick={guardar} disabled={pending || totalCortados === 0}>
+          <Button onClick={() => setConfirmar(true)} disabled={pending || totalCortados === 0}>
             <Scissors className="mr-1 h-4 w-4" />
             {pending ? "Guardando…" : `Registrar corte (${totalCortados})`}
           </Button>
@@ -231,7 +233,7 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
             {vrlHoy.bultos.toLocaleString("es-AR")} <span className="text-sm font-normal">bultos</span>
           </p>
           <p className="text-xs text-muted-foreground">
-            {hayAlgunCupo
+            {totalCortados > 0 || hayAlgunCupo
               ? `${vrlHoy.hl.toFixed(1)} HL · ${totalCortados} clientes · ${money(vrlHoy.monto)}`
               : "cargá el cupo de cada ciudad"}
           </p>
@@ -320,7 +322,7 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
             {ciudades.map((c) => (
               <TabsTrigger key={c.ciudad} value={c.ciudad} className="flex-none gap-1.5">
                 {c.ciudad}
-                {c.hayCupo && c.cortados > 0 && (
+                {c.cortados > 0 && (
                   <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-100 px-1 text-[10px] font-bold text-red-700">
                     {c.cortados}
                   </span>
@@ -345,10 +347,10 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                       value={cupos[c.ciudad] ?? ""}
                       onChange={(e) => setCupo(c.ciudad, e.target.value)}
                     />
-                    {c.hayCupo && (
+                    {(c.hayCupo || c.cortados > 0) && (
                       <Badge variant={c.cortados ? "destructive" : "secondary"}>
                         {c.cortados
-                          ? `${c.cortados} se caen · VRL ${c.bultos_cortados} bultos / ${c.hl_cortados.toFixed(1)} HL`
+                          ? `${c.cortados} se caen · VRL ${c.bultos_cortados.toLocaleString("es-AR")} bultos / ${c.hl_cortados.toFixed(1)} HL`
                           : "entran todos"}
                       </Badge>
                     )}
@@ -398,42 +400,163 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
         </Tabs>
       )}
 
-      {/* Vista previa en pantalla de los reprogramados (con opción de imprimir) */}
+      {/* Vista previa en pantalla de los reprogramados (con descarga del PDF) */}
       <ReprogramadosPreview
         open={preview}
         onOpenChange={setPreview}
         fecha={data.fecha_entrega}
         grupos={grupos}
+        nota={nota}
         total={{ ...vrlHoy, clientes: totalCortados }}
       />
 
-      {/* PDF imprimible de reprogramados (oculto en pantalla) */}
-      {mounted && totalCortados > 0 &&
-        createPortal(
-          <ReprogramadosPrint
-            fecha={data.fecha_entrega}
-            grupos={grupos}
-            total={{ ...vrlHoy, clientes: totalCortados }}
-          />,
-          document.body,
-        )}
+      {/* Confirmación del corte + comentario */}
+      <ConfirmarCorteDialog
+        open={confirmar}
+        onOpenChange={setConfirmar}
+        fecha={data.fecha_entrega}
+        total={{ ...vrlHoy, clientes: totalCortados }}
+        nota={nota}
+        onNotaChange={setNota}
+        onConfirmar={guardar}
+        pending={pending}
+      />
     </div>
+  )
+}
+
+/** Confirma el corte y toma el comentario (por qué se cortó así) antes de registrarlo. */
+function ConfirmarCorteDialog({
+  open, onOpenChange, fecha, total, nota, onNotaChange, onConfirmar, pending,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  fecha: string
+  total: { bultos: number; hl: number; monto: number; clientes: number }
+  nota: string
+  onNotaChange: (v: string) => void
+  onConfirmar: () => void
+  pending: boolean
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Scissors className="h-5 w-5 text-red-600" /> Registrar el corte del {fecha}
+          </DialogTitle>
+          <DialogDescription>
+            Se reprograman <strong>{total.clientes} clientes</strong> ·{" "}
+            {total.bultos.toLocaleString("es-AR")} bultos · {total.hl.toFixed(1)} HL ·{" "}
+            {money(total.monto)}. Mañana suben en el ranking.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1.5">
+          <label htmlFor="nota-corte" className="text-sm font-medium">
+            Comentario <span className="font-normal text-muted-foreground">(opcional)</span>
+          </label>
+          <Textarea
+            id="nota-corte"
+            rows={4}
+            value={nota}
+            onChange={(e) => onNotaChange(e.target.value)}
+            placeholder="Por qué se cortó así: camiones que no salieron, pedidos que se bajaron a mano, algo que haya que recordar mañana…"
+          />
+          <p className="text-xs text-muted-foreground">
+            Queda guardado con el corte y sale en el PDF de reprogramados.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button onClick={onConfirmar} disabled={pending || total.clientes === 0}>
+            <Scissors className="mr-1 h-4 w-4" />
+            {pending ? "Guardando…" : "Registrar corte"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 /** Modal de vista previa de los clientes reprogramados, legible en pantalla. */
 function ReprogramadosPreview({
-  open, onOpenChange, fecha, grupos, total,
+  open, onOpenChange, fecha, grupos, nota, total,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   fecha: string
   grupos: { ciudad: string; filas: FilaVista[]; bultos: number; hl: number; monto: number }[]
+  nota: string
   total: { bultos: number; hl: number; monto: number; clientes: number }
 }) {
+  const [bajando, setBajando] = useState(false)
+
+  /** Pide el PDF al server con el corte de pantalla y lo baja como archivo. */
+  const descargar = async () => {
+    setBajando(true)
+    try {
+      const res = await fetch("/api/planeamiento/priorizacion-entrega/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fecha,
+          nota,
+          total,
+          grupos: grupos.map((g) => ({
+            ciudad: g.ciudad,
+            bultos: g.bultos,
+            hl: g.hl,
+            monto: g.monto,
+            filas: g.filas.map((f) => ({
+              id_cliente: f.id_cliente,
+              nombre: f.nombre,
+              localidad: f.localidad,
+              bultos: f.bultos,
+              hl: f.hl,
+              monto: f.monto,
+              score: f.score,
+              comportamiento: f.comportamiento,
+              rmd_prom: f.rmd_prom,
+              rechazos_45d: f.rechazos_45d,
+              veces_pospuesto: f.veces_pospuesto,
+              posicion: f.posicion,
+              motivo: f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad",
+            })),
+          })),
+        }),
+      })
+      if (!res.ok) {
+        const msg = await res.json().catch(() => null)
+        throw new Error(msg?.message ?? "No se pudo generar el PDF.")
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `reprogramados-${fecha}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo generar el PDF.")
+    } finally {
+      setBajando(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] w-[95vw] max-w-5xl overflow-y-auto">
+      {/* Ventana ancha: la tabla tiene 8 columnas y se lee de un saque.
+          Con el botón de maximizar para llevarla a pantalla casi completa. */}
+      <DialogContent
+        showExpandButton
+        className="max-h-[92vh] w-[96vw] max-w-[min(1600px,96vw)] overflow-y-auto sm:max-w-[min(1600px,96vw)]"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scissors className="h-5 w-5 text-red-600" />
@@ -507,12 +630,13 @@ function ReprogramadosPreview({
 
         <DialogFooter className="gap-2 sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            El corte se decide por score. “Imprimir” abre el diálogo para guardarlo como PDF.
+            El corte se decide por score. El PDF se baja como archivo, con el corte tal como está en pantalla.
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cerrar</Button>
-            <Button onClick={() => window.print()} disabled={grupos.length === 0}>
-              <Printer className="mr-1 h-4 w-4" /> Imprimir / Guardar PDF
+            <Button onClick={descargar} disabled={grupos.length === 0 || bajando}>
+              <Download className="mr-1 h-4 w-4" />
+              {bajando ? "Generando…" : "Descargar PDF"}
             </Button>
           </div>
         </DialogFooter>
@@ -676,109 +800,4 @@ function Fila({
       </TableRow>
     </>
   )
-}
-
-/** Listado imprimible de los clientes que se reprograman (VRL del día). */
-function ReprogramadosPrint({
-  fecha, grupos, total,
-}: {
-  fecha: string
-  grupos: { ciudad: string; filas: FilaVista[]; bultos: number; hl: number; monto: number }[]
-  total: { bultos: number; hl: number; monto: number; clientes: number }
-}) {
-  return (
-    <>
-      <style>{`
-        @media print {
-          body > *:not(#print-reprogramados) { display: none !important; }
-          #print-reprogramados { display: block !important; }
-          @page { size: A4 portrait; margin: 12mm; }
-        }
-      `}</style>
-      <div
-        id="print-reprogramados"
-        className="hidden"
-        style={{ color: "#111", fontFamily: "system-ui, sans-serif", fontSize: 11 }}
-      >
-        <div style={{ borderBottom: "2px solid #111", paddingBottom: 8, marginBottom: 12 }}>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>Volumen Reprogramado Logístico (VRL)</div>
-          <div style={{ fontSize: 12 }}>
-            Clientes reprogramados para la entrega del <strong>{fecha}</strong>
-          </div>
-          <div style={{ fontSize: 12, marginTop: 2 }}>
-            Total: <strong>{total.clientes}</strong> clientes ·{" "}
-            <strong>{total.bultos.toLocaleString("es-AR")}</strong> bultos ·{" "}
-            <strong>{total.hl.toFixed(1)}</strong> HL · {money(total.monto)}
-          </div>
-        </div>
-
-        {grupos.map((g) => (
-          <div key={g.ciudad} style={{ marginBottom: 14, breakInside: "avoid" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-              {g.ciudad}
-              <span style={{ fontWeight: 400, fontSize: 11 }}>
-                {" "}— {g.filas.length} clientes · {g.bultos.toLocaleString("es-AR")} bultos ·{" "}
-                {g.hl.toFixed(1)} HL · {money(g.monto)}
-              </span>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
-              <thead>
-                <tr style={{ background: "#eee" }}>
-                  {["#", "Cliente", "Localidad", "Bultos", "HL", "Monto", "Score", "Comp.", "RMD", "45d", "Posp.", "Motivo"].map(
-                    (h, i) => (
-                      <th
-                        key={h}
-                        style={{
-                          border: "1px solid #bbb",
-                          padding: "3px 5px",
-                          textAlign: i >= 3 && i <= 10 ? "right" : "left",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {g.filas.map((f) => (
-                  <tr key={f.id_cliente}>
-                    <td style={cell()}>{f.posicion}</td>
-                    <td style={cell()}>
-                      {f.nombre ?? `Cliente ${f.id_cliente}`}{" "}
-                      <span style={{ color: "#666" }}>#{f.id_cliente}</span>
-                    </td>
-                    <td style={cell()}>{f.localidad ?? "—"}</td>
-                    <td style={cell("right")}>{f.bultos}</td>
-                    <td style={cell("right")}>{f.hl.toFixed(1)}</td>
-                    <td style={cell("right")}>{money(f.monto)}</td>
-                    <td style={cell("right")}>{f.score.toFixed(0)}</td>
-                    <td style={cell("right")}>{f.comportamiento.toFixed(0)}</td>
-                    <td style={cell("right")}>{f.rmd_prom !== null ? f.rmd_prom.toFixed(1) : "—"}</td>
-                    <td style={cell("right")}>{f.rechazos_45d || "—"}</td>
-                    <td style={cell("right")}>{f.veces_pospuesto || "—"}</td>
-                    <td style={cell()}>
-                      {f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-
-        <div style={{ marginTop: 10, fontSize: 9, color: "#666" }}>
-          Generado desde Priorización de Entrega · dpo-app · El corte se decide por score (50%
-          comportamiento + 35% importancia + 15% valor). Los rechazos por falla interna no cuentan.
-          <br />
-          <strong>Comp.</strong> = comportamiento (rechazos por su culpa en 180 días). <strong>45d</strong> =
-          rechazos por su culpa en los últimos 45 días. <strong>RMD</strong> y NPS son banderas: no suman al score.
-        </div>
-      </div>
-    </>
-  )
-}
-
-function cell(align: "left" | "right" = "left"): CSSProperties {
-  return { border: "1px solid #ccc", padding: "3px 5px", textAlign: align }
 }
