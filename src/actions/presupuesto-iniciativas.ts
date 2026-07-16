@@ -129,6 +129,13 @@ export async function listIniciativas(
           r.ahorro_comprometido_anual !== null
             ? Number(r.ahorro_comprometido_anual)
             : null,
+        rubro: r.rubro ?? null,
+        ahorro_pct_objetivo:
+          r.ahorro_pct_objetivo !== null ? Number(r.ahorro_pct_objetivo) : null,
+        presupuesto_rubro_anual:
+          r.presupuesto_rubro_anual !== null
+            ? Number(r.presupuesto_rubro_anual)
+            : null,
         kpi_nombre: r.kpi_nombre,
         kpi_unidad: r.kpi_unidad,
         kpi_linea_base:
@@ -189,6 +196,13 @@ function camposIniciativaDesdeForm(formData: FormData): Record<string, any> {
     ahorro_comprometido_anual: parseNum(
       formData.get("ahorro_comprometido_anual"),
     ),
+    // Meta como % del presupuesto anual del rubro. El monto comprometido se
+    // calcula en el form y viaja resuelto en ahorro_comprometido_anual; acá se
+    // guarda de dónde salió (rubro, % y presupuesto usado) para que sea auditable
+    // y no se recalcule solo cuando se vuelva a subir el EERR.
+    rubro: parseText(formData.get("rubro")),
+    ahorro_pct_objetivo: parseNum(formData.get("ahorro_pct_objetivo")),
+    presupuesto_rubro_anual: parseNum(formData.get("presupuesto_rubro_anual")),
     kpi_nombre: parseText(formData.get("kpi_nombre")),
     kpi_unidad: parseText(formData.get("kpi_unidad")),
     kpi_linea_base: parseNum(formData.get("kpi_linea_base")),

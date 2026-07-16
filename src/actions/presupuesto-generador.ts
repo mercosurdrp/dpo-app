@@ -41,6 +41,84 @@ interface ProfileMin {
   nombre: string | null
 }
 
+/**
+ * Presupuesto ANUAL por rubro, para las metas de las iniciativas de ahorro.
+ *
+ * Sale de una hoja distinta a la de los desvíos: la hoja "DESVIOS" sólo trae los
+ * meses ya cerrados (el archivo de julio 2026 llega hasta junio), así que sumarla
+ * daría medio año. La hoja "PRESUPUESTO <año> MRP" tiene los 12 meses más una
+ * columna TOTAL (verificado: TOTAL == suma de los 12 en todos los rubros).
+ */
+function parseHojaPresupuestoAnual(buffer: ArrayBuffer): Map<string, number> {
+  const wb = XLSX.read(buffer, { type: "array" })
+  const nombre = wb.SheetNames.find((n) => /^\s*PRESUPUESTO\b/i.test(n))
+  if (!nombre) {
+    throw new Error(
+      'El Excel no tiene una hoja "PRESUPUESTO <año> MRP" con el presupuesto anual',
+    )
+  }
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[nombre], {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  // Misma forma que la hoja DESVIOS: rubro en la col 1, datos desde la fila 3.
+  // Acá la col 2 es el TOTAL del año.
+  const out = new Map<string, number>()
+  for (let i = 3; i < aoa.length; i++) {
+    const row = aoa[i]
+    if (!row) continue
+    const sub = row[1]
+    if (typeof sub !== "string") continue
+    const subNorm = normalizar(sub)
+    if (!subNorm || subNorm === "TOTAL" || subNorm === "RUBRO") continue
+    const total = row[2]
+    if (typeof total !== "number" || !Number.isFinite(total) || total === 0) {
+      continue
+    }
+    out.set(subNorm, total)
+  }
+  return out
+}
+
+/** Presupuesto anual de cada rubro del EERR del año. Clave: rubro normalizado. */
+export async function getPresupuestoAnualPorRubro(
+  anio: number,
+): Promise<Result<Record<string, number>>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    const mapa = parseHojaPresupuestoAnual(await blob.arrayBuffer())
+    return { data: Object.fromEntries(mapa) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo el presupuesto anual por rubro",
+    }
+  }
+}
+
 function normalizar(s: string): string {
   return s.replace(/\s+/g, " ").trim().toUpperCase()
 }

@@ -3000,6 +3000,12 @@ export interface IniciativaAhorro {
   responsable_id: string | null
   fecha_implementacion: string | null
   ahorro_comprometido_anual: number | null
+  /** Rubro del EERR sobre el que se calcula la meta. NULL = compromiso a mano. */
+  rubro: string | null
+  /** % del presupuesto anual del rubro que se compromete ahorrar (ej. 70). */
+  ahorro_pct_objetivo: number | null
+  /** Presupuesto anual del rubro con el que se calculó la meta (snapshot). */
+  presupuesto_rubro_anual: number | null
   kpi_nombre: string | null
   kpi_unidad: string | null
   kpi_linea_base: number | null

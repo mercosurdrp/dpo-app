@@ -511,6 +511,14 @@ export function IniciativasAhorroSection({
                     </div>
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       Compromiso anual {formatMoney(ini.ahorro_comprometido_anual)}
+                      {/* De dónde sale la meta, si se definió como % del rubro. */}
+                      {ini.rubro && ini.ahorro_pct_objetivo !== null && (
+                        <>
+                          {" "}
+                          = {formatNum(ini.ahorro_pct_objetivo)}% de{" "}
+                          {formatMoney(ini.presupuesto_rubro_anual)} ({ini.rubro})
+                        </>
+                      )}
                       {ahorroFrac !== null &&
                         ` · ${Math.round(ahorroFrac * 100)}% del año cubierto`}
                       {qCerrados === 0 && " · el año todavía no cerró un trimestre"}
