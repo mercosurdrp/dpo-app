@@ -57,6 +57,8 @@ import {
   reenviarMailGasto,
   updateGastoEstado,
 } from "@/actions/mantenimiento-gastos"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { KpiCard } from "./_components/kpi-card"
 import {
   GASTO_MEDIO_PAGO_LABELS,
   GASTO_TIPO_LABELS,
@@ -103,9 +105,9 @@ const TIPO_ICON: Record<GastoTipo, typeof FileText> = {
 }
 
 const TIPO_BADGE: Record<GastoTipo, string> = {
-  factura: "bg-indigo-100 text-indigo-700",
-  boleta: "bg-sky-100 text-sky-700",
-  caja_chica: "bg-amber-100 text-amber-700",
+  factura: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
+  boleta: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+  caja_chica: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
 }
 
 function hoyISO() {
@@ -200,288 +202,304 @@ export function GastosTab({
   }
 
   return (
-    <Tabs defaultValue="listado" className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="listado">Gastos</TabsTrigger>
-        <TabsTrigger value="imputar">
-          Imputar{pendientesImputar > 0 ? ` (${pendientesImputar})` : ""}
-        </TabsTrigger>
-      </TabsList>
+    <div className="space-y-4">
+      <DpoSeccionCinta seccionId="gastos" />
 
-      {/* ============ Sub-solapa: Listado / carga ============ */}
-      <TabsContent value="listado" className="space-y-6">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">
-                Total {fMes === "todos" ? "(todo)" : fmtMesLabel(fMes)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{fmtMoney(total)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Comprobantes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{filtrados.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Sin imputar</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-amber-600">{pendientesImputar}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">Imputados</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-emerald-600">{imputados}</p>
-            </CardContent>
-          </Card>
-        </div>
+      <Tabs defaultValue="listado" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="listado">Gastos</TabsTrigger>
+          <TabsTrigger value="imputar">
+            <span className="flex items-center gap-1.5">
+              Imputar
+              {pendientesImputar > 0 && (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-500/10 px-1.5 py-0 text-[11px] font-medium tabular-nums text-amber-700 dark:text-amber-400"
+                >
+                  {pendientesImputar}
+                </Badge>
+              )}
+            </span>
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Filtros + alta */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label className="text-xs text-slate-500">Mes</Label>
-              <Select value={fMes} onValueChange={(v) => setFMes(v ?? "todos")}>
-                <SelectTrigger className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los meses</SelectItem>
-                  {meses.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {fmtMesLabel(m)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-slate-500">Tipo</Label>
-              <Select value={fTipo} onValueChange={(v) => setFTipo(v ?? "todos")}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="factura">Factura</SelectItem>
-                  <SelectItem value="boleta">Boleta</SelectItem>
-                  <SelectItem value="caja_chica">Caja chica</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        {/* ============ Sub-solapa: Listado / carga ============ */}
+        <TabsContent value="listado" className="space-y-6">
+          {/* KPIs */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <KpiCard
+              label={`Total ${fMes === "todos" ? "(todo)" : fmtMesLabel(fMes)}`}
+              valor={fmtMoney(total)}
+              sub="Gasto de flota imputado contra presupuesto"
+              dpo="3.2"
+            />
+            <KpiCard
+              label="Comprobantes"
+              valor={filtrados.length}
+              sub={fTipo === "todos" ? "Todos los tipos" : GASTO_TIPO_LABELS[fTipo as GastoTipo]}
+            />
+            <KpiCard
+              label="Sin imputar"
+              valor={pendientesImputar}
+              estado={pendientesImputar > 0 ? "alerta" : "ok"}
+              sub="Pendientes de administración"
+            />
+            <KpiCard
+              label="Imputados"
+              valor={imputados}
+              estado={imputados > 0 ? "ok" : "neutro"}
+              sub="Dentro del filtro actual"
+            />
           </div>
-          <div className="flex items-end gap-2">
-            <Button
-              variant="outline"
-              title="Descargar Excel con el filtro actual"
-              render={<a href={exportUrl("xlsx")} download />}
-            >
-              <FileSpreadsheet className="mr-1 size-4 text-emerald-600" /> Excel
-            </Button>
-            <Button
-              variant="outline"
-              title="Descargar PDF con el filtro actual"
-              render={<a href={exportUrl("pdf")} target="_blank" rel="noreferrer" />}
-            >
-              <FileDown className="mr-1 size-4 text-red-600" /> PDF
-            </Button>
-            {puedeEditar && (
-              <Button onClick={() => setNuevoOpen(true)}>
-                <Plus className="mr-1 size-4" /> Nuevo gasto
+
+          {/* Filtros + alta */}
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Mes</Label>
+                <Select value={fMes} onValueChange={(v) => setFMes(v ?? "todos")}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los meses</SelectItem>
+                    {meses.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {fmtMesLabel(m)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Tipo</Label>
+                <Select value={fTipo} onValueChange={(v) => setFTipo(v ?? "todos")}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="factura">Factura</SelectItem>
+                    <SelectItem value="boleta">Boleta</SelectItem>
+                    <SelectItem value="caja_chica">Caja chica</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <Button
+                variant="outline"
+                title="Descargar Excel con el filtro actual"
+                render={<a href={exportUrl("xlsx")} download />}
+              >
+                <FileSpreadsheet className="mr-1 size-4 text-emerald-600 dark:text-emerald-400" />{" "}
+                Excel
               </Button>
-            )}
+              <Button
+                variant="outline"
+                title="Descargar PDF con el filtro actual"
+                render={<a href={exportUrl("pdf")} target="_blank" rel="noreferrer" />}
+              >
+                <FileDown className="mr-1 size-4 text-red-600 dark:text-red-400" /> PDF
+              </Button>
+              {puedeEditar && (
+                <Button onClick={() => setNuevoOpen(true)}>
+                  <Plus className="mr-1 size-4" /> Nuevo gasto
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Tabla */}
-        <Card>
-          <CardContent className="overflow-x-auto p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Proveedor</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Mes imp.</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtrados.length === 0 && (
+          {/* Tabla */}
+          <Card>
+            <CardContent className="overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-sm text-slate-400">
-                      No hay gastos cargados para este filtro.
-                    </TableCell>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead className="text-right">Monto</TableHead>
+                    <TableHead>Mes imp.</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                )}
-                {filtrados.map((g) => {
-                  const Icon = TIPO_ICON[g.tipo]
-                  const busy = busyId === g.id
-                  return (
-                    <TableRow key={g.id}>
-                      <TableCell className="whitespace-nowrap text-sm text-slate-600">
-                        {fmtFecha(g.fecha)}
-                        {g.fecha_carga && (
-                          <span className="block text-[11px] text-slate-400">
-                            Cargada {fmtFecha(g.fecha_carga)}
-                          </span>
-                        )}
+                </TableHeader>
+                <TableBody>
+                  {filtrados.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="py-8 text-center text-sm text-muted-foreground"
+                      >
+                        No hay gastos cargados para este filtro.
                       </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${TIPO_BADGE[g.tipo]}`}
-                        >
-                          <Icon className="size-3" /> {GASTO_TIPO_LABELS[g.tipo]}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-slate-800">{g.proveedor ?? "—"}</div>
-                        <div className="text-xs text-slate-500">
-                          {[
-                            g.dominio,
-                            g.numero_comprobante ? `N° ${g.numero_comprobante}` : null,
-                            g.orden_trabajo ? `OT ${g.orden_trabajo}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
-                        {g.tipo_mantenimiento && (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                            <Wrench className="size-3" />
-                            {GASTO_TIPO_MANTENIMIENTO_LABELS[g.tipo_mantenimiento]}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                        {fmtMoney(Number(g.monto))}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                        {fmtMesLabel(g.mes_imputacion)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <Badge
-                            variant="outline"
-                            className={
-                              g.estado_imputacion === "imputado"
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700"
-                            }
+                    </TableRow>
+                  )}
+                  {filtrados.map((g) => {
+                    const Icon = TIPO_ICON[g.tipo]
+                    const busy = busyId === g.id
+                    return (
+                      <TableRow key={g.id}>
+                        <TableCell className="whitespace-nowrap text-sm text-foreground">
+                          {fmtFecha(g.fecha)}
+                          {g.fecha_carga && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              Cargada {fmtFecha(g.fecha_carga)}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${TIPO_BADGE[g.tipo]}`}
                           >
-                            {g.estado_imputacion === "imputado" ? "Imputado" : "Sin imputar"}
-                          </Badge>
-                          <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                            {g.mail_enviado ? (
-                              <>
-                                <Mail className="size-3 text-emerald-500" /> Avisado
-                              </>
-                            ) : (
-                              <span title={g.mail_error ?? ""} className="flex items-center gap-1">
-                                <MailWarning className="size-3 text-amber-500" /> Mail pendiente
-                              </span>
-                            )}
-                            {g.estado_pago === "pagado" && (
-                              <span className="ml-1 text-emerald-600">· Pagado</span>
-                            )}
+                            <Icon className="size-3" /> {GASTO_TIPO_LABELS[g.tipo]}
                           </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {g.adjunto_urls[0] && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Ver comprobante"
-                              render={
-                                <a href={g.adjunto_urls[0]} target="_blank" rel="noreferrer" />
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-foreground">{g.proveedor ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {[
+                              g.dominio,
+                              g.numero_comprobante ? `N° ${g.numero_comprobante}` : null,
+                              g.orden_trabajo ? `OT ${g.orden_trabajo}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </div>
+                          {g.tipo_mantenimiento && (
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                              <Wrench className="size-3" />
+                              {GASTO_TIPO_MANTENIMIENTO_LABELS[g.tipo_mantenimiento]}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums text-foreground">
+                          {fmtMoney(Number(g.monto))}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {fmtMesLabel(g.mes_imputacion)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant="outline"
+                              className={
+                                g.estado_imputacion === "imputado"
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
                               }
                             >
-                              <Paperclip className="size-4" />
-                            </Button>
-                          )}
-                          {puedeEditar && (
-                            <>
-                              {!g.mail_enviado && (
+                              {g.estado_imputacion === "imputado" ? "Imputado" : "Sin imputar"}
+                            </Badge>
+                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                              {g.mail_enviado ? (
+                                <>
+                                  <Mail className="size-3 text-emerald-600 dark:text-emerald-400" />{" "}
+                                  Avisado
+                                </>
+                              ) : (
+                                <span
+                                  title={g.mail_error ?? ""}
+                                  className="flex items-center gap-1"
+                                >
+                                  <MailWarning className="size-3 text-amber-600 dark:text-amber-400" />{" "}
+                                  Mail pendiente
+                                </span>
+                              )}
+                              {g.estado_pago === "pagado" && (
+                                <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                                  · Pagado
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {g.adjunto_urls[0] && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Ver comprobante"
+                                render={
+                                  <a href={g.adjunto_urls[0]} target="_blank" rel="noreferrer" />
+                                }
+                              >
+                                <Paperclip className="size-4" />
+                              </Button>
+                            )}
+                            {puedeEditar && (
+                              <>
+                                {!g.mail_enviado && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={busy}
+                                    title="Reenviar aviso por mail"
+                                    onClick={() => onReenviar(g)}
+                                  >
+                                    <Mail className="size-4 text-sky-600 dark:text-sky-400" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   disabled={busy}
-                                  title="Reenviar aviso por mail"
-                                  onClick={() => onReenviar(g)}
+                                  title="Eliminar"
+                                  onClick={() => onEliminar(g)}
                                 >
-                                  <Mail className="size-4 text-sky-600" />
+                                  <Trash2 className="size-4 text-destructive" />
                                 </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                disabled={busy}
-                                title="Eliminar"
-                                onClick={() => onEliminar(g)}
-                              >
-                                <Trash2 className="size-4 text-red-500" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </TabsContent>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* ============ Sub-solapa: Imputar ============ */}
-      <TabsContent value="imputar" className="space-y-4">
-        <ImputarPanel
-          gastos={gastos}
-          puedeEditar={puedeEditar}
-          busyId={busyId}
-          onImputar={(g) => onEstado(g, { estado_imputacion: "imputado" })}
-          onDesimputar={(g) => onEstado(g, { estado_imputacion: "pendiente" })}
-        />
-      </TabsContent>
+        {/* ============ Sub-solapa: Imputar ============ */}
+        <TabsContent value="imputar" className="space-y-4">
+          <ImputarPanel
+            gastos={gastos}
+            puedeEditar={puedeEditar}
+            busyId={busyId}
+            onImputar={(g) => onEstado(g, { estado_imputacion: "imputado" })}
+            onDesimputar={(g) => onEstado(g, { estado_imputacion: "pendiente" })}
+          />
+        </TabsContent>
 
-      {nuevoOpen && (
-        <NuevoGastoDialog
-          dominios={dominios}
-          proveedores={provList}
-          onProveedorCreado={(p) =>
-            setProvList((prev) =>
-              prev.some((x) => x.id === p.id)
-                ? prev
-                : [...prev, p].sort((a, b) => a.nombre.localeCompare(b.nombre))
-            )
-          }
-          onClose={() => setNuevoOpen(false)}
-          onSaved={(mailOk) => {
-            setNuevoOpen(false)
-            toast.success(
-              mailOk ? "Gasto cargado y aviso enviado" : "Gasto cargado (aviso por mail pendiente)"
-            )
-            refresh()
-          }}
-        />
-      )}
-    </Tabs>
+        {nuevoOpen && (
+          <NuevoGastoDialog
+            dominios={dominios}
+            proveedores={provList}
+            onProveedorCreado={(p) =>
+              setProvList((prev) =>
+                prev.some((x) => x.id === p.id)
+                  ? prev
+                  : [...prev, p].sort((a, b) => a.nombre.localeCompare(b.nombre))
+              )
+            }
+            onClose={() => setNuevoOpen(false)}
+            onSaved={(mailOk) => {
+              setNuevoOpen(false)
+              toast.success(
+                mailOk
+                  ? "Gasto cargado y aviso enviado"
+                  : "Gasto cargado (aviso por mail pendiente)"
+              )
+              refresh()
+            }}
+          />
+        )}
+      </Tabs>
+    </div>
   )
 }
 
@@ -534,7 +552,7 @@ function ImputarPanel({
           <TableBody>
             {ordenados.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-slate-400">
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   No hay gastos cargados.
                 </TableCell>
               </TableRow>
@@ -545,7 +563,7 @@ function ImputarPanel({
               const imputado = g.estado_imputacion === "imputado"
               return (
                 <TableRow key={g.id} className={imputado ? "opacity-60" : ""}>
-                  <TableCell className="whitespace-nowrap text-sm text-slate-600">
+                  <TableCell className="whitespace-nowrap text-sm text-foreground">
                     {fmtFecha(g.fecha)}
                   </TableCell>
                   <TableCell>
@@ -556,15 +574,15 @@ function ImputarPanel({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium text-slate-800">{g.proveedor ?? "—"}</div>
+                    <div className="font-medium text-foreground">{g.proveedor ?? "—"}</div>
                     {g.numero_comprobante && (
-                      <div className="text-xs text-slate-500">N° {g.numero_comprobante}</div>
+                      <div className="text-xs text-muted-foreground">N° {g.numero_comprobante}</div>
                     )}
                   </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums text-slate-900">
+                  <TableCell className="text-right font-semibold tabular-nums text-foreground">
                     {fmtMoney(Number(g.monto))}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {fmtMesLabel(g.mes_imputacion)}
                   </TableCell>
                   <TableCell className="text-right">
@@ -572,7 +590,7 @@ function ImputarPanel({
                       <div className="flex items-center justify-end gap-2">
                         <Badge
                           variant="outline"
-                          className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                         >
                           <CheckCircle2 className="mr-1 size-3" /> Imputado
                         </Badge>
@@ -584,20 +602,19 @@ function ImputarPanel({
                             title="Deshacer"
                             onClick={() => onDesimputar(g)}
                           >
-                            <RotateCcw className="size-4 text-slate-400" />
+                            <RotateCcw className="size-4 text-muted-foreground" />
                           </Button>
                         )}
                       </div>
                     ) : puedeEditar ? (
-                      <Button
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => onImputar(g)}
-                      >
+                      <Button size="sm" disabled={busy} onClick={() => onImputar(g)}>
                         <CheckCircle2 className="mr-1 size-4" /> Imputar
                       </Button>
                     ) : (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                      >
                         Sin imputar
                       </Badge>
                     )}
@@ -793,7 +810,8 @@ function NuevoGastoDialog({
           </div>
           <div>
             <Label>
-              N° orden de trabajo{tipo === "factura" && <span className="text-red-500"> *</span>}
+              N° orden de trabajo
+              {tipo === "factura" && <span className="text-destructive"> *</span>}
             </Label>
             <Input
               value={ordenTrabajo}
@@ -841,7 +859,7 @@ function NuevoGastoDialog({
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             />
             {files.length > 0 && (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {files.length} archivo(s): {files.map((f) => f.name).join(", ")}
               </p>
             )}

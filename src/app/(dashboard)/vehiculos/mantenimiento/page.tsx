@@ -97,7 +97,7 @@ export default async function MantenimientoPage() {
   if ("error" in estadoRes) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Mantenimiento de camiones</h1>
+        <h1 className="text-2xl font-bold text-foreground">Mantenimiento de camiones</h1>
         <p className="mt-2 text-red-500">Error: {estadoRes.error}</p>
       </div>
     )

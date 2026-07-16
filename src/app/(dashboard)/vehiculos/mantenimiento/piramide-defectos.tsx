@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/select"
 import type { MantenimientoRealizado } from "@/types/database"
 import type { ChecklistItemNoOk } from "@/actions/mantenimiento-vehiculos"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { KpiCard } from "./_components/kpi-card"
 
 interface Props {
   itemsNoOk: ChecklistItemNoOk[]
@@ -136,11 +138,14 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
   return (
     <div className="space-y-4">
       {/* Encabezado + período */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-slate-700">
-          Pirámide de defectos de flota
-        </h2>
-        <div className="w-48">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold text-foreground">
+            Pirámide de defectos de flota
+          </h2>
+          <DpoSeccionCinta seccionId="piramide" />
+        </div>
+        <div className="w-48 shrink-0">
           <Select
             value={periodo}
             onValueChange={(v: string | null) =>
@@ -185,7 +190,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                   <polygon
                     points={points}
                     fill={n.color}
-                    stroke="#ffffff"
+                    className="stroke-card"
                     strokeWidth={1.2}
                   />
                   {/* Conteo en el centro */}
@@ -211,7 +216,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     textAnchor="start"
                     fontSize={11}
                     fontWeight={500}
-                    fill="#374151"
+                    className="fill-foreground"
                   >
                     {n.titulo}
                   </text>
@@ -229,44 +234,35 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
 
       {/* Indicadores */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Defectos</p>
-            <p className="text-base font-bold text-slate-900">
-              {fmtNum(datos.totalDefectos)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Críticos</p>
-            <p className="text-base font-bold text-amber-700">
-              {fmtNum(datos.conteo.critico)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Correctivos</p>
-            <p className="text-base font-bold text-orange-700">
-              {fmtNum(datos.conteo.correctivo)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Defectos / correctivo</p>
-            <p className="text-base font-bold text-slate-900">
-              {datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "—"}
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard
+          label="Defectos"
+          valor={fmtNum(datos.totalDefectos)}
+          sub="Ítems no conformes de checklist"
+        />
+        <KpiCard
+          label="Críticos"
+          valor={fmtNum(datos.conteo.critico)}
+          estado={datos.conteo.critico > 0 ? "alerta" : "ok"}
+          sub="Defectos críticos detectados"
+        />
+        <KpiCard
+          label="Correctivos"
+          valor={fmtNum(datos.conteo.correctivo)}
+          estado={datos.conteo.correctivo > 0 ? "alerta" : "ok"}
+          sub="Fallas que llegaron al taller"
+        />
+        <KpiCard
+          label="Defectos / correctivo"
+          valor={datos.ratioFalla !== null ? `${datos.ratioFalla} : 1` : "—"}
+          dpo="4.2"
+          sub="Base detectada por cada falla en taller"
+        />
       </div>
 
       {/* Ranking por unidad */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700">
+          <CardTitle className="text-sm font-semibold text-foreground">
             Defectos por unidad
           </CardTitle>
         </CardHeader>
@@ -292,7 +288,7 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     <TableCell className="font-medium">
                       {u.dominio}
                       {u.criticos > 0 && (
-                        <TriangleAlert className="ml-1 inline size-3.5 text-amber-600" />
+                        <TriangleAlert className="ml-1 inline size-3.5 text-amber-600 dark:text-amber-400" />
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -300,7 +296,10 @@ export function PiramideDefectos({ itemsNoOk, mantenimientos }: Props) {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {u.criticos > 0 ? (
-                        <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                        >
                           {fmtNum(u.criticos)}
                         </Badge>
                       ) : (

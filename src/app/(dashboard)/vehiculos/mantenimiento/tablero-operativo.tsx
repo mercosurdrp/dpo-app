@@ -34,6 +34,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { registrarLecturaVehiculo } from "@/actions/mantenimiento-vehiculos"
 import type {
   DocumentoVencimiento,
@@ -46,13 +47,41 @@ const ESTADO_SG: Record<
   EstadoServiceGeneral,
   { label: string; dot: string; badge: string }
 > = {
-  vencido: { label: "Vencido", dot: "bg-red-600", badge: "border-red-200 bg-red-100 text-red-700" },
-  rojo: { label: "≤10 días", dot: "bg-red-500", badge: "border-red-200 bg-red-100 text-red-700" },
-  naranja: { label: "≤15 días", dot: "bg-orange-400", badge: "border-orange-200 bg-orange-100 text-orange-700" },
-  amarillo: { label: "≤30 días", dot: "bg-amber-400", badge: "border-amber-200 bg-amber-100 text-amber-800" },
-  ok: { label: "Al día", dot: "bg-emerald-500", badge: "border-emerald-200 bg-emerald-100 text-emerald-700" },
-  sin_datos: { label: "Sin datos", dot: "bg-slate-300", badge: "border-slate-200 bg-slate-100 text-slate-500" },
-  no_aplica: { label: "No lleva service", dot: "bg-slate-200", badge: "border-slate-200 bg-slate-50 text-slate-400" },
+  vencido: {
+    label: "Vencido",
+    dot: "bg-destructive",
+    badge: "border-destructive/30 bg-destructive/10 text-destructive",
+  },
+  rojo: {
+    label: "≤10 días",
+    dot: "bg-destructive/70",
+    badge: "border-destructive/30 bg-destructive/10 text-destructive",
+  },
+  naranja: {
+    label: "≤15 días",
+    dot: "bg-orange-500",
+    badge: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  },
+  amarillo: {
+    label: "≤30 días",
+    dot: "bg-amber-500",
+    badge: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
+  ok: {
+    label: "Al día",
+    dot: "bg-emerald-500",
+    badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  },
+  sin_datos: {
+    label: "Sin datos",
+    dot: "bg-muted-foreground/40",
+    badge: "border-border bg-muted text-muted-foreground",
+  },
+  no_aplica: {
+    label: "No lleva service",
+    dot: "bg-border",
+    badge: "border-border bg-muted/50 text-muted-foreground/70",
+  },
 }
 
 const ORDEN_ESTADO: Record<EstadoServiceGeneral, number> = {
@@ -74,8 +103,14 @@ export interface OTPendiente {
 }
 
 const OT_BADGE: Record<OTPendiente["estado"], { label: string; cls: string }> = {
-  programado: { label: "Programada", cls: "border-blue-200 bg-blue-100 text-blue-700" },
-  en_taller: { label: "En taller", cls: "border-amber-200 bg-amber-100 text-amber-800" },
+  programado: {
+    label: "Programada",
+    cls: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+  },
+  en_taller: {
+    label: "En taller",
+    cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
 }
 
 const fmtNum = (v: number | null) =>
@@ -232,13 +267,15 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
 
   return (
     <div className="space-y-6">
+      <DpoSeccionCinta seccionId="tablero" />
+
       {/* ===== Fuera de servicio por documentación vencida ===== */}
       {docsVencidos.length > 0 && (
-        <Card className="border-red-300 bg-red-50">
+        <Card className="border-destructive/40 bg-destructive/5">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base text-red-800">
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
               <FileWarning className="size-4" /> Fuera de servicio por documentación
-              <Badge className="border-red-300 bg-red-100 text-red-700">
+              <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
                 {new Set(docsVencidos.map((d) => d.dominio)).size}{" "}
                 {new Set(docsVencidos.map((d) => d.dominio)).size === 1
                   ? "unidad"
@@ -247,7 +284,7 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="mb-2 text-xs text-red-700">
+            <p className="mb-2 text-xs text-destructive">
               Estas unidades tienen documentación vencida y no deben salir a ruta hasta
               regularizarla.
             </p>
@@ -255,11 +292,11 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
               {docsVencidos.map((d) => (
                 <span
                   key={d.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 py-1 text-xs"
                 >
-                  <span className="font-semibold text-slate-800">{d.dominio}</span>
-                  <span className="text-slate-600">{d.categoria}</span>
-                  <span className="font-medium text-red-600">
+                  <span className="font-semibold text-foreground">{d.dominio}</span>
+                  <span className="text-muted-foreground">{d.categoria}</span>
+                  <span className="font-medium text-destructive">
                     venció hace {Math.abs(d.diasRestantes)} d
                   </span>
                 </span>
@@ -275,16 +312,20 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Gauge className="size-4 text-slate-500" /> Service pendientes
+              <Gauge className="size-4 text-muted-foreground" /> Service pendientes
             </CardTitle>
             <div className="flex gap-1.5">
-              <Badge className="border-red-200 bg-red-50 text-red-700">Vencidos: {serviceVencidos}</Badge>
-              <Badge className="border-amber-200 bg-amber-50 text-amber-800">Por vencer: {servicePorVencer}</Badge>
+              <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+                Vencidos: {serviceVencidos}
+              </Badge>
+              <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                Por vencer: {servicePorVencer}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="overflow-x-auto pt-0">
             {servicePendientes.length === 0 ? (
-              <p className="py-3 text-sm text-slate-500">No hay services vencidos ni próximos.</p>
+              <p className="py-3 text-sm text-muted-foreground">No hay services vencidos ni próximos.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -307,15 +348,17 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                     return (
                       <TableRow
                         key={p.dominio}
-                        className="cursor-pointer hover:bg-slate-50"
+                        className="cursor-pointer hover:bg-muted/50"
                         onClick={() => irAProgramacion(p.dominio)}
                       >
                         <TableCell className="font-medium">{p.dominio}</TableCell>
-                        <TableCell className="text-slate-600">{prox}</TableCell>
+                        <TableCell className="text-muted-foreground">{prox}</TableCell>
                         <TableCell
                           className={cn(
                             "font-medium",
-                            p.estado === "vencido" || p.estado === "rojo" ? "text-red-600" : "text-slate-700"
+                            p.estado === "vencido" || p.estado === "rojo"
+                              ? "text-destructive"
+                              : "text-foreground"
                           )}
                         >
                           {diasTexto(p.diasRestantes)}
@@ -338,13 +381,15 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Wrench className="size-4 text-slate-500" /> Órdenes de trabajo
+              <Wrench className="size-4 text-muted-foreground" /> Órdenes de trabajo
             </CardTitle>
-            <Badge className="border-blue-200 bg-blue-50 text-blue-700">Abiertas: {otPendientes.length}</Badge>
+            <Badge className="border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400">
+              Abiertas: {otPendientes.length}
+            </Badge>
           </CardHeader>
           <CardContent className="overflow-x-auto pt-0">
             {otPendientes.length === 0 ? (
-              <p className="py-3 text-sm text-slate-500">No hay órdenes de trabajo abiertas.</p>
+              <p className="py-3 text-sm text-muted-foreground">No hay órdenes de trabajo abiertas.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -359,12 +404,12 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                   {otPendientes.map((ot) => (
                     <TableRow
                       key={ot.id}
-                      className="cursor-pointer hover:bg-slate-50"
+                      className="cursor-pointer hover:bg-muted/50"
                       onClick={() => onNavigate("historial", ot.dominio)}
                     >
                       <TableCell className="font-medium">{ot.dominio}</TableCell>
-                      <TableCell className="max-w-48 truncate text-slate-600">{ot.motivo}</TableCell>
-                      <TableCell className="text-slate-600">{antiguedad(ot.fecha)}</TableCell>
+                      <TableCell className="max-w-48 truncate text-muted-foreground">{ot.motivo}</TableCell>
+                      <TableCell className="text-muted-foreground">{antiguedad(ot.fecha)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={OT_BADGE[ot.estado].cls}>
                           {OT_BADGE[ot.estado].label}
@@ -380,7 +425,7 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
       </div>
 
       {/* Leyenda del semáforo de service */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         {(["vencido", "rojo", "naranja", "amarillo", "ok", "sin_datos", "no_aplica"] as EstadoServiceGeneral[]).map((k) => (
           <span key={k} className="flex items-center gap-1.5">
             <Dot estado={k} /> {ESTADO_SG[k].label}
@@ -392,7 +437,7 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardList className="size-4 text-slate-500" /> Programación de mantenimiento (service general)
+            <ClipboardList className="size-4 text-muted-foreground" /> Programación de mantenimiento (service general)
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -428,7 +473,7 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                   <TableRow
                     key={p.dominio}
                     id={`svc-${p.dominio}`}
-                    className={cn(resaltado === p.dominio && "bg-amber-50 ring-1 ring-amber-200")}
+                    className={cn(resaltado === p.dominio && "bg-amber-500/10 ring-1 ring-amber-500/40")}
                   >
                     <TableCell>
                       <Dot estado={p.estado} />
@@ -436,16 +481,18 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
                     <TableCell className="font-medium">
                       {p.dominio}
                       {p.motivo === "tiempo" && (
-                        <span className="ml-1 text-xs font-normal text-slate-400">(por tiempo)</span>
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">(por tiempo)</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-slate-600">{ultimoTxt}</TableCell>
-                    <TableCell className="text-slate-600">{registroTxt}</TableCell>
-                    <TableCell className="text-slate-600">{proximoTxt}</TableCell>
+                    <TableCell className="text-muted-foreground">{ultimoTxt}</TableCell>
+                    <TableCell className="text-muted-foreground">{registroTxt}</TableCell>
+                    <TableCell className="text-muted-foreground">{proximoTxt}</TableCell>
                     <TableCell
                       className={cn(
                         "text-right font-semibold tabular-nums",
-                        p.estado === "vencido" || p.estado === "rojo" ? "text-red-600" : "text-slate-700"
+                        p.estado === "vencido" || p.estado === "rojo"
+                          ? "text-destructive"
+                          : "text-foreground"
                       )}
                     >
                       {p.diasRestantes == null ? "—" : p.diasRestantes}
@@ -482,22 +529,22 @@ export function TableroOperativo({ programacion, documentos, otPendientes, unida
       {unidadesBaja.length > 0 && (
         <Card className="border-dashed">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base text-slate-500">
+            <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
               <Archive className="size-4" /> Unidades dadas de baja
             </CardTitle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground">
               Fuera de la programación, pero con su historial de OTs y checklists conservado.
             </p>
           </CardHeader>
           <CardContent className="pt-0">
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-border">
               {unidadesBaja.map((u) => (
                 <li key={u.dominio} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                  <span className="font-medium text-slate-600">{u.dominio}</span>
-                  <span className="text-slate-400">{u.descripcion ?? "—"}</span>
+                  <span className="font-medium text-foreground">{u.dominio}</span>
+                  <span className="text-muted-foreground">{u.descripcion ?? "—"}</span>
                   <button
                     type="button"
-                    className="ml-auto text-xs text-blue-600 hover:underline"
+                    className="ml-auto text-xs text-primary hover:underline"
                     onClick={() => onNavigate("historial", u.dominio)}
                   >
                     Ver sus OTs

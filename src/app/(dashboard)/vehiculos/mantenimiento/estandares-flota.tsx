@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   setEstandarEstado,
   type EstandarCumplimiento,
@@ -28,9 +29,15 @@ const CICLO: Record<EstandarEstado, EstandarEstado> = {
 }
 
 const CELDA: Record<EstandarEstado, { label: string; cls: string }> = {
-  ok: { label: "✓", cls: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
-  no_ok: { label: "✗", cls: "bg-red-100 font-bold text-red-700 hover:bg-red-200" },
-  na: { label: "—", cls: "bg-slate-50 text-slate-300 hover:bg-slate-100" },
+  ok: {
+    label: "✓",
+    cls: "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400",
+  },
+  no_ok: {
+    label: "✗",
+    cls: "bg-destructive/10 font-bold text-destructive hover:bg-destructive/20",
+  },
+  na: { label: "—", cls: "bg-muted text-muted-foreground/40 hover:bg-muted/70" },
 }
 
 interface Props {
@@ -79,7 +86,7 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
     const itemsAmbito = items.filter((i) => i.ambito === ambito)
     const cols = unidades.filter((u) => u.tipo === ambito)
     if (cols.length === 0 || itemsAmbito.length === 0) {
-      return <p className="py-6 text-center text-sm text-slate-400">Sin datos.</p>
+      return <p className="py-6 text-center text-sm text-muted-foreground">Sin datos.</p>
     }
 
     // % por unidad (ok ÷ evaluables), con overrides aplicados.
@@ -99,26 +106,29 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 min-w-64 border-b bg-white p-2 text-left font-medium text-slate-500">
+              <th className="sticky left-0 z-10 min-w-64 border-b border-border bg-card p-2 text-left font-medium text-muted-foreground">
                 Ítem del estándar
               </th>
               {cols.map((u) => {
                 const p = pctUnidad(u.dominio)
                 return (
-                  <th key={u.dominio} className="border-b p-2 text-center align-bottom">
-                    <span className="block text-xs font-semibold text-slate-700">
+                  <th
+                    key={u.dominio}
+                    className="border-b border-border p-2 text-center align-bottom"
+                  >
+                    <span className="block text-xs font-semibold text-foreground">
                       {u.dominio}
                     </span>
                     <span
                       className={cn(
                         "block text-[11px] font-medium tabular-nums",
                         p == null
-                          ? "text-slate-300"
+                          ? "text-muted-foreground/50"
                           : p >= 100
-                            ? "text-emerald-600"
+                            ? "text-emerald-600 dark:text-emerald-400"
                             : p >= 90
-                              ? "text-amber-600"
-                              : "text-red-600"
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-destructive"
                       )}
                     >
                       {p == null ? "—" : `${p.toFixed(0)}%`}
@@ -138,9 +148,9 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
                 .filter(Boolean)
                 .join("\n")
               return (
-                <tr key={it.id} className="border-b last:border-0">
+                <tr key={it.id} className="border-b border-border last:border-0">
                   <td
-                    className="sticky left-0 z-10 bg-white p-2 text-slate-700"
+                    className="sticky left-0 z-10 bg-card p-2 text-foreground"
                     title={justificacion || undefined}
                   >
                     {it.nombre}
@@ -176,24 +186,27 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
 
   return (
     <div className="space-y-4">
+      <DpoSeccionCinta seccionId="estandares" />
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="size-4 text-slate-500" /> Estándares de flota
+            <ShieldCheck className="size-4 text-muted-foreground" aria-hidden /> Estándares de
+            flota
           </CardTitle>
           <Badge
             className={cn(
               "text-sm",
               pct != null && pct >= 100
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-amber-200 bg-amber-50 text-amber-700"
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
             )}
           >
             Conformidad: {pct != null ? `${pct.toFixed(1)}%` : "—"}
           </Badge>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Matriz de cumplimiento del estándar (GTS) por unidad, sobre la flota activa
             del catálogo.{" "}
             {puedeEditar && (

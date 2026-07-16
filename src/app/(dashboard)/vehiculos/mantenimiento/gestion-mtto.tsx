@@ -42,6 +42,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
+import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
 import {
   createConteo,
   createNovedad,
@@ -79,20 +80,29 @@ function parseNum(s: string): number | null {
   return isNaN(n) ? null : n
 }
 
+// Escala única de badges del módulo: mismos tres tonos (crítico / alerta / ok)
+// que el semáforo de <KpiCard>, en tokens que respetan el tema.
+const BADGE_CRITICO = "border-destructive/30 bg-destructive/10 text-destructive"
+const BADGE_ALERTA =
+  "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+const BADGE_OK =
+  "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+const BADGE_NEUTRO = "border-border bg-muted text-muted-foreground"
+
 const PRIORIDAD_BADGE: Record<string, string> = {
-  alta: "bg-red-100 text-red-700",
-  media: "bg-amber-100 text-amber-700",
-  baja: "bg-slate-100 text-slate-600",
+  alta: BADGE_CRITICO,
+  media: BADGE_ALERTA,
+  baja: BADGE_NEUTRO,
 }
 const ESTADO_NOV_BADGE: Record<string, string> = {
-  abierta: "bg-red-100 text-red-700",
-  en_proceso: "bg-amber-100 text-amber-700",
-  resuelta: "bg-emerald-100 text-emerald-700",
+  abierta: BADGE_CRITICO,
+  en_proceso: BADGE_ALERTA,
+  resuelta: BADGE_OK,
 }
 const ESTADO_OC_BADGE: Record<string, string> = {
-  pendiente: "bg-amber-100 text-amber-700",
-  comprada: "bg-emerald-100 text-emerald-700",
-  anulada: "bg-slate-100 text-slate-500",
+  pendiente: BADGE_ALERTA,
+  comprada: BADGE_OK,
+  anulada: BADGE_NEUTRO,
 }
 
 const MATERIAL_LABEL: Record<string, string> = {
@@ -154,6 +164,8 @@ export function GestionMtto({
 
   return (
     <div className="space-y-4">
+      <DpoSeccionCinta seccionId="repuestos" />
+
       <Tabs defaultValue="repuestos">
         <TabsList>
           <TabsTrigger value="repuestos">Inventario</TabsTrigger>
@@ -164,11 +176,19 @@ export function GestionMtto({
 
         {/* ===== Residuos de mantenimiento (DPO 1.4) ===== */}
         <TabsContent value="residuos" className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">
-              Registro de disposición de residuos de mantenimiento (neumáticos, aceites,
-              filtros…) con proveedor y certificado de descarte.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Disposición de residuos
+                </h3>
+                <DpoPuntoBadge numero="1.4" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Registro de disposición de residuos de mantenimiento (neumáticos, aceites,
+                filtros…) con proveedor y certificado de descarte.
+              </p>
+            </div>
             {puedeEditar && (
               <Button size="sm" onClick={() => setDialog("residuo")}>
                 <Plus className="mr-1 size-4" /> Registrar disposición
@@ -178,7 +198,7 @@ export function GestionMtto({
           <Card>
             <CardContent className="overflow-x-auto pt-6">
               {residuos.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   Sin disposiciones registradas.
                 </p>
               ) : (
@@ -200,21 +220,23 @@ export function GestionMtto({
                       <TableRow key={r.id}>
                         <TableCell className="whitespace-nowrap">{fmtFecha(r.fecha)}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="bg-slate-100 text-slate-700">
+                          <Badge variant="outline" className={BADGE_NEUTRO}>
                             {MATERIAL_LABEL[r.material] ?? r.material}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-56 text-slate-600">
+                        <TableCell className="max-w-56 text-foreground">
                           {r.descripcion ?? "—"}
                           {r.observaciones && (
-                            <span className="block text-xs text-slate-400">{r.observaciones}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {r.observaciones}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right tabular-nums">
                           {r.cantidad != null ? `${fmtNum(r.cantidad)} ${r.unidad ?? ""}` : "—"}
                         </TableCell>
-                        <TableCell className="text-slate-600">{r.proveedor}</TableCell>
-                        <TableCell className="max-w-40 text-xs text-slate-500">
+                        <TableCell className="text-foreground">{r.proveedor}</TableCell>
+                        <TableCell className="max-w-40 text-xs text-muted-foreground">
                           {r.numeros_fuego ?? "—"}
                         </TableCell>
                         <TableCell>
@@ -223,12 +245,14 @@ export function GestionMtto({
                               href={r.certificado_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
                             >
                               <FileText className="size-3.5" /> Ver
                             </a>
                           ) : (
-                            <span className="text-xs italic text-amber-600">falta</span>
+                            <span className="text-xs italic text-amber-600 dark:text-amber-400">
+                              falta
+                            </span>
                           )}
                         </TableCell>
                         {puedeEditar && (
@@ -236,7 +260,7 @@ export function GestionMtto({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-7 text-red-500"
+                              className="size-7 text-destructive"
                               onClick={async () => {
                                 const res = await deleteResiduo(r.id)
                                 if ("error" in res) toast.error(res.error)
@@ -259,19 +283,33 @@ export function GestionMtto({
           </Card>
         </TabsContent>
 
-        {/* ===== Novedades ===== */}
+        {/* ===== Novedades (DPO 2.3) ===== */}
         <TabsContent value="novedades" className="space-y-3">
-          {puedeEditar && (
-            <div className="flex justify-end">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Novedades de repuestos
+                </h3>
+                <DpoPuntoBadge numero="2.3" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Faltantes y pedidos de piezas detectados sobre las unidades, con prioridad
+                y estado de resolución.
+              </p>
+            </div>
+            {puedeEditar && (
               <Button size="sm" onClick={() => setDialog("novedad")}>
                 <Plus className="mr-1 size-4" /> Nueva novedad
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           <Card>
             <CardContent className="overflow-x-auto pt-6">
               {novedades.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">Sin novedades cargadas.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Sin novedades cargadas.
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -289,7 +327,7 @@ export function GestionMtto({
                       <TableRow key={n.id}>
                         <TableCell className="whitespace-nowrap">{fmtFecha(n.fecha)}</TableCell>
                         <TableCell className="font-medium">{n.dominio}</TableCell>
-                        <TableCell className="max-w-72 text-slate-600">{n.descripcion}</TableCell>
+                        <TableCell className="max-w-72 text-foreground">{n.descripcion}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={PRIORIDAD_BADGE[n.prioridad]}>
                             {n.prioridad}
@@ -324,7 +362,7 @@ export function GestionMtto({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-7 text-red-500"
+                                className="size-7 text-destructive"
                                 onClick={() => borrar("novedades", n.id)}
                               >
                                 <Trash2 className="size-3.5" />
@@ -341,28 +379,42 @@ export function GestionMtto({
           </Card>
         </TabsContent>
 
-        {/* ===== Repuestos ===== */}
+        {/* ===== Repuestos / Inventario (DPO 2.3) ===== */}
         <TabsContent value="repuestos" className="space-y-3">
-          {puedeEditar && (
-            <div className="flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
-                <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setRepuestoEdit(null)
-                  setDialog("repuesto")
-                }}
-              >
-                <Plus className="mr-1 size-4" /> Nuevo repuesto
-              </Button>
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Inventario de piezas
+                </h3>
+                <DpoPuntoBadge numero="2.3" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Stock mínimo, objetivo y máximo por pieza, con movimientos y conteos
+                físicos que respaldan la exactitud del inventario.
+              </p>
             </div>
-          )}
+            {puedeEditar && (
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" onClick={() => setDialog("conteo")}>
+                  <ClipboardCheck className="mr-1 size-4" /> Conteo de stock
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setRepuestoEdit(null)
+                    setDialog("repuesto")
+                  }}
+                >
+                  <Plus className="mr-1 size-4" /> Nuevo repuesto
+                </Button>
+              </div>
+            )}
+          </div>
           <Card>
             <CardContent className="overflow-x-auto pt-6">
               {repuestos.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   Sin repuestos cargados.
                 </p>
               ) : (
@@ -383,7 +435,7 @@ export function GestionMtto({
                       const bajo = r.stock_actual <= r.stock_min
                       return (
                         <TableRow key={r.id}>
-                          <TableCell className="text-slate-500">{r.codigo || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{r.codigo || "—"}</TableCell>
                           <TableCell className="font-medium">
                             <button
                               className="text-left hover:underline"
@@ -396,31 +448,33 @@ export function GestionMtto({
                               {r.nombre}
                             </button>
                             {r.unidad && (
-                              <span className="ml-1 text-xs text-slate-400">({r.unidad})</span>
+                              <span className="ml-1 text-xs text-muted-foreground">
+                                ({r.unidad})
+                              </span>
                             )}
                           </TableCell>
                           <TableCell
                             className={cn(
                               "text-right font-medium tabular-nums",
-                              bajo ? "text-red-600" : "text-slate-700"
+                              bajo ? "text-destructive" : "text-foreground"
                             )}
                           >
                             {fmtNum(r.stock_actual)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-slate-500">
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
                             {fmtNum(r.stock_min)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-slate-500">
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
                             {fmtNum(r.stock_max)}
                           </TableCell>
-                          <TableCell className="text-slate-600">{r.ubicacion || "—"}</TableCell>
+                          <TableCell className="text-foreground">{r.ubicacion || "—"}</TableCell>
                           {puedeEditar && (
                             <TableCell>
                               <div className="flex items-center gap-1">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 text-emerald-600"
+                                  className="size-7 text-emerald-600 dark:text-emerald-400"
                                   title="Registrar ingreso"
                                   onClick={() =>
                                     setMovimiento({ repuesto: r, tipo: "ingreso" })
@@ -431,7 +485,7 @@ export function GestionMtto({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 text-amber-600"
+                                  className="size-7 text-amber-600 dark:text-amber-400"
                                   title="Registrar egreso"
                                   onClick={() =>
                                     setMovimiento({ repuesto: r, tipo: "egreso" })
@@ -442,7 +496,7 @@ export function GestionMtto({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 text-slate-500"
+                                  className="size-7 text-muted-foreground"
                                   title="Ver movimientos"
                                   onClick={() => setHistorialRep(r)}
                                 >
@@ -451,7 +505,7 @@ export function GestionMtto({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 text-red-500"
+                                  className="size-7 text-destructive"
                                   title="Eliminar repuesto"
                                   onClick={() => borrar("repuestos", r.id)}
                                 >
@@ -473,9 +527,12 @@ export function GestionMtto({
           {conteos.length > 0 && (
             <Card>
               <CardContent className="overflow-x-auto pt-6">
-                <p className="mb-2 text-sm font-medium text-slate-700">
-                  Conteos de stock realizados
-                </p>
+                <div className="mb-2 flex items-center gap-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Conteos de stock realizados
+                  </p>
+                  <DpoPuntoBadge numero="2.3" />
+                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -492,16 +549,18 @@ export function GestionMtto({
                     {conteos.map((c) => (
                       <TableRow
                         key={c.id}
-                        className="cursor-pointer hover:bg-slate-50"
+                        className="cursor-pointer hover:bg-muted/50"
                         onClick={() => setConteoVer(c)}
                       >
                         <TableCell className="whitespace-nowrap">{fmtFecha(c.fecha)}</TableCell>
-                        <TableCell className="text-slate-600">{c.realizado_por}</TableCell>
+                        <TableCell className="text-foreground">{c.realizado_por}</TableCell>
                         <TableCell className="text-right tabular-nums">{c.items_total}</TableCell>
                         <TableCell
                           className={cn(
                             "text-right tabular-nums",
-                            c.items_con_diferencia > 0 ? "text-red-600" : "text-slate-500"
+                            c.items_con_diferencia > 0
+                              ? "text-destructive"
+                              : "text-muted-foreground"
                           )}
                         >
                           {c.items_con_diferencia}
@@ -511,11 +570,11 @@ export function GestionMtto({
                         </TableCell>
                         <TableCell>
                           {c.ajustado ? (
-                            <Badge variant="outline" className="bg-emerald-100 text-emerald-700">
+                            <Badge variant="outline" className={BADGE_OK}>
                               stock ajustado
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="bg-slate-100 text-slate-500">
+                            <Badge variant="outline" className={BADGE_NEUTRO}>
                               sin ajuste
                             </Badge>
                           )}
@@ -525,7 +584,7 @@ export function GestionMtto({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-7 text-red-500"
+                              className="size-7 text-destructive"
                               onClick={async () => {
                                 const res = await deleteConteo(c.id)
                                 if ("error" in res) toast.error(res.error)
@@ -550,17 +609,23 @@ export function GestionMtto({
 
         {/* ===== Órdenes de compra ===== */}
         <TabsContent value="oc" className="space-y-3">
-          {puedeEditar && (
-            <div className="flex justify-end">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-foreground">Órdenes de compra</h3>
+              <p className="text-sm text-muted-foreground">
+                Compras de repuestos y servicios de flota, con proveedor, monto y estado.
+              </p>
+            </div>
+            {puedeEditar && (
               <Button size="sm" onClick={() => setDialog("oc")}>
                 <Plus className="mr-1 size-4" /> Nueva OC
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           <Card>
             <CardContent className="overflow-x-auto pt-6">
               {ordenesCompra.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   Sin órdenes de compra cargadas.
                 </p>
               ) : (
@@ -582,7 +647,7 @@ export function GestionMtto({
                         <TableCell className="whitespace-nowrap">{fmtFecha(o.fecha)}</TableCell>
                         <TableCell>{o.numero || "—"}</TableCell>
                         <TableCell className="font-medium">{o.proveedor || "—"}</TableCell>
-                        <TableCell className="max-w-60 text-slate-600">
+                        <TableCell className="max-w-60 text-foreground">
                           {o.descripcion || "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -617,7 +682,7 @@ export function GestionMtto({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-7 text-red-500"
+                                className="size-7 text-destructive"
                                 onClick={() => borrar("ordenes_compra", o.id)}
                               >
                                 <Trash2 className="size-3.5" />
@@ -791,7 +856,9 @@ function ConteoDialog({
                     <TableCell>
                       {r.nombre}
                       {r.unidad && (
-                        <span className="ml-1 text-xs text-slate-400">({r.unidad})</span>
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          ({r.unidad})
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -811,10 +878,10 @@ function ConteoDialog({
                       className={cn(
                         "text-right tabular-nums",
                         dif == null
-                          ? "text-slate-300"
+                          ? "text-muted-foreground/50"
                           : dif === 0
-                            ? "text-emerald-600"
-                            : "font-medium text-red-600"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "font-medium text-destructive"
                       )}
                     >
                       {dif == null ? "—" : dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
@@ -833,7 +900,7 @@ function ConteoDialog({
             placeholder="Opcional"
           />
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
           <input
             type="checkbox"
             checked={ajustar}
@@ -881,13 +948,13 @@ function ConteoDetalleDialog({
           </DialogTitle>
         </DialogHeader>
         {conteo.observaciones && (
-          <p className="text-sm text-slate-500">{conteo.observaciones}</p>
+          <p className="text-sm text-muted-foreground">{conteo.observaciones}</p>
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error ? (
-            <p className="py-4 text-sm text-red-500">{error}</p>
+            <p className="py-4 text-sm text-destructive">{error}</p>
           ) : detalle == null ? (
-            <p className="py-4 text-center text-sm text-slate-400">Cargando…</p>
+            <p className="py-4 text-center text-sm text-muted-foreground">Cargando…</p>
           ) : (
             <Table>
               <TableHeader>
@@ -913,7 +980,9 @@ function ConteoDetalleDialog({
                       <TableCell
                         className={cn(
                           "text-right tabular-nums",
-                          dif === 0 ? "text-emerald-600" : "font-medium text-red-600"
+                          dif === 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "font-medium text-destructive"
                         )}
                       >
                         {dif > 0 ? `+${fmtNum(dif)}` : fmtNum(dif)}
@@ -973,9 +1042,12 @@ function MovimientoDialog({
             Movimiento de stock · {repuesto.nombre}
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-slate-500">
-          Stock actual: <span className="font-medium tabular-nums">{fmtNum(repuesto.stock_actual)}</span>
-          {repuesto.unidad && <span className="text-slate-400"> {repuesto.unidad}</span>}
+        <p className="text-sm text-muted-foreground">
+          Stock actual:{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {fmtNum(repuesto.stock_actual)}
+          </span>
+          {repuesto.unidad && <span> {repuesto.unidad}</span>}
         </p>
         <div className="space-y-3">
           <div>
@@ -1057,11 +1129,11 @@ function HistorialMovimientosDialog({
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error ? (
-            <p className="py-4 text-sm text-red-500">{error}</p>
+            <p className="py-4 text-sm text-destructive">{error}</p>
           ) : movimientos == null ? (
-            <p className="py-4 text-center text-sm text-slate-400">Cargando…</p>
+            <p className="py-4 text-center text-sm text-muted-foreground">Cargando…</p>
           ) : movimientos.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">Sin movimientos</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Sin movimientos</p>
           ) : (
             <Table>
               <TableHeader>
@@ -1081,11 +1153,7 @@ function HistorialMovimientosDialog({
                     <TableCell>
                       <Badge
                         variant="outline"
-                        className={
-                          m.tipo === "ingreso"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-red-100 text-red-700"
-                        }
+                        className={m.tipo === "ingreso" ? BADGE_OK : BADGE_CRITICO}
                       >
                         {m.tipo === "ingreso" ? "Ingreso" : "Egreso"}
                       </Badge>
@@ -1093,19 +1161,21 @@ function HistorialMovimientosDialog({
                     <TableCell
                       className={cn(
                         "text-right font-medium tabular-nums",
-                        m.tipo === "ingreso" ? "text-emerald-600" : "text-red-600"
+                        m.tipo === "ingreso"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-destructive"
                       )}
                     >
                       {m.tipo === "ingreso" ? "+" : "−"}
                       {fmtNum(m.cantidad)}
                     </TableCell>
-                    <TableCell className="max-w-56 text-slate-600">
+                    <TableCell className="max-w-56 text-muted-foreground">
                       {m.motivo ?? "—"}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-slate-700">
+                    <TableCell className="text-right tabular-nums text-foreground">
                       {fmtNum(m.stock_resultante)}
                     </TableCell>
-                    <TableCell className="text-slate-500">{m.autor ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{m.autor ?? "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
