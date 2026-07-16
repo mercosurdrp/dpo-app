@@ -13,12 +13,17 @@
  *   codigoCliente = "200" + idCliente Chess (strip de prefijo string, ver normalizarCodigoCliente)
  *   codigoItem    = idArticulo Chess (cruzar con chess_articulos para HL)
  *
- * ⚠️ La API NO filtra por fecha ni por tipo (probado: orderby/sort/fechaDesde/from/filter
- *    son ignorados). Los registros vienen ordenados ASCENDENTE por id/fechaEntrega, así que
- *    lo reciente está en las últimas páginas. Histórico ≈ 31k registros / 155 páginas / 260s.
- *    Por eso el sync diario NO recorre todo: localiza la última página por búsqueda binaria
- *    (`buscarIndiceUltimaPagina`) y lee solo las últimas N (`fetchVentasRecientes`). El recorrido
- *    completo (`fetchVentasPorRango`) queda para el backfill histórico inicial.
+ * ⚠️ La API no ordena ni filtra por tipo (orderby/sort/filter son ignorados). Los registros
+ *    vienen ordenados ASCENDENTE por id, así que lo reciente está en las últimas páginas.
+ *    Histórico ≈ 31k registros / 155 páginas / 260s. Por eso el sync diario NO recorre todo:
+ *    localiza la última página por búsqueda binaria (`buscarIndiceUltimaPagina`) y lee solo las
+ *    últimas N (`fetchVentasRecientes`). El recorrido completo (`fetchVentasPorRango`) queda
+ *    para el backfill histórico inicial.
+ *
+ * ⚠️ `fechaDesde` SÍ se aplica (2026-07-16), al revés de lo que decía este encabezado: filtra
+ *    por **fechaPedido**, no por fechaEntrega. Sirve para acotar sin recorrer el histórico,
+ *    pero hay que retroceder lo suficiente como para no perder pedidos cargados con
+ *    anticipación — ver `fetchVentasPorFechaEntrega`.
  */
 
 export interface GescomCredentials {
@@ -105,15 +110,74 @@ export async function gescomLogin(creds: GescomCredentials): Promise<string> {
   return data.access_token
 }
 
-/** Una página de ventas (pagestoskip = número de página). */
+/** Una página de ventas (pagestoskip = número de página). `fechaDesde` opcional (ver abajo). */
 async function fetchVentasPagina(
-  creds: GescomCredentials, token: string, page: number,
+  creds: GescomCredentials, token: string, page: number, fechaDesde?: string,
 ): Promise<GescomVenta[]> {
-  const url = `${creds.baseUrl}?pagesize=${PAGE_SIZE}&pagestoskip=${page}&pagestotake=1`
+  const filtro = fechaDesde ? `&fechaDesde=${fechaDesde}` : ""
+  const url = `${creds.baseUrl}?pagesize=${PAGE_SIZE}&pagestoskip=${page}&pagestotake=1${filtro}`
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!r.ok) throw new Error(`GESCOM GET ventas page=${page}: ${r.status}`)
   const data = await r.json()
   return Array.isArray(data) ? (data.filter((v) => v && typeof v === "object") as GescomVenta[]) : []
+}
+
+/** Resta días a un YYYY-MM-DD. */
+function restarDias(fecha: string, dias: number): string {
+  const [y, m, d] = fecha.split("-").map((s) => parseInt(s, 10))
+  return new Date(Date.UTC(y, m - 1, d - dias)).toISOString().slice(0, 10)
+}
+
+/**
+ * Días de anticipación con que se carga un pedido antes de su entrega. Medido sobre 1.769
+ * ventas VEN de la empresa 98 (abr–jul 2026): la moda son 2 días, el p99 son 7 y el máximo
+ * observado 15. 21 deja margen de sobra sin arrastrar meses de ventas.
+ */
+const DIAS_ANTICIPACION = 21
+
+/** Cuántas páginas se piden a la vez. La API responde ~1s por página. */
+const TANDA = 4
+
+/**
+ * Ventas con `fechaEntrega` en [desde, hasta], acotando por el filtro `fechaDesde` de la API.
+ *
+ * 🚨 `fechaDesde` SÍ filtra (el encabezado de este módulo lo daba por ignorado; hoy lo
+ * aplica), pero **filtra por `fechaPedido`, NO por `fechaEntrega`** — verificado contra prod
+ * 2026-07-16: el `min(fechaPedido)` de la respuesta coincide exactamente con el parámetro, y
+ * `fechaDesde=2026-07-16` devuelve entregas del 15 al 18. Pedir el día anterior a la entrega
+ * trae 3 de los 13 pedidos del día y PIERDE los otros 10 EN SILENCIO. Por eso se retrocede
+ * `DIAS_ANTICIPACION` desde `desde` y el rango de entrega se filtra acá.
+ *
+ * Si la API dejara de aplicar el filtro, la respuesta traería `fechaPedido` anteriores al
+ * corte: se detecta y se cae a `fetchVentasRecientes` (más lento, pero correcto) en vez de
+ * devolver de menos.
+ */
+export async function fetchVentasPorFechaEntrega(
+  creds: GescomCredentials, token: string, desde: string, hasta: string,
+): Promise<GescomVenta[]> {
+  const corte = restarDias(desde, DIAS_ANTICIPACION)
+  const primera = await fetchVentasPagina(creds, token, 0, corte)
+  const pedidas = primera.map((v) => (v.fechaPedido ?? "").slice(0, 10)).filter(Boolean)
+  if (pedidas.some((f) => f < corte)) {
+    return await fetchVentasRecientes(creds, token, desde, hasta)
+  }
+
+  const enRango = (v: GescomVenta) => {
+    const f = (v.fechaEntrega ?? "").slice(0, 10)
+    return f >= desde && f <= hasta
+  }
+  const out: GescomVenta[] = primera.filter(enRango)
+  if (primera.length < PAGE_SIZE) return out
+
+  // El resto de las páginas de a tandas: son ~6 y en serie costarían ~6s.
+  for (let page = 1; page < MAX_PAGES; page += TANDA) {
+    const tanda = await Promise.all(
+      Array.from({ length: TANDA }, (_, i) => fetchVentasPagina(creds, token, page + i, corte)),
+    )
+    for (const chunk of tanda) out.push(...chunk.filter(enRango))
+    if (tanda.some((c) => c.length < PAGE_SIZE)) break
+  }
+  return out
 }
 
 /** True si la página `page` tiene al menos un registro. */

@@ -94,11 +94,13 @@ export interface EntradaPriorizacion {
   id_cliente: number
   nombre: string | null
   localidad: string | null
-  /** Bultos pedidos: es lo que OCUPA CUPO. */
+  /** Bultos pedidos: es lo que OCUPA CUPO. Chess + Gestión, porque van en el mismo camión. */
   bultos: number
   /** Volumen en HL del pedido. Alimenta el VRL (Volumen Reprogramado Logístico). */
   hl: number
   monto: number
+  /** De los `bultos`, cuántos vienen de GESTIÓN (GESCOM). 0 = pedido 100% Chess. */
+  bultos_gestion: number
   /** Clase del cliente. null = sin historia de ventas. */
   cluster: ClusterId | null
   /** Entregas REALES del cliente en la ventana (días con compra). Es el DENOMINADOR. */
