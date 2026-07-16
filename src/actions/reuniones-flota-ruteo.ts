@@ -41,6 +41,7 @@ export interface DiaRuteoReunion {
   vrlPedidos: number
   /** null = no se pudo consultar el dashboard Mercosur (≠ 0 reprogramado). */
   vrcHl: number | null
+  vrcBultos: number | null
 }
 
 export interface FlotaRuteoReunion {
@@ -49,8 +50,10 @@ export interface FlotaRuteoReunion {
     hasta: string
     dias: DiaRuteoReunion[]
     totalVrlHl: number
+    totalVrlBultos: number
     /** null si el VRC no se pudo leer: no se totaliza lo que no se conoce. */
     totalVrcHl: number | null
+    totalVrcBultos: number | null
     /** Mensaje a mostrar cuando el VRC no está disponible. */
     vrcError: string | null
   }
@@ -156,20 +159,29 @@ export async function getFlotaRuteoReunion(
   // Vive en la Railway del dashboard Mercosur. Si no responde se informa como
   // error visible: en un cuadro de 7 días, un cero silencioso se leería como
   // "no hubo reprogramado por crédito" y es una conclusión falsa.
-  const vrcPorDia = new Map<string, number>()
+  const vrcPorDia = new Map<string, { hl: number; bultos: number }>()
   let vrcError: string | null = null
   try {
     const pool = getPool()
-    const { rows } = await pool.query<{ fecha: string; hl: string | null }>(
+    const { rows } = await pool.query<{
+      fecha: string
+      hl: string | null
+      bultos: string | null
+    }>(
       `select to_char(fecha_entrega_original, 'YYYY-MM-DD') as fecha,
-              sum(hl) as hl
+              sum(hl) as hl, sum(bultos) as bultos
          from vol_reprog_com_pedido
         where lower(region) = 'pampeana'
           and fecha_entrega_original between $1 and $2
         group by 1`,
       [desde, hasta]
     )
-    for (const r of rows) vrcPorDia.set(r.fecha, Number(r.hl ?? 0))
+    for (const r of rows) {
+      vrcPorDia.set(r.fecha, {
+        hl: Number(r.hl ?? 0),
+        bultos: Number(r.bultos ?? 0),
+      })
+    }
   } catch (e) {
     vrcError =
       e instanceof Error
@@ -181,12 +193,14 @@ export async function getFlotaRuteoReunion(
   for (let i = VENTANA_DIAS; i >= 1; i--) {
     const fecha = diaAnterior(fechaReunion, i)
     const vrl = vrlPorDia.get(fecha)
+    const vrc = vrcPorDia.get(fecha)
     dias.push({
       fecha,
       vrlHl: vrl?.hl ?? 0,
       vrlBultos: vrl?.bultos ?? 0,
       vrlPedidos: vrl?.pedidos ?? 0,
-      vrcHl: vrcError ? null : (vrcPorDia.get(fecha) ?? 0),
+      vrcHl: vrcError ? null : (vrc?.hl ?? 0),
+      vrcBultos: vrcError ? null : (vrc?.bultos ?? 0),
     })
   }
 
@@ -286,7 +300,9 @@ export async function getFlotaRuteoReunion(
         hasta,
         dias,
         totalVrlHl: sumar(dias.map((d) => d.vrlHl)),
+        totalVrlBultos: sumar(dias.map((d) => d.vrlBultos)),
         totalVrcHl: vrcError ? null : sumar(dias.map((d) => d.vrcHl)),
+        totalVrcBultos: vrcError ? null : sumar(dias.map((d) => d.vrcBultos)),
         vrcError,
       },
       flota: {

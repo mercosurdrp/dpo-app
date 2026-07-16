@@ -57,6 +57,22 @@ function hl(v: number | null): string {
   })
 }
 
+/** HL con los bultos entre paréntesis: la unidad del indicador es el HL, el
+ *  bulto es la referencia física con la que se carga el camión. */
+function hlConBultos(hlValor: number | null, bultos: number | null) {
+  if (hlValor == null) return <span className="text-slate-400">—</span>
+  return (
+    <>
+      {hl(hlValor)}
+      {bultos != null && (
+        <span className="ml-1 text-xs font-normal text-slate-500">
+          ({bultos.toLocaleString("es-AR", { maximumFractionDigits: 0 })})
+        </span>
+      )}
+    </>
+  )
+}
+
 /** Verde si cumple el target, rojo si no. Gris cuando no hay dato ni target. */
 function colorTarget(
   valor: number | null,
@@ -179,7 +195,8 @@ export function SeccionFlotaRuteo({
                 Volumen reprogramado — últimos 7 días
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Del {formatFecha(data.ruteo.desde)} al {formatFecha(data.ruteo.hasta)}, en HL.
+                Del {formatFecha(data.ruteo.desde)} al {formatFecha(data.ruteo.hasta)}, en{" "}
+                <strong>HL</strong> y entre paréntesis los <strong>bultos</strong>.
                 VRL = reprogramado por capacidad de reparto · VRC = por crédito.
               </p>
 
@@ -198,10 +215,10 @@ export function SeccionFlotaRuteo({
                   <thead>
                     <tr className="border-b border-slate-200 text-xs text-slate-500">
                       <th className="py-1.5 text-left font-medium">Día</th>
-                      <th className="py-1.5 text-right font-medium">VRL (HL)</th>
+                      <th className="py-1.5 text-right font-medium">VRL</th>
                       <th className="py-1.5 text-right font-medium">Pedidos</th>
-                      <th className="py-1.5 text-right font-medium">VRC (HL)</th>
-                      <th className="py-1.5 text-right font-medium">Total (HL)</th>
+                      <th className="py-1.5 text-right font-medium">VRC</th>
+                      <th className="py-1.5 text-right font-medium">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -211,16 +228,21 @@ export function SeccionFlotaRuteo({
                           {diaSemana(d.fecha)} {formatFecha(d.fecha)}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">
-                          {hl(d.vrlHl)}
+                          {hlConBultos(d.vrlHl, d.vrlBultos)}
                         </td>
                         <td className="py-1.5 text-right tabular-nums text-slate-500">
                           {d.vrlPedidos}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">
-                          {hl(d.vrcHl)}
+                          {hlConBultos(d.vrcHl, d.vrcBultos)}
                         </td>
                         <td className="py-1.5 text-right font-medium tabular-nums">
-                          {d.vrcHl == null ? hl(d.vrlHl) : hl(d.vrlHl + d.vrcHl)}
+                          {hlConBultos(
+                            d.vrcHl == null ? d.vrlHl : d.vrlHl + d.vrcHl,
+                            d.vrcBultos == null
+                              ? d.vrlBultos
+                              : d.vrlBultos + d.vrcBultos,
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -229,16 +251,21 @@ export function SeccionFlotaRuteo({
                     <tr className="font-semibold">
                       <td className="py-2 text-slate-900">Total semana</td>
                       <td className="py-2 text-right tabular-nums">
-                        {hl(data.ruteo.totalVrlHl)}
+                        {hlConBultos(data.ruteo.totalVrlHl, data.ruteo.totalVrlBultos)}
                       </td>
                       <td />
                       <td className="py-2 text-right tabular-nums">
-                        {hl(data.ruteo.totalVrcHl)}
+                        {hlConBultos(data.ruteo.totalVrcHl, data.ruteo.totalVrcBultos)}
                       </td>
                       <td className="py-2 text-right tabular-nums">
-                        {data.ruteo.totalVrcHl == null
-                          ? hl(data.ruteo.totalVrlHl)
-                          : hl(data.ruteo.totalVrlHl + data.ruteo.totalVrcHl)}
+                        {hlConBultos(
+                          data.ruteo.totalVrcHl == null
+                            ? data.ruteo.totalVrlHl
+                            : data.ruteo.totalVrlHl + data.ruteo.totalVrcHl,
+                          data.ruteo.totalVrcBultos == null
+                            ? data.ruteo.totalVrlBultos
+                            : data.ruteo.totalVrlBultos + data.ruteo.totalVrcBultos,
+                        )}
                       </td>
                     </tr>
                   </tfoot>
@@ -261,8 +288,9 @@ export function SeccionFlotaRuteo({
                 Flota — {nombreMes(data.flota.mes)}
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Acumulado del mes, misma ventana y mismos objetivos que el tablero
-                de Indicadores de Flota.
+                Acumulado del mes hasta el {formatFecha(fechaReunion)} (la fecha de
+                esta reunión), con los mismos objetivos que el tablero de
+                Indicadores de Flota.
               </p>
 
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
