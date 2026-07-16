@@ -140,6 +140,46 @@ export async function getEerrAnual(
   }
 }
 
+const SELECT_TAREA_CON_RESPONSABLE =
+  "*, responsable:profiles!presupuestos_tareas_responsable_id_fkey(id, nombre, email)"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapTarea(row: any): PresupuestoTareaConResponsable {
+  const r = row
+  const presup =
+    r.monto_presupuestado !== null && r.monto_presupuestado !== undefined
+      ? Number(r.monto_presupuestado)
+      : null
+  const real =
+    r.monto_real !== null && r.monto_real !== undefined
+      ? Number(r.monto_real)
+      : null
+  return {
+    id: r.id,
+    anio: r.anio,
+    mes: r.mes,
+    rubro: r.rubro,
+    monto_presupuestado: presup,
+    monto_real: real,
+    descripcion: r.descripcion,
+    responsable_id: r.responsable_id,
+    fecha_limite: r.fecha_limite,
+    estado: r.estado as EstadoPresupuestoTarea,
+    evidencia_url: r.evidencia_url,
+    evidencia_nombre: r.evidencia_nombre,
+    evidencia_urls: (r.evidencia_urls as string[] | null) ?? [],
+    evidencia_nombres: (r.evidencia_nombres as string[] | null) ?? [],
+    justificacion: r.justificacion,
+    completada_at: r.completada_at,
+    created_by: r.created_by,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    responsable_nombre: r.responsable?.nombre ?? null,
+    responsable_email: r.responsable?.email ?? null,
+    desvio_pct: calcularDesvio(presup, real),
+  }
+}
+
 export async function listTareas(
   anio: number,
 ): Promise<Result<PresupuestoTareaConResponsable[]>> {
@@ -149,58 +189,68 @@ export async function listTareas(
 
     const { data, error } = await supabase
       .from("presupuestos_tareas")
-      .select(
-        "*, responsable:profiles!presupuestos_tareas_responsable_id_fkey(id, nombre, email)",
-      )
+      .select(SELECT_TAREA_CON_RESPONSABLE)
       .eq("anio", anio)
       .order("mes", { ascending: true })
       .order("created_at", { ascending: true })
 
     if (error) return { error: error.message }
 
-    const enriched: PresupuestoTareaConResponsable[] = (data ?? []).map(
-      (row) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = row as any
-        const presup =
-          r.monto_presupuestado !== null && r.monto_presupuestado !== undefined
-            ? Number(r.monto_presupuestado)
-            : null
-        const real =
-          r.monto_real !== null && r.monto_real !== undefined
-            ? Number(r.monto_real)
-            : null
-        return {
-          id: r.id,
-          anio: r.anio,
-          mes: r.mes,
-          rubro: r.rubro,
-          monto_presupuestado: presup,
-          monto_real: real,
-          descripcion: r.descripcion,
-          responsable_id: r.responsable_id,
-          fecha_limite: r.fecha_limite,
-          estado: r.estado as EstadoPresupuestoTarea,
-          evidencia_url: r.evidencia_url,
-          evidencia_nombre: r.evidencia_nombre,
-          evidencia_urls: (r.evidencia_urls as string[] | null) ?? [],
-          evidencia_nombres: (r.evidencia_nombres as string[] | null) ?? [],
-          justificacion: r.justificacion,
-          completada_at: r.completada_at,
-          created_by: r.created_by,
-          created_at: r.created_at,
-          updated_at: r.updated_at,
-          responsable_nombre: r.responsable?.nombre ?? null,
-          responsable_email: r.responsable?.email ?? null,
-          desvio_pct: calcularDesvio(presup, real),
-        }
-      },
-    )
-
-    return { data: enriched }
+    return { data: (data ?? []).map(mapTarea) }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando tareas",
+    }
+  }
+}
+
+/**
+ * Desvíos CARGADOS dentro de un mes calendario, sin importar qué período
+ * analizan. Es lo que se revisa en la reunión de presupuesto: "qué se cargó
+ * desde la última vez".
+ *
+ * 🚨 Filtra por `created_at` (cuándo se cargó la fila) y NO por la columna
+ * `mes`, que es el período ANALIZADO. Los dos casi nunca coinciden: el cierre de
+ * un mes se carga al mes siguiente. Medido en julio 2026: 8 desvíos cargados, y
+ * todos analizaban mayo o junio — filtrar por `mes` habría mostrado CERO.
+ *
+ * Tampoco filtra por `anio` (que es el del período): un desvío de diciembre
+ * cargado en enero tiene que salir en la reunión de enero.
+ *
+ * @param mes mes calendario "YYYY-MM" en el que se cargaron.
+ */
+export async function listTareasCargadasEnMes(
+  mes: string,
+): Promise<Result<PresupuestoTareaConResponsable[]>> {
+  try {
+    await requireAuth()
+    if (!/^\d{4}-\d{2}$/.test(mes)) return { error: "Mes inválido (YYYY-MM)" }
+    const supabase = await createClient()
+
+    // Bordes en hora argentina (-03:00): con UTC, lo cargado el día 1 antes de
+    // las 3 AM caería en el mes anterior.
+    const [anio, mm] = mes.split("-").map(Number)
+    const desde = `${mes}-01T00:00:00-03:00`
+    const siguiente =
+      mm === 12
+        ? `${anio + 1}-01`
+        : `${anio}-${String(mm + 1).padStart(2, "0")}`
+    const hasta = `${siguiente}-01T00:00:00-03:00`
+
+    const { data, error } = await supabase
+      .from("presupuestos_tareas")
+      .select(SELECT_TAREA_CON_RESPONSABLE)
+      .gte("created_at", desde)
+      .lt("created_at", hasta)
+      .order("created_at", { ascending: false })
+
+    if (error) return { error: error.message }
+
+    return { data: (data ?? []).map(mapTarea) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error cargando los desvíos del mes",
     }
   }
 }

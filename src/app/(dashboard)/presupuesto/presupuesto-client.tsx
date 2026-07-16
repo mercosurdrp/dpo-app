@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DesvioBadge } from "@/components/presupuesto/desvio-badge"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Select,
@@ -131,36 +132,6 @@ function formatMoney(n: number | null): string {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(n)
-}
-
-function DesvioBadge({ pct }: { pct: number | null }) {
-  if (pct === null || pct === undefined || Number.isNaN(pct)) {
-    return <span className="text-muted-foreground">—</span>
-  }
-  const abs = Math.abs(pct)
-  const sign = pct > 0 ? "+" : ""
-  if (abs < 5) {
-    return (
-      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-        {sign}
-        {pct.toFixed(1)}%
-      </Badge>
-    )
-  }
-  if (abs < 15) {
-    return (
-      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
-        {sign}
-        {pct.toFixed(1)}%
-      </Badge>
-    )
-  }
-  return (
-    <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
-      {sign}
-      {pct.toFixed(1)}%
-    </Badge>
-  )
 }
 
 function EstadoBadge({ estado }: { estado: EstadoPresupuestoTarea }) {

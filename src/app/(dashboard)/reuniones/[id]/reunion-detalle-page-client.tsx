@@ -76,6 +76,7 @@ import {
   SeccionFlotaRuteo,
   SECCION_FLOTA_RUTEO,
 } from "@/components/reuniones/seccion-flota-ruteo"
+import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
@@ -1234,13 +1235,21 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones) */}
-      {detalle.tipo !== "logistica-ventas" && (
+      {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones)
+          ni a Presupuesto, que sólo revisa desvíos y compromisos. */}
+      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
         <EtapaSeguridad
           fechaReunion={detalle.fecha}
           currentProfileId={currentProfileId}
           currentRole={currentRole}
         />
+      )}
+
+      {/* Reunión de Presupuesto: los desvíos cargados en el mes. Va arriba del
+          Action Log porque es el temario: se miran los desvíos y de ahí salen
+          los compromisos. */}
+      {detalle.tipo === "presupuesto" && (
+        <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
       )}
 
       {/* ROTURAS EN LA CALLE — reunión Matinal Distribución (Pampeana). Lista las
@@ -1511,8 +1520,10 @@ export function ReunionDetallePageClient({
         </CardContent>
       </Card>
 
-      {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por secciones) */}
-      {detalle.tipo !== "logistica-ventas" && (
+      {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por
+          secciones) ni a Presupuesto: no tiene indicadores configurados (mostraba
+          un tablero vacío) y su temario son los desvíos. */}
+      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
