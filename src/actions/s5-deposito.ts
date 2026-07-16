@@ -27,7 +27,8 @@ const PRODUCTIVIDAD_URL =
 
 // Productividad de maquinistas (Pal/HH) — deposito-esteban. Trae filas por
 // (fecha, operario, actividad); para el ranking solo cuenta la actividad
-// MAQUINISTA (DESPACHO y otras quedan afuera).
+// DESPACHO — la actividad "MAQUINISTA" del WMS es reubicación/acarreos y
+// queda afuera (mismo criterio que la reunión de warehouse).
 const PRODUCTIVIDAD_MAQ_URL =
   "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-maquinistas"
 
@@ -269,7 +270,7 @@ async function fetchProductividadMaquinistas(
     for (const f of json.data?.filas ?? []) {
       const fecha = String(f.fecha ?? "")
       if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
-      if ((f.actividad ?? "").trim().toUpperCase() !== "MAQUINISTA") continue
+      if ((f.actividad ?? "").trim().toUpperCase() !== "DESPACHO") continue
       const op = (f.operario ?? "").trim()
       const ph = f.pal_hh
       if (!op || typeof ph !== "number" || !Number.isFinite(ph)) continue
