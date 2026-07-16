@@ -25,12 +25,19 @@ const ERRORES_SHEET_URL =
 const PRODUCTIVIDAD_URL =
   "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-picking"
 
+// Productividad de maquinistas (Pal/HH) — deposito-esteban. Trae filas por
+// (fecha, operario, actividad); para el ranking solo cuenta la actividad
+// MAQUINISTA (DESPACHO y otras quedan afuera).
+const PRODUCTIVIDAD_MAQ_URL =
+  "https://deposito-esteban.vercel.app/api/shared/load?module=productividad-maquinistas"
+
 const DEFAULT_CONFIG: S5AyudantesConfig = {
   peso_errores: 0.6,
   peso_5s: 0.4,
   peso_productividad: 0,
   tope_errores: 200,
   prod_target: 300,
+  prod_target_maq: 18,
   meses_ventana: 2,
 }
 
@@ -238,13 +245,54 @@ async function fetchProductividadPorOperario(
   return out
 }
 
+// ── Productividad de maquinistas (promedio Pal/HH en la ventana) ──
+async function fetchProductividadMaquinistas(
+  prefijosMes: string[],
+): Promise<Map<string, number>> {
+  const acc = new Map<string, { sum: number; n: number }>()
+  try {
+    const res = await fetch(PRODUCTIVIDAD_MAQ_URL, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(9000),
+    })
+    if (!res.ok) return new Map()
+    const json = (await res.json()) as {
+      data?: {
+        filas?: Array<{
+          fecha?: string
+          operario?: string
+          actividad?: string
+          pal_hh?: number
+        }>
+      }
+    }
+    for (const f of json.data?.filas ?? []) {
+      const fecha = String(f.fecha ?? "")
+      if (!prefijosMes.some((p) => fecha.startsWith(p))) continue
+      if ((f.actividad ?? "").trim().toUpperCase() !== "MAQUINISTA") continue
+      const op = (f.operario ?? "").trim()
+      const ph = f.pal_hh
+      if (!op || typeof ph !== "number" || !Number.isFinite(ph)) continue
+      const cur = acc.get(op) ?? { sum: 0, n: 0 }
+      cur.sum += ph
+      cur.n += 1
+      acc.set(op, cur)
+    }
+  } catch {
+    /* best-effort: sin datos de maquinista queda en null */
+  }
+  const out = new Map<string, number>()
+  for (const [op, v] of acc.entries()) if (v.n > 0) out.set(op, v.sum / v.n)
+  return out
+}
+
 // ── Config ──
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
   const { data } = await supabase
     .from("s5_ayudantes_config")
     .select(
-      "peso_errores, peso_5s, peso_productividad, tope_errores, prod_target, meses_ventana",
+      "peso_errores, peso_5s, peso_productividad, tope_errores, prod_target, prod_target_maq, meses_ventana",
     )
     .eq("id", 1)
     .maybeSingle()
@@ -257,6 +305,9 @@ async function readConfig(supabase: any): Promise<S5AyudantesConfig> {
     ),
     tope_errores: Number(data.tope_errores ?? DEFAULT_CONFIG.tope_errores),
     prod_target: Number(data.prod_target ?? DEFAULT_CONFIG.prod_target),
+    prod_target_maq: Number(
+      data.prod_target_maq ?? DEFAULT_CONFIG.prod_target_maq,
+    ),
     meses_ventana: Number(data.meses_ventana ?? DEFAULT_CONFIG.meses_ventana),
   }
 }
@@ -283,8 +334,15 @@ export async function getRankingDeposito(
     const hasta = meses[meses.length - 1]
     const prefijos = meses.map((m) => m.slice(0, 7))
 
-    const [audRes, respRes, sectoresRes, erroresMap, prodMap, premiosRes] =
-      await Promise.all([
+    const [
+      audRes,
+      respRes,
+      sectoresRes,
+      erroresMap,
+      prodMap,
+      prodMaqMap,
+      premiosRes,
+    ] = await Promise.all([
         supabase
           .from("s5_auditorias")
           .select("periodo, sector_numero, nota_total")
@@ -301,6 +359,7 @@ export async function getRankingDeposito(
         supabase.from("s5_sectores_almacen").select("numero, nombre"),
         fetchErroresPorOperario(prefijos),
         fetchProductividadPorOperario(prefijos),
+        fetchProductividadMaquinistas(prefijos),
         supabase
           .from("s5_ayudantes_premios")
           .select("id, periodo_desde, area, posicion, empleado_id, nombre, score, origen")
@@ -341,7 +400,9 @@ export async function getRankingDeposito(
       sectores: Set<string>
       errores_cant: number | null
       productividad: number | null
+      productividad_maq: number | null
       es_picker: boolean
+      es_maquinista: boolean
       es_responsable: boolean
       _tokens: Set<string>
     }
@@ -362,7 +423,9 @@ export async function getRankingDeposito(
           sectores: new Set<string>(),
           errores_cant: null,
           productividad: null,
+          productividad_maq: null,
           es_picker: false,
+          es_maquinista: false,
           es_responsable: true,
           _tokens: tokens(emp.nombre),
         }
@@ -375,7 +438,7 @@ export async function getRankingDeposito(
     }
 
     // Helper para matchear un operario (del Sheet/productividad) a un
-    // candidato por tokens del nombre, o crear uno nuevo (picker).
+    // candidato por tokens del nombre, o crear uno nuevo.
     function matchOCrear(operario: string): Cand {
       const tk = tokens(operario)
       let c = cands.find((x) => comparten(x._tokens, tk))
@@ -387,26 +450,36 @@ export async function getRankingDeposito(
           sectores: new Set<string>(),
           errores_cant: null,
           productividad: null,
-          es_picker: true,
+          productividad_maq: null,
+          es_picker: false,
+          es_maquinista: false,
           es_responsable: false,
           _tokens: tk,
         }
         cands.push(c)
       }
-      c.es_picker = true
       return c
     }
 
     // Pickers (errores): cantidad de errores humanos en la ventana.
     for (const [operario, cant] of erroresMap.entries()) {
       const c = matchOCrear(operario)
+      c.es_picker = true
       c.errores_cant = (c.errores_cant ?? 0) + cant
     }
 
     // Pickers (productividad bul/HH promedio de la ventana).
     for (const [operario, bulhh] of prodMap.entries()) {
       const c = matchOCrear(operario)
+      c.es_picker = true
       c.productividad = bulhh
+    }
+
+    // Maquinistas (productividad Pal/HH promedio de la ventana).
+    for (const [operario, palhh] of prodMaqMap.entries()) {
+      const c = matchOCrear(operario)
+      c.es_maquinista = true
+      c.productividad_maq = palhh
     }
 
     // Scoring
@@ -415,6 +488,7 @@ export async function getRankingDeposito(
       nota_5s: number | null
       errores_score: number | null
       productividad: number | null
+      productividad_maq: number | null
       productividad_score: number | null
       score: number
     } {
@@ -425,14 +499,22 @@ export async function getRankingDeposito(
         c.errores_cant != null
           ? clamp(100 * (1 - c.errores_cant / tope), 0, 100)
           : null
-      // Productividad: bul/HH promedio de la ventana, normalizada vs target.
-      // Solo afecta el score si peso_productividad > 0 (editable en el panel).
+      // Productividad: cada actividad se normaliza contra su propio target
+      // (picking bul/HH vs prod_target; maquinista Pal/HH vs prod_target_maq)
+      // y el puntaje es el promedio de las que tenga el operario. Solo afecta
+      // el score si peso_productividad > 0 (editable en el panel).
       const target = config.prod_target > 0 ? config.prod_target : 300
+      const targetMaq = config.prod_target_maq > 0 ? config.prod_target_maq : 18
       const productividad = c.productividad
-      const productividad_score =
-        c.productividad != null
-          ? clamp((c.productividad / target) * 100, 0, 100)
-          : null
+      const productividad_maq = c.productividad_maq
+      const subScores: number[] = []
+      if (c.productividad != null)
+        subScores.push(clamp((c.productividad / target) * 100, 0, 100))
+      if (c.productividad_maq != null)
+        subScores.push(clamp((c.productividad_maq / targetMaq) * 100, 0, 100))
+      const productividad_score = subScores.length
+        ? subScores.reduce((a, b) => a + b, 0) / subScores.length
+        : null
 
       const parts: Array<[number, number]> = []
       if (nota_5s != null && config.peso_5s > 0)
@@ -443,7 +525,14 @@ export async function getRankingDeposito(
         parts.push([config.peso_productividad, productividad_score])
       const tw = parts.reduce((a, [w]) => a + w, 0)
       const score = tw > 0 ? parts.reduce((a, [w, v]) => a + w * v, 0) / tw : 0
-      return { nota_5s, errores_score, productividad, productividad_score, score }
+      return {
+        nota_5s,
+        errores_score,
+        productividad,
+        productividad_maq,
+        productividad_score,
+        score,
+      }
     }
 
     const rows: S5AyudanteDepositoRow[] = cands.map((c) => {
@@ -452,6 +541,7 @@ export async function getRankingDeposito(
         empleado_id: c.empleado_id,
         nombre: c.nombre,
         es_picker: c.es_picker,
+        es_maquinista: c.es_maquinista,
         es_responsable: c.es_responsable,
         sectores: Array.from(c.sectores),
         nota_5s: s.nota_5s != null ? Number(s.nota_5s.toFixed(1)) : null,
@@ -460,6 +550,7 @@ export async function getRankingDeposito(
         errores_score:
           s.errores_score != null ? Number(s.errores_score.toFixed(1)) : null,
         productividad: s.productividad,
+        productividad_maq: s.productividad_maq,
         productividad_score: s.productividad_score,
         score: Number(s.score.toFixed(1)),
         posicion_sugerida: null,
@@ -506,6 +597,7 @@ export async function updateAyudantesConfig(input: {
   peso_productividad: number
   tope_errores: number
   prod_target: number
+  prod_target_maq: number
   meses_ventana: number
 }): Promise<{ ok: true } | { error: string }> {
   try {
@@ -519,6 +611,7 @@ export async function updateAyudantesConfig(input: {
         peso_productividad: input.peso_productividad,
         tope_errores: input.tope_errores,
         prod_target: input.prod_target,
+        prod_target_maq: input.prod_target_maq,
         meses_ventana: Math.max(1, Math.min(6, Math.round(input.meses_ventana))),
         updated_by: profile.id,
       })
