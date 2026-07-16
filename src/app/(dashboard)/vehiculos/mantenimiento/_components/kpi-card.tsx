@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 import { DpoPuntoBadge } from "./dpo-badge"
@@ -67,9 +67,15 @@ export function KpiCard({
         className
       )}
     >
-      <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 pb-2">
+      {/* CardHeader es un grid: pasa a dos columnas solo si hay un CardAction.
+          Con flex-row el badge caía debajo del título y se estiraba. */}
+      <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-        {dpo ? <DpoPuntoBadge numero={dpo} /> : null}
+        {dpo ? (
+          <CardAction>
+            <DpoPuntoBadge numero={dpo} />
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-2">
         <div className="flex items-end justify-between gap-2">

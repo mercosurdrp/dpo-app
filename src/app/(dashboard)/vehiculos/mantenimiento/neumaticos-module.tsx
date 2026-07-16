@@ -104,7 +104,7 @@ const fmtFecha = (f: string | null) =>
 
 // Color del relleno de una posición según el desgaste (profundidad mm).
 function colorDesgaste(prof: number | null): string {
-  if (prof == null) return "bg-slate-400"
+  if (prof == null) return "bg-muted-foreground"
   if (prof <= PROFUNDIDAD_CRITICA_MM) return "bg-red-500"
   if (prof <= 5) return "bg-amber-400"
   return "bg-emerald-500"
@@ -381,7 +381,7 @@ export function NeumaticosModule({
                   <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
                   <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
                   <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
-                  <Leyenda color="bg-slate-400" txt="Sin medición" />
+                  <Leyenda color="bg-muted-foreground" txt="Sin medición" />
                   <p className="pt-1 text-muted-foreground/80">
                     {puedeEditar
                       ? "Hacé clic en una posición para asignar / medir / dar de baja."
@@ -951,7 +951,7 @@ function SiluetaUnidad({
       )}
       {/* Lanza de enganche (acoplado) */}
       {!conCabina && (
-        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-slate-300" />
+        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-muted" />
       )}
       {/* Línea de eje punteada por fila de ruedas, coloreada por función */}
       {filas.map((f) => (
@@ -994,7 +994,7 @@ function TireGlyph({
           "relative h-16 w-11 rounded-[9px] transition-transform",
           empty
             ? "border-2 border-dashed border-border bg-white"
-            : "shadow-md ring-1 ring-slate-900/40"
+            : "shadow-md ring-1 ring-foreground/20"
         )}
       >
         {!empty && (
@@ -1088,7 +1088,7 @@ function Diagrama({
                 label={p.label}
                 sub={n ? n.numero || "s/n" : null}
                 eje={p.eje}
-                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
                 empty={!n}
               />
             </div>
@@ -1564,7 +1564,7 @@ function MontajeDialog({
                       resaltaPosiciones && "ring-2 ring-emerald-500 ring-offset-1"
                     )}
                   >
-                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-slate-400" empty />
+                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-muted-foreground" empty />
                   </button>
                 )
               })}
@@ -2660,7 +2660,7 @@ function DiagramaNumeracion({
               label={p.label}
               sub={n ? n.numero || "s/n" : null}
               eje={p.eje}
-              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
               empty={!n}
             />
           </div>
@@ -2758,7 +2758,7 @@ function RotacionDiagrama({
             <TireGlyph
               label={p.label}
               eje={p.eje}
-              wearClass="bg-slate-500"
+              wearClass="bg-muted-foreground"
               empty={!n}
               badge={dest ? `→${dest}` : null}
             />
