@@ -208,10 +208,11 @@ export function PresupuestoClient({
   const [tareaViendo, setTareaViendo] =
     useState<PresupuestoTareaConResponsable | null>(null)
 
-  // Mes activo (el de la vista). Default = mes actual.
+  // Mes activo (el de la vista). Default = mes actual. 0 = todos los meses.
   const [mesActivo, setMesActivo] = useState<number>(
     new Date().getMonth() + 1,
   )
+  const verTodosLosMeses = mesActivo === 0
 
   // Filtros adicionales en tabla tareas (mes ya está fijado por mesActivo)
   const [filtroResp, setFiltroResp] = useState<string>("todos")
@@ -275,7 +276,7 @@ export function PresupuestoClient({
   // Filtrado de tareas — siempre por el mes activo
   const tareasFiltradas = useMemo(() => {
     return tareas.filter((t) => {
-      if (t.mes !== mesActivo) return false
+      if (!verTodosLosMeses && t.mes !== mesActivo) return false
       if (filtroResp !== "todos") {
         if (filtroResp === "sin" && t.responsable_id) return false
         if (filtroResp !== "sin" && t.responsable_id !== filtroResp)
@@ -284,11 +285,12 @@ export function PresupuestoClient({
       if (filtroEstado !== "todos" && t.estado !== filtroEstado) return false
       return true
     })
-  }, [tareas, mesActivo, filtroResp, filtroEstado])
+  }, [tareas, mesActivo, verTodosLosMeses, filtroResp, filtroEstado])
 
   const tareasDelMes = useMemo(
-    () => tareas.filter((t) => t.mes === mesActivo),
-    [tareas, mesActivo],
+    () =>
+      verTodosLosMeses ? tareas : tareas.filter((t) => t.mes === mesActivo),
+    [tareas, mesActivo, verTodosLosMeses],
   )
 
   function puedeResponder(t: PresupuestoTareaConResponsable): boolean {
@@ -559,7 +561,9 @@ export function PresupuestoClient({
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-700">
-            Tareas de análisis — {MESES[mesActivo - 1]} {anioActivo}
+            Tareas de análisis —{" "}
+            {verTodosLosMeses ? "Todos los meses" : MESES[mesActivo - 1]}{" "}
+            {anioActivo}
             <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
               {tareasDelMes.length}
             </span>
@@ -596,14 +600,15 @@ export function PresupuestoClient({
         <div className="mb-3 flex flex-wrap gap-2">
           <Select
             value={String(mesActivo)}
-            onValueChange={(v: string | null) =>
-              setMesActivo(Number(v) || mesActivo)
-            }
+            onValueChange={(v: string | null) => {
+              if (v !== null) setMesActivo(Number(v))
+            }}
           >
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="0">Todos los meses</SelectItem>
               {MESES.map((nom, i) => (
                 <SelectItem key={i + 1} value={String(i + 1)}>
                   {nom}
@@ -667,7 +672,7 @@ export function PresupuestoClient({
                     className="py-8 text-center text-sm text-muted-foreground"
                   >
                     {tareasDelMes.length === 0
-                      ? `Sin tareas para ${MESES[mesActivo - 1]} ${anioActivo}.`
+                      ? `Sin tareas para ${verTodosLosMeses ? "el año" : MESES[mesActivo - 1]} ${anioActivo}.`
                       : "Sin tareas que coincidan con los filtros."}
                     {puedeEditar && tareasDelMes.length === 0 && (
                       <>
@@ -691,6 +696,11 @@ export function PresupuestoClient({
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">
+                      {verTodosLosMeses && (
+                        <span className="mr-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-normal text-slate-600">
+                          {MESES[t.mes - 1]}
+                        </span>
+                      )}
                       {t.rubro}
                       {t.descripcion && (
                         <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
@@ -849,7 +859,7 @@ export function PresupuestoClient({
             open={openTarea}
             onOpenChange={setOpenTarea}
             anio={anioActivo}
-            defaultMes={mesActivo}
+            defaultMes={verTodosLosMeses ? new Date().getMonth() + 1 : mesActivo}
             tarea={tareaEditando}
             responsables={responsables}
             onSaved={refrescar}
@@ -858,7 +868,7 @@ export function PresupuestoClient({
             open={openGenerar}
             onOpenChange={setOpenGenerar}
             anio={anioActivo}
-            defaultMes={mesActivo}
+            defaultMes={verTodosLosMeses ? new Date().getMonth() + 1 : mesActivo}
             responsables={responsables}
             onSaved={refrescar}
           />
