@@ -2,7 +2,6 @@
 
 import { getPool } from "@/lib/mercosur-dashboard"
 import { getPedidosPendientes } from "@/lib/chess/pedidos-pendientes"
-import { getPedidosGestion } from "@/lib/gescom/pedidos-gestion"
 import {
   priorizarPorCiudad,
   PESOS_DEFAULT,
@@ -34,8 +33,6 @@ export interface PriorizacionData {
   /** Clientes que ya venían pospuestos de días anteriores. */
   pospuestos: number
   pesos: PesosPriorizacion
-  /** Cuánto de lo del día entró por GESTIÓN (GESCOM), para mostrarlo aparte. */
-  gestion: { clientes: number; bultos: number; hl: number; monto: number }
 }
 
 /** Resta días a un YYYY-MM-DD. */
@@ -166,43 +163,17 @@ export async function getPriorizacionEntrega(
     const desde = restarDias(hasta, VENTANA_DIAS)
     const desdeReciente = restarDias(hasta, VENTANA_RECIENTE_DIAS)  // bandera "rechazó hace poco"
 
-    const [pedidosChess, pedidosGestion, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] =
+    // Gestión (GESCOM) NO entra: se sacó a pedido del usuario (2026-07-17) — ese
+    // canal sale por su propio circuito y no compite por el cupo del camión.
+    const [pedidos, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] =
       await Promise.all([
         getPedidosPendientes(fechaEntrega),
-        // Gestión es un canal aparte pero se reparte en los MISMOS camiones ⇒ compite por el
-        // cupo. Si la API no contesta, la pantalla sigue con lo de Chess en vez de morir.
-        getPedidosGestion(fechaEntrega).catch(() => []),
         getPerfilClientes(desde, hasta),
         getRechazosPorCliente(desde, hasta),
         getRechazosPorCliente(desdeReciente, hasta),
         getBanderas(desde),
         getPospuestos(fechaEntrega),
       ])
-
-    // Un cliente puede pedir por los dos canales el mismo día: es UN cliente en la lista, con
-    // los bultos sumados, porque al camión sube todo junto.
-    const pedidosPorCliente = new Map<number, {
-      id_cliente: number; bultos: number; hl: number; monto: number; bultos_gestion: number
-    }>()
-    for (const p of pedidosChess) {
-      pedidosPorCliente.set(p.id_cliente, {
-        id_cliente: p.id_cliente, bultos: p.bultos, hl: p.hl, monto: p.monto, bultos_gestion: 0,
-      })
-    }
-    for (const g of pedidosGestion) {
-      const prev = pedidosPorCliente.get(g.id_cliente)
-      if (prev) {
-        prev.bultos += g.bultos
-        prev.hl += g.hl
-        prev.monto += g.monto
-        prev.bultos_gestion += g.bultos
-      } else {
-        pedidosPorCliente.set(g.id_cliente, {
-          id_cliente: g.id_cliente, bultos: g.bultos, hl: g.hl, monto: g.monto, bultos_gestion: g.bultos,
-        })
-      }
-    }
-    const pedidos = [...pedidosPorCliente.values()]
 
     if (pedidos.length === 0) {
       return { error: `No hay pedidos pendientes con fecha de entrega ${fechaEntrega}.` }
@@ -219,7 +190,7 @@ export async function getPriorizacionEntrega(
         bultos: p.bultos,
         hl: p.hl,
         monto: p.monto,
-        bultos_gestion: p.bultos_gestion,
+        bultos_gestion: 0,
         cluster: perfil?.cluster ?? null,
         entregas: perfil?.entregas ?? 0,
         rechazos: r?.eventos ?? 0,
@@ -246,12 +217,6 @@ export async function getPriorizacionEntrega(
         total_monto: entradas.reduce((a, e) => a + e.monto, 0),
         pospuestos: entradas.filter((e) => e.veces_pospuesto > 0).length,
         pesos,
-        gestion: {
-          clientes: pedidosGestion.length,
-          bultos: pedidosGestion.reduce((a, g) => a + g.bultos, 0),
-          hl: pedidosGestion.reduce((a, g) => a + g.hl, 0),
-          monto: pedidosGestion.reduce((a, g) => a + g.monto, 0),
-        },
       },
     }
   } catch (e) {
