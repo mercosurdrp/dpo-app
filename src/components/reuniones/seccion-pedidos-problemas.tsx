@@ -16,6 +16,7 @@ import {
   getPedidosConProblemas,
   type PedidoConProblema,
   type PedidosConProblemasReunion,
+  type TotalesFuente,
 } from "@/actions/reuniones-pedidos-problemas"
 import { ActionLogSeccion } from "./action-log-seccion"
 import type {
@@ -52,6 +53,13 @@ function num(v: number, dec = 0): string {
     maximumFractionDigits: dec,
   })
 }
+function nombreMes(mes: string): string {
+  const [y, m] = mes.split("-").map((s) => parseInt(s, 10))
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("es-AR", {
+    month: "long",
+    timeZone: "UTC",
+  })
+}
 // Monto compacto en pesos: $1,3 M / $850 mil / $420.
 function money(v: number): string {
   const abs = Math.abs(v)
@@ -66,6 +74,8 @@ function Resumen({
   pedidos,
   bultos,
   hl,
+  mesNombre,
+  mesTotales,
   tono,
   onClick,
 }: {
@@ -74,6 +84,8 @@ function Resumen({
   pedidos: number | null
   bultos: number | null
   hl: number | null
+  mesNombre: string
+  mesTotales: TotalesFuente | null
   tono: "amber" | "sky" | "slate"
   onClick: (() => void) | null
 }) {
@@ -104,9 +116,16 @@ function Resumen({
           ? "sin dato"
           : `${num(bultos)} bultos · ${num(hl ?? 0, 1)} HL`}
       </p>
+      <p className="mt-1.5 border-t border-slate-200/70 pt-1.5 text-xs text-slate-600">
+        <span className="font-medium capitalize">{mesNombre}</span>
+        {": "}
+        {mesTotales == null
+          ? "sin dato"
+          : `${num(mesTotales.pedidos)} ped · ${num(mesTotales.bultos)} bultos · ${num(mesTotales.hl, 1)} HL`}
+      </p>
       <p className="mt-1 text-xs text-slate-400">
         {detalle}
-        {onClick != null && " — tocá para ver el detalle"}
+        {onClick != null && " — tocá para ver el detalle de la semana"}
       </p>
     </button>
   )
@@ -297,7 +316,8 @@ export function SeccionPedidosProblemas({
           <>
             <p className="text-xs text-slate-500">
               Pedidos reprogramados del {formatFecha(data.desde)} al{" "}
-              {formatFecha(data.hasta)} (la semana previa a esta reunión).{" "}
+              {formatFecha(data.hasta)} (la semana previa a esta reunión), y
+              abajo el acumulado de {nombreMes(data.mes)} hasta esa fecha.{" "}
               <strong>VRL</strong> = fuera de ruta por capacidad de reparto ·{" "}
               <strong>VRC</strong> = por límite de crédito.
             </p>
@@ -319,6 +339,8 @@ export function SeccionPedidosProblemas({
                 pedidos={data.totalVrl.pedidos}
                 bultos={data.totalVrl.bultos}
                 hl={data.totalVrl.hl}
+                mesNombre={nombreMes(data.mes)}
+                mesTotales={data.mesVrl}
                 tono="amber"
                 onClick={
                   data.totalVrl.pedidos > 0 ? () => setFiltro("vrl") : null
@@ -330,6 +352,8 @@ export function SeccionPedidosProblemas({
                 pedidos={data.totalVrc?.pedidos ?? null}
                 bultos={data.totalVrc?.bultos ?? null}
                 hl={data.totalVrc?.hl ?? null}
+                mesNombre={nombreMes(data.mes)}
+                mesTotales={data.mesVrc}
                 tono="sky"
                 onClick={
                   (data.totalVrc?.pedidos ?? 0) > 0
@@ -350,6 +374,16 @@ export function SeccionPedidosProblemas({
                   totalPedidos == null
                     ? null
                     : data.totalVrl.hl + (data.totalVrc?.hl ?? 0)
+                }
+                mesNombre={nombreMes(data.mes)}
+                mesTotales={
+                  data.mesVrc == null
+                    ? null
+                    : {
+                        pedidos: data.mesVrl.pedidos + data.mesVrc.pedidos,
+                        bultos: data.mesVrl.bultos + data.mesVrc.bultos,
+                        hl: data.mesVrl.hl + data.mesVrc.hl,
+                      }
                 }
                 tono="slate"
                 onClick={

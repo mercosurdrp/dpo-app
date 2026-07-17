@@ -37,14 +37,32 @@ export interface PedidoConProblema {
   vecesPrevias: number | null
 }
 
+export interface TotalesFuente {
+  pedidos: number
+  bultos: number
+  hl: number
+}
+
 export interface PedidosConProblemasReunion {
   desde: string
   hasta: string
+  /** Mes de la reunión (YYYY-MM); el acumulado corre del 1° al día previo. */
+  mes: string
   pedidos: PedidoConProblema[]
-  totalVrl: { pedidos: number; bultos: number; hl: number }
+  totalVrl: TotalesFuente
   /** null cuando el dashboard Mercosur no respondió: no se sabe, no es cero. */
-  totalVrc: { pedidos: number; bultos: number; hl: number } | null
+  totalVrc: TotalesFuente | null
+  mesVrl: TotalesFuente
+  mesVrc: TotalesFuente | null
   vrcError: string | null
+}
+
+function totales(pedidos: Array<{ bultos: number; hl: number }>): TotalesFuente {
+  return {
+    pedidos: pedidos.length,
+    bultos: pedidos.reduce((s, p) => s + p.bultos, 0),
+    hl: pedidos.reduce((s, p) => s + p.hl, 0),
+  }
 }
 
 const MOTIVO_VRL: Record<string, string> = {
@@ -72,6 +90,11 @@ export async function getPedidosConProblemas(
 
   const hasta = diaAnterior(fechaReunion, 1)
   const desde = diaAnterior(fechaReunion, VENTANA_DIAS)
+  const mes = fechaReunion.slice(0, 7)
+  const inicioMes = `${mes}-01`
+  // La semana previa puede pisar el mes anterior (reunión a principio de mes):
+  // se trae una sola ventana que cubre las dos y se separa en memoria.
+  const inferior = desde < inicioMes ? desde : inicioMes
 
   // ── VRL: cortes de entrega, fila por cliente-día ──────────────────────────
   const supabase = await createClient()
@@ -80,13 +103,13 @@ export async function getPedidosConProblemas(
     .select(
       "fecha_entrega, id_cliente, nombre_cliente, localidad, bultos, hl, monto, motivo, veces_previas"
     )
-    .gte("fecha_entrega", desde)
+    .gte("fecha_entrega", inferior)
     .lte("fecha_entrega", hasta)
   if (vrlRes.error) {
     return { error: `No se pudo leer el VRL: ${vrlRes.error.message}` }
   }
 
-  const pedidos: PedidoConProblema[] = (vrlRes.data ?? []).map((r) => ({
+  const vrlTodos: PedidoConProblema[] = (vrlRes.data ?? []).map((r) => ({
     fuente: "vrl" as const,
     fecha: String(r.fecha_entrega),
     idCliente: String(r.id_cliente),
@@ -99,11 +122,13 @@ export async function getPedidosConProblemas(
     fechaNueva: null,
     vecesPrevias: Number(r.veces_previas ?? 0),
   }))
+  const pedidos = vrlTodos.filter((p) => p.fecha >= desde)
 
   // ── VRC: pedidos trabados por crédito, en la Railway del dashboard ────────
   // Si no responde se informa como error visible: un cero silencioso se leería
   // como "no hubo reprogramado por crédito" y es una conclusión falsa.
-  let totalVrc: PedidosConProblemasReunion["totalVrc"] = null
+  let totalVrc: TotalesFuente | null = null
+  let mesVrc: TotalesFuente | null = null
   let vrcError: string | null = null
   try {
     const pool = getPool()
@@ -124,32 +149,27 @@ export async function getPedidosConProblemas(
         where lower(region) = 'pampeana'
           and fecha_entrega_original between $1 and $2
         order by fecha_entrega_original, bultos desc nulls last`,
-      [desde, hasta]
+      [inferior, hasta]
     )
-    let bultos = 0
-    let hl = 0
-    for (const r of rows) {
-      const b = Number(r.bultos ?? 0)
-      const h = Number(r.hl ?? 0)
-      bultos += b
-      hl += h
-      pedidos.push({
-        fuente: "vrc",
-        fecha: r.fecha,
-        idCliente: r.idcliente ?? "",
-        cliente: r.cliente ?? `Cliente ${r.idcliente ?? "?"}`,
-        localidad: null,
-        motivo: r.motivo_credito
-          ? `Crédito: ${r.motivo_credito.replace(/_/g, " ").toLowerCase()}`
-          : "Límite de crédito",
-        bultos: b,
-        hl: h,
-        monto: Number(r.importe ?? 0),
-        fechaNueva: r.fecha_nueva,
-        vecesPrevias: null,
-      })
-    }
-    totalVrc = { pedidos: rows.length, bultos, hl }
+    const vrcTodos: PedidoConProblema[] = rows.map((r) => ({
+      fuente: "vrc" as const,
+      fecha: r.fecha,
+      idCliente: r.idcliente ?? "",
+      cliente: r.cliente ?? `Cliente ${r.idcliente ?? "?"}`,
+      localidad: null,
+      motivo: r.motivo_credito
+        ? `Crédito: ${r.motivo_credito.replace(/_/g, " ").toLowerCase()}`
+        : "Límite de crédito",
+      bultos: Number(r.bultos ?? 0),
+      hl: Number(r.hl ?? 0),
+      monto: Number(r.importe ?? 0),
+      fechaNueva: r.fecha_nueva,
+      vecesPrevias: null,
+    }))
+    const vrcSemana = vrcTodos.filter((p) => p.fecha >= desde)
+    pedidos.push(...vrcSemana)
+    totalVrc = totales(vrcSemana)
+    mesVrc = totales(vrcTodos.filter((p) => p.fecha >= inicioMes))
   } catch (e) {
     vrcError =
       e instanceof Error
@@ -161,18 +181,16 @@ export async function getPedidosConProblemas(
     a.fecha !== b.fecha ? (a.fecha < b.fecha ? -1 : 1) : b.bultos - a.bultos
   )
 
-  const vrl = pedidos.filter((p) => p.fuente === "vrl")
   return {
     data: {
       desde,
       hasta,
+      mes,
       pedidos,
-      totalVrl: {
-        pedidos: vrl.length,
-        bultos: vrl.reduce((s, p) => s + p.bultos, 0),
-        hl: vrl.reduce((s, p) => s + p.hl, 0),
-      },
+      totalVrl: totales(pedidos.filter((p) => p.fuente === "vrl")),
       totalVrc,
+      mesVrl: totales(vrlTodos.filter((p) => p.fecha >= inicioMes)),
+      mesVrc,
       vrcError,
     },
   }
