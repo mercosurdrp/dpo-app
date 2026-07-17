@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
 import type { FueraRutaDia } from "@/actions/fuera-ruta"
+import type { FueraRutaFila } from "@/lib/fuera-ruta/sheet"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
 import type { FilaPriorizada } from "@/lib/priorizacion/score"
 
@@ -175,6 +176,13 @@ export function PriorizacionClient({
 
   const setCupo = (ciudad: string, v: string) =>
     setCupos((p) => ({ ...p, [ciudad]: v }))
+
+  /** Registro fuera de ruta del día por cliente FACTURADO, para marcar la fila del ranking. */
+  const fueraRutaPorCliente = useMemo(() => {
+    const m = new Map<number, FueraRutaFila>()
+    for (const f of fueraRuta.filas) if (f.cod_cliente != null) m.set(f.cod_cliente, f)
+    return m
+  }, [fueraRuta.filas])
 
   /** Aplica el cupo de cada ciudad + los overrides manuales. */
   const ciudades = useMemo(() => {
@@ -498,6 +506,7 @@ export function PriorizacionClient({
                           hayCupo={c.hayCupo}
                           cruzaLinea={cruzaLinea}
                           cupo={c.cupo}
+                          fueraRuta={fueraRutaPorCliente.get(f.id_cliente)}
                           onForzar={(modo) =>
                             setForzados((p) => ({ ...p, [f.id_cliente]: modo }))
                           }
@@ -520,6 +529,7 @@ export function PriorizacionClient({
         grupos={grupos}
         nota={nota}
         total={{ ...vrlHoy, clientes: totalCortados }}
+        fueraRutaPorCliente={fueraRutaPorCliente}
       />
 
       {/* Confirmación del corte + comentario */}
@@ -596,7 +606,7 @@ function ConfirmarCorteDialog({
 
 /** Modal de vista previa de los clientes reprogramados, legible en pantalla. */
 function ReprogramadosPreview({
-  open, onOpenChange, fecha, grupos, nota, total,
+  open, onOpenChange, fecha, grupos, nota, total, fueraRutaPorCliente,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
@@ -604,6 +614,7 @@ function ReprogramadosPreview({
   grupos: { ciudad: string; filas: FilaVista[]; bultos: number; hl: number; monto: number }[]
   nota: string
   total: { bultos: number; hl: number; monto: number; clientes: number }
+  fueraRutaPorCliente: Map<number, FueraRutaFila>
 }) {
   const [bajando, setBajando] = useState(false)
 
@@ -637,7 +648,10 @@ function ReprogramadosPreview({
               rechazos_45d: f.rechazos_45d,
               veces_pospuesto: f.veces_pospuesto,
               posicion: f.posicion,
-              motivo: f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad",
+              // Si era fuera de ruta, el PDF lo grita: cortarlo deshace una entrega ya gestionada.
+              motivo:
+                (fueraRutaPorCliente.has(f.id_cliente) ? "FUERA DE RUTA · " : "") +
+                (f.cae_por_volumen ? "Por volumen" : f.motivos || "menor prioridad"),
             })),
           })),
         }),
@@ -726,6 +740,11 @@ function ReprogramadosPreview({
                         <TableCell className="text-right text-sm tabular-nums">{money(f.monto)}</TableCell>
                         <TableCell className="text-right text-sm tabular-nums font-semibold">{f.score.toFixed(0)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
+                          {fueraRutaPorCliente.has(f.id_cliente) && (
+                            <Badge className="mr-1 h-4 border-0 bg-amber-100 px-1 text-[10px] font-semibold text-amber-800">
+                              <Route className="mr-0.5 h-3 w-3" /> Fuera de ruta
+                            </Badge>
+                          )}
                           {f.cae_por_volumen
                             ? "Por volumen"
                             : f.rechazos_45d > 0
@@ -890,14 +909,19 @@ export function FueraRutaSolo({ error, fueraRuta }: { error: string; fueraRuta: 
 }
 
 function Fila({
-  f, hayCupo, cruzaLinea, cupo, onForzar,
+  f, hayCupo, cruzaLinea, cupo, fueraRuta, onForzar,
 }: {
   f: FilaVista
   hayCupo: boolean
   cruzaLinea: boolean
   cupo: number
+  /** Registro fuera de ruta del día para este cliente, si lo hay. */
+  fueraRuta?: FueraRutaFila
   onForzar: (modo: "entra" | "sale") => void
 }) {
+  const autorizacion = fueraRuta
+    ? [fueraRuta.descripcion, fueraRuta.observaciones].filter(Boolean).join(" · ")
+    : ""
   return (
     <>
       {cruzaLinea && (
@@ -919,10 +943,27 @@ function Fila({
           >
             {f.nombre ?? `Cliente ${f.id_cliente}`}
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
             #{f.id_cliente}
             {f.nps_categoria === "Detractor" && (
               <Badge variant="outline" className="h-4 px-1 text-[10px] text-red-700">Detractor</Badge>
+            )}
+            {fueraRuta && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Badge className="h-4 border-0 bg-amber-100 px-1 text-[10px] font-semibold text-amber-800">
+                      <Route className="mr-0.5 h-3 w-3" /> Fuera de ruta
+                    </Badge>
+                  }
+                />
+                <TooltipContent>
+                  Entrega fuera de ruta ya gestionada
+                  {fueraRuta.patente ? ` · patente ${fueraRuta.patente}` : ""}
+                  {autorizacion ? ` · ${autorizacion}` : ""}
+                  . Cortarlo deshace ese acuerdo.
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         </TableCell>
