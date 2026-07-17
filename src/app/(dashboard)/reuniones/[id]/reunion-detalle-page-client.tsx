@@ -77,6 +77,10 @@ import {
   SeccionFlotaRuteo,
   SECCION_FLOTA_RUTEO,
 } from "@/components/reuniones/seccion-flota-ruteo"
+import {
+  SeccionPedidosProblemas,
+  SECCION_PEDIDOS_PROBLEMAS,
+} from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
@@ -1041,6 +1045,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === SECCION_FLOTA_RUTEO),
     [actividadesAll],
   )
+  const actividadesPedidosProblemas = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_PEDIDOS_PROBLEMAS),
+    [actividadesAll],
+  )
   const actividadesRmd = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "rmd"),
     [actividadesAll],
@@ -1284,6 +1292,19 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           reunionId={detalle.id}
           actividades={actividadesRechazos}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Sección Pedidos con problemas (VRL + VRC de la semana previa) */}
+      {!IS_MISIONES && detalle.tipo === "logistica-ventas" && (
+        <SeccionPedidosProblemas
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          reunionTipo="logistica-ventas"
+          actividades={actividadesPedidosProblemas}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}
