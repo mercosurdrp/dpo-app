@@ -3,7 +3,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
-import { getPool } from "@/lib/mercosur-dashboard"
 import {
   calcularDisponibilidadMes,
   flotaDeRuta,
@@ -28,35 +27,10 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA =
   "El bloque de Flota y Ruteo solo está disponible en Pampeana."
 
-/** Días de la ventana de ruteo: la semana previa a la reunión. */
-const VENTANA_DIAS = 7
-
 /** Services que entran en "próximos": los que vencen dentro de este horizonte. */
 const HORIZONTE_SERVICES_DIAS = 30
 
-export interface DiaRuteoReunion {
-  fecha: string
-  vrlHl: number
-  vrlBultos: number
-  vrlPedidos: number
-  /** null = no se pudo consultar el dashboard Mercosur (≠ 0 reprogramado). */
-  vrcHl: number | null
-  vrcBultos: number | null
-}
-
 export interface FlotaRuteoReunion {
-  ruteo: {
-    desde: string
-    hasta: string
-    dias: DiaRuteoReunion[]
-    totalVrlHl: number
-    totalVrlBultos: number
-    /** null si el VRC no se pudo leer: no se totaliza lo que no se conoce. */
-    totalVrcHl: number | null
-    totalVrcBultos: number | null
-    /** Mensaje a mostrar cuando el VRC no está disponible. */
-    vrcError: string | null
-  }
   flota: {
     mes: string
     disponibilidadPct: number | null
@@ -101,20 +75,12 @@ async function traerTodo<T>(
   }
 }
 
-function diaAnterior(fecha: string, dias: number): string {
-  const d = new Date(`${fecha}T00:00:00`)
-  d.setDate(d.getDate() - dias)
-  return d.toISOString().slice(0, 10)
-}
-
 /**
- * Datos del bloque Flota y Ruteo de la reunión de logística de los lunes.
- *
- * Dos ventanas distintas a propósito:
- * - Ruteo (VRL/VRC): los 7 días previos a la reunión, día por día.
- * - Flota: el mes en curso, para que el número coincida con el que la misma
- *   gente ve en el tablero de Indicadores de Flota y no se discutan dos cifras
- *   distintas del mismo indicador.
+ * Datos del bloque de Flota de la reunión de logística de los lunes, sobre el
+ * mes en curso, para que el número coincida con el que la misma gente ve en el
+ * tablero de Indicadores de Flota y no se discutan dos cifras distintas del
+ * mismo indicador. El volumen reprogramado (VRL/VRC) va aparte, en la tarjeta
+ * de Pedidos con problemas (reuniones-pedidos-problemas.ts).
  */
 export async function getFlotaRuteoReunion(
   fechaReunion: string
@@ -127,82 +93,8 @@ export async function getFlotaRuteoReunion(
 
   const supabase = await createClient()
 
-  const hasta = diaAnterior(fechaReunion, 1)
-  const desde = diaAnterior(fechaReunion, VENTANA_DIAS)
   const mes = fechaReunion.slice(0, 7)
   const inicioMes = `${mes}-01`
-
-  // ── Ruteo: VRL ────────────────────────────────────────────────────────────
-  // Vía v_vrl_diario: entrega_cortes tiene RLS sólo para service_role y leerla
-  // directo devolvería 0 filas sin error.
-  const vrlRes = await supabase
-    .from("v_vrl_diario")
-    .select("fecha, hl, bultos, pedidos_reprogramados")
-    .gte("fecha", desde)
-    .lte("fecha", hasta)
-  if (vrlRes.error) {
-    return { error: `No se pudo leer el VRL: ${vrlRes.error.message}` }
-  }
-  const vrlPorDia = new Map<
-    string,
-    { hl: number; bultos: number; pedidos: number }
-  >()
-  for (const r of vrlRes.data ?? []) {
-    vrlPorDia.set(String(r.fecha), {
-      hl: Number(r.hl ?? 0),
-      bultos: Number(r.bultos ?? 0),
-      pedidos: Number(r.pedidos_reprogramados ?? 0),
-    })
-  }
-
-  // ── Ruteo: VRC ────────────────────────────────────────────────────────────
-  // Vive en la Railway del dashboard Mercosur. Si no responde se informa como
-  // error visible: en un cuadro de 7 días, un cero silencioso se leería como
-  // "no hubo reprogramado por crédito" y es una conclusión falsa.
-  const vrcPorDia = new Map<string, { hl: number; bultos: number }>()
-  let vrcError: string | null = null
-  try {
-    const pool = getPool()
-    const { rows } = await pool.query<{
-      fecha: string
-      hl: string | null
-      bultos: string | null
-    }>(
-      `select to_char(fecha_entrega_original, 'YYYY-MM-DD') as fecha,
-              sum(hl) as hl, sum(bultos) as bultos
-         from vol_reprog_com_pedido
-        where lower(region) = 'pampeana'
-          and fecha_entrega_original between $1 and $2
-        group by 1`,
-      [desde, hasta]
-    )
-    for (const r of rows) {
-      vrcPorDia.set(r.fecha, {
-        hl: Number(r.hl ?? 0),
-        bultos: Number(r.bultos ?? 0),
-      })
-    }
-  } catch (e) {
-    vrcError =
-      e instanceof Error
-        ? `VRC no disponible (dashboard Mercosur): ${e.message}`
-        : "VRC no disponible: no se pudo consultar el dashboard Mercosur."
-  }
-
-  const dias: DiaRuteoReunion[] = []
-  for (let i = VENTANA_DIAS; i >= 1; i--) {
-    const fecha = diaAnterior(fechaReunion, i)
-    const vrl = vrlPorDia.get(fecha)
-    const vrc = vrcPorDia.get(fecha)
-    dias.push({
-      fecha,
-      vrlHl: vrl?.hl ?? 0,
-      vrlBultos: vrl?.bultos ?? 0,
-      vrlPedidos: vrl?.pedidos ?? 0,
-      vrcHl: vrcError ? null : (vrc?.hl ?? 0),
-      vrcBultos: vrcError ? null : (vrc?.bultos ?? 0),
-    })
-  }
 
   // ── Flota: disponibilidad del mes en curso ────────────────────────────────
   // Las paradas que arrancaron antes del mes siguen contando: se traen las OT
@@ -295,16 +187,6 @@ export async function getFlotaRuteoReunion(
 
   return {
     data: {
-      ruteo: {
-        desde,
-        hasta,
-        dias,
-        totalVrlHl: sumar(dias.map((d) => d.vrlHl)),
-        totalVrlBultos: sumar(dias.map((d) => d.vrlBultos)),
-        totalVrcHl: vrcError ? null : sumar(dias.map((d) => d.vrcHl)),
-        totalVrcBultos: vrcError ? null : sumar(dias.map((d) => d.vrcBultos)),
-        vrcError,
-      },
       flota: {
         mes,
         disponibilidadPct: calc.flotaDisp,

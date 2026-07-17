@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2, Truck } from "lucide-react"
+import { Loader2, Truck } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import {
@@ -16,30 +16,15 @@ import type {
 
 export const SECCION_FLOTA_RUTEO = "flota_ruteo"
 
-/**
- * Desde cuándo el VRL se registra de verdad. Hasta esta fecha, entrega_cortes no
- * podía escribirse (su RLS sólo admitía service_role y registrarCorte() usa la
- * sesión del usuario), así que los cortes previos nunca se guardaron: esos días
- * valen 0 por falta de registro, no porque no se haya reprogramado nada. Se
- * aclara al pie para que nadie lea esos ceros como un logro.
- */
-const VRL_REGISTRO_DESDE = "2026-07-16"
-
 interface ResponsableOpt {
   id: string
   nombre: string
   email: string
 }
 
-const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
-
 function formatFecha(iso: string): string {
   const [, m, d] = iso.split("-")
   return `${d}/${m}`
-}
-function diaSemana(iso: string): string {
-  const [y, m, d] = iso.split("-").map((s) => parseInt(s, 10))
-  return DIAS_CORTOS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
 }
 function nombreMes(mes: string): string {
   const [y, m] = mes.split("-").map((s) => parseInt(s, 10))
@@ -48,29 +33,6 @@ function nombreMes(mes: string): string {
     year: "numeric",
     timeZone: "UTC",
   })
-}
-/** HL con un decimal; el guion largo distingue "no hay dato" de un cero real. */
-function hl(v: number | null): string {
-  return v == null ? "—" : v.toLocaleString("es-AR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })
-}
-
-/** HL con los bultos entre paréntesis: la unidad del indicador es el HL, el
- *  bulto es la referencia física con la que se carga el camión. */
-function hlConBultos(hlValor: number | null, bultos: number | null) {
-  if (hlValor == null) return <span className="text-slate-400">—</span>
-  return (
-    <>
-      {hl(hlValor)}
-      {bultos != null && (
-        <span className="ml-1 text-xs font-normal text-slate-500">
-          ({bultos.toLocaleString("es-AR", { maximumFractionDigits: 0 })})
-        </span>
-      )}
-    </>
-  )
 }
 
 /** Verde si cumple el target, rojo si no. Gris cuando no hay dato ni target. */
@@ -119,11 +81,10 @@ function Kpi({
 }
 
 /**
- * Bloque de Flota y Ruteo de la reunión de logística de los lunes.
- *
- * Dos ventanas distintas a propósito: el ruteo (VRL/VRC) mira los 7 días
- * previos día por día, y la flota mira el mes en curso, que es la ventana con
- * la que están definidos los objetivos y la que se ve en Indicadores de Flota.
+ * Bloque de Flota de la reunión de logística de los lunes, sobre el mes en
+ * curso, que es la ventana con la que están definidos los objetivos y la que
+ * se ve en Indicadores de Flota. El volumen reprogramado (VRL/VRC) se consulta
+ * en la tarjeta de Pedidos con problemas, no acá.
  */
 export function SeccionFlotaRuteo({
   fechaReunion,
@@ -170,14 +131,14 @@ export function SeccionFlotaRuteo({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Truck className="size-5 text-slate-500" />
-          Flota y Ruteo
+          Flota
         </CardTitle>
       </CardHeader>
       <CardContent>
         {loading && (
           <p className="flex items-center gap-2 text-sm text-slate-500">
             <Loader2 className="size-4 animate-spin" />
-            Cargando flota y ruteo…
+            Cargando flota…
           </p>
         )}
 
@@ -189,101 +150,8 @@ export function SeccionFlotaRuteo({
 
         {data && !loading && (
           <>
-            {/* ── Ruteo: VRL y VRC de los 7 días previos ── */}
-            <section>
-              <h3 className="text-sm font-semibold text-slate-900">
-                Volumen reprogramado — últimos 7 días
-              </h3>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Del {formatFecha(data.ruteo.desde)} al {formatFecha(data.ruteo.hasta)}, en{" "}
-                <strong>HL</strong> y entre paréntesis los <strong>bultos</strong>.
-                VRL = reprogramado por capacidad de reparto · VRC = por crédito.
-              </p>
-
-              {data.ruteo.vrcError && (
-                <p className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  <AlertTriangle className="mt-px size-4 shrink-0" />
-                  <span>
-                    {data.ruteo.vrcError} Las celdas de VRC quedan vacías: no son
-                    cero reprogramado, es un dato que no se pudo leer.
-                  </span>
-                </p>
-              )}
-
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[520px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-xs text-slate-500">
-                      <th className="py-1.5 text-left font-medium">Día</th>
-                      <th className="py-1.5 text-right font-medium">VRL</th>
-                      <th className="py-1.5 text-right font-medium">Pedidos</th>
-                      <th className="py-1.5 text-right font-medium">VRC</th>
-                      <th className="py-1.5 text-right font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.ruteo.dias.map((d) => (
-                      <tr key={d.fecha} className="border-b border-slate-100">
-                        <td className="py-1.5 text-slate-700">
-                          {diaSemana(d.fecha)} {formatFecha(d.fecha)}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">
-                          {hlConBultos(d.vrlHl, d.vrlBultos)}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums text-slate-500">
-                          {d.vrlPedidos}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">
-                          {hlConBultos(d.vrcHl, d.vrcBultos)}
-                        </td>
-                        <td className="py-1.5 text-right font-medium tabular-nums">
-                          {hlConBultos(
-                            d.vrcHl == null ? d.vrlHl : d.vrlHl + d.vrcHl,
-                            d.vrcBultos == null
-                              ? d.vrlBultos
-                              : d.vrlBultos + d.vrcBultos,
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="font-semibold">
-                      <td className="py-2 text-slate-900">Total semana</td>
-                      <td className="py-2 text-right tabular-nums">
-                        {hlConBultos(data.ruteo.totalVrlHl, data.ruteo.totalVrlBultos)}
-                      </td>
-                      <td />
-                      <td className="py-2 text-right tabular-nums">
-                        {hlConBultos(data.ruteo.totalVrcHl, data.ruteo.totalVrcBultos)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {hlConBultos(
-                          data.ruteo.totalVrcHl == null
-                            ? data.ruteo.totalVrlHl
-                            : data.ruteo.totalVrlHl + data.ruteo.totalVrcHl,
-                          data.ruteo.totalVrcBultos == null
-                            ? data.ruteo.totalVrlBultos
-                            : data.ruteo.totalVrlBultos + data.ruteo.totalVrcBultos,
-                        )}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {data.ruteo.desde < VRL_REGISTRO_DESDE && (
-                <p className="mt-2 text-xs text-slate-500">
-                  El registro del VRL arrancó el{" "}
-                  {formatFecha(VRL_REGISTRO_DESDE)}: los días anteriores figuran
-                  en 0 porque el corte no se guardaba, no porque no se haya
-                  reprogramado.
-                </p>
-              )}
-            </section>
-
             {/* ── Flota: indicadores del mes en curso ── */}
-            <section className="mt-6">
+            <section>
               <h3 className="text-sm font-semibold text-slate-900">
                 Flota — {nombreMes(data.flota.mes)}
               </h3>
@@ -394,7 +262,7 @@ export function SeccionFlotaRuteo({
               reunionId={reunionId}
               reunionTipo={reunionTipo}
               seccion={SECCION_FLOTA_RUTEO}
-              titulo="Flota y Ruteo"
+              titulo="Flota"
               actividades={actividades}
               responsables={responsables}
               puedeEditar={puedeEditar}
