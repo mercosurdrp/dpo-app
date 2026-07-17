@@ -9,6 +9,9 @@ import type { Profile } from "@/types/database"
 const BUCKET = "presupuestos"
 const REVALIDATE_PATH = "/presupuesto"
 const SHEET_DESVIOS = "DESVIOS"
+const SHEET_ALMACEN = "ALMACEN PXQ mrp"
+/** Fila de VENTAS que trae el volumen total del mes, en la hoja DESVIOS. */
+const FILA_TOTAL_HL = "TOTAL EN HL"
 const UMBRAL_PCT = 15
 const UMBRAL_ABS = 250_000
 const DIAS_VENCIMIENTO = 10
@@ -143,6 +146,145 @@ function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
     out.set(subNorm, { porMes })
   }
   return out
+}
+
+export interface CantidadMes {
+  /** 1-12 */
+  mes: number
+  /** Bultos que el presupuesto prevé perder ese mes. */
+  bultos: number
+}
+
+export interface VolumenMes {
+  mes: number
+  /** HL que el presupuesto preveía vender. */
+  hlPpto: number
+  /** HL realmente vendidos (venta facturada). */
+  hlReal: number
+}
+
+export interface PptoCantidades {
+  /** Clave: concepto normalizado (ej. "ROTURAS Y DERRAMES"). */
+  porConcepto: Record<string, CantidadMes[]>
+  /** Denominador del KPI: "Total en HL" de la hoja DESVIOS, ppto y real. */
+  volumen: VolumenMes[]
+}
+
+/**
+ * Cantidades PRESUPUESTADAS de lo que se rompe/vence, y el volumen vendido.
+ *
+ * El presupuesto de almacén se arma P×Q: debajo de cada concepto la hoja trae una
+ * fila "Q bultos" con la cantidad y otra "Precio bulto". Esa Q es el target del
+ * KPI, y es la razón por la que el KPI puede ir en cantidad en vez de en pesos:
+ * no hay que derivar nada de un precio, la meta física ya existe.
+ *
+ * Sale de la hoja de ALMACEN y no de DESVIOS porque DESVIOS agrega a pesos y
+ * pierde la Q. Ojo: acá cada mes es UNA columna (col 2 = enero), no cuatro como
+ * en DESVIOS.
+ */
+function parsePptoCantidades(buffer: ArrayBuffer): PptoCantidades {
+  const wb = XLSX.read(buffer, { type: "array" })
+
+  const wsAlm = wb.Sheets[SHEET_ALMACEN]
+  if (!wsAlm) throw new Error(`El Excel no tiene la hoja "${SHEET_ALMACEN}"`)
+  const alm = XLSX.utils.sheet_to_json<unknown[]>(wsAlm, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  const porConcepto: Record<string, CantidadMes[]> = {}
+  for (let i = 0; i < alm.length; i++) {
+    const row = alm[i]
+    if (!row) continue
+    // Un concepto se reconoce porque declara su centro de costo en la col 0; las
+    // filas Q/P que le siguen la traen vacía.
+    if (typeof row[0] !== "string" || typeof row[1] !== "string") continue
+    const concepto = normalizar(row[1])
+    if (!concepto) continue
+
+    // La Q vive en alguna de las filas siguientes, hasta el próximo concepto.
+    for (let j = i + 1; j < alm.length; j++) {
+      const sub = alm[j]
+      if (!sub || typeof sub[0] === "string") break // empezó otro concepto
+      const etiqueta = typeof sub[1] === "string" ? normalizar(sub[1]) : ""
+      if (!/^Q\b/.test(etiqueta)) continue
+      const meses: CantidadMes[] = []
+      for (let mes = 1; mes <= 12; mes++) {
+        const q = sub[2 + (mes - 1)]
+        if (typeof q !== "number" || !Number.isFinite(q)) continue
+        meses.push({ mes, bultos: q })
+      }
+      if (meses.length > 0) porConcepto[concepto] = meses
+      break
+    }
+  }
+
+  const wsDes = wb.Sheets[SHEET_DESVIOS]
+  if (!wsDes) throw new Error(`El Excel no tiene la hoja "${SHEET_DESVIOS}"`)
+  const des = XLSX.utils.sheet_to_json<unknown[]>(wsDes, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+  const volumen: VolumenMes[] = []
+  for (let i = 3; i < des.length; i++) {
+    const row = des[i]
+    if (!row || typeof row[1] !== "string") continue
+    if (normalizar(row[1]) !== FILA_TOTAL_HL) continue
+    for (let mes = 1; mes <= 12; mes++) {
+      const p = row[2 + 4 * (mes - 1)]
+      const r = row[3 + 4 * (mes - 1)]
+      const hayP = typeof p === "number" && Number.isFinite(p)
+      const hayR = typeof r === "number" && Number.isFinite(r)
+      if (!hayP && !hayR) continue
+      volumen.push({ mes, hlPpto: hayP ? p : 0, hlReal: hayR ? r : 0 })
+    }
+    break
+  }
+  if (volumen.length === 0) {
+    throw new Error(
+      `La hoja "${SHEET_DESVIOS}" no tiene la fila "${FILA_TOTAL_HL}" con el volumen vendido`,
+    )
+  }
+
+  return { porConcepto, volumen }
+}
+
+/** Cantidades presupuestadas (Q bultos) y volumen vendido del año. */
+export async function getPptoCantidades(
+  anio: number,
+): Promise<Result<PptoCantidades>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    return { data: parsePptoCantidades(await blob.arrayBuffer()) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo las cantidades presupuestadas",
+    }
+  }
 }
 
 /** Ejecución (presupuesto vs real acumulado) de cada rubro del EERR del año. */

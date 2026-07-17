@@ -20,6 +20,7 @@ import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
+import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -41,6 +42,8 @@ interface Props {
   iniciativas: IniciativaAhorroConDetalle[]
   /** Presupuestado vs real acumulado por rubro del EERR (rubro normalizado). */
   ejecucionRubros: Record<string, EjecucionRubro>
+  /** KPI físico por rubro (lo perdido por HL vendido). Vacío si no aplica. */
+  kpiPerdidas: Record<string, KpiPerdidas>
   responsables: ResponsableOpt[]
   puedeEditar: boolean
 }
@@ -113,6 +116,102 @@ function barColor(frac: number | null): string {
   if (frac >= 0.5) return "bg-amber-500"
   if (frac >= 0) return "bg-orange-500"
   return "bg-red-500"
+}
+
+const MES_CORTO = [
+  "",
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+]
+
+/**
+ * KPI físico del rubro: cuánto se rompe/vence por cada millón de HL vendidos,
+ * mes a mes, contra el target del presupuesto.
+ *
+ * Va en ppm y no en % porque los números son chicos: roturas ronda 0,04% y
+ * vencidos 0,003%, y a esa escala un tablero se vuelve ilegible (0,0002% vs
+ * 0,0071% no se compara de un vistazo; 2 ppm vs 71 sí).
+ */
+function KpiPerdidasBlock({
+  kpi,
+  rubro,
+}: {
+  kpi: KpiPerdidas
+  rubro: string
+}) {
+  const cumpleAcum = kpi.realPpmAcum <= kpi.targetPpmAcum
+  const hayAtipico = kpi.meses.some((m) => m.targetAtipico)
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+        <span className="text-muted-foreground">
+          {rubro === "PRODUCTO VENCIDO" ? "Vencido" : "Roto"} por HL vendido (ppm)
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-slate-900">
+            target <strong>{Math.round(kpi.targetPpmAcum)}</strong>
+            <span className="text-muted-foreground"> · real </span>
+            <strong>{Math.round(kpi.realPpmAcum)}</strong>
+          </span>
+          <Badge
+            className={
+              cumpleAcum
+                ? "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                : "border-red-200 bg-red-100 text-red-700 hover:bg-red-100"
+            }
+          >
+            {cumpleAcum ? "Cumple" : "Excede"}
+          </Badge>
+        </span>
+      </div>
+      {/* Mes a mes: el acumulado solo esconde la tendencia — roturas arrastra
+          enero (2.036 ppm) y desde marzo viene en ~400. */}
+      <div className="flex flex-wrap gap-1.5">
+        {kpi.meses.map((m) => {
+          const ok = m.realPpm <= m.targetPpm
+          return (
+            <div
+              key={m.mes}
+              title={`${MES_CORTO[m.mes]}: ${Math.round(m.realPpm)} ppm reales contra ${Math.round(m.targetPpm)} de target${m.targetAtipico ? " — target atípico" : ""}`}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                m.targetAtipico
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : ok
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              <span className="font-medium">{MES_CORTO[m.mes]}</span>{" "}
+              {Math.round(m.realPpm)}
+              <span className="opacity-60">/{Math.round(m.targetPpm)}</span>
+              {m.targetAtipico && " ⚠"}
+            </div>
+          )
+        })}
+      </div>
+      {hayAtipico && (
+        <p className="text-xs text-amber-700">
+          ⚠ El presupuesto de{" "}
+          {kpi.meses
+            .filter((m) => m.targetAtipico)
+            .map((m) => MES_CORTO[m.mes])
+            .join(" y ")}{" "}
+          pide mucho más que el resto del año. Contra ese target cumplir es
+          trivial y el ahorro puede ser un artefacto del presupuesto, no gestión.
+        </p>
+      )}
+    </div>
+  )
 }
 
 /** Índice 1-12 (el 0 queda sin usar para no restar en cada lectura). */
@@ -285,6 +384,7 @@ export function IniciativasAhorroSection({
   anio,
   iniciativas,
   ejecucionRubros,
+  kpiPerdidas,
   responsables,
   puedeEditar,
 }: Props) {
@@ -481,6 +581,9 @@ export function IniciativasAhorroSection({
             const ejec = ini.rubro
               ? ejecucionRubros[ini.rubro.trim().toUpperCase()]
               : undefined
+            const kpiPerd = ini.rubro
+              ? kpiPerdidas[ini.rubro.trim().toUpperCase()]
+              : undefined
             const {
               real: realAcum,
               meses: mesesEerr,
@@ -676,34 +779,44 @@ export function IniciativasAhorroSection({
                     </p>
                   </div>
 
-                  {/* KPI comprometido: la métrica que mueve el ahorro. */}
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
-                    <span className="text-muted-foreground">
-                      {ini.kpi_nombre
-                        ? ini.kpi_nombre +
-                          (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
-                        : "KPI comprometido"}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="text-slate-900">
-                        {formatNum(ini.kpi_linea_base)} →{" "}
-                        {formatNum(ini.kpi_objetivo)}
-                        {ultimoKpi !== null && (
-                          <>
-                            <span className="text-muted-foreground"> · hoy </span>
-                            <strong>{formatNum(ultimoKpi)}</strong>
-                            {ultimoKpiQ !== null && (
+                  {/* KPI comprometido: la métrica que mueve el ahorro. Si el
+                      rubro tiene el KPI físico (lo perdido por HL vendido), va
+                      ese: se mide contra el target del propio presupuesto del
+                      año, en vez de contra el gasto del año anterior. */}
+                  {kpiPerd ? (
+                    <KpiPerdidasBlock kpi={kpiPerd} rubro={ini.rubro!} />
+                  ) : (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+                      <span className="text-muted-foreground">
+                        {ini.kpi_nombre
+                          ? ini.kpi_nombre +
+                            (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
+                          : "KPI comprometido"}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-slate-900">
+                          {formatNum(ini.kpi_linea_base)} →{" "}
+                          {formatNum(ini.kpi_objetivo)}
+                          {ultimoKpi !== null && (
+                            <>
                               <span className="text-muted-foreground">
                                 {" "}
-                                (Q{ultimoKpiQ})
+                                · hoy{" "}
                               </span>
-                            )}
-                          </>
-                        )}
+                              <strong>{formatNum(ultimoKpi)}</strong>
+                              {ultimoKpiQ !== null && (
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  (Q{ultimoKpiQ})
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </span>
+                        <SemaforoBadge frac={kpiFrac} />
                       </span>
-                      <SemaforoBadge frac={kpiFrac} />
-                    </span>
-                  </div>
+                    </div>
+                  )}
 
                   {/* El análisis del último trimestre cargado. */}
                   {ultimoSeg && (
