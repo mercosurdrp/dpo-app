@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { urlVisorOffice } from "@/lib/abrir-archivo"
 import {
   Upload,
   Download,
@@ -167,6 +168,7 @@ export function EvidenciaPuntoClient({
     url: string
     mime: string
     titulo: string
+    office: boolean
   } | null>(null)
 
   const archivosVisibles = archivos.filter((a) =>
@@ -279,8 +281,16 @@ export function EvidenciaPuntoClient({
       url: res.data.url,
       mime: a.mime_type || "",
       titulo: a.titulo,
+      office: esOffice(a.file_ext),
     })
     setPreviewOpen(true)
+  }
+
+  // Word/Excel/PowerPoint: se renderizan embebiendo el visor web de Office
+  // (solo lectura; para cambiar el contenido va "Nueva versión").
+  function esOffice(ext: string): boolean {
+    const e = (ext || "").toLowerCase().replace(".", "")
+    return ["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(e)
   }
 
   function isPreviewable(mime: string, ext: string): boolean {
@@ -289,7 +299,8 @@ export function EvidenciaPuntoClient({
     return (
       m.startsWith("image/") ||
       m === "application/pdf" ||
-      ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(e)
+      ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(e) ||
+      esOffice(ext)
     )
   }
 
@@ -942,7 +953,7 @@ export function EvidenciaPuntoClient({
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Archivar{" "}
-            <span className="font-medium text-slate-900">{selected?.titulo}</span>. Se va a ocultar del listado pero queda disponible en "Ver archivados".
+            <span className="font-medium text-slate-900">{selected?.titulo}</span>. Se va a ocultar del listado pero queda disponible en &quot;Ver archivados&quot;.
           </p>
           <div>
             <Label>Motivo (opcional)</Label>
@@ -965,7 +976,7 @@ export function EvidenciaPuntoClient({
       </Dialog>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle>{previewData?.titulo ?? "Vista previa"}</DialogTitle>
           </DialogHeader>
@@ -976,13 +987,22 @@ export function EvidenciaPuntoClient({
                 <img
                   src={previewData.url}
                   alt={previewData.titulo}
-                  className="mx-auto max-h-[70vh] w-auto rounded border"
+                  className="mx-auto max-h-[75vh] w-auto rounded border"
+                />
+              ) : previewData.office ? (
+                // Word/Excel/PowerPoint: visor web de Office sobre la URL
+                // firmada. Solo lectura — para editar: descargar y subir
+                // "Nueva versión".
+                <iframe
+                  src={urlVisorOffice(previewData.url)}
+                  title={previewData.titulo}
+                  className="h-[75vh] w-full rounded border"
                 />
               ) : (
                 <iframe
                   src={previewData.url}
                   title={previewData.titulo}
-                  className="h-[70vh] w-full rounded border"
+                  className="h-[75vh] w-full rounded border"
                 />
               )}
               <div className="flex justify-end gap-2">

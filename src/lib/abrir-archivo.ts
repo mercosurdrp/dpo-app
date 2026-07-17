@@ -6,8 +6,13 @@
 // descargarse (los archivos suelen quedar guardados como
 // application/octet-stream, que el navegador siempre descarga).
 //
-// El resto (Excel, Word, CSV, ZIP, etc.) y cualquier URL externa se abren
-// directo, manteniendo el comportamiento actual: el navegador los descarga.
+// Word/Excel/PowerPoint se abren en el visor web de Microsoft Office
+// (view.officeapps.live.com), que renderiza el documento en el navegador a
+// partir de la URL firmada — sin descargar. Es solo lectura: para editar
+// sigue el flujo descargar → editar → "Nueva versión".
+//
+// El resto (CSV, ZIP, etc.) y cualquier URL externa se abren directo,
+// manteniendo el comportamiento actual: el navegador los descarga.
 
 const VISUALIZABLE = new Set([
   "jpg",
@@ -19,6 +24,8 @@ const VISUALIZABLE = new Set([
   "svg",
   "pdf",
 ])
+
+const OFFICE = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"])
 
 function extensionDe(valor: string): string {
   let pathname = valor
@@ -62,5 +69,14 @@ export function abrirArchivo(url: string, nombre?: string): void {
     )
     return
   }
+  if (OFFICE.has(ext)) {
+    window.open(urlVisorOffice(url), "_blank", "noopener,noreferrer")
+    return
+  }
   window.open(url, "_blank", "noopener,noreferrer")
+}
+
+/** URL del visor web de Microsoft Office para un archivo accesible por URL. */
+export function urlVisorOffice(url: string): string {
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`
 }
