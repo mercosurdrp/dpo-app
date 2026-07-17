@@ -1822,6 +1822,11 @@ export interface DpoArchivo {
   archived_by: string | null
   deleted_at: string | null
   deleted_by: string | null
+  /** Edición online en curso (puente Google Drive): id del archivo en Drive. */
+  edicion_drive_id: string | null
+  edicion_drive_url: string | null
+  edicion_iniciada_at: string | null
+  edicion_iniciada_por_nombre: string | null
   created_at: string
   updated_at: string
 }

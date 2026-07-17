@@ -284,6 +284,80 @@ export async function uploadArchivo(formData: FormData): Promise<Result<DpoArchi
   }
 }
 
+// Núcleo compartido de "nueva versión": lo usan la subida manual (nuevaVersion)
+// y el cierre de la edición online (finalizarEdicionOnline).
+async function guardarNuevaVersionDesdeBuffer(args: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any
+  profile: { id: string; nombre: string }
+  current: DpoArchivo
+  contenido: ArrayBuffer
+  file_name: string
+  mime_type: string
+  notas: string | null
+}): Promise<Result<DpoArchivo>> {
+  const { supabase, profile, current, contenido, file_name, mime_type, notas } =
+    args
+  const archivo_id = current.id
+  const nextVersion = current.current_version + 1
+  const file_ext = extractExt(file_name)
+  const file_size = contenido.byteLength
+  const path = `${current.pilar_codigo}/${current.punto_codigo}/${archivo_id}/v${nextVersion}-${file_name}`
+
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, contenido, { contentType: mime_type, upsert: false })
+
+  if (upErr) return { error: upErr.message }
+
+  const { error: errVer } = await supabase.from("dpo_archivo_versiones").insert({
+    archivo_id,
+    version: nextVersion,
+    file_path: path,
+    file_name,
+    file_size,
+    notas,
+    uploaded_by: profile.id,
+  })
+
+  if (errVer) {
+    await supabase.storage.from(BUCKET).remove([path])
+    return { error: errVer.message }
+  }
+
+  const { data: updated, error: errUpd } = await supabase
+    .from("dpo_archivos")
+    .update({
+      current_version: nextVersion,
+      current_file_path: path,
+      current_file_size: file_size,
+      file_name,
+      file_ext,
+      mime_type,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", archivo_id)
+    .select("*")
+    .single()
+
+  if (errUpd) return { error: errUpd.message }
+
+  await registerActivity(supabase, {
+    tipo: "archivo_version_nueva",
+    titulo: current.titulo,
+    descripcion: notas ?? undefined,
+    pilar_codigo: current.pilar_codigo,
+    punto_codigo: current.punto_codigo,
+    requisito_codigo: current.requisito_codigo ?? undefined,
+    archivo_id,
+    user_id: profile.id,
+    user_nombre: profile.nombre,
+    metadata: { version: nextVersion, file_name, file_size },
+  })
+
+  return { data: updated as DpoArchivo }
+}
+
 export async function nuevaVersion(formData: FormData): Promise<Result<DpoArchivo>> {
   try {
     const profile = await requireAuth()
@@ -306,67 +380,171 @@ export async function nuevaVersion(formData: FormData): Promise<Result<DpoArchiv
 
     if (errEx) return { error: errEx.message }
 
-    const current = existing as DpoArchivo
-    const nextVersion = current.current_version + 1
-    const file_name = file.name
-    const file_ext = extractExt(file_name)
-    const mime_type = file.type || "application/octet-stream"
-    const file_size = file.size
-    const path = `${current.pilar_codigo}/${current.punto_codigo}/${archivo_id}/v${nextVersion}-${file_name}`
-
-    const arrayBuffer = await file.arrayBuffer()
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, arrayBuffer, { contentType: mime_type, upsert: false })
-
-    if (upErr) return { error: upErr.message }
-
-    const { error: errVer } = await supabase.from("dpo_archivo_versiones").insert({
-      archivo_id,
-      version: nextVersion,
-      file_path: path,
-      file_name,
-      file_size,
+    return await guardarNuevaVersionDesdeBuffer({
+      supabase,
+      profile,
+      current: existing as DpoArchivo,
+      contenido: await file.arrayBuffer(),
+      file_name: file.name,
+      mime_type: file.type || "application/octet-stream",
       notas,
-      uploaded_by: profile.id,
     })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
 
-    if (errVer) {
-      await supabase.storage.from(BUCKET).remove([path])
-      return { error: errVer.message }
+// ── Edición online (puente Google Drive) ──
+// El archivo se sube TAL CUAL al Drive del service account, editable por
+// link (URL impredecible, temporal); se edita en Docs/Sheets/Slides en modo
+// Office y al terminar vuelve como nueva versión. Supabase sigue siendo la
+// única fuente de verdad.
+
+const EDITABLES_ONLINE = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"])
+
+export async function iniciarEdicionOnline(
+  archivo_id: string,
+): Promise<Result<{ url: string }>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: existing, error: errEx } = await supabase
+      .from("dpo_archivos")
+      .select("*")
+      .eq("id", archivo_id)
+      .single()
+    if (errEx) return { error: errEx.message }
+    const archivo = existing as DpoArchivo
+
+    if (archivo.archivado) return { error: "El archivo está archivado" }
+    if (!EDITABLES_ONLINE.has((archivo.file_ext || "").toLowerCase())) {
+      return { error: "Solo se pueden editar online archivos de Word, Excel o PowerPoint" }
+    }
+    // Ya hay una edición en curso → reanudarla en vez de duplicar copias.
+    if (archivo.edicion_drive_id && archivo.edicion_drive_url) {
+      return { data: { url: archivo.edicion_drive_url } }
     }
 
-    const { data: updated, error: errUpd } = await supabase
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(archivo.current_file_path)
+    if (errDl || !blob) {
+      return { error: errDl?.message || "No se pudo leer el archivo del storage" }
+    }
+
+    const { driveSubirParaEditar } = await import("@/lib/google-drive")
+    const subido = await driveSubirParaEditar(
+      await blob.arrayBuffer(),
+      archivo.file_name,
+      archivo.mime_type || "application/octet-stream",
+    )
+
+    const { error: errUpd } = await supabase
       .from("dpo_archivos")
       .update({
-        current_version: nextVersion,
-        current_file_path: path,
-        current_file_size: file_size,
-        file_name,
-        file_ext,
-        mime_type,
-        updated_at: new Date().toISOString(),
+        edicion_drive_id: subido.id,
+        edicion_drive_url: subido.url,
+        edicion_iniciada_at: new Date().toISOString(),
+        edicion_iniciada_por_nombre: profile.nombre,
       })
       .eq("id", archivo_id)
-      .select("*")
-      .single()
+    if (errUpd) {
+      const { driveBorrar } = await import("@/lib/google-drive")
+      await driveBorrar(subido.id)
+      return { error: errUpd.message }
+    }
 
+    return { data: { url: subido.url } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+export async function finalizarEdicionOnline(
+  archivo_id: string,
+  notas?: string,
+): Promise<Result<DpoArchivo>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: existing, error: errEx } = await supabase
+      .from("dpo_archivos")
+      .select("*")
+      .eq("id", archivo_id)
+      .single()
+    if (errEx) return { error: errEx.message }
+    const archivo = existing as DpoArchivo
+
+    if (!archivo.edicion_drive_id) {
+      return { error: "No hay una edición online en curso para este archivo" }
+    }
+
+    const { driveDescargar, driveBorrar } = await import("@/lib/google-drive")
+    const contenido = await driveDescargar(archivo.edicion_drive_id)
+
+    const res = await guardarNuevaVersionDesdeBuffer({
+      supabase,
+      profile,
+      current: archivo,
+      contenido,
+      file_name: archivo.file_name,
+      mime_type: archivo.mime_type || "application/octet-stream",
+      notas: notas?.trim() || "Edición online (Google Docs)",
+    })
+    if ("error" in res) return res
+
+    await driveBorrar(archivo.edicion_drive_id)
+    const { error: errUpd } = await supabase
+      .from("dpo_archivos")
+      .update({
+        edicion_drive_id: null,
+        edicion_drive_url: null,
+        edicion_iniciada_at: null,
+        edicion_iniciada_por_nombre: null,
+      })
+      .eq("id", archivo_id)
     if (errUpd) return { error: errUpd.message }
 
-    await registerActivity(supabase, {
-      tipo: "archivo_version_nueva",
-      titulo: current.titulo,
-      descripcion: notas ?? undefined,
-      pilar_codigo: current.pilar_codigo,
-      punto_codigo: current.punto_codigo,
-      requisito_codigo: current.requisito_codigo ?? undefined,
-      archivo_id,
-      user_id: profile.id,
-      user_nombre: profile.nombre,
-      metadata: { version: nextVersion, file_name, file_size },
-    })
+    return { data: { ...res.data, edicion_drive_id: null, edicion_drive_url: null } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
 
-    return { data: updated as DpoArchivo }
+export async function cancelarEdicionOnline(
+  archivo_id: string,
+): Promise<Result<null>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: existing, error: errEx } = await supabase
+      .from("dpo_archivos")
+      .select("id, edicion_drive_id")
+      .eq("id", archivo_id)
+      .single()
+    if (errEx) return { error: errEx.message }
+
+    const driveId = (existing as { edicion_drive_id: string | null }).edicion_drive_id
+    if (driveId) {
+      const { driveBorrar } = await import("@/lib/google-drive")
+      await driveBorrar(driveId)
+    }
+
+    const { error: errUpd } = await supabase
+      .from("dpo_archivos")
+      .update({
+        edicion_drive_id: null,
+        edicion_drive_url: null,
+        edicion_iniciada_at: null,
+        edicion_iniciada_por_nombre: null,
+      })
+      .eq("id", archivo_id)
+    if (errUpd) return { error: errUpd.message }
+
+    return { data: null }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

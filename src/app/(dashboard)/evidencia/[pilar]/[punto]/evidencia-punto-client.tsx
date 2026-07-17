@@ -19,6 +19,10 @@ import {
   EyeOff,
   Eye,
   ExternalLink,
+  FilePenLine,
+  Loader2,
+  CircleCheck,
+  CircleX,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -50,6 +54,9 @@ import {
   deleteArchivo,
   getArchivoById,
   getDownloadUrl,
+  iniciarEdicionOnline,
+  finalizarEdicionOnline,
+  cancelarEdicionOnline,
 } from "@/actions/dpo-evidencia"
 import { createClient } from "@/lib/supabase/client"
 import type { DpoArchivo, DpoArchivoVersion } from "@/types/database"
@@ -291,6 +298,54 @@ export function EvidenciaPuntoClient({
   function esOffice(ext: string): boolean {
     const e = (ext || "").toLowerCase().replace(".", "")
     return ["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(e)
+  }
+
+  // ── Edición online (puente Google Drive) ──
+  const [edicionBusyId, setEdicionBusyId] = useState<string | null>(null)
+
+  async function handleEditarOnline(a: DpoArchivo) {
+    setEdicionBusyId(a.id)
+    try {
+      const res = await iniciarEdicionOnline(a.id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      openUrlInNewTab(res.data.url)
+      router.refresh()
+    } finally {
+      setEdicionBusyId(null)
+    }
+  }
+
+  async function handleTerminarEdicion(a: DpoArchivo) {
+    setEdicionBusyId(a.id)
+    try {
+      const res = await finalizarEdicionOnline(a.id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(`Cambios guardados como v${res.data.current_version}`)
+      router.refresh()
+    } finally {
+      setEdicionBusyId(null)
+    }
+  }
+
+  async function handleCancelarEdicion(a: DpoArchivo) {
+    setEdicionBusyId(a.id)
+    try {
+      const res = await cancelarEdicionOnline(a.id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Edición online descartada")
+      router.refresh()
+    } finally {
+      setEdicionBusyId(null)
+    }
   }
 
   function isPreviewable(mime: string, ext: string): boolean {
@@ -632,6 +687,20 @@ export function EvidenciaPuntoClient({
                   {a.requisito_codigo && (
                     <Badge variant="outline">{a.requisito_codigo}</Badge>
                   )}
+                  {a.edicion_drive_id && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-50 text-amber-700"
+                      title={
+                        a.edicion_iniciada_por_nombre
+                          ? `Edición iniciada por ${a.edicion_iniciada_por_nombre}`
+                          : undefined
+                      }
+                    >
+                      <FilePenLine className="mr-1 size-3" />
+                      En edición online
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
                   <span>{formatBytes(a.current_file_size)}</span>
@@ -662,6 +731,60 @@ export function EvidenciaPuntoClient({
                       <Eye className="mr-1 size-4" />
                       Ver
                     </Button>
+                  )}
+                  {esOffice(a.file_ext) && !a.archivado && !a.edicion_drive_id && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEditarOnline(a)}
+                      disabled={edicionBusyId === a.id}
+                      title="Editar el documento en Google Docs/Sheets/Slides; al terminar se guarda como nueva versión"
+                    >
+                      {edicionBusyId === a.id ? (
+                        <Loader2 className="mr-1 size-4 animate-spin" />
+                      ) : (
+                        <FilePenLine className="mr-1 size-4" />
+                      )}
+                      Editar online
+                    </Button>
+                  )}
+                  {a.edicion_drive_id && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          a.edicion_drive_url && openUrlInNewTab(a.edicion_drive_url)
+                        }
+                      >
+                        <ExternalLink className="mr-1 size-4" />
+                        Seguir editando
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleTerminarEdicion(a)}
+                        disabled={edicionBusyId === a.id}
+                        title="Trae el documento editado y lo guarda como nueva versión"
+                      >
+                        {edicionBusyId === a.id ? (
+                          <Loader2 className="mr-1 size-4 animate-spin" />
+                        ) : (
+                          <CircleCheck className="mr-1 size-4" />
+                        )}
+                        Terminar y guardar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600"
+                        onClick={() => handleCancelarEdicion(a)}
+                        disabled={edicionBusyId === a.id}
+                        title="Descarta los cambios hechos online"
+                      >
+                        <CircleX className="mr-1 size-4" />
+                        Cancelar
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"
