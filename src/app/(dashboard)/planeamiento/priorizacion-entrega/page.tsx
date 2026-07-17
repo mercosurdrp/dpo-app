@@ -2,8 +2,9 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { redirect } from "next/navigation"
 import { getPriorizacionEntrega, getVrlMensual } from "@/actions/priorizacion-entrega"
+import { getFueraRuta } from "@/actions/fuera-ruta"
 import { IS_MISIONES } from "@/lib/empresa"
-import { PriorizacionClient } from "./priorizacion-client"
+import { PriorizacionClient, FueraRutaSolo } from "./priorizacion-client"
 
 export const dynamic = "force-dynamic"
 
@@ -31,11 +32,16 @@ export default async function PriorizacionEntregaPage({
   const { fecha } = await searchParams
   const fechaEntrega = /^\d{4}-\d{2}-\d{2}$/.test(fecha ?? "") ? fecha! : proximaFechaEntrega()
 
-  const [res, vrl] = await Promise.all([
+  const [res, vrl, fueraRutaRes] = await Promise.all([
     getPriorizacionEntrega(fechaEntrega),
     getVrlMensual(6),
+    getFueraRuta(fechaEntrega),
   ])
   const vrlMeses = "error" in vrl ? [] : vrl.data
+  const fueraRuta =
+    "error" in fueraRutaRes
+      ? { fecha: fechaEntrega, filas: [], total_monto: 0, sheet_ok: false }
+      : fueraRutaRes.data
 
   return (
     <div className="space-y-4">
@@ -47,12 +53,11 @@ export default async function PriorizacionEntregaPage({
       </Link>
 
       {"error" in res ? (
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Priorización de Entrega</h1>
-          <p className="mt-2 text-red-500">{res.error}</p>
-        </div>
+        // Sin pedidos pendientes (p. ej. una fecha pasada): el registro de fuera
+        // de ruta se muestra igual, que para eso es un registro con historia.
+        <FueraRutaSolo error={res.error} fueraRuta={fueraRuta} />
       ) : (
-        <PriorizacionClient data={res.data} vrl={vrlMeses} />
+        <PriorizacionClient data={res.data} vrl={vrlMeses} fueraRuta={fueraRuta} />
       )}
     </div>
   )

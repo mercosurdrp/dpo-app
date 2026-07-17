@@ -13,10 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Truck, Scissors, Clock,
-  ShieldCheck, PackageX, Info, Eye, Download,
+  ShieldCheck, PackageX, Info, Eye, Download, Route,
 } from "lucide-react"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
+import type { FueraRutaDia } from "@/actions/fuera-ruta"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
 import type { FilaPriorizada } from "@/lib/priorizacion/score"
 
@@ -150,7 +151,13 @@ function colorComportamiento(c: number): string {
   return "bg-red-100 text-red-800"
 }
 
-export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl: VrlMes[] }) {
+export function PriorizacionClient({
+  data, vrl, fueraRuta,
+}: {
+  data: PriorizacionData
+  vrl: VrlMes[]
+  fueraRuta: FueraRutaDia
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   /** Cupo de bultos por ciudad. Vacío = no hay corte: entran todos. */
@@ -415,7 +422,20 @@ export function PriorizacionClient({ data, vrl }: { data: PriorizacionData; vrl:
                 )}
               </TabsTrigger>
             ))}
+            {/* Los fuera de ruta van al final: no compiten por cupo, son otro circuito. */}
+            <TabsTrigger value="__fuera_ruta__" className="flex-none gap-1.5">
+              <Route className="h-3.5 w-3.5" /> Fuera de ruta
+              {fueraRuta.filas.length > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 px-1 text-[10px] font-bold text-amber-700">
+                  {fueraRuta.filas.length}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="__fuera_ruta__">
+            <FueraRutaPanel fueraRuta={fueraRuta} />
+          </TabsContent>
 
           {ciudades.map((c) => {
             const filasVista = ordenarFilas(c.filas, orden)
@@ -735,6 +755,137 @@ function ReprogramadosPreview({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Registro de PEDIDOS FUERA DE RUTA del día: entregas fuera del recorrido
+ * planificado, cargadas a mano por logística en el sheet de Novedades y
+ * snapshoteadas en `fuera_ruta_registros`. No compiten por el cupo del camión:
+ * son otro circuito, pero se controlan desde la misma pantalla del día.
+ */
+function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
+  const { filas } = fueraRuta
+  return (
+    <div className="space-y-3">
+      {!fueraRuta.sheet_ok && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          No se pudo leer el sheet de Novedades Logísticas: se muestra el último
+          registro guardado, que puede estar incompleto para hoy.
+        </div>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          <strong className="text-slate-900">Fuera de ruta</strong> · {filas.length}{" "}
+          {filas.length === 1 ? "pedido" : "pedidos"}
+          {fueraRuta.total_monto > 0 && <> · {money(fueraRuta.total_monto)}</>}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Fuente: sheet Novedades Logísticas (se sincroniza al abrir la pantalla)
+        </p>
+      </div>
+
+      {filas.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Sin pedidos fuera de ruta cargados para el {fueraRuta.fecha}.
+        </p>
+      ) : (
+        <Table className="text-xs">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Entrega en</TableHead>
+              <TableHead>Pedido</TableHead>
+              <TableHead>Canal</TableHead>
+              <TableHead className="text-right">Monto</TableHead>
+              <TableHead>Patente</TableHead>
+              <TableHead>Autorización / obs.</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filas.map((f) => {
+              const otroCliente =
+                f.cod_cliente_entregado != null && f.cod_cliente_entregado !== f.cod_cliente
+              return (
+                <TableRow key={f.clave}>
+                  <TableCell>
+                    <div className="max-w-[200px] truncate font-medium" title={f.cliente ?? undefined}>
+                      {f.cliente ?? "—"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {f.cod_cliente != null && <>#{f.cod_cliente}</>}
+                      {otroCliente && (
+                        <span className="text-amber-700">
+                          {" "}→ entrega a {f.cliente_entregado ?? `#${f.cod_cliente_entregado}`}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <div className="max-w-[200px] truncate" title={f.direccion_entrega ?? undefined}>
+                      {f.direccion_entrega ?? "—"}
+                    </div>
+                    <div className="text-muted-foreground">
+                      {f.localidad_entrega ?? f.localidad ?? ""}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <div className="tabular-nums">{f.nro_pedido ?? "—"}</div>
+                    <div className="text-muted-foreground">{f.tipo_comprobante ?? ""}</div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{f.canal ?? "—"}</TableCell>
+                  <TableCell className="text-right text-sm tabular-nums">
+                    {f.monto != null ? money(f.monto) : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs tabular-nums">{f.patente ?? "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div className="max-w-[220px] truncate" title={[f.descripcion, f.observaciones].filter(Boolean).join(" · ") || undefined}>
+                      {[f.descripcion, f.observaciones].filter(Boolean).join(" · ") || "—"}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Vista de la página cuando NO hay pedidos pendientes para la fecha (p. ej. un
+ * día pasado): el ranking no se puede armar, pero el registro de fuera de ruta
+ * se consulta igual — es un registro con historia.
+ */
+export function FueraRutaSolo({ error, fueraRuta }: { error: string; fueraRuta: FueraRutaDia }) {
+  const router = useRouter()
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Truck className="h-6 w-6" /> Priorización de Entrega
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Fecha de entrega</label>
+          <Input
+            type="date"
+            defaultValue={fueraRuta.fecha}
+            className="w-40"
+            onChange={(e) => e.target.value && router.push(`?fecha=${e.target.value}`)}
+          />
+        </div>
+      </div>
+      <Card>
+        <CardContent className="pt-4">
+          <FueraRutaPanel fueraRuta={fueraRuta} />
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
