@@ -358,21 +358,29 @@ function KpiPerdidasBlock({
 
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">
-                  El ratio
+                  El ratio = HL {esVencido ? "vencidos" : "rotos"} ÷ HL vendidos
                 </p>
+                {/* El ratio ES la división, no los HL vendidos sueltos: se
+                    muestra la cuenta completa de los dos lados. ppm = por millón,
+                    para que el número sea legible (roturas ~0,04%). */}
                 <FilaDetalle
-                  etiqueta="HL vendidos (ppto → real)"
-                  valor={`${formatNum(Math.round(detalle.hlVendidosPpto))} → ${formatNum(Math.round(detalle.hlVendidosReal))}`}
+                  etiqueta="Target"
+                  valor={`${formatNum(detalle.targetHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosPpto))} HL = ${Math.round(detalle.targetPpm)} ppm`}
                 />
                 <FilaDetalle
-                  etiqueta="ppm (target → real)"
-                  valor={`${Math.round(detalle.targetPpm)} → ${Math.round(detalle.realPpm)}`}
+                  etiqueta="Real"
+                  valor={`${formatNum(detalle.realHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosReal))} HL = ${Math.round(detalle.realPpm)} ppm`}
                   className={
                     detalle.realPpm <= detalle.targetPpm
                       ? "text-emerald-700"
                       : "text-red-600"
                   }
                 />
+                <p className="pt-1 text-xs text-muted-foreground">
+                  ppm = partes por millón del volumen vendido (
+                  {Math.round(detalle.realPpm)} ppm ={" "}
+                  {(detalle.realPpm / 10000).toFixed(4)}%).
+                </p>
               </div>
             </div>
           )}
