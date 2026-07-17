@@ -43,6 +43,8 @@ export interface Neumatico {
   fecha_instalacion: string | null
   fecha_baja: string | null
   observaciones: string | null
+  /** Foto/PDF de la factura de compra (URLs públicas del bucket de facturas). */
+  factura_urls: string[] | null
   created_at: string
   updated_at: string
   mediciones?: NeumaticoMedicion[]

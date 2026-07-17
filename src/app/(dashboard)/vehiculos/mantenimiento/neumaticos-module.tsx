@@ -34,6 +34,7 @@ import {
   Crosshair,
   Gauge,
   Layers,
+  Paperclip,
   Pencil,
   Plus,
   RotateCw,
@@ -42,6 +43,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  actualizarNeumatico,
   asignarNeumatico,
   crearNeumaticosMasivo,
   crearYColocarNeumatico,
@@ -56,7 +58,11 @@ import {
   setRotacionKm,
   type KmFlotaUnidad,
 } from "@/actions/neumaticos"
-import { createMantenimiento } from "@/actions/mantenimiento-vehiculos"
+import {
+  createMantenimiento,
+  subirFacturasMantenimiento,
+} from "@/actions/mantenimiento-vehiculos"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
   type Alineacion,
   type Neumatico,
@@ -170,6 +176,7 @@ export function NeumaticosModule({
 
   const [cargaOpen, setCargaOpen] = useState(false)
   const [individualOpen, setIndividualOpen] = useState(false)
+  const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
   const [montajeModo, setMontajeModo] = useState<"montar" | "desmontar" | null>(null)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
@@ -573,7 +580,8 @@ export function NeumaticosModule({
                   <th>Medida</th>
                   <th className="text-right">Prof. (mm)</th>
                   <th>Ingreso</th>
-                  {puedeEditar && <th className="w-10" />}
+                  <th>Factura</th>
+                  {puedeEditar && <th className="w-16" />}
                 </tr>
               </thead>
               <tbody>
@@ -590,8 +598,38 @@ export function NeumaticosModule({
                       {n.profundidad_actual_mm ?? "—"}
                     </td>
                     <td className="text-muted-foreground">{fmtFecha(n.fecha_ingreso)}</td>
+                    <td>
+                      {(n.factura_urls?.length ?? 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {n.factura_urls!.map((url, fi) => (
+                            <a
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                              title="Ver factura"
+                            >
+                              <Paperclip className="size-3" />
+                              {n.factura_urls!.length > 1 ? fi + 1 : "Ver"}
+                            </a>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/60">—</span>
+                      )}
+                    </td>
                     {puedeEditar && (
                       <td className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          title="Editar cubierta / adjuntar factura"
+                          onClick={() => setEditNeu(n)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -660,6 +698,16 @@ export function NeumaticosModule({
         <CargaIndividualDialog
           onClose={() => setIndividualOpen(false)}
           onDone={refresh}
+        />
+      )}
+      {editNeu && (
+        <EditarCubiertaDialog
+          neumatico={editNeu}
+          onClose={() => setEditNeu(null)}
+          onDone={() => {
+            setEditNeu(null)
+            refresh()
+          }}
         />
       )}
       {montajeModo && (
@@ -1099,6 +1147,199 @@ function Diagrama({
   )
 }
 
+// ==================== Factura de compra (foto/PDF) ====================
+
+const ACCEPT_FACTURA_NEU = "image/*,application/pdf,.pdf"
+
+/** Sube las facturas al bucket (imágenes comprimidas client-side por el 413
+ *  de Vercel). Devuelve las URLs, o null si falló (ya tosteado). */
+async function subirFacturasNeumaticos(files: File[]): Promise<string[] | null> {
+  if (files.length === 0) return []
+  const fd = new FormData()
+  fd.append("dominio", "NEUMATICOS")
+  for (const f of files) {
+    let archivo = f
+    if (f.type.startsWith("image/")) {
+      try {
+        archivo = await comprimirImagen(f)
+      } catch {
+        archivo = f
+      }
+    }
+    fd.append("facturas", archivo)
+  }
+  const res = await subirFacturasMantenimiento(fd)
+  if ("error" in res) {
+    toast.error(res.error)
+    return null
+  }
+  return res.data
+}
+
+function FacturaField({
+  files,
+  onChange,
+}: {
+  files: File[]
+  onChange: (files: File[]) => void
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">
+        Factura de compra (foto o PDF, opcional)
+      </Label>
+      <Input
+        type="file"
+        accept={ACCEPT_FACTURA_NEU}
+        multiple
+        onChange={(e) => onChange([...files, ...Array.from(e.target.files ?? [])])}
+      />
+      {files.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {files.map((f, i) => (
+            <li
+              key={`${f.name}-${i}`}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <Paperclip className="size-3 shrink-0" />
+              <span className="truncate">{f.name}</span>
+              <button
+                type="button"
+                className="text-destructive hover:underline"
+                onClick={() => onChange(files.filter((_, j) => j !== i))}
+              >
+                quitar
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function EditarCubiertaDialog({
+  neumatico,
+  onClose,
+  onDone,
+}: {
+  neumatico: Neumatico
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [numero, setNumero] = useState(neumatico.numero ?? "")
+  const [marca, setMarca] = useState(neumatico.marca ?? "")
+  const [medida, setMedida] = useState(neumatico.medida ?? "")
+  const [urlsExistentes, setUrlsExistentes] = useState<string[]>(
+    neumatico.factura_urls ?? [],
+  )
+  const [facturas, setFacturas] = useState<File[]>([])
+  const [saving, setSaving] = useState(false)
+
+  const guardar = async () => {
+    setSaving(true)
+    const nuevas = await subirFacturasNeumaticos(facturas)
+    if (nuevas === null) {
+      setSaving(false)
+      return
+    }
+    const res = await actualizarNeumatico({
+      id: neumatico.id,
+      numero,
+      marca,
+      medida,
+      factura_urls: [...urlsExistentes, ...nuevas],
+    })
+    setSaving(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success("Cubierta actualizada")
+    onDone()
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Editar cubierta {neumatico.numero ? `· ${neumatico.numero}` : ""}
+          </DialogTitle>
+          <DialogDescription>
+            Corregí los datos o adjuntá la factura de compra.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Número / serie</Label>
+              <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Marca</Label>
+              <Input value={marca} onChange={(e) => setMarca(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Medida</Label>
+              <Input value={medida} onChange={(e) => setMedida(e.target.value)} />
+            </div>
+          </div>
+
+          {urlsExistentes.length > 0 && (
+            <div>
+              <Label className="text-xs text-muted-foreground">Facturas cargadas</Label>
+              <ul className="mt-1 space-y-0.5">
+                {urlsExistentes.map((url) => (
+                  <li key={url} className="flex items-center gap-1.5 text-xs">
+                    <Paperclip className="size-3 shrink-0 text-muted-foreground" />
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="truncate font-medium text-primary hover:underline"
+                    >
+                      {nombreDeFacturaUrl(url)}
+                    </a>
+                    <button
+                      type="button"
+                      className="text-destructive hover:underline"
+                      onClick={() =>
+                        setUrlsExistentes((prev) => prev.filter((u) => u !== url))
+                      }
+                    >
+                      quitar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <FacturaField files={facturas} onChange={setFacturas} />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function nombreDeFacturaUrl(url: string): string {
+  try {
+    const last = url.split("/").pop() || "factura"
+    return decodeURIComponent(last.replace(/^\d+-\d+-/, ""))
+  } catch {
+    return "factura"
+  }
+}
+
 function CargaMasivaDialog({
   onClose,
   onDone,
@@ -1113,10 +1354,16 @@ function CargaMasivaDialog({
   const [modo, setModo] = useState<"cantidad" | "numeros">("cantidad")
   const [cantidad, setCantidad] = useState("4")
   const [numeros, setNumeros] = useState("")
+  const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
   const guardar = async () => {
     setSaving(true)
+    const facturaUrls = await subirFacturasNeumaticos(facturas)
+    if (facturaUrls === null) {
+      setSaving(false)
+      return
+    }
     const res = await crearNeumaticosMasivo({
       tipo,
       marca,
@@ -1124,6 +1371,7 @@ function CargaMasivaDialog({
       profundidad_inicial_mm: prof ? Number(prof) : null,
       cantidad: modo === "cantidad" ? Number(cantidad) : undefined,
       numeros: modo === "numeros" ? numeros.split(/[\n,]+/) : undefined,
+      factura_urls: facturaUrls,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1219,6 +1467,8 @@ function CargaMasivaDialog({
               />
             </div>
           )}
+
+          <FacturaField files={facturas} onChange={setFacturas} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -1245,10 +1495,16 @@ function CargaIndividualDialog({
   const [marca, setMarca] = useState("")
   const [medida, setMedida] = useState("")
   const [prof, setProf] = useState("")
+  const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
   const guardar = async () => {
     setSaving(true)
+    const facturaUrls = await subirFacturasNeumaticos(facturas)
+    if (facturaUrls === null) {
+      setSaving(false)
+      return
+    }
     const res = await crearNeumaticosMasivo({
       tipo,
       marca,
@@ -1256,6 +1512,7 @@ function CargaIndividualDialog({
       profundidad_inicial_mm: prof ? Number(prof) : null,
       numeros: numero.trim() ? [numero.trim()] : undefined,
       cantidad: numero.trim() ? undefined : 1,
+      factura_urls: facturaUrls,
     })
     setSaving(false)
     if ("error" in res) {
@@ -1321,6 +1578,9 @@ function CargaIndividualDialog({
               onChange={(e) => setProf(e.target.value)}
               placeholder="ej. 14"
             />
+          </div>
+          <div className="col-span-2">
+            <FacturaField files={facturas} onChange={setFacturas} />
           </div>
         </div>
         <DialogFooter>

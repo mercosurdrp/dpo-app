@@ -114,6 +114,8 @@ export async function crearNeumaticosMasivo(input: {
   profundidad_inicial_mm?: number | null
   cantidad?: number
   numeros?: string[]
+  /** Factura de compra (misma factura para todo el lote de la carga). */
+  factura_urls?: string[]
 }): Promise<{ success: true; creados: number } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -133,6 +135,7 @@ export async function crearNeumaticosMasivo(input: {
       profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
       profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
       estado: "stock" as const,
+      factura_urls: input.factura_urls?.length ? input.factura_urls : null,
       created_by: profile.id,
     }
     const filas: Array<typeof base & { numero: string | null }> =
@@ -143,6 +146,36 @@ export async function crearNeumaticosMasivo(input: {
     const { error } = await supabase.from("mantenimiento_neumaticos").insert(filas)
     if (error) return { error: error.message }
     return { success: true, creados: filas.length }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Edita los datos de una cubierta (número, marca, medida, factura). */
+export async function actualizarNeumatico(input: {
+  id: string
+  numero?: string | null
+  marca?: string | null
+  medida?: string | null
+  factura_urls?: string[] | null
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const update: Record<string, unknown> = {}
+    if (input.numero !== undefined) update.numero = input.numero?.trim() || null
+    if (input.marca !== undefined) update.marca = input.marca?.trim() || null
+    if (input.medida !== undefined) update.medida = input.medida?.trim() || null
+    if (input.factura_urls !== undefined) {
+      update.factura_urls = input.factura_urls?.length ? input.factura_urls : null
+    }
+    if (Object.keys(update).length === 0) return { success: true }
+    const { error } = await supabase
+      .from("mantenimiento_neumaticos")
+      .update(update)
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
