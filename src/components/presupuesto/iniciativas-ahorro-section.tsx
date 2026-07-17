@@ -11,8 +11,17 @@ import {
   Wallet,
   CheckCircle2,
   Info,
-  LineChart,
+  LineChart as LineChartIcon,
 } from "lucide-react"
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -165,11 +174,25 @@ function KpiPerdidasBlock({
   const detalle = kpi.meses.find((m) => m.mes === mesAbierto) ?? null
   const pesos = ejec?.porMes.find((p) => p.mes === mesAbierto) ?? null
 
+  // Escala log cuando la serie cruza órdenes de magnitud. En vencidos el target
+  // va de 1 ppm (abril) a 1.776 (junio, temporada baja): en escala lineal el eje
+  // se estira a 1.800 y el real —que va de 2 a 74— queda aplastado contra el
+  // piso, que es justo lo que se quiere mirar. Log necesita que no haya ceros.
+  const valores = kpi.meses.flatMap((m) => [m.realPpm, m.targetPpm])
+  const minVal = Math.min(...valores)
+  const maxVal = Math.max(...valores)
+  const usarLog = minVal > 0 && maxVal / minVal >= 50
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
         <span className="text-muted-foreground">
           {esVencido ? "Vencido" : "Roto"} por HL vendido (ppm)
+          {/* Que la escala no engañe: en log, una caída a la mitad y una a la
+              décima parte se ven casi igual de empinadas. */}
+          {usarLog && (
+            <span className="ml-1 text-xs opacity-70">· escala log</span>
+          )}
         </span>
         <span className="flex items-center gap-2">
           <span className="text-slate-900">
@@ -188,10 +211,57 @@ function KpiPerdidasBlock({
           </Badge>
         </span>
       </div>
-      {/* Mes a mes: el acumulado solo esconde la tendencia — roturas arrastra
-          enero (2.036 ppm) y desde marzo viene en ~400. El color dice si el mes
-          cumplió; el detalle se abre al clic para no llenar la tarjeta de
-          números. */}
+      {/* La evolución, que es lo que el semáforo no muestra: roturas arrastra
+          enero (2.036 ppm) y desde marzo viene en ~400. La línea punteada es el
+          target de CADA mes, que se mueve con el presupuesto. */}
+      <div className="h-40 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={kpi.meses.map((m) => ({
+              mes: MES_CORTO[m.mes],
+              real: Math.round(m.realPpm),
+              target: Math.round(m.targetPpm),
+            }))}
+            margin={{ top: 5, right: 14, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="mes" tick={{ fontSize: 11 }} className="capitalize" />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              width={44}
+              scale={usarLog ? "log" : "auto"}
+              domain={usarLog ? ["dataMin", "dataMax"] : [0, "auto"]}
+              allowDataOverflow={usarLog}
+            />
+            <Tooltip
+              formatter={(v, n) => [`${v} ppm`, n === "real" ? "Real" : "Target"]}
+              labelClassName="capitalize"
+              contentStyle={{ fontSize: 12 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="target"
+              name="target"
+              stroke="#94a3b8"
+              strokeDasharray="4 3"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="real"
+              name="real"
+              stroke={cumpleAcum ? "#059669" : "#dc2626"}
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      {/* El color dice si el mes cumplió; el detalle se abre al clic para no
+          llenar la tarjeta de números. */}
       <div className="flex flex-wrap gap-1.5">
         {kpi.meses.map((m) => {
           const ok = m.realPpm <= m.targetPpm
@@ -613,7 +683,7 @@ export function IniciativasAhorroSection({
         <Card>
           <CardContent className="flex items-center gap-3 py-4">
             <div className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-              <LineChart className="size-4" />
+              <LineChartIcon className="size-4" />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Iniciativas</p>
