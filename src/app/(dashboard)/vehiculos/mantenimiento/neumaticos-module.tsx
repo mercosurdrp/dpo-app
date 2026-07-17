@@ -734,6 +734,10 @@ export function NeumaticosModule({
             setPosDialog(null)
             refresh()
           }}
+          onEditar={(n) => {
+            setPosDialog(null)
+            setEditNeu(n)
+          }}
         />
       )}
     </div>
@@ -2197,6 +2201,7 @@ function PosicionDialog({
   vida,
   onClose,
   onDone,
+  onEditar,
 }: {
   unidad: UnidadFlota
   pos: PosicionNeumatico
@@ -2206,6 +2211,7 @@ function PosicionDialog({
   vida: VidaNeumatico | null
   onClose: () => void
   onDone: () => void
+  onEditar: (n: Neumatico) => void
 }) {
   const [saving, setSaving] = useState(false)
   // Asignación (posición vacía) — km de instalación prefijado con el km actual.
@@ -2446,6 +2452,30 @@ function PosicionDialog({
                     .join(" · ")}
                 </p>
               )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(actual.factura_urls?.length ?? 0) > 0 &&
+                  actual.factura_urls!.map((url, fi) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    >
+                      <Paperclip className="size-3" /> Factura
+                      {actual.factura_urls!.length > 1 ? ` ${fi + 1}` : ""}
+                    </a>
+                  ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => onEditar(actual)}
+                >
+                  <Pencil className="mr-1 size-3" /> Editar cubierta / factura
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2 rounded-md border border-border p-3">
