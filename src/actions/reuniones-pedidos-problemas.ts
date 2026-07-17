@@ -30,6 +30,7 @@ export interface PedidoConProblema {
   motivo: string
   bultos: number
   hl: number
+  monto: number
   /** VRC: a qué fecha se movió; null = todavía sin fecha nueva. */
   fechaNueva: string | null
   /** VRL: cuántas veces ya se le había postergado el pedido antes de este corte. */
@@ -77,7 +78,7 @@ export async function getPedidosConProblemas(
   const vrlRes = await supabase
     .from("entrega_cortes")
     .select(
-      "fecha_entrega, id_cliente, nombre_cliente, localidad, bultos, hl, motivo, veces_previas"
+      "fecha_entrega, id_cliente, nombre_cliente, localidad, bultos, hl, monto, motivo, veces_previas"
     )
     .gte("fecha_entrega", desde)
     .lte("fecha_entrega", hasta)
@@ -94,6 +95,7 @@ export async function getPedidosConProblemas(
     motivo: MOTIVO_VRL[r.motivo ?? ""] ?? r.motivo ?? "Sin motivo registrado",
     bultos: Number(r.bultos ?? 0),
     hl: Number(r.hl ?? 0),
+    monto: Number(r.monto ?? 0),
     fechaNueva: null,
     vecesPrevias: Number(r.veces_previas ?? 0),
   }))
@@ -112,10 +114,11 @@ export async function getPedidosConProblemas(
       motivo_credito: string | null
       bultos: string | null
       hl: string | null
+      importe: string | null
       fecha_nueva: string | null
     }>(
       `select to_char(fecha_entrega_original, 'YYYY-MM-DD') as fecha,
-              idcliente, cliente, motivo_credito, bultos, hl,
+              idcliente, cliente, motivo_credito, bultos, hl, importe,
               to_char(fecha_entrega_nueva, 'YYYY-MM-DD') as fecha_nueva
          from vol_reprog_com_pedido
         where lower(region) = 'pampeana'
@@ -141,6 +144,7 @@ export async function getPedidosConProblemas(
           : "Límite de crédito",
         bultos: b,
         hl: h,
+        monto: Number(r.importe ?? 0),
         fechaNueva: r.fecha_nueva,
         vecesPrevias: null,
       })

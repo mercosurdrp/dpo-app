@@ -2135,7 +2135,6 @@ export function ReunionDetallePageClient({
             responsables={responsables}
             puedeEditar={puedeEditar}
             onActividadesChanged={refrescar}
-            modoResumen
           />
         </>
       )}
