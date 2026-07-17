@@ -16,6 +16,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
@@ -145,16 +151,25 @@ const MES_CORTO = [
 function KpiPerdidasBlock({
   kpi,
   rubro,
+  ejec,
+  mesInicio,
 }: {
   kpi: KpiPerdidas
   rubro: string
+  ejec: EjecucionRubro | undefined
+  mesInicio: number
 }) {
+  const [mesAbierto, setMesAbierto] = useState<number | null>(null)
   const cumpleAcum = kpi.realPpmAcum <= kpi.targetPpmAcum
+  const esVencido = rubro === "PRODUCTO VENCIDO"
+  const detalle = kpi.meses.find((m) => m.mes === mesAbierto) ?? null
+  const pesos = ejec?.porMes.find((p) => p.mes === mesAbierto) ?? null
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
         <span className="text-muted-foreground">
-          {rubro === "PRODUCTO VENCIDO" ? "Vencido" : "Roto"} por HL vendido (ppm)
+          {esVencido ? "Vencido" : "Roto"} por HL vendido (ppm)
         </span>
         <span className="flex items-center gap-2">
           <span className="text-slate-900">
@@ -174,27 +189,144 @@ function KpiPerdidasBlock({
         </span>
       </div>
       {/* Mes a mes: el acumulado solo esconde la tendencia — roturas arrastra
-          enero (2.036 ppm) y desde marzo viene en ~400. */}
+          enero (2.036 ppm) y desde marzo viene en ~400. El color dice si el mes
+          cumplió; el detalle se abre al clic para no llenar la tarjeta de
+          números. */}
       <div className="flex flex-wrap gap-1.5">
         {kpi.meses.map((m) => {
           const ok = m.realPpm <= m.targetPpm
           return (
-            <div
+            <button
               key={m.mes}
-              title={`${MES_CORTO[m.mes]}: ${Math.round(m.realPpm)} ppm reales contra ${Math.round(m.targetPpm)} de target`}
-              className={`rounded-md border px-2 py-1 text-xs ${
+              type="button"
+              onClick={() => setMesAbierto(m.mes)}
+              title={`Ver el detalle de ${MES_NOMBRE[m.mes]}`}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize transition-opacity hover:opacity-80 ${
                 ok
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : "border-red-200 bg-red-50 text-red-700"
-              }`}
+              } ${m.mes < mesInicio ? "opacity-50" : ""}`}
             >
-              <span className="font-medium">{MES_CORTO[m.mes]}</span>{" "}
-              {Math.round(m.realPpm)}
-              <span className="opacity-60">/{Math.round(m.targetPpm)}</span>
-            </div>
+              {MES_CORTO[m.mes]}
+            </button>
           )
         })}
       </div>
+
+      <Dialog
+        open={mesAbierto !== null}
+        onOpenChange={(o) => !o && setMesAbierto(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="capitalize">
+              {detalle ? MES_NOMBRE[detalle.mes] : ""} — {rubro}
+            </DialogTitle>
+          </DialogHeader>
+          {detalle && (
+            <div className="space-y-4 text-sm">
+              {/* Antes de implementarla, el mes no le cuenta a la iniciativa:
+                  el rubro gastaba lo que gastaba sin ella. */}
+              {detalle.mes < mesInicio && (
+                <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                  Este mes es anterior a la implementación
+                  {mesInicio <= 12 && ` (${MES_NOMBRE[mesInicio]})`}: no cuenta
+                  para el ahorro de la iniciativa.
+                </p>
+              )}
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  Plata
+                </p>
+                <FilaDetalle
+                  etiqueta="Presupuestado"
+                  valor={pesos ? formatMoney(pesos.presup) : "—"}
+                />
+                <FilaDetalle
+                  etiqueta="Real"
+                  valor={pesos ? formatMoney(pesos.real) : "—"}
+                />
+                {pesos && (
+                  <FilaDetalle
+                    etiqueta={
+                      pesos.presup - pesos.real >= 0 ? "Ahorro" : "Gasto de más"
+                    }
+                    valor={formatMoney(Math.abs(pesos.presup - pesos.real))}
+                    className={
+                      pesos.presup - pesos.real >= 0
+                        ? "text-emerald-700"
+                        : "text-red-600"
+                    }
+                  />
+                )}
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  Volumen {esVencido ? "vencido" : "roto"}
+                </p>
+                <FilaDetalle
+                  etiqueta={`HL presupuestados a ${esVencido ? "vencerse" : "romperse"}`}
+                  valor={formatNum(detalle.targetHl)}
+                />
+                <FilaDetalle
+                  etiqueta={`HL reales ${esVencido ? "vencidos" : "rotos"}`}
+                  valor={formatNum(detalle.realHl)}
+                  className={
+                    detalle.realHl <= detalle.targetHl
+                      ? "text-emerald-700"
+                      : "text-red-600"
+                  }
+                />
+                {/* La unidad nativa del ppto: los HL salen de convertir esto. */}
+                <FilaDetalle
+                  etiqueta="Bultos (ppto → real)"
+                  valor={`${formatNum(detalle.targetBultos)} → ${formatNum(detalle.realBultos)}`}
+                />
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  El ratio
+                </p>
+                <FilaDetalle
+                  etiqueta="HL vendidos (ppto → real)"
+                  valor={`${formatNum(Math.round(detalle.hlVendidosPpto))} → ${formatNum(Math.round(detalle.hlVendidosReal))}`}
+                />
+                <FilaDetalle
+                  etiqueta="ppm (target → real)"
+                  valor={`${Math.round(detalle.targetPpm)} → ${Math.round(detalle.realPpm)}`}
+                  className={
+                    detalle.realPpm <= detalle.targetPpm
+                      ? "text-emerald-700"
+                      : "text-red-600"
+                  }
+                />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function FilaDetalle({
+  etiqueta,
+  valor,
+  className,
+}: {
+  etiqueta: string
+  valor: string
+  className?: string
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 last:border-0">
+      <span className="text-muted-foreground">{etiqueta}</span>
+      <span className={`font-medium tabular-nums ${className ?? "text-slate-900"}`}>
+        {valor}
+      </span>
     </div>
   )
 }
@@ -788,7 +920,12 @@ export function IniciativasAhorroSection({
                       ese: se mide contra el target del propio presupuesto del
                       año, en vez de contra el gasto del año anterior. */}
                   {kpiPerd ? (
-                    <KpiPerdidasBlock kpi={kpiPerd} rubro={ini.rubro!} />
+                    <KpiPerdidasBlock
+                      kpi={kpiPerd}
+                      rubro={ini.rubro!}
+                      ejec={ejec}
+                      mesInicio={mesInicio}
+                    />
                   ) : (
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
                       <span className="text-muted-foreground">

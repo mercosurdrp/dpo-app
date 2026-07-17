@@ -55,8 +55,15 @@ export interface KpiPerdidasMes {
   /** ppm = HL perdidos por millón de HL vendidos. */
   targetPpm: number
   realPpm: number
+  /** HL que el ppto preveía perder ese mes (la Q en bultos, pasada a HL). */
   targetHl: number
   realHl: number
+  /** La unidad NATIVA del presupuesto: los HL salen de convertir esto. */
+  targetBultos: number
+  realBultos: number
+  /** Denominador del mes, para poder auditar el ppm. */
+  hlVendidosPpto: number
+  hlVendidosReal: number
 }
 
 export interface KpiPerdidas {
@@ -76,11 +83,15 @@ export interface KpiPerdidas {
  * bultos: el factor se cancela de los dos lados. Así el KPI se lee en HL sin que
  * el mix se cuele como supuesto.
  */
-function factorHlPorBulto(items: PerdidaItem[]): number | null {
-  const bultos = items.reduce(
+function bultosDe(items: PerdidaItem[]): number {
+  return items.reduce(
     (acc, x) => acc + (x.bultos ?? 0) + (x.unidades ?? 0) / (x.un_bulto || 1),
     0,
   )
+}
+
+function factorHlPorBulto(items: PerdidaItem[]): number | null {
+  const bultos = bultosDe(items)
   const hl = items.reduce((acc, x) => acc + (x.hl ?? 0), 0)
   if (bultos <= 0) return null
   return hl / bultos
@@ -152,6 +163,10 @@ export async function getKpiPerdidas(
           mes,
           targetHl,
           realHl,
+          targetBultos: bultos,
+          realBultos: bultosDe(items),
+          hlVendidosPpto: vol.hlPpto,
+          hlVendidosReal: vol.hlReal,
           targetPpm: (targetHl / vol.hlPpto) * 1e6,
           realPpm: (realHl / vol.hlReal) * 1e6,
         })
