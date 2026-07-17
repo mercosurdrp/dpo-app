@@ -755,6 +755,21 @@ export async function crearReunion(
       .eq("tipo", tipo)
 
     const fijos = (fijosRaw ?? []) as { profile_id: string }[]
+
+    // Los lunes la reunión de logística de Pampeana suma los temas de flota y
+    // ruteo, y con ellos a Ezequiel Teves. No va en participantes_fijos porque
+    // esa lista aplica a TODOS los días del tipo.
+    if (!IS_MISIONES && tipo === "logistica" && isoWeekdayFromDateStr(fecha) === 1) {
+      const { data: teves } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("email", "eteves@mercosurdrp.com.ar")
+        .maybeSingle()
+      if (teves && !fijos.some((f) => f.profile_id === teves.id)) {
+        fijos.push({ profile_id: teves.id })
+      }
+    }
+
     if (fijos.length > 0) {
       const rows = fijos.map((f) => ({
         reunion_id: reunion.id,
