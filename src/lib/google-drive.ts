@@ -2,30 +2,60 @@ import crypto from "node:crypto"
 
 // Cliente mínimo de Google Drive para el puente de edición online de la
 // evidencia DPO: subir un archivo Office, hacerlo editable por link, bajarlo
-// de vuelta y borrarlo. REST directo con un JWT de service account firmado
-// con node:crypto — sin SDK de Google.
+// de vuelta y borrarlo. REST directo con node:crypto — sin SDK de Google.
 //
-// Credencial: env GOOGLE_DRIVE_SA_JSON = JSON de la key del service account
-// (crudo o en base64). El service account debe tener la Drive API habilitada
-// en su proyecto; los archivos viven en SU drive, temporalmente, mientras
-// dura la edición.
+// Credencial (una de las dos):
+// - GOOGLE_DRIVE_OAUTH_JSON = {"client_id","client_secret","refresh_token"}
+//   de una cuenta Gmail que autorizó a la app con scope drive.file (solo ve
+//   los archivos que la propia app crea). Es el modo para cuentas gratuitas:
+//   los archivos temporales viven en el Drive de esa cuenta.
+// - GOOGLE_DRIVE_SA_JSON = key JSON de un service account. 🚨 Solo sirve con
+//   Google Workspace (shared drives): los service accounts ya no tienen
+//   cuota de almacenamiento propia y la subida a My Drive da 403.
+// Ambas aceptan el JSON crudo o en base64.
 
 interface ServiceAccount {
   client_email: string
   private_key: string
 }
 
-function leerCredencial(): ServiceAccount {
-  const raw = process.env.GOOGLE_DRIVE_SA_JSON
-  if (!raw) {
-    throw new Error(
-      "Falta configurar la credencial de Google (env GOOGLE_DRIVE_SA_JSON)",
-    )
-  }
+interface OAuthCred {
+  client_id: string
+  client_secret: string
+  refresh_token: string
+}
+
+function parseEnvJson<T>(raw: string, nombre: string): T {
   const texto = raw.trim().startsWith("{")
     ? raw
     : Buffer.from(raw, "base64").toString("utf-8")
-  const sa = JSON.parse(texto) as ServiceAccount
+  try {
+    return JSON.parse(texto) as T
+  } catch {
+    throw new Error(`${nombre} no es un JSON válido`)
+  }
+}
+
+function leerOAuth(): OAuthCred | null {
+  const raw = process.env.GOOGLE_DRIVE_OAUTH_JSON
+  if (!raw) return null
+  const cred = parseEnvJson<OAuthCred>(raw, "GOOGLE_DRIVE_OAUTH_JSON")
+  if (!cred.client_id || !cred.client_secret || !cred.refresh_token) {
+    throw new Error(
+      "GOOGLE_DRIVE_OAUTH_JSON debe tener client_id, client_secret y refresh_token",
+    )
+  }
+  return cred
+}
+
+function leerServiceAccount(): ServiceAccount {
+  const raw = process.env.GOOGLE_DRIVE_SA_JSON
+  if (!raw) {
+    throw new Error(
+      "Falta configurar la credencial de Google (env GOOGLE_DRIVE_OAUTH_JSON o GOOGLE_DRIVE_SA_JSON)",
+    )
+  }
+  const sa = parseEnvJson<ServiceAccount>(raw, "GOOGLE_DRIVE_SA_JSON")
   if (!sa.client_email || !sa.private_key) {
     throw new Error("GOOGLE_DRIVE_SA_JSON no parece una key de service account")
   }
@@ -47,30 +77,42 @@ async function accessToken(): Promise<string> {
   if (tokenCache && Date.now() < tokenCache.expira - 60_000) {
     return tokenCache.token
   }
-  const sa = leerCredencial()
-  const ahora = Math.floor(Date.now() / 1000)
-  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }))
-  const claims = b64url(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/drive",
-      aud: "https://oauth2.googleapis.com/token",
-      iat: ahora,
-      exp: ahora + 3600,
-    }),
-  )
-  const firmador = crypto.createSign("RSA-SHA256")
-  firmador.update(`${header}.${claims}`)
-  const firma = b64url(firmador.sign(sa.private_key))
-  const jwt = `${header}.${claims}.${firma}`
+
+  const oauth = leerOAuth()
+  let body: URLSearchParams
+  if (oauth) {
+    body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: oauth.client_id,
+      client_secret: oauth.client_secret,
+      refresh_token: oauth.refresh_token,
+    })
+  } else {
+    const sa = leerServiceAccount()
+    const ahora = Math.floor(Date.now() / 1000)
+    const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }))
+    const claims = b64url(
+      JSON.stringify({
+        iss: sa.client_email,
+        scope: "https://www.googleapis.com/auth/drive",
+        aud: "https://oauth2.googleapis.com/token",
+        iat: ahora,
+        exp: ahora + 3600,
+      }),
+    )
+    const firmador = crypto.createSign("RSA-SHA256")
+    firmador.update(`${header}.${claims}`)
+    const firma = b64url(firmador.sign(sa.private_key))
+    body = new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${header}.${claims}.${firma}`,
+    })
+  }
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
+    body,
   })
   if (!res.ok) {
     throw new Error(`Google OAuth falló (${res.status}): ${await res.text()}`)
