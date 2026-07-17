@@ -264,6 +264,48 @@ export async function guardarEvaluacion(input: {
   }
 }
 
+/**
+ * Nota base para arrancar un rol: a toda celda SIN EVALUAR le carga
+ * nivel = estándar de la habilidad (todos "cumplen" y después se ajusta
+ * celda a celda según lo observado). No pisa ninguna nota ya cargada.
+ */
+export async function cargarNotaBase(rol: SkapRol): Promise<Result<{ cargadas: number; personas: number }>> {
+  try {
+    await assertPuedeEditar(rol)
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const matriz = await getMatrizRol(rol)
+    if ("error" in matriz) return { error: matriz.error }
+
+    const hoy = new Date().toISOString().slice(0, 10)
+    const rows = matriz.data.personas.flatMap((p) =>
+      p.celdas
+        .filter((c) => c.estado === "sin_evaluar")
+        .map((c) => ({
+          empleado_id: p.empleado_id,
+          habilidad_id: c.habilidad_id,
+          fecha_evaluacion: hoy,
+          nivel: c.estandar,
+          estandar_individual: null,
+          observaciones: "Nota base (= estándar requerido)",
+          evaluador_id: profile.id,
+        })),
+    )
+    if (rows.length === 0) return { data: { cargadas: 0, personas: 0 } }
+
+    const { error } = await supabase
+      .from("skap_evaluaciones")
+      .upsert(rows, { onConflict: "empleado_id,habilidad_id,fecha_evaluacion" })
+    if (error) return { error: error.message }
+
+    revalidatePath("/gente/matriz-skap")
+    return { data: { cargadas: rows.length, personas: new Set(rows.map((r) => r.empleado_id)).size } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error al cargar la nota base" }
+  }
+}
+
 /** Habilidad + su plan de formación, para el panel de detalle. */
 export async function getPlanFormacion(habilidadId: string): Promise<Result<SkapPlanFormacion | null>> {
   try {

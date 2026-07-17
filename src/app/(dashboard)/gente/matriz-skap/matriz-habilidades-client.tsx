@@ -3,7 +3,8 @@
 import { useState, useTransition, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen } from "lucide-react"
+import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen, ListChecks } from "lucide-react"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +24,7 @@ import {
   generarAccionesDesdeGaps,
   actualizarAccion,
   getPlanFormacion,
+  cargarNotaBase,
   type SkapAccionDetalle,
 } from "@/actions/skap-habilidades"
 import type {
@@ -32,6 +34,8 @@ import type {
   SkapPersonaRow,
   SkapPlanFormacion,
   SkapEstadoAccion,
+  SkapHabilidad,
+  SkapCelda,
 } from "@/types/database"
 
 /** Escala del instructivo: qué significa cada nivel. */
@@ -98,9 +102,11 @@ interface Props {
 
 export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
   const [vista, setVista] = useState<"matriz" | "acciones">("matriz")
   const [evaluando, setEvaluando] = useState<SkapPersonaRow | null>(null)
+  const [celdaEdit, setCeldaEdit] = useState<{ persona: SkapPersonaRow; habilidad: SkapHabilidad; celda: SkapCelda } | null>(null)
   const [planHabilidad, setPlanHabilidad] = useState<{ nombre: string; plan: SkapPlanFormacion | null } | null>(null)
 
   const { habilidades, personas, kpis } = matriz
@@ -143,9 +149,22 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
       toast.success(
         res.data.creadas === 0
           ? "No hay gaps nuevos: todas las brechas ya tienen una acción abierta"
-          : `${res.data.creadas} acciones de formación abiertas`,
+          : `${res.data.creadas} planes de acción creados — están en la pestaña Plan de formación`,
       )
-      router.refresh()
+      refrescarConScroll()
+    })
+  }
+
+  function notaBase() {
+    startTransition(async () => {
+      const res = await cargarNotaBase(matriz.rol)
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success(
+        res.data.cargadas === 0
+          ? "No había celdas sin evaluar: no se cargó nada"
+          : `Nota base cargada: ${res.data.cargadas} notas para ${res.data.personas} personas (= estándar de cada habilidad)`,
+      )
+      refrescarConScroll()
     })
   }
 
@@ -172,10 +191,16 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
             </SelectContent>
           </Select>
           {canEdit && (
-            <Button variant="outline" onClick={generarAcciones} disabled={pending}>
-              <Wand2 className="mr-1 size-4" />
-              Abrir acciones de los gaps
-            </Button>
+            <>
+              <Button variant="outline" onClick={notaBase} disabled={pending}>
+                <ListChecks className="mr-1 size-4" />
+                Cargar nota base
+              </Button>
+              <Button variant="outline" onClick={generarAcciones} disabled={pending}>
+                <Wand2 className="mr-1 size-4" />
+                Crear planes de acción de los gaps
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -348,14 +373,16 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
                                     : "border-l border-slate-100"
                                 }`}
                               >
-                                <div
+                                <button
+                                  disabled={!canEdit}
+                                  onClick={() => setCeldaEdit({ persona: p, habilidad: cols[ci].h, celda: c })}
                                   title={`${LABEL_GAP[c.estado]} · estándar ${c.estandar}${
                                     c.fecha_evaluacion ? ` · evaluado ${c.fecha_evaluacion}` : ""
-                                  }`}
-                                  className={`mx-auto flex size-8 items-center justify-center rounded-md text-[13px] font-bold shadow-sm ${COLOR_GAP[c.estado]}`}
+                                  }${canEdit ? " — clic para cambiar la nota" : ""}`}
+                                  className={`mx-auto flex size-8 items-center justify-center rounded-md text-[13px] font-bold shadow-sm transition enabled:cursor-pointer enabled:hover:scale-110 enabled:hover:ring-2 enabled:hover:ring-slate-400 ${COLOR_GAP[c.estado]}`}
                                 >
                                   {c.estado === "sin_evaluar" ? "" : c.estado === "no_aplica" ? "NA" : c.nivel}
-                                </div>
+                                </button>
                               </td>
                             )
                           })}
@@ -394,7 +421,21 @@ export function MatrizHabilidadesClient({ matriz, acciones, canEdit, roles }: Pr
           onClose={() => setEvaluando(null)}
           onSaved={() => {
             setEvaluando(null)
-            router.refresh()
+            refrescarConScroll()
+          }}
+        />
+      )}
+
+      {celdaEdit && (
+        <DialogNota
+          rol={matriz.rol}
+          persona={celdaEdit.persona}
+          habilidad={celdaEdit.habilidad}
+          celda={celdaEdit.celda}
+          onClose={() => setCeldaEdit(null)}
+          onSaved={() => {
+            setCeldaEdit(null)
+            refrescarConScroll()
           }}
         />
       )}
@@ -467,6 +508,103 @@ function Kpi({
         <p className="text-xs text-slate-400">{hint}</p>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Nota rápida de UNA celda: clic en un número y guarda al instante con fecha
+ * de hoy (si hoy ya había una nota, la corrige; un día distinto suma historial).
+ */
+function DialogNota({
+  rol,
+  persona,
+  habilidad,
+  celda,
+  onClose,
+  onSaved,
+}: {
+  rol: SkapRol
+  persona: SkapPersonaRow
+  habilidad: SkapHabilidad
+  celda: SkapCelda
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const actual = celda.estado === "no_aplica" ? "NA" : celda.nivel === null ? null : String(celda.nivel)
+
+  function guardar(v: string) {
+    startTransition(async () => {
+      const res = await guardarEvaluacion({
+        rol,
+        empleadoId: persona.empleado_id,
+        fecha: new Date().toISOString().slice(0, 10),
+        niveles: [{ habilidadId: habilidad.id, nivel: v === "NA" ? null : Number(v) }],
+      })
+      if ("error" in res) { toast.error(res.error); return }
+      toast.success(`${persona.nombre}: ${habilidad.habilidad} → ${v}`)
+      onSaved()
+    })
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base">
+            <Badge variant={habilidad.criticidad === "A" ? "destructive" : "secondary"} className="mr-1.5">
+              {habilidad.criticidad}
+            </Badge>
+            {habilidad.habilidad}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            {persona.nombre} <span className="text-slate-400">#{persona.legajo}</span> · estándar requerido{" "}
+            <span className="font-bold">{celda.estandar}</span>
+          </p>
+
+          <div className="flex gap-1.5">
+            {["0", "1", "2", "3", "4", "NA"].map((v) => {
+              const gap = v === "NA" ? null : Number(v) - celda.estandar
+              const color =
+                v === "NA"
+                  ? "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                  : gap! >= 0
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : gap === -1
+                      ? "bg-amber-400 text-amber-950 hover:bg-amber-500"
+                      : "bg-red-500 text-white hover:bg-red-600"
+              return (
+                <button
+                  key={v}
+                  disabled={pending}
+                  title={v === "NA" ? "No aplica" : ESCALA[Number(v)]}
+                  onClick={() => guardar(v)}
+                  className={`h-11 flex-1 rounded-md text-base font-bold shadow-sm transition disabled:opacity-50 ${color} ${
+                    actual === v ? "ring-2 ring-slate-900 ring-offset-2" : ""
+                  }`}
+                >
+                  {v}
+                </button>
+              )
+            })}
+          </div>
+
+          <ul className="space-y-0.5 text-xs text-slate-500">
+            {Object.entries(ESCALA).map(([n, d]) => (
+              <li key={n}>
+                <span className="font-bold text-slate-700">{n}</span> — {d}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-400">
+            Se guarda al hacer clic, con fecha de hoy. El color muestra cómo queda contra el estándar.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -593,7 +731,7 @@ function AccionesTab({
   rol: SkapRol
   canEdit: boolean
 }) {
-  const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [pending, startTransition] = useTransition()
   const [editando, setEditando] = useState<SkapAccionDetalle | null>(null)
 
@@ -688,7 +826,7 @@ function AccionesTab({
                   if ("error" in res) { toast.error(res.error); return }
                   toast.success("Acción actualizada")
                   setEditando(null)
-                  router.refresh()
+                  refrescarConScroll()
                 })
               }}
             >
