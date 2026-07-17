@@ -1,12 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, Loader2, PackageX } from "lucide-react"
+import { AlertTriangle, Loader2, PackageX, Users } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import {
   getPedidosConProblemas,
+  type PedidoConProblema,
   type PedidosConProblemasReunion,
 } from "@/actions/reuniones-pedidos-problemas"
 import { ActionLogSeccion } from "./action-log-seccion"
@@ -84,10 +93,92 @@ function Resumen({
   )
 }
 
+/** Tabla del detalle: quién, qué día, por qué motivo y cuántos bultos/HL. */
+function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs text-slate-500">
+            <th className="py-1.5 text-left font-medium">Día</th>
+            <th className="py-1.5 text-left font-medium">Cliente</th>
+            <th className="py-1.5 text-left font-medium">Origen</th>
+            <th className="py-1.5 text-left font-medium">Motivo</th>
+            <th className="py-1.5 text-right font-medium">Bultos</th>
+            <th className="py-1.5 text-right font-medium">HL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pedidos.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-4 text-center text-slate-400">
+                Ningún pedido reprogramado registrado en la semana.
+              </td>
+            </tr>
+          )}
+          {pedidos.map((p, i) => (
+            <tr
+              key={`${p.fuente}-${p.fecha}-${p.idCliente}-${i}`}
+              className="border-b border-slate-100"
+            >
+              <td className="whitespace-nowrap py-1.5 text-slate-700">
+                {diaSemana(p.fecha)} {formatFecha(p.fecha)}
+              </td>
+              <td className="py-1.5">
+                <span className="font-medium text-slate-800">{p.cliente}</span>
+                {p.localidad && (
+                  <span className="ml-1 text-xs text-slate-500">
+                    · {p.localidad}
+                  </span>
+                )}
+              </td>
+              <td className="py-1.5">
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    p.fuente === "vrl"
+                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                      : "border-sky-300 bg-sky-50 text-sky-700"
+                  )}
+                >
+                  {p.fuente === "vrl" ? "VRL" : "VRC"}
+                </Badge>
+              </td>
+              <td className="py-1.5 text-slate-600">
+                {p.motivo}
+                {p.vecesPrevias != null && p.vecesPrevias > 0 && (
+                  <span className="ml-1 text-xs font-medium text-red-600">
+                    · ya pospuesto ×{p.vecesPrevias}
+                  </span>
+                )}
+                {p.fuente === "vrc" && (
+                  <span className="ml-1 text-xs text-slate-500">
+                    {p.fechaNueva
+                      ? `· movido al ${formatFecha(p.fechaNueva)}`
+                      : "· sin fecha nueva"}
+                  </span>
+                )}
+              </td>
+              <td className="py-1.5 text-right tabular-nums">{num(p.bultos)}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-500">
+                {num(p.hl, 1)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /**
- * Pedidos con problemas de la reunión Logística-Ventas: quiénes se quedaron sin
- * su entrega en la semana previa, por qué motivo y cuántos bultos, juntando la
- * pata logística (VRL, cortes de ruteo) y la comercial (VRC, crédito).
+ * Pedidos con problemas: quiénes se quedaron sin su entrega en la semana previa
+ * a la reunión, por qué motivo y cuántos bultos, juntando la pata logística
+ * (VRL, cortes de ruteo) y la comercial (VRC, crédito).
+ *
+ * En la reunión Logística-Ventas la tabla va desplegada; en la de logística de
+ * los lunes (temas de flota y ruteo) `modoResumen` deja solo los totales y el
+ * detalle se abre con un click cuando hay pedidos.
  */
 export function SeccionPedidosProblemas({
   fechaReunion,
@@ -97,6 +188,7 @@ export function SeccionPedidosProblemas({
   responsables,
   puedeEditar,
   onActividadesChanged,
+  modoResumen = false,
 }: {
   fechaReunion: string
   reunionId: string
@@ -105,10 +197,12 @@ export function SeccionPedidosProblemas({
   responsables: ResponsableOpt[]
   puedeEditar: boolean
   onActividadesChanged: () => void
+  modoResumen?: boolean
 }) {
   const [data, setData] = useState<PedidosConProblemasReunion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [detalleAbierto, setDetalleAbierto] = useState(false)
 
   useEffect(() => {
     let cancel = false
@@ -212,82 +306,37 @@ export function SeccionPedidosProblemas({
               />
             </div>
 
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-xs text-slate-500">
-                    <th className="py-1.5 text-left font-medium">Día</th>
-                    <th className="py-1.5 text-left font-medium">Cliente</th>
-                    <th className="py-1.5 text-left font-medium">Origen</th>
-                    <th className="py-1.5 text-left font-medium">Motivo</th>
-                    <th className="py-1.5 text-right font-medium">Bultos</th>
-                    <th className="py-1.5 text-right font-medium">HL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.pedidos.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="py-4 text-center text-slate-400">
-                        Ningún pedido reprogramado registrado en la semana.
-                      </td>
-                    </tr>
-                  )}
-                  {data.pedidos.map((p, i) => (
-                    <tr
-                      key={`${p.fuente}-${p.fecha}-${p.idCliente}-${i}`}
-                      className="border-b border-slate-100"
-                    >
-                      <td className="whitespace-nowrap py-1.5 text-slate-700">
-                        {diaSemana(p.fecha)} {formatFecha(p.fecha)}
-                      </td>
-                      <td className="py-1.5">
-                        <span className="font-medium text-slate-800">
-                          {p.cliente}
-                        </span>
-                        {p.localidad && (
-                          <span className="ml-1 text-xs text-slate-500">
-                            · {p.localidad}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-1.5">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            p.fuente === "vrl"
-                              ? "border-amber-300 bg-amber-50 text-amber-700"
-                              : "border-sky-300 bg-sky-50 text-sky-700"
-                          )}
-                        >
-                          {p.fuente === "vrl" ? "VRL" : "VRC"}
-                        </Badge>
-                      </td>
-                      <td className="py-1.5 text-slate-600">
-                        {p.motivo}
-                        {p.vecesPrevias != null && p.vecesPrevias > 0 && (
-                          <span className="ml-1 text-xs font-medium text-red-600">
-                            · ya pospuesto ×{p.vecesPrevias}
-                          </span>
-                        )}
-                        {p.fuente === "vrc" && (
-                          <span className="ml-1 text-xs text-slate-500">
-                            {p.fechaNueva
-                              ? `· movido al ${formatFecha(p.fechaNueva)}`
-                              : "· sin fecha nueva"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {num(p.bultos)}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums text-slate-500">
-                        {num(p.hl, 1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {modoResumen ? (
+              data.pedidos.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setDetalleAbierto(true)}
+                  >
+                    <Users className="size-4" />
+                    Ver quiénes fueron ({data.pedidos.length})
+                  </Button>
+                  <Dialog open={detalleAbierto} onOpenChange={setDetalleAbierto}>
+                    <DialogContent className="max-w-3xl">
+                      <DialogHeader>
+                        <DialogTitle>Pedidos reprogramados de la semana</DialogTitle>
+                        <DialogDescription>
+                          Del {formatFecha(data.desde)} al {formatFecha(data.hasta)}
+                          , con el motivo y el volumen de cada pedido.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <TablaPedidos pedidos={data.pedidos} />
+                    </DialogContent>
+                  </Dialog>
+                </>
+              )
+            ) : (
+              <div className="mt-4">
+                <TablaPedidos pedidos={data.pedidos} />
+              </div>
+            )}
 
             {data.desde < VRL_REGISTRO_DESDE && (
               <p className="mt-2 text-xs text-slate-500">

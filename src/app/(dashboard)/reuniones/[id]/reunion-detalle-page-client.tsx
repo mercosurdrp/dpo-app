@@ -2117,15 +2117,27 @@ export function ReunionDetallePageClient({
           Sólo Pampeana: el VRL/VRC y el módulo de mantenimiento no existen en
           Misiones, donde la flota se gestiona en Cloudfleet. */}
       {!IS_MISIONES && detalle.tipo === "logistica" && esLunes(detalle.fecha) && (
-        <SeccionFlotaRuteo
-          fechaReunion={detalle.fecha}
-          reunionId={detalle.id}
-          reunionTipo={detalle.tipo}
-          actividades={actividadesFlotaRuteo}
-          responsables={responsables}
-          puedeEditar={puedeEditar}
-          onActividadesChanged={refrescar}
-        />
+        <>
+          <SeccionFlotaRuteo
+            fechaReunion={detalle.fecha}
+            reunionId={detalle.id}
+            reunionTipo={detalle.tipo}
+            actividades={actividadesFlotaRuteo}
+            responsables={responsables}
+            puedeEditar={puedeEditar}
+            onActividadesChanged={refrescar}
+          />
+          <SeccionPedidosProblemas
+            fechaReunion={detalle.fecha}
+            reunionId={detalle.id}
+            reunionTipo={detalle.tipo}
+            actividades={actividadesPedidosProblemas}
+            responsables={responsables}
+            puedeEditar={puedeEditar}
+            onActividadesChanged={refrescar}
+            modoResumen
+          />
+        </>
       )}
 
 
