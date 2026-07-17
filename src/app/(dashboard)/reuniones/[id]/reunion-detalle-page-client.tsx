@@ -1969,6 +1969,16 @@ export function ReunionDetallePageClient({
                                 ? `${formatearValor(valor!)}%`
                                 : formatearValor(valor!)
                             : "—"
+                          // Asterisco discreto cuando el día trae una
+                          // observación (ej. WNP apoyado en jornada teórica
+                          // porque el reloj no registró a alguien). El texto
+                          // completo sale al pasar el mouse y en el popover.
+                          const obs = muestra ? (cell?.observacion ?? null) : null
+                          const marcaObs = obs ? (
+                            <span aria-hidden className="ml-0.5 align-super text-[0.7em] font-bold text-amber-500">
+                              *
+                            </span>
+                          ) : null
                           return (
                             <td
                               key={f}
@@ -1984,10 +1994,16 @@ export function ReunionDetallePageClient({
                                   type="button"
                                   onClick={onCellClick}
                                   className="w-full cursor-pointer rounded px-1 py-0.5 underline-offset-2 hover:underline focus:outline-none focus:ring-1 focus:ring-blue-400"
-                                  title="Ver detalle del día"
+                                  title={obs ?? "Ver detalle del día"}
                                 >
                                   {contenido}
+                                  {marcaObs}
                                 </button>
+                              ) : obs ? (
+                                <span title={obs}>
+                                  {contenido}
+                                  {marcaObs}
+                                </span>
                               ) : (
                                 contenido
                               )}
