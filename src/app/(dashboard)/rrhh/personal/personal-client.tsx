@@ -161,6 +161,7 @@ export function PersonalClient({ empleados }: Props) {
               <th className="px-3 py-2 font-medium text-slate-700">Nombre</th>
               <th className="px-3 py-2 font-medium text-slate-700">Puesto</th>
               <th className="px-3 py-2 font-medium text-slate-700">Área</th>
+              <th className="px-3 py-2 font-medium text-slate-700">Teléfono</th>
               <th className="px-3 py-2 font-medium text-slate-700">Supervisor</th>
               <th className="px-3 py-2 font-medium text-slate-700">Contrato</th>
               <th className="px-3 py-2 font-medium text-slate-700">Activo</th>
@@ -174,6 +175,9 @@ export function PersonalClient({ empleados }: Props) {
                 <td className="px-3 py-2 font-medium">{e.nombre}</td>
                 <td className="px-3 py-2">{e.puesto ?? "—"}</td>
                 <td className="px-3 py-2">{e.area ?? "—"}</td>
+                <td className="px-3 py-2 whitespace-nowrap tabular-nums">
+                  {e.telefono ?? <span className="text-slate-400">—</span>}
+                </td>
                 <td className="px-3 py-2">
                   {e.supervisor_nombre ?? <span className="text-slate-400">—</span>}
                 </td>
