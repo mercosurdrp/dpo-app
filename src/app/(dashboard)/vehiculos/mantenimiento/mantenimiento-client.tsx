@@ -87,6 +87,7 @@ import {
   MANTENIMIENTO_ESTADO_LABELS,
 } from "@/types/database"
 import { TableroOperativo, type OTPendiente } from "./tablero-operativo"
+import { ProgramacionOt } from "./programacion-ot"
 import { ChecklistsMtto } from "./checklists-mtto"
 import { NeumaticosModule } from "./neumaticos-module"
 import { SeguimientoFlota } from "./seguimiento-flota"
@@ -724,6 +725,11 @@ export function MantenimientoClient({
         {/* ============ TAB: Herramientas (registro de pañol) ============ */}
         <TabsContent value="herramientas" className="space-y-6">
           <HerramientasTab herramientas={herramientas} puedeEditar={puedeEditar} />
+        </TabsContent>
+
+        {/* ============ TAB: Programación de OT (semana) ============ */}
+        <TabsContent value="programacion" className="space-y-6">
+          <ProgramacionOt estados={estados} tareas={tareas} puedeEditar={puedeEditar} />
         </TabsContent>
 
         {/* ============ TAB: Órdenes de Trabajo ============ */}

@@ -77,6 +77,15 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Adherencia al plan preventivo en herramienta digital y unidades fuera de servicio por documentación.",
   },
   {
+    id: "programacion",
+    label: "Programación OT",
+    grupo: "operacion",
+    puntos: ["2.2", "2.4"],
+    requisitos: ["R2.2.3"],
+    aporta:
+      "Programación semanal de órdenes de trabajo por unidad, con registro histórico y orden imprimible para el taller.",
+  },
+  {
     id: "historial",
     label: "Órdenes de Trabajo",
     grupo: "operacion",
