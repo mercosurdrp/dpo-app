@@ -150,7 +150,6 @@ function KpiPerdidasBlock({
   rubro: string
 }) {
   const cumpleAcum = kpi.realPpmAcum <= kpi.targetPpmAcum
-  const hayAtipico = kpi.meses.some((m) => m.targetAtipico)
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
@@ -182,34 +181,20 @@ function KpiPerdidasBlock({
           return (
             <div
               key={m.mes}
-              title={`${MES_CORTO[m.mes]}: ${Math.round(m.realPpm)} ppm reales contra ${Math.round(m.targetPpm)} de target${m.targetAtipico ? " — target atípico" : ""}`}
+              title={`${MES_CORTO[m.mes]}: ${Math.round(m.realPpm)} ppm reales contra ${Math.round(m.targetPpm)} de target`}
               className={`rounded-md border px-2 py-1 text-xs ${
-                m.targetAtipico
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : ok
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-red-200 bg-red-50 text-red-700"
+                ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
               }`}
             >
               <span className="font-medium">{MES_CORTO[m.mes]}</span>{" "}
               {Math.round(m.realPpm)}
               <span className="opacity-60">/{Math.round(m.targetPpm)}</span>
-              {m.targetAtipico && " ⚠"}
             </div>
           )
         })}
       </div>
-      {hayAtipico && (
-        <p className="text-xs text-amber-700">
-          ⚠ El presupuesto de{" "}
-          {kpi.meses
-            .filter((m) => m.targetAtipico)
-            .map((m) => MES_CORTO[m.mes])
-            .join(" y ")}{" "}
-          pide mucho más que el resto del año. Contra ese target cumplir es
-          trivial y el ahorro puede ser un artefacto del presupuesto, no gestión.
-        </p>
-      )}
     </div>
   )
 }
@@ -308,20 +293,37 @@ function trimestresCerrados(anio: number, hoy = new Date()): number {
 }
 
 /**
- * Ahorro que debería llevar acumulado a esta altura, prorrateado por los meses
- * transcurridos sobre los VIGENTES. Compararlo contra el compromiso ANUAL a
- * mitad de año da la lectura al revés: una iniciativa que rindió todo su
- * compromiso en un trimestre muestra la barra llena, como si no quedara nada por
- * hacer, cuando lo que pasó es que el compromiso quedó corto.
+ * Ahorro que debería llevar acumulado a esta altura.
  *
- * La base son los meses vigentes y no 12: si arranca en marzo, el compromiso
- * anual tiene que rendirse en 10 meses, no en 12.
+ * Con meta en % del rubro, es ese % aplicado al presupuesto de los meses ya
+ * cerrados. Es lo que hace que "bajar 10% al año" y "bajar 10% por mes" sean la
+ * MISMA meta: el 10% de cada mes suma el 10% del año.
+ *
+ * No se prorratea en cuotas iguales porque el presupuesto no es plano y eso
+ * deformaba la meta mes a mes: en roturas el ppto de junio ($468.796) es un
+ * tercio del de diciembre ($1.290.411), y la cuota lineal ($94.813) le exigía a
+ * junio el 20% y a diciembre el 7,3% — la misma meta pesando el doble o la mitad
+ * según el mes. Junio, encima, es uno de los meses que la tarjeta pinta en rojo.
+ *
+ * Sin meta en % (compromiso cargado a mano) no hay a qué aplicarle el %, así que
+ * ahí sí se prorratea por meses: es lo único que se puede hacer.
  */
 function esperadoALaFecha(
-  comprometidoAnual: number | null,
+  ini: IniciativaAhorroConDetalle,
+  presupComputado: number,
+  fuente: "eerr" | "manual",
   mesesTranscurridos: number,
   mesesVigentes: number,
 ): number | null {
+  if (
+    fuente === "eerr" &&
+    ini.ahorro_pct_objetivo !== null &&
+    ini.ahorro_pct_objetivo > 0 &&
+    presupComputado > 0
+  ) {
+    return (presupComputado * ini.ahorro_pct_objetivo) / 100
+  }
+  const comprometidoAnual = ini.ahorro_comprometido_anual
   if (comprometidoAnual === null || comprometidoAnual <= 0) return null
   if (mesesVigentes <= 0) return null
   return (comprometidoAnual * mesesTranscurridos) / mesesVigentes
@@ -617,7 +619,9 @@ export function IniciativasAhorroSection({
             const mesesTranscurridos =
               mesesEerr ?? Math.max(0, qCerrados * 3 - (mesInicio - 1))
             const esperado = esperadoALaFecha(
-              ini.ahorro_comprometido_anual,
+              ini,
+              presupComputado,
+              fuente,
               mesesTranscurridos,
               mesesVigentes,
             )

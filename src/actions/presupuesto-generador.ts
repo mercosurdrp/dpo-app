@@ -44,15 +44,28 @@ interface ProfileMin {
   nombre: string | null
 }
 
+export interface PresupuestoRubro {
+  /** Total del año. */
+  total: number
+  /** Los 12 meses, índice 0 = enero. */
+  meses: number[]
+}
+
 /**
- * Presupuesto ANUAL por rubro, para las metas de las iniciativas de ahorro.
+ * Presupuesto ANUAL por rubro, mes a mes, para las metas de las iniciativas.
  *
  * Sale de una hoja distinta a la de los desvíos: la hoja "DESVIOS" sólo trae los
  * meses ya cerrados (el archivo de julio 2026 llega hasta junio), así que sumarla
  * daría medio año. La hoja "PRESUPUESTO <año> MRP" tiene los 12 meses más una
  * columna TOTAL (verificado: TOTAL == suma de los 12 en todos los rubros).
+ *
+ * Los meses hacen falta porque una iniciativa puede arrancar a mitad de año: la
+ * meta se calcula sobre el presupuesto que puede influir, no sobre el del año
+ * entero. Roturas arranca en marzo, y ene-feb son $1.814.567 que ya pasaron.
  */
-function parseHojaPresupuestoAnual(buffer: ArrayBuffer): Map<string, number> {
+function parseHojaPresupuestoAnual(
+  buffer: ArrayBuffer,
+): Map<string, PresupuestoRubro> {
   const wb = XLSX.read(buffer, { type: "array" })
   const nombre = wb.SheetNames.find((n) => /^\s*PRESUPUESTO\b/i.test(n))
   if (!nombre) {
@@ -67,8 +80,8 @@ function parseHojaPresupuestoAnual(buffer: ArrayBuffer): Map<string, number> {
   })
 
   // Misma forma que la hoja DESVIOS: rubro en la col 1, datos desde la fila 3.
-  // Acá la col 2 es el TOTAL del año.
-  const out = new Map<string, number>()
+  // Acá la col 2 es el TOTAL del año y las 3..14 son los 12 meses.
+  const out = new Map<string, PresupuestoRubro>()
   for (let i = 3; i < aoa.length; i++) {
     const row = aoa[i]
     if (!row) continue
@@ -80,7 +93,11 @@ function parseHojaPresupuestoAnual(buffer: ArrayBuffer): Map<string, number> {
     if (typeof total !== "number" || !Number.isFinite(total) || total === 0) {
       continue
     }
-    out.set(subNorm, total)
+    const meses = Array.from({ length: 12 }, (_, k) => {
+      const v = row[3 + k]
+      return typeof v === "number" && Number.isFinite(v) ? v : 0
+    })
+    out.set(subNorm, { total, meses })
   }
   return out
 }
@@ -323,10 +340,13 @@ export async function getEjecucionPorRubro(
   }
 }
 
-/** Presupuesto anual de cada rubro del EERR del año. Clave: rubro normalizado. */
+/**
+ * Presupuesto de cada rubro del EERR, con el total y los 12 meses.
+ * Clave: rubro normalizado.
+ */
 export async function getPresupuestoAnualPorRubro(
   anio: number,
-): Promise<Result<Record<string, number>>> {
+): Promise<Result<Record<string, PresupuestoRubro>>> {
   try {
     await requireAuth()
     const supabase = await createClient()

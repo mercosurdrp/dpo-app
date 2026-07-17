@@ -57,8 +57,6 @@ export interface KpiPerdidasMes {
   realPpm: number
   targetHl: number
   realHl: number
-  /** El target del mes se disparó contra la mediana del año (ppto sospechoso). */
-  targetAtipico: boolean
 }
 
 export interface KpiPerdidas {
@@ -86,13 +84,6 @@ function factorHlPorBulto(items: PerdidaItem[]): number | null {
   const hl = items.reduce((acc, x) => acc + (x.hl ?? 0), 0)
   if (bultos <= 0) return null
   return hl / bultos
-}
-
-function mediana(xs: number[]): number {
-  if (xs.length === 0) return 0
-  const s = [...xs].sort((a, b) => a - b)
-  const m = Math.floor(s.length / 2)
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
 async function fetchPerdidas(): Promise<Record<string, PerdidaItem[]>> {
@@ -163,20 +154,16 @@ export async function getKpiPerdidas(
           realHl,
           targetPpm: (targetHl / vol.hlPpto) * 1e6,
           realPpm: (realHl / vol.hlReal) * 1e6,
-          targetAtipico: false,
         })
       }
       if (filas.length === 0) continue
 
-      // Un target que se dispara contra la mediana del año no mide gestión: mide
-      // un presupuesto mal cargado. El de PRODUCTO VENCIDO pide 222 bultos en
-      // mayo y 329 en junio contra menos de 40 el resto del año, y con esa vara
-      // cumplir es trivial. Se marca en vez de excluirse (decisión del usuario):
-      // el presupuesto aprobado es el presupuesto aprobado.
-      const med = mediana(filas.map((f) => f.targetPpm))
-      for (const f of filas) {
-        f.targetAtipico = med > 0 && f.targetPpm > med * 3
-      }
+      // 🚨 No marcar como sospechoso un target que se dispara: en PRODUCTO
+      // VENCIDO el ppto pide 222 bultos en mayo y 329 en junio contra menos de 40
+      // el resto del año, y eso es CORRECTO — mayo-junio es la temporada baja e
+      // históricamente se vence mucho, así que el presupuesto lo prevé. Una
+      // versión anterior lo señalaba como error de carga: era una lectura mía sin
+      // el contexto del negocio.
 
       const sumT = filas.reduce((a, f) => a + f.targetHl, 0)
       const sumR = filas.reduce((a, f) => a + f.realHl, 0)

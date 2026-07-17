@@ -24,7 +24,10 @@ import {
   crearIniciativa,
   actualizarIniciativa,
 } from "@/actions/presupuesto-iniciativas"
-import { getPresupuestoAnualPorRubro } from "@/actions/presupuesto-generador"
+import {
+  getPresupuestoAnualPorRubro,
+  type PresupuestoRubro,
+} from "@/actions/presupuesto-generador"
 import type {
   EstadoIniciativaAhorro,
   IniciativaAhorroConDetalle,
@@ -40,6 +43,23 @@ function formatMoney(n: number | null): string {
     maximumFractionDigits: 0,
   }).format(n)
 }
+
+/** Índice 1-12 (el 0 queda sin usar para no restar en cada lectura). */
+const MES_NOMBRE = [
+  "",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
 
 interface ResponsableOpt {
   id: string
@@ -89,7 +109,14 @@ export function IniciativaFormDialog({
       ? String(iniciativa.ahorro_pct_objetivo)
       : "",
   )
-  const [presupuestos, setPresupuestos] = useState<Record<string, number>>({})
+  const [presupuestos, setPresupuestos] = useState<
+    Record<string, PresupuestoRubro>
+  >({})
+  // Controlado (y no defaultValue) porque la meta depende de él: si la
+  // iniciativa arranca en marzo, el compromiso se calcula sobre marzo-diciembre.
+  const [fechaImpl, setFechaImpl] = useState<string>(
+    iniciativa?.fecha_implementacion ?? "",
+  )
   const [presupError, setPresupError] = useState<string | null>(null)
   const [cargandoPresup, setCargandoPresup] = useState(false)
 
@@ -105,6 +132,7 @@ export function IniciativaFormDialog({
           ? String(iniciativa.ahorro_pct_objetivo)
           : "",
       )
+      setFechaImpl(iniciativa?.fecha_implementacion ?? "")
       setError(null)
     }
   }, [open, iniciativa])
@@ -129,15 +157,41 @@ export function IniciativaFormDialog({
     }
   }, [open, anio])
 
-  // Presupuesto del rubro elegido. Si la iniciativa ya tenía uno guardado y el
-  // rubro no cambió, manda el guardado: el compromiso publicado no se mueve solo
-  // porque se haya vuelto a subir el EERR.
-  const presupDelRubro =
-    rubro && presupuestos[rubro] !== undefined
-      ? presupuestos[rubro]
-      : rubro && rubro === iniciativa?.rubro
-        ? (iniciativa.presupuesto_rubro_anual ?? null)
-        : null
+  // Primer mes que la iniciativa puede influir. Antes de esa fecha el rubro
+  // gastaba lo que gastaba sin ella, así que ese presupuesto no es su meta.
+  const mesInicio = (() => {
+    if (!fechaImpl) return 1
+    const d = new Date(`${fechaImpl}T12:00:00`)
+    if (Number.isNaN(d.getTime())) return 1
+    if (d.getFullYear() < anio) return 1
+    if (d.getFullYear() > anio) return 13
+    return d.getMonth() + 1
+  })()
+
+  // Presupuesto del rubro sobre el que se fija la meta: los meses en que la
+  // iniciativa está vigente, no el año entero. Roturas arranca en marzo, y
+  // ene-feb ($1.814.567) ya pasaron sin ella: pedirle el 10% del año completo
+  // sería exigirle 12,4% de lo que sí puede influir.
+  //
+  // Si la iniciativa ya tenía uno guardado y no cambió ni el rubro ni la fecha,
+  // manda el guardado: el compromiso publicado no se mueve solo porque se haya
+  // vuelto a subir el EERR.
+  const presupDelRubro = (() => {
+    const delEerr = rubro ? presupuestos[rubro] : undefined
+    if (delEerr) {
+      return delEerr.meses
+        .slice(mesInicio - 1)
+        .reduce((acc, x) => acc + x, 0)
+    }
+    if (
+      rubro &&
+      rubro === iniciativa?.rubro &&
+      fechaImpl === (iniciativa.fecha_implementacion ?? "")
+    ) {
+      return iniciativa.presupuesto_rubro_anual ?? null
+    }
+    return null
+  })()
   const pctNum = pct.trim() === "" ? null : Number(pct)
   const compromisoCalculado =
     presupDelRubro !== null && pctNum !== null && !Number.isNaN(pctNum)
@@ -303,8 +357,9 @@ export function IniciativaFormDialog({
               <Input
                 id="fecha_implementacion"
                 name="fecha_implementacion"
+                value={fechaImpl}
+                onChange={(e) => setFechaImpl(e.target.value)}
                 type="date"
-                defaultValue={iniciativa?.fecha_implementacion ?? ""}
               />
             </div>
           </div>
@@ -369,8 +424,13 @@ export function IniciativaFormDialog({
 
             {rubro && presupDelRubro !== null && (
               <p className="mt-2 text-sm text-slate-700">
-                Presupuesto {anio} del rubro:{" "}
-                <strong>{formatMoney(presupDelRubro)}</strong>
+                Presupuesto del rubro
+                {/* Que se vea que la base son los meses vigentes: si arranca a
+                    mitad de año, este número NO es el del año entero. */}
+                {mesInicio > 1
+                  ? ` de ${MES_NOMBRE[mesInicio]} a diciembre`
+                  : ` ${anio}`}
+                : <strong>{formatMoney(presupDelRubro)}</strong>
                 {compromisoCalculado !== null && (
                   <>
                     {" · "}Compromiso:{" "}
