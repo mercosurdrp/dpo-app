@@ -2,6 +2,7 @@
 
 import { getPool } from "@/lib/mercosur-dashboard"
 import { getPedidosPendientes } from "@/lib/chess/pedidos-pendientes"
+import { getPedidosGestion } from "@/lib/gescom/pedidos-gestion"
 import {
   priorizarPorCiudad,
   PESOS_DEFAULT,
@@ -163,17 +164,43 @@ export async function getPriorizacionEntrega(
     const desde = restarDias(hasta, VENTANA_DIAS)
     const desdeReciente = restarDias(hasta, VENTANA_RECIENTE_DIAS)  // bandera "rechazó hace poco"
 
-    // Gestión (GESCOM) NO entra: se sacó a pedido del usuario (2026-07-17) — ese
-    // canal sale por su propio circuito y no compite por el cupo del camión.
-    const [pedidos, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] =
+    // Gestión (GESCOM) entra como un pedido más, SIN diferenciarse (definición del
+    // usuario 2026-07-17: nada de leyendas ni marcas de canal — un pedido es un
+    // pedido). Si la API no contesta, la pantalla sigue con lo de Chess.
+    const [pedidosChess, pedidosGestion, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] =
       await Promise.all([
         getPedidosPendientes(fechaEntrega),
+        getPedidosGestion(fechaEntrega).catch(() => []),
         getPerfilClientes(desde, hasta),
         getRechazosPorCliente(desde, hasta),
         getRechazosPorCliente(desdeReciente, hasta),
         getBanderas(desde),
         getPospuestos(fechaEntrega),
       ])
+
+    // Un cliente puede pedir por los dos canales el mismo día: es UN cliente en la
+    // lista, con los bultos sumados, porque al camión sube todo junto.
+    const pedidosPorCliente = new Map<number, {
+      id_cliente: number; bultos: number; hl: number; monto: number
+    }>()
+    for (const p of pedidosChess) {
+      pedidosPorCliente.set(p.id_cliente, {
+        id_cliente: p.id_cliente, bultos: p.bultos, hl: p.hl, monto: p.monto,
+      })
+    }
+    for (const g of pedidosGestion) {
+      const prev = pedidosPorCliente.get(g.id_cliente)
+      if (prev) {
+        prev.bultos += g.bultos
+        prev.hl += g.hl
+        prev.monto += g.monto
+      } else {
+        pedidosPorCliente.set(g.id_cliente, {
+          id_cliente: g.id_cliente, bultos: g.bultos, hl: g.hl, monto: g.monto,
+        })
+      }
+    }
+    const pedidos = [...pedidosPorCliente.values()]
 
     if (pedidos.length === 0) {
       return { error: `No hay pedidos pendientes con fecha de entrega ${fechaEntrega}.` }
