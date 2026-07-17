@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { AdjuntosInput } from "@/components/adjuntos-input"
@@ -33,6 +34,7 @@ import {
   agregarAvanceActividad,
   getHistorialActividad,
   getSignedUrl,
+  reprogramarActividad,
 } from "@/actions/reuniones"
 import type {
   EstadoReunionActividad,
@@ -73,6 +75,10 @@ function formatFechaHora(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function plusDays(days: number): string {
+  return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
 }
 
 function formatFecha(fecha: string): string {
@@ -119,6 +125,24 @@ export function DetalleActividadDialog({
   const [nuevoEstado, setNuevoEstado] = useState<EstadoReunionActividad>(
     estadoInicial ?? actividad.estado,
   )
+  const [tipoCierre, setTipoCierre] = useState<"definitivo" | "reprogramar">(
+    "definitivo",
+  )
+  const [reprogPreset, setReprogPreset] = useState<"1w" | "1m" | "custom">(
+    "1w",
+  )
+  const [reprogCustom, setReprogCustom] = useState(
+    actividad.fecha_compromiso ?? plusDays(7),
+  )
+
+  const fechaNueva =
+    reprogPreset === "1w"
+      ? plusDays(7)
+      : reprogPreset === "1m"
+        ? plusDays(30)
+        : reprogCustom
+  const reprogramando =
+    nuevoEstado === "cerrada" && tipoCierre === "reprogramar"
 
   // Carga inicial del historial de avances. El estado se actualiza dentro
   // del callback async (no de forma síncrona en el cuerpo del efecto).
@@ -153,6 +177,27 @@ export function DetalleActividadDialog({
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+
+    if (reprogramando) {
+      if (!fechaNueva) {
+        setError("Elegí la nueva fecha de compromiso.")
+        return
+      }
+      startTransition(async () => {
+        const result = await reprogramarActividad(
+          actividad.id,
+          fechaNueva,
+          comentario.trim() || null,
+        )
+        if ("error" in result) {
+          setError(result.error)
+          return
+        }
+        onSaved()
+        onOpenChange(false)
+      })
+      return
+    }
 
     const form = e.currentTarget
     const formData = new FormData(form)
@@ -312,7 +357,9 @@ export function DetalleActividadDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="det_act_comentario">
-                Comentario{cerrandoTarea && " *"}
+                {reprogramando
+                  ? "Motivo de la reprogramación"
+                  : `Comentario${cerrandoTarea ? " *" : ""}`}
               </Label>
               <Textarea
                 id="det_act_comentario"
@@ -321,14 +368,16 @@ export function DetalleActividadDialog({
                 value={comentario}
                 onChange={(e) => setComentario(e.target.value)}
                 placeholder={
-                  cerrandoTarea
-                    ? "Obligatorio para cerrar: contá qué se resolvió…"
-                    : "Avances, plan de acción, etc."
+                  reprogramando
+                    ? "¿Por qué se reprograma? (opcional)"
+                    : cerrandoTarea
+                      ? "Obligatorio para cerrar: contá qué se resolvió…"
+                      : "Avances, plan de acción, etc."
                 }
               />
             </div>
 
-            <div className="space-y-1.5">
+            <div className={reprogramando ? "hidden" : "space-y-1.5"}>
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="size-3.5" />
                 Adjuntar archivos o fotos (podés pegar con Ctrl+V)
@@ -366,10 +415,88 @@ export function DetalleActividadDialog({
                 </SelectContent>
               </Select>
               {cerrandoTarea && (
-                <p className="text-xs text-amber-700">
-                  Para cerrar la actividad es obligatorio escribir un
-                  comentario.
-                </p>
+                <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <Label className="text-xs text-muted-foreground">
+                    ¿Cómo se cierra?
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTipoCierre("definitivo")}
+                      disabled={pending}
+                      className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                        tipoCierre === "definitivo"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Cierre definitivo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTipoCierre("reprogramar")}
+                      disabled={pending}
+                      className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                        tipoCierre === "reprogramar"
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      Reprogramar
+                    </button>
+                  </div>
+
+                  {tipoCierre === "definitivo" ? (
+                    <p className="text-xs text-amber-700">
+                      Para cerrar la actividad es obligatorio escribir un
+                      comentario.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        {(
+                          [
+                            ["1w", "+1 semana"],
+                            ["1m", "+1 mes"],
+                            ["custom", "Fecha"],
+                          ] as const
+                        ).map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setReprogPreset(val)}
+                            disabled={pending}
+                            className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                              reprogPreset === val
+                                ? "border-blue-500 bg-blue-50 text-blue-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {reprogPreset === "custom" && (
+                        <Input
+                          type="date"
+                          value={reprogCustom}
+                          onChange={(e) => setReprogCustom(e.target.value)}
+                          disabled={pending}
+                        />
+                      )}
+                      <div className="flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                        <CalendarClock className="size-3.5 shrink-0" />
+                        <span>
+                          La actividad sigue abierta y vence el{" "}
+                          <span className="font-semibold">
+                            {fechaNueva ? formatFecha(fechaNueva) : "—"}
+                          </span>
+                          . Queda registrado en el historial.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -390,7 +517,11 @@ export function DetalleActividadDialog({
               </Button>
               <Button type="submit" disabled={pending}>
                 {pending && <Loader2 className="mr-2 size-4 animate-spin" />}
-                {cerrandoTarea ? "Cerrar tarea" : "Guardar avance"}
+                {reprogramando
+                  ? "Reprogramar actividad"
+                  : cerrandoTarea
+                    ? "Cerrar tarea"
+                    : "Guardar avance"}
               </Button>
             </div>
           </form>
