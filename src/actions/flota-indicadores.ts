@@ -22,6 +22,8 @@ export type FlotaKpi =
   | "combustible_kml"
   | "co2_flota"
   | "cil_tareas"
+  | "correctivo_dias_parado"
+  | "neumaticos_conformidad"
 
 export type PlanFlotaEstado = "abierto" | "en_progreso" | "cerrado"
 export type PlanFlotaItemEstado = "pendiente" | "en_progreso" | "completado"
@@ -31,6 +33,7 @@ export interface FlotaMeta {
   meta: number | null
   comparador: ">=" | "<="
   unidad: string
+  justificacion: string | null
 }
 
 export interface FlotaPlanAccion {
@@ -77,7 +80,7 @@ export async function getFlotaMetas(): Promise<
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("flota_metas")
-      .select("kpi, meta, comparador, unidad")
+      .select("kpi, meta, comparador, unidad, justificacion")
     if (error) return { error: error.message }
     return { data: (data || []) as FlotaMeta[] }
   } catch (e) {
@@ -88,14 +91,16 @@ export async function getFlotaMetas(): Promise<
 export async function updateFlotaMeta(input: {
   kpi: FlotaKpi
   meta: number | null
+  justificacion?: string | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
-    const { error } = await supabase
-      .from("flota_metas")
-      .update({ meta: input.meta, updated_by: profile.id })
-      .eq("kpi", input.kpi)
+    const update: Record<string, unknown> = { meta: input.meta, updated_by: profile.id }
+    if (input.justificacion !== undefined) {
+      update.justificacion = input.justificacion?.trim() || null
+    }
+    const { error } = await supabase.from("flota_metas").update(update).eq("kpi", input.kpi)
     if (error) return { error: error.message }
     return { success: true }
   } catch (e) {
@@ -178,13 +183,35 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (rows.length < PAGE) break
     }
 
-    const [otRes, planesRes, conteosRes, cargasRes, cilRes] = await Promise.all([
+    const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes] = await Promise.all([
       supabase
         .from("mantenimiento_realizados")
         .select("dominio, fecha")
         .eq("tipo", "correctivo")
         .neq("estado", "cancelado")
         .gte("fecha", inicioVentana),
+      // Días parado por correctivo (DPO 2.4): rangos fuera de servicio de OT
+      // correctivas que tocan la ventana (pueden arrancar antes del 1er mes).
+      supabase
+        .from("mantenimiento_realizados")
+        .select("fuera_servicio_desde, fuera_servicio_hasta")
+        .eq("tipo", "correctivo")
+        .neq("estado", "cancelado")
+        .not("fuera_servicio_desde", "is", null)
+        .or(`fuera_servicio_hasta.gte.${inicioVentana},fuera_servicio_hasta.is.null`),
+      // Conformidad de neumáticos (DPO 3.4): mediciones del período sobre
+      // cubiertas instaladas.
+      supabase
+        .from("mantenimiento_neumatico_mediciones")
+        .select(
+          "neumatico_id, fecha, profundidad_mm, presion_psi, neumatico:mantenimiento_neumaticos!inner(estado)"
+        )
+        .eq("neumatico.estado", "instalado")
+        .gte("fecha", inicioVentana),
+      supabase
+        .from("mantenimiento_neumaticos")
+        .select("id", { count: "exact", head: true })
+        .eq("estado", "instalado"),
       supabase
         .from("checklist_planes_accion")
         .select("created_at, updated_at")
@@ -202,6 +229,9 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       supabase.from("mantenimiento_cil").select("fecha").gte("fecha", inicioVentana),
     ])
     if (otRes.error) return { error: otRes.error.message }
+    if (otParadaRes.error) return { error: otParadaRes.error.message }
+    if (medicionesRes.error) return { error: medicionesRes.error.message }
+    if (instaladasRes.error) return { error: instaladasRes.error.message }
     if (planesRes.error) return { error: planesRes.error.message }
     if (conteosRes.error) return { error: conteosRes.error.message }
     if (cargasRes.error) return { error: cargasRes.error.message }
@@ -294,6 +324,80 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (meses.includes(ym)) cilPorMes.set(ym, (cilPorMes.get(ym) ?? 0) + 1)
     }
 
+    // Días parado por correctivo: por cada mes, suma del solapamiento de los
+    // rangos fuera de servicio con el mes (una OT que cruza meses reparte sus
+    // días). Rango abierto (sin fecha de alta) = sigue parado hasta hoy.
+    const hoyArg = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(new Date())
+    const diasParado = new Map<string, number>()
+    for (const ot of (otParadaRes.data || []) as Array<{
+      fuera_servicio_desde: string
+      fuera_servicio_hasta: string | null
+    }>) {
+      const desde = ot.fuera_servicio_desde.slice(0, 10)
+      const hasta = (ot.fuera_servicio_hasta ?? hoyArg).slice(0, 10)
+      if (hasta < desde) continue
+      for (const ym of meses) {
+        const finMes = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)
+        const mesIni = `${ym}-01`
+        const mesFin = `${ym}-${pad2(finMes.getDate())}`
+        const ini = desde > mesIni ? desde : mesIni
+        const fin = hasta < mesFin ? hasta : mesFin
+        if (fin < ini) continue
+        const dias =
+          (new Date(`${fin}T00:00:00`).getTime() - new Date(`${ini}T00:00:00`).getTime()) /
+            MS_DIA +
+          1
+        diasParado.set(ym, (diasParado.get(ym) ?? 0) + dias)
+      }
+    }
+
+    // Conformidad de neumáticos: última medición DEL MES por cubierta, OK si
+    // profundidad ≥3mm y presión 90–120 psi (cuando están medidas), sobre el
+    // total de cubiertas instaladas. Mes sin mediciones = 0% (la rutina
+    // mensual de medición es justamente lo que exige DPO 3.4).
+    const PROF_MIN_MM = 3
+    const PRESION_MIN_PSI = 90
+    const PRESION_MAX_PSI = 120
+    const instaladas = instaladasRes.count ?? 0
+    const medPorMes = new Map<string, Map<string, { prof: number | null; psi: number | null; fecha: string }>>()
+    for (const m of (medicionesRes.data || []) as unknown as Array<{
+      neumatico_id: string
+      fecha: string
+      profundidad_mm: number | null
+      presion_psi: number | null
+    }>) {
+      const ym = String(m.fecha).slice(0, 7)
+      if (!meses.includes(ym)) continue
+      if (!medPorMes.has(ym)) medPorMes.set(ym, new Map())
+      const porNeu = medPorMes.get(ym)!
+      const prev = porNeu.get(m.neumatico_id)
+      if (!prev || m.fecha > prev.fecha) {
+        porNeu.set(m.neumatico_id, {
+          prof: m.profundidad_mm != null ? Number(m.profundidad_mm) : null,
+          psi: m.presion_psi != null ? Number(m.presion_psi) : null,
+          fecha: m.fecha,
+        })
+      }
+    }
+    const neumaticosConf = new Map<string, number | null>()
+    for (const ym of meses) {
+      if (instaladas === 0) {
+        neumaticosConf.set(ym, null)
+        continue
+      }
+      const porNeu = medPorMes.get(ym)
+      let ok = 0
+      for (const v of porNeu?.values() ?? []) {
+        if (v.prof == null && v.psi == null) continue
+        const profOk = v.prof == null || v.prof >= PROF_MIN_MM
+        const psiOk = v.psi == null || (v.psi >= PRESION_MIN_PSI && v.psi <= PRESION_MAX_PSI)
+        if (profOk && psiOk) ok++
+      }
+      neumaticosConf.set(ym, (ok / instaladas) * 100)
+    }
+
     return {
       data: {
         cil_tareas: meses.map((ym) => ({ ym, valor: cilPorMes.get(ym) ?? null })),
@@ -316,6 +420,14 @@ export async function getFlotaKpiSeriesExtra(): Promise<
         inventario_exactitud: meses.map((ym) => ({
           ym,
           valor: exactitud.get(ym) ?? null,
+        })),
+        correctivo_dias_parado: meses.map((ym) => ({
+          ym,
+          valor: diasParado.get(ym) ?? 0,
+        })),
+        neumaticos_conformidad: meses.map((ym) => ({
+          ym,
+          valor: neumaticosConf.get(ym) ?? null,
         })),
       },
     }

@@ -221,6 +221,24 @@ const KPI_DEFS: KpiDef[] = [
     conSerie: true,
     dpo: "4.1",
   },
+  {
+    kpi: "correctivo_dias_parado",
+    label: "Días parado por correctivo",
+    descripcion:
+      "Σ días fuera de servicio por OT correctivas dentro del mes (una OT que cruza meses reparte sus días)",
+    fmt: (v) => `${v.toFixed(0)} d`,
+    conSerie: true,
+    dpo: "2.4",
+  },
+  {
+    kpi: "neumaticos_conformidad",
+    label: "Conformidad de neumáticos",
+    descripcion:
+      "Cubiertas medidas en el mes dentro de estándar (≥3 mm de profundidad y 90–120 psi) ÷ cubiertas instaladas",
+    fmt: (v) => `${v.toFixed(0)}%`,
+    conSerie: true,
+    dpo: "3.4",
+  },
 ]
 
 // KPIs cuya serie de meses cerrados sale de `flota_kpi_snapshots` (los pisa el
@@ -711,6 +729,11 @@ function KpiIndicadorCard({
         {def.conSerie && (
           <p className="text-[11px] leading-tight text-muted-foreground">{def.descripcion}</p>
         )}
+        {meta?.justificacion && (
+          <p className="border-t border-border pt-1.5 text-[11px] italic leading-tight text-muted-foreground">
+            Por qué este PI: {meta.justificacion}
+          </p>
+        )}
       </div>
     </KpiCard>
   )
@@ -755,6 +778,7 @@ function MetaEditor({
   onCancel: () => void
 }) {
   const [valor, setValor] = useState(meta?.meta != null ? String(meta.meta) : "")
+  const [justif, setJustif] = useState(meta?.justificacion ?? "")
   const [saving, setSaving] = useState(false)
 
   const guardar = async () => {
@@ -764,7 +788,7 @@ function MetaEditor({
       return
     }
     setSaving(true)
-    const res = await updateFlotaMeta({ kpi: def.kpi, meta: num })
+    const res = await updateFlotaMeta({ kpi: def.kpi, meta: num, justificacion: justif })
     setSaving(false)
     if ("error" in res) {
       toast.error(res.error)
@@ -775,25 +799,34 @@ function MetaEditor({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span>Meta {meta?.comparador === "<=" ? "≤" : "≥"}</span>
-      <Input
-        value={valor}
-        onChange={(e) => setValor(e.target.value)}
-        className="h-6 w-24 px-1.5 text-xs"
-        placeholder="sin meta"
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === "Enter") guardar()
-          if (e.key === "Escape") onCancel()
-        }}
+    <div className="w-full space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <span>Meta {meta?.comparador === "<=" ? "≤" : "≥"}</span>
+        <Input
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          className="h-6 w-24 px-1.5 text-xs"
+          placeholder="sin meta"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") guardar()
+            if (e.key === "Escape") onCancel()
+          }}
+        />
+        <Button size="sm" className="h-6 px-2 text-xs" onClick={guardar} disabled={saving}>
+          {saving ? "…" : "OK"}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancel}>
+          ✕
+        </Button>
+      </div>
+      <Textarea
+        value={justif}
+        onChange={(e) => setJustif(e.target.value)}
+        rows={2}
+        className="text-xs"
+        placeholder="Por qué se eligió este PI y qué impacto ataca (el auditor lo pregunta)"
       />
-      <Button size="sm" className="h-6 px-2 text-xs" onClick={guardar} disabled={saving}>
-        {saving ? "…" : "OK"}
-      </Button>
-      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancel}>
-        ✕
-      </Button>
     </div>
   )
 }
