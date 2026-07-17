@@ -167,6 +167,13 @@ export interface FueraRutaMes {
   monto: number
 }
 
+/**
+ * El acumulado publicado arranca en abril 2026 (definición del usuario, 2026-07-17):
+ * la carga del sheet en los meses anteriores fue irregular y la serie no es
+ * representativa. El detalle diario y la tabla conservan TODO el histórico igual.
+ */
+const ACUMULADO_DESDE = "2026-04"
+
 /** Acumulado por mes desde la vista (bypassa el techo de 1000 filas de PostgREST). */
 export async function getFueraRutaMensual(meses = 13): Promise<Result<FueraRutaMes[]>> {
   await requireAuth()
@@ -176,6 +183,7 @@ export async function getFueraRutaMensual(meses = 13): Promise<Result<FueraRutaM
   const { data, error } = await supabase
     .from("v_fuera_ruta_mensual")
     .select("*")
+    .gte("anio_mes", ACUMULADO_DESDE)
     .limit(meses)
   if (error) return { error: `No se pudo leer el acumulado de fuera de ruta: ${error.message}` }
 
