@@ -39,6 +39,8 @@ export interface KpiCardProps {
   footer?: ReactNode
   className?: string
   children?: ReactNode
+  /** Hace la tarjeta clickeable (abre el detalle del KPI). */
+  onClick?: () => void
 }
 
 /**
@@ -57,6 +59,7 @@ export function KpiCard({
   footer,
   className,
   children,
+  onClick,
 }: KpiCardProps) {
   return (
     <Card
@@ -64,8 +67,23 @@ export function KpiCard({
         "relative overflow-hidden",
         "before:absolute before:inset-y-0 before:left-0 before:w-1 before:content-['']",
         ACENTO[estado],
+        onClick &&
+          "cursor-pointer transition-colors hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring",
         className
       )}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onClick()
+              }
+            }
+          : undefined
+      }
     >
       {/* CardHeader es un grid: pasa a dos columnas solo si hay un CardAction.
           Con flex-row el badge caía debajo del título y se estiraba. */}

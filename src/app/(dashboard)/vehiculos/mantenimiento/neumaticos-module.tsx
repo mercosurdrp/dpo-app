@@ -177,6 +177,9 @@ export function NeumaticosModule({
   const [cargaOpen, setCargaOpen] = useState(false)
   const [individualOpen, setIndividualOpen] = useState(false)
   const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
+  const [detalleResumen, setDetalleResumen] = useState<
+    "stock" | "instaladas" | "criticas" | "bajas" | null
+  >(null)
   const [montajeModo, setMontajeModo] = useState<"montar" | "desmontar" | null>(null)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
@@ -281,18 +284,34 @@ export function NeumaticosModule({
     <div className="space-y-6">
       <DpoSeccionCinta seccionId="neumaticos" />
 
-      {/* Resumen */}
+      {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="En stock" valor={resumen.stock} sub="Cubiertas disponibles para montar" />
-        <KpiCard label="Instaladas" valor={resumen.instalados} sub="Cubiertas rodando en la flota" />
+        <KpiCard
+          label="En stock"
+          valor={resumen.stock}
+          sub="Cubiertas disponibles para montar · click para ver"
+          onClick={() => setDetalleResumen("stock")}
+        />
+        <KpiCard
+          label="Instaladas"
+          valor={resumen.instalados}
+          sub="Cubiertas rodando en la flota · click para ver"
+          onClick={() => setDetalleResumen("instaladas")}
+        />
         <KpiCard
           label="Desgaste crítico"
           valor={resumen.criticos}
-          sub={`Profundidad ≤ ${PROFUNDIDAD_CRITICA_MM} mm`}
+          sub={`Profundidad ≤ ${PROFUNDIDAD_CRITICA_MM} mm · click para ver`}
           estado={resumen.criticos > 0 ? "critico" : "ok"}
           dpo="3.4"
+          onClick={() => setDetalleResumen("criticas")}
         />
-        <KpiCard label="Bajas (total)" valor={resumen.bajas} sub="Cubiertas dadas de baja" />
+        <KpiCard
+          label="Bajas (total)"
+          valor={resumen.bajas}
+          sub="Cubiertas dadas de baja · click para ver"
+          onClick={() => setDetalleResumen("bajas")}
+        />
       </div>
 
       {puedeEditar && (
@@ -708,6 +727,18 @@ export function NeumaticosModule({
             setEditNeu(null)
             refresh()
           }}
+        />
+      )}
+      {detalleResumen && (
+        <ResumenDetalleDialog
+          categoria={detalleResumen}
+          neumaticos={neumaticos}
+          puedeEditar={puedeEditar}
+          onEditar={(n) => {
+            setDetalleResumen(null)
+            setEditNeu(n)
+          }}
+          onClose={() => setDetalleResumen(null)}
         />
       )}
       {montajeModo && (
@@ -1148,6 +1179,162 @@ function Diagrama({
         )
       })}
     </div>
+  )
+}
+
+// ==================== Detalle de las tarjetas del resumen ====================
+
+type CategoriaResumen = "stock" | "instaladas" | "criticas" | "bajas"
+
+const CATEGORIA_TITULO: Record<CategoriaResumen, string> = {
+  stock: "Cubiertas en stock",
+  instaladas: "Cubiertas instaladas",
+  criticas: "Cubiertas con desgaste crítico",
+  bajas: "Cubiertas dadas de baja",
+}
+
+function ResumenDetalleDialog({
+  categoria,
+  neumaticos,
+  puedeEditar,
+  onEditar,
+  onClose,
+}: {
+  categoria: CategoriaResumen
+  neumaticos: Neumatico[]
+  puedeEditar: boolean
+  onEditar: (n: Neumatico) => void
+  onClose: () => void
+}) {
+  const lista = useMemo(() => {
+    switch (categoria) {
+      case "stock":
+        return neumaticos.filter((n) => n.estado === "stock")
+      case "instaladas":
+        return [...neumaticos]
+          .filter((n) => n.estado === "instalado")
+          .sort(
+            (a, b) =>
+              (a.dominio ?? "").localeCompare(b.dominio ?? "") ||
+              (a.posicion ?? "").localeCompare(b.posicion ?? ""),
+          )
+      case "criticas":
+        return [...neumaticos]
+          .filter(
+            (n) =>
+              n.estado === "instalado" &&
+              n.profundidad_actual_mm != null &&
+              n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM,
+          )
+          .sort(
+            (a, b) => (a.profundidad_actual_mm ?? 0) - (b.profundidad_actual_mm ?? 0),
+          )
+      case "bajas":
+        return [...neumaticos]
+          .filter((n) => n.estado === "baja")
+          .sort((a, b) => (b.fecha_baja ?? "").localeCompare(a.fecha_baja ?? ""))
+    }
+  }, [categoria, neumaticos])
+
+  const conUnidad = categoria === "instaladas" || categoria === "criticas"
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            {CATEGORIA_TITULO[categoria]} ({lista.length})
+          </DialogTitle>
+          <DialogDescription>
+            {conUnidad
+              ? "Cada cubierta con la unidad y la posición en la que está rodando."
+              : categoria === "stock"
+                ? "Disponibles para montar."
+                : "Historial de bajas con su motivo."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-auto">
+          {lista.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hay cubiertas en esta categoría.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-background">
+                <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2">Número</th>
+                  <th>Tipo</th>
+                  <th>Medida</th>
+                  <th className="text-right">Prof. (mm)</th>
+                  {conUnidad && <th className="pl-3">Unidad</th>}
+                  {conUnidad && <th>Posición</th>}
+                  {categoria === "bajas" && <th className="pl-3">Fecha baja</th>}
+                  {categoria === "bajas" && <th>Motivo</th>}
+                  {categoria === "stock" && <th className="pl-3">Ingreso</th>}
+                  {puedeEditar && categoria !== "bajas" && <th className="w-8" />}
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((n, i) => (
+                  <tr
+                    key={n.id}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
+                  >
+                    <td className="py-1.5 font-medium">{n.numero || "s/n"}</td>
+                    <td className="text-muted-foreground">{TIPO_LABEL[n.tipo]}</td>
+                    <td className="text-muted-foreground">{n.medida || "—"}</td>
+                    <td
+                      className={cn(
+                        "text-right tabular-nums",
+                        n.profundidad_actual_mm != null &&
+                          n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM
+                          ? "font-semibold text-destructive"
+                          : "text-foreground",
+                      )}
+                    >
+                      {n.profundidad_actual_mm ?? "—"}
+                    </td>
+                    {conUnidad && (
+                      <td className="pl-3 font-semibold">{n.dominio ?? "—"}</td>
+                    )}
+                    {conUnidad && (
+                      <td className="text-muted-foreground">{n.posicion ?? "—"}</td>
+                    )}
+                    {categoria === "bajas" && (
+                      <td className="pl-3 text-muted-foreground">{fmtFecha(n.fecha_baja)}</td>
+                    )}
+                    {categoria === "bajas" && (
+                      <td className="text-muted-foreground">{n.motivo_baja || "—"}</td>
+                    )}
+                    {categoria === "stock" && (
+                      <td className="pl-3 text-muted-foreground">{fmtFecha(n.fecha_ingreso)}</td>
+                    )}
+                    {puedeEditar && categoria !== "bajas" && (
+                      <td className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 text-muted-foreground hover:text-foreground"
+                          title="Editar cubierta / factura"
+                          onClick={() => onEditar(n)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cerrar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
