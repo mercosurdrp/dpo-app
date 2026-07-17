@@ -364,12 +364,12 @@ function KpiPerdidasBlock({
                     muestra la cuenta completa de los dos lados. ppm = por millón,
                     para que el número sea legible (roturas ~0,04%). */}
                 <FilaDetalle
-                  etiqueta="Target"
-                  valor={`${formatNum(detalle.targetHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosPpto))} HL = ${Math.round(detalle.targetPpm)} ppm`}
+                  etiqueta="Target (presupuesto)"
+                  valor={`${formatNum(detalle.targetHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosPpto))} HL proyectados = ${Math.round(detalle.targetPpm)} ppm`}
                 />
                 <FilaDetalle
                   etiqueta="Real"
-                  valor={`${formatNum(detalle.realHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosReal))} HL = ${Math.round(detalle.realPpm)} ppm`}
+                  valor={`${formatNum(detalle.realHl)} ÷ ${formatNum(Math.round(detalle.hlVendidosReal))} HL vendidos = ${Math.round(detalle.realPpm)} ppm`}
                   className={
                     detalle.realPpm <= detalle.targetPpm
                       ? "text-emerald-700"
