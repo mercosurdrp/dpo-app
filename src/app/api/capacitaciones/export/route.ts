@@ -28,6 +28,24 @@ function fmtDate(iso: string | null | undefined): string {
   return iso.length >= 10 ? iso.slice(0, 10) : iso
 }
 
+// Fecha y hora en zona Argentina (para auditoría), formato DD/MM/AAAA HH:mm
+const fmtRealAR = new Intl.DateTimeFormat("es-AR", {
+  timeZone: "America/Argentina/Buenos_Aires",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+})
+
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ""
+  return fmtRealAR.format(d).replace(", ", " ")
+}
+
 export async function GET(_req: NextRequest) {
   try {
     const supabase = await createClient()
@@ -91,6 +109,41 @@ export async function GET(_req: NextRequest) {
       asistByCap.set(a.capacitacion_id, arr)
     }
 
+    // Fecha/hora REAL de realización: el ÚLTIMO intento de examen por
+    // empleado+capacitación (created_at = cuándo rindió). Es el que coincide
+    // con la nota/resultado registrados en la asistencia.
+    const ultimoIntento = new Map<string, string>() // `${capId}|${empId}` -> created_at
+    if (caps.length > 0) {
+      const capIds = caps.map((c) => c.id)
+      const PAGE_SIZE = 1000
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from("examen_intentos")
+          .select("capacitacion_id, empleado_id, created_at")
+          .in("capacitacion_id", capIds)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1)
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        const batch = (data ?? []) as {
+          capacitacion_id: string
+          empleado_id: string
+          created_at: string
+        }[]
+        for (const it of batch) {
+          if (!it.created_at) continue
+          const key = `${it.capacitacion_id}|${it.empleado_id}`
+          const prev = ultimoIntento.get(key)
+          if (!prev || it.created_at > prev) ultimoIntento.set(key, it.created_at)
+        }
+        if (batch.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+    }
+
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
 
@@ -132,6 +185,7 @@ export async function GET(_req: NextRequest) {
           Legajo: "",
           Sector: "",
           Presente: "",
+          "Fecha y hora real": "",
           Nota: "",
           Resultado: "",
           Observaciones: "",
@@ -144,12 +198,18 @@ export async function GET(_req: NextRequest) {
       )
 
       for (const a of list) {
+        // Fecha/hora real: último intento; si no hubo examen pero está
+        // presente, se usa cuándo se marcó la asistencia (updated_at).
+        const realIso =
+          ultimoIntento.get(`${c.id}|${a.empleado_id}`) ??
+          (a.presente ? a.updated_at : null)
         rows.push({
           ...base,
           Empleado: a.empleado?.nombre ?? "",
           Legajo: a.empleado?.legajo ?? "",
           Sector: a.empleado?.sector ?? "",
           Presente: fmtBool(a.presente),
+          "Fecha y hora real": fmtDateTime(realIso),
           Nota: a.nota ?? "",
           Resultado: a.resultado
             ? RESULTADO_LABELS[a.resultado as ResultadoCapacitacion] ??
@@ -175,6 +235,7 @@ export async function GET(_req: NextRequest) {
         "Legajo",
         "Sector",
         "Presente",
+        "Fecha y hora real",
         "Nota",
         "Resultado",
         "Observaciones",
@@ -195,6 +256,7 @@ export async function GET(_req: NextRequest) {
       { wch: 10 },
       { wch: 16 },
       { wch: 10 },
+      { wch: 18 },
       { wch: 8 },
       { wch: 14 },
       { wch: 40 },

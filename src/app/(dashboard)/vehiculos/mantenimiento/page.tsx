@@ -19,6 +19,7 @@ import {
   getMantenimientoConfig,
 } from "@/actions/neumaticos"
 import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
+import { getHerramientas } from "@/actions/mantenimiento-herramientas"
 import {
   getFlotaKpiSeriesExtra,
   getFlotaKpiSnapshots,
@@ -64,6 +65,7 @@ export default async function MantenimientoPage() {
     kpiExtraRes,
     tareasCilRes,
     estandaresRes,
+    herramientasRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -88,13 +90,14 @@ export default async function MantenimientoPage() {
     getFlotaKpiSeriesExtra(),
     getTareasCil(),
     getEstandaresFlota(),
+    getHerramientas(),
     getProfile(),
   ])
 
   if ("error" in estadoRes) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Mantenimiento de camiones</h1>
+        <h1 className="text-2xl font-bold text-foreground">Mantenimiento de camiones</h1>
         <p className="mt-2 text-red-500">Error: {estadoRes.error}</p>
       </div>
     )
@@ -161,6 +164,7 @@ export default async function MantenimientoPage() {
     "data" in estandaresRes
       ? estandaresRes.data
       : { items: [], cumplimiento: [], unidades: [], pct: null }
+  const herramientas = "data" in herramientasRes ? herramientasRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -190,6 +194,7 @@ export default async function MantenimientoPage() {
       kpiExtraSeries={kpiExtraSeries}
       tareasCil={tareasCil}
       estandares={estandares}
+      herramientas={herramientas}
       rotacionKm={configRes.rotacion_km}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}

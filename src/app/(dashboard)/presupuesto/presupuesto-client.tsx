@@ -3,6 +3,7 @@
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import {
   Wallet,
   FileText,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DesvioBadge } from "@/components/presupuesto/desvio-badge"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Select,
@@ -55,6 +57,8 @@ import { TareaFormDialog } from "@/components/presupuesto/tarea-form-dialog"
 import { GenerarTareasDialog } from "@/components/presupuesto/generar-tareas-dialog"
 import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-dialog"
 import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
+import type { EjecucionRubro } from "@/actions/presupuesto-generador"
+import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
@@ -82,6 +86,9 @@ interface Props {
   currentProfileId: string | null
   mostrarIniciativas: boolean
   iniciativas: IniciativaAhorroConDetalle[]
+  /** Ejecución (presup. vs real) por rubro del EERR: de acá sale el ahorro real. */
+  ejecucionRubros: Record<string, EjecucionRubro>
+  kpiPerdidas: Record<string, KpiPerdidas>
   mostrarPlanesAccion: boolean
   planesAccion: PlanAccionPresupuestoConDetalle[]
   mostrarInversiones: boolean
@@ -132,36 +139,6 @@ function formatMoney(n: number | null): string {
   }).format(n)
 }
 
-function DesvioBadge({ pct }: { pct: number | null }) {
-  if (pct === null || pct === undefined || Number.isNaN(pct)) {
-    return <span className="text-muted-foreground">—</span>
-  }
-  const abs = Math.abs(pct)
-  const sign = pct > 0 ? "+" : ""
-  if (abs < 5) {
-    return (
-      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-        {sign}
-        {pct.toFixed(1)}%
-      </Badge>
-    )
-  }
-  if (abs < 15) {
-    return (
-      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
-        {sign}
-        {pct.toFixed(1)}%
-      </Badge>
-    )
-  }
-  return (
-    <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
-      {sign}
-      {pct.toFixed(1)}%
-    </Badge>
-  )
-}
-
 function EstadoBadge({ estado }: { estado: EstadoPresupuestoTarea }) {
   if (estado === "completada") {
     return (
@@ -195,12 +172,15 @@ export function PresupuestoClient({
   currentProfileId,
   mostrarIniciativas,
   iniciativas,
+  ejecucionRubros,
+  kpiPerdidas,
   mostrarPlanesAccion,
   planesAccion,
   mostrarInversiones,
   inversiones,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [, startTransition] = useTransition()
 
   // Lista de años a mostrar en el selector: los que existen en BD + el actual
@@ -238,7 +218,7 @@ export function PresupuestoClient({
   const [filtroEstado, setFiltroEstado] = useState<string>("todos")
 
   function refrescar() {
-    router.refresh()
+    refrescarConScroll()
   }
 
   function cambiarAnio(nuevo: string | null) {
@@ -815,6 +795,8 @@ export function PresupuestoClient({
             <IniciativasAhorroSection
               anio={anioActivo}
               iniciativas={iniciativas}
+              ejecucionRubros={ejecucionRubros}
+              kpiPerdidas={kpiPerdidas}
               responsables={responsables}
               puedeEditar={puedeEditar}
             />

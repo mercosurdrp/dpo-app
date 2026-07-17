@@ -10,6 +10,7 @@ import {
 } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import {
   ArrowLeft,
   BarChart3,
@@ -72,6 +73,11 @@ import {
 import { TlpDetalleDiaDialog } from "@/components/reuniones/tlp-detalle-dia-dialog"
 import { WnpDetalleDiaDialog } from "@/components/reuniones/wnp-detalle-dia-dialog"
 import { SeccionAccionesComerciales } from "@/components/reuniones/seccion-acciones-comerciales"
+import {
+  SeccionFlotaRuteo,
+  SECCION_FLOTA_RUTEO,
+} from "@/components/reuniones/seccion-flota-ruteo"
+import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
@@ -237,6 +243,10 @@ function esFinDeSemana(iso: string): boolean {
   const d = new Date(iso + "T12:00:00")
   const g = d.getDay()
   return g === 0 || g === 6
+}
+
+function esLunes(iso: string): boolean {
+  return new Date(iso + "T12:00:00").getDay() === 1
 }
 
 function formatearValor(n: number): string {
@@ -760,6 +770,7 @@ export function ReunionDetallePageClient({
   currentRole,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [, startTransition] = useTransition()
 
   // Indicadores como state — se refetchan al cambiar el filtro de sucursal
@@ -805,7 +816,7 @@ export function ReunionDetallePageClient({
       // Refrescar el tablero con la sucursal actual.
       const ind = await getIndicadoresMes(detalle.id, { sucursal: sucursalSel })
       if ("data" in ind) setIndicadoresMes(ind.data)
-      router.refresh()
+      refrescarConScroll()
     } catch (e) {
       setSyncMsg(
         `Error: ${e instanceof Error ? e.message : "no se pudo sincronizar"}`,
@@ -829,7 +840,7 @@ export function ReunionDetallePageClient({
       const res = await refreshIndicadoresLogistica(detalle.id)
       if ("data" in res) {
         setIndicadoresMes(res.data)
-        router.refresh()
+        refrescarConScroll()
       } else {
         setActualizarMsg(`Error: ${res.error}`)
       }
@@ -1026,6 +1037,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "acciones_comerciales"),
     [actividadesAll],
   )
+  const actividadesFlotaRuteo = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_FLOTA_RUTEO),
+    [actividadesAll],
+  )
   const actividadesRmd = useMemo(
     () => actividadesAll.filter((a) => a.seccion === "rmd"),
     [actividadesAll],
@@ -1071,7 +1086,7 @@ export function ReunionDetallePageClient({
 
   function refrescar() {
     // Re-fetch del server component (todo el árbol de la página)
-    router.refresh()
+    refrescarConScroll()
   }
 
   async function abrirArchivo(url: string | null) {
@@ -1222,13 +1237,21 @@ export function ReunionDetallePageClient({
         />
       )}
 
-      {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones) */}
-      {detalle.tipo !== "logistica-ventas" && (
+      {/* ETAPA 1: SEGURIDAD — no aplica a Ventas-Logística (todo por secciones)
+          ni a Presupuesto, que sólo revisa desvíos y compromisos. */}
+      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
         <EtapaSeguridad
           fechaReunion={detalle.fecha}
           currentProfileId={currentProfileId}
           currentRole={currentRole}
         />
+      )}
+
+      {/* Reunión de Presupuesto: los desvíos cargados en el mes. Va arriba del
+          Action Log porque es el temario: se miran los desvíos y de ahí salen
+          los compromisos. */}
+      {detalle.tipo === "presupuesto" && (
+        <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
       )}
 
       {/* ROTURAS EN LA CALLE — reunión Matinal Distribución (Pampeana). Lista las
@@ -1499,8 +1522,10 @@ export function ReunionDetallePageClient({
         </CardContent>
       </Card>
 
-      {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por secciones) */}
-      {detalle.tipo !== "logistica-ventas" && (
+      {/* ETAPA 3: TABLERO DE CONTROL — no aplica a Ventas-Logística (todo por
+          secciones) ni a Presupuesto: no tiene indicadores configurados (mostraba
+          un tablero vacío) y su temario son los desvíos. */}
+      {detalle.tipo !== "logistica-ventas" && detalle.tipo !== "presupuesto" && (
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-blue-900">
@@ -2045,6 +2070,21 @@ export function ReunionDetallePageClient({
           titulo="Etapa 4 — Cumplimiento de SLA"
           codigos={SLA_CODIGOS_REUNION_OPERATIVA}
           actividades={actividadesSla}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
+      )}
+
+      {/* Los lunes la reunión de logística suma los temas de flota y ruteo.
+          Sólo Pampeana: el VRL/VRC y el módulo de mantenimiento no existen en
+          Misiones, donde la flota se gestiona en Cloudfleet. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && esLunes(detalle.fecha) && (
+        <SeccionFlotaRuteo
+          fechaReunion={detalle.fecha}
+          reunionId={detalle.id}
+          reunionTipo={detalle.tipo}
+          actividades={actividadesFlotaRuteo}
           responsables={responsables}
           puedeEditar={puedeEditar}
           onActividadesChanged={refrescar}

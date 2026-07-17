@@ -2,11 +2,12 @@
 
 import { getPool } from "@/lib/mercosur-dashboard"
 import { getPedidosPendientes } from "@/lib/chess/pedidos-pendientes"
+import { getPedidosGestion } from "@/lib/gescom/pedidos-gestion"
 import {
   priorizarPorCiudad,
   PESOS_DEFAULT,
-  PESO_MOTIVO,
   VENTANA_DIAS,
+  VENTANA_RECIENTE_DIAS,
   type EntradaPriorizacion,
   type PesosPriorizacion,
   type CiudadPriorizada,
@@ -33,6 +34,8 @@ export interface PriorizacionData {
   /** Clientes que ya venían pospuestos de días anteriores. */
   pospuestos: number
   pesos: PesosPriorizacion
+  /** Cuánto de lo del día entró por GESTIÓN (GESCOM), para mostrarlo aparte. */
+  gestion: { clientes: number; bultos: number; hl: number; monto: number }
 }
 
 /** Resta días a un YYYY-MM-DD. */
@@ -94,47 +97,20 @@ async function getPerfilClientes(
 }
 
 /**
- * Rechazos POR CAUSA DEL CLIENTE en la ventana.
- * 🚨 `rechazos` tiene UNA FILA POR ARTÍCULO: primero se juntan las líneas por entrega
- * (serie + nrodoc) y recién después se cuentan entregas rechazadas.
+ * Rechazos POR CAUSA DEL CLIENTE en la ventana, agregados por cliente.
+ * 🚨 `rechazos` tiene UNA FILA POR ARTÍCULO. La agregación (juntar líneas por entrega,
+ * motivo predominante, filtrar a los motivos por culpa) la hace la función Postgres
+ * `rechazos_culpa_cliente` en UNA llamada, en vez de traer la tabla entera paginada.
+ * `motivos` viene ya formateado ("SIN DINERO×3, CERRADO×1").
  */
 async function getRechazosPorCliente(desde: string, hasta: string) {
   const supabase = await createClient()
-  type Entrega = { id_cliente: number; motivos: Map<string, number> }
-  const entregas = new Map<string, Entrega>()
-  const PAGE = 1000
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from("rechazos")
-      .select("id_cliente, serie, nrodoc, ds_rechazo")
-      .gte("fecha", desde)
-      .lte("fecha", hasta)
-      .range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    for (const r of data as { id_cliente: number; serie: number | null; nrodoc: number | null; ds_rechazo: string | null }[]) {
-      const key = `${r.id_cliente}|${r.serie ?? "?"}|${r.nrodoc ?? "?"}`
-      const e = entregas.get(key) ?? { id_cliente: r.id_cliente, motivos: new Map() }
-      const motivo = (r.ds_rechazo ?? "").trim().toUpperCase()
-      e.motivos.set(motivo, (e.motivos.get(motivo) ?? 0) + 1)
-      entregas.set(key, e)
-    }
-    if (data.length < PAGE) break
-    from += PAGE
-  }
-
-  const acc = new Map<number, { eventos: number; pesados: number; motivos: Map<string, number> }>()
-  for (const e of entregas.values()) {
-    // El motivo de la entrega es el predominante entre sus líneas.
-    let motivo = "", max = 0
-    for (const [m, c] of e.motivos) if (c > max) { max = c; motivo = m }
-    const peso = PESO_MOTIVO[motivo]
-    if (!peso) continue    // falla NUESTRA (preventa, distribución, stock…): no es del cliente
-    const a = acc.get(e.id_cliente) ?? { eventos: 0, pesados: 0, motivos: new Map() }
-    a.eventos += 1
-    a.pesados += peso
-    a.motivos.set(motivo, (a.motivos.get(motivo) ?? 0) + 1)
-    acc.set(e.id_cliente, a)
+  const acc = new Map<number, { eventos: number; pesados: number; motivos: string }>()
+  const { data, error } = await supabase.rpc("rechazos_culpa_cliente", { desde, hasta })
+  if (error || !data) return acc   // rechazo es opcional: si la RPC no está, seguimos sin él
+  // La RPC devuelve un objeto { "<id>": { eventos, pesados, motivos } }.
+  for (const [id, v] of Object.entries(data as Record<string, { eventos: number; pesados: number; motivos: string }>)) {
+    acc.set(Number(id), { eventos: v.eventos, pesados: Number(v.pesados), motivos: v.motivos ?? "" })
   }
   return acc
 }
@@ -143,22 +119,12 @@ async function getRechazosPorCliente(desde: string, hasta: string) {
 async function getBanderas(desde: string) {
   const supabase = await createClient()
   const rmd = new Map<number, { suma: number; n: number }>()
-  const PAGE = 1000
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from("nps_rmd_cliente")
-      .select("cod_cliente, puntuacion")
-      .gte("fecha_puntuacion", desde)
-      .range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    for (const r of data as { cod_cliente: number; puntuacion: number }[]) {
-      const p = rmd.get(r.cod_cliente) ?? { suma: 0, n: 0 }
-      p.suma += r.puntuacion; p.n += 1
-      rmd.set(r.cod_cliente, p)
-    }
-    if (data.length < PAGE) break
-    from += PAGE
+  // La RPC devuelve un objeto { "<cod>": { prom, n } } en un solo request. Se devuelve
+  // como jsonb (no set) justamente para no chocar con el techo de 1.000 filas de PostgREST.
+  const { data: rmdData } = await supabase.rpc("rmd_promedio_cliente", { desde })
+  for (const [cod, v] of Object.entries((rmdData ?? {}) as Record<string, { prom: number; n: number }>)) {
+    // Se guarda como suma/n para no tocar el consumidor (rmd.suma / rmd.n).
+    rmd.set(Number(cod), { suma: Number(v.prom) * v.n, n: v.n })
   }
   const nps = new Map<number, string>()
   const { data: enc } = await supabase
@@ -198,14 +164,45 @@ export async function getPriorizacionEntrega(
   try {
     const hasta = restarDias(fechaEntrega, 1)          // el comportamiento se mide hasta ayer
     const desde = restarDias(hasta, VENTANA_DIAS)
+    const desdeReciente = restarDias(hasta, VENTANA_RECIENTE_DIAS)  // bandera "rechazó hace poco"
 
-    const [pedidos, perfiles, rechazos, banderas, pospuestos] = await Promise.all([
-      getPedidosPendientes(fechaEntrega),
-      getPerfilClientes(desde, hasta),
-      getRechazosPorCliente(desde, hasta),
-      getBanderas(desde),
-      getPospuestos(fechaEntrega),
-    ])
+    const [pedidosChess, pedidosGestion, perfiles, rechazos, rechazosRecientes, banderas, pospuestos] =
+      await Promise.all([
+        getPedidosPendientes(fechaEntrega),
+        // Gestión es un canal aparte pero se reparte en los MISMOS camiones ⇒ compite por el
+        // cupo. Si la API no contesta, la pantalla sigue con lo de Chess en vez de morir.
+        getPedidosGestion(fechaEntrega).catch(() => []),
+        getPerfilClientes(desde, hasta),
+        getRechazosPorCliente(desde, hasta),
+        getRechazosPorCliente(desdeReciente, hasta),
+        getBanderas(desde),
+        getPospuestos(fechaEntrega),
+      ])
+
+    // Un cliente puede pedir por los dos canales el mismo día: es UN cliente en la lista, con
+    // los bultos sumados, porque al camión sube todo junto.
+    const pedidosPorCliente = new Map<number, {
+      id_cliente: number; bultos: number; hl: number; monto: number; bultos_gestion: number
+    }>()
+    for (const p of pedidosChess) {
+      pedidosPorCliente.set(p.id_cliente, {
+        id_cliente: p.id_cliente, bultos: p.bultos, hl: p.hl, monto: p.monto, bultos_gestion: 0,
+      })
+    }
+    for (const g of pedidosGestion) {
+      const prev = pedidosPorCliente.get(g.id_cliente)
+      if (prev) {
+        prev.bultos += g.bultos
+        prev.hl += g.hl
+        prev.monto += g.monto
+        prev.bultos_gestion += g.bultos
+      } else {
+        pedidosPorCliente.set(g.id_cliente, {
+          id_cliente: g.id_cliente, bultos: g.bultos, hl: g.hl, monto: g.monto, bultos_gestion: g.bultos,
+        })
+      }
+    }
+    const pedidos = [...pedidosPorCliente.values()]
 
     if (pedidos.length === 0) {
       return { error: `No hay pedidos pendientes con fecha de entrega ${fechaEntrega}.` }
@@ -222,11 +219,13 @@ export async function getPriorizacionEntrega(
         bultos: p.bultos,
         hl: p.hl,
         monto: p.monto,
+        bultos_gestion: p.bultos_gestion,
         cluster: perfil?.cluster ?? null,
         entregas: perfil?.entregas ?? 0,
         rechazos: r?.eventos ?? 0,
         rechazos_pesados: r?.pesados ?? 0,
-        motivos: r ? [...r.motivos].map(([m, n]) => `${m}×${n}`).join(", ") : "",
+        motivos: r?.motivos ?? "",
+        rechazos_45d: rechazosRecientes.get(p.id_cliente)?.eventos ?? 0,
         veces_pospuesto: pospuestos.get(p.id_cliente) ?? 0,
         rmd_prom: rmd ? rmd.suma / rmd.n : null,
         nps_categoria: banderas.nps.get(p.id_cliente) ?? null,
@@ -247,6 +246,12 @@ export async function getPriorizacionEntrega(
         total_monto: entradas.reduce((a, e) => a + e.monto, 0),
         pospuestos: entradas.filter((e) => e.veces_pospuesto > 0).length,
         pesos,
+        gestion: {
+          clientes: pedidosGestion.length,
+          bultos: pedidosGestion.reduce((a, g) => a + g.bultos, 0),
+          hl: pedidosGestion.reduce((a, g) => a + g.hl, 0),
+          monto: pedidosGestion.reduce((a, g) => a + g.monto, 0),
+        },
       },
     }
   } catch (e) {
@@ -262,12 +267,20 @@ export async function registrarCorte(
     bultos: number; hl: number; monto: number; score: number; posicion: number
     comportamiento: number; cluster: string | null; veces_previas: number; motivo: string
   }[],
+  /** Comentario del que hace el corte (por qué se cortó así). Se guarda en cada fila. */
+  nota = "",
 ): Promise<Result<{ registrados: number }>> {
   const perfil = await requireAuth()
   if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+  // Mismo alcance que la RLS de entrega_cortes: si el código pidiera menos que
+  // la policy, el corte fallaría con un error opaco de la base en vez de éste.
+  if (perfil.role !== "admin" && perfil.role !== "supervisor") {
+    return { error: "Solo un admin o un supervisor puede registrar el corte." }
+  }
   if (cortados.length === 0) return { error: "No hay clientes cortados para registrar." }
 
   const supabase = await createClient()
+  const comentario = nota.trim().slice(0, 2000) || null
   // 🚨 PostgREST exige claves IDÉNTICAS en un insert múltiple (PGRST102): armamos las
   // filas con exactamente las mismas columnas.
   const filas = cortados.map((c) => ({
@@ -284,7 +297,7 @@ export async function registrarCorte(
     cluster: c.cluster,
     veces_previas: c.veces_previas,
     motivo: c.motivo,
-    nota: null as string | null,
+    nota: comentario,
     cortado_por: perfil.email,
   }))
 

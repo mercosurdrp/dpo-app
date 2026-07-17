@@ -2394,8 +2394,10 @@ export interface S5AyudantesConfig {
   peso_productividad: number
   /** Bultos errados acumulados en la ventana que valen 0 puntos. */
   tope_errores: number
-  /** bul/HH que vale 100 puntos de productividad. */
+  /** bul/HH que vale 100 puntos de productividad (picking). */
   prod_target: number
+  /** Pal/HH que vale 100 puntos de productividad (maquinistas). */
+  prod_target_maq: number
   meses_ventana: number
 }
 
@@ -2403,6 +2405,7 @@ export interface S5AyudanteDepositoRow {
   empleado_id: string | null
   nombre: string
   es_picker: boolean
+  es_maquinista: boolean
   es_responsable: boolean
   /** Sectores que tuvo asignados en la ventana (ej. "Nave"). */
   sectores: string[]
@@ -2410,7 +2413,11 @@ export interface S5AyudanteDepositoRow {
   /** Cantidad de errores HUMANOS (filas del Sheet) acumulados en la ventana. */
   errores_cant: number | null
   errores_score: number | null
+  /** bul/HH promedio de picking en la ventana. */
   productividad: number | null
+  /** Pal/HH promedio como maquinista en la ventana. */
+  productividad_maq: number | null
+  /** Puntaje 0-100 combinado (promedio de picking y maquinista disponibles). */
   productividad_score: number | null
   score: number
   /** Posición sugerida por la fórmula (1..3) o null si fuera del podio. */
@@ -2993,6 +3000,12 @@ export interface IniciativaAhorro {
   responsable_id: string | null
   fecha_implementacion: string | null
   ahorro_comprometido_anual: number | null
+  /** Rubro del EERR sobre el que se calcula la meta. NULL = compromiso a mano. */
+  rubro: string | null
+  /** % del presupuesto anual del rubro que se compromete ahorrar (ej. 70). */
+  ahorro_pct_objetivo: number | null
+  /** Presupuesto anual del rubro con el que se calculó la meta (snapshot). */
+  presupuesto_rubro_anual: number | null
   kpi_nombre: string | null
   kpi_unidad: string | null
   kpi_linea_base: number | null

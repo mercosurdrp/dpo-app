@@ -135,7 +135,7 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
   roturas_dia: Record<string, number | null>
   faltantes_dia: Record<string, number | null>
   wnp_dia: Record<string, number | null>
-  /** Errores por operador por día (para el drill-down). { fecha: { Troli/Galvez/Ovejero: count } } */
+  /** Errores por operador por día (para el drill-down). { fecha: { Troli/Galvez/Ovejero/Selenzo: count } } */
   errores_por_operador_dia: Record<string, Record<string, number>>
   /** Targets mensuales del mes consultado. */
   targets: WarehouseTargets
@@ -152,6 +152,18 @@ export interface WarehouseSerieDiaria extends WarehouseSerieBase {
 const EXTERNAL_FETCH_TTL_MS = 5 * 60 * 1000
 const SNAPSHOT_TTL_MS = 60 * 60 * 1000
 const EXTERNAL_FETCH_TIMEOUT_MS = 5000
+/**
+ * Cuánto recordamos que una fuente FALLÓ (timeout, 5xx, red caída).
+ *
+ * Sin esto, un fallo no se cachea y cada render vuelve a pagar los 5s de
+ * timeout, por cada fuente: con deposito-esteban caído, abrir la reunión
+ * costaba ~15s a CADA persona, indefinidamente. Recordar el fallo un rato
+ * corto convierte eso en 15s para el primero y respuesta inmediata (con las
+ * filas vacías, como ya pasaba) para los demás.
+ *
+ * Corto a propósito: es lo que tarda en recuperarse solo cuando la fuente vuelve.
+ */
+const FAILURE_CACHE_TTL_MS = 30 * 1000
 
 type CacheEntry = { value: unknown; expiresAt: number }
 const externalCache = new Map<string, CacheEntry>()
@@ -181,11 +193,15 @@ async function fetchJsonSafe<T>(url: string, ttlMs?: number): Promise<T | null> 
       cache: "no-store",
       signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      writeCache(url, null, FAILURE_CACHE_TTL_MS)
+      return null
+    }
     const data = (await res.json()) as T
     writeCache(url, data, ttlMs)
     return data
   } catch {
+    writeCache(url, null, FAILURE_CACHE_TTL_MS)
     return null
   }
 }
@@ -198,11 +214,15 @@ async function fetchTextSafe(url: string): Promise<string | null> {
       cache: "no-store",
       signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      writeCache(url, null, FAILURE_CACHE_TTL_MS)
+      return null
+    }
     const text = await res.text()
     writeCache(url, text)
     return text
   } catch {
+    writeCache(url, null, FAILURE_CACHE_TTL_MS)
     return null
   }
 }
@@ -411,8 +431,10 @@ export async function buildAperturaPickingDelDia(
   return base
 }
 
-/** Trae { Troli, Galvez, Ovejero } con la cantidad de errores (= filas
- *  del Sheet "Errores picking") de un día puntual. */
+/** Trae { Troli, Galvez, Ovejero, Selenzo } con la cantidad de errores (= filas
+ *  del Sheet "Errores picking") de un día puntual. El conteo sale del Sheet
+ *  directo (ver fetchErroresCountDelSheet); a serie-diaria sólo se le pregunta
+ *  si el día operó, para no mostrar 0 en un día sin despacho. */
 async function fetchErroresCountPorOperador(
   fecha: string,
 ): Promise<Record<string, number> | null> {
@@ -420,9 +442,19 @@ async function fetchErroresCountPorOperador(
   const year = partes[0]
   const month = partes[1]
   if (!year || !month) return null
-  const res = await fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
-    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
-  )
+  const [sheet, res] = await Promise.all([
+    fetchErroresCountDelSheet(year, month),
+    fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
+      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+    ),
+  ])
+  if (sheet) {
+    const delSheet = sheet.porOperador[fecha]
+    if (delSheet) return delSheet
+    return res?.errores_count_dia?.[fecha] !== undefined
+      ? ceroPorOperador()
+      : null
+  }
   return res?.errores_count_por_operador_dia?.[fecha] ?? null
 }
 
@@ -532,6 +564,70 @@ function parseFechaSheet(raw: string): string | null {
 function parseDecimalEs(s: string): number {
   const n = parseFloat(s.replace(",", "."))
   return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Conteo de errores de picking del mes leyendo el Sheet DIRECTO — cada fila
+ * del Sheet es 1 error.
+ *
+ * Misma semántica que `_picking_errores_conteo_diaria` de deposito-esteban
+ * (excluye TIPO DE ERROR = SISTEMA, que no es error de operario), pero sin
+ * pasar por `serie-diaria`: ese endpoint tarda ~45s, así que cachea su
+ * resultado y sólo lo revalida cuando cambian los movimientos acumulados. El
+ * Sheet no participa de esa invalidación ⇒ una carga nueva de errores no se
+ * veía hasta el cron de las 08:00 del día siguiente, y el matinal (que mira
+ * los errores de ayer) llegaba siempre tarde. El CSV es chico: leerlo acá
+ * cuesta ~1s y el dato queda fresco a los 5 min (TTL de `fetchTextSafe`).
+ *
+ * A diferencia de deposito-esteban, el desglose por operador incluye a
+ * SELENZO: cubre picking y sus errores ya sumaban al total, pero al no estar
+ * en la lista de allá quedaban sin atribuir (su fila mostraba 0). Mismo
+ * criterio que la productividad, que ya lo incluye.
+ */
+async function fetchErroresCountDelSheet(
+  year: number,
+  month: number,
+): Promise<{
+  porDia: Record<string, number>
+  porOperador: Record<string, Record<string, number>>
+} | null> {
+  const csv = await fetchTextSafe(SHEET_URL)
+  if (!csv) return null
+
+  const lines = csv.split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) return null
+
+  const prefijo = `${year}-${String(month).padStart(2, "0")}`
+  const porDia: Record<string, number> = {}
+  const porOperador: Record<string, Record<string, number>> = {}
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvRow(lines[i])
+    if (cells.length < 2 || !cells[0]?.trim()) continue
+    // TIPO DE ERROR (col 4) = SISTEMA no es error de operario.
+    if (cells.length > 4 && cells[4]?.trim().toUpperCase() === "SISTEMA") continue
+    const fecha = parseFechaSheet(cells[0])
+    if (!fecha || !fecha.startsWith(prefijo)) continue
+
+    // El total cuenta la fila aunque el operario no matchee ningún alias
+    // (igual que deposito-esteban): un error mal tipeado sigue siendo un error.
+    porDia[fecha] = (porDia[fecha] ?? 0) + 1
+
+    // Sin diacríticos: el Sheet se tipea a mano y alterna GALVEZ/GÁLVEZ.
+    const operario = (cells[1] ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+    const alias = OPERADORES_APERTURA.find((a) => matchOperador(operario, a))
+    if (!alias) continue
+    let fila = porOperador[fecha]
+    if (!fila) {
+      fila = Object.fromEntries(OPERADORES_APERTURA.map((a) => [a, 0]))
+      porOperador[fecha] = fila
+    }
+    fila[alias] += 1
+  }
+
+  return { porDia, porOperador }
 }
 
 async function fetchErroresPickingPorFecha(): Promise<
@@ -792,6 +888,28 @@ export async function getVentasHlEsperadas(
   )
 }
 
+function ceroPorOperador(): Record<string, number> {
+  return Object.fromEntries(OPERADORES_APERTURA.map((a) => [a, 0]))
+}
+
+/**
+ * Errores del día. El Sheet manda (es la fuente, y llega fresco), pero
+ * serie-diaria decide si el día CUENTA: sólo rellena en 0 los días con
+ * despacho, así que un domingo/feriado/futuro queda en "—" en vez de mostrar
+ * un 0 inventado. Si el Sheet no está disponible, se cae al conteo de la API.
+ */
+function contarErroresDelDia(
+  fecha: string,
+  sheet: { porDia: Record<string, number> } | null,
+  api: DepositoIndicadoresSerieDiaria | null,
+): number | null {
+  const deApi = api?.errores_count_dia?.[fecha]
+  if (!sheet) return typeof deApi === "number" ? deApi : null
+  const delSheet = sheet.porDia[fecha]
+  if (delSheet !== undefined) return delSheet
+  return typeof deApi === "number" ? 0 : null
+}
+
 /**
  * Trae de /api/indicadores/serie-diaria:
  *  - Series MTD acumuladas (roturas/faltantes) para que la columna MTD del
@@ -824,9 +942,18 @@ async function fetchSerieExtra(
   const partes = fechaReunion.split("-").map((s) => parseInt(s, 10))
   const year = partes[0]
   const month = partes[1]
-  const res = await fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
-    `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
-  )
+  // El conteo de errores sale del Sheet directo (fresco a los 5 min); el resto
+  // de las series sigue viniendo de serie-diaria, que las necesita calcular.
+  // El objetivo de venta va acá aunque sólo se use al final (target de WQI):
+  // no depende de `res`, y esperarlo después agregaba un round-trip entero a
+  // chess-dashboard a la ruta crítica del render (hasta 5s si está frío).
+  const [res, erroresSheet, objetivoVentaHl] = await Promise.all([
+    fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
+      `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+    ),
+    fetchErroresCountDelSheet(year, month),
+    fetchObjetivoVentaHl(year, month),
+  ])
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
@@ -865,9 +992,13 @@ async function fetchSerieExtra(
     // el día de la reunión se revela una vez cerrado (misma máscara `cerrado`).
     precision[f] = cerrado ? (res?.precision?.[f] ?? null) : null
     if (cerrado) {
-      const cnt = res?.errores_count_dia?.[f]
-      errores_dia[f] = typeof cnt === "number" ? cnt : null
-      const porOp = res?.errores_count_por_operador_dia?.[f]
+      const cnt = contarErroresDelDia(f, erroresSheet, res)
+      errores_dia[f] = cnt
+      const porOp = erroresSheet
+        ? cnt === null
+          ? undefined
+          : (erroresSheet.porOperador[f] ?? ceroPorOperador())
+        : res?.errores_count_por_operador_dia?.[f]
       if (porOp) errores_por_operador_dia[f] = porOp
     } else {
       errores_dia[f] = null
@@ -882,7 +1013,7 @@ async function fetchSerieExtra(
   // presupuesto.
   const roturasTarget = res?.targets?.roturas ?? null
   const ventasHl = VENTAS_HL_PRESUPUESTO[year]?.[month] ?? null
-  const ventasHlWqi = (await fetchObjetivoVentaHl(year, month)) ?? ventasHl
+  const ventasHlWqi = objetivoVentaHl ?? ventasHl
   const wqiTarget =
     roturasTarget !== null && ventasHlWqi
       ? Math.round((roturasTarget / ventasHlWqi) * 1_000_000)

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useOptimistic, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import {
   ListTodo,
@@ -12,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
+  RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +32,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { updateAccion, deleteAccion } from "@/actions/acciones"
+import { CerrarAccionDialog } from "./cerrar-accion-dialog"
 import {
   ESTADO_ACCION_LABELS,
   ESTADO_ACCION_COLORS,
@@ -46,6 +49,7 @@ interface AccionEnriquecida {
   evidencia_urls: string[]
   created_at: string
   updated_at: string
+  reprogramaciones_count: number
   pregunta_texto: string
   pregunta_numero: string
   bloque_nombre: string
@@ -83,9 +87,13 @@ export function AccionesClient({
   acciones: AccionEnriquecida[]
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all")
   const [search, setSearch] = useState("")
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [cierreAccion, setCierreAccion] = useState<AccionEnriquecida | null>(
+    null
+  )
   const [isPending, startTransition] = useTransition()
 
   // Optimistic state for estado changes
@@ -129,6 +137,14 @@ export function AccionesClient({
   }, [optimisticAcciones])
 
   async function handleEstadoChange(id: string, newEstado: EstadoAccion) {
+    // Cerrar pasa por el diálogo: ahí se elige cierre definitivo o reprogramar.
+    if (newEstado === "completado") {
+      const accion = optimisticAcciones.find((a) => a.id === id)
+      if (accion && accion.estado !== "completado") {
+        setCierreAccion(accion)
+        return
+      }
+    }
     startTransition(async () => {
       setOptimisticAccion({ id, estado: newEstado })
       const result = await updateAccion(id, { estado: newEstado })
@@ -137,7 +153,7 @@ export function AccionesClient({
       } else {
         toast.success(`Estado actualizado a ${ESTADO_ACCION_LABELS[newEstado]}`)
       }
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -150,7 +166,7 @@ export function AccionesClient({
       toast.error(result.error)
     } else {
       toast.success("Accion eliminada")
-      router.refresh()
+      refrescarConScroll()
     }
     setDeleting(null)
   }
@@ -275,6 +291,7 @@ export function AccionesClient({
                           <AlertCircle className="ml-1 inline size-3.5 text-red-500" />
                         )}
                       </span>
+                      <ReprogramadaBadge count={accion.reprogramaciones_count} />
                     </TableCell>
                     <TableCell>
                       <EstadoDropdown
@@ -359,6 +376,7 @@ export function AccionesClient({
                       <AlertCircle className="ml-1 inline size-3.5 text-red-500" />
                     )}
                   </span>
+                  <ReprogramadaBadge count={accion.reprogramaciones_count} />
                 </div>
 
                 <EstadoDropdown
@@ -371,7 +389,28 @@ export function AccionesClient({
           </div>
         </>
       )}
+
+      <CerrarAccionDialog
+        accion={cierreAccion}
+        onOpenChange={(open) => {
+          if (!open) setCierreAccion(null)
+        }}
+        onDone={() => refrescarConScroll()}
+      />
     </div>
+  )
+}
+
+function ReprogramadaBadge({ count }: { count: number }) {
+  if (!count) return null
+  return (
+    <span
+      title={`Reprogramada ${count} ${count === 1 ? "vez" : "veces"}`}
+      className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+    >
+      <RotateCcw className="size-2.5" />
+      ×{count}
+    </span>
   )
 }
 

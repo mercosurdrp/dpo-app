@@ -273,6 +273,12 @@ export function drawFooters(doc: Doc) {
     const margin = doc.page.margins.left
     const y = pageH - 22
 
+    // 🚨 El footer se dibuja DEBAJO del margen inferior (y > maxY): con el margen
+    // puesto, pdfkit lo toma como texto que no entra y encadena una página en
+    // blanco por cada text() del footer. Se anula el margen mientras se dibuja.
+    const bottom = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
+
     doc.save()
     doc
       .strokeColor(COLOR_BORDER)
@@ -301,6 +307,8 @@ export function drawFooters(doc: Doc) {
         align: "right",
         lineBreak: false,
       })
+
+    doc.page.margins.bottom = bottom
   }
 }
 

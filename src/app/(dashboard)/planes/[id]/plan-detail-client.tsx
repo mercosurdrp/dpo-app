@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import {
   ArrowLeft,
@@ -170,6 +171,7 @@ function PuntoManualSection({
   canEdit: boolean
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<PuntoManualSearchResult[]>([])
@@ -197,7 +199,7 @@ function PuntoManualSection({
       setOpen(false)
       setQuery("")
       setResults([])
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -210,7 +212,7 @@ function PuntoManualSection({
         return
       }
       toast.success("Asociación quitada")
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
@@ -395,6 +397,7 @@ export function PlanDetailClient({
   puedeIntervenirEnAvances?: boolean
 }) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [editOpen, setEditOpen] = useState(false)
   const canEditResponsables =
     currentRole === "admin" || currentRole === "auditor"
@@ -467,7 +470,7 @@ export function PlanDetailClient({
         estadoActual={plan.estado}
         puedeIntervenir={puedeIntervenirEnAvances}
         planTitulo={plan.titulo || plan.descripcion}
-        onChanged={() => router.refresh()}
+        onChanged={() => refrescarConScroll()}
       />
 
       <EditarPlanDialog
@@ -475,7 +478,7 @@ export function PlanDetailClient({
         canEditResponsables={canEditResponsables}
         open={editOpen}
         onOpenChange={setEditOpen}
-        onSaved={() => router.refresh()}
+        onSaved={() => refrescarConScroll()}
       />
     </div>
   )

@@ -36,7 +36,6 @@ import {
   MessageSquareText,
   ShieldAlert,
   ClipboardCheck,
-  Wrench,
   Plus,
   Pencil,
   ImageIcon,
@@ -44,6 +43,8 @@ import {
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
+import { KpiCard } from "./_components/kpi-card"
 import {
   createTareaCil,
   deleteTareaCil,
@@ -73,8 +74,8 @@ function TipoBadge({ tipo }: { tipo: string }) {
       variant="outline"
       className={cn(
         tipo === "liberacion"
-          ? "border-sky-200 bg-sky-50 text-sky-700"
-          : "border-violet-200 bg-violet-50 text-violet-700"
+          ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+          : "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400"
       )}
     >
       {tipoLabel(tipo)}
@@ -83,15 +84,15 @@ function TipoBadge({ tipo }: { tipo: string }) {
 }
 
 const VALOR_BADGE: Record<string, string> = {
-  nook: "border-red-200 bg-red-50 text-red-700",
-  malo: "border-red-200 bg-red-50 text-red-700",
-  regular: "border-amber-200 bg-amber-50 text-amber-700",
+  nook: "border-destructive/30 bg-destructive/10 text-destructive",
+  malo: "border-destructive/30 bg-destructive/10 text-destructive",
+  regular: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 }
 
 function ValorBadge({ valor }: { valor: string }) {
   const label = valor === "nook" ? "No OK" : valor === "regular" ? "Regular" : valor
   return (
-    <Badge variant="outline" className={VALOR_BADGE[valor] ?? "border-slate-200 bg-slate-50"}>
+    <Badge variant="outline" className={VALOR_BADGE[valor] ?? "border-border bg-muted"}>
       {label}
     </Badge>
   )
@@ -103,9 +104,9 @@ const PLAN_TIPO_LABEL: Record<ChecklistPlanTipo, string> = {
   proactivo: "Proactivo",
 }
 const PLAN_TIPO_BADGE: Record<ChecklistPlanTipo, string> = {
-  correctivo: "border-orange-200 bg-orange-50 text-orange-700",
-  preventivo: "border-sky-200 bg-sky-50 text-sky-700",
-  proactivo: "border-violet-200 bg-violet-50 text-violet-700",
+  correctivo: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  preventivo: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  proactivo: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400",
 }
 const PLAN_ESTADO_LABEL: Record<ChecklistPlanEstado, string> = {
   pendiente: "Pendiente",
@@ -113,9 +114,9 @@ const PLAN_ESTADO_LABEL: Record<ChecklistPlanEstado, string> = {
   resuelto: "Resuelto",
 }
 const PLAN_ESTADO_BADGE: Record<ChecklistPlanEstado, string> = {
-  pendiente: "border-slate-200 bg-slate-50 text-slate-600",
-  en_proceso: "border-amber-200 bg-amber-50 text-amber-700",
-  resuelto: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  pendiente: "border-border bg-muted text-muted-foreground",
+  en_proceso: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  resuelto: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
 }
 
 /**
@@ -251,61 +252,49 @@ export function ChecklistsMtto({
 
   return (
     <div className="space-y-6">
+      <DpoSeccionCinta seccionId="checklists" />
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <AlertTriangle className="size-4 text-red-500" /> Ítems no OK
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={cn("text-2xl font-bold", items.length > 0 ? "text-red-600" : "text-slate-900")}>
-              {items.length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <ShieldAlert className="size-4 text-red-600" /> Críticos no OK
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={cn("text-2xl font-bold", criticos > 0 ? "text-red-600" : "text-slate-900")}>
-              {criticos}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <Wrench className="size-4 text-emerald-500" /> Con plan de acción
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">
+        <KpiCard
+          label="Ítems no OK"
+          valor={items.length}
+          estado={items.length > 0 ? "alerta" : "ok"}
+          dpo="1.3"
+          sub="Observaciones abiertas en los checklists"
+        />
+        <KpiCard
+          label="Críticos no OK"
+          valor={criticos}
+          estado={criticos > 0 ? "critico" : "ok"}
+          dpo="1.3"
+          sub="Defectos críticos detectados"
+        />
+        <KpiCard
+          label="Con plan de acción"
+          valor={
+            <>
               {conPlan}
-              <span className="ml-1 text-sm font-normal text-slate-400">/ {items.length}</span>
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              <MessageSquareText className="size-4 text-slate-400" /> Con comentarios
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{coments.length}</p>
-          </CardContent>
-        </Card>
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                / {items.length}
+              </span>
+            </>
+          }
+          estado="neutro"
+          sub="Observaciones con reparación registrada"
+        />
+        <KpiCard
+          label="Con comentarios"
+          valor={coments.length}
+          estado="neutro"
+          sub="Checklists con observaciones del chofer"
+        />
       </div>
 
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <Label className="text-xs text-slate-500">Unidad</Label>
+          <Label className="text-xs text-muted-foreground">Unidad</Label>
           <Select value={fDominio} onValueChange={(v: string | null) => setFDominio(v ?? "todos")}>
             <SelectTrigger className="w-36">
               <SelectValue />
@@ -321,7 +310,7 @@ export function ChecklistsMtto({
           </Select>
         </div>
         <div>
-          <Label className="text-xs text-slate-500">Tipo</Label>
+          <Label className="text-xs text-muted-foreground">Tipo</Label>
           <Select value={fTipo} onValueChange={(v: string | null) => setFTipo(v ?? "todos")}>
             <SelectTrigger className="w-36">
               <SelectValue />
@@ -338,15 +327,15 @@ export function ChecklistsMtto({
       {/* Ítems observados (no OK) */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="size-4 text-slate-500" /> Ítems observados (no OK)
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <AlertTriangle className="size-4 text-muted-foreground" /> Ítems observados (no OK)
           </CardTitle>
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-center">
-              <ClipboardCheck className="size-8 text-emerald-300" />
-              <p className="mt-3 text-sm text-slate-500">
+              <ClipboardCheck className="size-8 text-emerald-600 dark:text-emerald-400" />
+              <p className="mt-3 text-sm text-muted-foreground">
                 Sin ítems observados en los checklists. Todo OK.
               </p>
             </div>
@@ -375,13 +364,13 @@ export function ChecklistsMtto({
                       <TableCell>
                         <TipoBadge tipo={i.tipo} />
                       </TableCell>
-                      <TableCell className="text-slate-600">{i.categoria}</TableCell>
+                      <TableCell className="text-muted-foreground">{i.categoria}</TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1.5">
                           {i.item}
                           {i.critico && (
                             <span title="Ítem crítico">
-                              <ShieldAlert className="size-3.5 text-red-500" />
+                              <ShieldAlert className="size-3.5 text-destructive" />
                             </span>
                           )}
                         </span>
@@ -389,9 +378,9 @@ export function ChecklistsMtto({
                       <TableCell>
                         <ValorBadge valor={i.valor} />
                       </TableCell>
-                      <TableCell className="text-slate-600">{i.chofer || "—"}</TableCell>
-                      <TableCell className="max-w-72 text-slate-600">
-                        {i.comentario || <span className="text-slate-300">—</span>}
+                      <TableCell className="text-muted-foreground">{i.chofer || "—"}</TableCell>
+                      <TableCell className="max-w-72 text-muted-foreground">
+                        {i.comentario || <span className="text-muted-foreground/50">—</span>}
                       </TableCell>
                       <TableCell className="min-w-44">
                         <PlanCell item={i} puedeEditar={puedeEditar} onEditar={() => setPlanItem(i)} />
@@ -401,7 +390,7 @@ export function ChecklistsMtto({
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                             title="Eliminar esta observación"
                             onClick={() => {
                               setDelError(null)
@@ -425,12 +414,12 @@ export function ChecklistsMtto({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <MessageSquareText className="size-4 text-slate-500" /> Comentarios y observaciones
+            <MessageSquareText className="size-4 text-muted-foreground" /> Comentarios y observaciones
           </CardTitle>
         </CardHeader>
         <CardContent>
           {coments.length === 0 ? (
-            <p className="py-6 text-sm text-slate-500">
+            <p className="py-6 text-sm text-muted-foreground">
               Sin comentarios cargados en los checklists del período.
             </p>
           ) : (
@@ -453,8 +442,8 @@ export function ChecklistsMtto({
                     <TableCell>
                       <TipoBadge tipo={c.tipo} />
                     </TableCell>
-                    <TableCell className="text-slate-600">{c.chofer || "—"}</TableCell>
-                    <TableCell className="max-w-md text-slate-700">{c.observaciones}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.chofer || "—"}</TableCell>
+                    <TableCell className="max-w-md text-foreground">{c.observaciones}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -483,17 +472,18 @@ export function ChecklistsMtto({
               )}
             </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             Se quita esta observación No OK del listado{delItem?.plan ? " junto con su plan de acción" : ""}. Esta acción no se puede deshacer.
           </p>
-          {delError && <p className="text-sm text-red-600">{delError}</p>}
+          {delError && <p className="text-sm text-destructive">{delError}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDelItem(null)} disabled={pendingDel}>
               Cancelar
             </Button>
             <Button
               type="button"
-              className="gap-1 bg-red-600 text-white hover:bg-red-700"
+              variant="destructive"
+              className="gap-1"
               onClick={confirmarBorrado}
               disabled={pendingDel}
             >
@@ -540,11 +530,12 @@ function TareasCilSection({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ClipboardCheck className="size-4 text-slate-500" /> Tareas CIL / ATO
-          <Badge variant="outline" className="bg-slate-100 text-slate-600">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <ClipboardCheck className="size-4 text-muted-foreground" /> Tareas CIL / ATO
+          <Badge variant="outline" className="bg-muted text-muted-foreground">
             {tareasCil.length}
           </Badge>
+          <DpoPuntoBadge numero="4.1" />
         </CardTitle>
         {puedeEditar && (
           <Button size="sm" onClick={() => setAbrirCarga(true)}>
@@ -553,12 +544,12 @@ function TareasCilSection({
         )}
       </CardHeader>
       <CardContent className="overflow-x-auto">
-        <p className="mb-3 text-sm text-slate-500">
+        <p className="mb-3 text-sm text-muted-foreground">
           Limpieza, inspección y lubricación autónomas hechas por los operarios
           (incrementales al checklist diario).
         </p>
         {tareasCil.length === 0 ? (
-          <p className="py-4 text-center text-sm text-slate-400">
+          <p className="py-4 text-center text-sm text-muted-foreground">
             Sin tareas CIL registradas.
           </p>
         ) : (
@@ -580,12 +571,15 @@ function TareasCilSection({
                   <TableCell className="whitespace-nowrap">{fmtFecha(t.fecha)}</TableCell>
                   <TableCell className="font-medium">{t.dominio}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="bg-sky-50 text-sky-700">
+                    <Badge
+                      variant="outline"
+                      className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                    >
                       {TAREA_CIL_LABEL[t.tarea] ?? t.tarea}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-slate-600">{t.operario}</TableCell>
-                  <TableCell className="max-w-64 text-slate-600">
+                  <TableCell className="text-muted-foreground">{t.operario}</TableCell>
+                  <TableCell className="max-w-64 text-muted-foreground">
                     {t.descripcion ?? "—"}
                   </TableCell>
                   <TableCell>
@@ -594,12 +588,12 @@ function TareasCilSection({
                         href={t.foto_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
                       >
                         <ImageIcon className="size-3.5" /> Ver
                       </a>
                     ) : (
-                      <span className="text-slate-300">—</span>
+                      <span className="text-muted-foreground/50">—</span>
                     )}
                   </TableCell>
                   {puedeEditar && (
@@ -607,7 +601,7 @@ function TareasCilSection({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-7 text-red-500"
+                        className="size-7 text-destructive"
                         onClick={async () => {
                           const res = await deleteTareaCil(t.id)
                           if ("error" in res) toast.error(res.error)
@@ -775,7 +769,7 @@ function PlanCell({
 }) {
   const plan = item.plan
   if (!plan) {
-    if (!puedeEditar) return <span className="text-slate-300">—</span>
+    if (!puedeEditar) return <span className="text-muted-foreground/50">—</span>
     return (
       <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onEditar}>
         <Plus className="size-3.5" /> Agregar
@@ -789,7 +783,7 @@ function PlanCell({
       onClick={puedeEditar ? onEditar : undefined}
       className={cn(
         "flex w-full flex-col items-start gap-1 rounded-md p-1 text-left",
-        puedeEditar && "hover:bg-slate-50"
+        puedeEditar && "hover:bg-muted"
       )}
       title={plan.descripcion}
     >
@@ -801,15 +795,15 @@ function PlanCell({
           {PLAN_ESTADO_LABEL[plan.estado]}
         </Badge>
       </span>
-      <span className="line-clamp-2 max-w-56 text-xs text-slate-600">{plan.descripcion}</span>
-      <span className="flex items-center gap-2 text-[11px] text-slate-400">
+      <span className="line-clamp-2 max-w-56 text-xs text-muted-foreground">{plan.descripcion}</span>
+      <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {plan.fotoUrl && (
           <span className="flex items-center gap-0.5">
             <ImageIcon className="size-3" /> foto
           </span>
         )}
         {puedeEditar && (
-          <span className="flex items-center gap-0.5 text-sky-600">
+          <span className="flex items-center gap-0.5 text-primary">
             <Pencil className="size-3" /> editar
           </span>
         )}
@@ -882,7 +876,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Tipo</Label>
+              <Label className="text-xs text-muted-foreground">Tipo</Label>
               <Select value={tipo} onValueChange={(v: string | null) => v && setTipo(v as ChecklistPlanTipo)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -895,7 +889,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Estado</Label>
+              <Label className="text-xs text-muted-foreground">Estado</Label>
               <Select value={estado} onValueChange={(v: string | null) => v && setEstado(v as ChecklistPlanEstado)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -910,7 +904,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
           </div>
 
           <div>
-            <Label className="text-xs text-slate-500">¿Qué se trabajó / cómo se reparó?</Label>
+            <Label className="text-xs text-muted-foreground">¿Qué se trabajó / cómo se reparó?</Label>
             <Textarea
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
@@ -920,14 +914,14 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
           </div>
 
           <div>
-            <Label className="text-xs text-slate-500">Foto de la reparación (opcional)</Label>
+            <Label className="text-xs text-muted-foreground">Foto de la reparación (opcional)</Label>
             {fotoActual ? (
               <div className="mt-1 flex items-center gap-3">
                 <a
                   href={plan!.fotoUrl!}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 text-sm text-sky-600 hover:underline"
+                  className="flex items-center gap-1 text-sm text-primary hover:underline"
                 >
                   <ImageIcon className="size-4" /> Ver foto actual
                 </a>
@@ -935,7 +929,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-7 gap-1 text-xs text-red-600"
+                  className="h-7 gap-1 text-xs text-destructive"
                   onClick={() => setEliminarFoto(true)}
                 >
                   <Trash2 className="size-3.5" /> Quitar
@@ -949,7 +943,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
               />
             )}
             {eliminarFoto && (
-              <p className="mt-1 text-xs text-amber-600">
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
                 Se quitará la foto actual al guardar.{" "}
                 <button
                   type="button"
@@ -962,7 +956,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
             )}
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
@@ -970,7 +964,7 @@ function PlanDialog({ item, onClose }: { item: ChecklistItemNoOk; onClose: () =>
             <Button
               type="button"
               variant="ghost"
-              className="gap-1 text-red-600 hover:text-red-700"
+              className="gap-1 text-destructive hover:text-destructive"
               onClick={borrar}
               disabled={pending}
             >

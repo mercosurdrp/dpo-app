@@ -47,6 +47,7 @@ import {
 import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } from "@/actions/capacitaciones"
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
 import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import { CapacitacionesCalendario } from "./capacitaciones-calendario"
 
 interface Props {
   capacitaciones: CapacitacionConResumen[]
@@ -183,6 +184,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
   }, [withDerived])
 
   const [expandedPilar, setExpandedPilar] = useState<string | null>(null)
+  const [avanceOpen, setAvanceOpen] = useState(false)
 
   const [realizadasOpen, setRealizadasOpen] = useState(false)
 
@@ -425,8 +427,19 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
       {avancePorPilar.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Avance por Pilar</CardTitle>
+            <button
+              type="button"
+              onClick={() => setAvanceOpen((v) => !v)}
+              className="flex w-full items-center gap-2 text-left outline-none"
+              title={avanceOpen ? "Ocultar avance por pilar" : "Ver avance por pilar"}
+            >
+              <ChevronDown
+                className={`size-4 text-slate-400 transition-transform ${avanceOpen ? "" : "-rotate-90"}`}
+              />
+              <CardTitle className="text-base">Avance por Pilar</CardTitle>
+            </button>
           </CardHeader>
+          {avanceOpen && (
           <CardContent className="space-y-3">
             {avancePorPilar.map((p) => {
               const color = PILAR_COLORS[p.pilar] ?? "#94A3B8"
@@ -495,8 +508,12 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
               )
             })}
           </CardContent>
+          )}
         </Card>
       )}
+
+      {/* Calendario de programación (respeta los filtros activos) */}
+      <CapacitacionesCalendario capacitaciones={filtered} />
 
       {/* Dialog: lista de capacitaciones realizadas */}
       <Dialog open={realizadasOpen} onOpenChange={setRealizadasOpen}>

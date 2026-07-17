@@ -51,7 +51,7 @@ function creds(): ChessCredentials {
  * Maestro de artículos para convertir bultos → HL.
  * `valor_unidad_medida` = HL POR BULTO. Calibrado: art 7038 (0,12) × 350 bultos = 42 HL.
  */
-async function getMaestroArticulos(): Promise<Map<number, { vum: number; unidadesBulto: number }>> {
+export async function getMaestroArticulos(): Promise<Map<number, { vum: number; unidadesBulto: number }>> {
   const { rows } = await getPool().query<{ id_articulo: number; vum: string; ub: string }>(
     `select id_articulo, valor_unidad_medida vum, unidades_bulto ub
      from articulos where valor_unidad_medida is not null`,

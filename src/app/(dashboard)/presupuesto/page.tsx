@@ -7,6 +7,14 @@ import {
   puedeEditarPresupuesto,
 } from "@/actions/presupuesto"
 import { listIniciativas } from "@/actions/presupuesto-iniciativas"
+import {
+  getEjecucionPorRubro,
+  type EjecucionRubro,
+} from "@/actions/presupuesto-generador"
+import {
+  getKpiPerdidas,
+  type KpiPerdidas,
+} from "@/actions/presupuesto-perdidas-kpi"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { listInversiones } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
@@ -69,6 +77,8 @@ export default async function PresupuestoPage({
     iniciativasRes,
     planesAccionRes,
     inversionesRes,
+    ejecucionRes,
+    kpiPerdidasRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -84,6 +94,17 @@ export default async function PresupuestoPage({
     mostrarInversiones
       ? listInversiones(anioActivo)
       : Promise.resolve<{ data: InversionConDetalle[] }>({ data: [] }),
+    // Ejecución por rubro (EERR): de acá sale el ahorro REAL de las iniciativas
+    // que tienen rubro, con la misma vara que su compromiso.
+    mostrarIniciativas
+      ? getEjecucionPorRubro(anioActivo)
+      : Promise.resolve<{ data: Record<string, EjecucionRubro> }>({ data: {} }),
+    // KPI físico de las iniciativas del depósito (lo perdido por HL vendido).
+    // Pega al tablero de Esteban: si no responde, las tarjetas caen al KPI
+    // cargado a mano en vez de romper la página.
+    mostrarIniciativas
+      ? getKpiPerdidas(anioActivo)
+      : Promise.resolve<{ data: Record<string, KpiPerdidas> }>({ data: {} }),
   ])
 
   if ("error" in tareasRes) {
@@ -107,6 +128,8 @@ export default async function PresupuestoPage({
       currentProfileId={profile?.id ?? null}
       mostrarIniciativas={mostrarIniciativas}
       iniciativas={"data" in iniciativasRes ? iniciativasRes.data : []}
+      ejecucionRubros={"data" in ejecucionRes ? ejecucionRes.data : {}}
+      kpiPerdidas={"data" in kpiPerdidasRes ? kpiPerdidasRes.data : {}}
       mostrarPlanesAccion={mostrarPlanesAccion}
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}

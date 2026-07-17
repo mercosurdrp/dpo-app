@@ -9,6 +9,9 @@ import type { Profile } from "@/types/database"
 const BUCKET = "presupuestos"
 const REVALIDATE_PATH = "/presupuesto"
 const SHEET_DESVIOS = "DESVIOS"
+const SHEET_ALMACEN = "ALMACEN PXQ mrp"
+/** Fila de VENTAS que trae el volumen total del mes, en la hoja DESVIOS. */
+const FILA_TOTAL_HL = "TOTAL EN HL"
 const UMBRAL_PCT = 15
 const UMBRAL_ABS = 250_000
 const DIAS_VENCIMIENTO = 10
@@ -39,6 +42,342 @@ interface CatalogoRow {
 interface ProfileMin {
   id: string
   nombre: string | null
+}
+
+export interface PresupuestoRubro {
+  /** Total del año. */
+  total: number
+  /** Los 12 meses, índice 0 = enero. */
+  meses: number[]
+}
+
+/**
+ * Presupuesto ANUAL por rubro, mes a mes, para las metas de las iniciativas.
+ *
+ * Sale de una hoja distinta a la de los desvíos: la hoja "DESVIOS" sólo trae los
+ * meses ya cerrados (el archivo de julio 2026 llega hasta junio), así que sumarla
+ * daría medio año. La hoja "PRESUPUESTO <año> MRP" tiene los 12 meses más una
+ * columna TOTAL (verificado: TOTAL == suma de los 12 en todos los rubros).
+ *
+ * Los meses hacen falta porque una iniciativa puede arrancar a mitad de año: la
+ * meta se calcula sobre el presupuesto que puede influir, no sobre el del año
+ * entero. Roturas arranca en marzo, y ene-feb son $1.814.567 que ya pasaron.
+ */
+function parseHojaPresupuestoAnual(
+  buffer: ArrayBuffer,
+): Map<string, PresupuestoRubro> {
+  const wb = XLSX.read(buffer, { type: "array" })
+  const nombre = wb.SheetNames.find((n) => /^\s*PRESUPUESTO\b/i.test(n))
+  if (!nombre) {
+    throw new Error(
+      'El Excel no tiene una hoja "PRESUPUESTO <año> MRP" con el presupuesto anual',
+    )
+  }
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[nombre], {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  // Misma forma que la hoja DESVIOS: rubro en la col 1, datos desde la fila 3.
+  // Acá la col 2 es el TOTAL del año y las 3..14 son los 12 meses.
+  const out = new Map<string, PresupuestoRubro>()
+  for (let i = 3; i < aoa.length; i++) {
+    const row = aoa[i]
+    if (!row) continue
+    const sub = row[1]
+    if (typeof sub !== "string") continue
+    const subNorm = normalizar(sub)
+    if (!subNorm || subNorm === "TOTAL" || subNorm === "RUBRO") continue
+    const total = row[2]
+    if (typeof total !== "number" || !Number.isFinite(total) || total === 0) {
+      continue
+    }
+    const meses = Array.from({ length: 12 }, (_, k) => {
+      const v = row[3 + k]
+      return typeof v === "number" && Number.isFinite(v) ? v : 0
+    })
+    out.set(subNorm, { total, meses })
+  }
+  return out
+}
+
+export interface EjecucionMes {
+  /** 1-12 */
+  mes: number
+  presup: number
+  real: number
+}
+
+export interface EjecucionRubro {
+  /**
+   * Un item por mes CERRADO (el EERR se sube con el mes cerrado). Va mes a mes y
+   * no como total porque una iniciativa puede arrancar a mitad de año: lo gastado
+   * antes de implementarla no es mérito ni culpa suya. Ej.: Roturas arranca en
+   * marzo, y enero (la rotura de depósito de $1,3M) no le corresponde.
+   */
+  porMes: EjecucionMes[]
+}
+
+/**
+ * Ejecución acumulada por rubro: presupuestado vs real de los meses cerrados.
+ *
+ * De acá sale el ahorro REAL de una iniciativa (presup − real), con la misma vara
+ * que su compromiso (% del presupuesto). Antes el ahorro se cargaba a mano y
+ * medido contra el gasto del año anterior, así que no era comparable: "Roturas"
+ * declaraba $1,12M de ahorro contra la línea base 2025 cuando contra el
+ * presupuesto venía $1,81M POR ENCIMA.
+ *
+ * Lee la hoja DESVIOS (la que tiene real, no sólo presupuesto): sólo trae los
+ * meses cerrados, y eso es justamente lo que se quiere acumular.
+ */
+function parseEjecucion(buffer: ArrayBuffer): Map<string, EjecucionRubro> {
+  const wb = XLSX.read(buffer, { type: "array" })
+  const ws = wb.Sheets[SHEET_DESVIOS]
+  if (!ws) throw new Error(`El Excel no tiene la hoja "${SHEET_DESVIOS}"`)
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  const out = new Map<string, EjecucionRubro>()
+  for (let i = 3; i < aoa.length; i++) {
+    const row = aoa[i]
+    if (!row) continue
+    const sub = row[1]
+    if (typeof sub !== "string") continue
+    const subNorm = normalizar(sub)
+    if (!subNorm || subNorm === "TOTAL" || subNorm === "RUBRO") continue
+
+    const porMes: EjecucionMes[] = []
+    for (let mes = 1; mes <= 12; mes++) {
+      const p = row[2 + 4 * (mes - 1)]
+      const r = row[3 + 4 * (mes - 1)]
+      const hayP = typeof p === "number" && Number.isFinite(p)
+      const hayR = typeof r === "number" && Number.isFinite(r)
+      if (!hayP && !hayR) continue
+      porMes.push({ mes, presup: hayP ? p : 0, real: hayR ? r : 0 })
+    }
+    if (porMes.length === 0) continue
+    out.set(subNorm, { porMes })
+  }
+  return out
+}
+
+export interface CantidadMes {
+  /** 1-12 */
+  mes: number
+  /** Bultos que el presupuesto prevé perder ese mes. */
+  bultos: number
+}
+
+export interface VolumenMes {
+  mes: number
+  /** HL que el presupuesto preveía vender. */
+  hlPpto: number
+  /** HL realmente vendidos (venta facturada). */
+  hlReal: number
+}
+
+export interface PptoCantidades {
+  /** Clave: concepto normalizado (ej. "ROTURAS Y DERRAMES"). */
+  porConcepto: Record<string, CantidadMes[]>
+  /** Denominador del KPI: "Total en HL" de la hoja DESVIOS, ppto y real. */
+  volumen: VolumenMes[]
+}
+
+/**
+ * Cantidades PRESUPUESTADAS de lo que se rompe/vence, y el volumen vendido.
+ *
+ * El presupuesto de almacén se arma P×Q: debajo de cada concepto la hoja trae una
+ * fila "Q bultos" con la cantidad y otra "Precio bulto". Esa Q es el target del
+ * KPI, y es la razón por la que el KPI puede ir en cantidad en vez de en pesos:
+ * no hay que derivar nada de un precio, la meta física ya existe.
+ *
+ * Sale de la hoja de ALMACEN y no de DESVIOS porque DESVIOS agrega a pesos y
+ * pierde la Q. Ojo: acá cada mes es UNA columna (col 2 = enero), no cuatro como
+ * en DESVIOS.
+ */
+function parsePptoCantidades(buffer: ArrayBuffer): PptoCantidades {
+  const wb = XLSX.read(buffer, { type: "array" })
+
+  const wsAlm = wb.Sheets[SHEET_ALMACEN]
+  if (!wsAlm) throw new Error(`El Excel no tiene la hoja "${SHEET_ALMACEN}"`)
+  const alm = XLSX.utils.sheet_to_json<unknown[]>(wsAlm, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+
+  const porConcepto: Record<string, CantidadMes[]> = {}
+  for (let i = 0; i < alm.length; i++) {
+    const row = alm[i]
+    if (!row) continue
+    // Un concepto se reconoce porque declara su centro de costo en la col 0; las
+    // filas Q/P que le siguen la traen vacía.
+    if (typeof row[0] !== "string" || typeof row[1] !== "string") continue
+    const concepto = normalizar(row[1])
+    if (!concepto) continue
+
+    // La Q vive en alguna de las filas siguientes, hasta el próximo concepto.
+    for (let j = i + 1; j < alm.length; j++) {
+      const sub = alm[j]
+      if (!sub || typeof sub[0] === "string") break // empezó otro concepto
+      const etiqueta = typeof sub[1] === "string" ? normalizar(sub[1]) : ""
+      if (!/^Q\b/.test(etiqueta)) continue
+      const meses: CantidadMes[] = []
+      for (let mes = 1; mes <= 12; mes++) {
+        const q = sub[2 + (mes - 1)]
+        if (typeof q !== "number" || !Number.isFinite(q)) continue
+        meses.push({ mes, bultos: q })
+      }
+      if (meses.length > 0) porConcepto[concepto] = meses
+      break
+    }
+  }
+
+  const wsDes = wb.Sheets[SHEET_DESVIOS]
+  if (!wsDes) throw new Error(`El Excel no tiene la hoja "${SHEET_DESVIOS}"`)
+  const des = XLSX.utils.sheet_to_json<unknown[]>(wsDes, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  })
+  const volumen: VolumenMes[] = []
+  for (let i = 3; i < des.length; i++) {
+    const row = des[i]
+    if (!row || typeof row[1] !== "string") continue
+    if (normalizar(row[1]) !== FILA_TOTAL_HL) continue
+    for (let mes = 1; mes <= 12; mes++) {
+      const p = row[2 + 4 * (mes - 1)]
+      const r = row[3 + 4 * (mes - 1)]
+      const hayP = typeof p === "number" && Number.isFinite(p)
+      const hayR = typeof r === "number" && Number.isFinite(r)
+      if (!hayP && !hayR) continue
+      volumen.push({ mes, hlPpto: hayP ? p : 0, hlReal: hayR ? r : 0 })
+    }
+    break
+  }
+  if (volumen.length === 0) {
+    throw new Error(
+      `La hoja "${SHEET_DESVIOS}" no tiene la fila "${FILA_TOTAL_HL}" con el volumen vendido`,
+    )
+  }
+
+  return { porConcepto, volumen }
+}
+
+/** Cantidades presupuestadas (Q bultos) y volumen vendido del año. */
+export async function getPptoCantidades(
+  anio: number,
+): Promise<Result<PptoCantidades>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    return { data: parsePptoCantidades(await blob.arrayBuffer()) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo las cantidades presupuestadas",
+    }
+  }
+}
+
+/** Ejecución (presupuesto vs real acumulado) de cada rubro del EERR del año. */
+export async function getEjecucionPorRubro(
+  anio: number,
+): Promise<Result<Record<string, EjecucionRubro>>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    return { data: Object.fromEntries(parseEjecucion(await blob.arrayBuffer())) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo la ejecución por rubro",
+    }
+  }
+}
+
+/**
+ * Presupuesto de cada rubro del EERR, con el total y los 12 meses.
+ * Clave: rubro normalizado.
+ */
+export async function getPresupuestoAnualPorRubro(
+  anio: number,
+): Promise<Result<Record<string, PresupuestoRubro>>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: eerr, error: errEerr } = await supabase
+      .from("presupuestos_eerr_anual")
+      .select("archivo_url")
+      .eq("anio", anio)
+      .maybeSingle()
+    if (errEerr) return { error: errEerr.message }
+    if (!eerr?.archivo_url) {
+      return { error: `No hay Estado de Resultado cargado para ${anio}` }
+    }
+
+    const { data: blob, error: errDl } = await supabase.storage
+      .from(BUCKET)
+      .download(eerr.archivo_url)
+    if (errDl || !blob) {
+      return { error: `Descargando EERR: ${errDl?.message ?? "sin blob"}` }
+    }
+
+    const mapa = parseHojaPresupuestoAnual(await blob.arrayBuffer())
+    return { data: Object.fromEntries(mapa) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error leyendo el presupuesto anual por rubro",
+    }
+  }
 }
 
 function normalizar(s: string): string {

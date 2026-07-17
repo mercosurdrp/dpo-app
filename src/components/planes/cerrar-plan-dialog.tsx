@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import {
@@ -65,6 +66,7 @@ function CerrarPlanForm({
   onDone,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [sinEvidencia, setSinEvidencia] = useState(false)
   const [motivo, setMotivo] = useState("")
   const [pending, startTransition] = useTransition()
@@ -127,7 +129,7 @@ function CerrarPlanForm({
         router.push(`/planes/${res.seguimientoId}`)
       } else {
         toast.success("Plan cerrado")
-        router.refresh()
+        refrescarConScroll()
       }
     })
   }

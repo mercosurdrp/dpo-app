@@ -77,6 +77,8 @@ import {
   type VidaNeumatico,
 } from "@/lib/vehiculos/vida-neumaticos"
 import { VEHICULO_TIPO_LABELS, type VehiculoTipo } from "@/types/database"
+import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { KpiCard } from "./_components/kpi-card"
 
 interface UnidadFlota {
   dominio: string
@@ -102,7 +104,7 @@ const fmtFecha = (f: string | null) =>
 
 // Color del relleno de una posición según el desgaste (profundidad mm).
 function colorDesgaste(prof: number | null): string {
-  if (prof == null) return "bg-slate-400"
+  if (prof == null) return "bg-muted-foreground"
   if (prof <= PROFUNDIDAD_CRITICA_MM) return "bg-red-500"
   if (prof <= 5) return "bg-amber-400"
   return "bg-emerald-500"
@@ -130,19 +132,27 @@ function estadoAlineacionConKm(
       ? Math.round(ultima.proxima_km - kmActual)
       : null
   if (!ultima || (!ultima.proxima_fecha && ultima.proxima_km == null)) {
-    return { label: "Sin programar", clase: "bg-slate-100 text-slate-600", faltanKm }
+    return { label: "Sin programar", clase: "bg-muted text-muted-foreground", faltanKm }
   }
   const hoy = new Date().toISOString().slice(0, 10)
   const en30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
   const vencidaFecha = ultima.proxima_fecha != null && ultima.proxima_fecha < hoy
   const vencidaKm = faltanKm != null && faltanKm <= 0
   if (vencidaFecha || vencidaKm)
-    return { label: "Vencida", clase: "bg-red-100 text-red-700", faltanKm }
+    return { label: "Vencida", clase: "bg-destructive/10 text-destructive", faltanKm }
   const porFecha = ultima.proxima_fecha != null && ultima.proxima_fecha <= en30
   const porKm = faltanKm != null && faltanKm <= 2000
   if (porFecha || porKm)
-    return { label: "Por vencer", clase: "bg-amber-100 text-amber-700", faltanKm }
-  return { label: "Al día", clase: "bg-emerald-100 text-emerald-700", faltanKm }
+    return {
+      label: "Por vencer",
+      clase: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      faltanKm,
+    }
+  return {
+    label: "Al día",
+    clase: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    faltanKm,
+  }
 }
 
 export function NeumaticosModule({
@@ -262,12 +272,20 @@ export function NeumaticosModule({
 
   return (
     <div className="space-y-6">
+      <DpoSeccionCinta seccionId="neumaticos" />
+
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <ResumenCard label="En stock" value={resumen.stock} tono="info" />
-        <ResumenCard label="Instaladas" value={resumen.instalados} tono="info" />
-        <ResumenCard label="Desgaste crítico" value={resumen.criticos} tono="danger" />
-        <ResumenCard label="Bajas (total)" value={resumen.bajas} tono="muted" />
+        <KpiCard label="En stock" valor={resumen.stock} sub="Cubiertas disponibles para montar" />
+        <KpiCard label="Instaladas" valor={resumen.instalados} sub="Cubiertas rodando en la flota" />
+        <KpiCard
+          label="Desgaste crítico"
+          valor={resumen.criticos}
+          sub={`Profundidad ≤ ${PROFUNDIDAD_CRITICA_MM} mm`}
+          estado={resumen.criticos > 0 ? "critico" : "ok"}
+          dpo="3.4"
+        />
+        <KpiCard label="Bajas (total)" valor={resumen.bajas} sub="Cubiertas dadas de baja" />
       </div>
 
       {puedeEditar && (
@@ -303,7 +321,7 @@ export function NeumaticosModule({
       <Card id="diagrama-unidad">
         <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <CircleDot className="size-4 text-slate-500" /> Diagrama de la unidad
+            <CircleDot className="size-4 text-muted-foreground" /> Diagrama de la unidad
           </CardTitle>
           <Select value={unidadSel} onValueChange={(v) => setUnidadSel(v ?? "")}>
             <SelectTrigger className="w-40">
@@ -320,11 +338,11 @@ export function NeumaticosModule({
         </CardHeader>
         <CardContent>
           {!unidad ? (
-            <p className="text-sm text-slate-500">Elegí una unidad.</p>
+            <p className="text-sm text-muted-foreground">Elegí una unidad.</p>
           ) : (
             <div className="space-y-4">
               {/* Datos del vehículo (estilo Cloudfleet) */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md border bg-slate-50/60 p-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md border border-border bg-muted/40 p-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
                 <DatoVehiculo label="Vehículo" valor={unidad.dominio} destacado />
                 <DatoVehiculo
                   label="Tipo"
@@ -352,19 +370,19 @@ export function NeumaticosModule({
                     setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
                   }
                 />
-                <div className="space-y-2 text-xs text-slate-500">
-                  <p className="font-medium text-slate-600">Convenciones</p>
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">Convenciones</p>
                   <div className="space-y-1">
                     <LeyendaEje clase="border-amber-400" txt="Eje direccional" />
                     <LeyendaEje clase="border-emerald-500" txt="Eje de tracción" />
-                    <LeyendaEje clase="border-slate-300" txt="Eje libre" />
+                    <LeyendaEje clase="border-border" txt="Eje libre" />
                   </div>
-                  <p className="pt-1 font-medium text-slate-600">Desgaste (chip de posición)</p>
+                  <p className="pt-1 font-medium text-foreground">Desgaste (chip de posición)</p>
                   <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
                   <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
                   <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
-                  <Leyenda color="bg-slate-400" txt="Sin medición" />
-                  <p className="pt-1 text-slate-400">
+                  <Leyenda color="bg-muted-foreground" txt="Sin medición" />
+                  <p className="pt-1 text-muted-foreground/80">
                     {puedeEditar
                       ? "Hacé clic en una posición para asignar / medir / dar de baja."
                       : "Vista de solo lectura."}
@@ -381,10 +399,10 @@ export function NeumaticosModule({
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              <Gauge className="size-4 text-slate-500" /> Cubiertas instaladas ·{" "}
+              <Gauge className="size-4 text-muted-foreground" /> Cubiertas instaladas ·{" "}
               {unidad.dominio} ({instaladasOrden.length})
               {kmUnidad.kmActual != null && (
-                <span className="text-xs font-normal text-slate-400">
+                <span className="text-xs font-normal text-muted-foreground">
                   · {fmtNum(kmUnidad.kmActual)} km actual
                   {kmUnidad.kmDia ? ` · ~${fmtNum(kmUnidad.kmDia)} km/día` : ""}
                 </span>
@@ -403,13 +421,13 @@ export function NeumaticosModule({
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {instaladasOrden.length === 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 Esta unidad no tiene cubiertas instaladas.
               </p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-2">Pos.</th>
                     <th>Número</th>
                     <th>Tipo</th>
@@ -447,14 +465,14 @@ export function NeumaticosModule({
                     return (
                       <tr
                         key={n.id}
-                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                        className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                       >
                         <td className="py-2 font-medium">{n.posicion || "—"}</td>
                         <td>{n.numero || "—"}</td>
                         <td>{TIPO_LABEL[n.tipo]}</td>
-                        <td className="text-slate-600">{n.marca || "—"}</td>
-                        <td className="text-slate-600">{n.medida || "—"}</td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-muted-foreground">{n.marca || "—"}</td>
+                        <td className="text-muted-foreground">{n.medida || "—"}</td>
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {n.profundidad_inicial_mm ?? "—"}
                         </td>
                         <td
@@ -462,39 +480,39 @@ export function NeumaticosModule({
                             "text-right tabular-nums font-medium",
                             n.profundidad_actual_mm != null &&
                               n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM
-                              ? "text-red-600"
-                              : "text-slate-700"
+                              ? "text-destructive"
+                              : "text-foreground"
                           )}
                         >
                           {n.profundidad_actual_mm ?? "—"}
                         </td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {mmGastados ?? "—"}
                         </td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {kmPorMm != null ? fmtNum(kmPorMm) : "—"}
                         </td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {pres != null ? `${pres} psi` : "—"}
                         </td>
-                        <td className="text-slate-600">{fmtFecha(n.fecha_instalacion)}</td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-muted-foreground">{fmtFecha(n.fecha_instalacion)}</td>
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {fmtNum(n.km_instalacion)}
                         </td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {v?.kmRodados != null ? `${fmtNum(v.kmRodados)} km` : "—"}
                         </td>
                         <td
                           className={cn(
                             "text-right tabular-nums",
                             v && v.kmRestante != null && v.kmRestante <= 0
-                              ? "font-medium text-red-600"
-                              : "text-slate-700"
+                              ? "font-medium text-destructive"
+                              : "text-foreground"
                           )}
                         >
                           {v?.kmRestante != null ? `${fmtNum(v.kmRestante)} km` : "—"}
                         </td>
-                        <td className="text-right tabular-nums text-slate-600">
+                        <td className="text-right tabular-nums text-muted-foreground">
                           {v?.diasRestantes != null ? `${fmtNum(v.diasRestantes)} d` : "—"}
                         </td>
                         <td>
@@ -539,16 +557,16 @@ export function NeumaticosModule({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Layers className="size-4 text-slate-500" /> Stock de cubiertas ({stock.length})
+            <Layers className="size-4 text-muted-foreground" /> Stock de cubiertas ({stock.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {stock.length === 0 ? (
-            <p className="text-sm text-slate-500">No hay cubiertas en stock.</p>
+            <p className="text-sm text-muted-foreground">No hay cubiertas en stock.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-2">Número</th>
                   <th>Tipo</th>
                   <th>Marca</th>
@@ -562,22 +580,22 @@ export function NeumaticosModule({
                 {stock.map((n, i) => (
                   <tr
                     key={n.id}
-                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
                     <td className="py-2 font-medium">{n.numero || "—"}</td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
-                    <td className="text-slate-600">{n.marca || "—"}</td>
-                    <td className="text-slate-600">{n.medida || "—"}</td>
+                    <td className="text-muted-foreground">{n.marca || "—"}</td>
+                    <td className="text-muted-foreground">{n.medida || "—"}</td>
                     <td className="text-right tabular-nums">
                       {n.profundidad_actual_mm ?? "—"}
                     </td>
-                    <td className="text-slate-600">{fmtFecha(n.fecha_ingreso)}</td>
+                    <td className="text-muted-foreground">{fmtFecha(n.fecha_ingreso)}</td>
                     {puedeEditar && (
                       <td className="text-right">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 text-slate-400 hover:text-red-600"
+                          className="size-7 text-muted-foreground hover:text-destructive"
                           onClick={async () => {
                             const res = await eliminarNeumatico({ id: n.id })
                             if ("error" in res) toast.error(res.error)
@@ -608,7 +626,7 @@ export function NeumaticosModule({
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-2">Número</th>
                   <th>Tipo</th>
                   <th>Medida</th>
@@ -620,13 +638,13 @@ export function NeumaticosModule({
                 {bajas.map((n, i) => (
                   <tr
                     key={n.id}
-                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
                     <td className="py-2 font-medium">{n.numero || "—"}</td>
                     <td>{TIPO_LABEL[n.tipo]}</td>
-                    <td className="text-slate-600">{n.medida || "—"}</td>
-                    <td className="text-slate-600">{fmtFecha(n.fecha_baja)}</td>
-                    <td className="text-slate-600">{n.motivo_baja || "—"}</td>
+                    <td className="text-muted-foreground">{n.medida || "—"}</td>
+                    <td className="text-muted-foreground">{fmtFecha(n.fecha_baja)}</td>
+                    <td className="text-muted-foreground">{n.motivo_baja || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -748,9 +766,9 @@ function InspeccionMensualCard({
   const pct = filas.length > 0 ? Math.round((completas / filas.length) * 100) : 0
 
   const BADGE: Record<string, string> = {
-    completa: "bg-emerald-100 text-emerald-700",
-    parcial: "bg-amber-100 text-amber-700",
-    pendiente: "bg-slate-100 text-slate-500",
+    completa: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    parcial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    pendiente: "bg-muted text-muted-foreground",
   }
   const LABEL: Record<string, string> = {
     completa: "Completa",
@@ -763,9 +781,9 @@ function InspeccionMensualCard({
       <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Ruler className="size-4 text-slate-500" /> Inspección mensual
+            <Ruler className="size-4 text-muted-foreground" /> Inspección mensual
           </CardTitle>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Una vez por mes se mide profundidad y presión de todas las cubiertas de la
             flota. Las mediciones se cargan desde el diagrama de cada unidad.
           </p>
@@ -786,7 +804,7 @@ function InspeccionMensualCard({
       <CardContent className="space-y-3">
         {/* Avance de la ronda */}
         <div className="flex items-center gap-3">
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
             <div
               className={cn(
                 "h-full rounded-full",
@@ -795,13 +813,13 @@ function InspeccionMensualCard({
               style={{ width: `${pct}%` }}
             />
           </div>
-          <span className="whitespace-nowrap text-sm font-medium text-slate-700">
+          <span className="whitespace-nowrap text-sm font-medium text-foreground">
             {completas}/{filas.length} unidades · {pct}%
           </span>
         </div>
 
         {filas.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             No hay cubiertas instaladas cargadas en el módulo.
           </p>
         ) : (
@@ -809,13 +827,13 @@ function InspeccionMensualCard({
             {filas.map((f) => (
               <button
                 key={f.dominio}
-                className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left hover:bg-slate-50"
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
                 onClick={() => onIrAUnidad(f.dominio)}
                 title="Ir al diagrama de la unidad para cargar mediciones"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">{f.dominio}</p>
-                  <p className="text-xs tabular-nums text-slate-500">
+                  <p className="text-sm font-semibold text-foreground">{f.dominio}</p>
+                  <p className="text-xs tabular-nums text-muted-foreground">
                     {f.medidas}/{f.total} cubiertas
                     {f.ultima && ` · ${fmtFecha(f.ultima)}`}
                   </p>
@@ -833,33 +851,6 @@ function InspeccionMensualCard({
 }
 
 // ==================== Subcomponentes ====================
-
-function ResumenCard({
-  label,
-  value,
-  tono,
-}: {
-  label: string
-  value: number
-  tono: "info" | "danger" | "muted"
-}) {
-  const color =
-    tono === "danger" && value > 0
-      ? "text-red-600"
-      : tono === "muted"
-        ? "text-slate-500"
-        : "text-slate-900"
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-slate-500">{label}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className={cn("text-2xl font-bold", color)}>{value}</p>
-      </CardContent>
-    </Card>
-  )
-}
 
 function Leyenda({ color, txt }: { color: string; txt: string }) {
   return (
@@ -891,8 +882,8 @@ function DatoVehiculo({
 }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={cn("text-sm", destacado ? "font-bold text-slate-900" : "font-medium text-slate-700")}>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("text-sm text-foreground", destacado ? "font-bold" : "font-medium")}>
         {valor}
       </p>
     </div>
@@ -904,7 +895,7 @@ function DatoVehiculo({
 const EJE_LINEA: Record<string, string> = {
   direccional: "border-amber-400",
   traccion: "border-emerald-500",
-  libre: "border-slate-300",
+  libre: "border-border",
 }
 
 // Silueta de la unidad vista desde arriba, estilo Cloudfleet: bastidor central
@@ -937,30 +928,30 @@ function SiluetaUnidad({
     <div className="pointer-events-none absolute inset-0">
       {/* Bastidor */}
       <div
-        className="absolute inset-x-[34%] rounded-md border-2 border-slate-300 bg-white"
+        className="absolute inset-x-[34%] rounded-md border-2 border-border bg-white"
         style={{ top: `${bastidorTop}%`, height: `${bastidorBottom - bastidorTop}%` }}
       >
         {/* Largueros */}
-        <div className="absolute inset-y-1 left-[18%] w-px bg-slate-200" />
-        <div className="absolute inset-y-1 right-[18%] w-px bg-slate-200" />
+        <div className="absolute inset-y-1 left-[18%] w-px bg-muted" />
+        <div className="absolute inset-y-1 right-[18%] w-px bg-muted" />
         {/* Travesaños en cada eje */}
         {filas.map((f) => (
           <div
             key={f.y}
-            className="absolute inset-x-0 h-1 -translate-y-1/2 bg-slate-200"
+            className="absolute inset-x-0 h-1 -translate-y-1/2 bg-muted"
             style={{ top: `${((f.y - bastidorTop) / (bastidorBottom - bastidorTop)) * 100}%` }}
           />
         ))}
       </div>
       {/* Cabina (frente) con parabrisas */}
       {conCabina && (
-        <div className="absolute inset-x-[30%] top-[4%] h-[11%] rounded-lg border border-slate-300 bg-slate-50 shadow-sm">
+        <div className="absolute inset-x-[30%] top-[4%] h-[11%] rounded-lg border border-border bg-muted/50 shadow-sm">
           <div className="absolute inset-x-1.5 top-1 h-1.5 rounded-full bg-sky-200/80" />
         </div>
       )}
       {/* Lanza de enganche (acoplado) */}
       {!conCabina && (
-        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-slate-300" />
+        <div className="absolute left-1/2 top-0 h-[10%] w-1 -translate-x-1/2 rounded-full bg-muted" />
       )}
       {/* Línea de eje punteada por fila de ruedas, coloreada por función */}
       {filas.map((f) => (
@@ -1002,8 +993,8 @@ function TireGlyph({
         className={cn(
           "relative h-16 w-11 rounded-[9px] transition-transform",
           empty
-            ? "border-2 border-dashed border-slate-300 bg-white"
-            : "shadow-md ring-1 ring-slate-900/40"
+            ? "border-2 border-dashed border-border bg-white"
+            : "shadow-md ring-1 ring-foreground/20"
         )}
       >
         {!empty && (
@@ -1046,7 +1037,7 @@ function TireGlyph({
           className={cn(
             "absolute left-1/2 top-1/2 flex h-[28px] min-w-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full px-1 text-[12px] font-bold leading-none ring-2",
             empty
-              ? "bg-slate-50 text-slate-400 ring-white"
+              ? "bg-muted/50 text-muted-foreground/70 ring-white"
               : cn(wearClass, "text-white shadow ring-white/90")
           )}
         >
@@ -1054,7 +1045,7 @@ function TireGlyph({
         </span>
       </div>
       {sub && (
-        <span className="mt-0.5 max-w-[60px] truncate text-[10px] font-medium leading-tight text-slate-600">
+        <span className="mt-0.5 max-w-[60px] truncate text-[10px] font-medium leading-tight text-muted-foreground">
           {sub}
         </span>
       )}
@@ -1097,7 +1088,7 @@ function Diagrama({
                 label={p.label}
                 sub={n ? n.numero || "s/n" : null}
                 eje={p.eje}
-                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
                 empty={!n}
               />
             </div>
@@ -1155,7 +1146,7 @@ function CargaMasivaDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Tipo</Label>
+              <Label className="text-xs text-muted-foreground">Tipo</Label>
               <Select value={tipo} onValueChange={(v) => setTipo(v as "nuevo" | "recapado")}>
                 <SelectTrigger>
                   <SelectValue />
@@ -1167,7 +1158,7 @@ function CargaMasivaDialog({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Profundidad inicial (mm)</Label>
+              <Label className="text-xs text-muted-foreground">Profundidad inicial (mm)</Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1177,11 +1168,11 @@ function CargaMasivaDialog({
               />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Marca</Label>
+              <Label className="text-xs text-muted-foreground">Marca</Label>
               <Input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="ej. Firestone" />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Medida</Label>
+              <Label className="text-xs text-muted-foreground">Medida</Label>
               <Input value={medida} onChange={(e) => setMedida(e.target.value)} placeholder="ej. 295/80 R22.5" />
             </div>
           </div>
@@ -1207,7 +1198,7 @@ function CargaMasivaDialog({
 
           {modo === "cantidad" ? (
             <div>
-              <Label className="text-xs text-slate-500">Cantidad de cubiertas</Label>
+              <Label className="text-xs text-muted-foreground">Cantidad de cubiertas</Label>
               <Input
                 type="number"
                 min="1"
@@ -1217,7 +1208,7 @@ function CargaMasivaDialog({
             </div>
           ) : (
             <div>
-              <Label className="text-xs text-slate-500">
+              <Label className="text-xs text-muted-foreground">
                 Numeración (una por línea o separadas por coma)
               </Label>
               <Textarea
@@ -1286,7 +1277,7 @@ function CargaIndividualDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs text-slate-500">Número / serie</Label>
+            <Label className="text-xs text-muted-foreground">Número / serie</Label>
             <Input
               value={numero}
               onChange={(e) => setNumero(e.target.value)}
@@ -1294,7 +1285,7 @@ function CargaIndividualDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Tipo</Label>
+            <Label className="text-xs text-muted-foreground">Tipo</Label>
             <Select value={tipo} onValueChange={(v) => setTipo(v as "nuevo" | "recapado")}>
               <SelectTrigger>
                 <SelectValue />
@@ -1306,7 +1297,7 @@ function CargaIndividualDialog({
             </Select>
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Marca</Label>
+            <Label className="text-xs text-muted-foreground">Marca</Label>
             <Input
               value={marca}
               onChange={(e) => setMarca(e.target.value)}
@@ -1314,7 +1305,7 @@ function CargaIndividualDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Medida</Label>
+            <Label className="text-xs text-muted-foreground">Medida</Label>
             <Input
               value={medida}
               onChange={(e) => setMedida(e.target.value)}
@@ -1322,7 +1313,7 @@ function CargaIndividualDialog({
             />
           </div>
           <div className="col-span-2">
-            <Label className="text-xs text-slate-500">Profundidad inicial (mm)</Label>
+            <Label className="text-xs text-muted-foreground">Profundidad inicial (mm)</Label>
             <Input
               type="number"
               step="0.1"
@@ -1503,7 +1494,7 @@ function MontajeDialog({
         </DialogHeader>
 
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-slate-500">Unidad</Label>
+          <Label className="text-xs text-muted-foreground">Unidad</Label>
           <Select value={unidadSel} onValueChange={(v) => setUnidadSel(v ?? "")}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="Unidad" />
@@ -1517,7 +1508,7 @@ function MontajeDialog({
             </SelectContent>
           </Select>
           {kmU.kmActual != null && (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted-foreground">
               {fmtNum(Math.round(kmU.kmActual))} km — al montar se usa este km de
               instalación y la vida útil default por tipo
             </span>
@@ -1525,7 +1516,7 @@ function MontajeDialog({
         </div>
 
         {!unidad ? (
-          <p className="text-sm text-slate-500">Elegí una unidad.</p>
+          <p className="text-sm text-muted-foreground">Elegí una unidad.</p>
         ) : (
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
             {/* Diagrama de la unidad */}
@@ -1573,7 +1564,7 @@ function MontajeDialog({
                       resaltaPosiciones && "ring-2 ring-emerald-500 ring-offset-1"
                     )}
                   >
-                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-slate-400" empty />
+                    <TireGlyph label={p.label} eje={p.eje} wearClass="bg-muted-foreground" empty />
                   </button>
                 )
               })}
@@ -1587,12 +1578,12 @@ function MontajeDialog({
                 if (sel?.origen === "diagrama") void desmontar(sel.n)
               }}
               className={cn(
-                "min-h-48 w-full min-w-0 flex-1 rounded-lg border bg-slate-50/60 p-3 transition-colors",
+                "min-h-48 w-full min-w-0 flex-1 rounded-lg border border-border bg-muted/40 p-3 transition-colors",
                 resaltaStock && "border-sky-400 bg-sky-50 ring-2 ring-sky-400"
               )}
             >
-              <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                <Layers className="size-4 text-slate-400" /> Stock ({stock.length})
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <Layers className="size-4 text-muted-foreground" /> Stock ({stock.length})
                 {resaltaStock && (
                   <span className="text-xs font-normal text-sky-600">
                     — soltá acá para desmontar
@@ -1600,7 +1591,7 @@ function MontajeDialog({
                 )}
               </p>
               {stock.length === 0 ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   No hay cubiertas en stock. Tocá una posición vacía del diagrama para
                   cargar una comprada en el momento, o usá “Carga individual” / “Carga
                   masiva”.
@@ -1614,7 +1605,7 @@ function MontajeDialog({
                       onPointerDown={startDrag({ origen: "stock", n })}
                       title={`${n.numero || "s/n"} — arrastrá a una posición vacía para montar`}
                       className={cn(
-                        "flex cursor-grab touch-none select-none flex-col items-center rounded-md border bg-white p-1.5 shadow-sm",
+                        "flex cursor-grab touch-none select-none flex-col items-center rounded-md border border-border bg-card p-1.5 shadow-sm",
                         sel?.n.id === n.id && "ring-2 ring-emerald-500",
                         drag?.n.id === n.id && "opacity-40"
                       )}
@@ -1626,7 +1617,7 @@ function MontajeDialog({
                         wearClass={colorDesgaste(n.profundidad_actual_mm)}
                         empty={false}
                       />
-                      <span className="mt-0.5 text-[10px] tabular-nums text-slate-500">
+                      <span className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
                         {n.profundidad_actual_mm != null
                           ? `${n.profundidad_actual_mm} mm`
                           : "sin medición"}
@@ -1640,7 +1631,7 @@ function MontajeDialog({
         )}
 
         <DialogFooter>
-          <span className="mr-auto text-xs text-slate-400">
+          <span className="mr-auto text-xs text-muted-foreground">
             {saving ? "Guardando…" : sel ? `Seleccionada: ${sel.n.numero || "s/n"} — tocá el destino` : ""}
           </span>
           <Button variant="outline" onClick={onClose}>
@@ -1756,7 +1747,7 @@ function CargaEnPosicionDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Estado</Label>
+              <Label className="text-xs text-muted-foreground">Estado</Label>
               <Select value={tipo} onValueChange={(v) => setTipo((v as NeumaticoTipo) ?? "nuevo")}>
                 <SelectTrigger>
                   <SelectValue />
@@ -1768,35 +1759,35 @@ function CargaEnPosicionDialog({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">N° de cubierta (opcional)</Label>
+              <Label className="text-xs text-muted-foreground">N° de cubierta (opcional)</Label>
               <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ej: 45" />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Marca</Label>
+              <Label className="text-xs text-muted-foreground">Marca</Label>
               <Input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Fate" />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Medida</Label>
+              <Label className="text-xs text-muted-foreground">Medida</Label>
               <Input value={medida} onChange={(e) => setMedida(e.target.value)} placeholder="295/80R22.5" />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Prof. (mm)</Label>
+              <Label className="text-xs text-muted-foreground">Prof. (mm)</Label>
               <Input type="number" step="0.1" value={prof} onChange={(e) => setProf(e.target.value)} />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Fecha de colocación</Label>
+              <Label className="text-xs text-muted-foreground">Fecha de colocación</Label>
               <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Km de instalación</Label>
+              <Label className="text-xs text-muted-foreground">Km de instalación</Label>
               <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Vida útil (km)</Label>
+              <Label className="text-xs text-muted-foreground">Vida útil (km)</Label>
               <Input
                 type="number"
                 value={vidaUtil}
@@ -1889,7 +1880,7 @@ function GenerarOtNeumaticosDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label className="text-xs text-slate-500">Trabajo a realizar</Label>
+            <Label className="text-xs text-muted-foreground">Trabajo a realizar</Label>
             <Textarea
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
@@ -1898,15 +1889,15 @@ function GenerarOtNeumaticosDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Fecha</Label>
+              <Label className="text-xs text-muted-foreground">Fecha</Label>
               <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Km (odómetro)</Label>
+              <Label className="text-xs text-muted-foreground">Km (odómetro)</Label>
               <Input value={kmActual != null ? fmtNum(Math.round(kmActual)) : "—"} disabled />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Taller (opcional)</Label>
+              <Label className="text-xs text-muted-foreground">Taller (opcional)</Label>
               <Input
                 value={taller}
                 onChange={(e) => setTaller(e.target.value)}
@@ -1914,7 +1905,7 @@ function GenerarOtNeumaticosDialog({
               />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Mano de obra $ (opcional)</Label>
+              <Label className="text-xs text-muted-foreground">Mano de obra $ (opcional)</Label>
               <Input
                 type="number"
                 value={costoMo}
@@ -2040,7 +2031,7 @@ function PosicionDialog({
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs text-slate-500">Estado</Label>
+                    <Label className="text-xs text-muted-foreground">Estado</Label>
                     <Select value={tipoNueva} onValueChange={(v) => setTipoNueva((v as NeumaticoTipo) ?? "nuevo")}>
                       <SelectTrigger>
                         <SelectValue />
@@ -2052,28 +2043,28 @@ function PosicionDialog({
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs text-slate-500">N° de cubierta (opcional)</Label>
+                    <Label className="text-xs text-muted-foreground">N° de cubierta (opcional)</Label>
                     <Input value={numeroNueva} onChange={(e) => setNumeroNueva(e.target.value)} placeholder="Ej: 45" />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <Label className="text-xs text-slate-500">Marca</Label>
+                    <Label className="text-xs text-muted-foreground">Marca</Label>
                     <Input value={marcaNueva} onChange={(e) => setMarcaNueva(e.target.value)} placeholder="Fate" />
                   </div>
                   <div>
-                    <Label className="text-xs text-slate-500">Medida</Label>
+                    <Label className="text-xs text-muted-foreground">Medida</Label>
                     <Input value={medidaNueva} onChange={(e) => setMedidaNueva(e.target.value)} placeholder="295/80R22.5" />
                   </div>
                   <div>
-                    <Label className="text-xs text-slate-500">Prof. (mm)</Label>
+                    <Label className="text-xs text-muted-foreground">Prof. (mm)</Label>
                     <Input type="number" step="0.1" value={profNueva} onChange={(e) => setProfNueva(e.target.value)} />
                   </div>
                 </div>
               </>
             ) : (
               <div>
-                <Label className="text-xs text-slate-500">Cubierta del stock</Label>
+                <Label className="text-xs text-muted-foreground">Cubierta del stock</Label>
                 <Select value={stockSel} onValueChange={(v) => setStockSel(v ?? "")}>
                   <SelectTrigger>
                     <SelectValue placeholder={stock.length ? "Elegí una cubierta" : "Sin stock"} />
@@ -2094,11 +2085,11 @@ function PosicionDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-slate-500">Km de instalación</Label>
+                <Label className="text-xs text-muted-foreground">Km de instalación</Label>
                 <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs text-slate-500">Vida útil objetivo (km)</Label>
+                <Label className="text-xs text-muted-foreground">Vida útil objetivo (km)</Label>
                 <Input
                   type="number"
                   value={vidaUtil}
@@ -2107,7 +2098,7 @@ function PosicionDialog({
                 />
               </div>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-muted-foreground">
               Desde el km de instalación se estima cuánto falta para el cambio. Si dejás la vida
               útil vacía, usa el default por tipo (nuevo {VIDA_UTIL_DEFAULT_KM.nuevo} / recapado{" "}
               {VIDA_UTIL_DEFAULT_KM.recapado} km).
@@ -2166,9 +2157,9 @@ function PosicionDialog({
         ) : (
           // ----- Cubierta instalada: medir / quitar / baja -----
           <div className="space-y-4">
-            <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+            <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
               <div className="flex flex-wrap items-center gap-2">
-                <Ruler className="size-4 text-slate-400" />
+                <Ruler className="size-4 text-muted-foreground" />
                 Profundidad actual: <span className="font-semibold">{actual.profundidad_actual_mm ?? "—"} mm</span>
                 {vida && (
                   <Badge variant="outline" className={cn("text-xs", VIDA_BADGE[vida.estado].clase)}>
@@ -2177,7 +2168,7 @@ function PosicionDialog({
                 )}
               </div>
               {vida && (
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Vida útil objetivo {fmtNum(vida.vidaKm)} km ·{" "}
                   {vida.kmRodados != null ? `recorridos ${fmtNum(vida.kmRodados)} km · ` : ""}
                   {vida.kmRestante != null
@@ -2187,7 +2178,7 @@ function PosicionDialog({
                 </p>
               )}
               {actual.mediciones && actual.mediciones.length > 0 && (
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground/80">
                   Últimas mediciones:{" "}
                   {actual.mediciones
                     .slice(0, 4)
@@ -2197,19 +2188,19 @@ function PosicionDialog({
               )}
             </div>
 
-            <div className="space-y-2 rounded-md border p-3">
-              <p className="text-xs font-medium text-slate-600">Registrar desgaste</p>
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <p className="text-xs font-medium text-foreground">Registrar desgaste</p>
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-[11px] text-slate-500">Prof. (mm)</Label>
+                  <Label className="text-[11px] text-muted-foreground">Prof. (mm)</Label>
                   <Input type="number" step="0.1" value={profMed} onChange={(e) => setProfMed(e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-[11px] text-slate-500">Km</Label>
+                  <Label className="text-[11px] text-muted-foreground">Km</Label>
                   <Input type="number" value={kmMed} onChange={(e) => setKmMed(e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-[11px] text-slate-500">Presión</Label>
+                  <Label className="text-[11px] text-muted-foreground">Presión</Label>
                   <Input type="number" value={presion} onChange={(e) => setPresion(e.target.value)} />
                 </div>
               </div>
@@ -2233,8 +2224,8 @@ function PosicionDialog({
               </Button>
             </div>
 
-            <div className="space-y-2 rounded-md border border-red-100 p-3">
-              <p className="text-xs font-medium text-slate-600">Dar de baja</p>
+            <div className="space-y-2 rounded-md border border-destructive/30 p-3">
+              <p className="text-xs font-medium text-foreground">Dar de baja</p>
               <Input
                 placeholder="Motivo (desgaste, pinchadura, etc.)"
                 value={motivoBaja}
@@ -2297,10 +2288,10 @@ function PosicionDialog({
 }
 
 const ROT_BADGE: Record<string, { label: string; clase: string }> = {
-  ok: { label: "Al día", clase: "bg-emerald-100 text-emerald-700" },
-  proximo: { label: "Próxima", clase: "bg-amber-100 text-amber-700" },
-  vencido: { label: "Vencida", clase: "bg-red-100 text-red-700" },
-  sin_datos: { label: "Sin datos", clase: "bg-slate-100 text-slate-600" },
+  ok: { label: "Al día", clase: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  proximo: { label: "Próxima", clase: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  vencido: { label: "Vencida", clase: "bg-destructive/10 text-destructive" },
+  sin_datos: { label: "Sin datos", clase: "bg-muted text-muted-foreground" },
 }
 
 function RotacionCard({
@@ -2343,7 +2334,7 @@ function RotacionCard({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <RotateCw className="size-4 text-slate-500" /> Rotación y alineación · {unidad.dominio}
+          <RotateCw className="size-4 text-muted-foreground" /> Rotación y alineación · {unidad.dominio}
         </CardTitle>
         {puedeEditar && (
           <div className="flex gap-2">
@@ -2360,35 +2351,35 @@ function RotacionCard({
         {/* Contador de próxima rotación */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <Badge className={cn("border-0", badge.clase)}>{badge.label}</Badge>
-          <span className="flex items-center gap-1 text-slate-500">
-            Cada <span className="font-medium text-slate-700">{fmtNum(rotacionKm)} km</span>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            Cada <span className="font-medium text-foreground">{fmtNum(rotacionKm)} km</span>
             {puedeEditar && (
               <button
                 type="button"
                 onClick={() => setIntervaloOpen(true)}
                 title="Editar el intervalo de km (rotación y alineación)"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Pencil className="size-3.5" />
               </button>
             )}
           </span>
-          <span className="text-slate-500">
+          <span className="text-muted-foreground">
             Última:{" "}
-            <span className="font-medium text-slate-700">
+            <span className="font-medium text-foreground">
               {ultimaRotacion ? fmtFecha(ultimaRotacion.fecha) : "sin registro"}
             </span>
             {ultimaRotacion?.km != null && <span> · {fmtNum(ultimaRotacion.km)} km</span>}
           </span>
-          <span className="text-slate-500">
+          <span className="text-muted-foreground">
             Próxima:{" "}
-            <span className="font-medium text-slate-700">
+            <span className="font-medium text-foreground">
               {rotEstado.proximaKm != null ? `${fmtNum(rotEstado.proximaKm)} km` : "—"}
             </span>
             {rotEstado.kmRestante != null && (
               <span
                 className={cn(
-                  rotEstado.kmRestante <= 0 ? "text-red-600" : "text-slate-500"
+                  rotEstado.kmRestante <= 0 ? "text-destructive" : "text-muted-foreground"
                 )}
               >
                 {" "}
@@ -2411,25 +2402,25 @@ function RotacionCard({
               sugerida={sugerida}
               tipo={unidad.tipo}
             />
-            <div className="space-y-1 text-xs text-slate-500">
-              <p className="font-medium text-slate-600">Rotación sugerida</p>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Rotación sugerida</p>
               {layout
                 .filter((p) => sugerida[p.code])
                 .map((p) => (
                   <p key={p.code} className="flex items-center gap-1">
-                    <span className="font-medium text-slate-700">{p.label}</span>
-                    <ArrowRight className="size-3 text-slate-400" />
-                    <span className="font-medium text-slate-700">{sugerida[p.code]}</span>
+                    <span className="font-medium text-foreground">{p.label}</span>
+                    <ArrowRight className="size-3 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{sugerida[p.code]}</span>
                   </p>
                 ))}
-              <p className="pt-1 text-slate-400">
+              <p className="pt-1 text-muted-foreground/80">
                 Sugerencia para emparejar el desgaste. Ajustala según el estado real de cada
                 cubierta.
               </p>
             </div>
           </div>
         ) : (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground">
             No hay un patrón de rotación sugerido para este tipo de unidad.
           </p>
         )}
@@ -2439,7 +2430,7 @@ function RotacionCard({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-2">Fecha</th>
                   <th className="text-right">Km</th>
                   <th>Observaciones</th>
@@ -2450,17 +2441,17 @@ function RotacionCard({
                 {rotaciones.map((r, i) => (
                   <tr
                     key={r.id}
-                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                   >
                     <td className="py-2 font-medium">{fmtFecha(r.fecha)}</td>
-                    <td className="text-right tabular-nums text-slate-600">{fmtNum(r.km)}</td>
-                    <td className="text-slate-600">{r.observaciones || "—"}</td>
+                    <td className="text-right tabular-nums text-muted-foreground">{fmtNum(r.km)}</td>
+                    <td className="text-muted-foreground">{r.observaciones || "—"}</td>
                     {puedeEditar && (
                       <td className="text-right">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 text-slate-400 hover:text-red-600"
+                          className="size-7 text-muted-foreground hover:text-destructive"
                           onClick={async () => {
                             const res = await eliminarRotacion({ id: r.id })
                             if ("error" in res) toast.error(res.error)
@@ -2484,8 +2475,8 @@ function RotacionCard({
         {/* ---- Alineación ---- */}
         <div className="border-t pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <Crosshair className="size-4 text-slate-500" /> Alineación y balanceo
+            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Crosshair className="size-4 text-muted-foreground" /> Alineación y balanceo
             </p>
             {puedeEditar && (
               <div className="flex gap-2">
@@ -2507,24 +2498,24 @@ function RotacionCard({
             <DiagramaNumeracion layout={layout} porPosicion={porPosicion} tipo={unidad.tipo} />
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
               <Badge className={cn("border-0", alin.clase)}>{alin.label}</Badge>
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 Última:{" "}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-foreground">
                   {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
                 </span>
                 {ultimaAlineacion?.km != null && <span> · {fmtNum(ultimaAlineacion.km)} km</span>}
               </span>
               {(ultimaAlineacion?.proxima_fecha || ultimaAlineacion?.proxima_km != null) && (
-                <span className="text-slate-500">
+                <span className="text-muted-foreground">
                   Próxima:{" "}
-                  <span className="font-medium text-slate-700">
+                  <span className="font-medium text-foreground">
                     {fmtFecha(ultimaAlineacion?.proxima_fecha ?? null)}
                   </span>
                   {ultimaAlineacion?.proxima_km != null && (
                     <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
                   )}
                   {alin.faltanKm != null && (
-                    <span className={cn(alin.faltanKm <= 0 ? "text-red-600" : "text-slate-500")}>
+                    <span className={cn(alin.faltanKm <= 0 ? "text-destructive" : "text-muted-foreground")}>
                       {" "}
                       ({alin.faltanKm <= 0 ? "vencida" : `faltan ${fmtNum(alin.faltanKm)} km`})
                     </span>
@@ -2538,7 +2529,7 @@ function RotacionCard({
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-2">Fecha</th>
                     <th className="text-right">Km</th>
                     <th>Próxima</th>
@@ -2553,25 +2544,25 @@ function RotacionCard({
                   {alineaciones.map((a, i) => (
                     <tr
                       key={a.id}
-                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-slate-50/60")}
+                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
                     >
                       <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
-                      <td className="text-right tabular-nums text-slate-600">{fmtNum(a.km)}</td>
-                      <td className="text-slate-600">{fmtFecha(a.proxima_fecha)}</td>
-                      <td className="text-right tabular-nums text-slate-600">
+                      <td className="text-right tabular-nums text-muted-foreground">{fmtNum(a.km)}</td>
+                      <td className="text-muted-foreground">{fmtFecha(a.proxima_fecha)}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">
                         {fmtNum(a.proxima_km)}
                       </td>
-                      <td className="text-slate-600">{a.proveedor || "—"}</td>
-                      <td className="text-right tabular-nums text-slate-600">
+                      <td className="text-muted-foreground">{a.proveedor || "—"}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">
                         {a.costo != null ? fmtMoney(Number(a.costo)) : "—"}
                       </td>
-                      <td className="text-slate-600">{a.observaciones || "—"}</td>
+                      <td className="text-muted-foreground">{a.observaciones || "—"}</td>
                       {puedeEditar && (
                         <td className="text-right">
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="size-7 text-slate-400 hover:text-red-600"
+                            className="size-7 text-muted-foreground hover:text-destructive"
                             onClick={async () => {
                               const res = await eliminarAlineacion({ id: a.id })
                               if ("error" in res) toast.error(res.error)
@@ -2669,7 +2660,7 @@ function DiagramaNumeracion({
               label={p.label}
               sub={n ? n.numero || "s/n" : null}
               eje={p.eje}
-              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-slate-400"}
+              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
               empty={!n}
             />
           </div>
@@ -2719,7 +2710,7 @@ function IntervaloDialog({
           </DialogDescription>
         </DialogHeader>
         <div>
-          <Label className="text-xs text-slate-500">Intervalo (km)</Label>
+          <Label className="text-xs text-muted-foreground">Intervalo (km)</Label>
           <Input
             type="number"
             value={km}
@@ -2767,7 +2758,7 @@ function RotacionDiagrama({
             <TireGlyph
               label={p.label}
               eje={p.eje}
-              wearClass="bg-slate-500"
+              wearClass="bg-muted-foreground"
               empty={!n}
               badge={dest ? `→${dest}` : null}
             />
@@ -2826,15 +2817,15 @@ function RegistrarRotacionDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs text-slate-500">Fecha</Label>
+            <Label className="text-xs text-muted-foreground">Fecha</Label>
             <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Km</Label>
+            <Label className="text-xs text-muted-foreground">Km</Label>
             <Input type="number" value={km} onChange={(e) => setKm(e.target.value)} />
           </div>
           <div className="col-span-2">
-            <Label className="text-xs text-slate-500">Observaciones</Label>
+            <Label className="text-xs text-muted-foreground">Observaciones</Label>
             <Textarea
               rows={2}
               value={observaciones}
@@ -2907,11 +2898,11 @@ function AlineacionDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs text-slate-500">Fecha</Label>
+            <Label className="text-xs text-muted-foreground">Fecha</Label>
             <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Km</Label>
+            <Label className="text-xs text-muted-foreground">Km</Label>
             <Input
               type="number"
               value={km}
@@ -2920,7 +2911,7 @@ function AlineacionDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Próxima alineación (fecha)</Label>
+            <Label className="text-xs text-muted-foreground">Próxima alineación (fecha)</Label>
             <Input
               type="date"
               value={proximaFecha}
@@ -2928,7 +2919,7 @@ function AlineacionDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Próxima (km)</Label>
+            <Label className="text-xs text-muted-foreground">Próxima (km)</Label>
             <Input
               type="number"
               value={proximaKm}
@@ -2937,7 +2928,7 @@ function AlineacionDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Proveedor / gomería</Label>
+            <Label className="text-xs text-muted-foreground">Proveedor / gomería</Label>
             <Input
               value={proveedor}
               onChange={(e) => setProveedor(e.target.value)}
@@ -2945,7 +2936,7 @@ function AlineacionDialog({
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Costo ($)</Label>
+            <Label className="text-xs text-muted-foreground">Costo ($)</Label>
             <Input
               type="number"
               value={costo}
@@ -2954,7 +2945,7 @@ function AlineacionDialog({
             />
           </div>
           <div className="col-span-2">
-            <Label className="text-xs text-slate-500">Observaciones</Label>
+            <Label className="text-xs text-muted-foreground">Observaciones</Label>
             <Textarea
               rows={2}
               value={observaciones}

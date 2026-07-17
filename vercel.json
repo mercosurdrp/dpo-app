@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "path": "/api/sueno/cron-fallback-kpis",
+      "schedule": "40 6 * * *"
+    },
+    {
       "path": "/api/requisitos-legales/cron-alertas",
       "schedule": "0 12 * * *"
     },

@@ -1,12 +1,14 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { Fragment, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { GRUPOS_ORDEN, seccionesDeGrupo } from "@/lib/flota/dpo-puntos"
+import { KpiCard } from "./_components/kpi-card"
 import {
   Table,
   TableBody,
@@ -91,6 +93,8 @@ import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
 import { GestionMtto } from "./gestion-mtto"
+import { HerramientasTab } from "./herramientas-tab"
+import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
 import { EstandaresFlota } from "./estandares-flota"
 import type { EstandaresFlota as EstandaresFlotaData } from "@/actions/flota-estandares"
@@ -165,7 +169,7 @@ const ESTADO_MANT_BADGE: Record<MantenimientoEstado, string> = {
   programado: "bg-blue-100 text-blue-700",
   en_taller: "bg-amber-100 text-amber-700",
   completado: "bg-emerald-100 text-emerald-700",
-  cancelado: "bg-slate-100 text-slate-500",
+  cancelado: "bg-muted text-muted-foreground",
 }
 
 function hoyISO(): string {
@@ -339,7 +343,7 @@ function DisponibilidadCell({
         {saca ? "No disponible" : "Disponible"}
       </button>
       {saca && m.fuera_servicio_desde && (
-        <span className="text-[11px] text-slate-400">
+        <span className="text-[11px] text-muted-foreground/70">
           {fmtD(m.fuera_servicio_desde)}
           {m.fuera_servicio_hasta ? ` → ${fmtD(m.fuera_servicio_hasta)}` : " → sigue"}
         </span>
@@ -387,6 +391,7 @@ interface MantenimientoClientProps {
   kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   tareasCil: TareaCil[]
   estandares: EstandaresFlotaData
+  herramientas: Herramienta[]
   rotacionKm: number
   puedeEditar: boolean
   esAdmin: boolean
@@ -418,6 +423,7 @@ export function MantenimientoClient({
   kpiExtraSeries,
   tareasCil,
   estandares,
+  herramientas,
   rotacionKm,
   puedeEditar,
   esAdmin,
@@ -523,6 +529,7 @@ export function MantenimientoClient({
       estados.map((e) => ({
         dominio: e.vehiculo.dominio,
         tipo: e.vehiculo.tipo,
+        sector: e.vehiculo.sector,
         modelo: e.vehiculo.modelo,
         anio: e.vehiculo.anio,
       })),
@@ -544,9 +551,13 @@ export function MantenimientoClient({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Mantenimiento de camiones</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-foreground">Mantenimiento de camiones</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Plan preventivo de la flota controlado contra el km real de cada unidad.
+          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Evidencia del <span className="font-medium text-foreground">pilar Flota</span> de DPO.
+            Cada sección indica el punto que responde.
           </p>
         </div>
         {puedeEditar && (
@@ -557,56 +568,59 @@ export function MantenimientoClient({
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="tablero">Tablero operativo</TabsTrigger>
-          <TabsTrigger value="indicadores">Indicadores</TabsTrigger>
-          <TabsTrigger value="checklists">Check lists</TabsTrigger>
-          <TabsTrigger value="piramide">Pirámide de defectos</TabsTrigger>
-          <TabsTrigger value="historial">Órdenes de Trabajo</TabsTrigger>
-          <TabsTrigger value="seguimiento">Seguimiento de flota</TabsTrigger>
-          <TabsTrigger value="neumaticos">Neumáticos</TabsTrigger>
-          <TabsTrigger value="estandares">Estándares</TabsTrigger>
-          <TabsTrigger value="repuestos">Repuestos</TabsTrigger>
-          <TabsTrigger value="gastos">Gastos</TabsTrigger>
-          {puedeEditar && <TabsTrigger value="plantillas">Plan / Plantillas</TabsTrigger>}
+        {/* Las 12 solapas estaban planas y sin jerarquía: los tableros del día
+            convivían con el back-office. Se agrupan según SECCIONES_FLOTA y la
+            lista pasa a altura automática, porque a 12 no entraban en una fila. */}
+        <TabsList className="h-auto flex-wrap justify-start gap-y-1">
+          {GRUPOS_ORDEN.map((g, gi) => {
+            const secciones = seccionesDeGrupo(g).filter(
+              (s) => s.id !== "plantillas" || puedeEditar
+            )
+            if (!secciones.length) return null
+            return (
+              <Fragment key={g}>
+                {gi > 0 && (
+                  <span
+                    role="presentation"
+                    aria-hidden
+                    className="mx-1 h-4 w-px shrink-0 self-center bg-border"
+                  />
+                )}
+                {secciones.map((s) => (
+                  <TabsTrigger key={s.id} value={s.id} className="flex-none">
+                    {s.label}
+                  </TabsTrigger>
+                ))}
+              </Fragment>
+            )
+          })}
         </TabsList>
 
         {/* ============ TAB: Tablero operativo ============ */}
         <TabsContent value="tablero" className="space-y-6">
-          {/* KPIs (solo en el tablero operativo) */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                  <AlertTriangle className="size-4 text-red-500" /> Tareas vencidas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className={cn("text-2xl font-bold", kpis.vencidas > 0 ? "text-red-600" : "text-slate-900")}>
-                  {kpis.vencidas}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                  <CalendarClock className="size-4 text-amber-500" /> Próximas a vencer
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-slate-900">{kpis.proximas}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                  <CircleDollarSign className="size-4 text-emerald-600" /> Costo del mes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-slate-900">{fmtMoney(costos.costoMes)}</p>
-              </CardContent>
-            </Card>
+          {/* KPIs (solo en el tablero operativo). El grid era de 4 columnas con
+              la última celda vacía; con 3 tarjetas, 3 columnas. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KpiCard
+              label="Tareas vencidas"
+              valor={kpis.vencidas}
+              estado={kpis.vencidas > 0 ? "critico" : "ok"}
+              dpo="2.2"
+              sub="Adherencia al plan preventivo"
+            />
+            <KpiCard
+              label="Próximas a vencer"
+              valor={kpis.proximas}
+              estado={kpis.proximas > 0 ? "alerta" : "ok"}
+              dpo="2.2"
+              sub="Se programan antes del vencimiento"
+            />
+            <KpiCard
+              label="Costo del mes"
+              valor={fmtMoney(costos.costoMes)}
+              dpo="3.2"
+              sub="Gasto de flota imputado en el mes"
+            />
           </div>
 
           <TableroOperativo
@@ -707,18 +721,23 @@ export function MantenimientoClient({
           />
         </TabsContent>
 
+        {/* ============ TAB: Herramientas (registro de pañol) ============ */}
+        <TabsContent value="herramientas" className="space-y-6">
+          <HerramientasTab herramientas={herramientas} puedeEditar={puedeEditar} />
+        </TabsContent>
+
         {/* ============ TAB: Órdenes de Trabajo ============ */}
         <TabsContent value="historial" className="space-y-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Cada intervención de la flota (preventiva o correctiva). Una OT marcada como{" "}
             <span className="font-medium text-emerald-700">service general</span> reinicia el
             contador del próximo service en el tablero operativo.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Buscar</Label>
+              <Label className="text-xs text-muted-foreground">Buscar</Label>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
                 <Input
                   value={fBusqueda}
                   onChange={(e) => setFBusqueda(e.target.value)}
@@ -729,7 +748,7 @@ export function MantenimientoClient({
                   <button
                     type="button"
                     onClick={() => setFBusqueda("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground"
                     aria-label="Limpiar búsqueda"
                   >
                     <X className="size-4" />
@@ -738,7 +757,7 @@ export function MantenimientoClient({
               </div>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Dominio</Label>
+              <Label className="text-xs text-muted-foreground">Dominio</Label>
               <Select
                 value={fDominio}
                 onValueChange={(v: string | null) => setFDominio(v ?? "todos")}
@@ -762,7 +781,7 @@ export function MantenimientoClient({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Tipo</Label>
+              <Label className="text-xs text-muted-foreground">Tipo</Label>
               <Select value={fTipo} onValueChange={(v: string | null) => setFTipo(v ?? "todos")}>
                 <SelectTrigger className="w-36">
                   <SelectValue />
@@ -776,7 +795,7 @@ export function MantenimientoClient({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Estado</Label>
+              <Label className="text-xs text-muted-foreground">Estado</Label>
               <Select
                 value={fEstado}
                 onValueChange={(v: string | null) => setFEstado(v ?? "todos")}
@@ -795,7 +814,7 @@ export function MantenimientoClient({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Mes</Label>
+              <Label className="text-xs text-muted-foreground">Mes</Label>
               <Select value={fMes} onValueChange={(v: string | null) => setFMes(v ?? "todos")}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
@@ -811,12 +830,12 @@ export function MantenimientoClient({
               </Select>
             </div>
 
-            <div className="ml-auto rounded-lg border bg-slate-50 px-4 py-2 text-right">
-              <p className="text-xs font-medium text-slate-500">
+            <div className="ml-auto rounded-lg border bg-muted/50 px-4 py-2 text-right">
+              <p className="text-xs font-medium text-muted-foreground">
                 Costo total ({mantenimientosFiltrados.length}{" "}
                 {mantenimientosFiltrados.length === 1 ? "orden" : "órdenes"})
               </p>
-              <p className="text-xl font-bold text-slate-900">{fmtMoney(costoFiltrado)}</p>
+              <p className="text-xl font-bold text-foreground">{fmtMoney(costoFiltrado)}</p>
             </div>
           </div>
 
@@ -824,12 +843,12 @@ export function MantenimientoClient({
             <CardContent className="overflow-x-auto pt-6">
               {mantenimientosFiltrados.length === 0 ? (
                 <div className="flex flex-col items-center py-10 text-center">
-                  <Wrench className="size-8 text-slate-300" />
-                  <p className="mt-3 text-sm text-slate-500">
+                  <Wrench className="size-8 text-muted-foreground/50" />
+                  <p className="mt-3 text-sm text-muted-foreground">
                     Sin mantenimientos registrados todavía.
                   </p>
                   {puedeEditar && (
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-muted-foreground/70">
                       Cargá el último service conocido de cada unidad para inicializar el plan.
                     </p>
                   )}
@@ -858,17 +877,17 @@ export function MantenimientoClient({
                         onClick={() => setVerMant(m)}
                         className={cn(
                           "cursor-pointer hover:bg-sky-50",
-                          i % 2 === 1 && "bg-slate-50/60"
+                          i % 2 === 1 && "bg-muted/50/60"
                         )}
                       >
                         <TableCell>{fmtFecha(m.fecha)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-xs tabular-nums text-slate-600">
+                        <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                           <span className="block">
                             {m.numero_ot ||
                               (m.cloudfleet_number != null ? `CF #${m.cloudfleet_number}` : "—")}
                           </span>
                           {m.numero_factura && (
-                            <span className="block text-slate-400">Fc {m.numero_factura}</span>
+                            <span className="block text-muted-foreground/70">Fc {m.numero_factura}</span>
                           )}
                         </TableCell>
                         <TableCell className="font-medium">
@@ -903,7 +922,7 @@ export function MantenimientoClient({
                           </Badge>
                         </TableCell>
                         <TableCell className="max-w-72">
-                          <span className="line-clamp-2 text-xs text-slate-600">
+                          <span className="line-clamp-2 text-xs text-muted-foreground">
                             {(m.tareas || [])
                               .map((t) =>
                                 t.tarea_id
@@ -930,14 +949,14 @@ export function MantenimientoClient({
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-600">
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
                           {m.odometro != null
                             ? fmtNum(m.odometro)
                             : m.horometro != null
                               ? `${fmtNum(Number(m.horometro))} hs`
                               : "—"}
                         </TableCell>
-                        <TableCell className="text-slate-600">{m.taller || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{m.taller || "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {costoTotalOt(m) > 0 ? fmtMoney(costoTotalOt(m)) : "—"}
                         </TableCell>
@@ -991,7 +1010,7 @@ export function MantenimientoClient({
         {puedeEditar && (
           <TabsContent value="plantillas" className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 Tareas del plan preventivo por tipo de unidad. Vence lo que ocurra primero
                 (km, meses u horas).
               </p>
@@ -1032,7 +1051,7 @@ export function MantenimientoClient({
                           .map((t) => (
                             <TableRow key={t.id} className={cn(!t.activo && "opacity-50")}>
                               <TableCell className="font-medium">{t.nombre}</TableCell>
-                              <TableCell className="text-slate-600">
+                              <TableCell className="text-muted-foreground">
                                 {MANTENIMIENTO_CATEGORIA_LABELS[t.categoria]}
                               </TableCell>
                               <TableCell className="text-right tabular-nums">
@@ -1050,7 +1069,7 @@ export function MantenimientoClient({
                                   className={
                                     t.activo
                                       ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-slate-100 text-slate-500"
+                                      : "bg-muted text-muted-foreground"
                                   }
                                 >
                                   {t.activo ? "Activa" : "Inactiva"}
@@ -1262,7 +1281,7 @@ function SugerenciasLectura({
   if (sugerencias.length === 0) return null
   return (
     <div className="mt-1.5">
-      <p className="text-[11px] text-slate-400">Últimas lecturas registradas:</p>
+      <p className="text-[11px] text-muted-foreground/70">Últimas lecturas registradas:</p>
       <div className="mt-1 flex flex-wrap gap-1">
         {sugerencias.map((s, i) => {
           const val = String(s.odometro)
@@ -1277,12 +1296,12 @@ function SugerenciasLectura({
                 "rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors",
                 activa
                   ? "border-sky-300 bg-sky-100 text-sky-700"
-                  : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"
               )}
             >
               {fmtNum(s.odometro)}
               {unidad === "hs" && " hs"}
-              <span className="ml-1 text-[10px] font-normal text-slate-400">
+              <span className="ml-1 text-[10px] font-normal text-muted-foreground/70">
                 {fmtFecha(s.fecha)}
               </span>
             </button>
@@ -1330,11 +1349,11 @@ function HistorialLecturasMes({
         {open ? "Ocultar historial del mes" : `Ver historial del mes (${historial.length})`}
       </button>
       {open && (
-        <div className="mt-1 overflow-hidden rounded-md border border-slate-200">
-          <p className="border-b border-slate-100 bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
+        <div className="mt-1 overflow-hidden rounded-md border border-border">
+          <p className="border-b border-border bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground">
             Elegí el día de la factura: completa fecha y {suf} de la OT.
           </p>
-          <div className="max-h-52 overflow-y-auto divide-y divide-slate-100">
+          <div className="max-h-52 overflow-y-auto divide-y divide-border">
             {historial.map((s, i) => {
               const prev = historial[i + 1] // lectura anterior (más vieja)
               const dKm = prev ? s.odometro - prev.odometro : null
@@ -1346,13 +1365,13 @@ function HistorialLecturasMes({
                   onClick={() => onElegir(String(s.odometro), s.fecha)}
                   className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs hover:bg-sky-50"
                 >
-                  <span className="w-16 shrink-0 tabular-nums text-slate-600">
+                  <span className="w-16 shrink-0 tabular-nums text-muted-foreground">
                     {fmtFecha(s.fecha)}
                   </span>
-                  <span className="flex-1 text-right font-medium tabular-nums text-slate-900">
+                  <span className="flex-1 text-right font-medium tabular-nums text-foreground">
                     {fmtNum(s.odometro)} {suf}
                   </span>
-                  <span className="w-24 shrink-0 text-right text-[10px] tabular-nums text-slate-400">
+                  <span className="w-24 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground/70">
                     {dKm != null && dDias != null
                       ? `${dKm >= 0 ? "+" : ""}${fmtNum(dKm)} ${suf} · ${dDias}d`
                       : ""}
@@ -1643,7 +1662,7 @@ function NuevoMantenimientoDialog({
                 onChange={(e) => setNumeroOt(e.target.value)}
                 placeholder="Automático al guardar"
               />
-              <p className="mt-1 text-[11px] text-slate-400">
+              <p className="mt-1 text-[11px] text-muted-foreground/70">
                 {siguienteNumeroOt && numeroOt !== siguienteNumeroOt ? (
                   <>
                     <button
@@ -1675,7 +1694,7 @@ function NuevoMantenimientoDialog({
           </div>
 
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
-          <div className="space-y-3 rounded-md border border-slate-200 p-3">
+          <div className="space-y-3 rounded-md border border-border p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
           </div>
@@ -1691,7 +1710,7 @@ function NuevoMantenimientoDialog({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-slate-600">Entrada al taller</Label>
+                <Label className="text-xs text-muted-foreground">Entrada al taller</Label>
                 <Input
                   type="datetime-local"
                   value={entradaTaller}
@@ -1699,7 +1718,7 @@ function NuevoMantenimientoDialog({
                 />
               </div>
               <div>
-                <Label className="text-xs text-slate-600">Salida del taller</Label>
+                <Label className="text-xs text-muted-foreground">Salida del taller</Label>
                 <Input
                   type="datetime-local"
                   value={salidaTaller}
@@ -1727,15 +1746,15 @@ function NuevoMantenimientoDialog({
           </label>
 
           {/* Detalle de tareas (opcional): para registrar un service del plan. */}
-          <details className="rounded-md border border-slate-200 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-slate-600">
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
               Detalle de tareas del plan (opcional)
             </summary>
             <div className="mt-3 space-y-3">
               {dominio && (
                 <div>
                   <Label>Tareas del plan realizadas</Label>
-                  <div className="mt-1.5 grid max-h-48 gap-1.5 overflow-y-auto rounded-md border border-slate-200 p-3 sm:grid-cols-2">
+                  <div className="mt-1.5 grid max-h-48 gap-1.5 overflow-y-auto rounded-md border border-border p-3 sm:grid-cols-2">
                     {tareasDisponibles.map((t) => (
                       <label key={t.id} className="flex items-center gap-2 text-sm">
                         <Checkbox
@@ -1746,7 +1765,7 @@ function NuevoMantenimientoDialog({
                       </label>
                     ))}
                     {tareasDisponibles.length === 0 && (
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted-foreground/70">
                         No hay tareas de plan para este tipo de unidad.
                       </p>
                     )}
@@ -1912,7 +1931,7 @@ function RepuestosEditor({
   return (
     <div>
       <Label>Repuestos</Label>
-      <p className="mb-1 text-xs text-slate-500">
+      <p className="mb-1 text-xs text-muted-foreground">
         Los repuestos comprados aparte, para que queden separados de la mano de obra.
       </p>
       {repuestos.length > 0 && (
@@ -1942,7 +1961,7 @@ function RepuestosEditor({
               <button
                 type="button"
                 onClick={() => remove(i)}
-                className="shrink-0 text-slate-400 hover:text-red-500"
+                className="shrink-0 text-muted-foreground/70 hover:text-red-500"
               >
                 <X className="size-4" />
               </button>
@@ -1960,7 +1979,7 @@ function RepuestosEditor({
         <Plus className="mr-1 size-4" /> Agregar repuesto
       </Button>
       {subtotalRepuestos(repuestos) > 0 && (
-        <p className="mt-1.5 text-xs text-slate-500">
+        <p className="mt-1.5 text-xs text-muted-foreground">
           Subtotal repuestos: {fmtMoney(subtotalRepuestos(repuestos))}
         </p>
       )}
@@ -1980,7 +1999,7 @@ function TotalOtLinea({
   const rep = subtotalRepuestos(repuestos)
   if (mo <= 0 && rep <= 0) return null
   return (
-    <div className="space-y-0.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    <div className="space-y-0.5 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
       <p className="flex justify-between">
         <span>Mano de obra</span>
         <span className="tabular-nums">{fmtMoney(mo)}</span>
@@ -1989,7 +2008,7 @@ function TotalOtLinea({
         <span>Repuestos</span>
         <span className="tabular-nums">{fmtMoney(rep)}</span>
       </p>
-      <p className="flex justify-between border-t border-slate-200 pt-0.5 text-sm font-semibold text-slate-800">
+      <p className="flex justify-between border-t border-border pt-0.5 text-sm font-semibold text-foreground">
         <span>Total</span>
         <span className="tabular-nums">{fmtMoney(mo + rep)}</span>
       </p>
@@ -2028,7 +2047,7 @@ function DetalleOrdenDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
-            <Wrench className="size-4 text-slate-400" />
+            <Wrench className="size-4 text-muted-foreground/70" />
             Orden de trabajo · {m.dominio}
           </DialogTitle>
           <DialogDescription>
@@ -2078,16 +2097,16 @@ function DetalleOrdenDialog({
           {/* Datos */}
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
-              <dt className="text-xs font-medium text-slate-500">Dominio</dt>
-              <dd className="font-medium text-slate-900">{m.dominio}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">Dominio</dt>
+              <dd className="font-medium text-foreground">{m.dominio}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">Fecha</dt>
-              <dd className="text-slate-900">{fmtFecha(m.fecha)}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">Fecha</dt>
+              <dd className="text-foreground">{fmtFecha(m.fecha)}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">Km / Horas</dt>
-              <dd className="tabular-nums text-slate-900">
+              <dt className="text-xs font-medium text-muted-foreground">Km / Horas</dt>
+              <dd className="tabular-nums text-foreground">
                 {m.odometro != null
                   ? `${fmtNum(m.odometro)} km`
                   : m.horometro != null
@@ -2096,29 +2115,29 @@ function DetalleOrdenDialog({
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">Taller</dt>
-              <dd className="text-slate-900">{m.taller || "—"}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">Taller</dt>
+              <dd className="text-foreground">{m.taller || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Costo total (mano de obra + repuestos)
               </dt>
-              <dd className="tabular-nums text-slate-900">
+              <dd className="tabular-nums text-foreground">
                 {m.costo != null ? fmtMoney(Number(m.costo)) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">N° de factura</dt>
-              <dd className="text-slate-900">{m.numero_factura || "—"}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">N° de factura</dt>
+              <dd className="text-foreground">{m.numero_factura || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-500">N° de OT</dt>
-              <dd className="text-slate-900">{m.numero_ot || "—"}</dd>
+              <dt className="text-xs font-medium text-muted-foreground">N° de OT</dt>
+              <dd className="text-foreground">{m.numero_ot || "—"}</dd>
             </div>
             {m.entrada_taller ? (
               <div className="col-span-2">
-                <dt className="text-xs font-medium text-slate-500">Taller (entrada / salida)</dt>
-                <dd className="text-slate-900">
+                <dt className="text-xs font-medium text-muted-foreground">Taller (entrada / salida)</dt>
+                <dd className="text-foreground">
                   {fmtFechaHora(m.entrada_taller)}
                   {m.salida_taller ? ` → ${fmtFechaHora(m.salida_taller)}` : " → en el taller"}
                 </dd>
@@ -2126,8 +2145,8 @@ function DetalleOrdenDialog({
             ) : (
               fueraServicio && (
                 <div className="col-span-2">
-                  <dt className="text-xs font-medium text-slate-500">Fuera de servicio</dt>
-                  <dd className="text-slate-900">
+                  <dt className="text-xs font-medium text-muted-foreground">Fuera de servicio</dt>
+                  <dd className="text-foreground">
                     {fmtFecha(m.fuera_servicio_desde)}
                     {m.fuera_servicio_hasta
                       ? ` → ${fmtFecha(m.fuera_servicio_hasta)}`
@@ -2140,11 +2159,11 @@ function DetalleOrdenDialog({
 
           {/* Trabajo realizado: tareas cargadas y/o el detalle escrito en observaciones */}
           <div>
-            <p className="mb-1 text-xs font-medium text-slate-500">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
               Trabajo realizado en la unidad
             </p>
             {tareas.length === 0 && !m.observaciones ? (
-              <p className="text-slate-400">Sin detalle del trabajo cargado.</p>
+              <p className="text-muted-foreground/70">Sin detalle del trabajo cargado.</p>
             ) : (
               <div className="space-y-2">
                 {tareas.length > 0 && (
@@ -2152,15 +2171,15 @@ function DetalleOrdenDialog({
                     {tareas.map((t) => (
                       <li
                         key={t.id}
-                        className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
+                        className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5"
                       >
-                        <span className="text-slate-700">
+                        <span className="text-foreground">
                           {t.tarea_id
                             ? tareasById.get(t.tarea_id)?.nombre ?? "Tarea"
                             : t.descripcion || "Tarea"}
                         </span>
                         {t.costo != null && (
-                          <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                             {fmtMoney(Number(t.costo))}
                           </span>
                         )}
@@ -2169,7 +2188,7 @@ function DetalleOrdenDialog({
                   </ul>
                 )}
                 {m.observaciones && (
-                  <p className="whitespace-pre-wrap rounded-md border bg-slate-50 px-2.5 py-1.5 text-slate-700">
+                  <p className="whitespace-pre-wrap rounded-md border bg-muted/50 px-2.5 py-1.5 text-foreground">
                     {m.observaciones}
                   </p>
                 )}
@@ -2180,23 +2199,23 @@ function DetalleOrdenDialog({
           {/* Repuestos */}
           {(m.repuestos?.length ?? 0) > 0 && (
             <div>
-              <p className="mb-1 text-xs font-medium text-slate-500">Repuestos</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Repuestos</p>
               <ul className="space-y-1">
                 {m.repuestos!.map((r) => {
                   const sub = r.costo_unitario != null ? Number(r.costo_unitario) * Number(r.cantidad) : null
                   return (
                     <li
                       key={r.id}
-                      className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
+                      className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5"
                     >
-                      <span className="text-slate-700">
+                      <span className="text-foreground">
                         {r.descripcion}
                         {Number(r.cantidad) !== 1 && (
-                          <span className="text-slate-400"> ×{fmtNum(Number(r.cantidad))}</span>
+                          <span className="text-muted-foreground/70"> ×{fmtNum(Number(r.cantidad))}</span>
                         )}
                       </span>
                       {sub != null && (
-                        <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                        <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                           {fmtMoney(sub)}
                         </span>
                       )}
@@ -2210,13 +2229,13 @@ function DetalleOrdenDialog({
           {/* Mano de obra */}
           {(m.horas_mano_obra != null || m.costo_mano_obra != null) && (
             <div>
-              <p className="mb-1 text-xs font-medium text-slate-500">Mano de obra</p>
-              <div className="flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5">
-                <span className="text-slate-700">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Mano de obra</p>
+              <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5">
+                <span className="text-foreground">
                   {m.horas_mano_obra != null ? `${fmtNum(Number(m.horas_mano_obra))} hs` : "—"}
                 </span>
                 {m.costo_mano_obra != null && (
-                  <span className="shrink-0 tabular-nums text-xs text-slate-500">
+                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                     {fmtMoney(Number(m.costo_mano_obra))}
                   </span>
                 )}
@@ -2227,7 +2246,7 @@ function DetalleOrdenDialog({
           {/* Facturas / adjuntos */}
           {facturas.length > 0 && (
             <div>
-              <p className="mb-1 text-xs font-medium text-slate-500">Adjuntos</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Adjuntos</p>
               <div className="flex flex-wrap gap-2">
                 {facturas.map((url) => (
                   <a
@@ -2426,7 +2445,7 @@ function EditarMantenimientoDialog({
             />
           </div>
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
-          <div className="col-span-2 space-y-3 rounded-md border border-slate-200 p-3">
+          <div className="col-span-2 space-y-3 rounded-md border border-border p-3">
             <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
             <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
           </div>
@@ -2456,7 +2475,7 @@ function EditarMantenimientoDialog({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-slate-600">Entrada al taller</Label>
+                <Label className="text-xs text-muted-foreground">Entrada al taller</Label>
                 <Input
                   type="datetime-local"
                   value={entradaTaller}
@@ -2464,7 +2483,7 @@ function EditarMantenimientoDialog({
                 />
               </div>
               <div>
-                <Label className="text-xs text-slate-600">Salida del taller</Label>
+                <Label className="text-xs text-muted-foreground">Salida del taller</Label>
                 <Input
                   type="datetime-local"
                   value={salidaTaller}

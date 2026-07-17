@@ -1756,6 +1756,100 @@ export async function agregarAvanceActividad(
   }
 }
 
+export async function reprogramarActividad(
+  id: string,
+  fechaNueva: string,
+  motivo: string | null,
+): Promise<Result<ReunionActividad>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!id) return { error: "ID de actividad inválido" }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaNueva)) {
+      return { error: "Fecha inválida" }
+    }
+
+    const { data: actual, error: errActual } = await supabase
+      .from("reuniones_actividades")
+      .select("responsable_id, estado, fecha_compromiso")
+      .eq("id", id)
+      .single()
+    if (errActual || !actual) {
+      return { error: errActual?.message ?? "No se encontró la actividad" }
+    }
+
+    const fila = actual as {
+      responsable_id: string | null
+      estado: EstadoReunionActividad
+      fecha_compromiso: string | null
+    }
+
+    if (!isEditorRole(profile.role) && fila.responsable_id !== profile.id) {
+      return {
+        error:
+          "Solo el responsable o un editor puede reprogramar esta actividad",
+      }
+    }
+
+    const fmt = (f: string | null) =>
+      f ? f.split("-").reverse().join("/") : "sin fecha"
+    const comentario =
+      `📅 Reprogramada del ${fmt(fila.fecha_compromiso)} al ${fmt(fechaNueva)}.` +
+      (motivo?.trim() ? ` Motivo: ${motivo.trim()}` : "")
+
+    // La actividad sigue viva con la fecha corrida; si estaba cerrada se reabre.
+    const nuevoEstado: EstadoReunionActividad =
+      fila.estado === "cerrada" ? "en_curso" : fila.estado
+
+    const { data: evidenciaRow, error: errEvid } = await supabase
+      .from("reuniones_actividades_evidencias")
+      .insert({
+        actividad_id: id,
+        comentario,
+        estado_resultante: nuevoEstado,
+        autor_id: profile.id,
+      })
+      .select("id")
+      .single()
+    if (errEvid || !evidenciaRow) {
+      return {
+        error: errEvid?.message ?? "No se pudo registrar la reprogramación",
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const update: Record<string, any> = {
+      fecha_compromiso: fechaNueva,
+      estado: nuevoEstado,
+    }
+    if (fila.estado === "cerrada") update.completado_at = null
+
+    const { data, error } = await supabase
+      .from("reuniones_actividades")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single()
+    if (error) {
+      // Rollback manual del avance recién insertado.
+      await supabase
+        .from("reuniones_actividades_evidencias")
+        .delete()
+        .eq("id", (evidenciaRow as { id: string }).id)
+      return { error: error.message }
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as ReunionActividad }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error reprogramando la actividad",
+    }
+  }
+}
+
 export async function eliminarActividad(
   id: string,
 ): Promise<{ success: true } | { error: string }> {

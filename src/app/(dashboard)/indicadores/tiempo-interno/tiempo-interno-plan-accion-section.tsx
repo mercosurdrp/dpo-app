@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -60,6 +61,7 @@ interface Props {
 
 export function TiPlanAccionSection({ resumen }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [, startTransition] = useTransition()
   const [createFor, setCreateFor] = useState<TiPlanResumen | null>(null)
   const [openPlanId, setOpenPlanId] = useState<string | null>(null)
@@ -72,7 +74,7 @@ export function TiPlanAccionSection({ resumen }: Props) {
       : Math.round((mesesFueraConPlan / mesesFuera.length) * 100)
 
   function refresh() {
-    startTransition(() => router.refresh())
+    startTransition(() => refrescarConScroll())
   }
 
   return (

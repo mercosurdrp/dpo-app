@@ -11,6 +11,7 @@ interface AccionEnriquecida extends Accion {
   pilar_id: string
   pilar_nombre: string
   pilar_color: string
+  reprogramaciones_count: number
 }
 
 export async function getAcciones(
@@ -23,7 +24,7 @@ export async function getAcciones(
     let query = supabase
       .from("acciones")
       .select(
-        "*, respuestas!inner(id, auditoria_id, pregunta_id, preguntas!inner(id, numero, texto, bloque_id, bloques!inner(id, nombre, pilar_id, pilares!inner(id, nombre, color))))"
+        "*, acciones_reprogramaciones(count), respuestas!inner(id, auditoria_id, pregunta_id, preguntas!inner(id, numero, texto, bloque_id, bloques!inner(id, nombre, pilar_id, pilares!inner(id, nombre, color))))"
       )
       .order("created_at", { ascending: false })
 
@@ -102,6 +103,7 @@ export async function getAcciones(
           pilar_id: pilar.id,
           pilar_nombre: pilar.nombre,
           pilar_color: pilar.color,
+          reprogramaciones_count: 0,
         })
       }
 
@@ -132,6 +134,8 @@ export async function getAcciones(
         pilar_id: pilar?.id ?? "",
         pilar_nombre: pilar?.nombre ?? "",
         pilar_color: pilar?.color ?? "",
+        reprogramaciones_count:
+          row.acciones_reprogramaciones?.[0]?.count ?? 0,
       }
     })
 
@@ -194,6 +198,71 @@ export async function updateAccion(
     return { data: accion as Accion }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error updating accion" }
+  }
+}
+
+export async function reprogramarAccion(
+  id: string,
+  fechaNueva: string,
+  motivo: string | null
+): Promise<{ data: Accion } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaNueva)) {
+      return { error: "Fecha inválida" }
+    }
+
+    const { data: actual, error: errActual } = await supabase
+      .from("acciones")
+      .select("fecha_limite, estado")
+      .eq("id", id)
+      .single()
+    if (errActual || !actual) {
+      return { error: errActual?.message ?? "No se encontró la acción" }
+    }
+
+    const { data: reprog, error: errReprog } = await supabase
+      .from("acciones_reprogramaciones")
+      .insert({
+        accion_id: id,
+        fecha_anterior: actual.fecha_limite,
+        fecha_nueva: fechaNueva,
+        motivo: motivo?.trim() || null,
+        reprogramado_por: profile.id,
+      })
+      .select("id")
+      .single()
+    if (errReprog || !reprog) {
+      return {
+        error: errReprog?.message ?? "No se pudo registrar la reprogramación",
+      }
+    }
+
+    // La acción sigue viva con la fecha corrida; si estaba cerrada se reabre.
+    const { data: accion, error } = await supabase
+      .from("acciones")
+      .update({
+        fecha_limite: fechaNueva,
+        estado: actual.estado === "completado" ? "en_progreso" : actual.estado,
+      })
+      .eq("id", id)
+      .select()
+      .single()
+
+    if (error) {
+      await supabase
+        .from("acciones_reprogramaciones")
+        .delete()
+        .eq("id", reprog.id)
+      return { error: error.message }
+    }
+    return { data: accion as Accion }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error reprogramando accion",
+    }
   }
 }
 

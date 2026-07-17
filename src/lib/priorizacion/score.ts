@@ -82,17 +82,25 @@ export const PESO_MOTIVO: Record<string, number> = {
 /** Ventana de comportamiento. A 45 días casi no hay señal (17 clientes); a 180, hay 71. */
 export const VENTANA_DIAS = 180
 
+/**
+ * Ventana corta para la BANDERA "rechazó hace poco". Es una señal reciente que se
+ * MUESTRA en la fila; NO entra al score (el score usa la ventana larga de 180 días).
+ */
+export const VENTANA_RECIENTE_DIAS = 45
+
 // ── Entrada / salida ─────────────────────────────────────────────────────────
 
 export interface EntradaPriorizacion {
   id_cliente: number
   nombre: string | null
   localidad: string | null
-  /** Bultos pedidos: es lo que OCUPA CUPO. */
+  /** Bultos pedidos: es lo que OCUPA CUPO. Chess + Gestión, porque van en el mismo camión. */
   bultos: number
   /** Volumen en HL del pedido. Alimenta el VRL (Volumen Reprogramado Logístico). */
   hl: number
   monto: number
+  /** De los `bultos`, cuántos vienen de GESTIÓN (GESCOM). 0 = pedido 100% Chess. */
+  bultos_gestion: number
   /** Clase del cliente. null = sin historia de ventas. */
   cluster: ClusterId | null
   /** Entregas REALES del cliente en la ventana (días con compra). Es el DENOMINADOR. */
@@ -103,6 +111,8 @@ export interface EntradaPriorizacion {
   rechazos_pesados: number
   /** Detalle "SIN DINERO×3, CERRADO×1" para mostrar el porqué en la fila. */
   motivos: string
+  /** Rechazos por causa del cliente en los últimos 45 días (bandera reciente). NO entra al score. */
+  rechazos_45d: number
   /** Veces que ya le pospusimos este pedido (de `entrega_cortes`). */
   veces_pospuesto: number
   /** Banderas informativas: NO entran al score (medidos: no discriminan). */
@@ -138,6 +148,33 @@ export interface CiudadPriorizada {
   hl: number
   monto: number
   filas: FilaPriorizada[]
+}
+
+/**
+ * Localidades que se rutean en el MISMO camión ⇒ se muestran como una sola ciudad.
+ * (Confirmado con Fausto 2026-07-15; las claves son la ortografía SIN acento de
+ * `comprobantes.ds_localidad`.) Ojo: "Sánchez" figura como "VILLA GRAL SAVIO EX SANCHEZ".
+ */
+const ALIAS_CIUDAD: Record<string, string> = {
+  RAMALLO: "RAMALLO",
+  "VILLA RAMALLO": "RAMALLO",
+  "PEREZ MILLAN": "RAMALLO",
+  "LA VIOLETA": "RAMALLO",
+  "SAN NICOLAS DE LOS ARROYOS": "SAN NICOLÁS",
+  "SAN NICOLAS": "SAN NICOLÁS",
+  "VILLA GRAL SAVIO EX SANCHEZ": "SAN NICOLÁS",
+  SANCHEZ: "SAN NICOLÁS",
+}
+
+/**
+ * Ciudad de ruteo de una localidad: agrupa las localidades que van en el mismo camión.
+ * Si no está en el alias, devuelve la localidad tal cual (mayúsculas). El match ignora
+ * acentos y espacios de más; el label mostrado sí puede llevar acento.
+ */
+export function ciudadDeLocalidad(localidad: string | null): string {
+  const raw = (localidad ?? "SIN LOCALIDAD").trim().toUpperCase().replace(/\s+/g, " ")
+  const norm = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  return ALIAS_CIUDAD[norm] ?? raw
 }
 
 /** Comportamiento 0-100 a partir de los rechazos por causa del cliente. */
@@ -188,7 +225,7 @@ export function priorizarPorCiudad(
 
   const porCiudad = new Map<string, FilaPriorizada[]>()
   for (const f of calculadas) {
-    const c = (f.localidad ?? "SIN LOCALIDAD").trim().toUpperCase()
+    const c = ciudadDeLocalidad(f.localidad)
     if (!porCiudad.has(c)) porCiudad.set(c, [])
     porCiudad.get(c)!.push(f)
   }

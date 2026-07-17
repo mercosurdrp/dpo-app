@@ -254,6 +254,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
     peso_productividad: String(data.config.peso_productividad),
     tope_errores: String(data.config.tope_errores),
     prod_target: String(data.config.prod_target),
+    prod_target_maq: String(data.config.prod_target_maq),
     meses_ventana: String(data.config.meses_ventana),
   })
 
@@ -359,6 +360,7 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
       peso_productividad: Number(cfg.peso_productividad),
       tope_errores: Number(cfg.tope_errores),
       prod_target: Number(cfg.prod_target),
+      prod_target_maq: Number(cfg.prod_target_maq),
       meses_ventana: Number(cfg.meses_ventana),
     }
     if (Object.values(nums).some((n) => !Number.isFinite(n))) {
@@ -589,6 +591,9 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                           {r.es_picker && (
                             <Badge variant="outline" className="text-[10px]">picker</Badge>
                           )}
+                          {r.es_maquinista && (
+                            <Badge variant="outline" className="text-[10px]">maquinista</Badge>
+                          )}
                           {r.es_responsable && r.sectores.map((s) => (
                             <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
                           ))}
@@ -624,10 +629,19 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-right align-top">
-                        {r.productividad != null ? (
+                        {r.productividad != null || r.productividad_maq != null ? (
                           <>
                             <div className="text-muted-foreground">
-                              {r.productividad.toFixed(0)}
+                              {[
+                                r.productividad != null
+                                  ? `${r.productividad.toFixed(0)} bul`
+                                  : null,
+                                r.productividad_maq != null
+                                  ? `${r.productividad_maq.toFixed(1)} pal`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                               <span className="ml-1 text-xs">
                                 ({r.productividad_score?.toFixed(0)})
                               </span>
@@ -668,7 +682,8 @@ export function DepositoClient({ data, empleados, canEdit }: Props) {
                   ["peso_5s", "Peso 5S"],
                   ["peso_productividad", "Peso productividad"],
                   ["tope_errores", "Tope errores (cant. = 0 pts)"],
-                  ["prod_target", "Target prod. (bul/HH = 100)"],
+                  ["prod_target", "Target picking (bul/HH = 100)"],
+                  ["prod_target_maq", "Target maquinista (Pal/HH = 100)"],
                   ["meses_ventana", "Meses de ventana"],
                 ].map(([key, label]) => (
                   <div key={key} className="space-y-1">

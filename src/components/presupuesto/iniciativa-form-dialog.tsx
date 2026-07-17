@@ -24,12 +24,42 @@ import {
   crearIniciativa,
   actualizarIniciativa,
 } from "@/actions/presupuesto-iniciativas"
+import {
+  getPresupuestoAnualPorRubro,
+  type PresupuestoRubro,
+} from "@/actions/presupuesto-generador"
 import type {
   EstadoIniciativaAhorro,
   IniciativaAhorroConDetalle,
   TipoIniciativaAhorro,
 } from "@/types/database"
 import { ESTADO_OPCIONES, TIPO_OPCIONES } from "./iniciativas-constantes"
+
+function formatMoney(n: number | null): string {
+  if (n === null) return "—"
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(n)
+}
+
+/** Índice 1-12 (el 0 queda sin usar para no restar en cada lectura). */
+const MES_NOMBRE = [
+  "",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
 
 interface ResponsableOpt {
   id: string
@@ -71,15 +101,102 @@ export function IniciativaFormDialog({
     iniciativa?.kpi_mejor_si ?? "menor",
   )
 
+  // Meta = % del presupuesto anual del rubro. El presupuesto sale del EERR del
+  // año (hoja "PRESUPUESTO <año> MRP"), que es un Excel: se pide al abrir.
+  const [rubro, setRubro] = useState<string>(iniciativa?.rubro ?? "")
+  const [pct, setPct] = useState<string>(
+    iniciativa?.ahorro_pct_objetivo != null
+      ? String(iniciativa.ahorro_pct_objetivo)
+      : "",
+  )
+  const [presupuestos, setPresupuestos] = useState<
+    Record<string, PresupuestoRubro>
+  >({})
+  // Controlado (y no defaultValue) porque la meta depende de él: si la
+  // iniciativa arranca en marzo, el compromiso se calcula sobre marzo-diciembre.
+  const [fechaImpl, setFechaImpl] = useState<string>(
+    iniciativa?.fecha_implementacion ?? "",
+  )
+  const [presupError, setPresupError] = useState<string | null>(null)
+  const [cargandoPresup, setCargandoPresup] = useState(false)
+
   useEffect(() => {
     if (open) {
       setTipo(iniciativa?.tipo ?? "otro")
       setEstado(iniciativa?.estado ?? "planificada")
       setResponsableId(iniciativa?.responsable_id ?? "")
       setMejorSi(iniciativa?.kpi_mejor_si ?? "menor")
+      setRubro(iniciativa?.rubro ?? "")
+      setPct(
+        iniciativa?.ahorro_pct_objetivo != null
+          ? String(iniciativa.ahorro_pct_objetivo)
+          : "",
+      )
+      setFechaImpl(iniciativa?.fecha_implementacion ?? "")
       setError(null)
     }
   }, [open, iniciativa])
+
+  useEffect(() => {
+    if (!open) return
+    let cancel = false
+    setCargandoPresup(true)
+    setPresupError(null)
+    void getPresupuestoAnualPorRubro(anio).then((r) => {
+      if (cancel) return
+      if ("error" in r) {
+        setPresupError(r.error)
+        setPresupuestos({})
+      } else {
+        setPresupuestos(r.data)
+      }
+      setCargandoPresup(false)
+    })
+    return () => {
+      cancel = true
+    }
+  }, [open, anio])
+
+  // Primer mes que la iniciativa puede influir. Antes de esa fecha el rubro
+  // gastaba lo que gastaba sin ella, así que ese presupuesto no es su meta.
+  const mesInicio = (() => {
+    if (!fechaImpl) return 1
+    const d = new Date(`${fechaImpl}T12:00:00`)
+    if (Number.isNaN(d.getTime())) return 1
+    if (d.getFullYear() < anio) return 1
+    if (d.getFullYear() > anio) return 13
+    return d.getMonth() + 1
+  })()
+
+  // Presupuesto del rubro sobre el que se fija la meta: los meses en que la
+  // iniciativa está vigente, no el año entero. Roturas arranca en marzo, y
+  // ene-feb ($1.814.567) ya pasaron sin ella: pedirle el 10% del año completo
+  // sería exigirle 12,4% de lo que sí puede influir.
+  //
+  // Si la iniciativa ya tenía uno guardado y no cambió ni el rubro ni la fecha,
+  // manda el guardado: el compromiso publicado no se mueve solo porque se haya
+  // vuelto a subir el EERR.
+  const presupDelRubro = (() => {
+    const delEerr = rubro ? presupuestos[rubro] : undefined
+    if (delEerr) {
+      return delEerr.meses
+        .slice(mesInicio - 1)
+        .reduce((acc, x) => acc + x, 0)
+    }
+    if (
+      rubro &&
+      rubro === iniciativa?.rubro &&
+      fechaImpl === (iniciativa.fecha_implementacion ?? "")
+    ) {
+      return iniciativa.presupuesto_rubro_anual ?? null
+    }
+    return null
+  })()
+  const pctNum = pct.trim() === "" ? null : Number(pct)
+  const compromisoCalculado =
+    presupDelRubro !== null && pctNum !== null && !Number.isNaN(pctNum)
+      ? Math.round((presupDelRubro * pctNum) / 100)
+      : null
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -92,6 +209,25 @@ export function IniciativaFormDialog({
     formData.set("kpi_mejor_si", mejorSi)
     if (responsableId) formData.set("responsable_id", responsableId)
     else formData.delete("responsable_id")
+
+    // Con rubro, el compromiso es derivado (% del presupuesto) y viaja resuelto
+    // junto con su origen, para que después se pueda auditar de dónde salió.
+    if (rubro) {
+      if (compromisoCalculado === null) {
+        setError(
+          "Elegí el % a ahorrar: el compromiso se calcula sobre el presupuesto del rubro.",
+        )
+        return
+      }
+      formData.set("rubro", rubro)
+      formData.set("ahorro_pct_objetivo", String(pctNum))
+      formData.set("presupuesto_rubro_anual", String(presupDelRubro))
+      formData.set("ahorro_comprometido_anual", String(compromisoCalculado))
+    } else {
+      formData.delete("rubro")
+      formData.delete("ahorro_pct_objetivo")
+      formData.delete("presupuesto_rubro_anual")
+    }
 
     startTransition(async () => {
       const result = editing
@@ -221,24 +357,110 @@ export function IniciativaFormDialog({
               <Input
                 id="fecha_implementacion"
                 name="fecha_implementacion"
+                value={fechaImpl}
+                onChange={(e) => setFechaImpl(e.target.value)}
                 type="date"
-                defaultValue={iniciativa?.fecha_implementacion ?? ""}
               />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="ahorro_comprometido_anual">
-              Ahorro comprometido (anual, $)
-            </Label>
-            <Input
-              id="ahorro_comprometido_anual"
-              name="ahorro_comprometido_anual"
-              type="number"
-              step="0.01"
-              defaultValue={iniciativa?.ahorro_comprometido_anual ?? ""}
-              placeholder="0"
-            />
+          {/* Meta de ahorro: % del presupuesto anual del rubro. Si no se elige
+              rubro, el monto se carga a mano (iniciativas cuyo ahorro no sale de
+              un rubro del EERR, ej. renovación de flota). */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-700">
+              Meta de ahorro
+            </p>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="rubro">Rubro del presupuesto</Label>
+                <Select
+                  value={rubro}
+                  onValueChange={(v) => setRubro(v ?? "")}
+                >
+                  <SelectTrigger id="rubro">
+                    <SelectValue
+                      placeholder={
+                        cargandoPresup
+                          ? "Cargando presupuesto…"
+                          : "Sin rubro (monto a mano)"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {Object.keys(presupuestos)
+                      .sort()
+                      .map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ahorro_pct_objetivo">% a ahorrar</Label>
+                <Input
+                  id="ahorro_pct_objetivo"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={pct}
+                  onChange={(e) => setPct(e.target.value)}
+                  placeholder="70"
+                  disabled={!rubro}
+                />
+              </div>
+            </div>
+
+            {presupError && (
+              <p className="mt-2 text-xs text-amber-700">
+                No se pudo leer el presupuesto por rubro: {presupError} — cargá el
+                monto a mano.
+              </p>
+            )}
+
+            {rubro && presupDelRubro !== null && (
+              <p className="mt-2 text-sm text-slate-700">
+                Presupuesto del rubro
+                {/* Que se vea que la base son los meses vigentes: si arranca a
+                    mitad de año, este número NO es el del año entero. */}
+                {mesInicio > 1
+                  ? ` de ${MES_NOMBRE[mesInicio]} a diciembre`
+                  : ` ${anio}`}
+                : <strong>{formatMoney(presupDelRubro)}</strong>
+                {compromisoCalculado !== null && (
+                  <>
+                    {" · "}Compromiso:{" "}
+                    <strong className="text-emerald-700">
+                      {formatMoney(compromisoCalculado)}
+                    </strong>{" "}
+                    <span className="text-muted-foreground">
+                      ({pct}% de {formatMoney(presupDelRubro)})
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
+
+            {/* Sin rubro: el monto se sigue cargando a mano, como antes. */}
+            {!rubro && (
+              <div className="mt-2 space-y-1.5">
+                <Label htmlFor="ahorro_comprometido_anual">
+                  Ahorro comprometido (anual, $)
+                </Label>
+                <Input
+                  id="ahorro_comprometido_anual"
+                  name="ahorro_comprometido_anual"
+                  type="number"
+                  step="0.01"
+                  defaultValue={iniciativa?.ahorro_comprometido_anual ?? ""}
+                  placeholder="0"
+                />
+              </div>
+            )}
           </div>
 
           {/* KPI comprometido */}

@@ -19,6 +19,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { abrirArchivo as abrirArchivoEnVisor } from "@/lib/abrir-archivo"
 import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
+import type { EjecucionRubro } from "@/actions/presupuesto-generador"
+import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -38,6 +40,10 @@ interface ResponsableOpt {
 interface Props {
   anio: number
   iniciativas: IniciativaAhorroConDetalle[]
+  /** Presupuestado vs real acumulado por rubro del EERR (rubro normalizado). */
+  ejecucionRubros: Record<string, EjecucionRubro>
+  /** KPI físico por rubro (lo perdido por HL vendido). Vacío si no aplica. */
+  kpiPerdidas: Record<string, KpiPerdidas>
   responsables: ResponsableOpt[]
   puedeEditar: boolean
 }
@@ -112,9 +118,275 @@ function barColor(frac: number | null): string {
   return "bg-red-500"
 }
 
+const MES_CORTO = [
+  "",
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+]
+
+/**
+ * KPI físico del rubro: cuánto se rompe/vence por cada millón de HL vendidos,
+ * mes a mes, contra el target del presupuesto.
+ *
+ * Va en ppm y no en % porque los números son chicos: roturas ronda 0,04% y
+ * vencidos 0,003%, y a esa escala un tablero se vuelve ilegible (0,0002% vs
+ * 0,0071% no se compara de un vistazo; 2 ppm vs 71 sí).
+ */
+function KpiPerdidasBlock({
+  kpi,
+  rubro,
+}: {
+  kpi: KpiPerdidas
+  rubro: string
+}) {
+  const cumpleAcum = kpi.realPpmAcum <= kpi.targetPpmAcum
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+        <span className="text-muted-foreground">
+          {rubro === "PRODUCTO VENCIDO" ? "Vencido" : "Roto"} por HL vendido (ppm)
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-slate-900">
+            target <strong>{Math.round(kpi.targetPpmAcum)}</strong>
+            <span className="text-muted-foreground"> · real </span>
+            <strong>{Math.round(kpi.realPpmAcum)}</strong>
+          </span>
+          <Badge
+            className={
+              cumpleAcum
+                ? "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                : "border-red-200 bg-red-100 text-red-700 hover:bg-red-100"
+            }
+          >
+            {cumpleAcum ? "Cumple" : "Excede"}
+          </Badge>
+        </span>
+      </div>
+      {/* Mes a mes: el acumulado solo esconde la tendencia — roturas arrastra
+          enero (2.036 ppm) y desde marzo viene en ~400. */}
+      <div className="flex flex-wrap gap-1.5">
+        {kpi.meses.map((m) => {
+          const ok = m.realPpm <= m.targetPpm
+          return (
+            <div
+              key={m.mes}
+              title={`${MES_CORTO[m.mes]}: ${Math.round(m.realPpm)} ppm reales contra ${Math.round(m.targetPpm)} de target`}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              <span className="font-medium">{MES_CORTO[m.mes]}</span>{" "}
+              {Math.round(m.realPpm)}
+              <span className="opacity-60">/{Math.round(m.targetPpm)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Índice 1-12 (el 0 queda sin usar para no restar en cada lectura). */
+const MES_NOMBRE = [
+  "",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]
+
+/**
+ * Primer mes del año en que la iniciativa está vigente. Antes de esa fecha el
+ * rubro gastaba lo que gastaba sin ella, así que ese gasto no es ni mérito ni
+ * culpa de la iniciativa. Sin fecha, se asume vigente todo el año.
+ */
+function mesInicioDe(ini: IniciativaAhorroConDetalle): number {
+  if (!ini.fecha_implementacion) return 1
+  const d = new Date(`${ini.fecha_implementacion}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return 1
+  if (d.getFullYear() < ini.anio) return 1
+  if (d.getFullYear() > ini.anio) return 13 // arranca después de este año
+  return d.getMonth() + 1
+}
+
+/**
+ * Ahorro REAL de una iniciativa y contra qué se lo mide.
+ *
+ * Con rubro, sale del EERR: presupuestado − gasto real, sumando SÓLO los meses
+ * cerrados desde que la iniciativa está vigente. Es la misma vara con la que se
+ * fijó el compromiso (% del presupuesto), así que se pueden comparar. Antes el
+ * ahorro se cargaba a mano y contra el gasto del año ANTERIOR: "Roturas"
+ * declaraba $1,12M ahorrados cuando contra el presupuesto venía $1,81M por
+ * encima — dos varas distintas en la misma barra.
+ *
+ * Sin rubro (iniciativas cuyo ahorro no sale de un rubro del EERR) se mantiene la
+ * suma de lo cargado a mano en los seguimientos.
+ */
+function ahorroDe(
+  ini: IniciativaAhorroConDetalle,
+  ejecucion: EjecucionRubro | undefined,
+): {
+  real: number
+  /** Meses cerrados COMPUTADOS (los vigentes), no los del año. */
+  meses: number | null
+  mesInicio: number
+  /** Meses que la iniciativa está vigente en el año: la base del prorrateo. */
+  mesesVigentes: number
+  /** Presupuestado y gastado de los meses computados (para explicar el número). */
+  presupComputado: number
+  gastoComputado: number
+  fuente: "eerr" | "manual"
+} {
+  const mesInicio = mesInicioDe(ini)
+  const mesesVigentes = Math.max(0, 13 - mesInicio)
+  if (ini.rubro && ejecucion) {
+    const computados = ejecucion.porMes.filter((m) => m.mes >= mesInicio)
+    const presupComputado = computados.reduce((acc, m) => acc + m.presup, 0)
+    const gastoComputado = computados.reduce((acc, m) => acc + m.real, 0)
+    return {
+      real: presupComputado - gastoComputado,
+      meses: computados.length,
+      mesInicio,
+      mesesVigentes,
+      presupComputado,
+      gastoComputado,
+      fuente: "eerr",
+    }
+  }
+  return {
+    real: ini.seguimientos.reduce((acc, s) => acc + (s.ahorro_real ?? 0), 0),
+    meses: null,
+    mesInicio,
+    mesesVigentes,
+    presupComputado: 0,
+    gastoComputado: 0,
+    fuente: "manual",
+  }
+}
+
+/** Trimestres ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. */
+function trimestresCerrados(anio: number, hoy = new Date()): number {
+  if (anio < hoy.getFullYear()) return 4
+  if (anio > hoy.getFullYear()) return 0
+  return Math.floor(hoy.getMonth() / 3) // ene-mar → 0 cerrados; jul → 2
+}
+
+/**
+ * Ahorro que debería llevar acumulado a esta altura.
+ *
+ * Con meta en % del rubro, es ese % aplicado al presupuesto de los meses ya
+ * cerrados. Es lo que hace que "bajar 10% al año" y "bajar 10% por mes" sean la
+ * MISMA meta: el 10% de cada mes suma el 10% del año.
+ *
+ * No se prorratea en cuotas iguales porque el presupuesto no es plano y eso
+ * deformaba la meta mes a mes: en roturas el ppto de junio ($468.796) es un
+ * tercio del de diciembre ($1.290.411), y la cuota lineal ($94.813) le exigía a
+ * junio el 20% y a diciembre el 7,3% — la misma meta pesando el doble o la mitad
+ * según el mes. Junio, encima, es uno de los meses que la tarjeta pinta en rojo.
+ *
+ * Sin meta en % (compromiso cargado a mano) no hay a qué aplicarle el %, así que
+ * ahí sí se prorratea por meses: es lo único que se puede hacer.
+ */
+function esperadoALaFecha(
+  ini: IniciativaAhorroConDetalle,
+  presupComputado: number,
+  fuente: "eerr" | "manual",
+  mesesTranscurridos: number,
+  mesesVigentes: number,
+): number | null {
+  if (
+    fuente === "eerr" &&
+    ini.ahorro_pct_objetivo !== null &&
+    ini.ahorro_pct_objetivo > 0 &&
+    presupComputado > 0
+  ) {
+    return (presupComputado * ini.ahorro_pct_objetivo) / 100
+  }
+  const comprometidoAnual = ini.ahorro_comprometido_anual
+  if (comprometidoAnual === null || comprometidoAnual <= 0) return null
+  if (mesesVigentes <= 0) return null
+  return (comprometidoAnual * mesesTranscurridos) / mesesVigentes
+}
+
+/** Cómo viene el ahorro contra el ritmo, no contra el año entero. */
+function RitmoBadge({
+  frac,
+  meses,
+  mesesVigentes,
+}: {
+  frac: number | null
+  meses: number
+  mesesVigentes: number
+}) {
+  if (meses === 0) {
+    return <span className="text-xs text-muted-foreground">Sin meses cerrados</span>
+  }
+  if (frac === null) {
+    return <span className="text-xs text-muted-foreground">Sin ahorro cargado</span>
+  }
+  const pct = Math.round(frac * 100)
+  const detalle = `${pct}% del ritmo · ${meses} de ${mesesVigentes} meses`
+  if (frac < 0) {
+    return (
+      <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
+        Gastando de más · {detalle}
+      </Badge>
+    )
+  }
+  if (frac >= 1.25) {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        Por encima del ritmo · {detalle}
+      </Badge>
+    )
+  }
+  if (frac >= 0.9) {
+    return (
+      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+        En ritmo · {detalle}
+      </Badge>
+    )
+  }
+  if (frac >= 0.5) {
+    return (
+      <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+        Atrasada · {detalle}
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">
+      Muy atrasada · {detalle}
+    </Badge>
+  )
+}
+
 export function IniciativasAhorroSection({
   anio,
   iniciativas,
+  ejecucionRubros,
+  kpiPerdidas,
   responsables,
   puedeEditar,
 }: Props) {
@@ -172,11 +444,17 @@ export function IniciativasAhorroSection({
     let implementadas = 0
     for (const ini of iniciativas) {
       comprometido += ini.ahorro_comprometido_anual ?? 0
-      for (const s of ini.seguimientos) realAcum += s.ahorro_real ?? 0
+      // Por la MISMA vía que la tarjeta de cada iniciativa (EERR si hay rubro,
+      // seguimientos si no): sumar acá los seguimientos a mano daba un total que
+      // no coincidía con lo que mostraban las tarjetas de abajo.
+      realAcum += ahorroDe(
+        ini,
+        ini.rubro ? ejecucionRubros[ini.rubro.trim().toUpperCase()] : undefined,
+      ).real
       if (ini.estado === "implementada") implementadas++
     }
     return { comprometido, realAcum, implementadas }
-  }, [iniciativas])
+  }, [iniciativas, ejecucionRubros])
 
   return (
     <div className="space-y-5">
@@ -302,10 +580,21 @@ export function IniciativasAhorroSection({
       ) : (
         <div className="space-y-4">
           {iniciativas.map((ini) => {
-            const realAcum = ini.seguimientos.reduce(
-              (acc, s) => acc + (s.ahorro_real ?? 0),
-              0,
-            )
+            const ejec = ini.rubro
+              ? ejecucionRubros[ini.rubro.trim().toUpperCase()]
+              : undefined
+            const kpiPerd = ini.rubro
+              ? kpiPerdidas[ini.rubro.trim().toUpperCase()]
+              : undefined
+            const {
+              real: realAcum,
+              meses: mesesEerr,
+              mesInicio,
+              mesesVigentes,
+              presupComputado,
+              gastoComputado,
+              fuente,
+            } = ahorroDe(ini, ejec)
             const ahorroFrac =
               ini.ahorro_comprometido_anual && ini.ahorro_comprometido_anual > 0
                 ? realAcum / ini.ahorro_comprometido_anual
@@ -315,12 +604,33 @@ export function IniciativasAhorroSection({
               .filter((s) => s.kpi_valor !== null)
               .sort((a, b) => b.trimestre - a.trimestre)
             const ultimoKpi = conKpi.length > 0 ? conKpi[0].kpi_valor : null
+            const ultimoKpiQ = conKpi.length > 0 ? conKpi[0].trimestre : null
             const kpiFrac = cumplimientoKpi(
               ini.kpi_linea_base,
               ini.kpi_objetivo,
               ultimoKpi,
               ini.kpi_mejor_si,
             )
+            // Ritmo: lo acumulado contra lo que debería llevar a esta altura,
+            // no contra el compromiso anual entero. La ventana son los meses que
+            // el EERR tiene cerrados (o los trimestres del calendario si el
+            // ahorro es manual).
+            const qCerrados = trimestresCerrados(ini.anio)
+            const mesesTranscurridos =
+              mesesEerr ?? Math.max(0, qCerrados * 3 - (mesInicio - 1))
+            const esperado = esperadoALaFecha(
+              ini,
+              presupComputado,
+              fuente,
+              mesesTranscurridos,
+              mesesVigentes,
+            )
+            const ritmoFrac = esperado && esperado > 0 ? realAcum / esperado : null
+            // El último comentario cargado es el análisis de la iniciativa: es lo
+            // más valioso que se carga y estaba escondido dentro del diálogo.
+            const ultimoSeg = [...ini.seguimientos]
+              .filter((s) => (s.comentario ?? "").trim() !== "")
+              .sort((a, b) => b.trimestre - a.trimestre)[0]
             const tipoLabel =
               ini.tipo === "otro" && ini.tipo_otro
                 ? ini.tipo_otro
@@ -401,56 +711,126 @@ export function IniciativasAhorroSection({
                     </div>
                   </div>
 
-                  {/* Ahorro + KPI */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {/* Ahorro */}
-                    <div className="rounded-lg border bg-slate-50 p-3">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Ahorro (real acum. / comprometido)</span>
-                      </div>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        {formatMoney(realAcum)} /{" "}
-                        {formatMoney(ini.ahorro_comprometido_anual)}
-                      </p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full ${barColor(ahorroFrac)}`}
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (ahorroFrac ?? 0) * 100))}%`,
-                          }}
+                  {/* Ahorro: una sola barra, contra el RITMO esperado a esta
+                      altura del año. El KPI va como línea de texto: es la causa,
+                      el ahorro es el efecto — dos barras iguales no dejaban ver
+                      cuál manda. */}
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Ahorro real acumulado
+                        {fuente === "eerr" && ejec && (
+                          <>
+                            {" "}
+                            · presupuesto − real del rubro, {mesesEerr}{" "}
+                            {mesesEerr === 1 ? "mes" : "meses"} del EERR
+                            {/* Si arranca a mitad de año, decir desde cuándo se
+                                cuenta: el gasto previo no es de la iniciativa. */}
+                            {mesInicio > 1 && ` desde ${MES_NOMBRE[mesInicio]}`}
+                          </>
+                        )}
+                      </span>
+                      {esperado !== null && (
+                        <RitmoBadge
+                          frac={ritmoFrac}
+                          meses={mesesTranscurridos}
+                          mesesVigentes={mesesVigentes}
                         />
-                      </div>
+                      )}
                     </div>
+                    <p
+                      className={`mt-1 text-sm font-medium ${realAcum < 0 ? "text-red-600" : "text-slate-900"}`}
+                    >
+                      {formatMoney(realAcum)}
+                      {esperado !== null && (
+                        <span className="font-normal text-muted-foreground">
+                          {" "}
+                          de {formatMoney(esperado)} esperados a esta altura
+                        </span>
+                      )}
+                    </p>
+                    {/* Un ahorro negativo no es "poco ahorro": es gasto de más. */}
+                    {realAcum < 0 && fuente === "eerr" && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Va {formatMoney(Math.abs(realAcum))} POR ENCIMA del
+                        presupuesto del rubro ({formatMoney(gastoComputado)}{" "}
+                        gastados contra {formatMoney(presupComputado)}{" "}
+                        presupuestados
+                        {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}).
+                      </p>
+                    )}
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full ${barColor(ritmoFrac)}`}
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (ritmoFrac ?? 0) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Compromiso anual {formatMoney(ini.ahorro_comprometido_anual)}
+                      {/* De dónde sale la meta, si se definió como % del rubro. */}
+                      {ini.rubro && ini.ahorro_pct_objetivo !== null && (
+                        <>
+                          {" "}
+                          = {formatNum(ini.ahorro_pct_objetivo)}% de{" "}
+                          {formatMoney(ini.presupuesto_rubro_anual)} ({ini.rubro})
+                        </>
+                      )}
+                      {ahorroFrac !== null &&
+                        ` · ${Math.round(ahorroFrac * 100)}% del año cubierto`}
+                      {qCerrados === 0 && " · el año todavía no cerró un trimestre"}
+                    </p>
+                  </div>
 
-                    {/* KPI */}
-                    <div className="rounded-lg border bg-slate-50 p-3">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {ini.kpi_nombre
-                            ? ini.kpi_nombre +
-                              (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
-                            : "KPI comprometido"}
+                  {/* KPI comprometido: la métrica que mueve el ahorro. Si el
+                      rubro tiene el KPI físico (lo perdido por HL vendido), va
+                      ese: se mide contra el target del propio presupuesto del
+                      año, en vez de contra el gasto del año anterior. */}
+                  {kpiPerd ? (
+                    <KpiPerdidasBlock kpi={kpiPerd} rubro={ini.rubro!} />
+                  ) : (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+                      <span className="text-muted-foreground">
+                        {ini.kpi_nombre
+                          ? ini.kpi_nombre +
+                            (ini.kpi_unidad ? ` (${ini.kpi_unidad})` : "")
+                          : "KPI comprometido"}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-slate-900">
+                          {formatNum(ini.kpi_linea_base)} →{" "}
+                          {formatNum(ini.kpi_objetivo)}
+                          {ultimoKpi !== null && (
+                            <>
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · hoy{" "}
+                              </span>
+                              <strong>{formatNum(ultimoKpi)}</strong>
+                              {ultimoKpiQ !== null && (
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  (Q{ultimoKpiQ})
+                                </span>
+                              )}
+                            </>
+                          )}
                         </span>
                         <SemaforoBadge frac={kpiFrac} />
-                      </div>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        Base {formatNum(ini.kpi_linea_base)} → Obj{" "}
-                        {formatNum(ini.kpi_objetivo)}
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · Últ. {formatNum(ultimoKpi)}
-                        </span>
-                      </p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full ${barColor(kpiFrac)}`}
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (kpiFrac ?? 0) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                      </span>
                     </div>
-                  </div>
+                  )}
+
+                  {/* El análisis del último trimestre cargado. */}
+                  {ultimoSeg && (
+                    <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-medium text-slate-700">
+                        Q{ultimoSeg.trimestre}:
+                      </span>{" "}
+                      {ultimoSeg.comentario}
+                    </p>
+                  )}
 
                   {/* Tira de trimestres */}
                   <div className="grid grid-cols-4 gap-2">

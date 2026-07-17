@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { CalendarClock, Loader2 } from "lucide-react"
@@ -54,6 +55,7 @@ function ReprogramarForm({
   onDone,
 }: Props) {
   const router = useRouter()
+  const refrescarConScroll = useRefrescarConScroll()
   const [preset, setPreset] = useState<Preset>("1w")
   const [customDate, setCustomDate] = useState<string>(fechaActual ?? plusDays(7))
   const [motivo, setMotivo] = useState("")
@@ -93,7 +95,7 @@ function ReprogramarForm({
       toast.success("Plan reprogramado")
       onOpenChange(false)
       onDone?.()
-      router.refresh()
+      refrescarConScroll()
     })
   }
 
