@@ -13,12 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Truck, Scissors, Clock,
-  ShieldCheck, PackageX, Info, Eye, Download, Route,
+  ShieldCheck, PackageX, Info, Eye, Download, Route, CalendarDays,
 } from "lucide-react"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
-import type { FueraRutaDia } from "@/actions/fuera-ruta"
-import type { FueraRutaFila } from "@/lib/fuera-ruta/sheet"
+import type { FueraRutaDia, FueraRutaRegistro, FueraRutaMes } from "@/actions/fuera-ruta"
 import { CLUSTER_LABELS } from "@/actions/clusterizacion-tipos"
 import type { FilaPriorizada } from "@/lib/priorizacion/score"
 
@@ -153,11 +152,12 @@ function colorComportamiento(c: number): string {
 }
 
 export function PriorizacionClient({
-  data, vrl, fueraRuta,
+  data, vrl, fueraRuta, fueraRutaMensual,
 }: {
   data: PriorizacionData
   vrl: VrlMes[]
   fueraRuta: FueraRutaDia
+  fueraRutaMensual: FueraRutaMes[]
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -179,7 +179,7 @@ export function PriorizacionClient({
 
   /** Registro fuera de ruta del día por cliente FACTURADO, para marcar la fila del ranking. */
   const fueraRutaPorCliente = useMemo(() => {
-    const m = new Map<number, FueraRutaFila>()
+    const m = new Map<number, FueraRutaRegistro>()
     for (const f of fueraRuta.filas) if (f.cod_cliente != null) m.set(f.cod_cliente, f)
     return m
   }, [fueraRuta.filas])
@@ -439,10 +439,17 @@ export function PriorizacionClient({
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="__acumulado__" className="flex-none gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" /> Acumulado
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="__fuera_ruta__">
             <FueraRutaPanel fueraRuta={fueraRuta} />
+          </TabsContent>
+
+          <TabsContent value="__acumulado__">
+            <AcumuladoMensualPanel fueraRutaMensual={fueraRutaMensual} vrl={vrl} />
           </TabsContent>
 
           {ciudades.map((c) => {
@@ -614,7 +621,7 @@ function ReprogramadosPreview({
   grupos: { ciudad: string; filas: FilaVista[]; bultos: number; hl: number; monto: number }[]
   nota: string
   total: { bultos: number; hl: number; monto: number; clientes: number }
-  fueraRutaPorCliente: Map<number, FueraRutaFila>
+  fueraRutaPorCliente: Map<number, FueraRutaRegistro>
 }) {
   const [bajando, setBajando] = useState(false)
 
@@ -798,10 +805,13 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
         <p className="text-sm text-muted-foreground">
           <strong className="text-slate-900">Fuera de ruta</strong> · {filas.length}{" "}
           {filas.length === 1 ? "pedido" : "pedidos"}
+          {fueraRuta.total_bultos > 0 && (
+            <> · {fueraRuta.total_bultos.toLocaleString("es-AR")} bultos · {fueraRuta.total_hl.toFixed(1)} HL</>
+          )}
           {fueraRuta.total_monto > 0 && <> · {money(fueraRuta.total_monto)}</>}
         </p>
         <p className="text-xs text-muted-foreground">
-          Fuente: sheet Novedades Logísticas (se sincroniza al abrir la pantalla)
+          Fuente: sheet Novedades Logísticas + medidas del pedido en Chess
         </p>
       </div>
 
@@ -817,6 +827,8 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
               <TableHead>Entrega en</TableHead>
               <TableHead>Pedido</TableHead>
               <TableHead>Canal</TableHead>
+              <TableHead className="text-right">Bultos</TableHead>
+              <TableHead className="text-right">HL</TableHead>
               <TableHead className="text-right">Monto</TableHead>
               <TableHead>Patente</TableHead>
               <TableHead>Autorización / obs.</TableHead>
@@ -855,6 +867,12 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{f.canal ?? "—"}</TableCell>
                   <TableCell className="text-right text-sm tabular-nums">
+                    {f.bultos_pedido ?? f.bultos ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                    {f.hl_pedido != null ? f.hl_pedido.toFixed(1) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-sm tabular-nums">
                     {f.monto != null ? money(f.monto) : "—"}
                   </TableCell>
                   <TableCell className="text-xs tabular-nums">{f.patente ?? "—"}</TableCell>
@@ -874,11 +892,106 @@ function FueraRutaPanel({ fueraRuta }: { fueraRuta: FueraRutaDia }) {
 }
 
 /**
+ * Acumulado mensual de los dos volúmenes que no se entregaron como estaba
+ * planificado: FUERA DE RUTA (se entregó, pero fuera del recorrido) y VRL
+ * (se cortó y reprogramó por capacidad). Mismas unidades para comparar.
+ */
+function AcumuladoMensualPanel({
+  fueraRutaMensual, vrl,
+}: {
+  fueraRutaMensual: FueraRutaMes[]
+  vrl: VrlMes[]
+}) {
+  const fdrMap = new Map(fueraRutaMensual.map((m) => [m.anio_mes, m]))
+  const vrlMap = new Map(vrl.map((m) => [m.anio_mes, m]))
+  const meses = [...new Set([...fdrMap.keys(), ...vrlMap.keys()])].sort().reverse().slice(0, 13)
+
+  if (meses.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Todavía no hay meses con fuera de ruta ni cortes registrados.
+      </p>
+    )
+  }
+
+  const fmtMes = (ym: string) => {
+    const [y, m] = ym.split("-").map(Number)
+    const nombre = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("es-AR", {
+      month: "short", year: "2-digit", timeZone: "UTC",
+    })
+    return nombre.charAt(0).toUpperCase() + nombre.slice(1)
+  }
+  const num = (v: number, dec = 0) =>
+    v > 0 ? v.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : "—"
+
+  return (
+    <div className="space-y-3">
+      <Table className="text-xs">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead />
+            <TableHead colSpan={4} className="border-l text-center font-semibold text-amber-800">
+              <span className="inline-flex items-center gap-1"><Route className="h-3.5 w-3.5" /> Fuera de ruta</span>
+            </TableHead>
+            <TableHead colSpan={4} className="border-l text-center font-semibold text-red-700">
+              <span className="inline-flex items-center gap-1"><Scissors className="h-3.5 w-3.5" /> VRL (reprogramados)</span>
+            </TableHead>
+          </TableRow>
+          <TableRow>
+            <TableHead>Mes</TableHead>
+            <TableHead className="border-l text-right">Pedidos</TableHead>
+            <TableHead className="text-right">Bultos</TableHead>
+            <TableHead className="text-right">HL</TableHead>
+            <TableHead className="text-right">Monto</TableHead>
+            <TableHead className="border-l text-right">Pedidos</TableHead>
+            <TableHead className="text-right">Bultos</TableHead>
+            <TableHead className="text-right">HL</TableHead>
+            <TableHead className="text-right">Monto</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {meses.map((ym) => {
+            const f = fdrMap.get(ym)
+            const v = vrlMap.get(ym)
+            return (
+              <TableRow key={ym}>
+                <TableCell className="font-medium">{fmtMes(ym)}</TableCell>
+                <TableCell className="border-l text-right tabular-nums">{num(f?.pedidos ?? 0)}</TableCell>
+                <TableCell className="text-right tabular-nums">{num(f?.bultos ?? 0)}</TableCell>
+                <TableCell className="text-right tabular-nums">{num(f?.hl ?? 0, 1)}</TableCell>
+                <TableCell className="text-right tabular-nums">{f?.monto ? money(f.monto) : "—"}</TableCell>
+                <TableCell className="border-l text-right tabular-nums">{num(v?.pedidos_reprogramados ?? 0)}</TableCell>
+                <TableCell className="text-right tabular-nums">{num(v?.bultos ?? 0)}</TableCell>
+                <TableCell className="text-right tabular-nums">{num(v?.hl ?? 0, 1)}</TableCell>
+                <TableCell className="text-right tabular-nums">{v?.monto ? money(v.monto) : "—"}</TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+      <p className="text-xs text-muted-foreground">
+        Fuera de ruta: pedidos entregados fuera del recorrido planificado (sheet de Novedades, medidas
+        del pedido en Chess). VRL: pedidos cortados por capacidad con «Registrar corte» — el registro
+        arranca el 16/07/2026, no hay historia anterior. Para ver el detalle de un día, elegí la fecha
+        arriba y abrí la solapa Fuera de ruta.
+      </p>
+    </div>
+  )
+}
+
+/**
  * Vista de la página cuando NO hay pedidos pendientes para la fecha (p. ej. un
  * día pasado): el ranking no se puede armar, pero el registro de fuera de ruta
- * se consulta igual — es un registro con historia.
+ * y el acumulado mensual se consultan igual — es un registro con historia.
  */
-export function FueraRutaSolo({ error, fueraRuta }: { error: string; fueraRuta: FueraRutaDia }) {
+export function FueraRutaSolo({
+  error, fueraRuta, vrl, fueraRutaMensual,
+}: {
+  error: string
+  fueraRuta: FueraRutaDia
+  vrl: VrlMes[]
+  fueraRutaMensual: FueraRutaMes[]
+}) {
   const router = useRouter()
   return (
     <div className="space-y-4">
@@ -904,6 +1017,11 @@ export function FueraRutaSolo({ error, fueraRuta }: { error: string; fueraRuta: 
           <FueraRutaPanel fueraRuta={fueraRuta} />
         </CardContent>
       </Card>
+      <Card>
+        <CardContent className="pt-4">
+          <AcumuladoMensualPanel fueraRutaMensual={fueraRutaMensual} vrl={vrl} />
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -916,7 +1034,7 @@ function Fila({
   cruzaLinea: boolean
   cupo: number
   /** Registro fuera de ruta del día para este cliente, si lo hay. */
-  fueraRuta?: FueraRutaFila
+  fueraRuta?: FueraRutaRegistro
   onForzar: (modo: "entra" | "sale") => void
 }) {
   const autorizacion = fueraRuta
