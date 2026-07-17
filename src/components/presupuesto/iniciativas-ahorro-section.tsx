@@ -487,6 +487,46 @@ function ahorroDe(
   }
 }
 
+/**
+ * Cuánto del desvío se explica por haber vendido distinto de lo previsto.
+ *
+ * El presupuesto de roturas/vencidos se armó para un volumen PROYECTADO: si se
+ * vende más, se rompe más, y el ahorro contra el ppto plano castiga a la
+ * iniciativa por algo que no maneja. Roturas desde febrero: el ppto suponía
+ * 47.784 HL y se vendieron 55.043 (+15,2%). Contra el ppto plano queda en
+ * −$35.100, pero por HL mejoró (70,09 → 61,49 $/HL) y a volumen real ahorró
+ * $473.740 — el signo se da vuelta.
+ *
+ * No cambia el ahorro publicado (el compromiso es contra el ppto aprobado): se
+ * informa al lado, que es lo que pidió el usuario.
+ */
+function ajustePorVolumen(
+  kpi: KpiPerdidas,
+  mesInicio: number,
+  presupComputado: number,
+  gastoComputado: number,
+): {
+  hlPpto: number
+  hlReal: number
+  desvioPct: number
+  pptoAjustado: number
+  ahorroAjustado: number
+} | null {
+  const meses = kpi.meses.filter((m) => m.mes >= mesInicio)
+  if (meses.length === 0 || presupComputado <= 0) return null
+  const hlPpto = meses.reduce((a, m) => a + m.hlVendidosPpto, 0)
+  const hlReal = meses.reduce((a, m) => a + m.hlVendidosReal, 0)
+  if (hlPpto <= 0) return null
+  const pptoAjustado = (presupComputado / hlPpto) * hlReal
+  return {
+    hlPpto,
+    hlReal,
+    desvioPct: (hlReal / hlPpto - 1) * 100,
+    pptoAjustado,
+    ahorroAjustado: pptoAjustado - gastoComputado,
+  }
+}
+
 /** Trimestres ya CERRADOS del año, a hoy. Fallback cuando no hay EERR. */
 function trimestresCerrados(anio: number, hoy = new Date()): number {
   if (anio < hoy.getFullYear()) return 4
@@ -828,6 +868,17 @@ export function IniciativasAhorroSection({
               mesesVigentes,
             )
             const ritmoFrac = esperado && esperado > 0 ? realAcum / esperado : null
+            // Cuánto del desvío es volumen y no gestión: el ppto se armó para un
+            // volumen proyectado y se vendió otro.
+            const ajusteVol =
+              kpiPerd && fuente === "eerr"
+                ? ajustePorVolumen(
+                    kpiPerd,
+                    mesInicio,
+                    presupComputado,
+                    gastoComputado,
+                  )
+                : null
             // El último comentario cargado es el análisis de la iniciativa: es lo
             // más valioso que se carga y estaba escondido dentro del diálogo.
             const ultimoSeg = [...ini.seguimientos]
@@ -959,6 +1010,36 @@ export function IniciativasAhorroSection({
                         gastados contra {formatMoney(presupComputado)}{" "}
                         presupuestados
                         {mesInicio > 1 && `, desde ${MES_NOMBRE[mesInicio]}`}).
+                      </p>
+                    )}
+                    {/* El ppto se armó para un volumen PROYECTADO: si se vendió
+                        más, se rompe más, y el ahorro contra el ppto plano
+                        castiga a la iniciativa por algo que no maneja. */}
+                    {ajusteVol && Math.abs(ajusteVol.desvioPct) >= 5 && (
+                      <p className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                        El presupuesto se armó para{" "}
+                        {formatNum(Math.round(ajusteVol.hlPpto))} HL y se
+                        vendieron {formatNum(Math.round(ajusteVol.hlReal))} (
+                        {ajusteVol.desvioPct > 0 ? "+" : ""}
+                        {formatNum(Number(ajusteVol.desvioPct.toFixed(1)))}%):{" "}
+                        {ajusteVol.desvioPct > 0 ? "más" : "menos"} volumen
+                        vendido,{" "}
+                        {ajusteVol.desvioPct > 0 ? "más" : "menos"}{" "}
+                        {ini.rubro === "PRODUCTO VENCIDO" ? "vencido" : "roturas"}
+                        . A volumen real el presupuesto equivalente es{" "}
+                        {formatMoney(Math.round(ajusteVol.pptoAjustado))}, así que
+                        el ahorro ajustado sería{" "}
+                        <strong
+                          className={
+                            ajusteVol.ahorroAjustado >= 0
+                              ? "text-emerald-700"
+                              : "text-red-600"
+                          }
+                        >
+                          {ajusteVol.ahorroAjustado >= 0 ? "+" : "−"}
+                          {formatMoney(Math.abs(Math.round(ajusteVol.ahorroAjustado)))}
+                        </strong>
+                        .
                       </p>
                     )}
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
