@@ -463,20 +463,28 @@ export async function getAlertasVehiculos(): Promise<
       }
     }
 
+    // Valor comparable de una lectura: las OT de mantenimiento de los
+    // autoelevadores traen un odómetro cargado suelto que no representa las
+    // horas (HELI1: 68 el día que el horómetro real iba 42); cuando la lectura
+    // tiene horómetro se compara por horómetro, igual que el cálculo de horas.
+    const valorLectura = (l: Lectura): number => l.horometro ?? l.odometro
+    const tipoPorDominio = new Map(vehiculos.map((v) => [v.dominio, v.tipo]))
+
     for (const [dominio, arr] of porDominio) {
+      const esAE = tipoPorDominio.get(dominio) === "autoelevador"
       for (let i = 1; i < arr.length; i++) {
-        const prev = arr[i - 1]
-        const cur = arr[i]
-        if (cur.odometro < prev.odometro) {
+        const prev = valorLectura(arr[i - 1])
+        const cur = valorLectura(arr[i])
+        if (cur < prev) {
           alertas.push({
-            id: `ro-${dominio}-${cur.fecha}-${cur.hora}`,
+            id: `ro-${dominio}-${arr[i].fecha}-${arr[i].hora}`,
             tipo: "retroceso_odometro",
             severidad: "danger",
             dominio,
-            titulo: "Retroceso de odómetro",
-            descripcion: `De ${prev.odometro} (${prev.fecha}) a ${cur.odometro} (${cur.fecha})`,
-            valor: prev.odometro - cur.odometro,
-            fecha: cur.fecha,
+            titulo: esAE ? "Retroceso de horómetro" : "Retroceso de odómetro",
+            descripcion: `De ${prev} (${arr[i - 1].fecha}) a ${cur} (${arr[i].fecha})`,
+            valor: prev - cur,
+            fecha: arr[i].fecha,
           })
           break
         }
