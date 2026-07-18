@@ -113,6 +113,8 @@ export function OwdAnalisisClient({
   const [prioridad, setPrioridad] = useState<OwdPlanPrioridad>("media")
   const [responsableId, setResponsableId] = useState("")
   const [fechaObjetivo, setFechaObjetivo] = useState("")
+  const today = new Date().toISOString().slice(0, 10)
+  const [fechaPlan, setFechaPlan] = useState(today)
   const [baselinePct, setBaselinePct] = useState<number | null>(null)
 
   function abrirPlanOperario(t: OwdTendenciaOperario) {
@@ -125,6 +127,7 @@ export function OwdAnalisisClient({
     setPrioridad(t.estado === "rojo" ? "alta" : "media")
     setResponsableId("")
     setFechaObjetivo("")
+    setFechaPlan(today)
     setBaselinePct(t.promPropio)
     setDialogOpen(true)
   }
@@ -138,6 +141,7 @@ export function OwdAnalisisClient({
     setPrioridad("media")
     setResponsableId("")
     setFechaObjetivo("")
+    setFechaPlan(today)
     setBaselinePct(null)
     setDialogOpen(true)
   }
@@ -156,6 +160,7 @@ export function OwdAnalisisClient({
       prioridad,
       responsableId: responsableId || null,
       fechaObjetivo: fechaObjetivo || null,
+      fecha: fechaPlan || null,
       operario: origen === "operario" ? operario : null,
       observacionId: origen === "observacion" ? observacionId : null,
       baselinePct,
@@ -402,7 +407,15 @@ export function OwdAnalisisClient({
                 onChange={(e) => setDescripcion(e.target.value)}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Fecha del plan</Label>
+                <Input
+                  type="date"
+                  value={fechaPlan}
+                  onChange={(e) => setFechaPlan(e.target.value)}
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label>Prioridad</Label>
                 <select
@@ -477,6 +490,8 @@ function PlanCard({
 }) {
   const [comentario, setComentario] = useState("")
   const [nuevoEstado, setNuevoEstado] = useState<OwdPlanEstado | "">("")
+  const today = new Date().toISOString().slice(0, 10)
+  const [fechaAvance, setFechaAvance] = useState(today)
   const [busy, setBusy] = useState(false)
 
   const obs = plan.observacion_id
@@ -492,12 +507,14 @@ function PlanCard({
       planId: plan.id,
       comentario: comentario.trim() || undefined,
       estadoResultante: nuevoEstado || undefined,
+      fecha: fechaAvance || null,
     })
     setBusy(false)
     if ("error" in res) return toast.error(res.error)
     toast.success("Avance registrado")
     setComentario("")
     setNuevoEstado("")
+    setFechaAvance(today)
     onChanged()
   }
 
@@ -536,6 +553,10 @@ function PlanCard({
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-900">{plan.titulo}</p>
           <p className="text-xs text-muted-foreground">
+            {new Date(plan.created_at).toLocaleDateString("es-AR", {
+              timeZone: "America/Argentina/Buenos_Aires",
+            })}
+            {" · "}
             {plan.origen === "operario"
               ? `Operario: ${plan.operario || "—"}`
               : obs
@@ -594,6 +615,12 @@ function PlanCard({
             value={comentario}
             onChange={(e) => setComentario(e.target.value)}
             className="h-8 flex-1 text-sm"
+          />
+          <Input
+            type="date"
+            value={fechaAvance}
+            onChange={(e) => setFechaAvance(e.target.value)}
+            className="h-8 w-36 text-sm"
           />
           <select
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs"

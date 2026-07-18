@@ -1431,9 +1431,17 @@ interface CreateOwdPlanInput {
   prioridad?: OwdPlanPrioridad
   responsableId?: string | null
   fechaObjetivo?: string | null
+  // fecha real en que se hizo el plan (YYYY-MM-DD); permite backdatear cargas históricas
+  fecha?: string | null
   observacionId?: string | null
   operario?: string | null
   baselinePct?: number | null
+}
+
+// Un date (YYYY-MM-DD) elegido por el usuario → timestamptz al mediodía de Argentina,
+// para que el día no se corra al mostrarlo en ninguna zona horaria.
+function fechaATimestamp(fecha: string): string {
+  return `${fecha}T12:00:00-03:00`
 }
 
 export async function createOwdPlan(
@@ -1458,6 +1466,7 @@ export async function createOwdPlan(
         operario: input.origen === "operario" ? input.operario?.trim() || null : null,
         baseline_pct: input.baselinePct ?? null,
         created_by: profile.id,
+        ...(input.fecha ? { created_at: fechaATimestamp(input.fecha) } : {}),
       })
       .select("*")
       .single()
@@ -1514,6 +1523,8 @@ export async function addOwdPlanAvance(input: {
   planId: string
   comentario?: string
   estadoResultante?: OwdPlanEstado
+  // fecha real del avance (YYYY-MM-DD); permite backdatear cargas históricas
+  fecha?: string | null
 }): Promise<{ data: OwdPlanAvance } | { error: string }> {
   try {
     const profile = await requireAuth()
@@ -1529,6 +1540,7 @@ export async function addOwdPlanAvance(input: {
         comentario,
         estado_resultante: input.estadoResultante ?? null,
         autor_id: profile.id,
+        ...(input.fecha ? { created_at: fechaATimestamp(input.fecha) } : {}),
       })
       .select("*")
       .single()
