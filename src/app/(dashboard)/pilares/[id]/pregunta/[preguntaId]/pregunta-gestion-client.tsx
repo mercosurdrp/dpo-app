@@ -100,6 +100,7 @@ import {
   type Operador,
 } from "@/components/planes/tarea-form"
 import { PlanHerramientasInline } from "@/components/herramientas-gestion/plan-herramientas-inline"
+import { EvidenciaPlanDialog } from "@/components/planes/evidencia-plan-dialog"
 import type { PreguntaGestionFull } from "@/actions/gestion"
 import type {
   Pilar,
@@ -699,6 +700,17 @@ function PlanesTab({
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
+                      <EvidenciaPlanDialog
+                        planId={plan.id}
+                        estado={plan.estado}
+                        onEstadoChange={(estado) =>
+                          setPlanes((prev) =>
+                            prev.map((p) =>
+                              p.id === plan.id ? { ...p, estado } : p,
+                            ),
+                          )
+                        }
+                      />
                       <Button
                         variant="ghost"
                         size="icon-xs"

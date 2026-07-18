@@ -41,6 +41,7 @@ import {
   type PlanAvanceConAutor,
 } from "@/actions/plan-avances"
 import { AdjuntosInput } from "@/components/adjuntos-input"
+import { comprimirImagen } from "@/lib/comprimir-imagen"
 import { ESTADO_PLAN_COLORS, ESTADO_PLAN_LABELS } from "@/lib/constants"
 import type {
   EstadoPlan,
@@ -268,14 +269,25 @@ export function AvancesSection({
       toast.error("Elegí la fecha de la tarea repetida")
       return
     }
-    const fd = new FormData()
-    fd.append("comentario", comentario.trim())
-    for (const f of archivos) fd.append("archivo", f)
-    if (resultado !== "igual") fd.append("nuevo_estado", resultado)
-    if (resultado === "completado" && tipoCierre === "reprogramar" && fechaSeguimiento) {
-      fd.append("seguimiento_fecha", fechaSeguimiento)
-    }
     startSubmit(async () => {
+      const fd = new FormData()
+      fd.append("comentario", comentario.trim())
+      // Las fotos del celular pesan 4-12 MB y Vercel corta el body en 4,5 MB:
+      // se comprimen en el navegador antes de mandarlas al server action.
+      try {
+        for (const f of archivos) fd.append("archivo", await comprimirImagen(f))
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo procesar la imagen",
+        )
+        return
+      }
+      if (!planCerrado && resultado !== "igual") {
+        fd.append("nuevo_estado", resultado)
+      }
+      if (resultado === "completado" && tipoCierre === "reprogramar" && fechaSeguimiento) {
+        fd.append("seguimiento_fecha", fechaSeguimiento)
+      }
       const r = await agregarAvancePlan(planId, fd)
       if ("error" in r) {
         toast.error(r.error)
@@ -323,9 +335,9 @@ export function AvancesSection({
               {timeline.length}
             </span>
           </span>
-          {puedeIntervenir && !planCerrado && (
+          {puedeIntervenir && (
             <span className="flex flex-wrap items-center justify-end gap-2">
-              {!IS_MISIONES && (
+              {!IS_MISIONES && !planCerrado && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -337,7 +349,7 @@ export function AvancesSection({
               )}
               <Button size="sm" onClick={() => setDialogOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" />
-                Responder
+                {planCerrado ? "Agregar evidencia" : "Responder"}
               </Button>
             </span>
           )}
@@ -627,7 +639,9 @@ export function AvancesSection({
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Responder</DialogTitle>
+            <DialogTitle>
+              {planCerrado ? "Agregar evidencia" : "Responder"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -651,7 +665,15 @@ export function AvancesSection({
                 />
               </div>
             </div>
-            {/* Resultado: cambia el estado y, si cierra, definitivo o reprogramar */}
+            {/* Resultado: cambia el estado y, si cierra, definitivo o reprogramar.
+                Sobre una tarea cerrada solo se agrega evidencia, sin tocar el estado. */}
+            {planCerrado ? (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                La tarea ya está cerrada: la evidencia se agrega a su historial
+                sin cambiar el estado.
+              </p>
+            ) : (
+            <>
             <div className="space-y-2">
               <Label>Resultado</Label>
               <div className="grid grid-cols-3 gap-2">
@@ -750,6 +772,8 @@ export function AvancesSection({
                 )}
               </div>
             )}
+            </>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -765,11 +789,13 @@ export function AvancesSection({
             </Button>
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              {resultado === "completado"
-                ? tipoCierre === "reprogramar"
-                  ? "Cerrar y repetir"
-                  : "Cerrar tarea"
-                : "Guardar respuesta"}
+              {planCerrado
+                ? "Guardar evidencia"
+                : resultado === "completado"
+                  ? tipoCierre === "reprogramar"
+                    ? "Cerrar y repetir"
+                    : "Cerrar tarea"
+                  : "Guardar respuesta"}
             </Button>
           </DialogFooter>
         </DialogContent>
