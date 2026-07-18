@@ -246,6 +246,12 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
       toast.error("Cargá los km de la camioneta")
       return
     }
+    // El horómetro del autoelevador alimenta las horas del tablero y las
+    // alertas de la flota: sin la lectura el checklist queda ciego.
+    if (esAutoelevador && !odometro) {
+      toast.error("Cargá el horómetro del autoelevador (las horas que marca)")
+      return
+    }
 
     setSaving(true)
     const hoy = new Date().toISOString().slice(0, 10)
@@ -466,6 +472,7 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
             <div className="space-y-2 sm:col-span-2 lg:col-span-2">
               <Label className="text-base font-semibold text-slate-800">
                 {esAutoelevador ? "Horómetro (horas)" : "Odómetro (km)"}
+                {esControlUnico && <span className="text-red-600"> *</span>}
               </Label>
               <Input
                 type="number"

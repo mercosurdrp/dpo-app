@@ -98,6 +98,18 @@ export async function createChecklist(
       ? "liberacion"
       : tipoChecklistPorHora(now)
 
+    // El control único existe para registrar la lectura (horómetro en el
+    // autoelevador, km en la camioneta): sin ella el vehículo figura "sin
+    // movimiento" y las horas/km del período no se pueden calcular.
+    if (esControlUnico && !input.odometro) {
+      return {
+        error:
+          veh?.tipo === "autoelevador"
+            ? "Falta el horómetro: cargá las horas que marca el autoelevador."
+            : "Faltan los km: cargá el odómetro de la camioneta.",
+      }
+    }
+
     // Fetch items to determine criticality
     const { data: items } = await supabase
       .from("checklist_items")
