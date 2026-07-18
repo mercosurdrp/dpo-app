@@ -209,7 +209,21 @@ export async function getVehiculoDetalle(
     let horasResumen: ReturnType<typeof resumenHorasHorometro> | null = null
     if (esAutoelevador) {
       const lecturasAE = await fetchLecturas({ dominio })
-      horasResumen = resumenHorasHorometro(lecturasAE, hoy, inicioMes, inicioAnio)
+      // Días en que la máquina trabajó (checklist hecho, aunque el horómetro
+      // haya quedado vacío): sirven para repartir el delta de horas en los
+      // huecos sin lectura. Últimos 1000 checks ≈ años de un AE (uno por día).
+      const { data: chkDias } = await supabase
+        .from("checklist_vehiculos")
+        .select("fecha")
+        .eq("dominio", dominio)
+        .order("fecha", { ascending: false })
+        .limit(1000)
+      const diasConChecklist = new Set(
+        ((chkDias || []) as Array<{ fecha: string | null }>)
+          .map((r) => r.fecha)
+          .filter((f): f is string => !!f)
+      )
+      horasResumen = resumenHorasHorometro(lecturasAE, hoy, inicioMes, inicioAnio, diasConChecklist)
       kmMes = horasResumen.horasMes
       kmYTD = horasResumen.horasYTD
       kmHistorico = horasResumen.horasHistorico

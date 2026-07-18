@@ -354,8 +354,9 @@ export interface HorasResumen {
   horasHistorico: number
   ultimoHorometro: number | null
   ultimaFecha: string | null
-  // Horas trabajadas por día en los últimos 30 (delta del horómetro contra la
-  // lectura previa). Campo `km` para poder reusar el mismo chart que camiones.
+  // Horas trabajadas por día en los últimos 30 (delta del horómetro entre
+  // lecturas, atribuido a los días en que la máquina trabajó — ver
+  // resumenHorasHorometro). Campo `km` para reusar el mismo chart que camiones.
   porDia30: { fecha: string; km: number }[]
   // Toda la serie de horas por día (solo los días con lectura), de la más vieja
   // a la más nueva. El detalle la usa para el selector de mes: son pocas filas
@@ -376,7 +377,15 @@ export function resumenHorasHorometro(
   lecturas: Lectura[],
   hoy: string,
   inicioMes: string,
-  inicioAnio: string
+  inicioAnio: string,
+  // Fechas en las que la máquina trabajó (hubo checklist, con o sin lectura).
+  // El checklist del AE se hace a la MAÑANA, al empezar a usarla: el delta
+  // entre la lectura de hoy y la de ayer son horas trabajadas AYER. Por eso el
+  // delta se atribuye a los días [lectura anterior, lectura nueva) y, si en el
+  // medio quedaron días con checklist pero sin lectura (campo vacío antes de
+  // que fuera obligatorio), se reparte en partes iguales entre esos días en
+  // vez de amontonarse en uno solo.
+  diasConChecklist?: Set<string>
 ): HorasResumen {
   // Valor en HORAS de la lectura. `mantenimiento_realizados` guarda odómetro y
   // horómetro por separado y en los autoelevadores el odómetro de esa tabla
@@ -414,24 +423,35 @@ export function resumenHorasHorometro(
   const ultimo = limpio[limpio.length - 1]
   const horasHistorico = horas(ultimo) - horas(limpio[0])
 
-  const horasDesde = (inicioPeriodo: string): number => {
-    const enPeriodo = limpio.filter((l) => l.fecha >= inicioPeriodo)
-    if (enPeriodo.length === 0) return 0
-    const anteriores = limpio.filter((l) => l.fecha < inicioPeriodo)
-    const base = anteriores.length
-      ? horas(anteriores[anteriores.length - 1])
-      : horas(enPeriodo[0])
-    const fin = horas(enPeriodo[enPeriodo.length - 1])
-    return Math.max(0, fin - base)
-  }
-
-  // Delta contra la lectura anterior. La primera lectura de la historia no tiene
-  // contra qué comparar, así que no aporta horas (arranca la serie).
+  // Delta contra la lectura anterior, atribuido al período [anterior, nueva):
+  // con checks diarios todo el delta cae en el día de la lectura ANTERIOR (las
+  // horas se trabajaron ese día, el check nuevo es de la mañana siguiente). Si
+  // el hueco abarca varios días, se reparte parejo entre los días con
+  // checklist (la máquina trabajó); los días sin actividad quedan en cero. La
+  // primera lectura de la historia no tiene contra qué comparar (arranca la serie).
   const mapaDia = new Map<string, number>()
   for (let i = 1; i < limpio.length; i++) {
-    const f = limpio[i].fecha
     const delta = horas(limpio[i]) - horas(limpio[i - 1])
-    mapaDia.set(f, (mapaDia.get(f) || 0) + delta)
+    if (delta === 0) continue
+    const desde = limpio[i - 1].fecha
+    const hasta = limpio[i].fecha
+    const candidatos: string[] = [desde]
+    // Tope de 31 días de hueco: más que eso es historia sin datos y repartir
+    // no aporta (todo va al día de la lectura anterior).
+    if (desde < hasta && daysBetween(desde, hasta) <= 31) {
+      for (let d = addDays(desde, 1); d < hasta; d = addDays(d, 1)) {
+        if (diasConChecklist?.has(d)) candidatos.push(d)
+      }
+    }
+    // Reparto entero que suma exacto (redondeo acumulado).
+    const n = candidatos.length
+    let acum = 0
+    for (let k = 0; k < n; k++) {
+      const objetivo = Math.round((delta * (k + 1)) / n)
+      const parte = objetivo - acum
+      acum = objetivo
+      if (parte !== 0) mapaDia.set(candidatos[k], (mapaDia.get(candidatos[k]) || 0) + parte)
+    }
   }
   const porDia = Array.from(mapaDia.entries())
     .map(([fecha, km]) => ({ fecha, km }))
@@ -444,9 +464,14 @@ export function resumenHorasHorometro(
   }
   const porDia30 = Array.from(mapa30.entries()).map(([fecha, km]) => ({ fecha, km }))
 
+  // Mes/YTD suman la misma serie diaria que se muestra, así el KPI y el
+  // gráfico siempre cierran entre sí.
+  const sumaDesde = (inicio: string): number =>
+    porDia.filter((d) => d.fecha >= inicio).reduce((a, b) => a + b.km, 0)
+
   return {
-    horasMes: horasDesde(inicioMes),
-    horasYTD: horasDesde(inicioAnio),
+    horasMes: sumaDesde(inicioMes),
+    horasYTD: sumaDesde(inicioAnio),
     horasHistorico,
     ultimoHorometro: horas(ultimo),
     ultimaFecha: ultimo.fecha,
