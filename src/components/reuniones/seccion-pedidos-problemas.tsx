@@ -136,7 +136,7 @@ function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[700px] text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-popover">
           <tr className="border-b border-slate-200 text-xs text-slate-500">
             <th className="py-1.5 text-left font-medium">Día</th>
             <th className="py-1.5 text-left font-medium">Cliente</th>
@@ -201,8 +201,8 @@ function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
             </tr>
           ))}
         </tbody>
-        <tfoot>
-          <tr className="font-semibold">
+        <tfoot className="sticky bottom-0 z-10 bg-popover">
+          <tr className="border-t border-slate-200 font-semibold">
             <td colSpan={4} className="py-2 text-slate-900">
               Total ({pedidos.length} pedido{pedidos.length === 1 ? "" : "s"})
             </td>
@@ -398,7 +398,10 @@ export function SeccionPedidosProblemas({
                 if (!o) setFiltro(null)
               }}
             >
-              <DialogContent className="max-w-4xl">
+              <DialogContent
+                showExpandButton
+                className="max-h-[92vh] w-[96vw] max-w-[min(1600px,96vw)] overflow-y-auto sm:max-w-[min(1600px,96vw)]"
+              >
                 <DialogHeader>
                   <DialogTitle>
                     {filtro ? FILTRO_TITULO[filtro] : ""}
