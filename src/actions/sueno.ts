@@ -17,6 +17,7 @@ import {
   esKpiExterno,
   resolverValoresExternos,
 } from "@/lib/sueno/externos"
+import { otifResumen } from "@/lib/sueno/otif"
 import { tiempoPdvAnual, tlpAnual } from "@/lib/tlp/calc"
 import { tiempoRutaAnual } from "@/lib/tlp/tiempo-ruta"
 
@@ -186,9 +187,9 @@ const MES_LABEL = [
 const EXPLICACION: Record<string, string> = {
   vlc_hl:
     "VLC/HL = costo logístico del mes (Distribución + Almacén, cargados en Planeamiento → Costo por Punto de Venta) ÷ HL vendidos (facturado Chess neto). El YTD pondera por volumen: suma de costos ÷ suma de HL de los meses con costo cargado.",
-  otif: "OTIF = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle mensual con los bultos rechazados de cada mes.",
-  rechazo: "Rechazo = bultos rechazados ÷ bultos entregados (%). Por mes, con los bultos rechazados.",
-  in_full: "In-Full = bultos rechazados ÷ bultos distribuidos (% de rechazo). Detalle por mes.",
+  otif: "OTIF = In-Full + On Time = (rechazos + stock out + VRL + VRC) ÷ bultos vendidos. Es el % de volumen PERDIDO: cuanto más bajo, mejor. El VRL (reprogramado logístico) arranca el 18/07/2026 y el VRC (comercial) en julio 2026: los meses anteriores no tienen el componente On Time y por eso dan más bajo de lo real.",
+  rechazo: "Rechazo = bultos rechazados ÷ bultos vendidos (%), EXCLUYENDO el motivo «Sin stock» (ese va en In-Full como stock out, para no contarlo dos veces). Por mes, con los bultos rechazados.",
+  in_full: "In-Full = (rechazos + stock out + cancelaciones) ÷ bultos vendidos (%). Es el % perdido por no entregar completo. Las cancelaciones todavía no tienen fuente en la app y hoy suman 0.",
   tri: "TRI = accidentes REGISTRABLES del año (LTI + MDI + MTI), tomados de los reportes de seguridad cargados como accidente. Los FAI (primeros auxilios) no son registrables: por eso el detalle muestra también los accidentes totales del mes.",
   lti: "LTI = accidentes con días perdidos, tomados de los reportes de seguridad cargados como accidente. El detalle muestra además los accidentes totales de cada mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
@@ -338,6 +339,33 @@ export async function getSuenoDetalle(
       }
     }
 
+    // OTIF: sale de `otifResumen` (Supabase + Railway), no de la RPC de detalle.
+    if (kpiKey === "otif") {
+      const supabaseOtif = await createClient()
+      const resumen = await otifResumen(supabaseOtif, year)
+      const mesesOtif: SuenoDetalleMes[] = (resumen?.meses ?? [])
+        .filter((m) => m.otifPct !== null)
+        .map((m) => ({
+          mes: m.mes,
+          etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
+          valor: m.otifPct as number,
+          detalle: m.bultosRechazo + m.bultosStockout + m.bultosVrl + (m.bultosVrc ?? 0),
+        }))
+      return {
+        data: {
+          kpiKey,
+          label: cfg.label,
+          unidad: cfg.unidad,
+          fuente: "auto",
+          explicacion: resumen?.vrcDisponible === false
+            ? `${EXPLICACION.otif}\n\n⚠️ El VRC (reprogramado comercial) no se pudo leer: el número que ves es solo In-Full + VRL, así que está por debajo del OTIF real.`
+            : EXPLICACION.otif,
+          meses: mesesOtif,
+          detalleLabel: "Bultos perdidos",
+        },
+      }
+    }
+
     const explicacion = EXPLICACION[kpiKey]
     if (!explicacion) {
       // KPI manual: el detalle son los meses cargados a mano (sueno_kpi_mensual).
@@ -420,6 +448,25 @@ export async function refreshSuenoAuto(
     const supabase = await createClient()
     const { error } = await supabase.rpc("sueno_kpi_refresh", { p_anio: year })
     if (error) return { error: error.message }
+
+    // La rama cliente va DESPUÉS y pisa lo que dejó el refresh de arriba: esa
+    // función todavía escribe el complemento (98,x) en otif/in_full, y el árbol
+    // los publica como % de pérdida. Ver 20260720140000_sueno_otif_infull.sql.
+    const { error: errCliente } = await supabase.rpc("sueno_kpi_refresh_cliente", {
+      p_anio: year,
+    })
+    if (errCliente) return { error: errCliente.message }
+
+    // OTIF: no puede salir de una RPC porque el VRC vive en la Railway.
+    const resumen = await otifResumen(supabase, year)
+    if (resumen?.otifYtd != null) {
+      await supabase
+        .from("sueno_kpi_valores")
+        .update({ valor_ytd: resumen.otifYtd, updated_at: new Date().toISOString() })
+        .eq("kpi_key", "otif")
+        .eq("anio", year)
+    }
+
     revalidatePath("/")
     revalidatePath("/mis-capacitaciones")
     return { ok: true }
