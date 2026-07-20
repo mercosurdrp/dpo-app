@@ -181,6 +181,8 @@ export function PriorizacionClient({
   const [tab, setTab] = useState<string>("")
   /** Cliente al que se saltó desde la búsqueda: se resalta hasta que se toca otra cosa. */
   const [resaltado, setResaltado] = useState<number | null>(null)
+  /** Bloque del histórico de cortes, plegado por defecto. */
+  const [verCortes, setVerCortes] = useState(false)
 
   const setCupo = (ciudad: string, v: string) =>
     setCupos((p) => ({ ...p, [ciudad]: v }))
@@ -565,6 +567,33 @@ export function PriorizacionClient({
         </Card>
       )}
 
+      {/* El histórico de cortes NO es una ciudad más: va arriba, como bloque
+          propio. Arranca plegado porque la pantalla se abre todos los días para
+          rutear y esto es consulta ocasional. */}
+      <Card>
+        <CardContent className="pt-4">
+          <button
+            type="button"
+            onClick={() => setVerCortes((v) => !v)}
+            className="flex w-full items-center gap-2 text-left text-sm font-semibold text-slate-900"
+          >
+            <Camera className="h-4 w-4" />
+            Cortes registrados
+            <span className="font-normal text-muted-foreground">
+              — a quién se dejó abajo, mes a mes
+            </span>
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {verCortes ? "ocultar ▲" : "ver ▼"}
+            </span>
+          </button>
+          {verCortes && (
+            <div className="mt-3">
+              <CortesRegistradosPanel mesInicial={data.fecha_entrega.slice(0, 7)} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Solapas por ciudad */}
       {ciudadInicial && (
         <Tabs
@@ -596,9 +625,6 @@ export function PriorizacionClient({
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="__cortes__" className="flex-none gap-1.5">
-              <Camera className="h-3.5 w-3.5" /> Cortes registrados
-            </TabsTrigger>
             <TabsTrigger value="__acumulado__" className="flex-none gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" /> Acumulado
             </TabsTrigger>
@@ -606,10 +632,6 @@ export function PriorizacionClient({
 
           <TabsContent value="__fuera_ruta__">
             <FueraRutaPanel fueraRuta={fueraRuta} />
-          </TabsContent>
-
-          <TabsContent value="__cortes__">
-            <CortesRegistradosPanel mesInicial={data.fecha_entrega.slice(0, 7)} />
           </TabsContent>
 
           <TabsContent value="__acumulado__">
