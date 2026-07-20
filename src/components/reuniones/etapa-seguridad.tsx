@@ -59,6 +59,17 @@ function ultimoDiaHabilAnterior(fechaReunionIso: string): string {
   return `${yy}-${mm}-${dd}`
 }
 
+/** Día calendario anterior a la fecha dada (puede caer sábado o domingo). */
+function diaAnteriorA(fechaIso: string): string {
+  const [y, m, d] = fechaIso.split("-").map(Number)
+  const dt = new Date(y, m - 1, d)
+  dt.setDate(dt.getDate() - 1)
+  const yy = dt.getFullYear()
+  const mm = String(dt.getMonth() + 1).padStart(2, "0")
+  const dd = String(dt.getDate()).padStart(2, "0")
+  return `${yy}-${mm}-${dd}`
+}
+
 function fechaArDeTimestamp(timestamptz: string): string {
   const ar = new Date(timestamptz).toLocaleString("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -164,11 +175,27 @@ export function EtapaSeguridad({
     [fechaReunion],
   )
 
+  /**
+   * Todo lo cargado DESDE la reunión anterior, no lo cargado un día puntual.
+   *
+   * 🚨 Antes exigía created_at == último día hábil anterior, y como ese valor
+   * siempre cae de lunes a viernes, lo cargado un sábado o domingo no aparecía
+   * en NINGUNA reunión: el lunes busca el viernes y se saltea el fin de semana.
+   * Pasó con el incidente del viernes 17/07 (cargado el sábado 18) y con 3 de
+   * los 31 reportes existentes.
+   *
+   * El rango va del último día hábil anterior hasta el día previo a la reunión,
+   * así que no se duplica nada: lo del viernes se ve el lunes y no el viernes,
+   * que es la reunión donde se mira lo del jueves.
+   */
   const reportesUltimoHabil = useMemo(() => {
     return reportes
-      .filter((r) => fechaArDeTimestamp(r.created_at) === fechaUltimoHabil)
+      .filter((r) => {
+        const cargado = fechaArDeTimestamp(r.created_at)
+        return cargado >= fechaUltimoHabil && cargado < fechaReunion
+      })
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-  }, [reportes, fechaUltimoHabil])
+  }, [reportes, fechaUltimoHabil, fechaReunion])
 
   return (
     <Card className="border-red-200 bg-red-50/30">
@@ -278,12 +305,15 @@ export function EtapaSeguridad({
           )}
         </section>
 
-        {/* Reportes cargados el último día hábil */}
+        {/* Reportes cargados desde la reunión anterior */}
         <section className="space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <ClipboardList className="size-4 text-slate-600" />
-              Reportes cargados el {formatFechaCorta(fechaUltimoHabil)}
+              Reportes cargados{" "}
+              {diaAnteriorA(fechaReunion) === fechaUltimoHabil
+                ? `el ${formatFechaCorta(fechaUltimoHabil)}`
+                : `del ${formatFechaCorta(fechaUltimoHabil)} al ${formatFechaCorta(diaAnteriorA(fechaReunion))}`}
             </h3>
             {!cargando && (
               <span className="text-xs text-muted-foreground">
@@ -294,7 +324,7 @@ export function EtapaSeguridad({
           </div>
           {cargando ? null : reportesUltimoHabil.length === 0 ? (
             <p className="rounded-md border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-muted-foreground">
-              Sin reportes nuevos el último día hábil.
+              Sin reportes nuevos desde la reunión anterior.
             </p>
           ) : (
             <ul className="space-y-2">
