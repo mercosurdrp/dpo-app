@@ -2837,42 +2837,6 @@ async function getIndicadoresMesCore(
     const fechaDesde = fechas[0]
     const fechaHasta = fechas[fechas.length - 1]
 
-    // Lectura memoizada de `ventas_diarias` por rango. El render encadenaba
-    // TRES consultas idénticas al mismo mes (HL para la tasa de rechazos,
-    // bultos+HL para la serie diaria, HL de nuevo para WNP) más una del mes
-    // anterior. Cada una es un round-trip a Supabase, que está en us-west-2
-    // mientras las funciones corren en iad1: se pagaba el cruce del país tres
-    // veces para traer exactamente las mismas filas. Ahora se lee el
-    // superconjunto de columnas una sola vez por rango y se reusa.
-    type VentaDiariaRow = {
-      fecha: string
-      total_bultos: number | null
-      total_hl: number | null
-    }
-    const ventasDiariasCache = new Map<
-      string,
-      Promise<{ data: VentaDiariaRow[] | null; error: { message: string } | null }>
-    >()
-    const leerVentasDiarias = (desde: string, hasta: string) => {
-      const key = `${desde}|${hasta}`
-      let pendiente = ventasDiariasCache.get(key)
-      if (!pendiente) {
-        pendiente = (async () => {
-          const { data, error } = await supabase
-            .from("ventas_diarias")
-            .select("fecha, total_bultos, total_hl")
-            .gte("fecha", desde)
-            .lte("fecha", hasta)
-          return {
-            data: (data ?? null) as VentaDiariaRow[] | null,
-            error: error ? { message: error.message } : null,
-          }
-        })()
-        ventasDiariasCache.set(key, pendiente)
-      }
-      return pendiente
-    }
-
     // 3. Reuniones del mismo tipo cuya fecha cae en ese rango
     const { data: reunionesRaw, error: errRe } = await supabase
       .from("reuniones")
@@ -3132,49 +3096,33 @@ async function getIndicadoresMesCore(
       const hlPorFecha: Record<string, number> = {}
       const ventasHlPorFecha: Record<string, number> = {}
 
-      // PostgREST tope a 1000 filas y esta consulta traía el mes entero de una:
-      // enero-abril 2026 superan ese tope (1.632 filas en enero) y el indicador
-      // salía subcontado sin error visible — mostraba los primeros 1000 rechazos
-      // y descartaba el resto en silencio. Paginamos con .range() hasta agotar.
-      type RechazoRow = { fecha_venta: string; hl_rechazados: number | null }
-      const rechRaw: RechazoRow[] = []
-      let errRech: { message: string } | null = null
-      {
-        const PAGE = 1000
-        let from = 0
-        while (true) {
-          const { data: rows, error } = await supabase
-            .from("rechazos")
-            .select("fecha_venta, hl_rechazados")
-            .gte("fecha_venta", fechaDesde)
-            .lte("fecha_venta", fechaHasta)
-            .order("fecha_venta", { ascending: true })
-            .range(from, from + PAGE - 1)
-          if (error) {
-            errRech = error
-            break
-          }
-          if (!rows || rows.length === 0) break
-          rechRaw.push(...(rows as RechazoRow[]))
-          if (rows.length < PAGE) break
-          from += PAGE
-        }
-      }
+      const { data: rechRaw, error: errRech } = await supabase
+        .from("rechazos")
+        .select("fecha_venta, hl_rechazados")
+        .gte("fecha_venta", fechaDesde)
+        .lte("fecha_venta", fechaHasta)
 
       if (!errRech) {
-        for (const r of rechRaw) {
+        for (const r of (rechRaw ?? []) as Array<{
+          fecha_venta: string
+          hl_rechazados: number | null
+        }>) {
           const hl = Number(r.hl_rechazados ?? 0)
           if (!Number.isFinite(hl)) continue
           hlPorFecha[r.fecha_venta] = (hlPorFecha[r.fecha_venta] ?? 0) + hl
         }
 
-        const { data: ventRaw, error: errVent } = await leerVentasDiarias(
-          fechaDesde,
-          fechaHasta,
-        )
+        const { data: ventRaw, error: errVent } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_hl")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
 
         if (!errVent) {
-          for (const v of ventRaw ?? []) {
+          for (const v of (ventRaw ?? []) as Array<{
+            fecha: string
+            total_hl: number | null
+          }>) {
             const hl = Number(v.total_hl ?? 0)
             if (!Number.isFinite(hl)) continue
             ventasHlPorFecha[v.fecha] = (ventasHlPorFecha[v.fecha] ?? 0) + hl
@@ -3227,10 +3175,11 @@ async function getIndicadoresMesCore(
     //     uno = promedio diario del mes anterior. mejor_si=mayor (verde si
     //     supera meta). Se hace una sola lectura por rango con ambas columnas.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
-      const { data: ventRaw, error: errVent } = await leerVentasDiarias(
-        fechaDesde,
-        fechaHasta,
-      )
+      const { data: ventRaw, error: errVent } = await supabase
+        .from("ventas_diarias")
+        .select("fecha, total_bultos, total_hl")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
 
       if (!errVent) {
         // Rango del mes anterior
@@ -3240,7 +3189,11 @@ async function getIndicadoresMesCore(
         const prevDesde = prevFechasMes[0]
         const prevHasta = prevFechasMes[prevFechasMes.length - 1]
 
-        const { data: ventPrevRaw } = await leerVentasDiarias(prevDesde, prevHasta)
+        const { data: ventPrevRaw } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_bultos, total_hl")
+          .gte("fecha", prevDesde)
+          .lte("fecha", prevHasta)
 
         // Promedios diarios mes anterior (bultos y HL por separado)
         let metaBultos: number | null = null
@@ -4327,9 +4280,16 @@ async function getIndicadoresMesCore(
         // (`ventas_diarias.total_hl`, Chess/rechazos-sync), NO sobre el HL
         // despachado de deposito-esteban. Numerador: HL de roturas de la
         // serie-diaria. Misma fuente HL que la fila "HL vendidos" y el WNP.
-        const { data: ventHlRaw } = await leerVentasDiarias(fechaDesde, fechaHasta)
+        const { data: ventHlRaw } = await supabase
+          .from("ventas_diarias")
+          .select("fecha, total_hl")
+          .gte("fecha", fechaDesde)
+          .lte("fecha", fechaHasta)
         const hlVendidoDia: Record<string, number> = {}
-        for (const v of ventHlRaw ?? []) {
+        for (const v of (ventHlRaw ?? []) as Array<{
+          fecha: string
+          total_hl: number | null
+        }>) {
           const h = Number(v.total_hl ?? 0)
           if (Number.isFinite(h)) {
             hlVendidoDia[v.fecha] = (hlVendidoDia[v.fecha] ?? 0) + h

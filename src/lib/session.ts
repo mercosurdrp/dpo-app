@@ -1,17 +1,11 @@
-import { cache } from "react"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import type { Profile, UserRole } from "@/types/database"
 
 /**
  * Get the current user's profile. Returns null if not authenticated.
- *
- * Memoizado por request con `cache()` de React: una pantalla como
- * /reuniones/[id] encadena ~10 acciones y cada una revalidaba el usuario por
- * su cuenta (auth.getUser + select a profiles = 2 round-trips a Supabase, que
- * está en otra región). Ahora el primer llamado paga y el resto lo reusa.
  */
-export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
+export async function getProfile(): Promise<Profile | null> {
   const supabase = await createClient()
 
   const {
@@ -27,7 +21,7 @@ export const getProfile = cache(async function getProfile(): Promise<Profile | n
     .single()
 
   return profile as Profile | null
-})
+}
 
 /**
  * Require authentication. Redirects to /login if not authenticated.
