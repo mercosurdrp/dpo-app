@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { getMisCapacitaciones } from "@/actions/capacitaciones"
 import { getProfile } from "@/lib/session"
 import { getEstadoReunionHoy } from "@/actions/reunion-preruta"
@@ -6,7 +7,7 @@ import { getMiDashboard } from "@/actions/mi-asistencia"
 import { getMiEntrega } from "@/actions/mi-entrega"
 import { getMisSobrecargas } from "@/actions/sobrecargas"
 import { IS_MISIONES } from "@/lib/empresa"
-import { SuenoSection } from "@/components/sueno/sueno-section"
+import { SuenoSection, SuenoSkeleton } from "@/components/sueno/sueno-section"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
@@ -39,7 +40,9 @@ export default async function MisCapacitacionesPage() {
 
   return (
     <>
-      <SuenoSection />
+      <Suspense fallback={<SuenoSkeleton />}>
+        <SuenoSection />
+      </Suspense>
       <MisCapacitacionesClient
         capacitaciones={result.data}
         nombre={profile?.nombre ?? ""}

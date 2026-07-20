@@ -1,5 +1,5 @@
 import { NuqsAdapter } from "nuqs/adapters/next/app"
-import { requireAuth, getProfile } from "@/lib/session"
+import { requireAuth } from "@/lib/session"
 import { createClient } from "@/lib/supabase/server"
 import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
@@ -13,8 +13,9 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  await requireAuth()
-  const profile = await getProfile()
+  // requireAuth ya devuelve el Profile: pedirlo de nuevo con getProfile() era
+  // un segundo auth.getUser() + select a profiles en cada render.
+  const profile = await requireAuth()
   const role = profile?.role ?? "viewer"
   const email = profile?.email ?? null
   const puedeRecepcion = puedeOperarAcarreo(role, email)

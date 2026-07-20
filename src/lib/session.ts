@@ -1,17 +1,32 @@
+import { cache } from "react"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import type { Profile, UserRole } from "@/types/database"
 
 /**
  * Get the current user's profile. Returns null if not authenticated.
+ *
+ * Memoizado por request con `cache()` de React: una pantalla como
+ * /reuniones/[id] encadena ~10 acciones y cada una revalidaba el usuario por
+ * su cuenta (auth.getUser + select a profiles = 2 round-trips a Supabase, que
+ * está en otra región). Ahora el primer llamado paga y el resto lo reusa.
  */
-export async function getProfile(): Promise<Profile | null> {
+export const getProfile = cache(async function getProfile(): Promise<Profile | null> {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let { data: userData, error } = await supabase.auth.getUser()
 
+  // Una falla de red NO es una sesión inválida. Cuando Supabase está cargado
+  // devuelve 504 —o directamente el HTML de su página de error, que llega como
+  // AuthUnknownError— y sin este reintento el usuario terminaba en /login con
+  // la sesión intacta. Sólo reintentamos lo transitorio: un 401/403 es un "no"
+  // de verdad y se respeta al toque. Mismo criterio que el middleware.
+  if (error && error.status !== 401 && error.status !== 403) {
+    await new Promise((r) => setTimeout(r, 300))
+    ;({ data: userData, error } = await supabase.auth.getUser())
+  }
+
+  const user = userData?.user
   if (!user) return null
 
   const { data: profile } = await supabase
@@ -21,7 +36,7 @@ export async function getProfile(): Promise<Profile | null> {
     .single()
 
   return profile as Profile | null
-}
+})
 
 /**
  * Require authentication. Redirects to /login if not authenticated.

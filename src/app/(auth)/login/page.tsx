@@ -20,6 +20,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
 
     const supabase = createClient()
@@ -30,31 +31,55 @@ export default function LoginPage() {
         ? { email: `${legajo.trim()}@dpo.local`, password: dni.trim() }
         : { email: email.trim(), password }
 
-    const { error } = await supabase.auth.signInWithPassword(credentials)
+    try {
+      const { data: signInData, error } =
+        await supabase.auth.signInWithPassword(credentials)
 
-    if (error) {
-      toast.error(
-        mode === "empleado"
-          ? "Legajo o DNI incorrecto"
-          : "Credenciales inválidas"
-      )
+      if (error) {
+        toast.error(
+          mode === "empleado"
+            ? "Legajo o DNI incorrecto"
+            : "Credenciales inválidas"
+        )
+        setLoading(false)
+        return
+      }
+
+      // Con la sesión ya creada, el destino es lo único que falta. El modo del
+      // formulario ya lo anticipa, así que la consulta del rol es una mejora,
+      // no un requisito: si la base está lenta no tiene sentido dejar al
+      // usuario mirando el spinner por algo que ya sabemos. Quien manda sobre
+      // los permisos sigue siendo el layout (requireAuth) y las RLS.
+      let destino = mode === "empleado" ? "/mis-capacitaciones" : "/"
+
+      const consulta = supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", signInData.user?.id ?? "")
+        .single()
+
+      const resultado = await Promise.race([
+        consulta,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+      ])
+
+      const rol = resultado?.data?.role
+      if (rol) destino = rol === "empleado" ? "/mis-capacitaciones" : "/"
+
+      toast.success("Bienvenido")
+      router.push(destino)
+
+      // El botón se suelta sólo si la navegación no llegó a ningún lado. No va
+      // en un `finally`: router.push() retorna antes de que la página cargue,
+      // así que soltarlo ahí lo habilitaría con la navegación todavía en curso
+      // y cada re-click dispararía otro login contra un Auth ya cargado.
+      setTimeout(() => {
+        setLoading(false)
+        toast.error("La app está tardando en abrir. Reintentá o recargá.")
+      }, 20000)
+    } catch {
+      toast.error("No se pudo ingresar. Probá de nuevo en unos segundos.")
       setLoading(false)
-      return
-    }
-
-    // Check role to redirect
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
-      .single()
-
-    toast.success("Bienvenido")
-
-    if (profile?.role === "empleado") {
-      router.push("/mis-capacitaciones")
-    } else {
-      router.push("/")
     }
   }
 

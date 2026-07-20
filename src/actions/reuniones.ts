@@ -2837,6 +2837,147 @@ async function getIndicadoresMesCore(
     const fechaDesde = fechas[0]
     const fechaHasta = fechas[fechas.length - 1]
 
+    // Lectura memoizada de `ventas_diarias` por rango. El render encadenaba
+    // TRES consultas idénticas al mismo mes (HL para la tasa de rechazos,
+    // bultos+HL para la serie diaria, HL de nuevo para WNP) más una del mes
+    // anterior. Cada una es un round-trip a Supabase, que está en us-west-2
+    // mientras las funciones corren en iad1: se pagaba el cruce del país tres
+    // veces para traer exactamente las mismas filas. Ahora se lee el
+    // superconjunto de columnas una sola vez por rango y se reusa.
+    type VentaDiariaRow = {
+      fecha: string
+      total_bultos: number | null
+      total_hl: number | null
+    }
+    const ventasDiariasCache = new Map<
+      string,
+      Promise<{ data: VentaDiariaRow[] | null; error: { message: string } | null }>
+    >()
+    const leerVentasDiarias = (desde: string, hasta: string) => {
+      const key = `${desde}|${hasta}`
+      let pendiente = ventasDiariasCache.get(key)
+      if (!pendiente) {
+        pendiente = (async () => {
+          const { data, error } = await supabase
+            .from("ventas_diarias")
+            .select("fecha, total_bultos, total_hl")
+            .gte("fecha", desde)
+            .lte("fecha", hasta)
+          return {
+            data: (data ?? null) as VentaDiariaRow[] | null,
+            error: error ? { message: error.message } : null,
+          }
+        })()
+        ventasDiariasCache.set(key, pendiente)
+      }
+      return pendiente
+    }
+
+    // ── Prefetch de los I/O lentos ──────────────────────────────────────────
+    // Estas cuatro son las operaciones más caras del render y hasta ahora
+    // corrían una detrás de otra, al final de todo: dos HTTP externos
+    // (deposito-esteban para el DQI y para la serie de warehouse, este último
+    // además consulta un Google Sheet) y dos cálculos que abren sus propias
+    // consultas (ausentismo y WNP). Sumaban su latencia en serie sobre un
+    // presupuesto total de 60s.
+    //
+    // Acá SÓLO se adelanta el disparo: cada una se consume más abajo, en el
+    // mismo lugar, con el mismo guard y en el mismo orden que antes, así que
+    // ni las filas ni su orden en pantalla cambian. Lo único que cambia es que
+    // el pedido sale ahora y viaja solapado con las lecturas de Supabase.
+    //
+    // El envoltorio {ok,valor}/{ok,error} evita que un rechazo quede huérfano
+    // (unhandledRejection en producción) y hace que el error se re-lance en el
+    // punto exacto donde se lanzaba antes, cayendo en el mismo catch.
+    type Diferido<T> = Promise<{ ok: true; valor: T } | { ok: false; error: unknown }>
+    const diferir = <T>(iniciar: () => Promise<T>): Diferido<T> =>
+      iniciar().then(
+        (valor) => ({ ok: true as const, valor }),
+        (error) => ({ ok: false as const, error }),
+      )
+    const resolver = async <T>(d: Diferido<T>): Promise<T> => {
+      const r = await d
+      if (!r.ok) throw r.error
+      return r.valor
+    }
+
+    const quiereDqi =
+      (tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES
+    const quiereSerieWarehouse =
+      tipo === "warehouse" ||
+      tipo === "logistica" ||
+      (IS_MISIONES && tipo === "matinal-distribucion")
+
+    const pDqi = quiereDqi ? diferir(() => getDqiPpmMes(anio, mes)) : null
+    const pSerieWarehouse = quiereSerieWarehouse
+      ? diferir(() => buildWarehouseSerieDiaria(fechas, fecha))
+      : null
+    const pAusentismo =
+      tipo === "logistica" ? diferir(() => getAusentismoSerieEventos(mes, anio)) : null
+    const pSerieWnp =
+      tipo === "logistica"
+        ? diferir(() => cargarSerieWnp(supabase, fechaDesde, fechaHasta))
+        : null
+
+    // Precalienta el memo de ventas_diarias del mes: el primer consumidor real
+    // está bastante más abajo y así encuentra la promesa ya en vuelo.
+    void leerVentasDiarias(fechaDesde, fechaHasta).catch(() => {})
+
+    // Las lecturas de Supabase del mes, idénticas a las de siempre pero
+    // disparadas ahora en lugar de una detrás de otra. Devuelven {data,error}
+    // (no rechazan), así que no necesitan el envoltorio de arriba. Cada una se
+    // consume abajo con `await (pX ?? qX())`: si el prefetch corrió se reusa, y
+    // si no, se ejecuta ahí mismo como antes — el guard del sitio manda.
+    const quiereNoWarehouse = tipo !== "warehouse" && tipo !== "presupuesto"
+    const quiereChecklist = tipo === "logistica" || tipo === "matinal-distribucion"
+
+    const qReportesSeguridad = () =>
+      supabase
+        .from("reportes_seguridad")
+        .select("fecha, tipo_accidente")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .not("tipo_accidente", "is", null)
+        .then((r) => r)
+    const qTml = () =>
+      supabase
+        .from("registros_vehiculos")
+        .select("fecha, tml_minutos")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .eq("tipo", "egreso")
+        .not("tml_minutos", "is", null)
+        .then((r) => r)
+    const qOcupacionBodega = () =>
+      supabase
+        .from("ocupacion_bodega_diaria")
+        .select("fecha, ceq_total")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .gt("ceq_total", 0)
+        .then((r) => r)
+    const qChecklist = () =>
+      supabase
+        .from("checklist_vehiculos")
+        .select("fecha, dominio, tipo, resultado, odometro, hora")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .then((r) => r)
+    const qEgresosAyudantes = () =>
+      supabase
+        .from("registros_vehiculos")
+        .select("fecha, ayudante1, ayudante2")
+        .eq("tipo", "egreso")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .then((r) => r)
+
+    const pReportesSeguridad = qReportesSeguridad()
+    const pTml = quiereNoWarehouse ? qTml() : null
+    const pOcupacionBodega = quiereNoWarehouse ? qOcupacionBodega() : null
+    const pChecklist = quiereChecklist ? qChecklist() : null
+    const pEgresosAyudantes = quiereChecklist ? qEgresosAyudantes() : null
+
     // 3. Reuniones del mismo tipo cuya fecha cae en ese rango
     const { data: reunionesRaw, error: errRe } = await supabase
       .from("reuniones")
@@ -3025,12 +3166,8 @@ async function getIndicadoresMesCore(
     // 7. Indicadores AUTO desde reportes_seguridad: LTI y TRI.
     //    LTI = count(tipo_accidente='lti'), TRI = count(tipo_accidente ∈ {lti,mdi,mti}).
     //    MTD se calcula hasta la fecha de la reunión actual (incluida).
-    const { data: reportesRaw, error: errRep } = await supabase
-      .from("reportes_seguridad")
-      .select("fecha, tipo_accidente")
-      .gte("fecha", fechaDesde)
-      .lte("fecha", fechaHasta)
-      .not("tipo_accidente", "is", null)
+    const { data: reportesRaw, error: errRep } = await (pReportesSeguridad ??
+      qReportesSeguridad())
 
     const ltiPorFecha: Record<string, number> = {}
     const triPorFecha: Record<string, number> = {}
@@ -3096,33 +3233,49 @@ async function getIndicadoresMesCore(
       const hlPorFecha: Record<string, number> = {}
       const ventasHlPorFecha: Record<string, number> = {}
 
-      const { data: rechRaw, error: errRech } = await supabase
-        .from("rechazos")
-        .select("fecha_venta, hl_rechazados")
-        .gte("fecha_venta", fechaDesde)
-        .lte("fecha_venta", fechaHasta)
+      // PostgREST tope a 1000 filas y esta consulta traía el mes entero de una:
+      // enero-abril 2026 superan ese tope (1.632 filas en enero) y el indicador
+      // salía subcontado sin error visible — mostraba los primeros 1000 rechazos
+      // y descartaba el resto en silencio. Paginamos con .range() hasta agotar.
+      type RechazoRow = { fecha_venta: string; hl_rechazados: number | null }
+      const rechRaw: RechazoRow[] = []
+      let errRech: { message: string } | null = null
+      {
+        const PAGE = 1000
+        let from = 0
+        while (true) {
+          const { data: rows, error } = await supabase
+            .from("rechazos")
+            .select("fecha_venta, hl_rechazados")
+            .gte("fecha_venta", fechaDesde)
+            .lte("fecha_venta", fechaHasta)
+            .order("fecha_venta", { ascending: true })
+            .range(from, from + PAGE - 1)
+          if (error) {
+            errRech = error
+            break
+          }
+          if (!rows || rows.length === 0) break
+          rechRaw.push(...(rows as RechazoRow[]))
+          if (rows.length < PAGE) break
+          from += PAGE
+        }
+      }
 
       if (!errRech) {
-        for (const r of (rechRaw ?? []) as Array<{
-          fecha_venta: string
-          hl_rechazados: number | null
-        }>) {
+        for (const r of rechRaw) {
           const hl = Number(r.hl_rechazados ?? 0)
           if (!Number.isFinite(hl)) continue
           hlPorFecha[r.fecha_venta] = (hlPorFecha[r.fecha_venta] ?? 0) + hl
         }
 
-        const { data: ventRaw, error: errVent } = await supabase
-          .from("ventas_diarias")
-          .select("fecha, total_hl")
-          .gte("fecha", fechaDesde)
-          .lte("fecha", fechaHasta)
+        const { data: ventRaw, error: errVent } = await leerVentasDiarias(
+          fechaDesde,
+          fechaHasta,
+        )
 
         if (!errVent) {
-          for (const v of (ventRaw ?? []) as Array<{
-            fecha: string
-            total_hl: number | null
-          }>) {
+          for (const v of ventRaw ?? []) {
             const hl = Number(v.total_hl ?? 0)
             if (!Number.isFinite(hl)) continue
             ventasHlPorFecha[v.fecha] = (ventasHlPorFecha[v.fecha] ?? 0) + hl
@@ -3175,11 +3328,10 @@ async function getIndicadoresMesCore(
     //     uno = promedio diario del mes anterior. mejor_si=mayor (verde si
     //     supera meta). Se hace una sola lectura por rango con ambas columnas.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
-      const { data: ventRaw, error: errVent } = await supabase
-        .from("ventas_diarias")
-        .select("fecha, total_bultos, total_hl")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
+      const { data: ventRaw, error: errVent } = await leerVentasDiarias(
+        fechaDesde,
+        fechaHasta,
+      )
 
       if (!errVent) {
         // Rango del mes anterior
@@ -3189,11 +3341,7 @@ async function getIndicadoresMesCore(
         const prevDesde = prevFechasMes[0]
         const prevHasta = prevFechasMes[prevFechasMes.length - 1]
 
-        const { data: ventPrevRaw } = await supabase
-          .from("ventas_diarias")
-          .select("fecha, total_bultos, total_hl")
-          .gte("fecha", prevDesde)
-          .lte("fecha", prevHasta)
+        const { data: ventPrevRaw } = await leerVentasDiarias(prevDesde, prevHasta)
 
         // Promedios diarios mes anterior (bultos y HL por separado)
         let metaBultos: number | null = null
@@ -3317,13 +3465,7 @@ async function getIndicadoresMesCore(
     //     (tipo=egreso, tml_minutos NOT NULL). Meta 25 min. mejor_si=menor.
     //     MTD = promedio ponderado por # de egresos (Σ minutos / Σ egresos).
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
-      const { data: tmlRaw, error: errTml } = await supabase
-        .from("registros_vehiculos")
-        .select("fecha, tml_minutos")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-        .eq("tipo", "egreso")
-        .not("tml_minutos", "is", null)
+      const { data: tmlRaw, error: errTml } = await (pTml ?? qTml())
 
       if (!errTml) {
         const sumPorFecha: Record<string, number> = {}
@@ -3381,12 +3523,8 @@ async function getIndicadoresMesCore(
     //   MTD = (Σ ceq / (600 × Σ viajes)) × 100 (% promedio ponderado por viaje).
     //   Unidad: % · Meta: 100 · mejor_si=mayor.
     if (tipo !== "warehouse" && tipo !== "presupuesto") {
-      const { data: obRaw, error: errOB } = await supabase
-        .from("ocupacion_bodega_diaria")
-        .select("fecha, ceq_total")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-        .gt("ceq_total", 0)
+      const { data: obRaw, error: errOB } = await (pOcupacionBodega ??
+        qOcupacionBodega())
       if (!errOB) {
         const TARGET_OB = 600
         const sumPorFecha: Record<string, number> = {}
@@ -3521,11 +3659,7 @@ async function getIndicadoresMesCore(
     //     liberado para salir a la calle. El indicador Checklist muestra
     //     aprobados/total como texto "X/Y" (ej. 8/8, 7/8).
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
-      const { data: chkRaw, error: errChk } = await supabase
-        .from("checklist_vehiculos")
-        .select("fecha, dominio, tipo, resultado, odometro, hora")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
+      const { data: chkRaw, error: errChk } = await (pChecklist ?? qChecklist())
 
       if (!errChk) {
         const totalPorFecha: Record<string, number> = {}
@@ -3751,13 +3885,7 @@ async function getIndicadoresMesCore(
       // Por día: Σ (1 chofer + ayud1?1 + ayud2?1) / cantidad de egresos.
       // MTD: Σ personas-viaje del mes / Σ egresos del mes (= mismo cálculo
       //   que el card "FTE Promedio" del tablero /indicadores/tml).
-      const { data: regsRaw } = await supabase
-        .from("registros_vehiculos")
-        .select("fecha, ayudante1, ayudante2")
-        .eq("tipo", "egreso")
-        .gte("fecha", fechaDesde)
-        .lte("fecha", fechaHasta)
-
+      const { data: regsRaw } = await (pEgresosAyudantes ?? qEgresosAyudantes())
       const personasViajeDia: Record<string, number> = {}
       const egresosDia: Record<string, number> = {}
       const esAyudante = (s: string | null) => {
@@ -3826,7 +3954,7 @@ async function getIndicadoresMesCore(
     //   Tolerante a fallos: si el tablero no responde, mtd queda null (la fila se
     //   ve con "—") y la matinal sigue funcionando.
     if ((tipo === "logistica" || tipo === "matinal-distribucion") && !IS_MISIONES) {
-      const dqiPpm = await getDqiPpmMes(anio, mes)
+      const dqiPpm = pDqi ? await resolver(pDqi) : await getDqiPpmMes(anio, mes)
       const dqiValores: ReunionIndicadoresMes["indicadores"][number]["valores"] = {}
       for (const f of fechas) dqiValores[f] = null
       indicadoresAuto.push({
@@ -4087,7 +4215,9 @@ async function getIndicadoresMesCore(
         }
       }
 
-      const serie = await buildWarehouseSerieDiaria(fechas, fecha)
+      const serie = pSerieWarehouse
+        ? await resolver(pSerieWarehouse)
+        : await buildWarehouseSerieDiaria(fechas, fecha)
 
       // Métricas diarias (cada celda tiene valor del día, no acumulado).
       // El MTD se computa según `agregacion`.
@@ -4264,7 +4394,9 @@ async function getIndicadoresMesCore(
       if (tipo === "logistica") {
         // Ausentismo del mes (Depósito + Distribución), valor del día.
         // Drill por día desde la grilla muestra quién está ausente.
-        const ausentismoRes = await getAusentismoSerieEventos(mes, anio)
+        const ausentismoRes = pAusentismo
+          ? await resolver(pAusentismo)
+          : await getAusentismoSerieEventos(mes, anio)
         const ausentismoPorFechaRaw = "data" in ausentismoRes
           ? ausentismoRes.data.por_fecha
           : {}
@@ -4280,16 +4412,9 @@ async function getIndicadoresMesCore(
         // (`ventas_diarias.total_hl`, Chess/rechazos-sync), NO sobre el HL
         // despachado de deposito-esteban. Numerador: HL de roturas de la
         // serie-diaria. Misma fuente HL que la fila "HL vendidos" y el WNP.
-        const { data: ventHlRaw } = await supabase
-          .from("ventas_diarias")
-          .select("fecha, total_hl")
-          .gte("fecha", fechaDesde)
-          .lte("fecha", fechaHasta)
+        const { data: ventHlRaw } = await leerVentasDiarias(fechaDesde, fechaHasta)
         const hlVendidoDia: Record<string, number> = {}
-        for (const v of (ventHlRaw ?? []) as Array<{
-          fecha: string
-          total_hl: number | null
-        }>) {
+        for (const v of ventHlRaw ?? []) {
           const h = Number(v.total_hl ?? 0)
           if (Number.isFinite(h)) {
             hlVendidoDia[v.fecha] = (hlVendidoDia[v.fecha] ?? 0) + h
@@ -4326,7 +4451,9 @@ async function getIndicadoresMesCore(
         // reloj falló, más el supervisor (que no ficha). Toda la lógica y el
         // porqué de cada regla están en `src/lib/wnp/calculo.ts`.
         // Pedido del usuario 2026-07-14.
-        const serieWnp = await cargarSerieWnp(supabase, fechaDesde, fechaHasta)
+        const serieWnp = pSerieWnp
+          ? await resolver(pSerieWnp)
+          : await cargarSerieWnp(supabase, fechaDesde, fechaHasta)
         // WNP día = HL vendidos del día / horas-hombre del día.
         // WNP MTD = Σ HL / Σ horas (solo días cerrados con venta Y horas). Se
         // enmascara el día de la reunión y futuros (f < fecha), igual que el

@@ -34,10 +34,6 @@
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/foxtrot/cron-alertas",
-      "schedule": "*/5 10-21 * * *"
-    },
-    {
       "path": "/api/wa-bot/sync-clientes",
       "schedule": "30 8 * * *"
     },
