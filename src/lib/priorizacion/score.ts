@@ -164,7 +164,38 @@ const ALIAS_CIUDAD: Record<string, string> = {
   "SAN NICOLAS": "SAN NICOLÁS",
   "VILLA GRAL SAVIO EX SANCHEZ": "SAN NICOLÁS",
   SANCHEZ: "SAN NICOLÁS",
+  // Asignadas por el usuario 2026-07-20 (por ruta real, NO por partido: Mariano
+  // H. Alfonzo y Carabelas son de Pergamino y Rojas pero se reparten desde Colón).
+  "LA EMILIA": "SAN NICOLÁS",
+  "GENERAL ROJO": "SAN NICOLÁS",
+  EREZCANO: "SAN NICOLÁS",
+  "CAMPO SALLES": "SAN NICOLÁS",
+  GUERRICO: "SAN NICOLÁS",
+  "GENERAL CONESA": "SAN NICOLÁS",
+  CARABELAS: "COLON",
+  "EL ARBOLITO": "COLON",
+  "MARIANO H ALFONZO": "COLON",
+  TODD: "PERGAMINO",
+  // Las cinco ciudades de ruteo, explícitas para que el fallback no las toque.
+  COLON: "COLON",
+  ARRECIFES: "ARRECIFES",
+  PERGAMINO: "PERGAMINO",
 }
+
+/**
+ * Las únicas solapas que se rutean (definición del usuario 2026-07-20). Todo lo
+ * que no mapee a una de estas cae en "OTRAS": antes el fallback creaba una solapa
+ * por localidad suelta, y alcanzaba con que apareciera un cliente de otro lado
+ * para romper la lista.
+ */
+const CIUDADES_RUTEO = new Set([
+  "SAN NICOLÁS",
+  "RAMALLO",
+  "COLON",
+  "ARRECIFES",
+  "PERGAMINO",
+])
+export const CIUDAD_OTRAS = "OTRAS"
 
 /**
  * Ciudad de ruteo de una localidad: agrupa las localidades que van en el mismo camión.
@@ -173,8 +204,18 @@ const ALIAS_CIUDAD: Record<string, string> = {
  */
 export function ciudadDeLocalidad(localidad: string | null): string {
   const raw = (localidad ?? "SIN LOCALIDAD").trim().toUpperCase().replace(/\s+/g, " ")
-  const norm = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-  return ALIAS_CIUDAD[norm] ?? raw
+  // Se quitan tambi\u00e9n los PUNTOS: la misma localidad aparece como "VILLA GRAL
+  // SAVIO" y "VILLA GRAL. SAVIO" seg\u00fan qui\u00e9n la carg\u00f3, y sin esto la segunda no
+  // matcheaba y se abr\u00eda una solapa suelta.
+  const norm = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  const ciudad = ALIAS_CIUDAD[norm]
+  if (ciudad) return ciudad
+  return CIUDADES_RUTEO.has(norm) ? norm : CIUDAD_OTRAS
 }
 
 /** Comportamiento 0-100 a partir de los rechazos por causa del cliente. */
