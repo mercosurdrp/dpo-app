@@ -5,6 +5,10 @@ import { getArchivos } from "@/actions/dpo-evidencia"
 import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
 import { getOwdTemplateByPregunta, getOwdKpis } from "@/actions/owd"
 import {
+  getCoberturaVentanasHorarias,
+  PREGUNTA_44_ID,
+} from "@/actions/ventanas-horarias"
+import {
   getOperadoresParaAsignar,
   getPermisoCrearTareas,
 } from "@/actions/tareas-directas"
@@ -77,6 +81,15 @@ export default async function PreguntaPage({
   const owdKpisRes = owdTemplate ? await getOwdKpis(owdTemplate.id) : null
   const owdKpis = owdKpisRes && "data" in owdKpisRes ? owdKpisRes.data : null
 
+  // Entrega 4.4 "Entregas On Time": el R4.4.2/R4.4.3 se evidencian con el
+  // relevamiento trimestral de ventanas horarias, que vive en la base del
+  // dashboard Mercosur. Sólo se consulta en ese punto para no pagar la latencia
+  // de la Railway en el resto de los puntos.
+  const esPunto44 = preguntaId === PREGUNTA_44_ID
+  const vhRes = esPunto44 ? await getCoberturaVentanasHorarias() : null
+  const coberturaVh = vhRes && "data" in vhRes ? vhRes.data : null
+  const coberturaVhError = vhRes && "error" in vhRes ? vhRes.error : null
+
   return (
     <PreguntaGestionClient
       pilar={pilar as Pilar}
@@ -88,6 +101,9 @@ export default async function PreguntaPage({
       owdTemplate={owdTemplate}
       owdKpis={owdKpis}
       isAdmin={profile.role === "admin"}
+      mostrarVentanasHorarias={esPunto44}
+      coberturaVh={coberturaVh}
+      coberturaVhError={coberturaVhError}
     />
   )
 }

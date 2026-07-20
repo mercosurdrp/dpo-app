@@ -577,6 +577,149 @@ export async function consultarEquiposFrioPorCliente(): Promise<Map<number, Equi
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Ventanas horarias de los PDV (Entrega 4.4 "Entregas On Time", R4.4.2/R4.4.3).
+//
+// El relevamiento TRIMESTRAL vive en el dashboard Mercosur (/horarios-pdv), no
+// en dpo-app: `horarios_ciclos` (el trimestre), `horarios_padron` (el
+// denominador CONGELADO al abrir el ciclo) y `horarios_relevamientos` (una fila
+// por PDV relevado). El horario vigente queda además en `clientes.horario`.
+//
+// 🚨 El denominador es el PADRÓN CONGELADO, no la cartera viva: si un promotor
+// deja de visitar un PDV, ese PDV NO desaparece del padrón del trimestre. Sin
+// eso, no relevar subiría el porcentaje (denominador auto-reportado).
+//
+// R4.4.3 exige >80% de clientes con ventana horaria definida.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Umbral del requisito R4.4.3 del checklist DPO 2.1. */
+export const META_COBERTURA_VH = 80
+
+export interface CoberturaVhPromotor {
+  promotor: string
+  username: string | null
+  padron: number
+  relevados: number
+  pendientes: number
+  cobertura_pct: number
+  /** Relevamientos confirmados SIN tocar un solo campo del horario anterior. */
+  sin_cambios: number
+  ultima_carga: string | null
+}
+
+export interface CoberturaVh {
+  ciclo: string
+  desde: string
+  hasta: string
+  estado: string
+  /** Momento en que se congeló el padrón del ciclo. */
+  padron_at: string | null
+  padron: number
+  relevados: number
+  pendientes: number
+  cobertura_pct: number
+  meta_pct: number
+  cumple_meta: boolean
+  promotores: CoberturaVhPromotor[]
+}
+
+/**
+ * Cobertura del relevamiento de ventanas horarias del ciclo vigente (o del
+ * `ciclo` pedido), total y abierta por promotor. Réplica de `_seguimiento()` del
+ * backend del dashboard (backend/app/routers/horarios_pdv.py), que no expone un
+ * endpoint consumible sin JWT — por eso se lee la base directo, igual que el VRC.
+ *
+ * Devuelve null si todavía no se abrió ningún ciclo.
+ */
+export async function consultarCoberturaVentanasHorarias(
+  ciclo?: string,
+): Promise<CoberturaVh | null> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    const cicloRes = await client.query<{
+      codigo: string
+      desde: string
+      hasta: string
+      estado: string
+      padron_at: string | null
+    }>(
+      `SELECT codigo,
+              to_char(fecha_desde, 'YYYY-MM-DD') AS desde,
+              to_char(fecha_hasta, 'YYYY-MM-DD') AS hasta,
+              estado,
+              to_char(padron_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') AS padron_at
+         FROM horarios_ciclos
+        WHERE ($1::text IS NULL OR codigo = $1)
+        ORDER BY fecha_desde DESC
+        LIMIT 1`,
+      [ciclo ?? null],
+    )
+    const c = cicloRes.rows[0]
+    if (!c) return null
+
+    // Padrón congelado LEFT JOIN relevamientos: los PDV sin relevar cuentan.
+    const res = await client.query<{
+      promotor: string | null
+      username: string | null
+      padron: string
+      relevados: string
+      sin_cambios: string
+      ultima_carga: string | null
+    }>(
+      `SELECT p.promotor,
+              p.promotor_username                                    AS username,
+              count(*)                                               AS padron,
+              count(r.id_cliente)                                    AS relevados,
+              count(*) FILTER (WHERE r.confirmado_sin_cambios)       AS sin_cambios,
+              to_char(max(r.fecha_carga), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS ultima_carga
+         FROM horarios_padron p
+         LEFT JOIN horarios_relevamientos r
+                ON r.ciclo = p.ciclo AND r.id_cliente = p.id_cliente
+        WHERE p.ciclo = $1
+        GROUP BY p.promotor, p.promotor_username
+        ORDER BY p.promotor`,
+      [c.codigo],
+    )
+
+    const promotores: CoberturaVhPromotor[] = res.rows.map((r) => {
+      const padron = Number(r.padron) || 0
+      const relevados = Number(r.relevados) || 0
+      return {
+        promotor: r.promotor ?? "(sin promotor)",
+        username: r.username,
+        padron,
+        relevados,
+        pendientes: padron - relevados,
+        cobertura_pct: padron > 0 ? (relevados / padron) * 100 : 0,
+        sin_cambios: Number(r.sin_cambios) || 0,
+        ultima_carga: r.ultima_carga,
+      }
+    })
+
+    const padron = promotores.reduce((s, p) => s + p.padron, 0)
+    const relevados = promotores.reduce((s, p) => s + p.relevados, 0)
+    const cobertura_pct = padron > 0 ? (relevados / padron) * 100 : 0
+
+    return {
+      ciclo: c.codigo,
+      desde: c.desde,
+      hasta: c.hasta,
+      estado: c.estado,
+      padron_at: c.padron_at,
+      padron,
+      relevados,
+      pendientes: padron - relevados,
+      cobertura_pct,
+      meta_pct: META_COBERTURA_VH,
+      cumple_meta: cobertura_pct >= META_COBERTURA_VH,
+      promotores,
+    }
+  } finally {
+    client.release()
+  }
+}
+
 export interface CensoPdvInfo {
   /** HL/mes que el PDV mueve en TODO el mercado (CMQ + CCU + otros). */
   hl_total: number

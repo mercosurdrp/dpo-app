@@ -35,6 +35,7 @@ import {
   User,
   Users,
   CheckCircle,
+  Clock,
 } from "lucide-react"
 
 function pilarSlug(nombre: string): string {
@@ -114,6 +115,8 @@ import type {
   OwdTemplate,
 } from "@/types/database"
 import { OwdTab, type OwdKpisMini } from "./owd-tab"
+import { VentanasHorariasTab } from "./ventanas-horarias-tab"
+import type { CoberturaVh } from "@/lib/mercosur-dashboard"
 
 const SCORE_COLORS: Record<number, string> = {
   0: "#EF4444",
@@ -1270,6 +1273,9 @@ export function PreguntaGestionClient({
   owdTemplate = null,
   owdKpis = null,
   isAdmin = false,
+  mostrarVentanasHorarias = false,
+  coberturaVh = null,
+  coberturaVhError = null,
 }: {
   pilar: Pilar
   pregunta: PreguntaGestionFull
@@ -1280,6 +1286,10 @@ export function PreguntaGestionClient({
   owdTemplate?: OwdTemplate | null
   owdKpis?: OwdKpisMini | null
   isAdmin?: boolean
+  /** Sólo el punto Entrega 4.4 muestra el tab de ventanas horarias. */
+  mostrarVentanasHorarias?: boolean
+  coberturaVh?: CoberturaVh | null
+  coberturaVhError?: string | null
 }) {
   const [guiaOpen, setGuiaOpen] = useState(false)
   const [verificarOpen, setVerificarOpen] = useState(false)
@@ -1571,6 +1581,18 @@ export function PreguntaGestionClient({
               </span>
             )}
           </TabsTrigger>
+          {mostrarVentanasHorarias && (
+            <TabsTrigger value="ventanas-horarias">
+              <Clock className="mr-1 h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Ventanas Horarias</span>
+              <span className="sm:hidden">VH</span>
+              {coberturaVh && (
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  ({coberturaVh.cobertura_pct.toFixed(0)}%)
+                </span>
+              )}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="indicadores">
@@ -1608,6 +1630,14 @@ export function PreguntaGestionClient({
             isAdmin={isAdmin}
           />
         </TabsContent>
+        {mostrarVentanasHorarias && (
+          <TabsContent value="ventanas-horarias">
+            <VentanasHorariasTab
+              cobertura={coberturaVh}
+              error={coberturaVhError}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
