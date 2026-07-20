@@ -32,6 +32,7 @@ import {
   Fuel,
   Package,
   Gauge,
+  Map as MapIcon,
   type LucideIcon,
 } from "lucide-react"
 import type { Pilar, Indicador } from "@/types/database"
@@ -259,6 +260,42 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
               </div>
               <Link
                 href="/planeamiento/priorizacion-entrega"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Acceso a Plan Territorial (5.1), pilar Planeamiento — solo Pampeana.
+          Misiones tiene su propia versión en dpo-distribuciones. */}
+      {!IS_MISIONES && pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <MapIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Plan Territorial (5.1)
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    VLC/HL por ciudad · escenarios base/objetivo/ensueño ·
+                    simulador de relocalización del CD · planes de acción
+                    comercial+logística · revisión mensual
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/plan-territorial"
                 className={buttonVariants({ size: "lg" })}
                 style={{ backgroundColor: pilar.color, color: "#fff" }}
               >

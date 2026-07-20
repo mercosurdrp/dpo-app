@@ -131,6 +131,57 @@ async function bloqueRechazos(supabase: Supa) {
   })
 }
 
+// Planes del Plan Territorial (Planeamiento 5.1). Van en este mismo feed porque
+// son planes conjuntos comercial+logística: se gestionan en dpo-app y el
+// dashboard sólo los muestra, igual que NPS y Rechazos.
+// A diferencia de los otros dos, el foco no es un cliente sino una CIUDAD.
+async function bloqueTerritorial(supabase: Supa) {
+  const { data, error } = await supabase
+    .from("territorial_planes")
+    .select(
+      "id, titulo, descripcion, ciudad, palanca, linea_base, meta, fecha_implementacion, prioridad, estado, fecha_objetivo, created_at, updated_at, comercial:profiles!territorial_planes_responsable_comercial_id_fkey(nombre), logistica:profiles!territorial_planes_responsable_logistica_id_fkey(nombre)",
+    )
+    .order("created_at", { ascending: false })
+  if (error) return { error: error.message }
+  const planes = (data ?? []) as Array<Record<string, unknown>>
+  const avances = await ultimosAvances(
+    supabase,
+    "territorial_planes_avances",
+    planes.map((p) => String(p.id)),
+  )
+  return planes.map((p) => {
+    const com = p.comercial as { nombre?: string } | null
+    const log = p.logistica as { nombre?: string } | null
+    const av = avances.get(String(p.id))
+    return {
+      id: p.id,
+      titulo: p.titulo,
+      descripcion: p.descripcion ?? null,
+      ciudad: p.ciudad ?? null,
+      palanca: p.palanca ?? null,
+      linea_base: p.linea_base ?? null,
+      meta: p.meta ?? null,
+      fecha_implementacion: p.fecha_implementacion ?? null,
+      prioridad: p.prioridad,
+      estado: p.estado,
+      // Doble responsable: es lo que hace de estos planes algo conjunto.
+      responsable_comercial: com?.nombre ?? null,
+      responsable_logistica: log?.nombre ?? null,
+      responsable: com?.nombre ?? log?.nombre ?? null,
+      fecha_objetivo: p.fecha_objetivo ?? null,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      ultimo_avance: av
+        ? {
+            comentario: av.comentario,
+            estado_resultante: av.estado_resultante,
+            fecha: av.created_at,
+          }
+        : null,
+    }
+  })
+}
+
 export async function GET(request: NextRequest) {
   if (IS_MISIONES) {
     return NextResponse.json({ error: "No disponible en este tenant" }, { status: 404 })
@@ -144,15 +195,18 @@ export async function GET(request: NextRequest) {
 
   const supabase = getServiceClient()
   try {
-    const [nps, rechazos] = await Promise.all([
+    const [nps, rechazos, territorial] = await Promise.all([
       bloqueNps(supabase),
       bloqueRechazos(supabase),
+      bloqueTerritorial(supabase),
     ])
     return NextResponse.json({
-      fuente: "dpo-app Pampeana — planes comerciales (NPS + Rechazos)",
+      fuente:
+        "dpo-app Pampeana — planes comerciales (NPS + Rechazos + Plan Territorial)",
       generado_en: new Date().toISOString(),
       nps,
       rechazos,
+      territorial,
     })
   } catch (e) {
     return NextResponse.json(
