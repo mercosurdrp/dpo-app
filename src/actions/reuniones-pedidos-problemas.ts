@@ -10,7 +10,12 @@ type Result<T> = { data: T } | { error: string }
 const SOLO_PAMPEANA =
   "La sección Pedidos con problemas solo está disponible en Pampeana."
 
-/** Misma ventana que el bloque de Flota y Ruteo: la semana previa a la reunión. */
+/**
+ * Semana de 7 días que TERMINA el día de la reunión, inclusive: para la reunión
+ * del lunes va del martes anterior al lunes. Incluye el día de la reunión a
+ * propósito — en la reunión de la mañana se habla de los pedidos que HOY no se
+ * entregan por reprogramación (el corte se registra el día previo a la entrega).
+ */
 const VENTANA_DIAS = 7
 
 function diaAnterior(fecha: string, dias: number): string {
@@ -46,7 +51,7 @@ export interface TotalesFuente {
 export interface PedidosConProblemasReunion {
   desde: string
   hasta: string
-  /** Mes de la reunión (YYYY-MM); el acumulado corre del 1° al día previo. */
+  /** Mes de la reunión (YYYY-MM); el acumulado corre del 1° al día de la reunión. */
   mes: string
   pedidos: PedidoConProblema[]
   totalVrl: TotalesFuente
@@ -72,7 +77,7 @@ const MOTIVO_VRL: Record<string, string> = {
 }
 
 /**
- * Pedidos reprogramados de la semana previa a la reunión Logística-Ventas,
+ * Pedidos reprogramados de la semana que cierra el día de la reunión (inclusive),
  * juntando las dos patas del volumen reprogramado:
  *  - VRL (logístico): cortes de entrega registrados en Priorización de Entrega
  *    (`entrega_cortes`, Supabase propia).
@@ -88,12 +93,12 @@ export async function getPedidosConProblemas(
     return { error: "Fecha de reunión inválida (formato esperado YYYY-MM-DD)" }
   }
 
-  const hasta = diaAnterior(fechaReunion, 1)
-  const desde = diaAnterior(fechaReunion, VENTANA_DIAS)
+  const hasta = fechaReunion
+  const desde = diaAnterior(fechaReunion, VENTANA_DIAS - 1)
   const mes = fechaReunion.slice(0, 7)
   const inicioMes = `${mes}-01`
-  // La semana previa puede pisar el mes anterior (reunión a principio de mes):
-  // se trae una sola ventana que cubre las dos y se separa en memoria.
+  // La semana puede pisar el mes anterior (reunión a principio de mes): se trae
+  // una sola ventana que cubre las dos y se separa en memoria.
   const inferior = desde < inicioMes ? desde : inicioMes
 
   // ── VRL: cortes de entrega, fila por cliente-día ──────────────────────────

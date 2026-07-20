@@ -230,7 +230,7 @@ const FILTRO_TITULO: Record<Filtro, string> = {
 
 /**
  * Pedidos con problemas: tarjetas con la cantidad de pedidos, bultos y HL
- * reprogramados en la semana previa a la reunión — VRL (cortes de ruteo),
+ * reprogramados en la semana que cierra el día de la reunión — VRL (cortes de ruteo),
  * VRC (crédito) y el total. Tocando una tarjeta se abre el detalle de
  * quiénes fueron, qué día, con qué motivo y cuánto volumen y plata.
  * Se usa igual en Logística-Ventas y en la logística de los lunes.
@@ -316,8 +316,9 @@ export function SeccionPedidosProblemas({
           <>
             <p className="text-xs text-slate-500">
               Pedidos reprogramados del {formatFecha(data.desde)} al{" "}
-              {formatFecha(data.hasta)} (la semana previa a esta reunión), y
-              abajo el acumulado de {nombreMes(data.mes)} hasta esa fecha.{" "}
+              {formatFecha(data.hasta)} (la semana que cierra el día de esta
+              reunión, incluido), y abajo el acumulado de {nombreMes(data.mes)}{" "}
+              hasta esa fecha.{" "}
               <strong>VRL</strong> = fuera de ruta por capacidad de reparto ·{" "}
               <strong>VRC</strong> = por límite de crédito.
             </p>
