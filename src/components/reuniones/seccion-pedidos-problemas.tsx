@@ -283,6 +283,11 @@ function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
               </td>
               <td className="py-1.5 text-slate-600">
                 {p.motivo}
+                {p.veniaFueraDeRuta && (
+                  <span className="ml-1 text-xs font-medium text-violet-700">
+                    · venía fuera de ruta, se bajó del camión
+                  </span>
+                )}
                 {p.vecesPrevias != null && p.vecesPrevias > 0 && (
                   <span className="ml-1 text-xs font-medium text-red-600">
                     · ya pospuesto ×{p.vecesPrevias}
@@ -431,8 +436,9 @@ export function SeccionPedidosProblemas({
               hasta esa fecha.{" "}
               <strong>VRL</strong> = no se entregó por capacidad de reparto ·{" "}
               <strong>VRC</strong> = no se entregó por límite de crédito ·{" "}
-              <strong>Fuera de ruta</strong> = sí se entregó, pero fuera del
-              recorrido planificado (por eso va aparte del total).
+              <strong>Fuera de ruta</strong> = se llevó, pero fuera del recorrido
+              planificado. El que no se puede llevar se baja del camión y pasa a
+              contarse en el VRL, así que no se suma dos veces.
             </p>
 
             {data.vrcError && (
@@ -508,7 +514,11 @@ export function SeccionPedidosProblemas({
                   mezclaría "no se entregó" con "se entregó mal". */}
               <Resumen
                 titulo="Fuera de ruta"
-                detalle="se entregó, fuera del recorrido"
+                detalle={
+                  data.fdrBajados.pedidos > 0
+                    ? `se llevaron fuera del recorrido — otros ${data.fdrBajados.pedidos} se bajaron y están en el VRL`
+                    : "se llevaron, fuera del recorrido planificado"
+                }
                 pedidos={data.totalFdr.pedidos}
                 bultos={data.totalFdr.bultos}
                 hl={data.totalFdr.hl}

@@ -43,6 +43,11 @@ export interface PedidoConProblema {
   fechaNueva: string | null
   /** VRL: cuántas veces ya se le había postergado el pedido antes de este corte. */
   vecesPrevias: number | null
+  /**
+   * Este pedido estaba FUERA DE RUTA y además se bajó del camión (está en el
+   * corte). Se marca en la fila del VRL para no perder de vista de dónde venía.
+   */
+  veniaFueraDeRuta?: boolean
 }
 
 export interface TotalesFuente {
@@ -63,13 +68,18 @@ export interface PedidosConProblemasReunion {
   mesVrl: TotalesFuente
   mesVrc: TotalesFuente | null
   /**
-   * Fuera de ruta: se cuenta APARTE, NO entra al total de reprogramados. El
-   * pedido SÍ se entregó — el problema es que salió fuera del recorrido
-   * planificado, otro circuito. Sumarlo al VRL+VRC mezclaría "no se entregó"
-   * con "se entregó mal" y ninguno de los dos números querría decir nada.
+   * Fuera de ruta que SÍ se entregó (se llevó, fuera del recorrido planificado).
+   *
+   * 🚨 Excluye los que se bajaron del camión: cuando un fuera de ruta no se
+   * puede llevar se baja, y ese pedido YA ESTÁ CONTADO EN EL VRL (aparece en
+   * `entrega_cortes`). Si se contaran acá también, el mismo pedido sumaría dos
+   * veces. Los bajados se informan aparte en `fdrBajados`.
    */
   totalFdr: TotalesFuente
   mesFdr: TotalesFuente
+  /** Fuera de ruta que terminó bajado del camión ⇒ vive dentro del VRL. */
+  fdrBajados: TotalesFuente
+  mesFdrBajados: TotalesFuente
   vrcError: string | null
 }
 
@@ -228,7 +238,23 @@ export async function getPedidosConProblemas(
     fechaNueva: null,
     vecesPrevias: null,
   }))
-  const fdrSemana = fdrTodos.filter((p) => p.fecha >= desde)
+  // 🚨 Un fuera de ruta que NO se puede llevar se BAJA del camión, y ahí pasa a
+  // ser volumen reprogramado logístico: queda en `entrega_cortes` y ya está
+  // contado en el VRL. Los dos conjuntos se pisan en ese subconjunto ⇒ se cruza
+  // por cliente+fecha y el bajado NO vuelve a sumar como fuera de ruta.
+  const clavesVrl = new Set(vrlTodos.map((p) => `${p.fecha}|${p.idCliente}`))
+  const esBajado = (p: PedidoConProblema) =>
+    clavesVrl.has(`${p.fecha}|${p.idCliente}`)
+
+  // La fila del VRL dice de dónde venía, que es información de la reunión.
+  const clavesFdr = new Set(fdrTodos.map((p) => `${p.fecha}|${p.idCliente}`))
+  for (const p of vrlTodos) {
+    if (clavesFdr.has(`${p.fecha}|${p.idCliente}`)) p.veniaFueraDeRuta = true
+  }
+
+  const fdrEntregados = fdrTodos.filter((p) => !esBajado(p))
+  const fdrBajadosTodos = fdrTodos.filter(esBajado)
+  const fdrSemana = fdrEntregados.filter((p) => p.fecha >= desde)
   pedidos.push(...fdrSemana)
 
   pedidos.sort((a, b) =>
@@ -246,7 +272,11 @@ export async function getPedidosConProblemas(
       mesVrl: totales(vrlTodos.filter((p) => p.fecha >= inicioMes)),
       mesVrc,
       totalFdr: totales(fdrSemana),
-      mesFdr: totales(fdrTodos.filter((p) => p.fecha >= inicioMes)),
+      mesFdr: totales(fdrEntregados.filter((p) => p.fecha >= inicioMes)),
+      fdrBajados: totales(fdrBajadosTodos.filter((p) => p.fecha >= desde)),
+      mesFdrBajados: totales(
+        fdrBajadosTodos.filter((p) => p.fecha >= inicioMes)
+      ),
       vrcError,
     },
   }
