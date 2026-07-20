@@ -3,15 +3,27 @@
  *
  * Sin autenticación (decisión de negocio): cualquiera con el link obtiene el
  * JSON de la última foto del radar. Pensado para que otra app arme planes de
- * acción sobre los clientes en riesgo / críticos de la entrega de pasado mañana.
+ * acción sobre los clientes reincidentes de la entrega de pasado mañana.
  *
- * GET /api/radar-rechazos/feed?modo=criticos|todos&umbral=7
- *   modo=criticos (default) → solo clientes con MÁS de `umbral` rechazos por
- *                             SIN DINERO en el año calendario de la entrega.
+ * GET /api/radar-rechazos/feed?modo=criticos|todos
+ *   modo=criticos (default) → solo los clientes que cumplen el CRITERIO (abajo).
  *   modo=todos              → todos los clientes en riesgo de la foto.
  *
- * Los conteos `sin_dinero_anio` / `cerrado_anio` son del AÑO CALENDARIO de la
- * entrega (recontados desde el 1-ene). Solo Pampeana.
+ * 🚨 Los conteos salen TAL CUAL de `radar_rechazos_cliente`, que el cron ya
+ * calcula en VECES (cliente × fecha). NO recalcular acá sobre la tabla
+ * `rechazos`: (1) esa tabla tiene UNA FILA POR ARTÍCULO rechazado, así que
+ * contar filas infla el número por la cantidad de SKU del pedido (un rechazo de
+ * 13 productos contaba 13 — el bug que este feed tenía); (2) paginarla entera
+ * para todos los clientes del día tardaba +90 s y la ruta moría con 522.
+ *
+ * Ventanas (las del snapshot): `_anio` = últimos 365 días, `_mes` = últimos 30.
+ *
+ * CRITERIO (único, sin distinción de "críticos" vs "en riesgo") — entra el
+ * cliente que cumple CUALQUIERA de las dos condiciones, sumando SIN DINERO +
+ * CERRADO:
+ *   a) más de 1 rechazo por mes en promedio en los últimos 12 meses
+ *      →  rechazos_anio > 12
+ *   b) más de 2 rechazos en los últimos 30 días  →  rechazos_30d > 2
  *
  * OJO: este path debe estar en la allowlist de `src/middleware.ts`, si no el
  * middleware lo redirige a /login y nunca responde JSON.
@@ -23,9 +35,12 @@ import { createAdminClient } from "@/lib/supabase/admin"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const ID_CERRADO = 1
-const ID_SIN_DINERO = 6
-const UMBRAL_DEFAULT = 7
+/** Meses de la ventana anual del snapshot (365 días). */
+const MESES_ANIO = 12
+/** Promedio mensual mínimo en el año (excluyente: > 1 por mes). */
+const PROMEDIO_MENSUAL_ANIO = 1
+/** Rechazos mínimos en los últimos 30 días (excluyente: > 2). */
+const UMBRAL_30D = 2
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -43,8 +58,6 @@ export async function GET(req: NextRequest) {
   }
 
   const modo = req.nextUrl.searchParams.get("modo") === "todos" ? "todos" : "criticos"
-  const umbralRaw = Number(req.nextUrl.searchParams.get("umbral"))
-  const umbral = Number.isInteger(umbralRaw) && umbralRaw >= 0 ? umbralRaw : UMBRAL_DEFAULT
 
   try {
     const supa = createAdminClient()
@@ -66,46 +79,24 @@ export async function GET(req: NextRequest) {
     const { data: enRiesgo, error: cErr } = await supa
       .from("radar_rechazos_cliente")
       .select(
-        "id_cliente, nombre_cliente, localidad, telefono, id_promotor, nombre_promotor, reparto, bultos_pedido, monto_pedido",
+        "id_cliente, nombre_cliente, localidad, telefono, id_promotor, nombre_promotor, reparto, bultos_pedido, monto_pedido, sin_dinero_anio, sin_dinero_mes, cerrado_anio, cerrado_mes, bultos_rechazados_anio",
       )
       .eq("fecha_entrega", header.fecha_entrega)
     if (cErr) throw new Error(cErr.message)
 
-    const anio = Number(String(header.fecha_entrega).slice(0, 4))
-    const desde = `${anio}-01-01`
-    const ids = (enRiesgo ?? [])
-      .map((c) => c.id_cliente)
-      .filter((id): id is number => id != null)
-
-    // Conteo del año calendario (sin dinero / cerrado) para los clientes en riesgo
-    const calen = new Map<number, { sd: number; ce: number }>()
-    if (ids.length > 0) {
-      const PAGE = 1000
-      let from = 0
-      while (true) {
-        const { data, error } = await supa
-          .from("rechazos")
-          .select("id_cliente, id_rechazo")
-          .in("id_cliente", ids)
-          .in("id_rechazo", [ID_CERRADO, ID_SIN_DINERO])
-          .gte("fecha_venta", desde)
-          .range(from, from + PAGE - 1)
-        if (error) throw new Error(error.message)
-        if (!data || data.length === 0) break
-        for (const r of data as { id_cliente: number | null; id_rechazo: number }[]) {
-          if (r.id_cliente == null) continue
-          const c = calen.get(r.id_cliente) ?? { sd: 0, ce: 0 }
-          if (r.id_rechazo === ID_SIN_DINERO) c.sd += 1
-          else if (r.id_rechazo === ID_CERRADO) c.ce += 1
-          calen.set(r.id_cliente, c)
-        }
-        if (data.length < PAGE) break
-        from += PAGE
-      }
-    }
+    const umbralAnio = MESES_ANIO * PROMEDIO_MENSUAL_ANIO
 
     let clientes = (enRiesgo ?? []).map((c) => {
-      const cc = c.id_cliente != null ? calen.get(c.id_cliente) : undefined
+      const sinDineroAnio = Number(c.sin_dinero_anio ?? 0)
+      const cerradoAnio = Number(c.cerrado_anio ?? 0)
+      const sinDineroMes = Number(c.sin_dinero_mes ?? 0)
+      const cerradoMes = Number(c.cerrado_mes ?? 0)
+      // Los dos motivos se cuentan por separado en el snapshot: un mismo día con
+      // rechazo por ambos suma 2 acá. Es marginal y juega a favor de detectarlo.
+      const rechazosAnio = sinDineroAnio + cerradoAnio
+      const rechazos30d = sinDineroMes + cerradoMes
+      const porPromedio = rechazosAnio > umbralAnio
+      const por30d = rechazos30d > UMBRAL_30D
       return {
         id_cliente: c.id_cliente,
         nombre: c.nombre_cliente,
@@ -116,19 +107,29 @@ export async function GET(req: NextRequest) {
         reparto: c.reparto,
         bultos_pedido: Number(c.bultos_pedido ?? 0),
         monto_pedido: Number(c.monto_pedido ?? 0),
-        sin_dinero_anio: cc?.sd ?? 0,
-        cerrado_anio: cc?.ce ?? 0,
+        sin_dinero_anio: sinDineroAnio,
+        cerrado_anio: cerradoAnio,
+        sin_dinero_30d: sinDineroMes,
+        cerrado_30d: cerradoMes,
+        rechazos_anio: rechazosAnio,
+        rechazos_30d: rechazos30d,
+        bultos_rechazados_anio: Number(c.bultos_rechazados_anio ?? 0),
+        // Qué condición lo hizo entrar (puede ser una, la otra, o las dos).
+        por_promedio_anio: porPromedio,
+        por_ultimos_30d: por30d,
+        cumple_criterio: porPromedio || por30d,
       }
     })
 
     if (modo === "criticos") {
-      clientes = clientes.filter((c) => c.sin_dinero_anio > umbral)
+      clientes = clientes.filter((c) => c.cumple_criterio)
     }
 
     clientes.sort(
       (a, b) =>
         (a.promotor ?? "~").localeCompare(b.promotor ?? "~") ||
-        b.sin_dinero_anio - a.sin_dinero_anio ||
+        b.rechazos_30d - a.rechazos_30d ||
+        b.rechazos_anio - a.rechazos_anio ||
         (a.nombre ?? "").localeCompare(b.nombre ?? ""),
     )
 
@@ -136,8 +137,9 @@ export async function GET(req: NextRequest) {
       {
         ok: true,
         modo,
-        umbral: modo === "criticos" ? umbral : null,
-        anio,
+        criterio_meses: MESES_ANIO,
+        criterio_umbral_anio: umbralAnio,
+        criterio_umbral_30d: UMBRAL_30D,
         fecha_entrega: header.fecha_entrega,
         generado_at: header.generado_at,
         total_clientes_dia: header.total_clientes_dia,
