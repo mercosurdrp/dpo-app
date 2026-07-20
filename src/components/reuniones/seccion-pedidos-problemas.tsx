@@ -35,7 +35,7 @@ interface ResponsableOpt {
   email: string
 }
 
-type Filtro = "vrl" | "vrc" | "todos"
+type Filtro = "vrl" | "vrc" | "fdr" | "todos"
 
 const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
 
@@ -86,7 +86,7 @@ function Resumen({
   hl: number | null
   mesNombre: string
   mesTotales: TotalesFuente | null
-  tono: "amber" | "sky" | "slate"
+  tono: "amber" | "sky" | "slate" | "violet"
   onClick: (() => void) | null
 }) {
   return (
@@ -99,6 +99,7 @@ function Resumen({
         tono === "amber" && "border-amber-200 bg-amber-50/50",
         tono === "sky" && "border-sky-200 bg-sky-50/50",
         tono === "slate" && "border-slate-200",
+        tono === "violet" && "border-violet-200 bg-violet-50/50",
         onClick != null
           ? "cursor-pointer transition-shadow hover:shadow-md"
           : "cursor-default"
@@ -168,12 +169,15 @@ function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
                 <Badge
                   variant="outline"
                   className={cn(
-                    p.fuente === "vrl"
-                      ? "border-amber-300 bg-amber-50 text-amber-700"
-                      : "border-sky-300 bg-sky-50 text-sky-700"
+                    p.fuente === "vrl" &&
+                      "border-amber-300 bg-amber-50 text-amber-700",
+                    p.fuente === "vrc" &&
+                      "border-sky-300 bg-sky-50 text-sky-700",
+                    p.fuente === "fdr" &&
+                      "border-violet-300 bg-violet-50 text-violet-700"
                   )}
                 >
-                  {p.fuente === "vrl" ? "VRL" : "VRC"}
+                  {p.fuente === "vrl" ? "VRL" : p.fuente === "vrc" ? "VRC" : "FDR"}
                 </Badge>
               </td>
               <td className="py-1.5 text-slate-600">
@@ -223,9 +227,12 @@ function TablaPedidos({ pedidos }: { pedidos: PedidoConProblema[] }) {
 }
 
 const FILTRO_TITULO: Record<Filtro, string> = {
-  vrl: "Pedidos fuera de ruta — VRL (logístico)",
+  // 🚨 El VRL NO es fuera de ruta (eran cortes por capacidad); el label viejo
+  // decía eso y se volvió contradictorio al sumar el fuera de ruta de verdad.
+  vrl: "Pedidos reprogramados — VRL (logístico)",
   vrc: "Pedidos reprogramados — VRC (crédito)",
-  todos: "Pedidos reprogramados de la semana",
+  fdr: "Pedidos entregados FUERA DE RUTA",
+  todos: "Pedidos reprogramados de la semana (VRL + VRC)",
 }
 
 /**
@@ -287,7 +294,9 @@ export function SeccionPedidosProblemas({
     data == null || filtro == null
       ? []
       : filtro === "todos"
-        ? data.pedidos
+        ? // "Total semana" es VRL + VRC: el fuera de ruta queda afuera para que
+          // el número de la tarjeta y las filas del detalle sean lo mismo.
+          data.pedidos.filter((p) => p.fuente !== "fdr")
         : data.pedidos.filter((p) => p.fuente === filtro)
 
   return (
@@ -315,12 +324,14 @@ export function SeccionPedidosProblemas({
         {data && !loading && (
           <>
             <p className="text-xs text-slate-500">
-              Pedidos reprogramados del {formatFecha(data.desde)} al{" "}
+              Pedidos con problemas del {formatFecha(data.desde)} al{" "}
               {formatFecha(data.hasta)} (la semana que cierra el día de esta
               reunión, incluido), y abajo el acumulado de {nombreMes(data.mes)}{" "}
               hasta esa fecha.{" "}
-              <strong>VRL</strong> = fuera de ruta por capacidad de reparto ·{" "}
-              <strong>VRC</strong> = por límite de crédito.
+              <strong>VRL</strong> = no se entregó por capacidad de reparto ·{" "}
+              <strong>VRC</strong> = no se entregó por límite de crédito ·{" "}
+              <strong>Fuera de ruta</strong> = sí se entregó, pero fuera del
+              recorrido planificado (por eso va aparte del total).
             </p>
 
             {data.vrcError && (
@@ -333,9 +344,9 @@ export function SeccionPedidosProblemas({
               </p>
             )}
 
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Resumen
-                titulo="VRL — fuera de ruta"
+                titulo="VRL — logístico"
                 detalle="cortes del ruteo por capacidad"
                 pedidos={data.totalVrl.pedidos}
                 bultos={data.totalVrl.bultos}
@@ -389,6 +400,22 @@ export function SeccionPedidosProblemas({
                 tono="slate"
                 onClick={
                   data.pedidos.length > 0 ? () => setFiltro("todos") : null
+                }
+              />
+              {/* Fuera de ruta va APARTE del total: ese pedido sí se entregó,
+                  lo que falló fue el recorrido. Sumarlo al reprogramado
+                  mezclaría "no se entregó" con "se entregó mal". */}
+              <Resumen
+                titulo="Fuera de ruta"
+                detalle="se entregó, fuera del recorrido"
+                pedidos={data.totalFdr.pedidos}
+                bultos={data.totalFdr.bultos}
+                hl={data.totalFdr.hl}
+                mesNombre={nombreMes(data.mes)}
+                mesTotales={data.mesFdr}
+                tono="violet"
+                onClick={
+                  data.totalFdr.pedidos > 0 ? () => setFiltro("fdr") : null
                 }
               />
             </div>

@@ -25,8 +25,11 @@ function diaAnterior(fecha: string, dias: number): string {
 }
 
 export interface PedidoConProblema {
-  /** vrl = reprogramado por capacidad de reparto · vrc = trabado por crédito. */
-  fuente: "vrl" | "vrc"
+  /**
+   * vrl = reprogramado por capacidad de reparto · vrc = trabado por crédito ·
+   * fdr = entregado FUERA DE RUTA (salió, pero fuera del recorrido planificado).
+   */
+  fuente: "vrl" | "vrc" | "fdr"
   /** Fecha de entrega que se corrió (VRL: fecha del corte, VRC: entrega original). */
   fecha: string
   idCliente: string
@@ -59,6 +62,14 @@ export interface PedidosConProblemasReunion {
   totalVrc: TotalesFuente | null
   mesVrl: TotalesFuente
   mesVrc: TotalesFuente | null
+  /**
+   * Fuera de ruta: se cuenta APARTE, NO entra al total de reprogramados. El
+   * pedido SÍ se entregó — el problema es que salió fuera del recorrido
+   * planificado, otro circuito. Sumarlo al VRL+VRC mezclaría "no se entregó"
+   * con "se entregó mal" y ninguno de los dos números querría decir nada.
+   */
+  totalFdr: TotalesFuente
+  mesFdr: TotalesFuente
   vrcError: string | null
 }
 
@@ -83,6 +94,12 @@ const MOTIVO_VRL: Record<string, string> = {
  *    (`entrega_cortes`, Supabase propia).
  *  - VRC (comercial): pedidos corridos por límite de crédito
  *    (`vol_reprog_com_pedido`, Railway del dashboard Mercosur).
+ *  - FDR: entregas fuera del recorrido planificado (`fuera_ruta_registros`).
+ *    Va APARTE del total: ese pedido sí se entregó.
+ *
+ * Los tres son los tipos de "pedido con problema" del SOP 4.4 que dependen de
+ * logística; los otros dos del SOP (duplicados/errores de carga y PDV de alto
+ * riesgo) se controlan en preventa y no tienen registro en la app.
  */
 export async function getPedidosConProblemas(
   fechaReunion: string
@@ -182,6 +199,38 @@ export async function getPedidosConProblemas(
         : "VRC no disponible: no se pudo consultar el dashboard Mercosur."
   }
 
+  // ── FDR: entregas fuera del recorrido planificado ─────────────────────────
+  // Registro propio (`fuera_ruta_registros`, sincronizado del sheet de novedades
+  // de logística). Los bultos/HL se miden del pedido Chess y pueden faltar en los
+  // que nunca se facturaron: se muestran en 0 y el pedido igual se lista.
+  const fdrRes = await supabase
+    .from("fuera_ruta_registros")
+    .select(
+      "fecha_entrega, cod_cliente, cliente, localidad, bultos_pedido, hl_pedido, monto, patente, nro_pedido"
+    )
+    .gte("fecha_entrega", inferior)
+    .lte("fecha_entrega", hasta)
+  if (fdrRes.error) {
+    return { error: `No se pudo leer el fuera de ruta: ${fdrRes.error.message}` }
+  }
+  const fdrTodos: PedidoConProblema[] = (fdrRes.data ?? []).map((r) => ({
+    fuente: "fdr" as const,
+    fecha: String(r.fecha_entrega),
+    idCliente: String(r.cod_cliente ?? ""),
+    cliente: r.cliente ?? `Cliente ${r.cod_cliente ?? "?"}`,
+    localidad: r.localidad ?? null,
+    motivo: r.patente
+      ? `Fuera de ruta · patente ${r.patente}`
+      : "Fuera de ruta",
+    bultos: Number(r.bultos_pedido ?? 0),
+    hl: Number(r.hl_pedido ?? 0),
+    monto: Number(r.monto ?? 0),
+    fechaNueva: null,
+    vecesPrevias: null,
+  }))
+  const fdrSemana = fdrTodos.filter((p) => p.fecha >= desde)
+  pedidos.push(...fdrSemana)
+
   pedidos.sort((a, b) =>
     a.fecha !== b.fecha ? (a.fecha < b.fecha ? -1 : 1) : b.bultos - a.bultos
   )
@@ -196,6 +245,8 @@ export async function getPedidosConProblemas(
       totalVrc,
       mesVrl: totales(vrlTodos.filter((p) => p.fecha >= inicioMes)),
       mesVrc,
+      totalFdr: totales(fdrSemana),
+      mesFdr: totales(fdrTodos.filter((p) => p.fecha >= inicioMes)),
       vrcError,
     },
   }
