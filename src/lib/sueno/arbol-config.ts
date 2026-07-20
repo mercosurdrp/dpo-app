@@ -78,13 +78,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // ---- Estrategia (Resultados) ----
   { key: "tri", label: "TRI", nivel: "estrategia", rama: "seguridad", parentKey: null, unidad: "cant.", mejorSi: "menor", metaDefault: 1 },
   { key: "vlc_hl", label: "VLC/HL", nivel: "estrategia", rama: "productividad", parentKey: null, unidad: "$/HL", mejorSi: "menor", metaDefault: 10500 },
-  { key: "otif", label: "OTIF", nivel: "estrategia", rama: "cliente", parentKey: null, unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
+  { key: "otif", label: "OTIF", nivel: "estrategia", rama: "cliente", parentKey: null, unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Gestión ----
   { key: "lti", label: "LTI", nivel: "gestion", rama: "seguridad", parentKey: "tri", unidad: "cant.", mejorSi: "menor", metaDefault: 0 },
   { key: "tlp", label: "TLP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "Ceq/hh", mejorSi: "mayor", metaDefault: 34 },
   { key: "wnp", label: "WNP", nivel: "gestion", rama: "productividad", parentKey: "vlc_hl", unidad: "HL/HH", mejorSi: "mayor", metaDefault: 6 },
-  { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
+  { key: "in_full", label: "IN-FULL", nivel: "gestion", rama: "cliente", parentKey: "otif", unidad: "%", mejorSi: "menor", metaDefault: 1.4 },
 
   // ---- Operacional ----
   { key: "n_incidentes", label: "N° Incidentes", nivel: "operacional", rama: "seguridad", parentKey: "lti", unidad: "cant.", mejorSi: "menor", metaDefault: 20 },
