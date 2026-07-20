@@ -1,7 +1,9 @@
 -- OTIF / In-Full con la definición del negocio (2026-07-20).
 --
---   In Full = (rechazos + stock out + cancelaciones) ÷ HL VENDIDOS
---   OTIF    = In Full + VRL + VRC          (el On Time)
+--   In Full = (rechazos + stock out + cancelaciones) ÷ HL solicitados
+--   OTIF    = (rechazos + stock out + cancelaciones + VRL + VRC) ÷ HL solicitados
+--
+-- Mismo denominador para los dos, así OTIF = In Full + On Time da exacto.
 --
 -- Los dos se expresan como % de PÉRDIDA (cuanto más bajo, mejor). NO se hace
 -- "100 − resultado": el número que se publica es directamente la pérdida.
@@ -9,18 +11,32 @@
 -- ya los tenía configurados como `mejor_si = menor` con meta 1,7 ⇒ el nodo
 -- daba rojo permanente. Esta migración alinea el dato con esa configuración.
 --
--- 🚨 DENOMINADOR: "HL vendidos" = FACTURADO CHESS NETO, la fila "HL vendidos"
--- del Cuadro de Indicadores — NO `ventas_diarias` a secas, que es lo
--- DISTRIBUIDO y deja afuera la venta mostrador (~40% del volumen). Fórmula:
+-- 🚨 DENOMINADOR = TODO LO QUE PIDIÓ EL PDV, no lo que se terminó facturando:
+--
+--   HL vendidos (facturado Chess neto) + HL rechazados + VRL + VRC
+--
+-- Los tres términos que se suman son volumen que el punto de venta SOLICITÓ y
+-- no recibió: el rechazo salió del depósito y volvió (se despachó, no se
+-- facturó), el VRL/VRC se comprometió y se reprogramó. Si quedaran afuera del
+-- denominador, cuanto peor se entrega más chica sería la base y el indicador se
+-- maquillaría solo — el vicio del KPI con denominador auto-reportado.
+--
+-- "HL vendidos" es la fila del Cuadro de Indicadores (facturado Chess neto),
+-- NO `ventas_diarias` a secas, que es lo DISTRIBUIDO y deja afuera la venta
+-- mostrador (~40% del volumen). Fórmula:
 --   distribuido chess (ventas_diarias origen='chess')
 --   + FCVTA (mostrador) + PRVTA (factura presupuesto)
 --   − DVVTA (notas de crédito) − PRDVO (devoluciones presupuesto)
--- Validado contra la serie oficial 2026 del usuario (ene→jun):
---   1,81 · 1,81 · 1,76 · 3,71 · 1,18 · 0,90  vs  calculado
---   1,83 · 1,83 · 1,78 · 3,84 · 1,17 · 0,91  ⇒ cierra salvo abril, que en la
---   serie vieja venía subcontado por el tope de 1000 filas de PostgREST.
--- El origen de esta fórmula es `src/actions/cuadro-mensual.ts` (facturado_chess_*);
+-- El origen de esa parte es `src/actions/cuadro-mensual.ts` (facturado_chess_*);
 -- si allá cambia, hay que replicarlo acá.
+--
+-- Validado contra la serie oficial 2026 del usuario (ene→jun):
+--   usuario   1,81 · 1,81 · 1,76 · 3,71 · 1,18 · 0,90
+--   calculado 1,80 · 1,80 · 1,75 · 3,70 · 1,16 · 0,90   ⇒ cierra (±0,02 = redondeo)
+--
+-- Nota: un pedido reprogramado suma al denominador del mes en que se cortó y
+-- vuelve a sumar al del mes en que se entrega. Es intencional: en cada uno de
+-- esos meses el PDV lo pidió.
 --
 -- 🚨 El nodo `rechazo` NO se toca: sigue midiendo TODOS los motivos sobre lo
 -- DISTRIBUIDO, igual que el indicador de rechazos que ya se usa. Por eso
@@ -33,14 +49,15 @@
 --     0,003%–0,030% del volumen según el mes.
 --   · "cancelaciones" todavía no tiene fuente en la app (no hay tabla de
 --     pedidos anulados) ⇒ hoy suma 0. Cuando exista, se agrega acá.
---   · El OTIF NO se calcula en SQL: el VRC vive en la Railway del dashboard
---     Mercosur, fuera de este Postgres. Lo arma `src/lib/sueno/otif.ts`
---     combinando esta función con esa base.
+--   · Ni el OTIF ni el In-Full se calculan en SQL: el VRC vive en la Railway
+--     del dashboard Mercosur, fuera de este Postgres, y entra al DENOMINADOR de
+--     los dos. Los arma `src/lib/sueno/otif.ts` combinando esta función con esa
+--     base. Esta función solo expone los componentes, sin dividir.
 --   · `sueno_kpi_refresh` NO se reescribe acá a propósito: esa función es larga
 --     y ya hubo un incidente (ver 20260715150000_sueno_vlc_hl_restore) donde un
 --     CREATE OR REPLACE se comió el bloque del VLC/HL y lo dejó congelado. En su
---     lugar, el server action la llama primero y DESPUÉS pisa las tres filas de
---     la rama cliente con `sueno_kpi_refresh_cliente` + el OTIF calculado en TS.
+--     lugar, el server action la llama primero y DESPUÉS pisa las filas 'otif' e
+--     'in_full' con los valores calculados en TS.
 --     El orden importa: el refresh viejo todavía escribe el complemento (98,x).
 
 -- ── Componentes mensuales, todo en HL y agregado en el server ──
@@ -107,9 +124,9 @@ $$;
 GRANT EXECUTE ON FUNCTION sueno_otif_componentes(int) TO authenticated, anon, service_role;
 
 -- ── Detalle mensual ──
--- Solo cambia la rama de rechazo/in_full (ahora % de pérdida, y separando el
--- stock out). 'otif' YA NO sale de acá: lo resuelve el server action porque
--- necesita el VRC de la Railway. El resto de las ramas queda igual.
+-- 'otif' e 'in_full' YA NO salen de acá: los resuelve el server action, porque
+-- su denominador incluye el VRC, que vive en la Railway. La rama 'rechazo'
+-- queda tal cual estaba y el resto de las ramas, intacto.
 CREATE OR REPLACE FUNCTION sueno_kpi_detalle(p_kpi text, p_anio int)
 RETURNS TABLE(mes int, valor numeric, detalle numeric)
 LANGUAGE plpgsql
@@ -117,17 +134,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  IF p_kpi = 'in_full' THEN
-    -- Denominador = facturado neto (ver cabecera). Distinto del de 'rechazo'.
-    RETURN QUERY
-    SELECT c.mes,
-           round((c.hl_rechazo + c.hl_stockout)
-                 / nullif(c.hl_vendidos, 0) * 100, 2),
-           round(c.hl_rechazo + c.hl_stockout, 0)
-    FROM sueno_otif_componentes(p_anio) c
-    ORDER BY c.mes;
-
-  ELSIF p_kpi = 'rechazo' THEN
+  IF p_kpi = 'rechazo' THEN
     -- SIN CAMBIOS (pedido explícito): todos los motivos ÷ lo DISTRIBUIDO,
     -- igual que el indicador de rechazos del cuadro.
     RETURN QUERY
@@ -234,31 +241,3 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION sueno_kpi_detalle(text, int) TO authenticated, anon, service_role;
-
--- ── Refresh YTD: in_full y rechazo en % de pérdida; 'otif' ya no se toca ──
-CREATE OR REPLACE FUNCTION sueno_kpi_refresh_cliente(p_anio int)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_vend     numeric;
-  v_rech     numeric;
-  v_stockout numeric;
-BEGIN
-  SELECT sum(hl_vendidos), sum(hl_rechazo), sum(hl_stockout)
-    INTO v_vend, v_rech, v_stockout
-  FROM sueno_otif_componentes(p_anio);
-
-  -- Solo in_full. 'rechazo' lo sigue escribiendo `sueno_kpi_refresh` con su
-  -- denominador de siempre (distribuido), sin tocar.
-  IF coalesce(v_vend, 0) > 0 THEN
-    UPDATE sueno_kpi_valores
-       SET valor_ytd = round((v_rech + v_stockout) / v_vend * 100, 2), updated_at = now()
-     WHERE kpi_key = 'in_full' AND anio = p_anio;
-  END IF;
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION sueno_kpi_refresh_cliente(int) TO authenticated, anon, service_role;

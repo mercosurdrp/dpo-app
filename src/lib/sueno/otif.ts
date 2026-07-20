@@ -1,15 +1,22 @@
 /**
  * OTIF e In-Full del Árbol del Sueño, con la definición del negocio:
  *
- *   In Full = (rechazos + stock out + cancelaciones) ÷ HL vendidos
- *   OTIF    = In Full + VRL + VRC                    (el On Time)
+ *   In Full = (rechazos + stock out + cancelaciones) ÷ HL solicitados
+ *   OTIF    = (rechazos + stock out + cancelaciones + VRL + VRC) ÷ HL solicitados
  *
  * Los dos se publican como % de PÉRDIDA (menos es mejor). NO se hace
  * "100 − resultado".
  *
- * 🚨 "HL vendidos" = facturado Chess NETO (la fila "vendidos" del Cuadro de
- * Indicadores), NO lo distribuido: deja afuera la venta mostrador, que es ~40%
- * del volumen, y el porcentaje sale casi al doble. El nodo `rechazo` sí va
+ * 🚨 DENOMINADOR = TODO LO QUE PIDIÓ EL PDV:
+ *   HL vendidos (facturado Chess neto) + rechazos + VRL + VRC
+ * El rechazo salió del depósito y volvió: se despachó pero no se facturó, así
+ * que no está en "vendidos" y hay que sumarlo. El VRL/VRC también fue pedido
+ * por el PDV. Dejarlos afuera achicaría la base justo cuando peor se entrega.
+ * Es el mismo denominador para In Full y OTIF, así la resta entre los dos es
+ * exactamente el On Time.
+ *
+ * "HL vendidos" es la fila del Cuadro de Indicadores, NO lo distribuido: eso
+ * deja afuera la venta mostrador (~40% del volumen). El nodo `rechazo` sí va
  * sobre lo distribuido y por eso NO es comparable con estos dos.
  *
  * Todo va en HL: el mix de envases hace que el mismo mes dé distinto medido en
@@ -36,16 +43,18 @@ export interface OtifMes {
   hlStockout: number
   hlVrl: number
   hlVrc: number | null
-  /** (rechazo + stockout) ÷ HL vendidos × 100 */
+  /** vendidos + rechazo + stockout + VRL + VRC */
+  hlSolicitados: number
+  /** (rechazo + stockout) ÷ solicitados × 100 */
   inFullPct: number | null
-  /** In Full + (VRL + VRC) ÷ vendidos × 100 */
+  /** (rechazo + stockout + VRL + VRC) ÷ solicitados × 100 */
   otifPct: number | null
 }
 
 export interface OtifResumen {
   anio: number
   meses: OtifMes[]
-  /** YTD ponderado: suma de HL perdidos ÷ suma de HL vendidos. */
+  /** YTD ponderado: suma de HL perdidos ÷ suma de HL solicitados. */
   inFullYtd: number | null
   otifYtd: number | null
   /** false = la Railway no respondió; el OTIF queda sin el componente comercial. */
@@ -111,14 +120,17 @@ export async function otifResumen(
     const hlVrl = num(r.hl_vrl)
     const hlVrc = vrcPorMes?.get(r.mes) ?? (vrcDisponible ? 0 : null)
 
-    // Sin ventas del mes no hay denominador: el mes queda vacío, no en cero.
+    // Todo lo que el PDV pidió: lo facturado más lo que se le prometió y no
+    // recibió. Sin ventas del mes no hay denominador: queda vacío, no en cero.
+    const hlSolicitados =
+      hlVendidos + hlRechazo + hlStockout + hlVrl + (hlVrc ?? 0)
     const inFullPct =
       hlVendidos > 0
-        ? ((hlRechazo + hlStockout) / hlVendidos) * 100
+        ? ((hlRechazo + hlStockout) / hlSolicitados) * 100
         : null
     const otifPct =
-      inFullPct !== null
-        ? inFullPct + ((hlVrl + (hlVrc ?? 0)) / hlVendidos) * 100
+      hlVendidos > 0
+        ? ((hlRechazo + hlStockout + hlVrl + (hlVrc ?? 0)) / hlSolicitados) * 100
         : null
 
     return {
@@ -128,13 +140,14 @@ export async function otifResumen(
       hlStockout,
       hlVrl,
       hlVrc,
+      hlSolicitados,
       inFullPct: inFullPct === null ? null : redondear(inFullPct),
       otifPct: otifPct === null ? null : redondear(otifPct),
     }
   })
 
   // YTD ponderado por volumen (no promedio de los meses: cada mes pesa distinto).
-  const vendidos = meses.reduce((s, m) => s + m.hlVendidos, 0)
+  const vendidos = meses.reduce((s, m) => s + m.hlSolicitados, 0)
   const perdidaInFull = meses.reduce(
     (s, m) => s + m.hlRechazo + m.hlStockout,
     0,
