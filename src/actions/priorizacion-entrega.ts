@@ -319,6 +319,140 @@ export interface VrlMes {
   monto: number
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LA FOTO DEL CORTE
+//
+// `entrega_cortes` guarda una fila por cliente cortado con todo lo que se veía en
+// pantalla al momento de cortar (score, posición, comportamiento, cluster, motivo).
+// Hasta acá esa foto se escribía y no se leía nunca: el ranking se arma con los
+// pedidos PENDIENTES de Chess, que para una fecha pasada ya no existen, así que
+// abrir un día viejo mostraba la lista vacía. Estas dos funciones la devuelven.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un día con corte registrado (resumen para la lista del mes). */
+export interface CorteDia {
+  fecha: string
+  pedidos: number
+  clientes: number
+  bultos: number
+  hl: number
+  monto: number
+}
+
+/** Un cliente que quedó abajo, tal como se lo vio el día del corte. */
+export interface CorteFila {
+  id_cliente: number
+  nombre_cliente: string | null
+  localidad: string | null
+  bultos: number
+  hl: number
+  monto: number
+  score: number
+  posicion: number
+  comportamiento: number
+  cluster: string | null
+  veces_previas: number
+  motivo: string
+}
+
+/** La foto completa de un día: quiénes quedaron abajo, con qué nota y quién cortó. */
+export interface CorteRegistrado {
+  fecha: string
+  filas: CorteFila[]
+  total_clientes: number
+  total_bultos: number
+  total_hl: number
+  total_monto: number
+  /** Comentario que escribió quien cortó (es el mismo en todas las filas del día). */
+  nota: string | null
+  cortado_por: string | null
+  registrado_en: string | null
+}
+
+/**
+ * Días con corte registrado de un mes (YYYY-MM), del más reciente al más viejo.
+ *
+ * Sale de `v_vrl_diario` (ya agregada) en vez de traer las filas y sumar en JS:
+ * un mes de cortes puede pasar las 1000 filas con que PostgREST trunca en silencio.
+ */
+export async function getCortesDiarios(anioMes: string): Promise<Result<CorteDia[]>> {
+  await requireAuth()
+  if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+  if (!/^\d{4}-\d{2}$/.test(anioMes)) return { error: "Mes inválido (se espera YYYY-MM)." }
+
+  const primero = `${anioMes}-01`
+  // Último día del mes sin depender de la zona horaria: día 0 del mes siguiente.
+  const [y, m] = anioMes.split("-").map((s) => parseInt(s, 10))
+  const ultimo = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("v_vrl_diario")
+    .select("*")
+    .gte("fecha", primero)
+    .lte("fecha", ultimo)
+    .order("fecha", { ascending: false })
+  if (error) return { error: `No se pudieron leer los cortes del mes: ${error.message}` }
+
+  return {
+    data: (data ?? []).map((r) => ({
+      fecha: String(r.fecha),
+      pedidos: Number(r.pedidos_reprogramados ?? 0),
+      clientes: Number(r.clientes ?? 0),
+      bultos: Number(r.bultos ?? 0),
+      hl: Number(r.hl ?? 0),
+      monto: Number(r.monto ?? 0),
+    })),
+  }
+}
+
+/** La foto del corte de un día: la lista de clientes que quedaron abajo. */
+export async function getCorteDelDia(fecha: string): Promise<Result<CorteRegistrado>> {
+  await requireAuth()
+  if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { error: "Fecha inválida." }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("entrega_cortes")
+    .select(
+      "id_cliente, nombre_cliente, localidad, bultos, hl, monto, score, posicion, comportamiento, cluster, veces_previas, motivo, nota, cortado_por, created_at"
+    )
+    .eq("fecha_entrega", fecha)
+    .order("bultos", { ascending: false })
+  if (error) return { error: `No se pudo leer el corte: ${error.message}` }
+
+  const filas: CorteFila[] = (data ?? []).map((r) => ({
+    id_cliente: Number(r.id_cliente),
+    nombre_cliente: r.nombre_cliente ?? null,
+    localidad: r.localidad ?? null,
+    bultos: Number(r.bultos ?? 0),
+    hl: Number(r.hl ?? 0),
+    monto: Number(r.monto ?? 0),
+    score: Number(r.score ?? 0),
+    posicion: Number(r.posicion ?? 0),
+    comportamiento: Number(r.comportamiento ?? 0),
+    cluster: r.cluster ?? null,
+    veces_previas: Number(r.veces_previas ?? 0),
+    motivo: r.motivo ?? "",
+  }))
+  const primera = (data ?? [])[0]
+
+  return {
+    data: {
+      fecha,
+      filas,
+      total_clientes: filas.length,
+      total_bultos: filas.reduce((s, f) => s + f.bultos, 0),
+      total_hl: filas.reduce((s, f) => s + f.hl, 0),
+      total_monto: filas.reduce((s, f) => s + f.monto, 0),
+      nota: primera?.nota ?? null,
+      cortado_por: primera?.cortado_por ?? null,
+      registrado_en: primera?.created_at ? String(primera.created_at) : null,
+    },
+  }
+}
+
 /** VRL acumulado por mes (default: los últimos 12 meses). */
 export async function getVrlMensual(meses = 12): Promise<Result<VrlMes[]>> {
   await requireAuth()

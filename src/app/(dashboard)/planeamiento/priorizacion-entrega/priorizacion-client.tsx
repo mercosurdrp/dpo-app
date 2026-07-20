@@ -13,8 +13,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Truck, Scissors, Clock,
-  ShieldCheck, PackageX, Info, Eye, Download, Route, CalendarDays,
+  ShieldCheck, PackageX, Info, Eye, Download, Route, CalendarDays, Camera,
 } from "lucide-react"
+import { CortesRegistradosPanel } from "./cortes-registrados-panel"
 import { toast } from "sonner"
 import { registrarCorte, type PriorizacionData, type VrlMes } from "@/actions/priorizacion-entrega"
 import type { FueraRutaDia, FueraRutaRegistro, FueraRutaMes } from "@/actions/fuera-ruta"
@@ -433,6 +434,9 @@ export function PriorizacionClient({
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="__cortes__" className="flex-none gap-1.5">
+              <Camera className="h-3.5 w-3.5" /> Cortes registrados
+            </TabsTrigger>
             <TabsTrigger value="__acumulado__" className="flex-none gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" /> Acumulado
             </TabsTrigger>
@@ -440,6 +444,10 @@ export function PriorizacionClient({
 
           <TabsContent value="__fuera_ruta__">
             <FueraRutaPanel fueraRuta={fueraRuta} />
+          </TabsContent>
+
+          <TabsContent value="__cortes__">
+            <CortesRegistradosPanel mesInicial={data.fecha_entrega.slice(0, 7)} />
           </TabsContent>
 
           <TabsContent value="__acumulado__">
@@ -1005,6 +1013,16 @@ export function FueraRutaSolo({
           />
         </div>
       </div>
+      {/* En una fecha pasada esto es lo ÚNICO que reconstruye el día: a quién se
+          dejó abajo. Va primero, arriba del fuera de ruta. */}
+      <Card>
+        <CardContent className="pt-4">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Camera className="h-4 w-4" /> Cortes registrados
+          </h2>
+          <CortesRegistradosPanel mesInicial={fueraRuta.fecha.slice(0, 7)} />
+        </CardContent>
+      </Card>
       <Card>
         <CardContent className="pt-4">
           <FueraRutaPanel fueraRuta={fueraRuta} />
