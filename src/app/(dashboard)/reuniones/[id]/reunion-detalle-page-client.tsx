@@ -335,15 +335,25 @@ function AsistenteCard({
           <span className="inline-block size-3.5 shrink-0 rounded-full border border-slate-300 bg-white" />
         )}
         <div className="min-w-0 flex-1">
-          <p
-            className={`truncate text-sm ${
-              asistente.presente
-                ? "font-medium text-slate-900"
-                : "text-slate-600"
-            }`}
-          >
-            {asistente.profile_nombre}
-          </p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p
+              className={`truncate text-sm ${
+                asistente.presente
+                  ? "font-medium text-slate-900"
+                  : "text-slate-600"
+              }`}
+            >
+              {asistente.profile_nombre}
+            </p>
+            {asistente.origen === "preruta" && (
+              <span
+                className="shrink-0 rounded-sm bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-sky-700"
+                title="Registrado automáticamente desde el check-in de Reunión Pre-Ruta"
+              >
+                Pre-Ruta
+              </span>
+            )}
+          </div>
           {!asistente.presente && asistente.justificacion && (
             <p
               className="truncate text-xs text-muted-foreground"

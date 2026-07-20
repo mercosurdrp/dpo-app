@@ -3213,12 +3213,16 @@ export interface Reunion {
   updated_at: string
 }
 
+export type OrigenAsistencia = "manual" | "preruta"
+
 export interface ReunionAsistente {
   id: string
   reunion_id: string
   profile_id: string
   presente: boolean
   justificacion: string | null
+  /** 'preruta' = derivado del check-in en la app de Reunión Pre-Ruta */
+  origen: OrigenAsistencia
   created_at: string
 }
 

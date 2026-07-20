@@ -536,6 +536,7 @@ export async function getReunionDetalle(
           profile_id: r.profile_id,
           presente: r.presente,
           justificacion: r.justificacion,
+          origen: r.origen ?? "manual",
           created_at: r.created_at,
           profile_nombre: r.profile?.nombre ?? "",
           profile_email: r.profile?.email ?? null,
@@ -964,6 +965,9 @@ export async function setAsistencia(
       .update({
         presente,
         justificacion: justifNorm,
+        // Si alguien corrige la asistencia a mano, la marca pasa a ser suya
+        // aunque el registro haya nacido de un check-in de Pre-Ruta.
+        origen: "manual",
       })
       .eq("id", asistenteId)
       .select("*")
