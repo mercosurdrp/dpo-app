@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Truck, Scissors, Clock,
   ShieldCheck, PackageX, Info, Eye, Download, Route, CalendarDays, Camera,
+  Search, X,
 } from "lucide-react"
 import { CortesRegistradosPanel } from "./cortes-registrados-panel"
 import { toast } from "sonner"
@@ -174,6 +175,12 @@ export function PriorizacionClient({
   const [confirmar, setConfirmar] = useState(false)
   /** Comentario del corte: por qué se cortó así. Va a la base y al PDF. */
   const [nota, setNota] = useState("")
+  /** Búsqueda de cliente por nombre o código, CRUZANDO todas las ciudades. */
+  const [busqueda, setBusqueda] = useState("")
+  /** Solapa abierta. Controlada para poder saltar a la ciudad de un resultado. */
+  const [tab, setTab] = useState<string>("")
+  /** Cliente al que se saltó desde la búsqueda: se resalta hasta que se toca otra cosa. */
+  const [resaltado, setResaltado] = useState<number | null>(null)
 
   const setCupo = (ciudad: string, v: string) =>
     setCupos((p) => ({ ...p, [ciudad]: v }))
@@ -281,6 +288,43 @@ export function PriorizacionClient({
   }
 
   const ciudadInicial = ciudades[0]?.ciudad ?? ""
+  const tabActiva = tab || ciudadInicial
+
+  /**
+   * Resultados de la búsqueda, de TODAS las ciudades juntas: el punto es no tener
+   * que abrir solapa por solapa para encontrar a alguien. Matchea por nombre
+   * (ignorando acentos y mayúsculas) o por código de cliente.
+   */
+  const resultados = useMemo(() => {
+    const q = busqueda.trim()
+    if (q.length < 2) return []
+    const norm = (s: string) =>
+      s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    const needle = norm(q)
+    const out: { ciudad: string; fila: FilaVista }[] = []
+    for (const c of ciudades) {
+      for (const f of c.filas) {
+        const nombre = norm(f.nombre ?? "")
+        if (nombre.includes(needle) || String(f.id_cliente).includes(needle)) {
+          out.push({ ciudad: c.ciudad, fila: f })
+        }
+      }
+    }
+    // Los que se caen primero: es lo que se está por decidir.
+    return out.sort((a, b) => Number(a.fila.entra) - Number(b.fila.entra) || b.fila.bultos - a.fila.bultos)
+  }, [busqueda, ciudades])
+
+  /** Salta a la solapa de la ciudad del cliente y lo deja resaltado. */
+  const irAlCliente = (ciudad: string, idCliente: number) => {
+    setTab(ciudad)
+    setResaltado(idCliente)
+    // El TabsContent recién se monta al cambiar de solapa: se espera un frame.
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`cliente-${idCliente}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -400,20 +444,138 @@ export function PriorizacionClient({
             o hacé clic en una columna
           </span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={totalCortados === 0}
-          onClick={() => setPreview(true)}
-        >
-          <Eye className="mr-1 h-4 w-4" />
-          Ver reprogramados ({totalCortados})
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar cliente por nombre o código…"
+              className="h-8 w-64 pl-7 text-sm"
+            />
+            {busqueda && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBusqueda("")
+                  setResaltado(null)
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                title="Limpiar búsqueda"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={totalCortados === 0}
+            onClick={() => setPreview(true)}
+          >
+            <Eye className="mr-1 h-4 w-4" />
+            Ver reprogramados ({totalCortados})
+          </Button>
+        </div>
       </div>
+
+      {/* Resultados de la búsqueda: cruzan TODAS las ciudades, que es el punto. */}
+      {busqueda.trim().length >= 2 && (
+        <Card className="border-sky-200 bg-sky-50/40">
+          <CardContent className="pt-4">
+            {resultados.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Ningún cliente con <strong>&ldquo;{busqueda}&rdquo;</strong> tiene pedido
+                para esta fecha.
+              </p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {resultados.length} cliente{resultados.length === 1 ? "" : "s"} con
+                  pedido para el {data.fecha_entrega} — tocá uno para ir a su ciudad.
+                </p>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Ciudad</TableHead>
+                        <TableHead className="text-right">Pos.</TableHead>
+                        <TableHead className="text-right">Bultos</TableHead>
+                        <TableHead className="text-right">HL</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead className="text-center">Estado</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {resultados.map(({ ciudad, fila }) => (
+                        <TableRow
+                          key={`${ciudad}-${fila.id_cliente}`}
+                          className="cursor-pointer"
+                          onClick={() => irAlCliente(ciudad, fila.id_cliente)}
+                        >
+                          <TableCell className="font-medium">
+                            {fila.nombre ?? `Cliente ${fila.id_cliente}`}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              #{fila.id_cliente}
+                            </span>
+                          </TableCell>
+                          <TableCell>{ciudad}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fila.posicion}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fila.bultos.toLocaleString("es-AR")}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fila.hl.toFixed(1)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {money(fila.monto)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {fila.entra ? (
+                              <Badge
+                                variant="outline"
+                                className="border-emerald-300 bg-emerald-50 text-emerald-700"
+                              >
+                                Entra
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="border-red-300 bg-red-50 text-red-700"
+                              >
+                                Fuera
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            Ir a {ciudad} →
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Solapas por ciudad */}
       {ciudadInicial && (
-        <Tabs defaultValue={ciudadInicial} className="w-full">
+        <Tabs
+          value={tabActiva}
+          onValueChange={(v) => {
+            // Cambió de solapa a mano: el resaltado de la búsqueda ya no aplica.
+            setTab(v)
+            setResaltado(null)
+          }}
+          className="w-full"
+        >
           <TabsList className="h-auto flex-wrap justify-start">
             {ciudades.map((c) => (
               <TabsTrigger key={c.ciudad} value={c.ciudad} className="flex-none gap-1.5">
@@ -516,6 +678,7 @@ export function PriorizacionClient({
                           cruzaLinea={cruzaLinea}
                           cupo={c.cupo}
                           fueraRuta={fueraRutaPorCliente.get(f.id_cliente)}
+                          resaltado={resaltado === f.id_cliente}
                           onForzar={(modo) =>
                             setForzados((p) => ({ ...p, [f.id_cliente]: modo }))
                           }
@@ -1038,7 +1201,7 @@ export function FueraRutaSolo({
 }
 
 function Fila({
-  f, hayCupo, cruzaLinea, cupo, fueraRuta, onForzar,
+  f, hayCupo, cruzaLinea, cupo, fueraRuta, resaltado = false, onForzar,
 }: {
   f: FilaVista
   hayCupo: boolean
@@ -1046,6 +1209,8 @@ function Fila({
   cupo: number
   /** Registro fuera de ruta del día para este cliente, si lo hay. */
   fueraRuta?: FueraRutaRegistro
+  /** Se llegó a esta fila desde la búsqueda: se marca para encontrarla de un vistazo. */
+  resaltado?: boolean
   onForzar: (modo: "entra" | "sale") => void
 }) {
   const autorizacion = fueraRuta
@@ -1063,7 +1228,12 @@ function Fila({
           </TableCell>
         </TableRow>
       )}
-      <TableRow className={f.entra ? "" : "bg-red-50/60 opacity-90"}>
+      <TableRow
+        id={`cliente-${f.id_cliente}`}
+        className={`${f.entra ? "" : "bg-red-50/60 opacity-90"} ${
+          resaltado ? "ring-2 ring-inset ring-sky-400" : ""
+        }`}
+      >
         <TableCell className="text-xs text-muted-foreground">{f.posicion}</TableCell>
         <TableCell>
           <div
