@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { AlertTriangle, Loader2, PackageX } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -129,6 +129,107 @@ function Resumen({
         {onClick != null && " — tocá para ver el detalle de la semana"}
       </p>
     </button>
+  )
+}
+
+/**
+ * Detalle del modal: primero el TOTAL POR DÍA, y cada día se despliega para ver
+ * qué pedidos fueron.
+ *
+ * La tarjeta muestra la semana porque la reunión de Logística-Ventas es SEMANAL
+ * (medido: 8 reuniones en 7 semanas) y la del lunes también mira los 5 días
+ * previos: un total del día solo perdería lo que pasó entre reunión y reunión.
+ * Pero en la reunión se va bajando día por día, y para eso es esta vista.
+ */
+function DetallePorDia({ pedidos }: { pedidos: PedidoConProblema[] }) {
+  const [abierto, setAbierto] = useState<string | null>(null)
+
+  const dias = useMemo(() => {
+    const m = new Map<string, PedidoConProblema[]>()
+    for (const p of pedidos) {
+      const prev = m.get(p.fecha)
+      if (prev) prev.push(p)
+      else m.set(p.fecha, [p])
+    }
+    return [...m.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([fecha, ps]) => ({
+        fecha,
+        pedidos: ps,
+        bultos: ps.reduce((s, p) => s + p.bultos, 0),
+        hl: ps.reduce((s, p) => s + p.hl, 0),
+        monto: ps.reduce((s, p) => s + p.monto, 0),
+      }))
+  }, [pedidos])
+
+  if (dias.length === 0) return null
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[700px] text-sm">
+        <thead className="sticky top-0 z-10 bg-popover">
+          <tr className="border-b border-slate-200 text-xs text-slate-500">
+            <th className="py-1.5 text-left font-medium">Día</th>
+            <th className="py-1.5 text-right font-medium">Pedidos</th>
+            <th className="py-1.5 text-right font-medium">Bultos</th>
+            <th className="py-1.5 text-right font-medium">HL</th>
+            <th className="py-1.5 text-right font-medium">Monto</th>
+            <th className="py-1.5 text-right font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {dias.map((d) => {
+            const abiertoAca = abierto === d.fecha
+            return (
+              <Fragment key={d.fecha}>
+                <tr
+                  className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                  onClick={() => setAbierto(abiertoAca ? null : d.fecha)}
+                >
+                  <td className="whitespace-nowrap py-2 font-medium text-slate-800">
+                    {diaSemana(d.fecha)} {formatFecha(d.fecha)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {num(d.pedidos.length)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">{num(d.bultos)}</td>
+                  <td className="py-2 text-right tabular-nums">{num(d.hl, 1)}</td>
+                  <td className="py-2 text-right tabular-nums">{money(d.monto)}</td>
+                  <td className="py-2 text-right text-xs text-slate-500">
+                    {abiertoAca ? "ocultar ▲" : "ver pedidos ▼"}
+                  </td>
+                </tr>
+                {abiertoAca && (
+                  <tr>
+                    <td colSpan={6} className="bg-slate-50/60 px-2 py-2">
+                      <TablaPedidos pedidos={d.pedidos} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+        <tfoot className="sticky bottom-0 z-10 bg-popover">
+          <tr className="border-t border-slate-200 font-semibold">
+            <td className="py-2 text-slate-900">
+              Total ({dias.length} día{dias.length === 1 ? "" : "s"})
+            </td>
+            <td className="py-2 text-right tabular-nums">{num(pedidos.length)}</td>
+            <td className="py-2 text-right tabular-nums">
+              {num(pedidos.reduce((s, p) => s + p.bultos, 0))}
+            </td>
+            <td className="py-2 text-right tabular-nums">
+              {num(pedidos.reduce((s, p) => s + p.hl, 0), 1)}
+            </td>
+            <td className="py-2 text-right tabular-nums">
+              {money(pedidos.reduce((s, p) => s + p.monto, 0))}
+            </td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   )
 }
 
@@ -439,7 +540,7 @@ export function SeccionPedidosProblemas({
                     con el motivo y el volumen de cada pedido.
                   </DialogDescription>
                 </DialogHeader>
-                <TablaPedidos pedidos={pedidosFiltrados} />
+                <DetallePorDia pedidos={pedidosFiltrados} />
               </DialogContent>
             </Dialog>
 
