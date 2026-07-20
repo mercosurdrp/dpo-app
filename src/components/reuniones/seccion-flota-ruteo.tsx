@@ -9,6 +9,7 @@ import {
   type FlotaRuteoReunion,
 } from "@/actions/reuniones-flota-ruteo"
 import { ActionLogSeccion } from "./action-log-seccion"
+import { FlotaNoDisponiblesDialog } from "./flota-no-disponibles-dialog"
 import type {
   ReunionActividadConResponsable,
   TipoReunion,
@@ -53,6 +54,8 @@ function Kpi({
   target,
   mejorSi,
   detalle,
+  onClick,
+  tituloClick,
 }: {
   titulo: string
   valor: number | null
@@ -60,9 +63,24 @@ function Kpi({
   target: number | null
   mejorSi: "mayor" | "menor"
   detalle?: string
+  onClick?: () => void
+  tituloClick?: string
 }) {
+  const Wrapper = onClick ? "button" : "div"
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <Wrapper
+      {...(onClick
+        ? {
+            type: "button" as const,
+            onClick,
+            title: tituloClick,
+          }
+        : {})}
+      className={cn(
+        "rounded-lg border border-slate-200 p-3 text-left",
+        onClick && "w-full transition-colors hover:border-slate-300 hover:bg-slate-50"
+      )}
+    >
       <p className="text-xs font-medium text-slate-500">{titulo}</p>
       <p className={cn("mt-1 text-2xl font-bold", colorTarget(valor, target, mejorSi))}>
         {valor == null
@@ -76,7 +94,7 @@ function Kpi({
           : `objetivo ${mejorSi === "mayor" ? "≥" : "≤"} ${target.toLocaleString("es-AR")} ${unidad}`}
       </p>
       {detalle && <p className="mt-1 text-xs text-slate-400">{detalle}</p>}
-    </div>
+    </Wrapper>
   )
 }
 
@@ -106,6 +124,7 @@ export function SeccionFlotaRuteo({
   const [data, setData] = useState<FlotaRuteoReunion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [verNoDisponibles, setVerNoDisponibles] = useState(false)
 
   useEffect(() => {
     let cancel = false
@@ -168,10 +187,19 @@ export function SeccionFlotaRuteo({
                   unidad="%"
                   target={data.flota.disponibilidadTarget}
                   mejorSi="mayor"
+                  onClick={() => setVerNoDisponibles(true)}
+                  tituloClick="Ver qué camiones están fuera de servicio"
                   detalle={
-                    data.flota.utilizacionPct == null
-                      ? undefined
-                      : `utilización ${data.flota.utilizacionPct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`
+                    [
+                      data.flota.utilizacionPct == null
+                        ? null
+                        : `utilización ${data.flota.utilizacionPct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`,
+                      data.flota.noDisponiblesHoy.length === 0
+                        ? "sin unidades paradas hoy"
+                        : `${data.flota.noDisponiblesHoy.length} parada(s) hoy — ver detalle`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
                   }
                 />
                 <Kpi
@@ -267,6 +295,14 @@ export function SeccionFlotaRuteo({
               responsables={responsables}
               puedeEditar={puedeEditar}
               onChanged={onActividadesChanged}
+            />
+
+            <FlotaNoDisponiblesDialog
+              open={verNoDisponibles}
+              onOpenChange={setVerNoDisponibles}
+              fecha={fechaReunion}
+              unidades={data.flota.noDisponiblesHoy}
+              unidadesFlota={data.flota.unidadesFlota}
             />
           </>
         )}

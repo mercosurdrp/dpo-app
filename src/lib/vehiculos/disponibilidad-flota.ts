@@ -73,6 +73,127 @@ export function ruteoSetDe(diasRuteo: DiaRuteo[]): Set<string> {
   return new Set(diasRuteo.map((r) => `${r.dominio}|${r.fecha}`))
 }
 
+/** Una parada concreta: el tramo que sacó a la unidad de circulación. */
+export interface ParadaFlota {
+  desde: string
+  hasta: string
+  causa: "PMC" | "PMP" | "IND"
+  motivo: string | null
+  /** OT sin fecha de retorno: `hasta` es provisorio (se arrastra hasta hoy). */
+  abierta: boolean
+}
+
+/**
+ * Paradas por OT (con período) por dominio. Es la fuente de PMC/PMP tanto del
+ * cálculo mensual como del detalle de un día: extraída para que el % y la lista
+ * de camiones parados no puedan discrepar.
+ */
+export function paradasPorDominio(
+  mantenimientos: MantenimientoRealizado[],
+  hoy: string
+): Map<string, ParadaFlota[]> {
+  const paradas = new Map<string, ParadaFlota[]>()
+  for (const m of mantenimientos) {
+    if (!m.fuera_servicio_desde) continue
+    // Una OT cancelada nunca sacó la unidad de servicio.
+    if (m.estado === "cancelado") continue
+    const arr = paradas.get(m.dominio) ?? []
+    // Sin fecha de retorno: la parada se arrastra "hasta hoy" SOLO mientras
+    // la OT sigue abierta. Una OT ya completada cierra en su propia fecha,
+    // para no inflar indefinidamente los días de parada (PMC/PMP).
+    const abierta = m.estado === "programado" || m.estado === "en_taller"
+    const hasta = m.fuera_servicio_hasta || (abierta ? hoy : m.fecha)
+    arr.push({
+      desde: m.fuera_servicio_desde,
+      hasta,
+      causa: m.tipo === "correctivo" ? "PMC" : "PMP",
+      motivo: m.observaciones ?? null,
+      abierta: abierta && !m.fuera_servicio_hasta,
+    })
+    paradas.set(m.dominio, arr)
+  }
+  return paradas
+}
+
+/** Indisponibilidades (IND) por dominio: parada que no es de mantenimiento. */
+export function indisponibilidadesPorDominio(
+  indisponibilidades: FlotaIndisponibilidad[]
+): Map<string, ParadaFlota[]> {
+  const inds = new Map<string, ParadaFlota[]>()
+  for (const i of indisponibilidades) {
+    const arr = inds.get(i.dominio) ?? []
+    arr.push({
+      desde: i.fecha_desde,
+      hasta: i.fecha_hasta,
+      causa: "IND",
+      motivo: i.motivo ?? null,
+      abierta: false,
+    })
+    inds.set(i.dominio, arr)
+  }
+  return inds
+}
+
+/** Una unidad que no estaba disponible en una fecha, y por qué. */
+export interface UnidadNoDisponible {
+  dominio: string
+  modelo: string | null
+  anio: number | null
+  causa: "PMC" | "PMP" | "IND"
+  motivo: string | null
+  desde: string
+  /** null = la parada seguía abierta (OT sin fecha de retorno). */
+  hasta: string | null
+  /** Días que lleva parada al cierre de `fecha`, contando el día de inicio. */
+  diasParada: number
+}
+
+function diasEntre(desde: string, hasta: string): number {
+  const a = Date.UTC(+desde.slice(0, 4), +desde.slice(5, 7) - 1, +desde.slice(8, 10))
+  const b = Date.UTC(+hasta.slice(0, 4), +hasta.slice(5, 7) - 1, +hasta.slice(8, 10))
+  return Math.floor((b - a) / 86_400_000) + 1
+}
+
+/**
+ * Unidades no disponibles en una fecha puntual, con el motivo de cada parada.
+ * Usa la MISMA prioridad que el estado día a día del cálculo mensual
+ * (correctivo > preventivo > indisponible), así el detalle de un día siempre
+ * coincide con lo que ese día aportó al % del mes.
+ */
+export function noDisponiblesEnFecha(
+  fecha: string,
+  flota: UnidadFlota[],
+  mantenimientos: MantenimientoRealizado[],
+  indisponibilidades: FlotaIndisponibilidad[],
+  hoy: string
+): UnidadNoDisponible[] {
+  const paradas = paradasPorDominio(mantenimientos, hoy)
+  const inds = indisponibilidadesPorDominio(indisponibilidades)
+
+  const out: UnidadNoDisponible[] = []
+  for (const u of flota) {
+    const cubre = (p: ParadaFlota) => fecha >= p.desde && fecha <= p.hasta
+    const ps = (paradas.get(u.dominio) ?? []).filter(cubre)
+    const is = (inds.get(u.dominio) ?? []).filter(cubre)
+    // Misma prioridad que porDia: correctivo > preventivo > indisponible.
+    const elegida =
+      ps.find((p) => p.causa === "PMC") ?? ps.find((p) => p.causa === "PMP") ?? is[0]
+    if (!elegida) continue
+    out.push({
+      dominio: u.dominio,
+      modelo: u.modelo ?? null,
+      anio: u.anio ?? null,
+      causa: elegida.causa,
+      motivo: elegida.motivo,
+      desde: elegida.desde,
+      hasta: elegida.abierta ? null : elegida.hasta,
+      diasParada: diasEntre(elegida.desde, fecha),
+    })
+  }
+  // Las paradas más largas primero: son las que hay que discutir en la reunión.
+  return out.sort((a, b) => b.diasParada - a.diasParada || a.dominio.localeCompare(b.dominio))
+}
+
 /**
  * Estado día a día de cada unidad en un mes y agregados de flota.
  * `flota` ya debe venir filtrada con flotaDeRuta(); `hoy` en ISO (YYYY-MM-DD).
@@ -91,32 +212,8 @@ export function calcularDisponibilidadMes(
   const esFuturo = mesSel > hoy.slice(0, 7)
   const diasPeriodo = esFuturo ? 0 : esMesActual ? Number(hoy.slice(8, 10)) : diasDelMes
 
-  // Paradas por OT (con período) por dominio.
-  const paradas = new Map<string, { desde: string; hasta: string; causa: "PMC" | "PMP" }[]>()
-  for (const m of mantenimientos) {
-    if (!m.fuera_servicio_desde) continue
-    // Una OT cancelada nunca sacó la unidad de servicio.
-    if (m.estado === "cancelado") continue
-    const arr = paradas.get(m.dominio) ?? []
-    // Sin fecha de retorno: la parada se arrastra "hasta hoy" SOLO mientras
-    // la OT sigue abierta. Una OT ya completada cierra en su propia fecha,
-    // para no inflar indefinidamente los días de parada (PMC/PMP).
-    const abierta = m.estado === "programado" || m.estado === "en_taller"
-    const hasta = m.fuera_servicio_hasta || (abierta ? hoy : m.fecha)
-    arr.push({
-      desde: m.fuera_servicio_desde,
-      hasta,
-      causa: m.tipo === "correctivo" ? "PMC" : "PMP",
-    })
-    paradas.set(m.dominio, arr)
-  }
-  // Indisponibilidades (IND) por dominio.
-  const inds = new Map<string, { desde: string; hasta: string }[]>()
-  for (const i of indisponibilidades) {
-    const arr = inds.get(i.dominio) ?? []
-    arr.push({ desde: i.fecha_desde, hasta: i.fecha_hasta })
-    inds.set(i.dominio, arr)
-  }
+  const paradas = paradasPorDominio(mantenimientos, hoy)
+  const inds = indisponibilidadesPorDominio(indisponibilidades)
 
   // Días laborales = días con al menos un camión de la flota ruteado.
   // Los demás (domingos/feriados sin ruteo) NO cuentan para la utilización.

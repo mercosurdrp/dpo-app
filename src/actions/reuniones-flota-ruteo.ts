@@ -6,9 +6,11 @@ import { IS_MISIONES } from "@/lib/empresa"
 import {
   calcularDisponibilidadMes,
   flotaDeRuta,
+  noDisponiblesEnFecha,
   ruteoSetDe,
   TARGET_DISP,
   type UnidadFlota,
+  type UnidadNoDisponible,
 } from "@/lib/vehiculos/disponibilidad-flota"
 import {
   loadServiceGeneral,
@@ -51,6 +53,15 @@ export interface FlotaRuteoReunion {
      * aclara, en vez de hacer pasar la foto de hoy por la de ese día.
      */
     servicesAlDia: string
+    /**
+     * Unidades paradas EL DÍA de la reunión (no del mes): es lo que se mira al
+     * abrir el detalle de la tarjeta, para hablar de "qué tenemos abajo hoy".
+     * Ojo: el % de arriba es del mes acumulado, así que este listado explica la
+     * foto del día, no reconstruye ese porcentaje.
+     */
+    noDisponiblesHoy: UnidadNoDisponible[]
+    /** Unidades de reparto consideradas (denominador del %): excluye depósito. */
+    unidadesFlota: number
   }
 }
 
@@ -108,13 +119,13 @@ export async function getFlotaRuteoReunion(
       supabase
         .from("mantenimiento_realizados")
         .select(
-          "dominio, fecha, tipo, estado, fuera_servicio_desde, fuera_servicio_hasta"
+          "dominio, fecha, tipo, estado, observaciones, fuera_servicio_desde, fuera_servicio_hasta"
         )
         .not("fuera_servicio_desde", "is", null)
         .or(`fuera_servicio_hasta.is.null,fuera_servicio_hasta.gte.${inicioMes}`),
       supabase
         .from("flota_indisponibilidad")
-        .select("dominio, fecha_desde, fecha_hasta")
+        .select("dominio, fecha_desde, fecha_hasta, motivo")
         .gte("fecha_hasta", inicioMes),
       traerTodo<DiaRuteo>((desde, hasta) =>
         supabase
@@ -151,12 +162,21 @@ export async function getFlotaRuteoReunion(
 
   const flota = flotaDeRuta((unidadesRes.data ?? []) as UnidadFlota[])
   const ruteoSet = ruteoSetDe(ruteoRes.data)
+  const mttos = (mttosRes.data ?? []) as MantenimientoRealizado[]
+  const indisp = (indispRes.data ?? []) as FlotaIndisponibilidad[]
   const calc = calcularDisponibilidadMes(
     mes,
     flota,
-    (mttosRes.data ?? []) as MantenimientoRealizado[],
-    (indispRes.data ?? []) as FlotaIndisponibilidad[],
+    mttos,
+    indisp,
     ruteoSet,
+    fechaReunion
+  )
+  const noDisponiblesHoy = noDisponiblesEnFecha(
+    fechaReunion,
+    flota,
+    mttos,
+    indisp,
     fechaReunion
   )
 
@@ -200,6 +220,8 @@ export async function getFlotaRuteoReunion(
         servicesTarget: metaDe("services_vencidos"),
         proximosServices,
         servicesAlDia: today(),
+        noDisponiblesHoy,
+        unidadesFlota: flota.length,
       },
     },
   }
