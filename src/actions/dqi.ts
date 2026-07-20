@@ -14,9 +14,12 @@ import type { RoturaConDetalle } from "@/types/roturas"
 // dentro de dpo-app, en /indicadores/dqi.
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
-// El endpoint liviano /api/dqi tarda ~5s (no recalcula NAC/horas/WNP como el
-// /api/indicadores pesado, que tarda ~22s). 30s de margen por cold starts.
-const FETCH_TIMEOUT_MS = 30000
+// El endpoint liviano /api/dqi tarda ~2s medido (no recalcula NAC/horas/WNP
+// como el /api/indicadores pesado, que tarda ~22s). El margen de 30s era una
+// bomba: este fetch es un await bloqueante dentro del render de /reuniones/[id],
+// que tiene 60s de presupuesto total — un cold start lento se comía la mitad y
+// la página moría por timeout. Con 8s degrada a null y el resto se muestra.
+const FETCH_TIMEOUT_MS = 8000
 
 // Punto DPO Entrega 1.4 "Calidad de entrega de los productos".
 const PREGUNTA_14_ID = "8d76cc3d-1d4e-4274-ac46-281cf22bdfd2"
