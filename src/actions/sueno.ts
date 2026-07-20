@@ -187,9 +187,9 @@ const MES_LABEL = [
 const EXPLICACION: Record<string, string> = {
   vlc_hl:
     "VLC/HL = costo logístico del mes (Distribución + Almacén, cargados en Planeamiento → Costo por Punto de Venta) ÷ HL vendidos (facturado Chess neto). El YTD pondera por volumen: suma de costos ÷ suma de HL de los meses con costo cargado.",
-  otif: "OTIF = In-Full + On Time = (rechazos + stock out + VRL + VRC) ÷ bultos vendidos. Es el % de volumen PERDIDO: cuanto más bajo, mejor. El VRL (reprogramado logístico) arranca el 18/07/2026 y el VRC (comercial) en julio 2026: los meses anteriores no tienen el componente On Time y por eso dan más bajo de lo real.",
-  rechazo: "Rechazo = bultos rechazados ÷ bultos vendidos (%), EXCLUYENDO el motivo «Sin stock» (ese va en In-Full como stock out, para no contarlo dos veces). Por mes, con los bultos rechazados.",
-  in_full: "In-Full = (rechazos + stock out + cancelaciones) ÷ bultos vendidos (%). Es el % perdido por no entregar completo. Las cancelaciones todavía no tienen fuente en la app y hoy suman 0.",
+  otif: "OTIF = In-Full + On Time = (rechazos + stock out + VRL + VRC) ÷ HL vendidos. Es el % de volumen PERDIDO: cuanto más bajo, mejor. «HL vendidos» es el facturado Chess neto (la fila Vendidos del Cuadro de Indicadores), no lo distribuido. El VRL (reprogramado logístico) arranca el 18/07/2026 y el VRC (comercial) en julio 2026: los meses anteriores no tienen el componente On Time y por eso dan más bajo de lo real.",
+  rechazo: "Rechazo = bultos rechazados ÷ bultos DISTRIBUIDOS (%). Por mes, con los bultos rechazados. Ojo: usa otro denominador que OTIF e In-Full (que van sobre el facturado neto), así que no son comparables entre sí.",
+  in_full: "In-Full = (rechazos + stock out + cancelaciones) ÷ HL vendidos (facturado Chess neto) (%). Es el % perdido por no entregar completo. Las cancelaciones todavía no tienen fuente en la app y hoy suman 0.",
   tri: "TRI = accidentes REGISTRABLES del año (LTI + MDI + MTI), tomados de los reportes de seguridad cargados como accidente. Los FAI (primeros auxilios) no son registrables: por eso el detalle muestra también los accidentes totales del mes.",
   lti: "LTI = accidentes con días perdidos, tomados de los reportes de seguridad cargados como accidente. El detalle muestra además los accidentes totales de cada mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
@@ -349,7 +349,10 @@ export async function getSuenoDetalle(
           mes: m.mes,
           etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
           valor: m.otifPct as number,
-          detalle: m.bultosRechazo + m.bultosStockout + m.bultosVrl + (m.bultosVrc ?? 0),
+          detalle:
+            Math.round(
+              (m.hlRechazo + m.hlStockout + m.hlVrl + (m.hlVrc ?? 0)) * 10,
+            ) / 10,
         }))
       return {
         data: {
@@ -361,7 +364,7 @@ export async function getSuenoDetalle(
             ? `${EXPLICACION.otif}\n\n⚠️ El VRC (reprogramado comercial) no se pudo leer: el número que ves es solo In-Full + VRL, así que está por debajo del OTIF real.`
             : EXPLICACION.otif,
           meses: mesesOtif,
-          detalleLabel: "Bultos perdidos",
+          detalleLabel: "HL perdidos",
         },
       }
     }

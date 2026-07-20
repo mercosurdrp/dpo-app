@@ -1,18 +1,36 @@
 -- OTIF / In-Full con la definición del negocio (2026-07-20).
 --
---   In Full = (rechazos + stock out + cancelaciones) ÷ bultos vendidos
+--   In Full = (rechazos + stock out + cancelaciones) ÷ HL VENDIDOS
 --   OTIF    = In Full + VRL + VRC          (el On Time)
 --
--- Los tres se expresan como % de PÉRDIDA (cuanto más bajo, mejor). NO se hace
+-- Los dos se expresan como % de PÉRDIDA (cuanto más bajo, mejor). NO se hace
 -- "100 − resultado": el número que se publica es directamente la pérdida.
 -- Antes 'otif' e 'in_full' guardaban el COMPLEMENTO (98,x) mientras el árbol
 -- ya los tenía configurados como `mejor_si = menor` con meta 1,7 ⇒ el nodo
 -- daba rojo permanente. Esta migración alinea el dato con esa configuración.
 --
+-- 🚨 DENOMINADOR: "HL vendidos" = FACTURADO CHESS NETO, la fila "HL vendidos"
+-- del Cuadro de Indicadores — NO `ventas_diarias` a secas, que es lo
+-- DISTRIBUIDO y deja afuera la venta mostrador (~40% del volumen). Fórmula:
+--   distribuido chess (ventas_diarias origen='chess')
+--   + FCVTA (mostrador) + PRVTA (factura presupuesto)
+--   − DVVTA (notas de crédito) − PRDVO (devoluciones presupuesto)
+-- Validado contra la serie oficial 2026 del usuario (ene→jun):
+--   1,81 · 1,81 · 1,76 · 3,71 · 1,18 · 0,90  vs  calculado
+--   1,83 · 1,83 · 1,78 · 3,84 · 1,17 · 0,91  ⇒ cierra salvo abril, que en la
+--   serie vieja venía subcontado por el tope de 1000 filas de PostgREST.
+-- El origen de esta fórmula es `src/actions/cuadro-mensual.ts` (facturado_chess_*);
+-- si allá cambia, hay que replicarlo acá.
+--
+-- 🚨 El nodo `rechazo` NO se toca: sigue midiendo TODOS los motivos sobre lo
+-- DISTRIBUIDO, igual que el indicador de rechazos que ya se usa. Por eso
+-- `rechazo` e `in_full` NO son comparables entre sí ni suman en cascada:
+-- tienen denominadores distintos a propósito (operativo vs comercial).
+--
 -- Notas de alcance:
 --   · "stock out" es el motivo de rechazo SIN STOCK, que ya vive dentro de
---     `rechazos`. Por eso el nodo `rechazo` lo EXCLUYE y el `in_full` lo suma:
---     así los dos niveles del árbol no cuentan lo mismo dos veces.
+--     `rechazos`; en `in_full` entra sumado junto al resto. Es marginal:
+--     0,003%–0,030% del volumen según el mes.
 --   · "cancelaciones" todavía no tiene fuente en la app (no hay tabla de
 --     pedidos anulados) ⇒ hoy suma 0. Cuando exista, se agrega acá.
 --   · El OTIF NO se calcula en SQL: el VRC vive en la Railway del dashboard
@@ -25,35 +43,52 @@
 --     la rama cliente con `sueno_kpi_refresh_cliente` + el OTIF calculado en TS.
 --     El orden importa: el refresh viejo todavía escribe el complemento (98,x).
 
--- ── Componentes mensuales, todo en bultos y agregado en el server ──
+-- ── Componentes mensuales, todo en HL y agregado en el server ──
 -- (agregar acá y no en el cliente evita el tope de 1000 filas de PostgREST,
 --  que ya subcontó los rechazos de ene-abr 2026)
 CREATE OR REPLACE FUNCTION sueno_otif_componentes(p_anio int)
 RETURNS TABLE(
   mes int,
-  bultos_vendidos numeric,
-  bultos_rechazo numeric,
-  bultos_stockout numeric,
-  bultos_vrl numeric
+  hl_vendidos numeric,
+  hl_rechazo numeric,
+  hl_stockout numeric,
+  hl_vrl numeric
 )
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
   WITH v AS (
-    SELECT extract(month FROM fecha)::int AS m, sum(total_bultos) AS vendidos
-    FROM ventas_diarias
-    WHERE extract(year FROM fecha) = p_anio
-    GROUP BY 1
+    -- Facturado Chess NETO = misma fórmula que la fila "vendidos" del Cuadro
+    -- de Indicadores. Ojo: NO es `sum(total_hl)` de ventas_diarias.
+    SELECT d.m,
+           d.chess + coalesce(mo.fcvta, 0) + coalesce(mo.prvta, 0)
+                   - coalesce(mo.dvvta, 0) - coalesce(mo.prdvo, 0) AS vendidos
+    FROM (
+      SELECT extract(month FROM fecha)::int AS m, sum(total_hl) AS chess
+      FROM ventas_diarias
+      WHERE origen = 'chess' AND extract(year FROM fecha) = p_anio
+      GROUP BY 1
+    ) d
+    LEFT JOIN (
+      SELECT extract(month FROM fecha)::int AS m,
+             coalesce(sum(total_hl) FILTER (WHERE ds_documento = 'FCVTA'), 0) AS fcvta,
+             coalesce(sum(total_hl) FILTER (WHERE ds_documento = 'PRVTA'), 0) AS prvta,
+             coalesce(sum(total_hl) FILTER (WHERE ds_documento = 'DVVTA'), 0) AS dvvta,
+             coalesce(sum(total_hl) FILTER (WHERE ds_documento = 'PRDVO'), 0) AS prdvo
+      FROM ventas_mostrador_diarias
+      WHERE extract(year FROM fecha) = p_anio
+      GROUP BY 1
+    ) mo ON mo.m = d.m
   ), r AS (
     SELECT extract(month FROM coalesce(fecha_venta, fecha))::int AS m,
-           coalesce(sum(bultos_rechazados) FILTER (WHERE ds_rechazo IS DISTINCT FROM 'SIN STOCK'), 0) AS rech,
-           coalesce(sum(bultos_rechazados) FILTER (WHERE ds_rechazo = 'SIN STOCK'), 0) AS stockout
+           coalesce(sum(hl_rechazados) FILTER (WHERE ds_rechazo IS DISTINCT FROM 'SIN STOCK'), 0) AS rech,
+           coalesce(sum(hl_rechazados) FILTER (WHERE ds_rechazo = 'SIN STOCK'), 0) AS stockout
     FROM rechazos
     WHERE extract(year FROM coalesce(fecha_venta, fecha)) = p_anio
     GROUP BY 1
   ), l AS (
-    SELECT (split_part(anio_mes, '-', 2))::int AS m, sum(bultos) AS vrl
+    SELECT (split_part(anio_mes, '-', 2))::int AS m, sum(hl) AS vrl
     FROM v_vrl_mensual
     WHERE split_part(anio_mes, '-', 1) = p_anio::text
     GROUP BY 1
@@ -82,21 +117,37 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  IF p_kpi IN ('rechazo', 'in_full') THEN
+  IF p_kpi = 'in_full' THEN
+    -- Denominador = facturado neto (ver cabecera). Distinto del de 'rechazo'.
     RETURN QUERY
     SELECT c.mes,
-           round(
-             (CASE WHEN p_kpi = 'in_full'
-                   THEN c.bultos_rechazo + c.bultos_stockout
-                   ELSE c.bultos_rechazo
-              END) / nullif(c.bultos_vendidos, 0) * 100, 2),
-           round(
-             CASE WHEN p_kpi = 'in_full'
-                  THEN c.bultos_rechazo + c.bultos_stockout
-                  ELSE c.bultos_rechazo
-             END, 0)
+           round((c.hl_rechazo + c.hl_stockout)
+                 / nullif(c.hl_vendidos, 0) * 100, 2),
+           round(c.hl_rechazo + c.hl_stockout, 0)
     FROM sueno_otif_componentes(p_anio) c
     ORDER BY c.mes;
+
+  ELSIF p_kpi = 'rechazo' THEN
+    -- SIN CAMBIOS (pedido explícito): todos los motivos ÷ lo DISTRIBUIDO,
+    -- igual que el indicador de rechazos del cuadro.
+    RETURN QUERY
+    WITH r AS (
+      SELECT extract(month FROM coalesce(fecha_venta, fecha))::int AS m,
+             sum(bultos_rechazados) AS br
+      FROM rechazos
+      WHERE extract(year FROM coalesce(fecha_venta, fecha)) = p_anio
+      GROUP BY 1
+    ), v AS (
+      SELECT extract(month FROM fecha)::int AS m, sum(total_bultos) AS be
+      FROM ventas_diarias
+      WHERE extract(year FROM fecha) = p_anio
+      GROUP BY 1
+    )
+    SELECT v.m,
+           round(coalesce(r.br, 0) / nullif(v.be, 0) * 100, 2),
+           round(coalesce(r.br, 0), 0)
+    FROM v LEFT JOIN r ON r.m = v.m
+    ORDER BY v.m;
 
   ELSIF p_kpi = 'vlc_hl' THEN
     RETURN QUERY
@@ -196,15 +247,13 @@ DECLARE
   v_rech     numeric;
   v_stockout numeric;
 BEGIN
-  SELECT sum(bultos_vendidos), sum(bultos_rechazo), sum(bultos_stockout)
+  SELECT sum(hl_vendidos), sum(hl_rechazo), sum(hl_stockout)
     INTO v_vend, v_rech, v_stockout
   FROM sueno_otif_componentes(p_anio);
 
+  -- Solo in_full. 'rechazo' lo sigue escribiendo `sueno_kpi_refresh` con su
+  -- denominador de siempre (distribuido), sin tocar.
   IF coalesce(v_vend, 0) > 0 THEN
-    UPDATE sueno_kpi_valores
-       SET valor_ytd = round(v_rech / v_vend * 100, 2), updated_at = now()
-     WHERE kpi_key = 'rechazo' AND anio = p_anio;
-
     UPDATE sueno_kpi_valores
        SET valor_ytd = round((v_rech + v_stockout) / v_vend * 100, 2), updated_at = now()
      WHERE kpi_key = 'in_full' AND anio = p_anio;
