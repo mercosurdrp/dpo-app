@@ -182,9 +182,13 @@ END $$;
 -- ---------------------------------------------
 -- 6) Semilla: los tres escenarios 2026
 --
--- Los km del escenario de ensueño son ESTIMADOS (ruta desde San Nicolás) y
--- quedan editables: hay que validarlos contra distancias reales antes de
--- presentar el número en auditoría.
+-- Los km del escenario de ensueño se toman TAL CUAL de KM_DEFAULT de la solapa
+-- Simulación de Costo por PDV (simulacion-tab.tsx), que ya modelaba la mudanza
+-- a San Nicolás: si acá pusiéramos otros números habría dos escenarios "San
+-- Nicolás" distintos conviviendo en la misma app.
+-- 🚨 Pergamino (76) y Colón (131) quedaron con los MISMOS km que desde Ramallo.
+-- Puede ser correcto o puede ser que nunca se recalcularan: hay que validarlo
+-- contra distancias reales antes de presentar el número en auditoría.
 -- ---------------------------------------------
 INSERT INTO territorial_escenarios (anio, tipo, nombre, supuestos, km_ciudad)
 VALUES
@@ -200,8 +204,10 @@ VALUES
 
   (2026, 'dream', 'Escenario de ensueño — CD en San Nicolás',
    'Relocalización del centro de distribución a San Nicolás, donde está el 44% '
-   'de los PDV y el 46% del volumen. Recalcula el costo con la matriz de km '
-   'desde San Nicolás, sin cambiar nada más. '
-   'ATENCIÓN: los km son estimados de ruta y hay que validarlos.',
-   '{"San Nicolás": 8, "Ramallo": 24, "Pergamino": 55, "Arrecifes": 95, "Colón": 110}'::jsonb)
+   'de los PDV y el 46% del volumen. Matriz de km TOMADA DE la solapa Simulación '
+   'de Costo por PDV (KM_DEFAULT), para que no haya dos escenarios San Nicolás '
+   'distintos conviviendo. ATENCIÓN: Pergamino (76) y Colón (131) quedaron con '
+   'los MISMOS km que desde Ramallo — hay que validar si es correcto o si nunca '
+   'se recalcularon.',
+   '{"San Nicolás": 8, "Ramallo": 32, "Pergamino": 76, "Arrecifes": 94, "Colón": 131}'::jsonb)
 ON CONFLICT (anio, tipo) DO NOTHING;
