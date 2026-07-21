@@ -64,6 +64,27 @@ function norm(s: string | null | undefined): string {
   return (s || "").trim().toUpperCase().replace(/\s+/g, " ")
 }
 
+// 🚨 PostgREST corta en 1000 filas por respuesta. Sin paginar, `asistencia_marcas`
+// (2.015 salidas desde abril, 4.104 marcas totales) se leía a medias y se perdían
+// las MÁS NUEVAS: todo julio aparecía como "sin fichaje de salida" cuando las
+// marcas estaban en la base. Cualquier lectura que pueda superar las 1000 filas
+// tiene que pasar por acá.
+const PAGE = 1000
+
+async function leerTodo<T>(
+  query: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query(from, from + PAGE - 1)
+    if (error) throw new Error(error.message)
+    const rows = data ?? []
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
 const MESES = [
   "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
   "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
@@ -87,18 +108,20 @@ export async function getTiKpis(filters?: {
     const supabase = await createClient()
 
     // 1) Retornos
-    let qRet = supabase
-      .from("checklist_vehiculos")
-      .select("fecha,chofer,dominio,hora")
-      .eq("tipo", "retorno")
-      .order("fecha", { ascending: true })
-    if (filters?.fechaDesde) qRet = qRet.gte("fecha", filters.fechaDesde)
-    if (filters?.fechaHasta) qRet = qRet.lte("fecha", filters.fechaHasta)
-    const retRes = await qRet
-    if (retRes.error) return { error: retRes.error.message }
-    const retornos = (retRes.data || []) as {
+    // Paginado: hoy son ~675 desde abril, pero crece ~200/mes y al pasar las 1000
+    // se empezarían a perder retornos en silencio.
+    const retornos = await leerTodo<{
       fecha: string; chofer: string; dominio: string; hora: string
-    }[]
+    }>((f, t) => {
+      let q = supabase
+        .from("checklist_vehiculos")
+        .select("fecha,chofer,dominio,hora")
+        .eq("tipo", "retorno")
+      if (filters?.fechaDesde) q = q.gte("fecha", filters.fechaDesde)
+      if (filters?.fechaHasta) q = q.lte("fecha", filters.fechaHasta)
+      return q.order("id").range(f, t)
+    })
+    retornos.sort((a, b) => a.fecha.localeCompare(b.fecha))
 
     // 2) Resolver chofer → empleado (legajo). Usa mapeo_empleado_chofer + match por nombre.
     const [empRes, mapRes] = await Promise.all([
@@ -126,14 +149,17 @@ export async function getTiKpis(filters?: {
 
     // 3) Marcas de salida (S) del rango, indexadas por legajo|fechaARG → última (máx instante).
     const desde = filters?.fechaDesde || retornos[0]?.fecha || "2026-01-01"
-    const { data: marcasData, error: marcasErr } = await supabase
-      .from("asistencia_marcas")
-      .select("legajo,fecha_marca,tipo_marca")
-      .eq("tipo_marca", "S")
-      .gte("fecha_marca", desde)
-    if (marcasErr) return { error: marcasErr.message }
+    const marcasData = await leerTodo<{ legajo: number; fecha_marca: string }>((f, t) =>
+      supabase
+        .from("asistencia_marcas")
+        .select("legajo,fecha_marca,tipo_marca")
+        .eq("tipo_marca", "S")
+        .gte("fecha_marca", desde)
+        .order("id")
+        .range(f, t),
+    )
     const salidaPorLegFecha = new Map<string, number>()
-    for (const m of (marcasData || []) as { legajo: number; fecha_marca: string }[]) {
+    for (const m of marcasData) {
       const f = fechaArgDeMarca(m.fecha_marca)
       const k = `${m.legajo}|${f}`
       const ms = salidaUtcMs(m.fecha_marca)
@@ -149,14 +175,15 @@ export async function getTiKpis(filters?: {
     // marcas, ni por legajo ni por DNI.
     // Se detecta por datos y no por una lista fija: si mañana empiezan a fichar,
     // entran solos al indicador sin tocar código.
-    const { data: marcasAny, error: anyErr } = await supabase
-      .from("asistencia_marcas")
-      .select("legajo")
-      .gte("fecha_marca", desde)
-    if (anyErr) return { error: anyErr.message }
-    const legajosQueFichan = new Set(
-      ((marcasAny || []) as { legajo: number }[]).map((m) => m.legajo),
+    const marcasAny = await leerTodo<{ legajo: number }>((f, t) =>
+      supabase
+        .from("asistencia_marcas")
+        .select("legajo")
+        .gte("fecha_marca", desde)
+        .order("id")
+        .range(f, t),
     )
+    const legajosQueFichan = new Set(marcasAny.map((m) => m.legajo))
 
     // 4) Calcular TI por retorno
     const registros: TiRegistro[] = []
