@@ -29,9 +29,16 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   fecha: string | null
+  /** Qué grupo de unidades mostrar; debe coincidir con la fila clickeada. */
+  grupo?: "camiones" | "autoelevadores"
 }
 
-export function ChecklistDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
+export function ChecklistDetalleDiaDialog({
+  open,
+  onOpenChange,
+  fecha,
+  grupo = "camiones",
+}: Props) {
   const [data, setData] = useState<ChecklistResumenDia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,7 +52,7 @@ export function ChecklistDetalleDiaDialog({ open, onOpenChange, fecha }: Props) 
     let cancelado = false
     setLoading(true)
     setError(null)
-    void getChecklistResumenDia(fecha).then((res) => {
+    void getChecklistResumenDia(fecha, grupo).then((res) => {
       if (cancelado) return
       if ("error" in res) {
         setError(res.error)
@@ -58,14 +65,16 @@ export function ChecklistDetalleDiaDialog({ open, onOpenChange, fecha }: Props) 
     return () => {
       cancelado = true
     }
-  }, [open, fecha])
+  }, [open, fecha, grupo])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[1100px] overflow-y-auto sm:max-w-[95vw] lg:max-w-[1100px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Checklist de liberación
+            {grupo === "autoelevadores"
+              ? "Checklist de autoelevadores"
+              : "Checklist de liberación"}
             {fecha && (
               <span className="text-base font-normal text-muted-foreground">
                 · {formatFechaLarga(fecha)}
@@ -95,7 +104,11 @@ export function ChecklistDetalleDiaDialog({ open, onOpenChange, fecha }: Props) 
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <KpiCard
-                label="Cantidad de camiones"
+                label={
+                  grupo === "autoelevadores"
+                    ? "Cantidad de autoelevadores"
+                    : "Cantidad de camiones"
+                }
                 value={formatInt(data.camiones)}
                 sub="unidades únicas"
               />

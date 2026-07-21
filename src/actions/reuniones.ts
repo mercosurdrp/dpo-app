@@ -2971,12 +2971,21 @@ async function getIndicadoresMesCore(
         .gte("fecha", fechaDesde)
         .lte("fecha", fechaHasta)
         .then((r) => r)
+    // Tipo de unidad por dominio: el checklist no lo guarda, y sin esto los
+    // autoelevadores caen dentro del "X/Y" de los camiones (se graban como
+    // 'liberacion' igual que ellos, ver checklist-vehiculos.ts).
+    const qCatalogoVehiculos = () =>
+      supabase
+        .from("catalogo_vehiculos")
+        .select("dominio, tipo")
+        .then((r) => r)
 
     const pReportesSeguridad = qReportesSeguridad()
     const pTml = quiereNoWarehouse ? qTml() : null
     const pOcupacionBodega = quiereNoWarehouse ? qOcupacionBodega() : null
     const pChecklist = quiereChecklist ? qChecklist() : null
     const pEgresosAyudantes = quiereChecklist ? qEgresosAyudantes() : null
+    const pCatalogoVehiculos = quiereChecklist ? qCatalogoVehiculos() : null
 
     // 3. Reuniones del mismo tipo cuya fecha cae en ese rango
     const { data: reunionesRaw, error: errRe } = await supabase
@@ -3660,10 +3669,27 @@ async function getIndicadoresMesCore(
     //     aprobados/total como texto "X/Y" (ej. 8/8, 7/8).
     if (tipo === "logistica" || tipo === "matinal-distribucion") {
       const { data: chkRaw, error: errChk } = await (pChecklist ?? qChecklist())
+      const { data: catRaw } = await (pCatalogoVehiculos ?? qCatalogoVehiculos())
 
       if (!errChk) {
+        // dominio → tipo de unidad. Los autoelevadores se miden aparte: son
+        // otra operación (depósito, no calle) y con 2 equipos contra 11
+        // camiones sus rechazos quedaban diluidos hasta ser invisibles.
+        const tipoPorDominio = new Map<string, string>()
+        for (const v of (catRaw ?? []) as Array<{
+          dominio: string | null
+          tipo: string | null
+        }>) {
+          const d = (v.dominio ?? "").trim().toUpperCase()
+          if (d && v.tipo) tipoPorDominio.set(d, v.tipo)
+        }
+        const esAutoelevador = (dom: string) =>
+          tipoPorDominio.get(dom) === "autoelevador"
+
         const totalPorFecha: Record<string, number> = {}
         const aprobPorFecha: Record<string, number> = {}
+        const totalAePorFecha: Record<string, number> = {}
+        const aprobAePorFecha: Record<string, number> = {}
         // Dominios únicos por fecha — un camión puede tener más de un
         // checklist el mismo día (rehace tras corregir un desvío).
         const dominiosPorFecha: Record<string, Set<string>> = {}
@@ -3687,17 +3713,31 @@ async function getIndicadoresMesCore(
           hora: string | null
         }>) {
           const dom = (r.dominio ?? "").trim().toUpperCase()
+          const esAe = esAutoelevador(dom)
           // Camiones a la calle + Checklist: sólo los checklists de liberación.
+          // (Los autoelevadores también se graban como 'liberacion', por eso
+          // hay que mirar el tipo de unidad y no sólo el tipo de checklist.)
           if (r.tipo === "liberacion") {
-            totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
-            if (r.resultado === "aprobado") {
-              aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
-            }
-            if (dom) {
-              if (!dominiosPorFecha[r.fecha]) dominiosPorFecha[r.fecha] = new Set()
-              dominiosPorFecha[r.fecha].add(dom)
+            if (esAe) {
+              totalAePorFecha[r.fecha] = (totalAePorFecha[r.fecha] ?? 0) + 1
+              if (r.resultado === "aprobado") {
+                aprobAePorFecha[r.fecha] = (aprobAePorFecha[r.fecha] ?? 0) + 1
+              }
+            } else {
+              totalPorFecha[r.fecha] = (totalPorFecha[r.fecha] ?? 0) + 1
+              if (r.resultado === "aprobado") {
+                aprobPorFecha[r.fecha] = (aprobPorFecha[r.fecha] ?? 0) + 1
+              }
+              if (dom) {
+                if (!dominiosPorFecha[r.fecha]) dominiosPorFecha[r.fecha] = new Set()
+                dominiosPorFecha[r.fecha].add(dom)
+              }
             }
           }
+          // Km recorridos y horas en la calle: sólo unidades de calle. El
+          // autoelevador carga HORÓMETRO en el mismo campo `odometro`, así que
+          // incluirlo sumaba horas como si fueran kilómetros.
+          if (esAe) continue
           // Km recorridos: odómetro de liberación y de retorno por unidad.
           if (dom && r.odometro != null && Number.isFinite(r.odometro)) {
             if (!odoPorFechaDom[r.fecha]) odoPorFechaDom[r.fecha] = {}
@@ -3736,45 +3776,68 @@ async function getIndicadoresMesCore(
           buildAutoRow("auto_camiones_calle", "Cantidad de camiones", camionesPorFecha),
         )
 
-        // Fila "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.
-        const chkValores: Record<
-          string,
-          {
-            reunion_id: string
-            valor: number | null
-            observacion: string | null
-            texto: string | null
-          } | null
-        > = {}
-        let sumAprob = 0
-        let sumTotal = 0
-        for (const f of fechas) {
-          const total = totalPorFecha[f] ?? 0
-          const aprob = aprobPorFecha[f] ?? 0
-          chkValores[f] = {
-            reunion_id: "auto",
-            valor: total > 0 ? aprob : null,
-            observacion: null,
-            texto: total > 0 ? `${aprob}/${total}` : null,
+        // Filas "Checklist": texto "aprobados/total" por día; MTD = ΣA/ΣT.
+        // Van separadas camiones / autoelevadores — mezclarlas escondía los
+        // rechazos del autoelevador dentro del volumen de los camiones.
+        const filaChecklist = (
+          id: string,
+          nombre: string,
+          aprobPor: Record<string, number>,
+          totalPor: Record<string, number>,
+        ) => {
+          const valores: Record<
+            string,
+            {
+              reunion_id: string
+              valor: number | null
+              observacion: string | null
+              texto: string | null
+            } | null
+          > = {}
+          let sumAprob = 0
+          let sumTotal = 0
+          for (const f of fechas) {
+            const total = totalPor[f] ?? 0
+            const aprob = aprobPor[f] ?? 0
+            valores[f] = {
+              reunion_id: "auto",
+              valor: total > 0 ? aprob : null,
+              observacion: null,
+              texto: total > 0 ? `${aprob}/${total}` : null,
+            }
+            if (f <= fecha) {
+              sumAprob += aprob
+              sumTotal += total
+            }
           }
-          if (f <= fecha) {
-            sumAprob += aprob
-            sumTotal += total
+          return {
+            id,
+            nombre,
+            unidad: null,
+            meta: null,
+            orden: -1,
+            agregacion: "suma" as const,
+            valores,
+            mtd: sumTotal > 0 ? sumAprob : null,
+            mtd_texto: sumTotal > 0 ? `${sumAprob}/${sumTotal}` : null,
+            auto: true,
+            mostrar_cero: true,
           }
         }
-        indicadoresAuto.push({
-          id: "auto_checklist",
-          nombre: "Checklist",
-          unidad: null,
-          meta: null,
-          orden: -1,
-          agregacion: "suma",
-          valores: chkValores,
-          mtd: sumTotal > 0 ? sumAprob : null,
-          mtd_texto: sumTotal > 0 ? `${sumAprob}/${sumTotal}` : null,
-          auto: true,
-          mostrar_cero: true,
-        })
+        indicadoresAuto.push(
+          filaChecklist(
+            "auto_checklist",
+            "Checklist camiones",
+            aprobPorFecha,
+            totalPorFecha,
+          ),
+          filaChecklist(
+            "auto_checklist_ae",
+            "Checklist autoelevadores",
+            aprobAePorFecha,
+            totalAePorFecha,
+          ),
+        )
 
         // Fila "Km recorridos": Σ (odómetro de retorno − odómetro de
         // liberación) de cada unidad. Se descartan lecturas inválidas

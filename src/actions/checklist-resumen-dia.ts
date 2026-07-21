@@ -48,6 +48,7 @@ const VALORES_FALLO = new Set(["nook", "malo"])
  */
 export async function getChecklistResumenDia(
   fecha: string,
+  grupo: "camiones" | "autoelevadores" = "camiones",
 ): Promise<{ data: ChecklistResumenDia } | { error: string }> {
   try {
     await requireAuth()
@@ -61,14 +62,33 @@ export async function getChecklistResumenDia(
       .eq("tipo", "liberacion")
       .order("hora", { ascending: true })
     if (e1) return { error: e1.message }
-    const checklists = (chkRaw ?? []) as Array<{
+    // El autoelevador también se graba como 'liberacion', así que el grupo se
+    // resuelve por el tipo de la unidad en el catálogo, no por el del check.
+    const { data: catRaw } = await supa
+      .from("catalogo_vehiculos")
+      .select("dominio, tipo")
+    const tipoPorDominio = new Map<string, string>()
+    for (const v of (catRaw ?? []) as Array<{
+      dominio: string | null
+      tipo: string | null
+    }>) {
+      const d = (v.dominio ?? "").trim().toUpperCase()
+      if (d && v.tipo) tipoPorDominio.set(d, v.tipo)
+    }
+    const perteneceAlGrupo = (dominio: string | null) => {
+      const esAe =
+        tipoPorDominio.get((dominio ?? "").trim().toUpperCase()) ===
+        "autoelevador"
+      return grupo === "autoelevadores" ? esAe : !esAe
+    }
+    const checklists = ((chkRaw ?? []) as Array<{
       id: string
       dominio: string
       chofer: string
       hora: string
       resultado: "aprobado" | "rechazado"
       observaciones: string | null
-    }>
+    }>).filter((c) => perteneceAlGrupo(c.dominio))
 
     // 2. Respuestas + ítems de esos checklists
     const respPorChk: Record<string, ChecklistItemDetalle[]> = {}
@@ -123,9 +143,14 @@ export async function getChecklistResumenDia(
       (egrRaw ?? []).map((e: { dominio: string | null }) => norm(e.dominio)),
     )
     dominiosEgreso.delete("")
-    const sinChecklist = [...dominiosEgreso]
-      .filter((d) => !dominiosConChecklist.has(d))
-      .sort()
+    // "Salió sin checklist" se mide contra los egresos de calle: un
+    // autoelevador no registra egreso, así que en su grupo la lista no aplica.
+    const sinChecklist =
+      grupo === "autoelevadores"
+        ? []
+        : [...dominiosEgreso]
+            .filter((d) => !dominiosConChecklist.has(d))
+            .sort()
 
     let aprobados = 0
     let rechazados = 0

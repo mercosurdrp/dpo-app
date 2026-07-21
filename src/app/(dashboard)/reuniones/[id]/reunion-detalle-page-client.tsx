@@ -924,6 +924,10 @@ export function ReunionDetallePageClient({
   const [checklistDetalleFecha, setChecklistDetalleFecha] = useState<
     string | null
   >(null)
+  // Qué grupo abrió el detalle: la grilla tiene una fila por tipo de unidad.
+  const [checklistDetalleGrupo, setChecklistDetalleGrupo] = useState<
+    "camiones" | "autoelevadores"
+  >("camiones")
 
   // Detalle del día al hacer click en la celda del indicador Km recorridos:
   // km por camión (odómetro de retorno − odómetro de liberación).
@@ -1932,10 +1936,16 @@ export function ReunionDetallePageClient({
                           }
                           // Checklist "X/Y": verde si todas aprobadas, ámbar
                           // si hubo algún rechazo en las liberaciones del día.
-                          if (ind.id === "auto_checklist") {
+                          // Un día sin checklists (texto null) queda neutro: no
+                          // hubo rechazos, simplemente no hubo actividad.
+                          if (
+                            ind.id === "auto_checklist" ||
+                            ind.id === "auto_checklist_ae"
+                          ) {
                             const m = (cell?.texto ?? "").match(/^(\d+)\/(\d+)$/)
-                            colorClass =
-                              m && m[1] === m[2]
+                            colorClass = !m
+                              ? "font-medium text-slate-700"
+                              : m[1] === m[2]
                                 ? "bg-emerald-50 font-semibold text-emerald-700"
                                 : "bg-amber-50 font-semibold text-amber-700"
                           }
@@ -1943,7 +1953,9 @@ export function ReunionDetallePageClient({
                           const esBultosVendidos = ind.id === "auto_bultos_vendidos"
                           const esHlVendidos = ind.id === "auto_hl_vendidos"
                           const esTml = ind.id === "auto_tml"
-                          const esChecklist = ind.id === "auto_checklist"
+                          const esChecklist =
+                            ind.id === "auto_checklist" ||
+                            ind.id === "auto_checklist_ae"
                           const esKm = ind.id === "auto_km_recorridos"
                           const esHorasCalle = ind.id === "auto_horas_calle"
                           const esAperturaPicking =
@@ -1990,7 +2002,14 @@ export function ReunionDetallePageClient({
                             else if (esBultosVendidos) setVentasBultosFecha(f)
                             else if (esHlVendidos) setVentasHlFecha(f)
                             else if (esTml) setTmlDetalleFecha(f)
-                            else if (esChecklist) setChecklistDetalleFecha(f)
+                            else if (esChecklist) {
+                              setChecklistDetalleGrupo(
+                                ind.id === "auto_checklist_ae"
+                                  ? "autoelevadores"
+                                  : "camiones",
+                              )
+                              setChecklistDetalleFecha(f)
+                            }
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
@@ -2298,6 +2317,7 @@ export function ReunionDetallePageClient({
           if (!o) setChecklistDetalleFecha(null)
         }}
         fecha={checklistDetalleFecha}
+        grupo={checklistDetalleGrupo}
       />
 
       <KmRecorridosDetalleDiaDialog
