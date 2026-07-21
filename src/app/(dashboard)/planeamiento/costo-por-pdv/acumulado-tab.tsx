@@ -77,6 +77,7 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
   const [filas, setFilas] = useState<CostoPorPdvRow[]>([])
   const [meses, setMeses] = useState<CostoYtdMes[]>([])
   const [cargado, setCargado] = useState<number | null>(null)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const [q, setQ] = useState("")
@@ -97,11 +98,15 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
     startTransition(async () => {
       const res = await getCostoPorPdvYtd(anio)
       if ("error" in res) {
+        // Nunca mostrar un acumulado a medias: si falla, se avisa. Antes un mes que
+        // fallaba se descartaba en silencio y el total quedaba corto sin que se notara.
         setFilas([])
         setMeses([])
+        setErrorCarga(res.error)
       } else {
         setFilas(res.data)
         setMeses(res.meses)
+        setErrorCarga(null)
       }
       setCargado(anio)
     })
@@ -221,6 +226,15 @@ export function AcumuladoTab({ costos, kmCiudades, anioInicial }: Props) {
 
   return (
     <div className="space-y-6">
+      {errorCarga && (
+        <Card className="border-l-4 border-l-red-500 bg-red-50/60">
+          <CardContent className="pt-6 text-sm text-red-900">
+            <strong>No se pudo cargar el acumulado.</strong> No se muestra nada para no
+            dar un total incompleto. Detalle: {errorCarga}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Aviso */}
       <Card className="border-l-4 border-l-sky-500 bg-sky-50/50">
         <CardContent className="flex items-start gap-3 pt-6">

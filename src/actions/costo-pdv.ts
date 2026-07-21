@@ -191,63 +191,53 @@ export async function getCostoPorPdvYtd(
   anio: number,
 ): Promise<{ data: CostoPorPdvRow[]; meses: CostoYtdMes[] } | { error: string }> {
   const supabase = await createClient()
-  const { data: mesesData, error: eMeses } = await supabase
-    .from("costo_logistico_mensual")
-    .select("mes")
-    .eq("anio", anio)
-    .order("mes", { ascending: true })
-  if (eMeses) return { error: eMeses.message }
-  const meses = (mesesData ?? []).map((r) => Number(r.mes))
-  if (meses.length === 0) return { data: [], meses: [] }
-
-  // Un mes por RPC, en paralelo (Promise.all preserva el orden de `meses`).
-  const resultados = await Promise.all(meses.map((m) => getCostoPorPdv(anio, m)))
-
-  const acc = new Map<number, CostoPorPdvRow>()
-  const resumen: CostoYtdMes[] = []
-  meses.forEach((mes, i) => {
-    const res = resultados[i]
-    if ("error" in res) return
-    let cTot = 0, venta = 0, bultos = 0, hl = 0
-    for (const f of res.data) {
-      cTot += f.costo_total
-      venta += f.venta_neta
-      bultos += f.bultos
-      hl += f.hl
-      const cur = acc.get(f.id_cliente)
-      if (!cur) {
-        acc.set(f.id_cliente, { ...f })
-      } else {
-        cur.bultos += f.bultos
-        cur.comprobantes += f.comprobantes
-        cur.hl += f.hl
-        cur.venta_neta += f.venta_neta
-        cur.costo_almacen += f.costo_almacen
-        cur.costo_distrib += f.costo_distrib
-        cur.costo_distancia += f.costo_distancia
-        cur.costo_total += f.costo_total
-        cur.bultos_rechazados += f.bultos_rechazados
-        cur.eventos_rechazo += f.eventos_rechazo
-        // Me quedo con la ciudad/nombre informados (por si un mes vino sin ciudad).
-        if ((!cur.ciudad || cur.ciudad === "(sin ciudad)") && f.ciudad) cur.ciudad = f.ciudad
-        if (!cur.nombre_cliente && f.nombre_cliente) cur.nombre_cliente = f.nombre_cliente
-      }
-    }
-    resumen.push({ anio, mes, costo_total: cTot, venta_neta: venta, bultos, hl, pdv: res.data.length })
+  // Una sola RPC que acumula del lado del servidor.
+  //
+  // Antes esto lanzaba una RPC por mes con Promise.all y acumulaba en JS. Con 6 meses
+  // cargados las 6 salían juntas, se peleaban la CPU de la instancia y varias morían
+  // por statement_timeout (8s para `authenticated`); el error se descartaba en
+  // silencio, así que el acumulado mostraba "5 meses cargados" y le faltaba un mes
+  // entero de costo sin avisar. Ahora es un solo statement (con su propio timeout de
+  // 60s, ver migración 20260721140000) y cualquier fallo se devuelve como error.
+  const { data, error } = await supabase.rpc("get_costo_por_pdv_ytd_json", {
+    p_anio: anio,
   })
+  if (error) return { error: error.message }
 
-  // Recalcular los derivados sobre los totales acumulados.
-  const filas = [...acc.values()].map((f) => ({
-    ...f,
-    costo_x_bulto: f.bultos ? f.costo_total / f.bultos : 0,
-    costo_x_hl: f.hl ? f.costo_total / f.hl : 0,
-    pct_venta: f.venta_neta ? (100 * f.costo_total) / f.venta_neta : 0,
-    pct_rechazo:
-      f.bultos + f.bultos_rechazados
-        ? (100 * f.bultos_rechazados) / (f.bultos + f.bultos_rechazados)
-        : 0,
-  }))
-  return { data: filas, meses: resumen }
+  const payload = (data ?? {}) as { data?: unknown; meses?: unknown }
+  const filasRaw = Array.isArray(payload.data) ? (payload.data as Record<string, unknown>[]) : []
+  const mesesRaw = Array.isArray(payload.meses) ? (payload.meses as Record<string, unknown>[]) : []
+
+  return {
+    data: filasRaw.map((r) => ({
+      id_cliente: Number(r.id_cliente),
+      nombre_cliente: (r.nombre_cliente as string) ?? "",
+      ciudad: (r.ciudad as string) ?? "(sin ciudad)",
+      bultos: Number(r.bultos),
+      comprobantes: Number(r.comprobantes),
+      hl: Number(r.hl),
+      venta_neta: Number(r.venta_neta),
+      costo_almacen: Number(r.costo_almacen),
+      costo_distrib: Number(r.costo_distrib),
+      costo_distancia: Number(r.costo_distancia ?? 0),
+      costo_total: Number(r.costo_total),
+      costo_x_bulto: Number(r.costo_x_bulto ?? 0),
+      costo_x_hl: Number(r.costo_x_hl ?? 0),
+      pct_venta: Number(r.pct_venta ?? 0),
+      bultos_rechazados: Number(r.bultos_rechazados ?? 0),
+      eventos_rechazo: Number(r.eventos_rechazo ?? 0),
+      pct_rechazo: Number(r.pct_rechazo ?? 0),
+    })),
+    meses: mesesRaw.map((m) => ({
+      anio: Number(m.anio),
+      mes: Number(m.mes),
+      costo_total: Number(m.costo_total),
+      venta_neta: Number(m.venta_neta),
+      bultos: Number(m.bultos),
+      hl: Number(m.hl),
+      pdv: Number(m.pdv),
+    })),
+  }
 }
 
 /**

@@ -510,6 +510,17 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
               <strong>{fmtMoney((kpis.costoTotal + bolsa.costo_almacen) / (kpis.hl + bolsa.hl))}/HL</strong>, que es
               el <strong>VLC/HL</strong> del Árbol del Sueño.
             </p>
+            <p className="mt-3 rounded-md bg-sky-100/70 p-3 text-sm text-sky-950">
+              ⚠️ <strong>Esto no bajó el costo de la empresa.</strong> El costo del mes es el mismo que carga
+              Finanzas: lo único que cambió es <strong>a quién se le asigna</strong>. Antes los PDV con reparto
+              cargaban también con el almacenaje de la mercadería que se retira en el depósito, que no era de
+              ellos. Por eso el costo por PDV baja aunque no se haya ahorrado un peso.
+            </p>
+            <p className="mt-2 text-sm text-slate-700">
+              Sirve para comparar canales: servir por depósito cuesta{" "}
+              <strong>{fmtMoney(bolsa.costo_x_hl)}/HL</strong> contra{" "}
+              <strong>{fmtMoney(kpis.hl ? kpis.costoTotal / kpis.hl : 0)}/HL</strong> por reparto.
+            </p>
           </CardContent>
         </Card>
       )}
