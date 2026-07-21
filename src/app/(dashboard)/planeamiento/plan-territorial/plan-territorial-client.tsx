@@ -12,6 +12,7 @@ import {
   Plus,
   CalendarCheck,
   ChevronRight,
+  Pencil,
 } from "lucide-react"
 import {
   LineChart,
@@ -48,6 +49,7 @@ import {
 } from "@/components/ui/table"
 import {
   crearPlanTerritorial,
+  actualizarPlanTerritorial,
   agregarAvancePlanTerritorial,
   registrarRevision,
   type Territorio,
@@ -320,10 +322,15 @@ export function PlanTerritorialClient({
         {/* ---------------- Planes (R5.1.2 / R5.1.4) ---------------- */}
         <TabsContent value="planes" className="space-y-4 pt-4">
           {esEditor && (
-            <NuevoPlanDialog
+            <PlanDialog
               ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
               perfiles={perfiles}
               territorio={territorio}
+              trigger={
+                <Button>
+                  <Plus className="h-4 w-4" /> Nuevo plan territorial
+                </Button>
+              }
             />
           )}
           {planes.length === 0 && (
@@ -337,6 +344,9 @@ export function PlanTerritorialClient({
               plan={p}
               ciudad={territorio?.ciudades.find((c) => c.ciudad === p.ciudad)}
               esEditor={esEditor}
+              ciudades={(territorio?.ciudades ?? []).map((c) => c.ciudad)}
+              perfiles={perfiles}
+              territorio={territorio}
             />
           ))}
         </TabsContent>
@@ -521,17 +531,22 @@ function EscenarioDreamCard({ dream }: { dream: Escenario }) {
           ))}
         </div>
 
-        <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="flex items-start gap-2 pt-6 text-sm text-amber-900">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              <strong>La simulación no puede mostrar un ahorro en pesos.</strong>{" "}
-              El modelo parte del costo que Finanzas cargó para el mes y lo
-              reparte entre los PDV: cambiar los km cambia <em>cómo se reparte</em>,
-              no cuánto se gasta, así que el VLC/HL total da idéntico. Para
-              convertir los km evitados en pesos hay que valorizarlos a $/km y
-              bajar el pool — decisión de modelo pendiente.
-            </span>
+        <Card className="border-slate-200 bg-slate-50">
+          <CardContent className="space-y-2 pt-6 text-sm text-slate-700">
+            <p>
+              <strong>Cómo se calcula el ahorro.</strong> Se mide sobre el{" "}
+              <strong>costo por llegar</strong> (el line-haul: km de ida y vuelta
+              a cada ciudad × viajes × $/km), que es el único componente que se
+              mueve al cambiar de dónde sale el camión. Almacén y reparto quedan
+              igual. Es la misma apertura que muestra el pop-up de costo
+              logístico en Costo por PDV.
+            </p>
+            <p>
+              <strong>Ene–jun 2026:</strong> el costo de llegar baja{" "}
+              <strong>$60.733.313</strong> (entre 10,4% y 14,0% según el mes),
+              sobre un costo logístico de $922.006.318 y 48.238 HL ⇒ VLC/HL de{" "}
+              <strong>19.114 a 17.855</strong>, un <strong>6,59%</strong> menos.
+            </p>
           </CardContent>
         </Card>
 
@@ -551,10 +566,16 @@ function PlanCard({
   plan,
   ciudad,
   esEditor,
+  ciudades,
+  perfiles,
+  territorio,
 }: {
   plan: PlanTerritorial
   ciudad: CiudadResumen | undefined
   esEditor: boolean
+  ciudades: string[]
+  perfiles: Array<{ id: string; nombre: string }>
+  territorio: Territorio | null
 }) {
   const actual = ciudad?.costo_x_hl ?? null
   const delta =
@@ -631,48 +652,110 @@ function PlanCard({
           </p>
         )}
 
-        {esEditor && <NuevoAvanceDialog plan={plan} costoActual={actual} />}
+        {esEditor && (
+          <div className="flex flex-wrap gap-2">
+            <NuevoAvanceDialog plan={plan} costoActual={actual} />
+            <PlanDialog
+              ciudades={ciudades}
+              perfiles={perfiles}
+              territorio={territorio}
+              plan={plan}
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Pencil className="h-4 w-4" /> Editar
+                </Button>
+              }
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-function NuevoPlanDialog({
+/**
+ * Alta y edición de un plan territorial.
+ *
+ * Es UN solo componente para las dos cosas: si recibe `plan` edita, si no
+ * crea. Tener dos formularios casi iguales garantizaba que un campo agregado
+ * en uno se olvidara en el otro.
+ *
+ * 🚨 Los campos van CONTROLADOS, no con defaultValue. Con defaultValue la
+ * línea base se escribía sólo en el primer render: si elegías Colón y después
+ * cambiabas a Arrecifes, el input se quedaba con el número de Colón y el plan
+ * nacía con la línea base de otra ciudad (pasó de verdad).
+ */
+function PlanDialog({
   ciudades,
   perfiles,
   territorio,
+  plan,
+  trigger,
 }: {
   ciudades: string[]
   perfiles: Array<{ id: string; nombre: string }>
   territorio: Territorio | null
+  /** Si viene, el diálogo edita ese plan en vez de crear uno nuevo. */
+  plan?: PlanTerritorial
+  trigger: React.ReactElement
 }) {
+  const editando = plan != null
+
   const [abierto, setAbierto] = useState(false)
-  const [ciudad, setCiudad] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [pendiente, startTransition] = useTransition()
 
-  // Precargamos la línea base con el $/HL vigente de la ciudad elegida: es
-  // justamente el "antes" contra el que se va a medir la mejora.
-  const lineaBaseSugerida =
-    territorio?.ciudades.find((c) => c.ciudad === ciudad)?.costo_x_hl ?? null
+  const [ciudad, setCiudad] = useState(plan?.ciudad ?? "")
+  const [palanca, setPalanca] = useState<PalancaPlan>(plan?.palanca ?? "otro")
+  const [titulo, setTitulo] = useState(plan?.titulo ?? "")
+  const [descripcion, setDescripcion] = useState(plan?.descripcion ?? "")
+  const [lineaBase, setLineaBase] = useState(
+    plan?.linea_base != null ? String(Math.round(plan.linea_base)) : "",
+  )
+  const [meta, setMeta] = useState(
+    plan?.meta != null ? String(Math.round(plan.meta)) : "",
+  )
+  const [fechaImpl, setFechaImpl] = useState(plan?.fecha_implementacion ?? "")
+  const [baseDesde, setBaseDesde] = useState(plan?.linea_base_desde ?? "")
+  const [baseHasta, setBaseHasta] = useState(plan?.linea_base_hasta ?? "")
+  const [comercial, setComercial] = useState(plan?.responsable_comercial_id ?? "")
+  const [logistica, setLogistica] = useState(plan?.responsable_logistica_id ?? "")
+
+  const costoDe = (c: string) =>
+    territorio?.ciudades.find((x) => x.ciudad === c)?.costo_x_hl ?? null
+
+  // Al cambiar de ciudad se re-sugiere la línea base con el $/HL vigente de
+  // ESA ciudad. Al editar no se pisa: el valor guardado es el "antes" contra
+  // el que ya se viene midiendo y cambiarlo solo falsearía la mejora.
+  function onCiudad(c: string) {
+    setCiudad(c)
+    if (!editando) {
+      const sug = costoDe(c)
+      setLineaBase(sug ? String(Math.round(sug)) : "")
+    }
+  }
 
   function onSubmit(formData: FormData) {
     setError(null)
     startTransition(async () => {
-      const r = await crearPlanTerritorial(formData)
+      const r = editando
+        ? await actualizarPlanTerritorial(plan.id, formData)
+        : await crearPlanTerritorial(formData)
       if ("error" in r) setError(r.error)
       else setAbierto(false)
     })
   }
 
+  const sugerida = costoDe(ciudad)
+
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
-      <DialogTrigger render={<Button />}>
-        <Plus className="h-4 w-4" /> Nuevo plan territorial
-      </DialogTrigger>
+      <DialogTrigger render={trigger} />
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Nuevo plan territorial</DialogTitle>
+          <DialogTitle>
+            {editando ? `Editar — ${plan.titulo}` : "Nuevo plan territorial"}
+          </DialogTitle>
         </DialogHeader>
         <form action={onSubmit} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -684,7 +767,7 @@ function NuevoPlanDialog({
                 required
                 className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm"
                 value={ciudad}
-                onChange={(e) => setCiudad(e.target.value)}
+                onChange={(e) => onCiudad(e.target.value)}
               >
                 <option value="">Elegir…</option>
                 {ciudades.map((c) => (
@@ -700,12 +783,12 @@ function NuevoPlanDialog({
                 id="palanca"
                 name="palanca"
                 className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm"
+                value={palanca}
+                onChange={(e) => setPalanca(e.target.value as PalancaPlan)}
               >
-                {(
-                  Object.keys(PALANCA_LABEL) as PalancaPlan[]
-                ).map((p) => (
-                  <option key={p} value={p}>
-                    {PALANCA_LABEL[p]}
+                {(Object.keys(PALANCA_LABEL) as PalancaPlan[]).map((x) => (
+                  <option key={x} value={x}>
+                    {PALANCA_LABEL[x]}
                   </option>
                 ))}
               </select>
@@ -714,12 +797,26 @@ function NuevoPlanDialog({
 
           <div>
             <Label htmlFor="titulo">Título</Label>
-            <Input id="titulo" name="titulo" required className="mt-1" />
+            <Input
+              id="titulo"
+              name="titulo"
+              required
+              className="mt-1"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+            />
           </div>
 
           <div>
             <Label htmlFor="descripcion">Qué se va a hacer</Label>
-            <Textarea id="descripcion" name="descripcion" rows={3} className="mt-1" />
+            <Textarea
+              id="descripcion"
+              name="descripcion"
+              rows={3}
+              className="mt-1"
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+            />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -731,14 +828,26 @@ function NuevoPlanDialog({
                 type="number"
                 step="0.01"
                 className="mt-1"
-                defaultValue={
-                  lineaBaseSugerida ? Math.round(lineaBaseSugerida) : ""
-                }
+                value={lineaBase}
+                onChange={(e) => setLineaBase(e.target.value)}
               />
+              {ciudad && sugerida != null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {ciudad} hoy: {pesos(sugerida)}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="meta">Meta ($/HL)</Label>
-              <Input id="meta" name="meta" type="number" step="0.01" className="mt-1" />
+              <Input
+                id="meta"
+                name="meta"
+                type="number"
+                step="0.01"
+                className="mt-1"
+                value={meta}
+                onChange={(e) => setMeta(e.target.value)}
+              />
             </div>
             <div>
               <Label htmlFor="fecha_implementacion">Implementación</Label>
@@ -747,6 +856,8 @@ function NuevoPlanDialog({
                 name="fecha_implementacion"
                 type="date"
                 className="mt-1"
+                value={fechaImpl}
+                onChange={(e) => setFechaImpl(e.target.value)}
               />
             </div>
           </div>
@@ -759,6 +870,8 @@ function NuevoPlanDialog({
                 name="linea_base_desde"
                 type="date"
                 className="mt-1"
+                value={baseDesde}
+                onChange={(e) => setBaseDesde(e.target.value)}
               />
             </div>
             <div>
@@ -768,6 +881,8 @@ function NuevoPlanDialog({
                 name="linea_base_hasta"
                 type="date"
                 className="mt-1"
+                value={baseHasta}
+                onChange={(e) => setBaseHasta(e.target.value)}
               />
             </div>
           </div>
@@ -781,11 +896,13 @@ function NuevoPlanDialog({
                 id="responsable_comercial_id"
                 name="responsable_comercial_id"
                 className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm"
+                value={comercial}
+                onChange={(e) => setComercial(e.target.value)}
               >
                 <option value="">—</option>
-                {perfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
+                {perfiles.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.nombre}
                   </option>
                 ))}
               </select>
@@ -798,11 +915,13 @@ function NuevoPlanDialog({
                 id="responsable_logistica_id"
                 name="responsable_logistica_id"
                 className="mt-1 block h-9 w-full rounded-md border border-slate-300 px-2 text-sm"
+                value={logistica}
+                onChange={(e) => setLogistica(e.target.value)}
               >
                 <option value="">—</option>
-                {perfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
+                {perfiles.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.nombre}
                   </option>
                 ))}
               </select>
@@ -813,7 +932,11 @@ function NuevoPlanDialog({
 
           <DialogFooter>
             <Button type="submit" disabled={pendiente}>
-              {pendiente ? "Guardando…" : "Crear plan"}
+              {pendiente
+                ? "Guardando…"
+                : editando
+                  ? "Guardar cambios"
+                  : "Crear plan"}
             </Button>
           </DialogFooter>
         </form>
