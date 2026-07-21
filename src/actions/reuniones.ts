@@ -4682,11 +4682,17 @@ async function getIndicadoresMesCore(
           fxRow("auto_fx_resecuenciado", "Rutas con resecuenciado", "%", fx.pct_resecuenciado, "promedio", null, "mayor"),
           fxRow("auto_fx_pct_finalizadas", "Rutas finalizadas", "%", fx.pct_finalizadas, "promedio", 100, "mayor"),
           fxRow("auto_fx_entregas_ok", "Entregas exitosas", "%", fx.pct_entregas_exitosas, "promedio", 98, "mayor"),
-          fxRow("auto_fx_tiempo_ruta", "Tiempo en ruta", "min", fx.tiempo_ruta, "promedio", null, "menor"),
-          fxRow("auto_fx_tiempo_pdv", "Tiempo por PDV", "min", fx.tiempo_pdv, "promedio", null, "menor"),
-          fxRow("auto_fx_km", "Km recorridos", "km", fx.km_recorridos, "suma", null, undefined),
-          fxRow("auto_fx_paradas_no_auth", "Paradas no autorizadas", "u.", fx.paradas_no_autorizadas, "suma", null, "menor"),
+          // Tiempo en ruta: acá MÁS es mejor — el camión tiene que estar en la
+          // calle. Target y gatillo se cargan desde el diálogo de indicadores
+          // (hoy: verde ≥300 min, amarillo 250-300, rojo <300 y <gatillo), por
+          // eso la meta va en null y la inyecta el wrapper desde la config.
+          fxRow("auto_fx_tiempo_ruta", "Tiempo en ruta", "min", fx.tiempo_ruta, "promedio", null, "mayor"),
         )
+        // Tiempo por PDV, Km recorridos y Paradas no autorizadas: dados de baja
+        // de la matinal a pedido de la operación (2026-07-21). Los dos primeros
+        // venían de `fx_driven_m` / `tml_authorized_stops_seconds`, que llegan
+        // con valores inconsistentes desde el CSV de ROUTE_ANALYTICS. La serie
+        // se sigue calculando en buildPampeanaFoxtrotSerie por si se reactivan.
       } catch {
         // si Foxtrot/DB falla, la matinal sigue con el resto de los indicadores
       }

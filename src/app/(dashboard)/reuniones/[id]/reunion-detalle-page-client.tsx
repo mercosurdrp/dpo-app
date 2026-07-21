@@ -257,15 +257,18 @@ function formatearValor(n: number): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n)
 }
 
-// Indicadores de almacén que usan semáforo de 3 zonas en las celdas diarias
+// Indicadores que usan semáforo de 3 zonas en las celdas diarias
 // (verde mejor que target · amarillo entre target y gatillo · rojo peor que
 // gatillo). El resto de indicadores conserva su coloreo histórico de 2 zonas.
-const SEMAFORO_3_ZONAS_ALMACEN = new Set([
+const SEMAFORO_3_ZONAS = new Set([
   "auto_wqi",
   "auto_wnp",
   "auto_productividad_picking",
   "auto_errores_picking",
   "auto_ausentismo",
+  // Tiempo en ruta (Matinal de Distribución): target y gatillo se cargan
+  // desde el diálogo de configuración de indicadores.
+  "auto_fx_tiempo_ruta",
 ])
 
 function EstadoActividadBadge({
@@ -1891,7 +1894,7 @@ export function ReunionDetallePageClient({
                           // gatillo, rojo SOLO si está peor que el gatillo. Sin
                           // target/gatillo definidos queda neutro (el formato
                           // ya está armado para cuando se carguen los umbrales).
-                          if (SEMAFORO_3_ZONAS_ALMACEN.has(ind.id)) {
+                          if (SEMAFORO_3_ZONAS.has(ind.id)) {
                             if (
                               ind.mejor_si &&
                               ind.meta != null &&
