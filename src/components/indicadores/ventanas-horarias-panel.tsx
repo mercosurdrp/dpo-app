@@ -89,12 +89,14 @@ export function VentanasHorariasPanel({ cobertura, error }: Props) {
             <span className="text-sm text-muted-foreground">
               {fmtFecha(cobertura.desde)} → {fmtFecha(cobertura.hasta)}
             </span>
-            {cobertura.padron_at && (
-              <span className="text-xs text-muted-foreground">
-                · padrón congelado el {fmtFecha(cobertura.padron_at)}
-              </span>
-            )}
           </div>
+
+          <p className="mb-4 text-xs text-muted-foreground">
+            Las ventanas horarias vigentes son las relevadas en{" "}
+            <strong>2026-Q2</strong>. El ciclo <strong>{cobertura.ciclo}</strong>{" "}
+            se está relevando ahora: hasta que se complete, la ventana de cada
+            PDV sigue siendo la del trimestre anterior.
+          </p>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
@@ -310,12 +312,11 @@ export function VentanasHorariasPanel({ cobertura, error }: Props) {
         <CardContent className="pt-6">
           <p className="mb-1 font-medium text-slate-900">Avance por promotor</p>
           <p className="mb-4 text-xs text-muted-foreground">
-            El denominador es el padrón <strong>congelado</strong> al abrir el
-            ciclo, no la cartera viva: dejar de visitar un PDV no lo saca de la
-            cuenta. <strong>Con VH</strong> es el último relevamiento de cada
-            PDV, de cualquier trimestre; <strong>{cobertura.ciclo}</strong> es lo
-            cargado en el ciclo en curso. &quot;Sin cambios&quot; son los
-            confirmados con el horario anterior sin tocar un solo campo.
+            El denominador es el padrón del ciclo, no la cartera viva: dejar de
+            visitar un PDV no lo saca de la cuenta. <strong>Con VH</strong> es el
+            último relevamiento de cada PDV, de cualquier trimestre. &quot;Sin
+            cambios&quot; son los confirmados con el horario anterior sin tocar
+            un solo campo.
           </p>
           <div className="overflow-x-auto">
             <Table>
@@ -326,7 +327,6 @@ export function VentanasHorariasPanel({ cobertura, error }: Props) {
                   <TableHead className="text-right">Con VH</TableHead>
                   <TableHead className="text-right">Sin VH</TableHead>
                   <TableHead className="text-right">Cobertura</TableHead>
-                  <TableHead className="text-right">{cobertura.ciclo}</TableHead>
                   <TableHead className="text-right">Sin cambios</TableHead>
                   <TableHead className="text-right">Última carga</TableHead>
                 </TableRow>
@@ -348,9 +348,6 @@ export function VentanasHorariasPanel({ cobertura, error }: Props) {
                       }`}
                     >
                       {p.cobertura_pct.toFixed(1)}%
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {p.ciclo_relevados > 0 ? p.ciclo_relevados : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {p.sin_cambios > 0 ? p.sin_cambios : "—"}
