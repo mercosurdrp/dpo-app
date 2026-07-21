@@ -29,9 +29,11 @@ import {
 import {
   getCostoPorPdv,
   getCostosMensuales,
+  getBolsaDeposito,
   guardarCostoMensual,
   getKmCiudades,
   guardarKmCiudad,
+  type BolsaDeposito,
   type CostoMensual,
   type CostoPorPdvRow,
   type KmCiudad,
@@ -95,14 +97,16 @@ interface Props {
   costos: CostoMensual[]
   mesInicial: { anio: number; mes: number } | null
   filasIniciales: CostoPorPdvRow[]
+  bolsaInicial: BolsaDeposito | null
   kmCiudades: KmCiudad[]
   canEdit: boolean
 }
 
-export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales, kmCiudades: kmInit, canEdit }: Props) {
+export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales, bolsaInicial, kmCiudades: kmInit, canEdit }: Props) {
   const [costos, setCostos] = useState<CostoMensual[]>(costosInit)
   const [sel, setSel] = useState(mesInicial)
   const [filas, setFilas] = useState<CostoPorPdvRow[]>(filasIniciales)
+  const [bolsa, setBolsa] = useState<BolsaDeposito | null>(bolsaInicial)
   const [kmCiudades, setKmCiudades] = useState<KmCiudad[]>(kmInit)
   const [isPending, startTransition] = useTransition()
 
@@ -129,8 +133,9 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
   function cambiarMes(anio: number, mes: number) {
     setSel({ anio, mes })
     startTransition(async () => {
-      const res = await getCostoPorPdv(anio, mes)
+      const [res, b] = await Promise.all([getCostoPorPdv(anio, mes), getBolsaDeposito(anio, mes)])
       setFilas("data" in res ? res.data : [])
+      setBolsa(b)
     })
   }
 
@@ -163,6 +168,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
     const costoTotal = filas.reduce((s, f) => s + f.costo_total, 0)
     const venta = filas.reduce((s, f) => s + f.venta_neta, 0)
     const bultos = filas.reduce((s, f) => s + f.bultos, 0)
+    const hl = filas.reduce((s, f) => s + f.hl, 0)
     const almacen = filas.reduce((s, f) => s + f.costo_almacen, 0)
     const distancia = filas.reduce((s, f) => s + f.costo_distancia, 0)
     const distrib = filas.reduce((s, f) => s + f.costo_distrib, 0)
@@ -171,6 +177,7 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
       costoTotal,
       venta,
       bultos,
+      hl,
       almacen,
       distancia,
       distrib,
@@ -426,7 +433,12 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
                 modelo tiene <strong>3 componentes</strong>, todos anclados en datos reales (sin porcentajes inventados):
               </p>
               <ul className="list-disc space-y-1 pl-5">
-                <li><strong>Almacén</strong> → por <strong>bultos</strong> (depósito).</li>
+                <li>
+                  <strong>Almacén</strong> → por <strong>bultos</strong>, repartido entre{" "}
+                  <strong>todo lo que pasó por el depósito</strong>: lo distribuido <em>y</em> la venta que se retira
+                  en el depósito (ver abajo). Antes se repartía sólo entre lo distribuido, lo que le cargaba a los PDV
+                  con reparto un almacenaje que no era de ellos.
+                </li>
                 <li>
                   <strong>Distancia (llegar a la ciudad)</strong> → el costo de viajar a cada ciudad ={" "}
                   <strong>km × 2 (ida y vuelta) × viajes reales</strong> del mes, valuado al{" "}
@@ -458,6 +470,49 @@ export function CostoPdvClient({ costos: costosInit, mesInicial, filasIniciales,
           </details>
         </CardContent>
       </Card>
+
+      {/* Venta por depósito: lo vendido que no sale a reparto */}
+      {bolsa && bolsa.hl > 0 && (
+        <Card className="border-l-4 border-l-sky-400 bg-sky-50/40">
+          <CardHeader>
+            <CardTitle className="text-base">Venta por depósito (no sale a reparto)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <div className="text-xs text-muted-foreground">HL</div>
+                <div className="text-lg font-semibold">{fmtNum(bolsa.hl, 1)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Bultos</div>
+                <div className="text-lg font-semibold">{fmtNum(bolsa.bultos)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Costo de almacén</div>
+                <div className="text-lg font-semibold">{fmtMoney(bolsa.costo_almacen)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Costo/HL</div>
+                <div className="text-lg font-semibold text-sky-700">{fmtMoney(bolsa.costo_x_hl)}</div>
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-slate-700">
+              Es la diferencia entre los <strong>HL vendidos</strong> (los del Árbol del Sueño) y los{" "}
+              <strong>HL distribuidos</strong>: mercadería que se factura pero se retira en el depósito, así que
+              consume <strong>almacén pero no camión</strong>. Por eso se lleva su parte del almacén y{" "}
+              <strong>nada</strong> de distribución.
+            </p>
+            <p className="mt-2 text-sm text-slate-700">
+              Sumando esta línea, el reparto cierra contra el costo del mes:{" "}
+              <strong>{fmtMoney(kpis.costoTotal)}</strong> de los PDV +{" "}
+              <strong>{fmtMoney(bolsa.costo_almacen)}</strong> de depósito ={" "}
+              <strong>{fmtMoney(kpis.costoTotal + bolsa.costo_almacen)}</strong>. Y sobre los HL vendidos da{" "}
+              <strong>{fmtMoney((kpis.costoTotal + bolsa.costo_almacen) / (kpis.hl + bolsa.hl))}/HL</strong>, que es
+              el <strong>VLC/HL</strong> del Árbol del Sueño.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Distribución por banda */}
       <Card>

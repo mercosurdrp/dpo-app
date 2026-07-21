@@ -134,6 +134,41 @@ export async function getCostoPorPdv(
   }
 }
 
+/**
+ * "Bolsa" de depósito: la venta que NO sale a reparto (se retira en el depósito),
+ * es decir HL vendidos − HL distribuidos. Consume almacén pero no camión, así que
+ * se lleva su parte del almacén (por bultos) y nada de distribución.
+ *
+ * Existe para que el total cierre: costo de los PDV + costo de la bolsa = pool del
+ * mes, y (costo total) ÷ (HL vendidos) = el VLC/HL del Árbol del Sueño.
+ */
+export interface BolsaDeposito {
+  bultos: number
+  hl: number
+  costo_almacen: number
+  costo_x_hl: number
+}
+
+export async function getBolsaDeposito(
+  anio: number,
+  mes: number,
+): Promise<BolsaDeposito | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc("get_bolsa_deposito", {
+    p_anio: anio,
+    p_mes: mes,
+  })
+  if (error) return null
+  const fila = Array.isArray(data) ? data[0] : data
+  if (!fila) return null
+  return {
+    bultos: Number(fila.bultos ?? 0),
+    hl: Number(fila.hl ?? 0),
+    costo_almacen: Number(fila.costo_almacen ?? 0),
+    costo_x_hl: Number(fila.costo_x_hl ?? 0),
+  }
+}
+
 /** Resumen de un mes dentro del acumulado YTD. */
 export interface CostoYtdMes {
   anio: number
