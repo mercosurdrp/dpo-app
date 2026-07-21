@@ -36,6 +36,7 @@ import {
 import { buildPampeanaFoxtrotSerie } from "@/lib/foxtrot/auto-indicadores-pampeana"
 import { buildCloudfleetChecksSerie } from "@/lib/cloudfleet/checks-serie"
 import { IS_MISIONES } from "@/lib/empresa"
+import { getMetaSueno } from "@/lib/sueno/meta"
 import { getDqiPpmMes } from "@/actions/dqi"
 import { getAusentismoSerieEventos } from "@/actions/ausentismo"
 import type {
@@ -2750,7 +2751,11 @@ export async function getIndicadoresMes(
       if (!c) return ind
       return {
         ...ind,
-        gatillo: c.gatillo,
+        // El gatillo del código tiene prioridad, igual que meta y mejor_si:
+        // las filas auto que traen su umbral de otra fuente (TLP ← Árbol del
+        // Sueño) no deben perderlo contra una fila de config homónima que lo
+        // tiene vacío.
+        gatillo: ind.gatillo ?? c.gatillo,
         // La meta del código (filas auto con target dinámico, ej. WQI) tiene
         // prioridad; cuando el código no define meta (ej. Errores/Ausentismo)
         // se toma la de la config, para que el semáforo de 3 zonas sea
@@ -3647,17 +3652,22 @@ async function getIndicadoresMesCore(
           }
         }
         const mtdTlp = hhMtd > 0 ? Math.round((ceqMtd / hhMtd) * 100) / 100 : null
+        // El target sale del nodo TLP del Árbol del Sueño: es el mismo
+        // indicador, así que no puede tener dos metas distintas según la
+        // pantalla desde la que se mire.
+        const metaTlp = await getMetaSueno(supabase, "tlp", anio)
         indicadoresAuto.push({
           id: "auto_tlp",
           nombre: "TLP",
           unidad: "CEq/h",
-          meta: null,
+          meta: metaTlp.meta,
+          gatillo: metaTlp.gatillo,
           orden: -1,
           agregacion: "promedio",
           valores: valoresTlp,
           mtd: mtdTlp,
           auto: true,
-          mejor_si: "mayor",
+          mejor_si: metaTlp.mejorSi ?? "mayor",
         })
       }
     }
@@ -4118,9 +4128,21 @@ async function getIndicadoresMesCore(
               ms.tiempo_ruta_promedio, "promedio", null, "menor",
             ),
           )
-          const tlpRow = buildSerieRow(
-            "auto_tlp", "TLP", "CEq/h", ms.tlp, "promedio", null, "mayor",
-          )
+          // Mismo criterio que en Pampeana: el target del TLP es el del nodo
+          // del Árbol del Sueño, no una constante propia de la reunión.
+          const metaTlpMis = await getMetaSueno(supabase, "tlp", anio)
+          const tlpRow = {
+            ...buildSerieRow(
+              "auto_tlp",
+              "TLP",
+              "CEq/h",
+              ms.tlp,
+              "promedio",
+              metaTlpMis.meta,
+              metaTlpMis.mejorSi ?? "mayor",
+            ),
+            gatillo: metaTlpMis.gatillo,
+          }
           const tiempoPdvRow = buildSerieRow(
             "auto_tiempo_pdv", "Tiempo por PDV", "min", ms.tiempo_pdv, "promedio", null, "menor",
           )

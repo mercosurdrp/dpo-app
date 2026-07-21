@@ -269,6 +269,8 @@ const SEMAFORO_3_ZONAS = new Set([
   // Tiempo en ruta (Matinal de Distribución): target y gatillo se cargan
   // desde el diálogo de configuración de indicadores.
   "auto_fx_tiempo_ruta",
+  // TLP: target y gatillo salen del nodo del Árbol del Sueño.
+  "auto_tlp",
 ])
 
 function EstadoActividadBadge({
