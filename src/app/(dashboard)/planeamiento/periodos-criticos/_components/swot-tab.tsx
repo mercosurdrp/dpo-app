@@ -13,7 +13,14 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Info, Pencil, Plus, Trash2 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Camera, History, Info, Pencil, Plus, Trash2 } from "lucide-react"
 import type { DiaCalendario } from "./client"
 import { detectarPeriodosCriticos } from "../_lib/detectar-periodos"
 
@@ -38,6 +45,27 @@ type PeriodoOpcion = {
   fechaFin: string
   anio: number
 }
+
+/** Ítem tal como quedó congelado dentro de un snapshot (sin id: es una copia). */
+type SnapshotItem = Pick<
+  SwotItem,
+  "categoria" | "texto" | "impacto" | "accion_recomendada"
+>
+
+type Snapshot = {
+  id: string
+  periodo_nombre: string
+  periodo_anio: number
+  periodo_fecha_inicio: string | null
+  periodo_fecha_fin: string | null
+  momento: "previo" | "posterior"
+  fecha_corte: string
+  items: SnapshotItem[]
+  nota: string
+}
+
+/** "actual" = FODA vivo y editable · un id = foto congelada, solo lectura. */
+type Vista = "actual" | string
 
 const CUADRANTES: {
   cat: Categoria
@@ -67,6 +95,9 @@ export function SwotTab({
   anio: number
 }) {
   const [items, setItems] = useState<SwotItem[]>([])
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  const [vista, setVista] = useState<Vista>("actual")
+  const [congelando, setCongelando] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // null = cerrado · {item|null, cat} = abierto (item null => crear)
@@ -86,10 +117,19 @@ export function SwotTab({
     setCargando(true)
     setError(null)
     try {
-      const res = await fetch("/api/planeamiento/periodos-criticos/swot")
-      const j = await res.json()
-      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
-      setItems(j.items ?? [])
+      const [resItems, resSnaps] = await Promise.all([
+        fetch("/api/planeamiento/periodos-criticos/swot"),
+        fetch("/api/planeamiento/periodos-criticos/swot/snapshots"),
+      ])
+      const jItems = await resItems.json()
+      if (!resItems.ok) throw new Error(jItems.error || `HTTP ${resItems.status}`)
+      setItems(jItems.items ?? [])
+
+      // Las fotos son secundarias: si fallan, el FODA vivo se sigue viendo.
+      if (resSnaps.ok) {
+        const jSnaps = await resSnaps.json()
+        setSnapshots(jSnaps.snapshots ?? [])
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando el análisis FODA")
     } finally {
@@ -101,11 +141,47 @@ export function SwotTab({
     void cargar()
   }, [])
 
+  const snapshotActivo = useMemo(
+    () => (vista === "actual" ? null : snapshots.find((s) => s.id === vista) ?? null),
+    [vista, snapshots],
+  )
+  const soloLectura = snapshotActivo !== null
+
   const porCategoria = useMemo(() => {
-    const m: Record<Categoria, SwotItem[]> = { F: [], O: [], D: [], A: [] }
-    for (const it of items) m[it.categoria]?.push(it)
+    const m: Record<Categoria, (SwotItem | SnapshotItem)[]> = { F: [], O: [], D: [], A: [] }
+    const fuente = snapshotActivo ? snapshotActivo.items : items
+    for (const it of fuente) m[it.categoria]?.push(it)
     return m
-  }, [items])
+  }, [items, snapshotActivo])
+
+  // Congela el FODA vivo como evidencia del período (R3.4.3). Los ítems los lee
+  // el server de la base, no se mandan desde acá.
+  async function congelar(periodo: PeriodoOpcion, momento: "previo" | "posterior") {
+    setCongelando(true)
+    try {
+      const res = await fetch("/api/planeamiento/periodos-criticos/swot/snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          periodo_nombre: periodo.nombre,
+          periodo_anio: periodo.anio,
+          periodo_fecha_inicio: periodo.fechaInicio,
+          periodo_fecha_fin: periodo.fechaFin,
+          momento,
+        }),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      toast.success(
+        `FODA ${momento === "previo" ? "previo" : "posterior"} congelado para ${periodo.nombre}`,
+      )
+      void cargar()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo congelar el FODA")
+    } finally {
+      setCongelando(false)
+    }
+  }
 
   async function eliminar(it: SwotItem) {
     if (!confirm(`¿Eliminar este item del FODA?\n\n"${it.texto}"`)) return
@@ -140,11 +216,78 @@ export function SwotTab({
         </div>
       )}
 
-      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
-        <Info className="size-4 shrink-0 text-slate-400" />
-        Para mover un item de cuadrante, editalo y cambiá su categoría. El tag de
-        período es opcional e indica de qué período crítico surgió el aprendizaje.
+      {/* Selector de versión + congelado. La comparación entre la foto previa y
+          la posterior ES la evidencia que pide R3.4.3. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+          <History className="size-4 text-slate-400" />
+          Ver FODA:
+        </div>
+        <Select value={vista} onValueChange={(v: string | null) => v && setVista(v)}>
+          <SelectTrigger className="h-8 w-[280px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="actual">Actual (editable)</SelectItem>
+            {snapshots.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.momento === "previo" ? "Previo" : "Posterior"} · {s.periodo_nombre} (
+                {s.periodo_anio}) · {s.fecha_corte}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {!soloLectura && periodos.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-xs text-slate-500">Congelar como evidencia:</span>
+            <Select
+              disabled={congelando}
+              onValueChange={(v: string | null) => {
+                if (!v) return
+                const [momento, nombre] = v.split("|")
+                const p = periodos.find((x) => x.nombre === nombre)
+                if (p) void congelar(p, momento as "previo" | "posterior")
+              }}
+            >
+              <SelectTrigger className="h-8 w-[240px] text-xs">
+                <SelectValue placeholder="Elegí período y momento…" />
+              </SelectTrigger>
+              <SelectContent>
+                {periodos.map((p) => (
+                  <SelectItem key={`previo|${p.nombre}`} value={`previo|${p.nombre}`}>
+                    Previo · {p.nombre}
+                  </SelectItem>
+                ))}
+                {periodos.map((p) => (
+                  <SelectItem key={`posterior|${p.nombre}`} value={`posterior|${p.nombre}`}>
+                    Posterior · {p.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
+
+      {soloLectura ? (
+        <div className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-2.5 text-xs text-indigo-900">
+          <Camera className="mt-0.5 size-4 shrink-0 text-indigo-500" />
+          <span>
+            Estás viendo una <b>foto congelada</b> del{" "}
+            {snapshotActivo?.momento === "previo" ? "FODA previo" : "FODA posterior"} de{" "}
+            <b>{snapshotActivo?.periodo_nombre}</b>, tomada el {snapshotActivo?.fecha_corte}.
+            No se edita: es la evidencia de cómo estaba el análisis en ese momento.
+            {snapshotActivo?.nota ? ` — ${snapshotActivo.nota}` : ""}
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+          <Info className="size-4 shrink-0 text-slate-400" />
+          Para mover un item de cuadrante, editalo y cambiá su categoría. El tag de
+          período es opcional e indica de qué período crítico surgió el aprendizaje.
+        </div>
+      )}
 
       {cargando ? (
         <p className="text-sm text-muted-foreground">Cargando…</p>
@@ -159,52 +302,56 @@ export function SwotTab({
                     ({porCategoria[q.cat].length})
                   </span>
                 </CardTitle>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 text-xs"
-                  onClick={() => setEditor({ item: null, cat: q.cat })}
-                >
-                  <Plus className="size-3.5" /> Agregar
-                </Button>
+                {!soloLectura && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => setEditor({ item: null, cat: q.cat })}
+                  >
+                    <Plus className="size-3.5" /> Agregar
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
                 {porCategoria[q.cat].length === 0 ? (
                   <p className="text-xs text-muted-foreground">Sin items.</p>
                 ) : (
-                  porCategoria[q.cat].map((it) => (
+                  porCategoria[q.cat].map((it, i) => (
                     <div
-                      key={it.id}
+                      key={"id" in it ? it.id : `${q.cat}-${i}`}
                       className="group rounded-md border bg-white p-2 text-sm"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="whitespace-pre-wrap text-slate-800">
                           {it.texto}
                         </p>
-                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setEditor({ item: it, cat: it.categoria })}
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-red-600"
-                            onClick={() => void eliminar(it)}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
+                        {!soloLectura && "id" in it && (
+                          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => setEditor({ item: it, cat: it.categoria })}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-red-600"
+                              onClick={() => void eliminar(it)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <Badge className={`${IMPACTO_BADGE[it.impacto]} text-[10px]`}>
                           Impacto {it.impacto}
                         </Badge>
-                        {it.periodo_nombre && (
+                        {"periodo_nombre" in it && it.periodo_nombre && (
                           <Badge variant="outline" className="text-[10px] font-normal">
                             {it.periodo_nombre}
                           </Badge>
