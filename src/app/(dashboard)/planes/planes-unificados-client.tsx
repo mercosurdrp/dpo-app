@@ -34,6 +34,7 @@ const ORIGENES: { value: PlanOrigen; label: string; color: string }[] = [
   { value: "roturas", label: "Roturas en calle", color: "#F59E0B" },
   { value: "s5", label: "5S", color: "#10B981" },
   { value: "tlp", label: "TLP", color: "#0D9488" },
+  { value: "tiempo_pdv", label: "Tiempo por PDV", color: "#EA580C" },
   { value: "reunion", label: "Reunión", color: "#6366F1" },
   { value: "presupuesto", label: "Presupuesto", color: "#A16207" },
   { value: "riesgo", label: "Riesgo externo", color: "#BE123C" },

@@ -1,14 +1,21 @@
 import { getTiempoRutaKpis, getChecklists } from "@/actions/checklist-vehiculos"
 import { getVehiculos } from "@/actions/registros-vehiculos"
+import { getTiempoRutaClientes } from "@/actions/tiempo-ruta-cliente"
 import { TiempoRutaClient } from "./tiempo-ruta-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
 export default async function TiempoRutaPage() {
-  const [kpisRes, checklistsRes, vehiculosRes] = await Promise.all([
+  // El detalle por PDV se mira sobre el año corrido: con menos historia la mediana
+  // por cliente queda armada con 4-5 visitas y no aguanta una discusión.
+  const hoy = new Date().toISOString().slice(0, 10)
+  const desde = `${hoy.slice(0, 4)}-01-01`
+
+  const [kpisRes, checklistsRes, vehiculosRes, clientesRes] = await Promise.all([
     getTiempoRutaKpis(),
     getChecklists({ tipo: "retorno", limit: 50 }),
     getVehiculos(),
+    getTiempoRutaClientes(desde, hoy),
   ])
 
   if ("error" in kpisRes) {
@@ -35,6 +42,7 @@ export default async function TiempoRutaPage() {
         kpis={kpisRes.data}
         checklists={checklists}
         vehiculos={vehiculos}
+        clientes={"data" in clientesRes ? clientesRes.data : null}
       />
     </div>
   )

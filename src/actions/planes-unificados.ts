@@ -26,6 +26,7 @@ export type PlanOrigen =
   | "roturas"
   | "s5"
   | "tlp"
+  | "tiempo_pdv"
   | "reunion"
   | "presupuesto"
   | "riesgo"
@@ -57,6 +58,7 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   roturas: "Roturas en calle",
   s5: "5S",
   tlp: "TLP",
+  tiempo_pdv: "Tiempo por PDV",
   reunion: "Reunión",
   presupuesto: "Presupuesto",
   riesgo: "Riesgo externo",
@@ -276,6 +278,7 @@ export async function getPlanesUnificados(opts?: {
       { origen: "rechazos", tabla: "rechazos_planes", href: "/indicadores/rechazos" },
       { origen: "owd", tabla: "owd_planes", href: "/owd" },
       { origen: "tlp", tabla: "tlp_planes", href: "/indicadores/tlp" },
+      { origen: "tiempo_pdv", tabla: "tiempo_pdv_planes", href: "/indicadores/tiempo-pdv" },
     ]
 
     for (const cfg of comunes) {

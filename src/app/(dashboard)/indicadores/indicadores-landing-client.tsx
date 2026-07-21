@@ -21,6 +21,7 @@ import {
   FolderOpen,
   Package,
   Route as RouteIcon,
+  Store,
 } from "lucide-react"
 import type { PilarConIndicadoresCount } from "@/actions/indicadores"
 import { IS_MISIONES } from "@/lib/empresa"
@@ -263,6 +264,25 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          {!IS_MISIONES && (
+            <Link href="/indicadores/tiempo-pdv">
+              <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-orange-300">
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="rounded-xl p-3 bg-orange-100 text-orange-600 group-hover:bg-orange-200 transition-colors">
+                    <Store className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Tiempo por Punto de Venta
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Qué cliente consume el tiempo — Pilar Entrega
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           {!IS_MISIONES && (
             <Link href="/indicadores/tiempo-interno">
               <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-cyan-300">

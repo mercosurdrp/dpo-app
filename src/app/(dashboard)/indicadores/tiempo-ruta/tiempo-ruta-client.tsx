@@ -33,6 +33,8 @@ import type {
   TiempoRutaSemanal,
   TiempoRutaMensual,
 } from "@/types/database"
+import type { TiempoRutaClientesData } from "@/actions/tiempo-ruta-cliente"
+import { ClientesTiempo } from "./_components/clientes-tiempo"
 import {
   Clock,
   Target,
@@ -60,6 +62,8 @@ interface Props {
   kpis: KpiData
   checklists: ChecklistVehiculo[]
   vehiculos: CatalogoVehiculo[]
+  /** null si la migración del detalle por PDV todavía no está aplicada. */
+  clientes: TiempoRutaClientesData | null
 }
 
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -107,7 +111,7 @@ function formatHora(isoStr: string) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })
 }
 
-export function TiempoRutaClient({ kpis, checklists, vehiculos }: Props) {
+export function TiempoRutaClient({ kpis, checklists, vehiculos, clientes }: Props) {
   const [tab, setTab] = useState("semanal")
 
   const semanalData = kpis.semanal.map((s) => ({
@@ -233,6 +237,9 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos }: Props) {
         <TabsList>
           <TabsTrigger value="semanal">Semanal</TabsTrigger>
           <TabsTrigger value="mensual">Mensual</TabsTrigger>
+          {clientes && !clientes.sinDatos && (
+            <TabsTrigger value="pdv">Por punto de venta</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="semanal">
@@ -357,6 +364,18 @@ export function TiempoRutaClient({ kpis, checklists, vehiculos }: Props) {
             </Card>
           </div>
         </TabsContent>
+
+        {clientes && !clientes.sinDatos && (
+          <TabsContent value="pdv">
+            <ClientesTiempo
+              clientes={clientes.clientes}
+              ciudades={clientes.ciudades}
+              paradas={clientes.paradas}
+              desde={clientes.desde}
+              hasta={clientes.hasta}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Recent retorno checklists */}
