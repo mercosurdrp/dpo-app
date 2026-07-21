@@ -153,6 +153,17 @@ const EXTERNAL_FETCH_TTL_MS = 5 * 60 * 1000
 const SNAPSHOT_TTL_MS = 60 * 60 * 1000
 const EXTERNAL_FETCH_TIMEOUT_MS = 5000
 /**
+ * Timeout para `/api/indicadores/serie-diaria` de deposito-esteban.
+ *
+ * Ese endpoint re-arma la serie del mes (movimientos + Sheets) y mide 3-5s en
+ * caliente: quedaba PEGADO al timeout genérico de 5s y se caía de a ratos.
+ * Cuando se cae, `fetchSerieExtra` devuelve todo null y la grilla pierde
+ * Precisión, Errores, WQI, Roturas y Faltantes de golpe — y encima el fallo se
+ * cachea 30s, así que el vacío persiste. Es la única fuente lenta y es la que
+ * alimenta media grilla: se le da margen propio.
+ */
+const SERIE_DIARIA_TIMEOUT_MS = 20_000
+/**
  * Cuánto recordamos que una fuente FALLÓ (timeout, 5xx, red caída).
  *
  * Sin esto, un fallo no se cachea y cada render vuelve a pagar los 5s de
@@ -185,13 +196,17 @@ function writeCache(url: string, value: unknown, ttlMs = EXTERNAL_FETCH_TTL_MS) 
   })
 }
 
-async function fetchJsonSafe<T>(url: string, ttlMs?: number): Promise<T | null> {
+async function fetchJsonSafe<T>(
+  url: string,
+  ttlMs?: number,
+  timeoutMs = EXTERNAL_FETCH_TIMEOUT_MS,
+): Promise<T | null> {
   const cached = readCache<T | null>(url)
   if (cached !== undefined) return cached
   try {
     const res = await fetch(url, {
       cache: "no-store",
-      signal: AbortSignal.timeout(EXTERNAL_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) {
       writeCache(url, null, FAILURE_CACHE_TTL_MS)
@@ -446,6 +461,8 @@ async function fetchErroresCountPorOperador(
     fetchErroresCountDelSheet(year, month),
     fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+      undefined,
+      SERIE_DIARIA_TIMEOUT_MS,
     ),
   ])
   if (sheet) {
@@ -779,6 +796,8 @@ async function buildSerieLegacy(
     await Promise.all([
       fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
         `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+        undefined,
+        SERIE_DIARIA_TIMEOUT_MS,
       ),
       fetchJsonSafe<DepositoOcupacionShared>(
         `${DEPOSITO_API_BASE}/api/shared/load?module=ocupacion`,
@@ -950,6 +969,8 @@ async function fetchSerieExtra(
   const [res, erroresSheet, objetivoVentaHl] = await Promise.all([
     fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
+      undefined,
+      SERIE_DIARIA_TIMEOUT_MS,
     ),
     fetchErroresCountDelSheet(year, month),
     fetchObjetivoVentaHl(year, month),
