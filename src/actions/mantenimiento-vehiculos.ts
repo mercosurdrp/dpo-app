@@ -3,11 +3,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import { loadEstadoPlan } from "@/lib/vehiculos/plan-mantenimiento"
-import { totalRepuestos } from "@/lib/vehiculos/costo-ot"
-import {
-  detectarTareas,
-  type TareaDetectable,
-} from "@/lib/vehiculos/deteccion-tareas"
 import {
   loadServiceGeneral,
   estadoPorDias,
@@ -370,15 +365,6 @@ interface PlanTareaInput {
   frecuencia_meses?: number | null
   frecuencia_horas?: number | null
   orden?: number
-  /** Términos que autodetectan la tarea en el texto de la OT. */
-  palabras_clave?: string[]
-}
-
-/** minúsculas, sin acentos y sin vacíos: así se compara contra el texto de la OT. */
-function normalizarPalabrasClave(ps: string[] | undefined): string[] {
-  return (ps ?? [])
-    .map((p) => normalizarTexto(p).trim())
-    .filter((p) => p !== "")
 }
 
 export async function createPlanTarea(
@@ -401,7 +387,6 @@ export async function createPlanTarea(
         frecuencia_meses: input.frecuencia_meses || null,
         frecuencia_horas: input.frecuencia_horas || null,
         orden: input.orden ?? 0,
-        palabras_clave: normalizarPalabrasClave(input.palabras_clave),
         created_by: profile.id,
       })
       .select()
@@ -428,8 +413,6 @@ export async function updatePlanTarea(
     if (input.frecuencia_horas !== undefined) patch.frecuencia_horas = input.frecuencia_horas || null
     if (input.orden !== undefined) patch.orden = input.orden
     if (input.activo !== undefined) patch.activo = input.activo
-    if (input.palabras_clave !== undefined)
-      patch.palabras_clave = normalizarPalabrasClave(input.palabras_clave)
 
     const { data, error } = await supabase
       .from("mantenimiento_plan_tareas")
@@ -513,7 +496,7 @@ export async function getMantenimientos(
     let query = supabase
       .from("mantenimiento_realizados")
       .select(
-        "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*), facturas:mantenimiento_realizado_facturas(*)"
+        "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*)"
       )
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
@@ -644,87 +627,6 @@ async function sincronizarNeumaticosDesdeOt(
   })
 }
 
-/**
- * Registra como realizadas las tareas del plan que la OT menciona en su texto.
- *
- * El taller escribe lo que hizo ("se cambió la bomba de agua") en vez de tildar
- * checkboxes; esto lo convierte en un registro con el km/horas de la OT, que es
- * lo que hace arrancar el contador del próximo vencimiento.
- *
- * Sólo toca las filas marcadas `auto`: un tilde manual nunca se pisa ni se borra.
- * Si la OT deja de estar completada o de mencionar la tarea, su fila automática
- * se elimina — igual que el puente de Neumáticos.
- */
-async function sincronizarTareasPlanDesdeOt(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  otId: string
-): Promise<void> {
-  const { data: ot } = await supabase
-    .from("mantenimiento_realizados")
-    .select(
-      "id, dominio, estado, observaciones, tareas:mantenimiento_realizado_tareas(descripcion, auto)"
-    )
-    .eq("id", otId)
-    .single()
-  if (!ot) return
-
-  // Las filas automáticas se recalculan de cero en cada guardado.
-  await supabase
-    .from("mantenimiento_realizado_tareas")
-    .delete()
-    .eq("mantenimiento_id", ot.id)
-    .eq("auto", true)
-
-  if (ot.estado !== "completado") return
-
-  const { data: veh } = await supabase
-    .from("catalogo_vehiculos")
-    .select("tipo")
-    .eq("dominio", ot.dominio)
-    .maybeSingle()
-  const tipo = (veh as { tipo: string | null } | null)?.tipo
-  if (!tipo) return
-
-  const { data: tareas } = await supabase
-    .from("mantenimiento_plan_tareas")
-    .select("id, tipo_vehiculo, activo, palabras_clave")
-
-  // Sólo el texto escrito a mano: las descripciones de filas `auto` son las que
-  // acabamos de borrar, y las manuales ya llevan su tarea_id.
-  const textos = [
-    ...(
-      (ot.tareas as Array<{ descripcion: string | null; auto: boolean }> | null) ?? []
-    )
-      .filter((t) => !t.auto)
-      .map((t) => t.descripcion),
-    ot.observaciones,
-  ]
-
-  const detectadas = detectarTareas(textos, (tareas ?? []) as TareaDetectable[], tipo)
-  if (detectadas.length === 0) return
-
-  // No duplicar lo que el usuario ya tildó a mano.
-  const { data: manuales } = await supabase
-    .from("mantenimiento_realizado_tareas")
-    .select("tarea_id")
-    .eq("mantenimiento_id", ot.id)
-    .not("tarea_id", "is", null)
-  const yaEstan = new Set(
-    ((manuales as Array<{ tarea_id: string }> | null) ?? []).map((m) => m.tarea_id)
-  )
-
-  const nuevas = detectadas.filter((id) => !yaEstan.has(id))
-  if (nuevas.length === 0) return
-
-  await supabase.from("mantenimiento_realizado_tareas").insert(
-    nuevas.map((tareaId) => ({
-      mantenimiento_id: ot.id,
-      tarea_id: tareaId,
-      auto: true,
-    }))
-  )
-}
-
 interface MantenimientoTareaInput {
   tareaId?: string
   descripcion?: string
@@ -735,19 +637,6 @@ interface MantenimientoRepuestoInput {
   descripcion: string
   cantidad?: number
   costoUnitario?: number | null
-}
-
-/**
- * Factura de repuestos de la OT: proveedor + comprobante + sus líneas. Todos los
- * datos de cabecera son opcionales (se puede cargar sólo el detalle, o sólo el
- * monto sin desglosar).
- */
-interface MantenimientoFacturaInput {
-  proveedor?: string
-  numero?: string
-  montoTotal?: number | null
-  adjuntoUrl?: string | null
-  repuestos?: MantenimientoRepuestoInput[]
 }
 
 interface CreateMantenimientoInput {
@@ -771,85 +660,10 @@ interface CreateMantenimientoInput {
   entrada_taller?: string | null
   salida_taller?: string | null
   tareas: MantenimientoTareaInput[]
-  /** Repuestos sin factura asociada (compatibilidad con la carga anterior). */
   repuestos?: MantenimientoRepuestoInput[]
-  facturas?: MantenimientoFacturaInput[]
 }
 
 const FACTURAS_BUCKET = "mantenimiento-evidencias"
-
-/**
- * Reemplaza el detalle de facturas de repuestos + sus líneas de una OT.
- *
- * Borra primero las facturas (las líneas caen por ON DELETE SET NULL, así que se
- * limpian aparte) y vuelve a insertar todo, igual que hace el detalle de tareas.
- * Los repuestos sueltos —sin factura— se pasan en `sueltos`.
- */
-async function reemplazarFacturasYRepuestos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  mantenimientoId: string,
-  facturas: MantenimientoFacturaInput[] | undefined,
-  sueltos: MantenimientoRepuestoInput[] | undefined
-): Promise<{ error: string } | null> {
-  const lineas = (rs: MantenimientoRepuestoInput[] | undefined, facturaId: string | null) =>
-    (rs ?? [])
-      .filter((r) => r.descripcion?.trim())
-      .map((r) => ({
-        mantenimiento_id: mantenimientoId,
-        factura_id: facturaId,
-        descripcion: r.descripcion.trim(),
-        cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
-        costo_unitario: r.costoUnitario ?? null,
-      }))
-
-  const { error: delRep } = await supabase
-    .from("mantenimiento_realizado_repuestos")
-    .delete()
-    .eq("mantenimiento_id", mantenimientoId)
-  if (delRep) return { error: delRep.message }
-  const { error: delFac } = await supabase
-    .from("mantenimiento_realizado_facturas")
-    .delete()
-    .eq("mantenimiento_id", mantenimientoId)
-  if (delFac) return { error: delFac.message }
-
-  const filas = lineas(sueltos, null)
-
-  // Una factura se descarta si quedó completamente vacía (sin proveedor, número,
-  // monto, adjunto ni líneas): son las filas que el usuario agregó y no usó.
-  const utiles = (facturas ?? []).filter(
-    (f) =>
-      f.proveedor?.trim() ||
-      f.numero?.trim() ||
-      f.montoTotal != null ||
-      f.adjuntoUrl ||
-      (f.repuestos ?? []).some((r) => r.descripcion?.trim())
-  )
-
-  for (let i = 0; i < utiles.length; i++) {
-    const f = utiles[i]
-    const { data, error } = await supabase
-      .from("mantenimiento_realizado_facturas")
-      .insert({
-        mantenimiento_id: mantenimientoId,
-        proveedor: f.proveedor?.trim() || null,
-        numero: f.numero?.trim() || null,
-        monto_total: f.montoTotal ?? null,
-        adjunto_url: f.adjuntoUrl || null,
-        orden: i,
-      })
-      .select("id")
-      .single()
-    if (error) return { error: error.message }
-    filas.push(...lineas(f.repuestos, (data as { id: string }).id))
-  }
-
-  if (filas.length > 0) {
-    const { error } = await supabase.from("mantenimiento_realizado_repuestos").insert(filas)
-    if (error) return { error: error.message }
-  }
-  return null
-}
 
 /**
  * Sube las facturas/comprobantes de un mantenimiento al Storage y devuelve las
@@ -972,19 +786,23 @@ export async function createMantenimiento(
       return { error: tareasError.message }
     }
 
-    const repError = await reemplazarFacturasYRepuestos(
-      supabase,
-      mantenimiento.id,
-      input.facturas,
-      input.repuestos
-    )
-    if (repError) {
-      await supabase.from("mantenimiento_realizados").delete().eq("id", mantenimiento.id)
-      return repError
+    const repuestos = (input.repuestos ?? []).filter((r) => r.descripcion?.trim())
+    if (repuestos.length > 0) {
+      const { error: repError } = await supabase.from("mantenimiento_realizado_repuestos").insert(
+        repuestos.map((r) => ({
+          mantenimiento_id: mantenimiento.id,
+          descripcion: r.descripcion.trim(),
+          cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
+          costo_unitario: r.costoUnitario ?? null,
+        }))
+      )
+      if (repError) {
+        await supabase.from("mantenimiento_realizados").delete().eq("id", mantenimiento.id)
+        return { error: repError.message }
+      }
     }
 
     try {
-      await sincronizarTareasPlanDesdeOt(supabase, mantenimiento.id)
       await sincronizarNeumaticosDesdeOt(supabase, mantenimiento.id)
     } catch (e) {
       console.error("Sync Neumáticos desde OT:", e)
@@ -1020,8 +838,6 @@ interface UpdateMantenimientoInput {
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
   repuestos?: MantenimientoRepuestoInput[]
-  /** Si se pasa, reemplaza el detalle completo de facturas de repuestos. */
-  facturas?: MantenimientoFacturaInput[]
 }
 
 export async function updateMantenimiento(
@@ -1089,18 +905,29 @@ export async function updateMantenimiento(
       if (insError) return { error: insError.message }
     }
 
-    if (input.repuestos || input.facturas) {
-      const repError = await reemplazarFacturasYRepuestos(
-        supabase,
-        input.id,
-        input.facturas,
-        input.repuestos
-      )
-      if (repError) return repError
+    if (input.repuestos) {
+      const { error: delRepError } = await supabase
+        .from("mantenimiento_realizado_repuestos")
+        .delete()
+        .eq("mantenimiento_id", input.id)
+      if (delRepError) return { error: delRepError.message }
+      const repuestos = input.repuestos.filter((r) => r.descripcion?.trim())
+      if (repuestos.length > 0) {
+        const { error: insRepError } = await supabase
+          .from("mantenimiento_realizado_repuestos")
+          .insert(
+            repuestos.map((r) => ({
+              mantenimiento_id: input.id,
+              descripcion: r.descripcion.trim(),
+              cantidad: r.cantidad && r.cantidad > 0 ? r.cantidad : 1,
+              costo_unitario: r.costoUnitario ?? null,
+            }))
+          )
+        if (insRepError) return { error: insRepError.message }
+      }
     }
 
     try {
-      await sincronizarTareasPlanDesdeOt(supabase, input.id)
       await sincronizarNeumaticosDesdeOt(supabase, input.id)
     } catch (e) {
       console.error("Sync Neumáticos desde OT:", e)
@@ -2271,7 +2098,7 @@ export async function getCostosMantenimiento(): Promise<
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
       .select(
-        "fecha, tipo, costo, costo_mano_obra, tareas:mantenimiento_realizado_tareas(costo), repuestos:mantenimiento_realizado_repuestos(cantidad, costo_unitario, factura_id), facturas:mantenimiento_realizado_facturas(id, monto_total)"
+        "fecha, tipo, costo, costo_mano_obra, tareas:mantenimiento_realizado_tareas(costo), repuestos:mantenimiento_realizado_repuestos(cantidad, costo_unitario)"
       )
       .neq("estado", "cancelado")
       .gte("fecha", desde)
@@ -2289,17 +2116,13 @@ export async function getCostosMantenimiento(): Promise<
       costo: number | null
       costo_mano_obra: number | null
       tareas: { costo: number | null }[]
-      repuestos: {
-        cantidad: number | null
-        costo_unitario: number | null
-        factura_id: string | null
-      }[]
-      facturas: { id: string; monto_total: number | null }[]
+      repuestos: { cantidad: number | null; costo_unitario: number | null }[]
     }>) {
       const costoTareas = (m.tareas || []).reduce((a, t) => a + Number(t.costo || 0), 0)
-      // Facturas de repuestos + repuestos sueltos, con la misma regla que la UI
-      // (monto_total manda sobre el detalle de líneas).
-      const costoRepuestos = totalRepuestos(m.facturas || [], m.repuestos || [])
+      const costoRepuestos = (m.repuestos || []).reduce(
+        (a, r) => a + Number(r.cantidad || 1) * Number(r.costo_unitario || 0),
+        0
+      )
       const desglosado = costoTareas + Number(m.costo_mano_obra || 0) + costoRepuestos
       // El costo de cabecera de las OT cargadas por la app ya es MO + repuestos
       // (sin tareas); tomar el mayor entre cabecera y desglose suma lo que falte

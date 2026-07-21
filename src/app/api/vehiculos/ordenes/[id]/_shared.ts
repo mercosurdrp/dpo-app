@@ -19,7 +19,7 @@ export async function fetchOrdenExport(id: string): Promise<OrdenExport | null> 
   const { data, error } = await supabase
     .from("mantenimiento_realizados")
     .select(
-      "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*), facturas:mantenimiento_realizado_facturas(*)"
+      "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*)"
     )
     .eq("id", id)
     .maybeSingle()

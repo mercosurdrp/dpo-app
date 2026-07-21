@@ -1345,12 +1345,6 @@ export interface MantenimientoPlanTarea {
   frecuencia_horas: number | null
   activo: boolean
   orden: number
-  /**
-   * Términos que, si aparecen en las tareas libres u observaciones de una OT
-   * completada, la dan por realizada sin necesidad de tildarla. En minúsculas y
-   * sin acentos. Vacío = la tarea no se autodetecta.
-   */
-  palabras_clave: string[]
   created_by: string | null
   created_at: string
   updated_at: string
@@ -1384,8 +1378,6 @@ export interface MantenimientoRealizadoTarea {
   tarea_id: string | null
   descripcion: string | null
   costo: number | null
-  /** true = la detectó el texto de la OT, no la tildó el usuario. */
-  auto: boolean
   created_at: string
 }
 
@@ -1395,29 +1387,6 @@ export interface MantenimientoRealizadoRepuesto {
   descripcion: string
   cantidad: number
   costo_unitario: number | null
-  /** Factura de repuestos a la que pertenece la línea. NULL = repuesto suelto. */
-  factura_id: string | null
-  created_at: string
-}
-
-/**
- * Factura de repuestos de una OT. Los repuestos suelen comprarse aparte del
- * mecánico que hace la mano de obra, y a veces a más de un proveedor, así que
- * una OT puede tener varias.
- *
- * El monto de la factura es `monto_total` si está cargado (y ahí las líneas de
- * repuesto quedan como detalle informativo); si está vacío, se usa la suma de
- * sus líneas.
- */
-export interface MantenimientoRealizadoFactura {
-  id: string
-  mantenimiento_id: string
-  proveedor: string | null
-  numero: string | null
-  monto_total: number | null
-  /** Foto o PDF del comprobante, en el bucket mantenimiento-evidencias. */
-  adjunto_url: string | null
-  orden: number
   created_at: string
 }
 
@@ -1429,10 +1398,8 @@ export interface MantenimientoRealizado {
   horometro: number | null
   tipo: MantenimientoTipo
   estado: MantenimientoEstado
-  /** Taller/proveedor de la MANO DE OBRA (los repuestos van en `facturas`). */
   taller: string | null
   costo: number | null
-  /** Factura de la MANO DE OBRA (los repuestos llevan la suya en `facturas`). */
   numero_factura: string | null
   /** Nº de orden de trabajo propio (ej. "1471"), distinto de la factura. */
   numero_ot: string | null
@@ -1459,7 +1426,6 @@ export interface MantenimientoRealizado {
   updated_at: string
   tareas?: MantenimientoRealizadoTarea[]
   repuestos?: MantenimientoRealizadoRepuesto[]
-  facturas?: MantenimientoRealizadoFactura[]
 }
 
 export type EstadoTareaMantenimiento = "ok" | "proximo" | "vencido" | "sin_datos"
@@ -1479,12 +1445,6 @@ export interface EstadoPlanCelda {
   pctConsumido: number | null
   /** true cuando el estado se calculó solo por tiempo (sin lecturas km/horas). */
   soloPorTiempo: boolean
-  /**
-   * true = vencida porque NUNCA se registró y la unidad ya superó el intervalo
-   * (ej. camión con 417.000 km y una tarea cada 100.000 sin ningún registro).
-   * Distinto de un vencido con historial: acá no se sabe si se hizo alguna vez.
-   */
-  nuncaRegistrado?: boolean
 }
 
 export interface EstadoPlanVehiculo {
