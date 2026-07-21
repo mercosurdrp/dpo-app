@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ProyeccionData, type ZonaReparto,
+  type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type MetricasDistribucion, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ProyeccionData, type ZonaReparto,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto, guardarAjustesVolumen,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
   recalcularProductividadAlmacen,
@@ -290,6 +290,131 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
   )
 }
 
+// Modal del MES EN CURSO para camiones: cómo se llega a los camiones necesarios
+// (piso por cobertura de zonas, no solo volumen ÷ capacidad).
+function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, enTaller, viajes }: {
+  m: MetricasDistribucion; zonas: ZonaReparto[]; capCamVj: number; dispo: number; totalFlota: number; enTaller: number; viajes: number
+}) {
+  const camZona = (peso: number, min: number, vol: number) => Math.max(min, capCamVj > 0 ? Math.ceil((vol * peso) / capCamVj) : 0)
+  const filas = zonas.map((z) => ({
+    zona: z.zona, peso: z.peso, min: z.camiones_minimos,
+    porVol: capCamVj > 0 ? Math.ceil((m.volumenCeqPromedio * z.peso) / capCamVj) : 0,
+    usa: camZona(z.peso, z.camiones_minimos, m.volumenCeqPromedio),
+  }))
+  const totalZonas = filas.reduce((s, f) => s + f.usa, 0)
+  const porVolPuro = capCamVj > 0 ? Math.ceil(m.volumenCeqPromedio / capCamVj) : 0
+  const estadoTxt = m.camionesNecesariosPico <= dispo ? "Cubre" : m.camionesNecesariosPromedio <= dispo ? "Refuerzo en pico" : `Faltan ${m.camionesNecesariosPromedio - dispo}`
+  return (
+    <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogHeader><DialogTitle>Camiones — {m.mes} · {estadoTxt}</DialogTitle></DialogHeader>
+      <p className="text-sm text-muted-foreground">
+        Demanda: volumen ruteado del mes (ruteo_cierres, {fmt(m.diasCerrados)} días cerrados) convertido a cajas equivalentes.
+        Flota: {fmt(totalFlota)} unidades de distribución{enTaller > 0 ? `, ${fmt(enTaller)} en taller` : ""} → <b>{fmt(dispo)} disponibles</b>.
+        Capacidad de un camión: <b>{fmt(Math.round(capCamVj))} CEq/día</b> ({fmt(viajes)} viaje{viajes === 1 ? "" : "s"}/día).
+      </p>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Zona</TableHead><TableHead className="text-right">Peso</TableHead><TableHead className="text-right">Por volumen</TableHead>
+          <TableHead className="text-right">Mínimo</TableHead><TableHead className="text-right">Usa</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          {filas.map((f) => (
+            <TableRow key={f.zona}>
+              <TableCell className="font-medium">{f.zona}</TableCell>
+              <TableCell className="text-right">{Math.round(f.peso * 100)}%</TableCell>
+              <TableCell className="text-right text-muted-foreground">{f.porVol}</TableCell>
+              <TableCell className="text-right text-muted-foreground">{f.min}</TableCell>
+              <TableCell className={`text-right font-semibold ${f.usa > f.porVol ? "text-amber-700" : ""}`}>{f.usa}</TableCell>
+            </TableRow>
+          ))}
+          <TableRow className="border-t-2">
+            <TableCell className="font-bold">Total necesarios (promedio)</TableCell>
+            <TableCell colSpan={3} className="text-right text-xs text-muted-foreground">contra {fmt(dispo)} disponibles</TableCell>
+            <TableCell className="text-right font-bold">{totalZonas}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+      <div className="rounded-md border-l-4 border-sky-400 bg-sky-50 p-3 text-sm">
+        <p className="mb-1 font-semibold">Qué significa</p>
+        <p>
+          Por volumen puro alcanzarían <b>{porVolPuro}</b> camiones ({fmt(m.volumenCeqPromedio)} CEq ÷ {fmt(Math.round(capCamVj))}),
+          pero cada zona necesita un mínimo de unidades para llegar aunque no vayan llenas → el piso real es <b>{totalZonas}</b>.
+          {m.camionesNecesariosPico > m.camionesNecesariosPromedio
+            ? <> En el día pico ({fmt(m.volumenCeqPico)} CEq) suben a <b>{m.camionesNecesariosPico}</b>.</>
+            : null}
+          {" "}
+          {m.camionesNecesariosPico <= dispo
+            ? <><b className="text-emerald-700">La flota disponible cubre incluso el pico.</b></>
+            : m.camionesNecesariosPromedio <= dispo
+              ? <><b className="text-amber-700">En el pico faltan {m.camionesNecesariosPico - dispo}</b> → 2ª vuelta o refuerzo esos días.</>
+              : <><b className="text-red-700">Faltan {m.camionesNecesariosPromedio - dispo} en un día promedio</b> → 2ª vuelta obligada o sumar unidades.</>}
+        </p>
+      </div>
+    </DialogContent>
+  )
+}
+
+// Modal del MES EN CURSO para choferes / ayudantes.
+function DetalleHoyRepartoModal({ nombre, r, mes, camionesProm, camionesPico, usaObservada, ausentismo }: {
+  nombre: string; r: RolReparto; mes: string; camionesProm: number; camionesPico: number; usaObservada: boolean; ausentismo: number
+}) {
+  const dot = Math.round(r.dotacionProm)
+  const brecha = r.fteNecesariosProm - dot
+  const brechaPico = r.fteNecesariosPico - dot
+  const estadoTxt = r.fteNecesariosPico <= dot ? "Cubre" : r.fteNecesariosProm <= dot ? "Refuerzo en pico" : `Faltan ${brecha}`
+  const pasos: Array<[string, string, string]> = [
+    ["Camiones necesarios (promedio)", `${camionesProm}`, "del cálculo por zonas de reparto"],
+    ["Camiones necesarios (pico)", `${camionesPico}`, "día de mayor volumen"],
+    ["Tripulación por camión", `${fmt(r.porCamion)}`, "editable en Datos de entrada"],
+    ["Necesarios (promedio)", `${r.fteNecesariosProm}`, `${camionesProm} camiones × ${fmt(r.porCamion)}`],
+    ["Necesarios (pico)", `${r.fteNecesariosPico}`, `${camionesPico} camiones × ${fmt(r.porCamion)}`],
+    ["Dotación considerada", `${fmt(dot)}`, usaObservada
+      ? "promedio real de personas distintas por día (registros_vehiculos, egresos) — ya trae el ausentismo implícito"
+      : `plantel cargado a mano${ausentismo > 0 ? `, menos ${Math.round(ausentismo * 100)}% de ausentismo` : ""}`],
+    ["Dotación observada", `${fmt(Math.round(r.dotacionObservada))}`, "promedio real diario del mes, siempre como referencia"],
+  ]
+  return (
+    <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogHeader><DialogTitle className="capitalize">{nombre} — {mes} · {estadoTxt}</DialogTitle></DialogHeader>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Paso</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>De dónde sale</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          {pasos.map(([k, v, d]) => (
+            <TableRow key={k}>
+              <TableCell className="font-medium">{k}</TableCell>
+              <TableCell className="whitespace-nowrap text-right font-semibold">{v}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{d}</TableCell>
+            </TableRow>
+          ))}
+          <TableRow className="border-t-2">
+            <TableCell className="font-bold">Brecha (promedio)</TableCell>
+            <TableCell className={`text-right font-bold ${brecha > 0 ? "text-red-700" : "text-emerald-700"}`}>{brecha > 0 ? `faltan ${brecha}` : `sobran ${Math.abs(brecha)}`}</TableCell>
+            <TableCell className="text-xs text-muted-foreground">necesarios − dotación</TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell className="font-bold">Brecha (pico)</TableCell>
+            <TableCell className={`text-right font-bold ${brechaPico > 0 ? "text-red-700" : "text-emerald-700"}`}>{brechaPico > 0 ? `faltan ${brechaPico}` : `sobran ${Math.abs(brechaPico)}`}</TableCell>
+            <TableCell className="text-xs text-muted-foreground">necesarios en el pico − dotación</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+      <div className="rounded-md border-l-4 border-sky-400 bg-sky-50 p-3 text-sm">
+        <p className="mb-1 font-semibold">Qué significa</p>
+        <p>
+          {brecha > 0
+            ? <>Faltan <b className="text-red-700">{brecha}</b> ya en un día promedio: cada camión que sale necesita {fmt(r.porCamion)} y hoy salen {fmt(dot)} personas por día. Sin refuerzo, algún camión no sale o va incompleto.</>
+            : brechaPico > 0
+              ? <>Alcanza en el día promedio, pero el pico pide <b>{r.fteNecesariosPico}</b> y hay <b>{fmt(dot)}</b> → <b className="text-amber-700">faltan {brechaPico} los días fuertes</b> (contratar, horas extra o 2ª vuelta).</>
+              : <>La dotación de <b>{fmt(dot)}</b> cubre incluso el pico ({r.fteNecesariosPico}). Holgura: <b className="text-emerald-700">{dot - r.fteNecesariosPico}</b> en el día más cargado.</>}
+          {usaObservada ? <> Ojo: la dotación es el <b>promedio real observado</b>, así que ya incluye las ausencias del mes.</> : null}
+        </p>
+      </div>
+    </DialogContent>
+  )
+}
+
 function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data: DimData; proyLive: ProyeccionData | null; escenario: PctEscenario; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const m = data.metricas
   const rep = data.reparto
@@ -399,23 +524,38 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                   <TableCell className="text-right">{fmt(m.volumenCeqPromedio)} CEq <span className="text-xs text-muted-foreground">(pico {fmt(m.volumenCeqPico)})</span></TableCell>
                   <TableCell className="text-right">{fmt(dispo)} unid · {fmt(Math.round(data.capacidadInstaladaDiaria))} CEq</TableCell>
                   <TableCell className="text-right font-semibold">{m.camionesNecesariosPromedio} (pico {m.camionesNecesariosPico})</TableCell>
-                  <TableCell className={estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).c}>{estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).t}</TableCell>
+                  <TableCell className="p-0">
+                    <Dialog>
+                      <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).c}`}>
+                        {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                      </DialogTrigger>
+                      <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} enTaller={data.flota.filter((u) => u.enTaller).length} viajes={data.config.viajes_por_dia} />
+                    </Dialog>
+                  </TableCell>
                 </TableRow>
                 {rep && (["choferes", "ayudantes"] as const).map((k) => {
                   const r = rep[k]; const dot = Math.round(r.dotacionProm); const e = estado(r.fteNecesariosProm, dot, r.fteNecesariosPico)
+                  const cargadoAMano = k === "choferes" ? data.config.dotacion_choferes > 0 : data.config.dotacion_ayudantes > 0
                   return (
                     <TableRow key={k}>
                       <TableCell className="font-medium capitalize">{k}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{m.camionesNecesariosPromedio} camiones × {fmt(r.porCamion)}</TableCell>
                       <TableCell className="text-right">{fmt(dot)} <span className="text-xs text-muted-foreground">(real)</span></TableCell>
                       <TableCell className="text-right font-semibold">{r.fteNecesariosProm} (pico {r.fteNecesariosPico})</TableCell>
-                      <TableCell className={e.c}>{e.t}</TableCell>
+                      <TableCell className="p-0">
+                        <Dialog>
+                          <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${e.c}`}>
+                            {e.t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                          </DialogTrigger>
+                          <DetalleHoyRepartoModal nombre={k} r={r} mes={m.mes} camionesProm={m.camionesNecesariosPromedio} camionesPico={m.camionesNecesariosPico} usaObservada={!cargadoAMano} ausentismo={data.config.ausentismo_reparto} />
+                        </Dialog>
+                      </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = volumen CEq ÷ (capacidad por camión × viajes/día). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Camiones necesarios = volumen CEq ÷ (capacidad por camión × viajes/día). Choferes/ayudantes = camiones × tripulación. Dotación de reparto = promedio real diario (registros_vehiculos). «Cubre» = alcanza incluso en el pico. <b>Tocá el estado</b> para ver el desglose por zona y el cálculo paso a paso.</p>
           </CardContent>
         </Card>
       )}
@@ -522,6 +662,124 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes, volDiaMes }: { rol:
   )
 }
 
+// Modal del MES EN CURSO: abre desde la columna Estado y explica paso a paso de dónde
+// sale el «Cubre» / «Extras en pico» / «Faltan N», con la fuente de cada dato. El caso
+// típico es «Faltan 0,2»: no falta gente, es el colchón de ausentismo contra un
+// necesario que se redondea a personas enteras — por eso además va el chequeo por volumen.
+function DetalleHoyAlmacenModal({ nombre, r, mes, unidad, esHL, horasTurno, ausentismo, fuente }: {
+  nombre: string; r: RolFte; mes: string; unidad: string; esHL: boolean; horasTurno: number; ausentismo: number; fuente: string
+}) {
+  const paletas = (v: number) => `${fmt(Math.round(v / 6))} pal`
+  const uv = (v: number) => `${fmt(v)} ${unidad}${esHL ? ` (${paletas(v)})` : ""}`
+  const capTotal = Math.round(r.capDiariaFte * r.dotacionEfectiva)
+  const brechaProm = Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10
+  const brechaPico = Math.round((r.fteNecesariosPico - r.dotacionEfectiva) * 10) / 10
+  const deficitProm = Math.max(0, r.volumenProm - capTotal)
+  const deficitPico = Math.max(0, r.volumenPico - capTotal)
+  // productividad efectiva por hora-hombre (ya descontada la utilización del turno)
+  const prodEfHora = r.productividad * r.utilizacion
+  const hhExtra = (falt: number) => (prodEfHora > 0 ? Math.round((falt / prodEfHora) * 10) / 10 : 0)
+  const cubrePorVolumen = deficitProm === 0
+  const alcanzaNominal = r.fteNecesariosProm <= r.dotacion
+  const estadoTxt = r.fteNecesariosPico <= r.dotacionEfectiva ? "Cubre"
+    : r.fteNecesariosProm <= r.dotacionEfectiva ? "Extras en pico" : `Faltan ${fmt(brechaProm)}`
+  const pasos: Array<[string, string, string]> = [
+    ["Demanda promedio / día", uv(r.volumenProm), `promedio de ${fmt(r.diasConDatos)} días con dato`],
+    ["Demanda del día pico", uv(r.volumenPico), "día de mayor volumen del mes"],
+    ["Productividad", `${fmt(r.productividad)} ${esHL ? "HL" : unidad}/HH`, esHL ? "estándar en pal/HH × 6 HL/paleta" : "por hora-hombre trabajada"],
+    ["Horas de turno × utilización", `${fmt(horasTurno)} h × ${Math.round(r.utilizacion * 100)}% = ${fmt(Math.round(horasTurno * r.utilizacion * 10) / 10)} h`, "horas efectivas sobre la tarea"],
+    ["Capacidad por persona / día", uv(r.capDiariaFte), "productividad × horas × utilización"],
+    ["Necesarios (promedio)", `${r.fteNecesariosProm}`, `${fmt(r.volumenProm)} ÷ ${fmt(r.capDiariaFte)}, redondeado hacia arriba`],
+    ["Necesarios (pico)", `${r.fteNecesariosPico}`, `${fmt(r.volumenPico)} ÷ ${fmt(r.capDiariaFte)}, redondeado hacia arriba`],
+    ["Dotación nominal", `${fmt(r.dotacion)}`, "personas cargadas en Datos de entrada"],
+    ["Ausentismo", `${Math.round(ausentismo * 100)}%`, "vacaciones, licencias y faltas"],
+    ["Dotación efectiva", `${fmt(r.dotacionEfectiva)}`, `${fmt(r.dotacion)} × (1 − ${Math.round(ausentismo * 100)}%) — contra esto se compara`],
+    ["Capacidad del equipo / día", uv(capTotal), `${fmt(r.capDiariaFte)} × ${fmt(r.dotacionEfectiva)}`],
+  ]
+  return (
+    <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogHeader><DialogTitle>{nombre} — {mes} · {estadoTxt}</DialogTitle></DialogHeader>
+      <p className="text-sm text-muted-foreground">{fuente}</p>
+      <Table>
+        <TableHeader><TableRow>
+          <TableHead>Paso</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>De dónde sale</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>
+          {pasos.map(([k, v, d]) => (
+            <TableRow key={k}>
+              <TableCell className="font-medium">{k}</TableCell>
+              <TableCell className="whitespace-nowrap text-right font-semibold">{v}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{d}</TableCell>
+            </TableRow>
+          ))}
+          <TableRow className="border-t-2">
+            <TableCell className="font-bold">Brecha (promedio)</TableCell>
+            <TableCell className={`text-right font-bold ${brechaProm > 0 ? "text-red-700" : "text-emerald-700"}`}>
+              {brechaProm > 0 ? `faltan ${fmt(brechaProm)}` : `sobran ${fmt(Math.abs(brechaProm))}`}
+            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">necesarios − dotación efectiva</TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell className="font-bold">Brecha (pico)</TableCell>
+            <TableCell className={`text-right font-bold ${brechaPico > 0 ? "text-red-700" : "text-emerald-700"}`}>
+              {brechaPico > 0 ? `faltan ${fmt(brechaPico)}` : `sobran ${fmt(Math.abs(brechaPico))}`}
+            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">necesarios en el pico − dotación efectiva</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+
+      <div className="rounded-md border bg-slate-50 p-3 text-sm">
+        <p className="mb-1 font-semibold">Chequeo por volumen (sin redondear a personas)</p>
+        <p className="text-muted-foreground">
+          El equipo mueve <b>{uv(capTotal)}</b> por día. La demanda promedio es <b>{uv(r.volumenProm)}</b> y la del pico <b>{uv(r.volumenPico)}</b>.
+        </p>
+        <ul className="mt-1 list-disc pl-5">
+          <li>Día promedio: {deficitProm > 0
+            ? <>quedan <b className="text-red-700">{uv(deficitProm)}</b> sin cubrir ≈ <b>{fmt(hhExtra(deficitProm))} hora-hombre extra</b>.</>
+            : <><b className="text-emerald-700">cubre</b>, con {uv(capTotal - r.volumenProm)} de holgura.</>}
+          </li>
+          <li>Día pico: {deficitPico > 0
+            ? <>quedan <b className="text-red-700">{uv(deficitPico)}</b> sin cubrir ≈ <b>{fmt(hhExtra(deficitPico))} hora-hombre extra</b>.</>
+            : <><b className="text-emerald-700">cubre</b>, con {uv(capTotal - r.volumenPico)} de holgura.</>}
+          </li>
+        </ul>
+      </div>
+
+      <div className="rounded-md border-l-4 border-sky-400 bg-sky-50 p-3 text-sm">
+        <p className="mb-1 font-semibold">Qué significa</p>
+        {brechaProm > 0 && brechaProm < 1 && alcanzaNominal ? (
+          <p>
+            <b>No falta gente en el plantel.</b> Con la dotación nominal de <b>{fmt(r.dotacion)}</b> alcanza
+            (necesarios {r.fteNecesariosProm}), pero al descontar el ausentismo del {Math.round(ausentismo * 100)}% la
+            dotación efectiva baja a <b>{fmt(r.dotacionEfectiva)}</b> y aparece la brecha de <b>{fmt(brechaProm)}</b>.
+            {cubrePorVolumen
+              ? <> Además, por volumen el equipo cubre la demanda promedio, así que el faltante viene del redondeo a personas enteras.</>
+              : <> Traducido: los días en que falta alguien hay que cubrir ~{uv(deficitProm)} con horas extra o reasignando.</>}
+            {" "}Es el colchón de ausentismo, no un déficit estructural.
+          </p>
+        ) : brechaProm > 0 ? (
+          <p>
+            Faltan <b className="text-red-700">{fmt(brechaProm)}</b> personas incluso en un día promedio: la demanda de{" "}
+            <b>{uv(r.volumenProm)}</b> supera lo que mueven {fmt(r.dotacionEfectiva)} personas ({uv(capTotal)}).
+            Se cubre con <b>{fmt(hhExtra(deficitProm))} hora-hombre extra por día</b>, con refuerzo, o subiendo la productividad.
+          </p>
+        ) : brechaPico > 0 ? (
+          <p>
+            La dotación alcanza en un día promedio pero no en el pico: ahí hacen falta <b>{r.fteNecesariosPico}</b> y hay{" "}
+            <b>{fmt(r.dotacionEfectiva)}</b> → <b className="text-amber-700">{fmt(hhExtra(deficitPico))} hora-hombre extra</b> los días fuertes.
+          </p>
+        ) : (
+          <p>
+            La dotación efectiva de <b>{fmt(r.dotacionEfectiva)}</b> cubre incluso el día pico (necesarios {r.fteNecesariosPico}).
+            Holgura en el pico: <b className="text-emerald-700">{uv(Math.max(0, capTotal - r.volumenPico))}</b>.
+          </p>
+        )}
+      </div>
+    </DialogContent>
+  )
+}
+
 function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { data: DimData; proyLive: ProyeccionData | null; escenario: PctEscenario; canEdit: boolean; run: RunFn; isPending: boolean }) {
   const a = data.almacen
   const proy = proyLive
@@ -560,10 +818,14 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
   }), "Datos de almacén guardados")
 
   const rolesHoy = a ? [
-    { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false, hl: false, real: null as number | null },
-    { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH },
-    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false, hl: false, real: null as number | null },
-    { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null },
+    { n: "Pickeros", r: a.pickeros, u: "bultos", pico: false, hl: false, real: null as number | null,
+      fuente: "Demanda: bultos despachados por día (ocupacion_bodega_diaria, líneas de venta de Chess). Productividad: promedio YTD del Árbol del Sueño (deposito-esteban), con override editable." },
+    { n: "Clasificadores", r: a.clasificadores, u: "HL", pico: false, hl: true, real: a.clasificadores.prodRealPalHH,
+      fuente: "Demanda: HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf), repartidos uniforme entre los días hábiles del mes — por eso promedio y pico son iguales. Conversión: 6 HL por paleta." },
+    { n: "Tareas generales", r: a.reempaque, u: "bultos", pico: false, hl: false, real: null as number | null,
+      fuente: "Demanda y productividad: reempaque de deposito-esteban (bultos por día y bultos ÷ horas trabajadas del mes)." },
+    { n: "Maquinistas", r: a.maquinistas, u: "pallets", pico: false, hl: false, real: null as number | null,
+      fuente: `Demanda: pallets de acarreo descargado (recepcion_acarreos) + carga a distribución (deposito-esteban) × (1 + factor de retorno ${fmt(a.maquinistas.factorRetorno)}). Promedios del mes: ${fmt(a.maquinistas.palAcarreoProm)} pal de acarreo y ${fmt(a.maquinistas.palCargaProm)} pal de carga por día.` },
   ] : []
   // Compara contra la dotación EFECTIVA (descontado el ausentismo).
   const estadoHoy = (r: RolFte) =>
@@ -635,7 +897,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 <TableHead className="text-right">Vol/día</TableHead><TableHead className="text-right">Necesarios</TableHead><TableHead>Estado</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {rolesHoy.map(({ n, r, u, pico, hl, real }) => {
+                {rolesHoy.map(({ n, r, u, pico, hl, real, fuente }) => {
                   const e = estadoHoy(r)
                   const unidadProd = hl ? "HL/HH" : (u === "paletas" || u === "pallets") ? "pal/HH" : "bul/HH"
                   const paletas = (v: number) => fmt(Math.round(v / 6)) // 6 HL/paleta retornable
@@ -663,13 +925,20 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                           : <span className="text-xs text-muted-foreground"> (pico {fmt(r.volumenPico)})</span>}
                       </TableCell>
                       <TableCell className="text-right font-semibold">{r.fteNecesariosProm}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${r.fteNecesariosPico})` : ""}</TableCell>
-                      <TableCell className={e.cls}>{e.txt}</TableCell>
+                      <TableCell className="p-0">
+                        <Dialog>
+                          <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${e.cls}`}>
+                            {e.txt} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
+                          </DialogTrigger>
+                          <DetalleHoyAlmacenModal nombre={n} r={r} mes={a!.mes} unidad={u} esHL={hl} horasTurno={data.config.horas_turno} ausentismo={data.config.ausentismo_almacen} fuente={fuente} />
+                        </Dialog>
+                      </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
           </CardContent>
         </Card>
       )}
