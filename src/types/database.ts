@@ -1152,6 +1152,7 @@ export interface TiRegistro {
     | "sin_match"
     | "sin_biometrico"
     | "no_ficha"
+    | "bajo_umbral"
     | "negativo"
     | "outlier"
     | null
@@ -1165,6 +1166,10 @@ export interface TiKpis {
   noFicha: number
   /** Choferes sin ninguna marca en el período, para mostrarlos aparte. */
   choferesSinFichaje: string[]
+  /** Umbral mínimo aplicado (0 = sin filtro). Los excluidos siguen listados. */
+  minTiMinutos: number
+  /** Retornos dejados fuera del cálculo por quedar debajo del umbral. */
+  bajoUmbral: number
   excluidos: number // negativos + outliers
   promedioMinutos: number
   mediana: number

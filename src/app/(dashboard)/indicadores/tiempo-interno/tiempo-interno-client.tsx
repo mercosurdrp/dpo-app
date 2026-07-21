@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { claveSemana, rangoDeSemana, semanaDelAnio } from "@/lib/tiempo-interno"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -56,6 +57,7 @@ const MOTIVO_LABEL: Record<string, string> = {
   sin_match: "Chofer sin legajo",
   sin_biometrico: "Sin fichaje de salida",
   no_ficha: "No ficha (fuera del reloj)",
+  bajo_umbral: "Debajo del mínimo operativo",
   negativo: "Salida antes del retorno",
   outlier: "Fuera de rango (>3h)",
 }
@@ -216,6 +218,8 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
         </Card>
       </div>
 
+      <UmbralToggle activo={kpis.minTiMinutos > 0} excluidos={kpis.bajoUmbral} />
+
       {/* Charts */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -279,6 +283,9 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
       {/* Plan de Acción R1.3.4 */}
       <TiPlanAccionSection resumen={planesResumen} />
 
+      {/* Resumen por chofer */}
+      <ChoferesTable registros={kpis.registros} metaMinutos={kpis.metaMinutos} />
+
       {/* Registros */}
       <RegistrosTable registros={kpis.registros} />
 
@@ -325,6 +332,197 @@ function horaArg(iso: string | null): string {
 
 const TODAS_LAS_SEMANAS = "__todas__"
 const FILAS_POR_PAGINA = 100
+
+// Botón de umbral operativo. El criterio es de la operación: bajar del camión,
+// entregar documentación y fichar no se hace en menos de 10 minutos, así que un
+// TI por debajo de eso no mide velocidad — mide un checklist cargado al salir.
+// No borra nada: los registros siguen listados en el detalle con su motivo.
+function UmbralToggle({ activo, excluidos }: { activo: boolean; excluidos: number }) {
+  const router = useRouter()
+  const params = useSearchParams()
+  const [pending, startTransition] = useTransition()
+
+  function toggle() {
+    const q = new URLSearchParams(params.toString())
+    if (activo) q.delete("min")
+    else q.set("min", "10")
+    startTransition(() => router.push(`/indicadores/tiempo-interno?${q.toString()}`))
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white p-3">
+      <Button variant={activo ? "default" : "outline"} size="sm" onClick={toggle} disabled={pending}>
+        {activo ? "Quitar mínimo de 10 min" : "Excluir menores a 10 min"}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        {activo ? (
+          <>
+            Se dejaron fuera del cálculo{" "}
+            <span className="font-medium text-slate-700">{excluidos}</span> retornos de
+            menos de 10 minutos: no se puede bajar, entregar la documentación y fichar en
+            menos que eso, así que ese tiempo es checklist cargado al salir, no velocidad.
+            Los registros siguen listados abajo.
+          </>
+        ) : (
+          <>
+            Los retornos de menos de 10 minutos están contando. Suelen ser el checklist
+            cargado justo antes de fichar, y bajan artificialmente el promedio.
+          </>
+        )}
+      </p>
+    </div>
+  )
+}
+
+// ==================== RESUMEN POR CHOFER ====================
+//
+// El TI es de las pocas cosas del tablero que mide a una PERSONA, así que el
+// ranking necesita dos defensas o hace más daño que bien:
+//
+// 1. MEDIANA, no promedio: un día que el chofer se quedó 2 h por una rotura no
+//    puede definir su desempeño de tres meses.
+// 2. Señal de "casi cero": si un chofer tiene muchos TI de 0-5 min, lo más
+//    probable no es que sea rapidísimo sino que carga el checklist de retorno
+//    justo antes de irse — con lo cual el TI le da ~0 POR CONSTRUCCIÓN y no se
+//    lo está midiendo. Caso real: 64% de casi-ceros contra 14% del que le sigue.
+//    Sin esta columna, el primer puesto del ranking se lo lleva quien rompe la
+//    medición, y el resto aprende que conviene cargar el checklist al salir.
+const MIN_REGISTROS_CHOFER = 5
+const UMBRAL_CASI_CERO_PCT = 30
+const TI_CASI_CERO = 5
+
+interface FilaChofer {
+  chofer: string
+  n: number
+  mediana: number
+  promedio: number
+  pctEnMeta: number
+  pctCasiCero: number
+  sinDato: number
+}
+
+function ChoferesTable({
+  registros,
+  metaMinutos,
+}: {
+  registros: TiRegistro[]
+  metaMinutos: number
+}) {
+  const filas = useMemo<FilaChofer[]>(() => {
+    const porChofer = new Map<string, { tis: number[]; sinDato: number }>()
+    for (const r of registros) {
+      const g = porChofer.get(r.chofer) ?? { tis: [], sinDato: 0 }
+      if (r.motivo_sin_dato === null && r.ti_minutos != null) g.tis.push(r.ti_minutos)
+      else g.sinDato++
+      porChofer.set(r.chofer, g)
+    }
+    const out: FilaChofer[] = []
+    for (const [chofer, g] of porChofer) {
+      if (g.tis.length < MIN_REGISTROS_CHOFER) continue
+      const orden = [...g.tis].sort((a, b) => a - b)
+      const mediana = orden[Math.floor(orden.length / 2)]
+      const promedio = Math.round(orden.reduce((a, b) => a + b, 0) / orden.length)
+      const enMeta = orden.filter((t) => t <= metaMinutos).length
+      const casiCero = orden.filter((t) => t <= TI_CASI_CERO).length
+      out.push({
+        chofer,
+        n: orden.length,
+        mediana,
+        promedio,
+        pctEnMeta: Math.round((enMeta / orden.length) * 100),
+        pctCasiCero: Math.round((casiCero / orden.length) * 100),
+        sinDato: g.sinDato,
+      })
+    }
+    return out.sort((a, b) => a.mediana - b.mediana)
+  }, [registros, metaMinutos])
+
+  if (filas.length === 0) return null
+
+  const sospechosos = filas.filter((f) => f.pctCasiCero >= UMBRAL_CASI_CERO_PCT)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Resumen por chofer</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Mediana del tiempo interno, del más rápido al más lento. Solo choferes con{" "}
+          {MIN_REGISTROS_CHOFER} registros o más.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Chofer</TableHead>
+                <TableHead className="text-right">Retornos medidos</TableHead>
+                <TableHead className="text-right">Mediana</TableHead>
+                <TableHead className="text-right">Promedio</TableHead>
+                <TableHead className="text-right">% en meta</TableHead>
+                <TableHead className="text-right">Sin dato</TableHead>
+                <TableHead>Confiabilidad</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filas.map((f) => (
+                <TableRow key={f.chofer}>
+                  <TableCell className="font-medium">{f.chofer}</TableCell>
+                  <TableCell className="text-right">{f.n}</TableCell>
+                  <TableCell className="text-right">
+                    <TiBadge ti={f.mediana} />
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {f.promedio} min
+                  </TableCell>
+                  <TableCell className="text-right">{f.pctEnMeta}%</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {f.sinDato || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {f.pctCasiCero >= UMBRAL_CASI_CERO_PCT ? (
+                      <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                        Revisar carga ({f.pctCasiCero}% en ~0)
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="mt-4 space-y-2 rounded-md bg-slate-50 p-3 text-xs text-muted-foreground">
+          <p>
+            <span className="font-medium text-slate-700">Se compara por mediana</span>, no
+            por promedio: un día que alguien se quedó dos horas por una rotura no puede
+            definir su desempeño de meses.
+          </p>
+          {sospechosos.length > 0 && (
+            <p>
+              <span className="font-medium text-amber-700">Ojo antes de premiar:</span>{" "}
+              {sospechosos.map((f) => f.chofer).join(", ")}{" "}
+              {sospechosos.length === 1 ? "tiene" : "tienen"} muchos retornos con tiempo
+              interno de casi cero. Lo más probable no es que{" "}
+              {sospechosos.length === 1 ? "sea" : "sean"} más rápido
+              {sospechosos.length === 1 ? "" : "s"}, sino que el checklist de retorno se
+              carga justo antes de irse: ahí el indicador da ~0 solo, y en realidad no se
+              está midiendo nada. Conviene verificar cómo carga antes de tomarlo como
+              ejemplo.
+            </p>
+          )}
+          <p>
+            La columna <span className="font-medium text-slate-700">Sin dato</span> son
+            retornos de ese chofer que no se pudieron medir (sin fichaje, fuera de rango o
+            fuera del reloj). Un número alto ahí relativiza el resto de la fila.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
   const [semanaSel, setSemanaSel] = useState<string>(TODAS_LAS_SEMANAS)

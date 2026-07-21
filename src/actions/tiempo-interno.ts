@@ -99,6 +99,15 @@ const MESES = [
 export async function getTiKpis(filters?: {
   fechaDesde?: string
   fechaHasta?: string
+  /**
+   * Piso de minutos para que un retorno cuente. Criterio de la operación: bajar
+   * del camión, entregar la documentación y fichar no se hace en menos de 10
+   * minutos, así que un TI por debajo de eso no es velocidad — es el checklist
+   * de retorno cargado justo antes de irse (ahí el TI da ~0 por construcción).
+   * Los registros excluidos NO se borran: quedan listados con motivo
+   * `bajo_umbral` para poder auditar a quién y cuántas veces le pasa.
+   */
+  minTiMinutos?: number
 }): Promise<{ data: TiKpis } | { error: string }> {
   try {
     await requireAuth()
@@ -186,7 +195,8 @@ export async function getTiKpis(filters?: {
     const registros: TiRegistro[] = []
     const tis: number[] = []
     const sinFichajeSet = new Set<string>()
-    let sinBio = 0, excluidos = 0, noFicha = 0
+    let sinBio = 0, excluidos = 0, noFicha = 0, bajoUmbral = 0
+    const minTi = filters?.minTiMinutos ?? 0
     for (const r of retornos) {
       const emp = resolveLegajo(r.chofer)
       const base = { fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora }
@@ -216,6 +226,11 @@ export async function getTiKpis(filters?: {
       if (ti > TI_OUTLIER_MINUTOS) {
         excluidos++
         registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: "outlier" })
+        continue
+      }
+      if (minTi > 0 && ti < minTi) {
+        bajoUmbral++
+        registros.push({ ...base, legajo: emp.legajo, hora_salida: salidaIso, ti_minutos: ti, motivo_sin_dato: "bajo_umbral" })
         continue
       }
       tis.push(ti)
@@ -275,6 +290,7 @@ export async function getTiKpis(filters?: {
         totalRetornos: retornos.length,
         conTi, sinBiometrico: sinBio, excluidos,
         noFicha, choferesSinFichaje: [...sinFichajeSet].sort(),
+        minTiMinutos: minTi, bajoUmbral,
         promedioMinutos, mediana, dentroMeta, pctDentroMeta,
         metaMinutos: TI_META_MINUTOS, pctMetaMinimo: PCT_META_MINIMO,
         semanal, mensual, registros,

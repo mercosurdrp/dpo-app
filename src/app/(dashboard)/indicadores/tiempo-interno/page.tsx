@@ -3,9 +3,22 @@ import { TiempoInternoClient } from "./tiempo-interno-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
-export default async function TiempoInternoPage() {
+// El umbral va por URL y no por estado del cliente: así el server recalcula
+// KPIs, series semanales/mensuales y resumen por chofer con el MISMO código, en
+// vez de duplicar la agregación en el navegador y arriesgar que las dos versiones
+// se separen con el tiempo.
+const MIN_TI_OPERATIVO = 10
+
+export default async function TiempoInternoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ min?: string }>
+}) {
+  const sp = await searchParams
+  const minTiMinutos = sp.min === String(MIN_TI_OPERATIVO) ? MIN_TI_OPERATIVO : 0
+
   const [kpisRes, planesRes] = await Promise.all([
-    getTiKpis(),
+    getTiKpis({ minTiMinutos }),
     getTiPlanesResumen(),
   ])
 
