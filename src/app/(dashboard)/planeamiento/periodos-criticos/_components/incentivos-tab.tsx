@@ -49,6 +49,16 @@ function urlExterna(link: string): string {
 const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const AMBITOS = ["Choferes", "Ayudantes", "Warehouse"] as const
 
+/** KPI del programa: habilitante no puntúa pero sin cumplirlo no se cobra. */
+type KpiIncentivo = {
+  id: string
+  ambito: string
+  nombre: string
+  tipo: "habilitante" | "puntaje"
+  meta: string
+  fuente: string
+}
+
 type Programa = {
   nombre: string; periodo: string; descripcion: string
   archivo_url: string | null; archivo_nombre: string | null
@@ -80,6 +90,7 @@ const COLOR_PUESTO: Record<number, string> = {
 
 export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
   const [prog, setProg] = useState<Programa | null>(null)
+  const [kpis, setKpis] = useState<KpiIncentivo[]>([])
   const [registros, setRegistros] = useState<Registro[]>([])
   const [anio, setAnio] = useState(anioActivo)
   const [editor, setEditor] = useState<Registro | "nuevo" | null>(null)
@@ -91,6 +102,7 @@ export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
         fetch(`${API}/registro?anio=${anio}`).then((x) => x.json()),
       ])
       if (p.programa) setProg(p.programa)
+      if (p.kpis) setKpis(p.kpis)
       if (r.registros) setRegistros(r.registros)
     } catch { /* noop */ }
   }, [anio])
@@ -124,6 +136,52 @@ export function IncentivosTab({ anioActivo }: { anioActivo: number }) {
   return (
     <div className="space-y-4">
       <ProgramaCard prog={prog} onSaved={(p) => setProg(p)} />
+
+      {/* KPIs del programa — R3.4.4 pide demostrar a qué indicadores está
+          conectado el incentivo. Habilitante y puntaje se muestran separados
+          porque no se juegan igual: el habilitante es un piso, no una carrera. */}
+      {kpis.length > 0 && (
+        <Card className="border-l-4 border-l-indigo-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">KPIs del programa</CardTitle>
+            <p className="text-xs text-slate-500">
+              Los <b>habilitantes</b> no suman puntos, pero sin cumplirlos no se cobra.
+              Los de <b>puntaje</b> son los que compiten.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {(["habilitante", "puntaje"] as const).map((tipo) => {
+              const delTipo = kpis.filter((k) => k.tipo === tipo)
+              if (delTipo.length === 0) return null
+              return (
+                <div key={tipo} className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {tipo === "habilitante" ? "Habilitantes" : "Compiten"}
+                  </p>
+                  {delTipo.map((k) => (
+                    <div
+                      key={k.id}
+                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border bg-white p-2 text-sm"
+                    >
+                      <Badge variant="outline" className="text-[10px] font-normal">
+                        {k.ambito}
+                      </Badge>
+                      <span className="font-medium text-slate-800">{k.nombre}</span>
+                      <span className="text-slate-500">·</span>
+                      <span className="font-semibold text-indigo-700">{k.meta}</span>
+                      {k.fuente && (
+                        <span className="w-full text-xs text-slate-500">
+                          Fuente: {k.fuente}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 🏆 Premiación — galería de ganadores con foto (estilo PPT) */}
       <Card className="border-l-4 border-l-amber-500">

@@ -18,7 +18,10 @@ async function signed(supabase: Awaited<ReturnType<typeof createClient>>, path: 
   return data?.signedUrl ?? null
 }
 
-// GET → programa de incentivos (singleton) con URLs públicas resueltas
+// GET → programa de incentivos de temporada alta, con sus KPIs y las URLs
+// públicas resueltas. Los KPIs son filas (pc_incentivos_kpis) y no prosa dentro
+// de `descripcion`: R3.4.4 pide demostrar a qué indicadores está conectado el
+// incentivo, con su meta.
 export async function GET() {
   const profile = await getProfile()
   if (!profile) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -26,12 +29,21 @@ export async function GET() {
   const supabase = await createClient()
   const { data, error } = await supabase.from("pc_incentivos_programa").select("*").eq("id", 1).single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Los KPIs son secundarios: si fallan, la ficha del programa se sigue viendo.
+  const { data: kpis } = await supabase
+    .from("pc_incentivos_kpis")
+    .select("*")
+    .eq("programa_id", data.id)
+    .order("orden", { ascending: true })
+
   return NextResponse.json({
     programa: {
       ...data,
       archivo_url: await signed(supabase, data.archivo_path),
       comunicado_url: await signed(supabase, data.comunicado_path),
     },
+    kpis: kpis ?? [],
   })
 }
 
