@@ -1,7 +1,6 @@
 "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -154,10 +153,9 @@ export function OnTimeClient({ anio, onTime, vh, vhError }: Props) {
           <Card>
             <CardContent className="pt-6">
               <p className="mb-4 text-xs text-muted-foreground">
-                Los meses anteriores a julio 2026 están <strong>sin medir</strong>:
-                el VRL arranca el 18/07/2026 y el VRC en julio, así que darían
-                100% por falta de dato y no por buena performance. Quedan fuera
-                del YTD.
+                La serie arranca en <strong>julio 2026</strong>: el VRL empieza
+                el 18/07 y el VRC en julio. Los meses anteriores no se muestran
+                porque darían 100% por falta de dato y no por buena performance.
               </p>
               <div className="overflow-x-auto">
                 <Table>
@@ -172,18 +170,10 @@ export function OnTimeClient({ anio, onTime, vh, vhError }: Props) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(onTime?.meses ?? []).map((m) => (
-                      <TableRow
-                        key={m.mes}
-                        className={m.medido ? undefined : "opacity-50"}
-                      >
+                    {medidos.map((m) => (
+                      <TableRow key={m.mes}>
                         <TableCell className="font-medium">
                           {MESES[m.mes - 1]}
-                          {!m.medido && (
-                            <Badge variant="secondary" className="ml-2">
-                              sin medir
-                            </Badge>
-                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {fmtHl(m.hlSolicitados)}
@@ -203,14 +193,14 @@ export function OnTimeClient({ anio, onTime, vh, vhError }: Props) {
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium ${
-                            !m.medido || m.onTimePct === null
+                            m.onTimePct === null
                               ? "text-slate-400"
                               : m.onTimePct >= meta
                                 ? "text-green-600"
                                 : "text-red-600"
                           }`}
                         >
-                          {!m.medido || m.onTimePct === null
+                          {m.onTimePct === null
                             ? "—"
                             : `${m.onTimePct.toFixed(2)}%`}
                         </TableCell>
