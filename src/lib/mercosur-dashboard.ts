@@ -599,15 +599,24 @@ export interface CoberturaVhPromotor {
   promotor: string
   username: string | null
   padron: number
-  relevados: number
-  pendientes: number
+  /** PDV con ventana horaria conocida (relevamiento más reciente, cualquier ciclo). */
+  con_vh: number
+  sin_vh: number
   cobertura_pct: number
-  /** Relevamientos confirmados SIN tocar un solo campo del horario anterior. */
+  /** Relevados en el ciclo EN CURSO (avance del trimestre). */
+  ciclo_relevados: number
+  /** Confirmados en el ciclo en curso SIN tocar un solo campo del anterior. */
   sin_cambios: number
   ultima_carga: string | null
 }
 
+export interface CicloRelevado {
+  ciclo: string
+  relevados: number
+}
+
 export interface CoberturaVh {
+  /** Ciclo EN CURSO (el que define el padrón). */
   ciclo: string
   desde: string
   hasta: string
@@ -615,11 +624,26 @@ export interface CoberturaVh {
   /** Momento en que se congeló el padrón del ciclo. */
   padron_at: string | null
   padron: number
-  relevados: number
-  pendientes: number
+
+  // ── Requisito R4.4.3: >80% de los clientes con ventana horaria DEFINIDA.
+  // Cuenta el relevamiento MÁS RECIENTE de cada PDV, sea del ciclo que sea: una
+  // ventana relevada el trimestre pasado sigue siendo la ventana vigente hasta
+  // que se la vuelva a relevar.
+  /** PDV del padrón con ventana horaria conocida. */
+  con_vh: number
+  sin_vh: number
   cobertura_pct: number
   meta_pct: number
   cumple_meta: boolean
+
+  // ── Requisito R4.4.2: la rutina TRIMESTRAL. Avance del ciclo en curso.
+  ciclo_relevados: number
+  ciclo_pendientes: number
+  ciclo_pct: number
+
+  /** Relevamientos por ciclo (histórico de la rutina trimestral). */
+  por_ciclo: CicloRelevado[]
+
   promotores: CoberturaVhPromotor[]
 }
 
@@ -658,24 +682,38 @@ export async function consultarCoberturaVentanasHorarias(
     const c = cicloRes.rows[0]
     if (!c) return null
 
-    // Padrón congelado LEFT JOIN relevamientos: los PDV sin relevar cuentan.
+    // Padrón congelado LEFT JOIN:
+    //  - `ult`: el relevamiento MÁS RECIENTE del PDV, de cualquier ciclo → es la
+    //    ventana horaria vigente (R4.4.3). Una VH relevada en Q2 sigue siendo la
+    //    vigente hasta que se la vuelva a relevar.
+    //  - `act`: el relevamiento del ciclo EN CURSO → avance de la rutina (R4.4.2).
+    // Los PDV sin relevar nunca desaparecen: el denominador es el padrón.
     const res = await client.query<{
       promotor: string | null
       username: string | null
       padron: string
-      relevados: string
+      con_vh: string
+      ciclo_relevados: string
       sin_cambios: string
       ultima_carga: string | null
     }>(
       `SELECT p.promotor,
-              p.promotor_username                                    AS username,
-              count(*)                                               AS padron,
-              count(r.id_cliente)                                    AS relevados,
-              count(*) FILTER (WHERE r.confirmado_sin_cambios)       AS sin_cambios,
-              to_char(max(r.fecha_carga), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS ultima_carga
+              p.promotor_username                                  AS username,
+              count(*)                                             AS padron,
+              count(ult.id_cliente)                                AS con_vh,
+              count(act.id_cliente)                                AS ciclo_relevados,
+              count(*) FILTER (WHERE act.confirmado_sin_cambios)   AS sin_cambios,
+              to_char(max(ult.fecha_carga), 'YYYY-MM-DD"T"HH24:MI:SSOF') AS ultima_carga
          FROM horarios_padron p
-         LEFT JOIN horarios_relevamientos r
-                ON r.ciclo = p.ciclo AND r.id_cliente = p.id_cliente
+         LEFT JOIN LATERAL (
+           SELECT r.id_cliente, r.fecha_carga
+             FROM horarios_relevamientos r
+            WHERE r.id_cliente = p.id_cliente AND r.horario IS NOT NULL
+            ORDER BY r.fecha_carga DESC
+            LIMIT 1
+         ) ult ON true
+         LEFT JOIN horarios_relevamientos act
+                ON act.ciclo = p.ciclo AND act.id_cliente = p.id_cliente
         WHERE p.ciclo = $1
         GROUP BY p.promotor, p.promotor_username
         ORDER BY p.promotor`,
@@ -684,22 +722,43 @@ export async function consultarCoberturaVentanasHorarias(
 
     const promotores: CoberturaVhPromotor[] = res.rows.map((r) => {
       const padron = Number(r.padron) || 0
-      const relevados = Number(r.relevados) || 0
+      const con_vh = Number(r.con_vh) || 0
+      const ciclo_relevados = Number(r.ciclo_relevados) || 0
       return {
         promotor: r.promotor ?? "(sin promotor)",
         username: r.username,
         padron,
-        relevados,
-        pendientes: padron - relevados,
-        cobertura_pct: padron > 0 ? (relevados / padron) * 100 : 0,
+        con_vh,
+        sin_vh: padron - con_vh,
+        cobertura_pct: padron > 0 ? (con_vh / padron) * 100 : 0,
+        ciclo_relevados,
         sin_cambios: Number(r.sin_cambios) || 0,
         ultima_carga: r.ultima_carga,
       }
     })
 
+    // Histórico de la rutina trimestral, acotado al padrón vigente para que sea
+    // comparable con la cobertura (un relevamiento de un PDV que ya no está en
+    // el padrón no cuenta para el requisito).
+    const ciclosRes = await client.query<{ ciclo: string; relevados: string }>(
+      `SELECT r.ciclo, count(DISTINCT r.id_cliente) AS relevados
+         FROM horarios_relevamientos r
+        WHERE r.horario IS NOT NULL
+          AND EXISTS (SELECT 1 FROM horarios_padron p
+                       WHERE p.ciclo = $1 AND p.id_cliente = r.id_cliente)
+        GROUP BY r.ciclo
+        ORDER BY r.ciclo`,
+      [c.codigo],
+    )
+    const por_ciclo: CicloRelevado[] = ciclosRes.rows.map((r) => ({
+      ciclo: r.ciclo,
+      relevados: Number(r.relevados) || 0,
+    }))
+
     const padron = promotores.reduce((s, p) => s + p.padron, 0)
-    const relevados = promotores.reduce((s, p) => s + p.relevados, 0)
-    const cobertura_pct = padron > 0 ? (relevados / padron) * 100 : 0
+    const con_vh = promotores.reduce((s, p) => s + p.con_vh, 0)
+    const ciclo_relevados = promotores.reduce((s, p) => s + p.ciclo_relevados, 0)
+    const cobertura_pct = padron > 0 ? (con_vh / padron) * 100 : 0
 
     return {
       ciclo: c.codigo,
@@ -708,11 +767,15 @@ export async function consultarCoberturaVentanasHorarias(
       estado: c.estado,
       padron_at: c.padron_at,
       padron,
-      relevados,
-      pendientes: padron - relevados,
+      con_vh,
+      sin_vh: padron - con_vh,
       cobertura_pct,
       meta_pct: META_COBERTURA_VH,
       cumple_meta: cobertura_pct >= META_COBERTURA_VH,
+      ciclo_relevados,
+      ciclo_pendientes: padron - ciclo_relevados,
+      ciclo_pct: padron > 0 ? (ciclo_relevados / padron) * 100 : 0,
+      por_ciclo,
       promotores,
     }
   } finally {

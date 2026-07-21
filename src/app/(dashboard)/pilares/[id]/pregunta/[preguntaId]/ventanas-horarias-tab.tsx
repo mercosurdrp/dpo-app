@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { AlertTriangle, Clock, CalendarRange } from "lucide-react"
+import { AlertTriangle, Clock, CalendarRange, CheckCircle2 } from "lucide-react"
 import type { CoberturaVh } from "@/lib/mercosur-dashboard"
 
 interface Props {
@@ -98,36 +98,54 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">
-                Cobertura de ventanas horarias
+                PDV con ventana horaria definida
               </p>
               <p className={`text-2xl font-bold ${pctColor}`}>
                 {pct.toFixed(1)}%
                 <span className="text-base font-normal text-muted-foreground">
                   {" "}
-                  / {meta}% (R4.4.3)
+                  / &gt;{meta}% (R4.4.3)
                 </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {cobertura.con_vh.toLocaleString("es-AR")} de{" "}
+                {cobertura.padron.toLocaleString("es-AR")} del padrón
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">PDV relevados</p>
+              <p className="text-xs text-muted-foreground">Sin ventana horaria</p>
               <p className="text-2xl font-bold text-slate-900">
-                {cobertura.relevados.toLocaleString("es-AR")}
+                {cobertura.sin_vh.toLocaleString("es-AR")}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Avance del ciclo {cobertura.ciclo} (R4.4.2)
+              </p>
+              <p className="text-2xl font-bold text-slate-900">
+                {cobertura.ciclo_relevados.toLocaleString("es-AR")}
                 <span className="text-base font-normal text-muted-foreground">
                   /{cobertura.padron.toLocaleString("es-AR")}
                 </span>
               </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Pendientes</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {cobertura.pendientes.toLocaleString("es-AR")}
+              <p className="text-xs text-muted-foreground">
+                {cobertura.ciclo_pct.toFixed(1)}% del trimestre en curso
               </p>
             </div>
           </div>
 
           <Progress value={Math.min(pct, 100)} className="mt-4" />
 
-          {!cumple_meta && (
+          {cumple_meta ? (
+            <div className="mt-4 flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+              <p className="text-sm text-green-900">
+                Se cumple el R4.4.3: más del {meta}% de los clientes tiene
+                ventana horaria definida. La ventana vigente de cada PDV es la
+                del último relevamiento, aunque sea de un trimestre anterior.
+              </p>
+            </div>
+          ) : (
             <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <p className="text-sm text-amber-900">
@@ -137,12 +155,31 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
                   {Math.max(
                     0,
                     Math.ceil((meta / 100) * cobertura.padron) -
-                      cobertura.relevados,
+                      cobertura.con_vh,
                   ).toLocaleString("es-AR")}{" "}
                   PDV
                 </strong>{" "}
                 para llegar al umbral.
               </p>
+            </div>
+          )}
+
+          {/* Rutina trimestral (R4.4.2): un ciclo por trimestre. */}
+          {cobertura.por_ciclo.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Rutina trimestral — PDV del padrón relevados en cada ciclo
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {cobertura.por_ciclo.map((c) => (
+                  <Badge
+                    key={c.ciclo}
+                    variant={c.ciclo === cobertura.ciclo ? "default" : "secondary"}
+                  >
+                    {c.ciclo}: {c.relevados.toLocaleString("es-AR")}
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
         </CardContent>
@@ -155,8 +192,10 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
           <p className="mb-4 text-xs text-muted-foreground">
             El denominador es el padrón <strong>congelado</strong> al abrir el
             ciclo, no la cartera viva: dejar de visitar un PDV no lo saca de la
-            cuenta. &quot;Sin cambios&quot; son los que se confirmaron con el
-            horario anterior sin tocar un solo campo.
+            cuenta. <strong>Con VH</strong> es el último relevamiento de cada
+            PDV, de cualquier trimestre; <strong>{cobertura.ciclo}</strong> es lo
+            cargado en el ciclo en curso. &quot;Sin cambios&quot; son los
+            confirmados con el horario anterior sin tocar un solo campo.
           </p>
           <div className="overflow-x-auto">
             <Table>
@@ -164,9 +203,10 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
                 <TableRow>
                   <TableHead>Promotor</TableHead>
                   <TableHead className="text-right">Padrón</TableHead>
-                  <TableHead className="text-right">Relevados</TableHead>
-                  <TableHead className="text-right">Pendientes</TableHead>
+                  <TableHead className="text-right">Con VH</TableHead>
+                  <TableHead className="text-right">Sin VH</TableHead>
                   <TableHead className="text-right">Cobertura</TableHead>
+                  <TableHead className="text-right">{cobertura.ciclo}</TableHead>
                   <TableHead className="text-right">Sin cambios</TableHead>
                   <TableHead className="text-right">Última carga</TableHead>
                 </TableRow>
@@ -176,8 +216,8 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
                   <TableRow key={p.username ?? p.promotor}>
                     <TableCell className="font-medium">{p.promotor}</TableCell>
                     <TableCell className="text-right">{p.padron}</TableCell>
-                    <TableCell className="text-right">{p.relevados}</TableCell>
-                    <TableCell className="text-right">{p.pendientes}</TableCell>
+                    <TableCell className="text-right">{p.con_vh}</TableCell>
+                    <TableCell className="text-right">{p.sin_vh}</TableCell>
                     <TableCell
                       className={`text-right font-medium ${
                         p.cobertura_pct >= meta
@@ -188,6 +228,9 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
                       }`}
                     >
                       {p.cobertura_pct.toFixed(1)}%
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {p.ciclo_relevados > 0 ? p.ciclo_relevados : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {p.sin_cambios > 0 ? p.sin_cambios : "—"}
