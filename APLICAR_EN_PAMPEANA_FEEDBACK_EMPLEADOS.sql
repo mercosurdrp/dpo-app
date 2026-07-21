@@ -124,7 +124,7 @@ CREATE POLICY "feedback_empleados_storage_delete"
   ON storage.objects FOR DELETE TO authenticated
   USING (
     bucket_id = 'feedback-empleados'
-    AND EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    AND EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid()) AND role = 'admin')
   );
 
 -- =============================================
@@ -209,26 +209,26 @@ ALTER TABLE feedback_empleados_adjuntos ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "feedback_empleados_read" ON feedback_empleados;
 CREATE POLICY "feedback_empleados_read" ON feedback_empleados FOR SELECT TO authenticated
   USING (
-    creado_por = auth.uid()
-    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()
+    creado_por = (select auth.uid())
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid())
                AND role IN ('admin', 'supervisor', 'admin_rrhh'))
   );
 
 DROP POLICY IF EXISTS "feedback_empleados_insert" ON feedback_empleados;
 CREATE POLICY "feedback_empleados_insert" ON feedback_empleados FOR INSERT TO authenticated
-  WITH CHECK (creado_por = auth.uid());
+  WITH CHECK (creado_por = (select auth.uid()));
 
 -- Update: sólo gestión. El empleado no edita lo que ya mandó (trazabilidad).
 DROP POLICY IF EXISTS "feedback_empleados_update" ON feedback_empleados;
 CREATE POLICY "feedback_empleados_update" ON feedback_empleados FOR UPDATE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()
+    EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid())
             AND role IN ('admin', 'supervisor', 'admin_rrhh'))
   );
 
 DROP POLICY IF EXISTS "feedback_empleados_delete" ON feedback_empleados;
 CREATE POLICY "feedback_empleados_delete" ON feedback_empleados FOR DELETE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid()) AND role = 'admin'));
 
 DROP POLICY IF EXISTS "feedback_empleados_adjuntos_read" ON feedback_empleados_adjuntos;
 CREATE POLICY "feedback_empleados_adjuntos_read"
@@ -238,8 +238,8 @@ CREATE POLICY "feedback_empleados_adjuntos_read"
       SELECT 1 FROM feedback_empleados f
       WHERE f.id = feedback_empleados_adjuntos.feedback_id
         AND (
-          f.creado_por = auth.uid()
-          OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()
+          f.creado_por = (select auth.uid())
+          OR EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid())
                      AND role IN ('admin', 'supervisor', 'admin_rrhh'))
         )
     )
@@ -252,15 +252,15 @@ CREATE POLICY "feedback_empleados_adjuntos_insert"
     EXISTS (
       SELECT 1 FROM feedback_empleados f
       WHERE f.id = feedback_empleados_adjuntos.feedback_id
-        AND f.creado_por = auth.uid()
+        AND f.creado_por = (select auth.uid())
     )
-    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid()) AND role = 'admin')
   );
 
 DROP POLICY IF EXISTS "feedback_empleados_adjuntos_delete" ON feedback_empleados_adjuntos;
 CREATE POLICY "feedback_empleados_adjuntos_delete"
   ON feedback_empleados_adjuntos FOR DELETE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = (select auth.uid()) AND role = 'admin'));
 
 GRANT ALL ON feedback_empleados TO anon, authenticated, service_role;
 GRANT ALL ON feedback_empleados_adjuntos TO anon, authenticated, service_role;
