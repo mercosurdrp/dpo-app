@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Bell, Check, X } from "lucide-react"
 import { toast } from "sonner"
@@ -13,7 +13,15 @@ import {
 import type { Notificacion } from "@/types/database"
 import { cn } from "@/lib/utils"
 
-const POLL_MS = 60_000
+// El polling de fondo es la última red: el refresco que importa ocurre al
+// volver a la pestaña y al abrir la campanita. A 60s, cada pestaña abierta
+// (incluidas las olvidadas de un día para el otro) pegaba 4 consultas por
+// minuto contra la DB —notificaciones + sesión + usuario + perfil— y sumaba
+// ~25% de la carga total del proyecto.
+const POLL_MS = 3_600_000
+
+// Evita ráfagas cuando se alterna de pestaña o se abre y cierra el panel.
+const MIN_REFRESH_MS = 30_000
 
 function formatRelative(iso: string): string {
   const d = new Date(iso)
@@ -43,23 +51,41 @@ export function NotificacionesBell({ collapsed = false }: Props) {
 
   const noLeidas = items.filter((n) => !n.leida).length
 
-  // Initial + polling. Sincroniza el componente con el sistema externo (DB).
-  useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      const res = await getMisNotificaciones()
-      if (cancelled) return
-      if ("data" in res) {
-        setItems(res.data)
-      }
-    }
-    run()
-    const id = setInterval(run, POLL_MS)
-    return () => {
-      cancelled = true
-      clearInterval(id)
+  const cancelledRef = useRef(false)
+  const ultimoFetchRef = useRef(0)
+
+  const refrescar = useCallback(async (force = false) => {
+    if (!force && Date.now() - ultimoFetchRef.current < MIN_REFRESH_MS) return
+    ultimoFetchRef.current = Date.now()
+    const res = await getMisNotificaciones()
+    if (cancelledRef.current) return
+    if ("data" in res) {
+      setItems(res.data)
     }
   }, [])
+
+  // Initial + polling. Sincroniza el componente con el sistema externo (DB).
+  // Con la pestaña oculta no se consulta: una pestaña en segundo plano no
+  // muestra el badge, así que refrescarlo no le sirve a nadie.
+  useEffect(() => {
+    cancelledRef.current = false
+    void refrescar(true)
+
+    const id = setInterval(() => {
+      if (!document.hidden) void refrescar()
+    }, POLL_MS)
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) void refrescar()
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+
+    return () => {
+      cancelledRef.current = true
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [refrescar])
 
   // Click fuera cierra
   useEffect(() => {
@@ -124,7 +150,10 @@ export function NotificacionesBell({ collapsed = false }: Props) {
     <div className="relative">
       <button
         ref={btnRef}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!open) void refrescar()
+          setOpen((v) => !v)
+        }}
         className={cn(
           "relative flex w-full items-center gap-3 px-4 py-3 text-sm transition-colors",
           "text-slate-400 hover:bg-white/5 hover:text-white"
