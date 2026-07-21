@@ -1345,6 +1345,12 @@ export interface MantenimientoPlanTarea {
   frecuencia_horas: number | null
   activo: boolean
   orden: number
+  /**
+   * Términos que, si aparecen en las tareas libres u observaciones de una OT
+   * completada, la dan por realizada sin necesidad de tildarla. En minúsculas y
+   * sin acentos. Vacío = la tarea no se autodetecta.
+   */
+  palabras_clave: string[]
   created_by: string | null
   created_at: string
   updated_at: string
@@ -1378,6 +1384,8 @@ export interface MantenimientoRealizadoTarea {
   tarea_id: string | null
   descripcion: string | null
   costo: number | null
+  /** true = la detectó el texto de la OT, no la tildó el usuario. */
+  auto: boolean
   created_at: string
 }
 

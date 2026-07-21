@@ -2520,6 +2520,14 @@ function DetalleOrdenDialog({
                           {t.tarea_id
                             ? tareasById.get(t.tarea_id)?.nombre ?? "Tarea"
                             : t.descripcion || "Tarea"}
+                          {t.auto && (
+                            <span
+                              title="Detectada por el texto de la OT: reinicia el contador de esta tarea"
+                              className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+                            >
+                              automática
+                            </span>
+                          )}
                         </span>
                         {t.costo != null && (
                           <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
@@ -2925,7 +2933,14 @@ function TareaPlantillaDialog({
     tarea?.frecuencia_horas != null ? String(tarea.frecuencia_horas) : ""
   )
   const [activo, setActivo] = useState(tarea?.activo ?? true)
+  const [palabras, setPalabras] = useState((tarea?.palabras_clave ?? []).join(", "))
   const [saving, setSaving] = useState(false)
+
+  // "correa, bomba de agua" -> ["correa", "bomba de agua"]
+  const palabrasLista = palabras
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p !== "")
 
   const submit = async () => {
     if (!nombre.trim()) {
@@ -2948,6 +2963,7 @@ function TareaPlantillaDialog({
           frecuencia_meses: meses,
           frecuencia_horas: horas,
           activo,
+          palabras_clave: palabrasLista,
         })
       : await createPlanTarea({
           codigo: nombre,
@@ -2958,6 +2974,7 @@ function TareaPlantillaDialog({
           frecuencia_meses: meses,
           frecuencia_horas: horas,
           orden: 500,
+          palabras_clave: palabrasLista,
         })
     setSaving(false)
     if ("error" in res) {
@@ -3044,6 +3061,21 @@ function TareaPlantillaDialog({
                 onChange={(e) => setFrecHoras(e.target.value)}
               />
             </div>
+          </div>
+          <div>
+            <Label>Palabras que la detectan sola</Label>
+            <Input
+              value={palabras}
+              onChange={(e) => setPalabras(e.target.value)}
+              placeholder="correa, bomba de agua, valvula"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              Separadas por coma. Si una OT completada las menciona en las tareas libres o
+              en observaciones, la tarea queda registrada sola al kilometraje de esa OT —
+              no hace falta tildarla. Se ignoran acentos y mayúsculas, y las frases que
+              niegan (&ldquo;no se cambió&rdquo;, &ldquo;queda pendiente&rdquo;) no cuentan.
+              Dejalo vacío para que la tarea no se autodetecte.
+            </p>
           </div>
           {tarea && (
             <label className="flex items-center gap-2 text-sm">
