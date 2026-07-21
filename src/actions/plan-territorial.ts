@@ -3,11 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import {
-  getCostoPorPdv,
-  getKmCiudades,
-  type CostoPorPdvRow,
-} from "./costo-pdv"
+import { getKmCiudades } from "./costo-pdv"
 
 const PATH = "/planeamiento/plan-territorial"
 const ROLES_EDITORES = ["admin", "supervisor", "admin_rrhh"]
@@ -74,65 +70,6 @@ export interface Territorio {
   }
 }
 
-/** Acumulador mutable por ciudad mientras recorremos los meses. */
-interface Acc {
-  ciudad: string
-  pdv: Set<number>
-  hl: number
-  bultos: number
-  venta_neta: number
-  costo_total: number
-  costo_distancia: number
-  entregas: number
-  bultos_rechazados: number
-  serie: Map<number, CiudadMes>
-}
-
-function nuevoAcc(ciudad: string): Acc {
-  return {
-    ciudad,
-    pdv: new Set(),
-    hl: 0,
-    bultos: 0,
-    venta_neta: 0,
-    costo_total: 0,
-    costo_distancia: 0,
-    entregas: 0,
-    bultos_rechazados: 0,
-    serie: new Map(),
-  }
-}
-
-function acumular(acc: Acc, f: CostoPorPdvRow, anio: number, mes: number) {
-  acc.pdv.add(f.id_cliente)
-  acc.hl += f.hl
-  acc.bultos += f.bultos
-  acc.venta_neta += f.venta_neta
-  acc.costo_total += f.costo_total
-  acc.costo_distancia += f.costo_distancia
-  acc.entregas += f.comprobantes
-  acc.bultos_rechazados += f.bultos_rechazados
-
-  const m = acc.serie.get(mes) ?? {
-    anio,
-    mes,
-    hl: 0,
-    bultos: 0,
-    venta_neta: 0,
-    costo_total: 0,
-    costo_x_hl: 0,
-    entregas: 0,
-    pdv: 0,
-  }
-  m.hl += f.hl
-  m.bultos += f.bultos
-  m.venta_neta += f.venta_neta
-  m.costo_total += f.costo_total
-  m.entregas += f.comprobantes
-  m.pdv += 1
-  acc.serie.set(mes, m)
-}
-
 /**
  * Diagnóstico por ciudad de todos los meses con costo cargado del año.
  *
@@ -164,51 +101,61 @@ export async function getTerritorio(anio: number): Promise<Result<Territorio>> {
       }
     }
 
-    const [resultados, kmCiudades] = await Promise.all([
-      Promise.all(meses.map((m) => getCostoPorPdv(anio, m))),
+    // Una sola RPC que agrega por ciudad del lado del servidor.
+    //
+    // Antes esto era `Promise.all(meses.map(getCostoPorPdv))` con un
+    // `if ("error" in res) return` que descartaba en silencio cualquier mes caído por
+    // statement_timeout (8s para `authenticated`). Con varios meses cargados las RPC
+    // salían juntas, competían por la CPU y algunas morían: los costos por ciudad
+    // quedaban cortos y una línea base de plan podía nacer contra un total
+    // incompleto, sin ninguna señal. Ahora un fallo se propaga como error.
+    const [{ data: terr, error: eTerr }, kmCiudades] = await Promise.all([
+      supabase.rpc("get_territorio_json", { p_anio: anio }),
       getKmCiudades(),
     ])
+    if (eTerr) return { error: eTerr.message }
     const kmPorCiudad = new Map(kmCiudades.map((k) => [k.ciudad, k.km]))
 
-    const porCiudad = new Map<string, Acc>()
-    meses.forEach((mes, i) => {
-      const res = resultados[i]
-      if ("error" in res) return
-      for (const f of res.data) {
-        const ciudad = f.ciudad || "(sin ciudad)"
-        let acc = porCiudad.get(ciudad)
-        if (!acc) {
-          acc = nuevoAcc(ciudad)
-          porCiudad.set(ciudad, acc)
-        }
-        acumular(acc, f, anio, mes)
-      }
-    })
+    const payload = (terr ?? {}) as { ciudades?: unknown }
+    const crudas = Array.isArray(payload.ciudades)
+      ? (payload.ciudades as Record<string, unknown>[])
+      : []
 
-    const ciudades: CiudadResumen[] = [...porCiudad.values()]
-      .map((a) => {
-        const serie = [...a.serie.values()]
-          .sort((x, y) => x.mes - y.mes)
-          .map((m) => ({ ...m, costo_x_hl: m.hl ? m.costo_total / m.hl : 0 }))
-        const pdv = a.pdv.size
+    const ciudades: CiudadResumen[] = crudas
+      .map((c) => {
+        const hl = Number(c.hl ?? 0)
+        const bultos = Number(c.bultos ?? 0)
+        const entregas = Number(c.entregas ?? 0)
+        const rech = Number(c.bultos_rechazados ?? 0)
+        const pdv = Number(c.pdv ?? 0)
+        const serie = (Array.isArray(c.serie) ? (c.serie as Record<string, unknown>[]) : []).map(
+          (m) => ({
+            anio: Number(m.anio),
+            mes: Number(m.mes),
+            hl: Number(m.hl ?? 0),
+            bultos: Number(m.bultos ?? 0),
+            venta_neta: Number(m.venta_neta ?? 0),
+            costo_total: Number(m.costo_total ?? 0),
+            costo_x_hl: Number(m.costo_x_hl ?? 0),
+            entregas: Number(m.entregas ?? 0),
+            pdv: Number(m.pdv ?? 0),
+          }),
+        )
         return {
-          ciudad: a.ciudad,
-          km: kmPorCiudad.get(a.ciudad) ?? null,
+          ciudad: String(c.ciudad ?? "(sin ciudad)"),
+          km: kmPorCiudad.get(String(c.ciudad ?? "")) ?? null,
           pdv,
-          hl: a.hl,
-          bultos: a.bultos,
-          venta_neta: a.venta_neta,
-          costo_total: a.costo_total,
-          costo_distancia: a.costo_distancia,
-          costo_x_hl: a.hl ? a.costo_total / a.hl : 0,
-          entregas: a.entregas,
-          hl_por_entrega: a.entregas ? a.hl / a.entregas : 0,
-          bultos_por_entrega: a.entregas ? a.bultos / a.entregas : 0,
-          entregas_por_pdv: pdv ? a.entregas / pdv : 0,
-          pct_rechazo:
-            a.bultos + a.bultos_rechazados
-              ? (100 * a.bultos_rechazados) / (a.bultos + a.bultos_rechazados)
-              : 0,
+          hl,
+          bultos,
+          venta_neta: Number(c.venta_neta ?? 0),
+          costo_total: Number(c.costo_total ?? 0),
+          costo_distancia: Number(c.costo_distancia ?? 0),
+          costo_x_hl: Number(c.costo_x_hl ?? 0),
+          entregas,
+          hl_por_entrega: entregas ? hl / entregas : 0,
+          bultos_por_entrega: entregas ? bultos / entregas : 0,
+          entregas_por_pdv: pdv ? entregas / pdv : 0,
+          pct_rechazo: bultos + rech ? (100 * rech) / (bultos + rech) : 0,
           serie,
         }
       })
