@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { AlertTriangle, Clock, CalendarRange, CheckCircle2 } from "lucide-react"
 import type { CoberturaVh } from "@/lib/mercosur-dashboard"
 
@@ -184,6 +185,125 @@ export function VentanasHorariasTab({ cobertura, error }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Apertura por ciudad de ruteo — misma agrupación que Priorización de
+          Entrega: las localidades que van en el mismo camión son una sola solapa. */}
+      {cobertura.ciudades.length > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="mb-1 font-medium text-slate-900">Por ciudad de ruteo</p>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Las mismas ciudades que usa Priorización de Entrega: cada solapa
+              agrupa las localidades que se reparten desde ahí. La asignación es
+              por <strong>ruta</strong>, no por partido.
+            </p>
+            <Tabs defaultValue={cobertura.ciudades[0].ciudad}>
+              <TabsList variant="line" className="w-full flex-wrap">
+                {cobertura.ciudades.map((cd) => (
+                  <TabsTrigger key={cd.ciudad} value={cd.ciudad}>
+                    {cd.ciudad}
+                    <span
+                      className={`ml-1 text-[10px] ${
+                        cd.cobertura_pct >= meta
+                          ? "text-green-600"
+                          : "text-amber-600"
+                      }`}
+                    >
+                      {cd.cobertura_pct.toFixed(0)}%
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {cobertura.ciudades.map((cd) => (
+                <TabsContent key={cd.ciudad} value={cd.ciudad}>
+                  <div className="mb-3 grid gap-4 sm:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Cobertura</p>
+                      <p
+                        className={`text-xl font-bold ${
+                          cd.cobertura_pct >= meta
+                            ? "text-green-600"
+                            : "text-amber-600"
+                        }`}
+                      >
+                        {cd.cobertura_pct.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Padrón</p>
+                      <p className="text-xl font-bold text-slate-900">
+                        {cd.padron.toLocaleString("es-AR")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Con VH</p>
+                      <p className="text-xl font-bold text-slate-900">
+                        {cd.con_vh.toLocaleString("es-AR")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Sin VH</p>
+                      <p className="text-xl font-bold text-slate-900">
+                        {cd.sin_vh.toLocaleString("es-AR")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Localidad</TableHead>
+                          <TableHead className="text-right">Padrón</TableHead>
+                          <TableHead className="text-right">Con VH</TableHead>
+                          <TableHead className="text-right">Sin VH</TableHead>
+                          <TableHead className="text-right">Cobertura</TableHead>
+                          <TableHead className="text-right">
+                            {cobertura.ciclo}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cd.localidades.map((l) => (
+                          <TableRow key={l.localidad}>
+                            <TableCell className="font-medium">
+                              {l.localidad}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {l.padron}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {l.con_vh}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {l.sin_vh}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-medium ${
+                                l.cobertura_pct >= meta
+                                  ? "text-green-600"
+                                  : l.cobertura_pct > 0
+                                    ? "text-amber-600"
+                                    : "text-red-600"
+                              }`}
+                            >
+                              {l.cobertura_pct.toFixed(1)}%
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {l.ciclo_relevados > 0 ? l.ciclo_relevados : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Avance por promotor */}
       <Card>

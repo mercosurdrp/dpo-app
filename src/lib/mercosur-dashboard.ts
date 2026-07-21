@@ -1,4 +1,5 @@
 import { Pool } from "pg"
+import { ciudadDeLocalidad, CIUDAD_OTRAS } from "@/lib/priorizacion/score"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conexión de SOLO LECTURA a la base del dashboard Mercosur (Railway/Postgres),
@@ -615,6 +616,28 @@ export interface CicloRelevado {
   relevados: number
 }
 
+/** Una localidad real ("pueblito") dentro de una ciudad de ruteo. */
+export interface CoberturaVhLocalidad {
+  localidad: string
+  padron: number
+  con_vh: number
+  sin_vh: number
+  cobertura_pct: number
+  ciclo_relevados: number
+}
+
+/** Ciudad de ruteo: la misma agrupación que usa Priorización de Entrega. */
+export interface CoberturaVhCiudad {
+  ciudad: string
+  padron: number
+  con_vh: number
+  sin_vh: number
+  cobertura_pct: number
+  ciclo_relevados: number
+  /** Las localidades que se reparten desde esta ciudad, de mayor a menor padrón. */
+  localidades: CoberturaVhLocalidad[]
+}
+
 export interface CoberturaVh {
   /** Ciclo EN CURSO (el que define el padrón). */
   ciclo: string
@@ -643,6 +666,9 @@ export interface CoberturaVh {
 
   /** Relevamientos por ciclo (histórico de la rutina trimestral). */
   por_ciclo: CicloRelevado[]
+
+  /** Apertura por ciudad de ruteo (las 5 de Priorización de Entrega + OTRAS). */
+  ciudades: CoberturaVhCiudad[]
 
   promotores: CoberturaVhPromotor[]
 }
@@ -755,6 +781,80 @@ export async function consultarCoberturaVentanasHorarias(
       relevados: Number(r.relevados) || 0,
     }))
 
+    // Apertura por LOCALIDAD, que después se agrupa en las ciudades de ruteo con
+    // el mismo criterio que Priorización de Entrega: la localidad cruda separaría
+    // Ramallo de Villa Ramallo, que van en el mismo camión.
+    const locRes = await client.query<{
+      localidad: string | null
+      padron: string
+      con_vh: string
+      ciclo_relevados: string
+    }>(
+      `SELECT p.localidad,
+              count(*)              AS padron,
+              count(ult.id_cliente) AS con_vh,
+              count(act.id_cliente) AS ciclo_relevados
+         FROM horarios_padron p
+         LEFT JOIN LATERAL (
+           SELECT r.id_cliente
+             FROM horarios_relevamientos r
+            WHERE r.id_cliente = p.id_cliente AND r.horario IS NOT NULL
+            ORDER BY r.fecha_carga DESC
+            LIMIT 1
+         ) ult ON true
+         LEFT JOIN horarios_relevamientos act
+                ON act.ciclo = p.ciclo AND act.id_cliente = p.id_cliente
+        WHERE p.ciclo = $1
+        GROUP BY p.localidad`,
+      [c.codigo],
+    )
+
+    const porCiudad = new Map<string, CoberturaVhCiudad>()
+    for (const r of locRes.rows) {
+      const ciudad = ciudadDeLocalidad(r.localidad)
+      const padronLoc = Number(r.padron) || 0
+      const conVhLoc = Number(r.con_vh) || 0
+      const cicloLoc = Number(r.ciclo_relevados) || 0
+      const loc: CoberturaVhLocalidad = {
+        localidad: (r.localidad ?? "").trim() || "(sin localidad)",
+        padron: padronLoc,
+        con_vh: conVhLoc,
+        sin_vh: padronLoc - conVhLoc,
+        cobertura_pct: padronLoc > 0 ? (conVhLoc / padronLoc) * 100 : 0,
+        ciclo_relevados: cicloLoc,
+      }
+      const acc = porCiudad.get(ciudad) ?? {
+        ciudad,
+        padron: 0,
+        con_vh: 0,
+        sin_vh: 0,
+        cobertura_pct: 0,
+        ciclo_relevados: 0,
+        localidades: [],
+      }
+      acc.padron += padronLoc
+      acc.con_vh += conVhLoc
+      acc.ciclo_relevados += cicloLoc
+      acc.localidades.push(loc)
+      porCiudad.set(ciudad, acc)
+    }
+    const ciudades = [...porCiudad.values()]
+      .map((cd) => ({
+        ...cd,
+        sin_vh: cd.padron - cd.con_vh,
+        cobertura_pct: cd.padron > 0 ? (cd.con_vh / cd.padron) * 100 : 0,
+        localidades: cd.localidades.sort((a, b) => b.padron - a.padron),
+      }))
+      // OTRAS siempre al final: no es una ciudad de ruteo, es el cajón de lo que
+      // no mapea (hoy, los PDV sin localidad cargada).
+      .sort((a, b) =>
+        a.ciudad === CIUDAD_OTRAS
+          ? 1
+          : b.ciudad === CIUDAD_OTRAS
+            ? -1
+            : b.padron - a.padron,
+      )
+
     const padron = promotores.reduce((s, p) => s + p.padron, 0)
     const con_vh = promotores.reduce((s, p) => s + p.con_vh, 0)
     const ciclo_relevados = promotores.reduce((s, p) => s + p.ciclo_relevados, 0)
@@ -776,6 +876,7 @@ export async function consultarCoberturaVentanasHorarias(
       ciclo_pendientes: padron - ciclo_relevados,
       ciclo_pct: padron > 0 ? (ciclo_relevados / padron) * 100 : 0,
       por_ciclo,
+      ciudades,
       promotores,
     }
   } finally {
