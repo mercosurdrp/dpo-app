@@ -149,15 +149,34 @@ export async function buildPampeanaFoxtrotSerie(
     const finalizada = r.is_finalized === true
     if (finalizada) a.finalizadas++
 
-    if (r.driver_click_score != null && Number.isFinite(r.driver_click_score)) {
+    const rd = r.raw_data ?? {}
+
+    // Calidad de conducción: sólo rutas FINALIZADAS, igual que el tiempo de
+    // ruta. Una ruta sin cerrar trae el score a medio hacer (en Pergamino las
+    // no finalizadas promedian 5,7 contra 39,3 las cerradas) y hundía el
+    // indicador con un dato que todavía no terminó de generarse.
+    if (
+      finalizada &&
+      r.driver_click_score != null &&
+      Number.isFinite(r.driver_click_score)
+    ) {
       a.clickSum += r.driver_click_score
       a.clickN++
     }
-    if (r.adherencia_secuencia != null && Number.isFinite(r.adherencia_secuencia)) {
+    // Adherencia a la secuencia: sólo donde el resecuenciado en tiempo real
+    // está ACTIVO. Con `fx_seq_enabled = false` no hay secuencia optimizada
+    // contra la cual medir y Foxtrot devuelve 0 — ese 0 es "no aplica", no
+    // "adherencia nula". En Pergamino está apagado en el 100% de las rutas,
+    // así que esos ceros arrastraban el promedio de toda la operación.
+    if (
+      finalizada &&
+      rd.fx_seq_enabled === true &&
+      r.adherencia_secuencia != null &&
+      Number.isFinite(r.adherencia_secuencia)
+    ) {
       a.adhSum += r.adherencia_secuencia
       a.adhN++
     }
-    const rd = r.raw_data ?? {}
     if (typeof rd.fx_seq_enabled === "boolean") {
       a.seqTotal++
       if (rd.fx_seq_enabled) a.seqEnabled++
