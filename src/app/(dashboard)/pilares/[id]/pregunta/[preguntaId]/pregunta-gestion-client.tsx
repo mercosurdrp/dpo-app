@@ -115,7 +115,6 @@ import type {
   OwdTemplate,
 } from "@/types/database"
 import { OwdTab, type OwdKpisMini } from "./owd-tab"
-import { VentanasHorariasTab } from "./ventanas-horarias-tab"
 import type { CoberturaVh } from "@/lib/mercosur-dashboard"
 
 const SCORE_COLORS: Record<number, string> = {
@@ -1632,10 +1631,84 @@ export function PreguntaGestionClient({
         </TabsContent>
         {mostrarVentanasHorarias && (
           <TabsContent value="ventanas-horarias">
-            <VentanasHorariasTab
-              cobertura={coberturaVh}
-              error={coberturaVhError}
-            />
+            {/* Resumen + deep-link: el análisis completo vive en el módulo de
+                indicadores (/indicadores/on-time), no duplicado acá. */}
+            <Card>
+              <CardContent className="pt-6">
+                {coberturaVhError ? (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-sm text-amber-900">
+                      {coberturaVhError}
+                    </p>
+                  </div>
+                ) : coberturaVh ? (
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        PDV con ventana horaria
+                      </p>
+                      <p
+                        className={`text-2xl font-bold ${
+                          coberturaVh.cumple_meta
+                            ? "text-green-600"
+                            : "text-amber-600"
+                        }`}
+                      >
+                        {coberturaVh.cobertura_pct.toFixed(1)}%
+                        <span className="text-base font-normal text-muted-foreground">
+                          {" "}
+                          / &gt;{coberturaVh.meta_pct}%
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        R4.4.3 ·{" "}
+                        {coberturaVh.con_vh.toLocaleString("es-AR")} de{" "}
+                        {coberturaVh.padron.toLocaleString("es-AR")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Ciclo {coberturaVh.ciclo} (R4.4.2)
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {coberturaVh.ciclo_relevados.toLocaleString("es-AR")}
+                        <span className="text-base font-normal text-muted-foreground">
+                          /{coberturaVh.padron.toLocaleString("es-AR")}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        rutina trimestral en curso
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Ciudades de ruteo
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {coberturaVh.ciudades.length}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        con apertura por localidad
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No hay ningún ciclo de relevamiento abierto.
+                  </p>
+                )}
+
+                <div className="mt-4">
+                  <Link href="/indicadores/on-time">
+                    <Button variant="outline">
+                      <ExternalLink className="mr-2 h-4 w-4" /> Ver indicador On
+                      Time completo
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>

@@ -162,6 +162,22 @@ export function IndicadoresLandingClient({ pilares }: Props) {
               </CardContent>
             </Card>
           </Link>
+          <Link href="/indicadores/on-time">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-teal-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-teal-100 text-teal-600 group-hover:bg-teal-200 transition-colors">
+                  <Clock className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">On Time</p>
+                  <p className="text-sm text-muted-foreground">
+                    Entregas en el día pactado + ventanas horarias — Pilar
+                    Entrega 4.4
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/indicadores/puntualidad">
             <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-green-300">
               <CardContent className="flex items-center gap-4 pt-6">

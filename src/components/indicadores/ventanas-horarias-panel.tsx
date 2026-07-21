@@ -28,7 +28,7 @@ function fmtFecha(iso: string | null): string {
   return `${d}/${m}/${y}`
 }
 
-export function VentanasHorariasTab({ cobertura, error }: Props) {
+export function VentanasHorariasPanel({ cobertura, error }: Props) {
   // La Railway no respondió: se avisa, NUNCA se muestra 0 como si fuera el dato.
   if (error) {
     return (
