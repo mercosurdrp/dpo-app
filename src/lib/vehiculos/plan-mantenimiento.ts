@@ -78,7 +78,21 @@ function computeCelda(
     soloPorTiempo: false,
   }
 
-  if (!ultimo) return celda
+  // Tarea que nunca se registró. "Sin datos" solo mientras la unidad todavía no
+  // llegó al intervalo: un camión con 417.000 km y una tarea cada 100.000 que no
+  // figura hecha NUNCA es un dato faltante, es un vencimiento — y justamente el
+  // más urgente. Se marca vencido y `nuncaRegistrado` lo distingue en la UI de
+  // un vencido con historial.
+  if (!ultimo) {
+    const superaKm = frecKm != null && actual.kmActual != null && actual.kmActual >= frecKm
+    const superaHoras =
+      frecHoras != null && actual.horasActuales != null && actual.horasActuales >= frecHoras
+    if (superaKm || superaHoras) {
+      celda.estado = "vencido"
+      celda.nuncaRegistrado = true
+    }
+    return celda
+  }
 
   let estado: EstadoTareaMantenimiento = "ok"
   let pctMax: number | null = null

@@ -1471,6 +1471,12 @@ export interface EstadoPlanCelda {
   pctConsumido: number | null
   /** true cuando el estado se calculó solo por tiempo (sin lecturas km/horas). */
   soloPorTiempo: boolean
+  /**
+   * true = vencida porque NUNCA se registró y la unidad ya superó el intervalo
+   * (ej. camión con 417.000 km y una tarea cada 100.000 sin ningún registro).
+   * Distinto de un vencido con historial: acá no se sabe si se hizo alguna vez.
+   */
+  nuncaRegistrado?: boolean
 }
 
 export interface EstadoPlanVehiculo {
