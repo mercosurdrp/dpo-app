@@ -59,6 +59,22 @@ async function resolverTiempoPdvVivo(
   }
 }
 
+/**
+ * OTIF e In-Full vivos. No pueden salir de `sueno_kpi_refresh`: su denominador
+ * (HL solicitados por el PDV) incluye el VRC, que está en la Railway del
+ * dashboard Mercosur. Tolerante a fallos → null (cae al valor de la tabla).
+ */
+async function resolverOtifVivo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+): Promise<Awaited<ReturnType<typeof otifResumen>>> {
+  try {
+    return await otifResumen(supabase, year)
+  } catch {
+    return null
+  }
+}
+
 interface ValorRow {
   kpi_key: string
   valor_ytd: number | null
@@ -134,10 +150,14 @@ export async function getSuenoArbol(
 
     // TLP y Tiempo en PDV en vivo (mismo cálculo que /indicadores/tlp); si
     // fallan, caen al valor de la tabla.
-    const [tlpVivo, pdvVivo, rutaVivo] = await Promise.all([
+    // OTIF e In-Full también van en vivo: su denominador incluye el VRC, que
+    // vive fuera de Supabase, así que `sueno_kpi_refresh` no puede calcularlos
+    // y el valor persistido puede quedar viejo o pisado.
+    const [tlpVivo, pdvVivo, rutaVivo, otifVivo] = await Promise.all([
       resolverTlpVivo(supabase, year),
       resolverTiempoPdvVivo(supabase, year),
       resolverTiempoRutaVivo(supabase, year),
+      resolverOtifVivo(supabase, year),
     ])
 
     const nodos: SuenoNodo[] = ARBOL_SUENO.map((cfg) => {
@@ -150,7 +170,11 @@ export async function getSuenoArbol(
             ? (pdvVivo?.ytd ?? null)
             : cfg.key === "tiempo_ruta"
               ? (rutaVivo?.ytd ?? null)
-              : externos.get(cfg.key)
+              : cfg.key === "otif"
+                ? (otifVivo?.otifYtd ?? null)
+                : cfg.key === "in_full"
+                  ? (otifVivo?.inFullYtd ?? null)
+                  : externos.get(cfg.key)
       const mensualYtd = esKpiManualMensual(cfg.key)
         ? agregarMensual(cfg.key, (mensuales.get(cfg.key) ?? []).map((m) => m.valor))
         : null
