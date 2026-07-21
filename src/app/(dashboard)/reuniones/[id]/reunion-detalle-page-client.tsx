@@ -83,6 +83,10 @@ import {
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
+import {
+  SeccionPeriodosCriticos,
+  SECCION_PERIODOS_CRITICOS,
+} from "@/components/reuniones/seccion-periodos-criticos"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -251,6 +255,24 @@ function esFinDeSemana(iso: string): boolean {
 
 function esLunes(iso: string): boolean {
   return new Date(iso + "T12:00:00").getDay() === 1
+}
+
+/**
+ * Último martes del mes: la reunión Ventas-Logística es semanal (todos los
+ * martes), y la del último martes es además la revisión MENSUAL de períodos
+ * críticos que pide el manual DPO (R3.4.2). No es una reunión aparte: es la
+ * misma, con un bloque más.
+ *
+ * Se resuelve por fecha y no por configuración porque el tipo de reunión ya se
+ * crea todos los martes; lo único que cambia es qué se muestra ese día.
+ */
+function esUltimoMartesDelMes(iso: string): boolean {
+  const d = new Date(iso + "T12:00:00")
+  if (d.getDay() !== 2) return false
+  // Si sumarle una semana cae en otro mes, es el último martes.
+  const masUnaSemana = new Date(d)
+  masUnaSemana.setDate(d.getDate() + 7)
+  return masUnaSemana.getMonth() !== d.getMonth()
 }
 
 function formatearValor(n: number): string {
@@ -1076,6 +1098,10 @@ export function ReunionDetallePageClient({
     () => actividadesAll.filter((a) => a.seccion === "nps"),
     [actividadesAll],
   )
+  const actividadesPeriodosCriticos = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_PERIODOS_CRITICOS),
+    [actividadesAll],
+  )
 
   const conteosActividades = useMemo(() => {
     const c = { no_comenzada: 0, en_curso: 0, cerrada: 0 }
@@ -1418,6 +1444,19 @@ export function ReunionDetallePageClient({
           }
         />
       )}
+
+      {/* Períodos críticos — sólo en la reunión del ÚLTIMO MARTES del mes, que
+          es la revisión mensual que pide el manual DPO (R3.4.2). */}
+      {detalle.tipo === "logistica-ventas" &&
+        esUltimoMartesDelMes(detalle.fecha) && (
+          <SeccionPeriodosCriticos
+            reunionId={detalle.id}
+            actividades={actividadesPeriodosCriticos}
+            responsables={responsables}
+            puedeEditar={puedeEditar}
+            onActividadesChanged={refrescar}
+          />
+        )}
 
       {/* ETAPA 2: ACTION LOG (en Ventas-Logística es el Action Log general) */}
       <Card className="border-emerald-200 bg-emerald-50/30">
