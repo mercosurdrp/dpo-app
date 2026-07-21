@@ -1848,10 +1848,18 @@ export function ReunionDetallePageClient({
                               ? true
                               : valor! > 0)
                           const esPct = ind.unidad === "%"
-                          // Color por polaridad de la meta (mejor_si). Si no hay
-                          // mejor_si ni meta (ej. LTI/TRI), se pinta en rojo cuando
-                          // hay valor (mismo comportamiento histórico).
-                          let colorClass = "bg-red-50 font-semibold text-red-700"
+                          // Color por polaridad de la meta (mejor_si). Sin meta o
+                          // sin polaridad no hay contra qué comparar: el valor va
+                          // NEUTRO, no rojo — pintarlo de rojo hacía que
+                          // indicadores sin meta cargada (tiempo en ruta, tiempo
+                          // por PDV, km, paradas no autorizadas, resecuenciado)
+                          // se vieran siempre en rojo con cualquier valor.
+                          // Excepción: LTI/TRI son indicadores de EVENTO, donde
+                          // cualquier valor > 0 es malo de por sí y el rojo no
+                          // depende de ninguna meta (el 0 se neutraliza abajo).
+                          let colorClass = esLtiTri
+                            ? "bg-red-50 font-semibold text-red-700"
+                            : "font-medium text-slate-700"
                           if (ind.mejor_si && ind.meta != null && valor != null) {
                             const cumple =
                               ind.mejor_si === "menor"

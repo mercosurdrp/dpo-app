@@ -51,6 +51,7 @@ export interface PampeanaFoxtrotSerie {
 
 type RouteRow = {
   fecha: string
+  driver_name: string | null
   is_finalized: boolean | null
   tiempo_ruta_minutos: number | null
   total_deliveries: number | null
@@ -125,7 +126,7 @@ export async function buildPampeanaFoxtrotSerie(
     const { data, error } = await supabase
       .from("foxtrot_routes")
       .select(
-        "fecha, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful, driver_click_score, adherencia_secuencia, raw_data",
+        "fecha, driver_name, is_finalized, tiempo_ruta_minutos, total_deliveries, deliveries_successful, driver_click_score, adherencia_secuencia, raw_data",
       )
       .in("dc_id", dcs)
       .gte("fecha", fechaDesde)
@@ -138,6 +139,11 @@ export async function buildPampeanaFoxtrotSerie(
 
   const porFecha = new Map<string, Acc>()
   for (const r of rows) {
+    // Rutas sin chofer asignado: Foxtrot las emite con `driver_name` vacío y
+    // llegan con entregas cargadas pero 0 exitosas, hundiendo el % de entregas
+    // exitosas y el % de finalizadas. No son de nadie y no representan trabajo
+    // real, así que no entran en el indicador.
+    if (!r.driver_name || r.driver_name.trim() === "") continue
     const a = porFecha.get(r.fecha) ?? emptyAcc()
     a.rutas++
     const finalizada = r.is_finalized === true
