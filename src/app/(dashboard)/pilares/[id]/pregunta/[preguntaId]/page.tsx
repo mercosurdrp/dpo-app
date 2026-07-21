@@ -4,10 +4,8 @@ import { getPreguntaGestion } from "@/actions/gestion"
 import { getArchivos } from "@/actions/dpo-evidencia"
 import { getCapacitacionesForPregunta } from "@/actions/capacitaciones"
 import { getOwdTemplateByPregunta, getOwdKpis } from "@/actions/owd"
-import {
-  getCoberturaVentanasHorarias,
-  PREGUNTA_44_ID,
-} from "@/actions/ventanas-horarias"
+import { getCoberturaVentanasHorarias } from "@/actions/ventanas-horarias"
+import { PREGUNTA_44_ID } from "@/lib/on-time"
 import {
   getOperadoresParaAsignar,
   getPermisoCrearTareas,

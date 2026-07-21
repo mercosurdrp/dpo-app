@@ -1,11 +1,5 @@
 "use server"
 
-import { requireAuth } from "@/lib/session"
-import {
-  consultarCoberturaVentanasHorarias,
-  type CoberturaVh,
-} from "@/lib/mercosur-dashboard"
-
 // ===== Ventanas horarias de los PDV (DPO Entrega 4.4 "Entregas On Time") =====
 // El punto 4.4 pide, en R4.4.2 y R4.4.3, una rutina TRIMESTRAL de revisión de las
 // ventanas horarias del PDV y una BASE ÚNICA con esas ventanas disponible para
@@ -18,13 +12,13 @@ import {
 // 🚨 La ventana horaria de Chess NO sirve como fuente: son valores "default"
 // cargados masivamente que no se respetan operativamente (validado contra 30 y
 // 120 días de Foxtrot). La única VH creíble es la relevada por el promotor.
+//
+// 🚨 Este archivo SOLO puede exportar funciones async ("use server"):
+// PREGUNTA_44_ID y los tipos viven en @/lib/on-time.
 
-/** Punto DPO Entrega 4.4 "ENTREGAS ON TIME" (key 5_2_26_84). */
-export const PREGUNTA_44_ID = "abee84bc-9579-4e8e-9512-d6ce84f7f860"
-
-export type CoberturaVhResult =
-  | { data: CoberturaVh | null }
-  | { error: string }
+import { requireAuth } from "@/lib/session"
+import { consultarCoberturaVentanasHorarias } from "@/lib/mercosur-dashboard"
+import type { CoberturaVhResult } from "@/lib/on-time"
 
 /**
  * Cobertura del relevamiento de ventanas horarias del ciclo vigente.

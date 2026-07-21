@@ -13,7 +13,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Clock, AlertTriangle, Info } from "lucide-react"
 import { VentanasHorariasPanel } from "@/components/indicadores/ventanas-horarias-panel"
-import type { OnTimeResumen } from "@/actions/on-time"
+import type { OnTimeResumen } from "@/lib/on-time"
 import type { CoberturaVh } from "@/lib/mercosur-dashboard"
 
 const MESES = [
