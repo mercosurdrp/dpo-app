@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2, Tv } from "lucide-react"
+import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2, Tv, QrCode, Download } from "lucide-react"
 import {
   getPendientesAcarreo,
   ingresarDepositoAcarreo,
@@ -11,6 +11,8 @@ import {
   borrarRecepcionAcarreo,
   type RecepcionPendiente,
 } from "@/actions/acarreo"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { ACARREO_ANUNCIO_URL } from "@/lib/acarreo-anuncio"
 
 type Color = "verde" | "amarillo" | "rojo"
 function semaforo(min: number): Color {
@@ -53,6 +55,7 @@ export function RecepcionClient({
   const [rows, setRows] = useState<RecepcionPendiente[]>(inicial)
   const [now, setNow] = useState(() => Date.now())
   const [pending, start] = useTransition()
+  const [qrAbierto, setQrAbierto] = useState(false)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -84,15 +87,64 @@ export function RecepcionClient({
             Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–2h · 🔴 &gt;2h.
           </p>
         </div>
-        <a
-          href="https://acarreo-rdf.vercel.app/monitor"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <Tv className="size-4" /> Modo monitor
-        </a>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setQrAbierto(true)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <QrCode className="size-4" /> Ver QR
+          </button>
+          <a
+            href="https://acarreo-rdf.vercel.app/monitor"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <Tv className="size-4" /> Modo monitor
+          </a>
+        </div>
       </div>
+
+      <Dialog open={qrAbierto} onOpenChange={setQrAbierto}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="size-5 text-pink-600" />
+              QR para anunciarse
+            </DialogTitle>
+            <DialogDescription>
+              Mostrale esta pantalla al chofer o imprimí el cartel para la portería. Al escanearlo
+              carga patente, transportista y remito, y queda anunciado acá.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/api/acarreo/qr"
+              alt={`Código QR que abre ${ACARREO_ANUNCIO_URL}`}
+              width={280}
+              height={280}
+              className="size-[280px] max-w-full rounded-lg border border-slate-200 bg-white p-2"
+            />
+            <a
+              href={ACARREO_ANUNCIO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all text-center text-xs text-slate-500 underline-offset-2 hover:underline"
+            >
+              {ACARREO_ANUNCIO_URL}
+            </a>
+            <a
+              href="/api/acarreo/qr?format=pdf"
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+            >
+              <Download className="size-4" /> Descargar cartel A4
+            </a>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {errorInicial ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
