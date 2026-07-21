@@ -79,9 +79,11 @@ import type {
   MantenimientoProveedor,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
+  MantenimientoRealizadoRepuesto,
   MantenimientoTipo,
   VehiculoTipo,
 } from "@/types/database"
+import { montoFactura } from "@/lib/vehiculos/costo-ot"
 import {
   MANTENIMIENTO_CATEGORIA_LABELS,
   MANTENIMIENTO_ESTADO_LABELS,
@@ -1439,7 +1441,7 @@ function NuevoMantenimientoDialog({
   )
   const [libres, setLibres] = useState<string[]>([])
   const [libreInput, setLibreInput] = useState("")
-  const [repuestos, setRepuestos] = useState<RepuestoForm[]>([])
+  const [facturasRep, setFacturasRep] = useState<FacturaForm[]>(() => [nuevaFactura()])
   const [costoMO, setCostoMO] = useState("")
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
@@ -1505,6 +1507,11 @@ function NuevoMantenimientoDialog({
       setSaving(false)
       return
     }
+    const rep = await facturasPayload(dominio, facturasRep)
+    if (rep === null) {
+      setSaving(false)
+      return
+    }
     const res = await createMantenimiento({
       dominio,
       fecha,
@@ -1514,13 +1521,14 @@ function NuevoMantenimientoDialog({
       horometro: parseNum(horometro),
       taller,
       // El costo total se arma solo: mano de obra + repuestos.
-      costo: totalOt(repuestos, costoMO),
+      costo: totalOt(facturasRep, costoMO),
       numero_factura: factura,
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
       costo_mano_obra: parseNum(costoMO),
-      repuestos: repuestosPayload(repuestos),
+      repuestos: rep.repuestos,
+      facturas: rep.facturas,
       evidencia_urls: evidencia.length > 0 ? evidencia : null,
       entrada_taller: entradaTaller || null,
       salida_taller: salidaTaller || null,
@@ -1701,8 +1709,8 @@ function NuevoMantenimientoDialog({
 
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="space-y-3 rounded-md border border-border p-3">
-            <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
+            <FacturasRepuestosEditor facturas={facturasRep} setFacturas={setFacturasRep} />
+            <TotalOtLinea facturas={facturasRep} costoManoObra={costoMO} />
           </div>
 
           <FacturasInput facturas={facturas} setFacturas={setFacturas} />
@@ -1882,6 +1890,37 @@ function FacturasInput({
   )
 }
 
+// Líneas de repuesto en la vista de detalle (solo lectura).
+function LineasRepuestoDetalle({ lineas }: { lineas: MantenimientoRealizadoRepuesto[] }) {
+  if (lineas.length === 0) return null
+  return (
+    <ul className="space-y-1">
+      {lineas.map((r) => {
+        const sub =
+          r.costo_unitario != null ? Number(r.costo_unitario) * Number(r.cantidad) : null
+        return (
+          <li
+            key={r.id}
+            className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5"
+          >
+            <span className="text-foreground">
+              {r.descripcion}
+              {Number(r.cantidad) !== 1 && (
+                <span className="text-muted-foreground/70"> ×{fmtNum(Number(r.cantidad))}</span>
+              )}
+            </span>
+            {sub != null && (
+              <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                {fmtMoney(sub)}
+              </span>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 // ===== Repuestos + mano de obra (para que queden desglosados en la OT) =====
 
 interface RepuestoForm {
@@ -1894,6 +1933,135 @@ function nuevoRepuesto(): RepuestoForm {
   return { descripcion: "", cantidad: "1", costoUnitario: "" }
 }
 
+/**
+ * Una factura de repuestos del formulario: proveedor + comprobante + sus líneas.
+ * Todos los datos de cabecera son opcionales. Si `montoTotal` está cargado, ése
+ * es el monto de la factura y las líneas quedan como detalle.
+ *
+ * `adjuntoUrl` es un comprobante ya subido (al editar); `adjuntoFile` es uno
+ * nuevo elegido en esta edición, que se sube recién al guardar.
+ */
+interface FacturaForm {
+  proveedor: string
+  numero: string
+  montoTotal: string
+  adjuntoUrl: string | null
+  adjuntoFile: File | null
+  repuestos: RepuestoForm[]
+}
+
+function nuevaFactura(): FacturaForm {
+  return {
+    proveedor: "",
+    numero: "",
+    montoTotal: "",
+    adjuntoUrl: null,
+    adjuntoFile: null,
+    repuestos: [nuevoRepuesto()],
+  }
+}
+
+/** true si la factura no tiene ningún dato de cabecera cargado. */
+function facturaSinCabecera(f: FacturaForm): boolean {
+  return !f.proveedor.trim() && !f.numero.trim() && !f.montoTotal.trim() && !f.adjuntoUrl && !f.adjuntoFile
+}
+
+/** Monto de una factura: el total cargado a mano, o la suma de sus líneas. */
+function montoFacturaForm(f: FacturaForm): number {
+  const total = parseFloat(f.montoTotal)
+  if (f.montoTotal.trim() && Number.isFinite(total)) return total
+  return subtotalRepuestos(f.repuestos)
+}
+
+/** Σ de todas las facturas cargadas. */
+function totalFacturas(fs: FacturaForm[]): number {
+  return fs.reduce((a, f) => a + montoFacturaForm(f), 0)
+}
+
+/**
+ * Reconstruye las facturas del formulario desde la OT guardada. Los repuestos
+ * sin factura (los de la carga anterior) van a una primera factura sin cabecera,
+ * que al guardar vuelve a salir como repuestos sueltos.
+ */
+function facturasDesde(m: MantenimientoRealizado): FacturaForm[] {
+  const linea = (r: MantenimientoRealizadoRepuesto): RepuestoForm => ({
+    descripcion: r.descripcion,
+    cantidad: r.cantidad != null ? String(r.cantidad) : "1",
+    costoUnitario: r.costo_unitario != null ? String(r.costo_unitario) : "",
+  })
+  const todos = m.repuestos ?? []
+  const out: FacturaForm[] = []
+
+  const sueltos = todos.filter((r) => !r.factura_id)
+  if (sueltos.length > 0) {
+    out.push({ ...nuevaFactura(), repuestos: sueltos.map(linea) })
+  }
+  for (const f of [...(m.facturas ?? [])].sort((a, b) => a.orden - b.orden)) {
+    const lineas = todos.filter((r) => r.factura_id === f.id).map(linea)
+    out.push({
+      proveedor: f.proveedor ?? "",
+      numero: f.numero ?? "",
+      montoTotal: f.monto_total != null ? String(f.monto_total) : "",
+      adjuntoUrl: f.adjunto_url,
+      adjuntoFile: null,
+      repuestos: lineas.length > 0 ? lineas : [nuevoRepuesto()],
+    })
+  }
+  return out
+}
+
+/**
+ * Arma el payload de las actions. Sube los comprobantes nuevos y separa las
+ * facturas de verdad de los repuestos sueltos (grupo sin cabecera), para no
+ * crear filas de factura vacías.
+ *
+ * Devuelve null si falló la subida de algún adjunto (el error ya se avisó).
+ */
+async function facturasPayload(
+  dominio: string,
+  fs: FacturaForm[]
+): Promise<{
+  facturas: Array<{
+    proveedor: string
+    numero: string
+    montoTotal: number | null
+    adjuntoUrl: string | null
+    repuestos: ReturnType<typeof repuestosPayload>
+  }>
+  repuestos: ReturnType<typeof repuestosPayload>
+} | null> {
+  const facturas: Array<{
+    proveedor: string
+    numero: string
+    montoTotal: number | null
+    adjuntoUrl: string | null
+    repuestos: ReturnType<typeof repuestosPayload>
+  }> = []
+  let sueltos: ReturnType<typeof repuestosPayload> = []
+
+  for (const f of fs) {
+    const lineas = repuestosPayload(f.repuestos)
+    if (facturaSinCabecera(f)) {
+      sueltos = [...sueltos, ...lineas]
+      continue
+    }
+    let url = f.adjuntoUrl
+    if (f.adjuntoFile) {
+      const subidas = await subirFacturas(dominio, [f.adjuntoFile])
+      if (subidas === null) return null
+      url = subidas[0] ?? url
+    }
+    facturas.push({
+      proveedor: f.proveedor.trim(),
+      numero: f.numero.trim(),
+      montoTotal: f.montoTotal.trim() ? parseFloat(f.montoTotal) : null,
+      adjuntoUrl: url,
+      repuestos: lineas,
+    })
+  }
+  return { facturas, repuestos: sueltos }
+}
+
 // Subtotal de repuestos = Σ (cantidad × costo unitario) de las filas con datos.
 function subtotalRepuestos(reps: RepuestoForm[]): number {
   return reps.reduce((a, r) => {
@@ -1901,15 +2069,6 @@ function subtotalRepuestos(reps: RepuestoForm[]): number {
     const cu = parseFloat(r.costoUnitario) || 0
     return a + cant * cu
   }, 0)
-}
-
-// Convierte los repuestos cargados de la BD al formato editable del formulario.
-function repuestosDesde(m: MantenimientoRealizado): RepuestoForm[] {
-  return (m.repuestos ?? []).map((r) => ({
-    descripcion: r.descripcion,
-    cantidad: r.cantidad != null ? String(r.cantidad) : "1",
-    costoUnitario: r.costo_unitario != null ? String(r.costo_unitario) : "",
-  }))
 }
 
 // Mapea las filas del formulario al payload de la action (descarta vacías).
@@ -1923,25 +2082,23 @@ function repuestosPayload(reps: RepuestoForm[]) {
     }))
 }
 
-// Editor de la lista de repuestos (descripción + cantidad + costo unitario).
-function RepuestosEditor({
+// Líneas de repuesto de una factura (descripción + cantidad + costo unitario).
+function LineasRepuesto({
   repuestos,
   setRepuestos,
+  atenuado,
 }: {
   repuestos: RepuestoForm[]
   setRepuestos: (r: RepuestoForm[]) => void
+  atenuado: boolean
 }) {
   const update = (i: number, patch: Partial<RepuestoForm>) =>
     setRepuestos(repuestos.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const remove = (i: number) => setRepuestos(repuestos.filter((_, j) => j !== i))
   return (
     <div>
-      <Label>Repuestos</Label>
-      <p className="mb-1 text-xs text-muted-foreground">
-        Los repuestos comprados aparte, para que queden separados de la mano de obra.
-      </p>
       {repuestos.length > 0 && (
-        <div className="mt-1.5 space-y-2">
+        <div className="space-y-2">
           {repuestos.map((r, i) => (
             <div key={i} className="flex items-center gap-2">
               <Input
@@ -1962,7 +2119,7 @@ function RepuestosEditor({
                 value={r.costoUnitario}
                 onChange={(e) => update(i, { costoUnitario: e.target.value })}
                 placeholder="$ c/u"
-                className="w-24"
+                className={cn("w-24", atenuado && "opacity-60")}
               />
               <button
                 type="button"
@@ -1984,25 +2141,205 @@ function RepuestosEditor({
       >
         <Plus className="mr-1 size-4" /> Agregar repuesto
       </Button>
-      {subtotalRepuestos(repuestos) > 0 && (
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          Subtotal repuestos: {fmtMoney(subtotalRepuestos(repuestos))}
-        </p>
-      )}
     </div>
+  )
+}
+
+/**
+ * Editor de repuestos agrupados por factura. Los repuestos suelen comprarse
+ * aparte del mecánico que hace la mano de obra, así que cada factura lleva su
+ * propio proveedor, número y comprobante, y se pueden cargar varias.
+ */
+function FacturasRepuestosEditor({
+  facturas,
+  setFacturas,
+}: {
+  facturas: FacturaForm[]
+  setFacturas: (f: FacturaForm[]) => void
+}) {
+  const update = (i: number, patch: Partial<FacturaForm>) =>
+    setFacturas(facturas.map((f, j) => (j === i ? { ...f, ...patch } : f)))
+  const remove = (i: number) => setFacturas(facturas.filter((_, j) => j !== i))
+
+  return (
+    <div>
+      <Label>Repuestos</Label>
+      <p className="mb-1.5 text-xs text-muted-foreground">
+        Los repuestos comprados aparte, con su propio proveedor y factura. Podés cargar
+        más de una si los compraste en distintos lados.
+      </p>
+
+      <div className="space-y-3">
+        {facturas.map((f, i) => {
+          const detalle = subtotalRepuestos(f.repuestos)
+          const total = parseFloat(f.montoTotal)
+          const tieneTotal = f.montoTotal.trim() !== "" && Number.isFinite(total)
+          // Aviso (no bloqueante) si el monto cargado no coincide con el detalle.
+          const discrepa = tieneTotal && detalle > 0 && Math.abs(total - detalle) >= 0.5
+          return (
+            <div key={i} className="rounded-md border border-border p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {facturas.length > 1 ? `Factura ${i + 1}` : "Factura"}
+                </p>
+                {facturas.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => remove(i)}
+                    className="text-xs text-muted-foreground/70 hover:text-red-500"
+                  >
+                    Quitar factura
+                  </button>
+                )}
+              </div>
+
+              <div className="mb-2 grid gap-2 sm:grid-cols-3">
+                <div>
+                  <Label className="text-xs font-normal text-muted-foreground">
+                    Proveedor
+                  </Label>
+                  <Input
+                    value={f.proveedor}
+                    onChange={(e) => update(i, { proveedor: e.target.value })}
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-normal text-muted-foreground">
+                    N° factura
+                  </Label>
+                  <Input
+                    value={f.numero}
+                    onChange={(e) => update(i, { numero: e.target.value })}
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-normal text-muted-foreground">
+                    Monto total
+                  </Label>
+                  <Input
+                    type="number"
+                    value={f.montoTotal}
+                    onChange={(e) => update(i, { montoTotal: e.target.value })}
+                    placeholder="Opcional"
+                  />
+                </div>
+              </div>
+
+              <AdjuntoFactura
+                url={f.adjuntoUrl}
+                file={f.adjuntoFile}
+                onFile={(file) => update(i, { adjuntoFile: file })}
+                onQuitar={() => update(i, { adjuntoUrl: null, adjuntoFile: null })}
+              />
+
+              <div className="mt-2.5">
+                <LineasRepuesto
+                  repuestos={f.repuestos}
+                  setRepuestos={(r) => update(i, { repuestos: r })}
+                  atenuado={tieneTotal}
+                />
+              </div>
+
+              {tieneTotal ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Cuenta el monto total: <span className="tabular-nums">{fmtMoney(total)}</span>
+                  {detalle > 0 && <> · el detalle queda como referencia</>}
+                </p>
+              ) : (
+                detalle > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Subtotal: <span className="tabular-nums">{fmtMoney(detalle)}</span>
+                  </p>
+                )
+              )}
+              {discrepa && (
+                <p className="mt-1 text-xs text-amber-600">
+                  El detalle suma {fmtMoney(detalle)} y no coincide con el monto total.
+                  Se guarda el monto total igual.
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={() => setFacturas([...facturas, nuevaFactura()])}
+      >
+        <Plus className="mr-1 size-4" /> Agregar otra factura de repuestos
+      </Button>
+    </div>
+  )
+}
+
+// Comprobante (foto o PDF) de una factura de repuestos.
+function AdjuntoFactura({
+  url,
+  file,
+  onFile,
+  onQuitar,
+}: {
+  url: string | null
+  file: File | null
+  onFile: (f: File | null) => void
+  onQuitar: () => void
+}) {
+  if (file || url) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs">
+        <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+        {file ? (
+          <span className="truncate text-foreground">{file.name}</span>
+        ) : (
+          <a
+            href={url!}
+            target="_blank"
+            rel="noreferrer"
+            className="truncate text-sky-600 hover:underline"
+          >
+            {nombreArchivoDeUrl(url!)}
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={onQuitar}
+          className="ml-auto shrink-0 text-muted-foreground/70 hover:text-red-500"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    )
+  }
+  return (
+    <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-sky-600 hover:underline">
+      <Paperclip className="size-3.5" />
+      Adjuntar comprobante (foto o PDF)
+      <input
+        type="file"
+        accept={ACCEPT_FACTURA}
+        className="hidden"
+        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+      />
+    </label>
   )
 }
 
 // Total de la OT = mano de obra + repuestos, cada suma por su lado y el total al pie.
 function TotalOtLinea({
-  repuestos,
+  facturas,
   costoManoObra,
 }: {
-  repuestos: RepuestoForm[]
+  facturas: FacturaForm[]
   costoManoObra: string
 }) {
   const mo = parseFloat(costoManoObra) || 0
-  const rep = subtotalRepuestos(repuestos)
+  const rep = totalFacturas(facturas)
   if (mo <= 0 && rep <= 0) return null
   return (
     <div className="space-y-0.5 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
@@ -2023,9 +2360,9 @@ function TotalOtLinea({
 }
 
 // Total que se guarda en `costo` (lo usa el reporte de costos): MO + repuestos.
-function totalOt(repuestos: RepuestoForm[], costoManoObra: string): number | null {
+function totalOt(facturas: FacturaForm[], costoManoObra: string): number | null {
   const mo = parseFloat(costoManoObra) || 0
-  const total = mo + subtotalRepuestos(repuestos)
+  const total = mo + totalFacturas(facturas)
   return total > 0 ? total : null
 }
 
@@ -2202,33 +2539,54 @@ function DetalleOrdenDialog({
             )}
           </div>
 
-          {/* Repuestos */}
+          {/* Repuestos, agrupados por factura (los sueltos van sin encabezado) */}
           {(m.repuestos?.length ?? 0) > 0 && (
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Repuestos</p>
-              <ul className="space-y-1">
-                {m.repuestos!.map((r) => {
-                  const sub = r.costo_unitario != null ? Number(r.costo_unitario) * Number(r.cantidad) : null
-                  return (
-                    <li
-                      key={r.id}
-                      className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5"
-                    >
-                      <span className="text-foreground">
-                        {r.descripcion}
-                        {Number(r.cantidad) !== 1 && (
-                          <span className="text-muted-foreground/70"> ×{fmtNum(Number(r.cantidad))}</span>
-                        )}
-                      </span>
-                      {sub != null && (
-                        <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                          {fmtMoney(sub)}
-                        </span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="space-y-2">
+                <LineasRepuestoDetalle lineas={(m.repuestos ?? []).filter((r) => !r.factura_id)} />
+                {[...(m.facturas ?? [])]
+                  .sort((a, b) => a.orden - b.orden)
+                  .map((f) => {
+                    const lineas = (m.repuestos ?? []).filter((r) => r.factura_id === f.id)
+                    const monto = montoFactura(f, m.repuestos ?? [])
+                    return (
+                      <div key={f.id} className="rounded-md border">
+                        <div className="flex items-center justify-between gap-2 border-b bg-muted/50 px-2.5 py-1.5 text-xs">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            {f.adjunto_url && (
+                              <a
+                                href={f.adjunto_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Ver comprobante"
+                                className="shrink-0 text-sky-600 hover:text-sky-700"
+                              >
+                                <Paperclip className="size-3.5" />
+                              </a>
+                            )}
+                            <span className="truncate text-foreground">
+                              {f.proveedor || "Proveedor sin especificar"}
+                            </span>
+                            {f.numero && (
+                              <span className="shrink-0 text-muted-foreground/70">
+                                · fact. {f.numero}
+                              </span>
+                            )}
+                          </span>
+                          {monto > 0 && (
+                            <span className="shrink-0 tabular-nums font-medium text-foreground">
+                              {fmtMoney(monto)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-1.5">
+                          <LineasRepuestoDetalle lineas={lineas} />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
             </div>
           )}
 
@@ -2335,12 +2693,15 @@ function EditarMantenimientoDialog({
   )
   const [urlsExistentes, setUrlsExistentes] = useState<string[]>(m.evidencia_urls ?? [])
   const [facturasNuevas, setFacturasNuevas] = useState<File[]>([])
-  const [repuestos, setRepuestos] = useState<RepuestoForm[]>(() => repuestosDesde(m))
+  const [facturasRep, setFacturasRep] = useState<FacturaForm[]>(() => {
+    const fs = facturasDesde(m)
+    return fs.length > 0 ? fs : [nuevaFactura()]
+  })
   const [costoMO, setCostoMO] = useState(() => {
     if (m.costo_mano_obra != null) return String(m.costo_mano_obra)
     // OT vieja sin desglose: la mano de obra hereda el costo total menos los repuestos.
     if (m.costo != null) {
-      const mo = Number(m.costo) - subtotalRepuestos(repuestosDesde(m))
+      const mo = Number(m.costo) - totalFacturas(facturasDesde(m))
       return mo > 0 ? String(mo) : ""
     }
     return ""
@@ -2355,6 +2716,11 @@ function EditarMantenimientoDialog({
       return
     }
     const evidencia = [...urlsExistentes, ...nuevas]
+    const rep = await facturasPayload(m.dominio, facturasRep)
+    if (rep === null) {
+      setSaving(false)
+      return
+    }
     const res = await updateMantenimiento({
       id: m.id,
       fecha,
@@ -2363,13 +2729,14 @@ function EditarMantenimientoDialog({
       horometro: parseNum(horometro),
       taller,
       // El costo total se arma solo: mano de obra + repuestos.
-      costo: totalOt(repuestos, costoMO),
+      costo: totalOt(facturasRep, costoMO),
       numero_factura: factura,
       numero_ot: numeroOt,
       observaciones: obs,
       es_service_general: esServiceGeneral,
       costo_mano_obra: parseNum(costoMO),
-      repuestos: repuestosPayload(repuestos),
+      repuestos: rep.repuestos,
+      facturas: rep.facturas,
       evidencia_urls: evidencia,
       entrada_taller: entradaTaller || null,
       salida_taller: salidaTaller || null,
@@ -2452,8 +2819,8 @@ function EditarMantenimientoDialog({
           </div>
           {/* Repuestos por un lado, mano de obra por el otro; el total se suma solo. */}
           <div className="col-span-2 space-y-3 rounded-md border border-border p-3">
-            <RepuestosEditor repuestos={repuestos} setRepuestos={setRepuestos} />
-            <TotalOtLinea repuestos={repuestos} costoManoObra={costoMO} />
+            <FacturasRepuestosEditor facturas={facturasRep} setFacturas={setFacturasRep} />
+            <TotalOtLinea facturas={facturasRep} costoManoObra={costoMO} />
           </div>
           <div className="col-span-2">
             <Label>Observaciones</Label>
