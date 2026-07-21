@@ -15,6 +15,7 @@ import {
   Boxes,
   PackageCheck,
   Megaphone,
+  MessageSquare,
   Wrench,
   PackageX,
   Sparkles,
@@ -61,6 +62,11 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
     ...(IS_MISIONES
       ? []
       : [{ label: "Roturas en calle", href: "/mis-roturas", icon: <PackageX className="size-5" /> }]),
+    // Feedback: canal ascendente que se trata en la matinal siguiente
+    // (punto DPO Entrega 2.2). Solo Pampeana, que es donde corre la matinal.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Feedback", href: "/mi-feedback", icon: <MessageSquare className="size-5" /> }]),
     { label: "Comunicaciones", href: "/portal/comunicaciones", icon: <Megaphone className="size-5" /> },
     { label: "Servicios", href: "/portal/servicios", icon: <Wrench className="size-5" /> },
     { label: "Reportar", href: "/reportar-seguridad", icon: <ShieldAlert className="size-5" /> },

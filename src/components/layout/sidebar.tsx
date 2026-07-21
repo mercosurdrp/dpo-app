@@ -18,6 +18,7 @@ import {
   Link2,
   Settings,
   Lightbulb,
+  MessageSquare,
   Sparkles,
   ScrollText,
   ShieldAlert,
@@ -296,6 +297,15 @@ export const navItems: NavItem[] = [
     label: "Sugerencias",
     href: "/sugerencias",
     icon: <Lightbulb className="size-5" />,
+  },
+  {
+    // Feedback que carga la gente desde /mi-feedback: se trata en la matinal
+    // de distribución y acá se le hace el seguimiento (punto DPO Entrega 2.2).
+    label: "Feedback de empleados",
+    href: "/feedback-empleados",
+    icon: <MessageSquare className="size-5" />,
+    roles: ["admin", "supervisor", "admin_rrhh"],
+    hideForEmpleado: true,
   },
 ]
 

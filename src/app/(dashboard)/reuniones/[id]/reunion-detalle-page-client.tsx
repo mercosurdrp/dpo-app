@@ -61,6 +61,7 @@ import { DetalleActividadDialog } from "@/components/reuniones/detalle-actividad
 import { EtapaSeguridad } from "@/components/reuniones/etapa-seguridad"
 import { ContadorReunion } from "@/components/reuniones/contador-reunion"
 import { SeccionRoturasCalle } from "@/components/reuniones/seccion-roturas-calle"
+import { SeccionFeedbackEmpleados } from "@/components/reuniones/seccion-feedback-empleados"
 import { SeccionRechazos } from "@/components/reuniones/seccion-rechazos"
 import { TareasOperariosBloque } from "@/components/reuniones/tareas-operarios-bloque"
 import { SeccionAvanceVenta } from "@/components/reuniones/seccion-avance-venta"
@@ -1312,6 +1313,17 @@ export function ReunionDetallePageClient({
       {!IS_MISIONES && detalle.tipo === "matinal-distribucion" && (
         <SeccionRoturasCalle
           fechaReunion={detalle.fecha}
+          currentRole={currentRole}
+        />
+      )}
+
+      {/* FEEDBACK DE LA GENTE — Matinal Distribución (Pampeana). Trae lo que
+          cargaron los empleados desde /mi-feedback y no se trató todavía, más lo
+          tratado en esta misma reunión. Cubre el punto DPO Entrega 2.2: el
+          feedback tiene que TRATARSE y responderse, no sólo recibirse. */}
+      {!IS_MISIONES && detalle.tipo === "matinal-distribucion" && (
+        <SeccionFeedbackEmpleados
+          reunionId={detalle.id}
           currentRole={currentRole}
         />
       )}
