@@ -3,6 +3,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { registerActivity } from "@/lib/dpo-activity"
+// La semana se calcula en un solo lugar: el filtro del detalle usa la misma
+// función, así los números coinciden con la serie semanal.
+import { semanaDelAnio } from "@/lib/tiempo-interno"
 import type {
   TiKpis,
   TiRegistro,
@@ -90,13 +93,7 @@ const MESES = [
   "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
 ]
 
-function semanaDelAnio(fechaISO: string): { year: number; semana: number } {
-  const date = new Date(fechaISO + "T12:00:00")
-  const startOfYear = new Date(date.getFullYear(), 0, 1)
-  const diff = date.getTime() - startOfYear.getTime()
-  const semana = Math.ceil((diff / 86400000 + startOfYear.getDay() + 1) / 7)
-  return { year: date.getFullYear(), semana }
-}
+
 
 // ==================== CÁLCULO DE KPIs ====================
 export async function getTiKpis(filters?: {

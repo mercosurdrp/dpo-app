@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { claveSemana, rangoDeSemana, semanaDelAnio } from "@/lib/tiempo-interno"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -321,18 +323,80 @@ function horaArg(iso: string | null): string {
   return d.toISOString().slice(11, 16)
 }
 
+const TODAS_LAS_SEMANAS = "__todas__"
+const FILAS_POR_PAGINA = 100
+
 function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
+  const [semanaSel, setSemanaSel] = useState<string>(TODAS_LAS_SEMANAS)
+  const [tope, setTope] = useState(FILAS_POR_PAGINA)
+
+  // Semanas presentes en los datos, de la más reciente a la más vieja, con el
+  // rango de fechas al lado: "Semana 29" solo no le dice nada a nadie.
+  const semanas = useMemo(() => {
+    const porClave = new Map<string, { clave: string; semana: number; fechas: string[] }>()
+    for (const r of registros) {
+      const { semana } = semanaDelAnio(r.fecha)
+      const clave = claveSemana(r.fecha)
+      if (!porClave.has(clave)) porClave.set(clave, { clave, semana, fechas: [] })
+      porClave.get(clave)!.fechas.push(r.fecha)
+    }
+    return [...porClave.values()]
+      .map((g) => ({
+        clave: g.clave,
+        label: `Semana ${g.semana} (${rangoDeSemana(g.fechas)})`,
+        cantidad: g.fechas.length,
+      }))
+      .sort((a, b) => b.clave.localeCompare(a.clave, undefined, { numeric: true }))
+  }, [registros])
+
+  const filtrados = useMemo(
+    () =>
+      semanaSel === TODAS_LAS_SEMANAS
+        ? registros
+        : registros.filter((r) => claveSemana(r.fecha) === semanaSel),
+    [registros, semanaSel],
+  )
+
+  const visibles = filtrados.slice(0, tope)
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Detalle por retorno</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          TI = fichaje de salida − checklist de retorno, por chofer/día. Las filas sin TI se muestran con su motivo.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Detalle por retorno</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              TI = fichaje de salida − checklist de retorno, por chofer/día. Las filas sin TI se muestran con su motivo.
+            </p>
+          </div>
+          {semanas.length > 0 && (
+            <select
+              value={semanaSel}
+              onChange={(e) => {
+                setSemanaSel(e.target.value)
+                setTope(FILAS_POR_PAGINA)
+              }}
+              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700"
+            >
+              <option value={TODAS_LAS_SEMANAS}>
+                Todas las semanas ({registros.length})
+              </option>
+              {semanas.map((s) => (
+                <option key={s.clave} value={s.clave}>
+                  {s.label} — {s.cantidad}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        {registros.length === 0 ? (
-          <p className="py-8 text-center text-muted-foreground">Sin retornos en el período.</p>
+        {filtrados.length === 0 ? (
+          <p className="py-8 text-center text-muted-foreground">
+            {registros.length === 0
+              ? "Sin retornos en el período."
+              : "Sin retornos en la semana elegida."}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -347,7 +411,7 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {registros.slice(0, 100).map((r, i) => (
+                {visibles.map((r, i) => (
                   <TableRow key={i}>
                     <TableCell className="text-sm">{r.fecha}</TableCell>
                     <TableCell className="text-sm">{r.chofer}</TableCell>
@@ -367,6 +431,22 @@ function RegistrosTable({ registros }: { registros: TiRegistro[] }) {
                 ))}
               </TableBody>
             </Table>
+            {/* Antes cortaba en 100 filas sin avisar: se veía como si no hubiera más. */}
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Mostrando {visibles.length} de {filtrados.length}
+                {semanaSel !== TODAS_LAS_SEMANAS && " en la semana elegida"}
+              </p>
+              {visibles.length < filtrados.length && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTope((t) => t + FILAS_POR_PAGINA)}
+                >
+                  Ver {Math.min(FILAS_POR_PAGINA, filtrados.length - visibles.length)} más
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
