@@ -16,7 +16,7 @@ import {
   type DimData, type FlotaUnidad, type DimConfig, type DimPlan, type RolFte, type RolReparto, type MetricasDistribucion, type ProyeccionAlmacenRol, type ProyeccionMes, type ProyeccionFlotaRol, type ProyeccionData, type ZonaReparto,
   guardarCapacidadFlota, guardarConfigDim, guardarObjetivoKpi, guardarZonasReparto, guardarAjustesVolumen,
   crearPlanDim, actualizarEstadoPlanDim, eliminarPlanDim, recalcularFactorCeq,
-  recalcularProductividadAlmacen,
+  recalcularProductividadAlmacen, guardarCostoHh,
 } from "@/actions/dimensionamiento"
 
 function fmt(v: number) {
@@ -127,29 +127,237 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
     ? zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((ceqDia * z.peso) / proy.capCamionViaje)), 0)
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
-    const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
+    const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
     for (const mm of meses) {
       const ceqMes = proy.flotaCeqPromBase * mm.indice
-      let dias = 0, pico = 0, sv = false
+      let dias = 0, pico = 0, sv = false, pdias = 0
       for (const wd of weekdaysDelMes(mm.mes)) {
         const w = pesoDe(wd)
         if (w <= 0) continue
         const ceqDia = ceqMes * 6 * w
         const camionesDia = camionesDe(ceqDia)
         const necesarios = camionesDia * rf.tripulacion
-        if (necesarios > rf.dotacion) dias++
+        if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
         if (camionesDia > proy.camionesDisp) sv = true
         pico = Math.max(pico, necesarios)
       }
       diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
+      personaDias.push(Math.round(pdias * 10) / 10)
     }
-    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses }
+    return { ...rf, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias }
   })
 
   return { ...proy, hlBase, ajusteBasePct: pctDe(proy.mesBase, proy.ajusteBasePct), meses, almacen, flota }
 }
 
 type PctEscenario = { pct: Record<string, string>; setPct: React.Dispatch<React.SetStateAction<Record<string, string>>> }
+
+// ─── Solapa Costo — cuánto cuesta hoy el HL y cuánto suma hacer horas extra ──
+
+const money = (v: number) => `$${Math.round(v).toLocaleString("es-AR")}`
+const money2 = (v: number) => `$${v.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`
+
+// Horas extra del mes por sector: almacén = suma de los 4 roles; distribución = las
+// personas que faltan cada día de refuerzo × horas de la vuelta extra (los camiones
+// no son hora-hombre, por eso quedan afuera).
+function hhDelMes(proy: ProyeccionData, i: number) {
+  const almacen = proy.almacen.reduce((s, r) => s + (r.horasExtra[i] ?? 0), 0)
+  const distrib = proy.flota
+    .filter((r) => r.rol !== "Camiones")
+    .reduce((s, r) => s + (r.personaDias?.[i] ?? 0), 0) * proy.horasVueltaExtra
+  return { almacen: Math.round(almacen * 10) / 10, distrib: Math.round(distrib * 10) / 10 }
+}
+
+function CostoTab({ data, proyLive, canEdit, run, isPending }: {
+  data: DimData; proyLive: ProyeccionData | null; canEdit: boolean; run: RunFn; isPending: boolean
+}) {
+  const proy = proyLive
+  const [tar, setTar] = useState<Record<number, { a: string; e: string }>>(() =>
+    Object.fromEntries((proy?.costoHh ?? []).map((c) => [c.mes, { a: String(c.almacen), e: String(c.entrega) }])))
+  const [hve, setHve] = useState(String(data.config.horas_vuelta_extra))
+
+  if (!proy) return <p className="text-sm text-muted-foreground">Sin proyección de volumen: cargá el presupuesto anual para ver el costo.</p>
+
+  const tarifaDe = (mesN: number, campo: "a" | "e") => {
+    const t = tar[mesN]
+    if (t && t[campo] !== "") return Number(t[campo]) || 0
+    const c = proy.costoHh.find((x) => x.mes === mesN)
+    return campo === "a" ? (c?.almacen ?? 0) : (c?.entrega ?? 0)
+  }
+  const horasVuelta = Number(hve) > 0 ? Number(hve) : proy.horasVueltaExtra
+
+  const filas = proy.meses.map((mm, i) => {
+    const mesN = Number(mm.mes.split("-")[1])
+    const hh = hhDelMes({ ...proy, horasVueltaExtra: horasVuelta }, i)
+    const $alm = hh.almacen * tarifaDe(mesN, "a")
+    const $dis = hh.distrib * tarifaDe(mesN, "e")
+    const total = $alm + $dis
+    return { mm, mesN, hh, $alm, $dis, total, hl: mm.hl, porHl: mm.hl > 0 ? total / mm.hl : 0 }
+  })
+  const tot = filas.reduce((s, f) => ({
+    hhA: s.hhA + f.hh.almacen, hhD: s.hhD + f.hh.distrib,
+    $a: s.$a + f.$alm, $d: s.$d + f.$dis, total: s.total + f.total, hl: s.hl + f.hl,
+  }), { hhA: 0, hhD: 0, $a: 0, $d: 0, total: 0, hl: 0 })
+  const vlc = proy.vlc
+  const sinTarifas = proy.costoHh.every((c) => c.almacen === 0 && c.entrega === 0)
+
+  return (
+    <div className="space-y-6">
+      {/* ════ Costo/HL de HOY ════ */}
+      <Card className="border-slate-300">
+        <CardHeader className="pb-2"><CardTitle className="text-base">Costo logístico por HL — hoy</CardTitle></CardHeader>
+        <CardContent>
+          {vlc.valorMes == null ? (
+            <p className="text-sm text-muted-foreground">Todavía no hay costo logístico cargado este año (tabla de costo mensual del Árbol del Sueño).</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-8">
+                <div>
+                  <p className="text-xs text-muted-foreground">Último mes con dato ({mesLabel(vlc.mesBase ?? "")})</p>
+                  <p className="text-2xl font-bold text-slate-900">{money(vlc.valorMes)}<span className="text-sm font-normal text-muted-foreground"> /HL</span></p>
+                  {vlc.hlMes ? <p className="text-xs text-muted-foreground">sobre {fmt(vlc.hlMes)} HL vendidos</p> : null}
+                </div>
+                {vlc.ytd != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Acumulado del año</p>
+                    <p className="text-2xl font-bold text-slate-900">{money(vlc.ytd)}<span className="text-sm font-normal text-muted-foreground"> /HL</span></p>
+                  </div>
+                )}
+                {vlc.meta != null && vlc.meta > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Meta (VLC/HL)</p>
+                    <p className={`text-2xl font-bold ${(vlc.ytd ?? 0) <= vlc.meta ? "text-emerald-700" : "text-red-700"}`}>{money(vlc.meta)}<span className="text-sm font-normal text-muted-foreground"> /HL</span></p>
+                    <p className="text-xs text-muted-foreground">{(vlc.ytd ?? 0) <= vlc.meta ? `margen ${money(vlc.meta - (vlc.ytd ?? 0))}` : `excedido en ${money((vlc.ytd ?? 0) - vlc.meta)}`}</p>
+                  </div>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Es el <b>VLC/HL</b> del Árbol del Sueño: (costo de distribución + costo de almacén) ÷ HL vendidos del mes. Incluye toda la estructura, no solo la mano de obra.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ════ Datos de entrada — valor de la hora extra ════ */}
+      {canEdit && (
+        <Card className="border-sky-200">
+          <CardHeader className="pb-2"><CardTitle className="text-base">1 · Valor de la hora extra ($/hora)</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Sector</TableHead>
+                {proy.meses.map((mm) => <TableHead key={mm.mes} className="text-right">{mesLabel(mm.mes)}</TableHead>)}
+              </TableRow></TableHeader>
+              <TableBody>
+                {([["a", "Almacén"], ["e", "Distribución"]] as const).map(([campo, label]) => (
+                  <TableRow key={campo}>
+                    <TableCell className="font-medium">{label}</TableCell>
+                    {proy.meses.map((mm) => {
+                      const mesN = Number(mm.mes.split("-")[1])
+                      return (
+                        <TableCell key={mm.mes} className="text-right">
+                          <Input type="number" step="1" className="h-8 w-24 text-right"
+                            value={tar[mesN]?.[campo] ?? String(campo === "a" ? tarifaDe(mesN, "a") : tarifaDe(mesN, "e"))}
+                            onChange={(e) => setTar((s) => ({
+                              ...s,
+                              [mesN]: { a: s[mesN]?.a ?? String(tarifaDe(mesN, "a")), e: s[mesN]?.e ?? String(tarifaDe(mesN, "e")), [campo]: e.target.value },
+                            }))} />
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <Label className="text-xs">Horas extra por persona en un día de refuerzo</Label>
+                <Input type="number" step="0.5" className="h-8 w-24" value={hve} onChange={(e) => setHve(e.target.value)} />
+              </div>
+              <Button size="sm" disabled={isPending} onClick={() => run(async () => {
+                const r1 = await guardarCostoHh(Number(proy.mesBase.split("-")[0]), proy.meses.map((mm) => {
+                  const mesN = Number(mm.mes.split("-")[1])
+                  return { mes: mesN, almacen: tarifaDe(mesN, "a"), entrega: tarifaDe(mesN, "e") }
+                }))
+                if ((r1 as { error?: string })?.error) return r1
+                return guardarConfigDim({ ...data.config, horas_vuelta_extra: Number(hve) || 4 })
+              }, "Costos guardados")}>Guardar</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Valores del <b>presupuesto PxQ 2026</b> (hojas ALMACEN y ENTREGA del EERR), con el recargo 50%/100% ya incluido e inflación del 2% mensual. Editalos si el valor real de liquidación difiere.
+              Las horas extra de <b>distribución</b> salen de los días de refuerzo: cada persona que falta ese día hace {fmt(horasVuelta)} h extra.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ════ Resultado — cuánto cuesta hacer las extras ════ */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">2 · Si hacés las horas extra, cuánto cuesta</CardTitle></CardHeader>
+        <CardContent>
+          {sinTarifas && <p className="mb-2 text-sm text-amber-700">Cargá el valor de la hora extra arriba para ver los importes.</p>}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Mes</TableHead>
+                <TableHead className="text-right">HH extra almacén</TableHead>
+                <TableHead className="text-right">$ almacén</TableHead>
+                <TableHead className="text-right">HH extra distrib.</TableHead>
+                <TableHead className="text-right">$ distribución</TableHead>
+                <TableHead className="text-right">$ total</TableHead>
+                <TableHead className="text-right">HL del mes</TableHead>
+                <TableHead className="text-right">$/HL extra</TableHead>
+                {vlc.valorMes != null && <TableHead className="text-right">Costo/HL proyectado</TableHead>}
+              </TableRow></TableHeader>
+              <TableBody>
+                {filas.map((f) => {
+                  const proyectado = (vlc.valorMes ?? 0) + f.porHl
+                  const excede = vlc.meta != null && vlc.meta > 0 && proyectado > vlc.meta
+                  return (
+                    <TableRow key={f.mm.mes} className={f.total > 0 ? "" : "text-muted-foreground"}>
+                      <TableCell className="font-medium">
+                        {mesLabel(f.mm.mes)}
+                        {f.mm.ajustePct !== 0 ? <span className="ml-1 text-[10px] text-sky-700">{f.mm.ajustePct > 0 ? "+" : ""}{f.mm.ajustePct}%</span> : null}
+                      </TableCell>
+                      <TableCell className="text-right">{f.hh.almacen > 0 ? `${fmt(f.hh.almacen)} h` : "—"}</TableCell>
+                      <TableCell className="text-right">{f.$alm > 0 ? money(f.$alm) : "—"}</TableCell>
+                      <TableCell className="text-right">{f.hh.distrib > 0 ? `${fmt(f.hh.distrib)} h` : "—"}</TableCell>
+                      <TableCell className="text-right">{f.$dis > 0 ? money(f.$dis) : "—"}</TableCell>
+                      <TableCell className="text-right font-semibold">{f.total > 0 ? money(f.total) : "—"}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{fmt(Math.round(f.hl))}</TableCell>
+                      <TableCell className={`text-right font-semibold ${f.porHl > 0 ? "text-amber-700" : ""}`}>{f.porHl > 0 ? money2(f.porHl) : "—"}</TableCell>
+                      {vlc.valorMes != null && (
+                        <TableCell className={`text-right ${excede ? "text-red-700 font-semibold" : ""}`}>{money(proyectado)}</TableCell>
+                      )}
+                    </TableRow>
+                  )
+                })}
+                <TableRow className="border-t-2">
+                  <TableCell className="font-bold">Total</TableCell>
+                  <TableCell className="text-right font-bold">{fmt(Math.round(tot.hhA))} h</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.$a)}</TableCell>
+                  <TableCell className="text-right font-bold">{fmt(Math.round(tot.hhD))} h</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.$d)}</TableCell>
+                  <TableCell className="text-right font-bold">{money(tot.total)}</TableCell>
+                  <TableCell className="text-right font-bold text-muted-foreground">{fmt(Math.round(tot.hl))}</TableCell>
+                  <TableCell className="text-right font-bold">{tot.hl > 0 ? money2(tot.total / tot.hl) : "—"}</TableCell>
+                  {vlc.valorMes != null && <TableCell />}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            <b>HH extra almacén</b> = horas-hombre que la dotación fija no llega a cubrir (pickeros + clasificadores + tareas generales + maquinistas).
+            <b> HH extra distribución</b> = personas que faltan en cada día de refuerzo × {fmt(horasVuelta)} h.
+            <b> $/HL extra</b> = lo que suma la reestructuración al costo por HL de ese mes; el <b>costo/HL proyectado</b> lo suma al {money(vlc.valorMes ?? 0)}/HL de hoy.
+            Los HL siguen el escenario cargado en Flota o Almacén: si cambiás un %, esta tabla se actualiza sola.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
@@ -190,6 +398,7 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         <TabsList>
           <TabsTrigger value="flotaentrega">Flota / Entrega</TabsTrigger>
           <TabsTrigger value="almacen">Almacén</TabsTrigger>
+          <TabsTrigger value="costo">Costo / HL</TabsTrigger>
           <TabsTrigger value="kpis">KPIs de distribución</TabsTrigger>
           <TabsTrigger value="planes">Planes & Reunión</TabsTrigger>
         </TabsList>
@@ -202,6 +411,11 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
         {/* ─── Almacén ─── */}
         <TabsContent value="almacen" className="space-y-4">
           <AlmacenTab data={data} proyLive={proyLive} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
+        </TabsContent>
+
+        {/* ─── Costo / HL ─── */}
+        <TabsContent value="costo" className="space-y-4">
+          <CostoTab data={data} proyLive={proyLive} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
         {/* ─── KPIs ─── */}

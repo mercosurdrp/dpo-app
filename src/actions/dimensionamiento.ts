@@ -125,6 +125,23 @@ export interface DimConfig {
   dotacion_reempaque: number    // tareas generales / reempaque actuales
   ausentismo_almacen: number    // fracción 0–1 no disponible en promedio (vacaciones/licencias/faltas)
   ausentismo_reparto: number    // ídem reparto; 0 = la dotación observada ya lo trae implícito
+  horas_vuelta_extra: number    // horas extra por persona en un día de refuerzo de flota (días → hora-hombre)
+}
+
+// Costo de la hora-hombre EXTRA por sector (EERR PxQ; recargo 50/100% ya incluido).
+export interface CostoHhMes {
+  mes: number
+  almacen: number
+  entrega: number
+}
+
+// Costo/HL de referencia: lo que hoy cuesta la logística por HL (VLC/HL del Árbol del Sueño).
+export interface VlcReferencia {
+  mesBase: string | null   // último mes con costo cargado
+  valorMes: number | null  // $/HL de ese mes
+  hlMes: number | null     // HL vendidos de ese mes
+  ytd: number | null       // $/HL acumulado del año
+  meta: number | null      // meta del KPI
 }
 
 export interface RolFte {
@@ -229,6 +246,7 @@ export interface ProyeccionFlotaRol {
   diasRefuerzo: number[]         // por mes: días con necesarios > dotación
   picoNecesario: number[]        // por mes: necesarios el día más cargado
   segundaVueltaMeses: boolean[]  // por mes: algún día supera los camiones disponibles (2ª vuelta obligada)
+  personaDias: number[]          // por mes: Σ (necesarios − dotación) de los días de refuerzo → hora-hombre × horas_vuelta_extra
 }
 export interface ProyeccionData {
   mesBase: string
@@ -244,6 +262,9 @@ export interface ProyeccionData {
   camionesDisp: number
   capCamion: number
   pesos: number[]                // [lun..sab]
+  costoHh: CostoHhMes[]          // $/hora extra por mes y sector (mismo orden que meses)
+  horasVueltaExtra: number       // horas extra por persona en un día de refuerzo
+  vlc: VlcReferencia             // costo logístico por HL de referencia (Árbol del Sueño)
 }
 
 export interface DimPlan {
@@ -346,6 +367,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       dotacion_reempaque: Number(configRes.data?.dotacion_reempaque ?? 1),
       ausentismo_almacen: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_almacen ?? 0.08))),
       ausentismo_reparto: Math.min(0.9, Math.max(0, Number(configRes.data?.ausentismo_reparto ?? 0))),
+      // columna nueva: se lee aparte para no romper el select si la migración aún no corrió
+      horas_vuelta_extra: 4,
+    }
+    {
+      const { data: hve } = await supabase.from("dim_config").select("horas_vuelta_extra").eq("id", 1).maybeSingle()
+      const v = Number(hve?.horas_vuelta_extra)
+      if (Number.isFinite(v) && v > 0) config.horas_vuelta_extra = v
     }
     // Dotación efectiva de almacén: descuenta el ausentismo promedio (1 decimal).
     const efAlmacen = (dot: number) => Math.round(dot * (1 - config.ausentismo_almacen) * 10) / 10
@@ -720,24 +748,61 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             { rol: "Ayudantes", dotacion: ayudantesDisp, tripulacion: config.ayudantes_por_camion },
           ]
           const flotaProy: ProyeccionFlotaRol[] = recursosFlota.map((rf) => {
-            const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = []
+            const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
             for (const mm of meses) {
               const ceqMes = ceqProm * mm.indice
-              let dias = 0, pico = 0, sv = false
+              let dias = 0, pico = 0, sv = false, pdias = 0
               for (const wd of weekdaysDelMes(Number(mm.mes.split("-")[1]))) {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
                 const camionesDia = zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
                 const necesarios = camionesDia * rf.tripulacion
-                if (necesarios > rf.dotacion) dias++
+                if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
                 if (camionesDia > camionesDisp) sv = true
                 pico = Math.max(pico, necesarios)
               }
               diasRefuerzo.push(dias); picoNecesario.push(pico); segundaVueltaMeses.push(sv)
+              personaDias.push(Math.round(pdias * 10) / 10)
             }
-            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses }
+            return { rol: rf.rol, dotacion: rf.dotacion, tripulacion: rf.tripulacion, diasRefuerzo, picoNecesario, segundaVueltaMeses, personaDias }
           })
+
+          // Costo de la hora extra por mes/sector + VLC/HL de referencia, para valorizar
+          // las horas extra que el modelo proyecta y traducirlas a $/HL incremental.
+          const costoHh: CostoHhMes[] = []
+          try {
+            const { data: ch } = await supabase
+              .from("dim_costo_hh").select("mes, costo_hh_almacen, costo_hh_entrega").eq("anio", anioActual)
+            const porMes = new Map((ch ?? []).map((r) => [Number(r.mes), r]))
+            for (const mm of meses) {
+              const r = porMes.get(Number(mm.mes.split("-")[1]))
+              costoHh.push({
+                mes: Number(mm.mes.split("-")[1]),
+                almacen: Number(r?.costo_hh_almacen ?? 0),
+                entrega: Number(r?.costo_hh_entrega ?? 0),
+              })
+            }
+          } catch {
+            // tabla aún no creada → la UI pide cargar los valores
+          }
+
+          const vlc: VlcReferencia = { mesBase: null, valorMes: null, hlMes: null, ytd: null, meta: null }
+          try {
+            const { data: det } = await supabase.rpc("sueno_kpi_detalle", { p_kpi: "vlc_hl", p_anio: anioActual })
+            const filas = (det ?? []) as Array<{ mes: number; valor: number; detalle: number }>
+            const ult = filas.filter((f) => Number(f.valor) > 0).sort((a, b) => Number(b.mes) - Number(a.mes))[0]
+            if (ult) {
+              vlc.mesBase = `${anioActual}-${String(ult.mes).padStart(2, "0")}`
+              vlc.valorMes = Number(ult.valor)
+              vlc.hlMes = Number(ult.detalle)
+            }
+            const { data: kv } = await supabase
+              .from("sueno_kpi_valores").select("valor_ytd, meta").eq("kpi_key", "vlc_hl").eq("anio", anioActual).maybeSingle()
+            if (kv) { vlc.ytd = Number(kv.valor_ytd); vlc.meta = Number(kv.meta) }
+          } catch {
+            // el KPI del Árbol del Sueño no está disponible → se muestra solo el incremental
+          }
 
           proyeccion = {
             mesBase: `${anioActual}-${String(mesActual).padStart(2, "0")}`,
@@ -746,6 +811,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
             flotaCeqPromBase: Math.round(ceqProm), capCamionViaje: Math.round(capCamionViaje),
             choferesDisp, camionesDisp, capCamion: Math.round(capCamion),
             pesos: pesos.map((x) => Math.round((x / sumaPesos) * 1000) / 1000),
+            costoHh, horasVueltaExtra: config.horas_vuelta_extra, vlc,
           }
         }
       }
@@ -843,10 +909,38 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
         dotacion_reempaque: Math.max(0, Number(config.dotacion_reempaque) || 0),
         ausentismo_almacen: Math.min(0.9, Math.max(0, Number(config.ausentismo_almacen) || 0)),
         ausentismo_reparto: Math.min(0.9, Math.max(0, Number(config.ausentismo_reparto) || 0)),
+        horas_vuelta_extra: Math.min(12, Math.max(0.5, Number(config.horas_vuelta_extra) || 4)),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1)
+    if (error) return { error: error.message }
+    revalidatePath("/planeamiento/dimensionamiento")
+    return { data: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error" }
+  }
+}
+
+// Costo de la hora extra por mes y sector. Se pisa el set completo del año.
+export async function guardarCostoHh(anio: number, filas: Array<{ mes: number; almacen: number; entrega: number }>) {
+  try {
+    if (IS_MISIONES) return { error: SOLO_PAMPEANA }
+    const profile = await requireRole(ROLES_EDICION)
+    if (!profile) return { error: "Sin permisos" }
+    const supabase = await createClient()
+    const rows = filas
+      .filter((f) => Number(f.mes) >= 1 && Number(f.mes) <= 12)
+      .map((f) => ({
+        anio,
+        mes: Number(f.mes),
+        costo_hh_almacen: Math.max(0, Number(f.almacen) || 0),
+        costo_hh_entrega: Math.max(0, Number(f.entrega) || 0),
+        updated_by: profile.id,
+        updated_at: new Date().toISOString(),
+      }))
+    if (rows.length === 0) return { data: true }
+    const { error } = await supabase.from("dim_costo_hh").upsert(rows, { onConflict: "anio,mes" })
     if (error) return { error: error.message }
     revalidatePath("/planeamiento/dimensionamiento")
     return { data: true }
