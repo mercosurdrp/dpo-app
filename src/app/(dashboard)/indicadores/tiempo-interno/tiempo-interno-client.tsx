@@ -53,6 +53,7 @@ function TiBadge({ ti }: { ti: number }) {
 const MOTIVO_LABEL: Record<string, string> = {
   sin_match: "Chofer sin legajo",
   sin_biometrico: "Sin fichaje de salida",
+  no_ficha: "No ficha (fuera del reloj)",
   negativo: "Salida antes del retorno",
   outlier: "Fuera de rango (>3h)",
 }
@@ -185,7 +186,14 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Retornos sin marca biométrica ({kpis.excluidos} excluidos)
+              Olvidos de fichada ({kpis.excluidos} excluidos por rango)
+              {kpis.noFicha > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium">{kpis.noFicha}</span> de choferes que
+                  no fichan, contados aparte
+                </>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -271,6 +279,37 @@ export function TiempoInternoClient({ kpis, planesResumen }: Props) {
 
       {/* Registros */}
       <RegistrosTable registros={kpis.registros} />
+
+      {/* Calidad del dato: sin esto, dos ajustes quedan invisibles y el que mire
+          la serie no entiende por qué mayo cambió ni qué pasó con los faltantes. */}
+      <Card className="border-slate-200 bg-slate-50">
+        <CardContent className="pt-6">
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <p className="font-medium text-slate-700">Sobre el dato</p>
+            <p>
+              <span className="font-medium">Reloj desfasado del 6 al 18 de mayo:</span> el
+              biométrico grabó con 3 horas de más (la mediana de entrada saltó de 06:56 a
+              09:55 y volvió sola el 19). El desfase se corrige en el cálculo, así que esas
+              semanas ya no muestran los 91 y 121 min que publicaban antes. No afectó al
+              ausentismo ni a las horas trabajadas: ahí entrada y salida se corrieron igual
+              y la resta se cancela.
+            </p>
+            {kpis.choferesSinFichaje.length > 0 && (
+              <p>
+                <span className="font-medium">Fuera de la medición:</span>{" "}
+                {kpis.choferesSinFichaje.join(", ")} — no tienen ninguna marca en el reloj
+                en todo el período, así que sus retornos no cuentan como dato faltante. Si
+                empiezan a fichar, entran solos.
+              </p>
+            )}
+            <p>
+              <span className="font-medium">Salida antes del retorno:</span> se descartan.
+              El checklist no guarda una hora de retorno declarada sino el momento en que
+              se envía el formulario, así que cargarlo tarde da un TI negativo.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

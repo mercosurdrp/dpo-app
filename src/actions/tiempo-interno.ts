@@ -28,10 +28,31 @@ const TI_OUTLIER_MINUTOS = 180 // > 3h se descarta como anomalía (no es tiempo 
 const MARCAS_EN_HORA_ARGENTINA = process.env.MARCAS_EN_HORA_ARGENTINA === "true"
 const AR_OFFSET_MS = 3 * 3600 * 1000
 
+// 🚨 Ventana en que el reloj ZKTeco grabó con ~3 h de desfase (guardó UTC en vez
+// de hora ARG). Verificado sobre los datos: la mediana de ENTRADA salta de 06:56
+// a 09:55 el 06-05, se mantiene 11 días hábiles y vuelve sola a 06:56 el 19-05.
+// Que se corran las entradas es la prueba de que fue el reloj y no la gente:
+// nadie entra 3 h más tarde durante dos semanas y después vuelve al mismo minuto.
+//
+// No afectó al ausentismo ni a las horas trabajadas (entrada y salida se
+// corrieron igual, la resta se cancela). Rompió SOLO el Tiempo Interno, que es el
+// único que cruza el fichaje contra el checklist: una fuente corrida y la otra no.
+// Sin corregir, esas dos semanas publicaban 91 y 121 min contra una meta de 30.
+//
+// 🚨 La corrección va acá y NO en `asistencia_marcas`: ese sync es auto-reparador
+// (el PHP del reloj re-lee toda la ventana desde abril y re-upsertea cada hora),
+// así que cualquier arreglo sobre la tabla se pisa solo en menos de una hora.
+const RELOJ_DESFASADO_DESDE = "2026-05-06"
+const RELOJ_DESFASADO_HASTA = "2026-05-18"
+const RELOJ_DESFASE_MS = 3 * 3600 * 1000
+
 // Instante real (UTC ms) de una marca biométrica.
 function salidaUtcMs(fechaMarca: string): number {
   const ms = new Date(fechaMarca).getTime()
-  return MARCAS_EN_HORA_ARGENTINA ? ms + AR_OFFSET_MS : ms
+  const base = MARCAS_EN_HORA_ARGENTINA ? ms + AR_OFFSET_MS : ms
+  const dia = fechaMarca.slice(0, 10)
+  const desfasada = dia >= RELOJ_DESFASADO_DESDE && dia <= RELOJ_DESFASADO_HASTA
+  return desfasada ? base - RELOJ_DESFASE_MS : base
 }
 // Fecha ARG (YYYY-MM-DD) de una marca, para emparejar con checklist.fecha.
 function fechaArgDeMarca(fechaMarca: string): string {
@@ -121,15 +142,38 @@ export async function getTiKpis(filters?: {
       }
     }
 
+    // 3.b) Legajos que NO pasan por el reloj: cero marcas (de cualquier tipo) en
+    // todo el período. No es dato faltante — es gente fuera del alcance de la
+    // medición, y contarla como "sin biométrico" ensucia la cobertura y hace
+    // parecer que el pipeline falla. Caso real: un chofer con 58 retornos y cero
+    // marcas, ni por legajo ni por DNI.
+    // Se detecta por datos y no por una lista fija: si mañana empiezan a fichar,
+    // entran solos al indicador sin tocar código.
+    const { data: marcasAny, error: anyErr } = await supabase
+      .from("asistencia_marcas")
+      .select("legajo")
+      .gte("fecha_marca", desde)
+    if (anyErr) return { error: anyErr.message }
+    const legajosQueFichan = new Set(
+      ((marcasAny || []) as { legajo: number }[]).map((m) => m.legajo),
+    )
+
     // 4) Calcular TI por retorno
     const registros: TiRegistro[] = []
     const tis: number[] = []
-    let sinBio = 0, excluidos = 0
+    const sinFichajeSet = new Set<string>()
+    let sinBio = 0, excluidos = 0, noFicha = 0
     for (const r of retornos) {
       const emp = resolveLegajo(r.chofer)
       const base = { fecha: r.fecha, chofer: r.chofer, dominio: r.dominio, hora_retorno: r.hora }
       if (!emp) {
         registros.push({ ...base, legajo: null, hora_salida: null, ti_minutos: null, motivo_sin_dato: "sin_match" })
+        continue
+      }
+      if (!legajosQueFichan.has(emp.legajo)) {
+        noFicha++
+        sinFichajeSet.add(norm(r.chofer))
+        registros.push({ ...base, legajo: emp.legajo, hora_salida: null, ti_minutos: null, motivo_sin_dato: "no_ficha" })
         continue
       }
       const salMs = salidaPorLegFecha.get(`${emp.legajo}|${r.fecha}`)
@@ -206,6 +250,7 @@ export async function getTiKpis(filters?: {
       data: {
         totalRetornos: retornos.length,
         conTi, sinBiometrico: sinBio, excluidos,
+        noFicha, choferesSinFichaje: [...sinFichajeSet].sort(),
         promedioMinutos, mediana, dentroMeta, pctDentroMeta,
         metaMinutos: TI_META_MINUTOS, pctMetaMinimo: PCT_META_MINIMO,
         semanal, mensual, registros,

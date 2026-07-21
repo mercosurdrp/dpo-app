@@ -1145,13 +1145,26 @@ export interface TiRegistro {
   hora_retorno: string // ISO UTC del checklist de retorno
   hora_salida: string | null // ISO UTC normalizado del biométrico
   ti_minutos: number | null
-  motivo_sin_dato: "sin_match" | "sin_biometrico" | "negativo" | "outlier" | null
+  // "no_ficha": el chofer no pasa por el reloj biométrico (cero marcas en todo el
+   // período). No es un dato faltante: está fuera del alcance de la medición, y
+   // por eso no cuenta en el denominador.
+  motivo_sin_dato:
+    | "sin_match"
+    | "sin_biometrico"
+    | "no_ficha"
+    | "negativo"
+    | "outlier"
+    | null
 }
 
 export interface TiKpis {
   totalRetornos: number
   conTi: number // retornos con TI calculable
   sinBiometrico: number
+  /** Retornos de choferes que no fichan nunca: fuera del alcance, no son error de dato. */
+  noFicha: number
+  /** Choferes sin ninguna marca en el período, para mostrarlos aparte. */
+  choferesSinFichaje: string[]
   excluidos: number // negativos + outliers
   promedioMinutos: number
   mediana: number
