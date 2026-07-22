@@ -9,6 +9,8 @@ import type {
   EstadoPasoPlanAccion,
   PlanAccionPresupuestoConDetalle,
   PlanAccionPaso,
+  PlanAccionAvance,
+  TipoAvancePlanAccion,
 } from "@/types/database"
 
 const REVALIDATE_PATH = "/presupuesto"
@@ -114,7 +116,7 @@ export async function listPlanesAccion(
     const { data, error } = await supabase
       .from("presupuestos_planes_accion")
       .select(
-        "*, responsable:profiles!presupuestos_planes_accion_responsable_id_fkey(id, nombre, email), tarea:presupuestos_tareas!presupuestos_planes_accion_tarea_id_fkey(id, rubro, mes), pasos:presupuestos_planes_accion_pasos(*, responsable:profiles!presupuestos_planes_accion_pasos_responsable_id_fkey(id, nombre))",
+        "*, responsable:profiles!presupuestos_planes_accion_responsable_id_fkey(id, nombre, email), cerrador:profiles!presupuestos_planes_accion_cerrado_por_fkey(id, nombre), tarea:presupuestos_tareas!presupuestos_planes_accion_tarea_id_fkey(id, rubro, mes), pasos:presupuestos_planes_accion_pasos(*, responsable:profiles!presupuestos_planes_accion_pasos_responsable_id_fkey(id, nombre)), avances:presupuestos_planes_accion_avances(*, autor:profiles!presupuestos_planes_accion_avances_created_by_fkey(id, nombre))",
       )
       .eq("anio", anio)
       .order("created_at", { ascending: true })
@@ -146,6 +148,24 @@ export async function listPlanesAccion(
           return a.created_at.localeCompare(b.created_at)
         })
 
+      // Bitácora: más reciente primero.
+      const avances: PlanAccionAvance[] = (r.avances ?? [])
+        .map((a: Record<string, unknown>) => ({
+          id: a.id as string,
+          plan_id: a.plan_id as string,
+          paso_id: (a.paso_id as string) ?? null,
+          comentario: a.comentario as string,
+          estado_snapshot: (a.estado_snapshot as string) ?? null,
+          tipo: a.tipo as TipoAvancePlanAccion,
+          created_by: (a.created_by as string) ?? null,
+          created_at: a.created_at as string,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          autor_nombre: (a.autor as any)?.nombre ?? null,
+        }))
+        .sort((a: PlanAccionAvance, b: PlanAccionAvance) =>
+          b.created_at.localeCompare(a.created_at),
+        )
+
       return {
         id: r.id,
         anio: r.anio,
@@ -158,6 +178,8 @@ export async function listPlanesAccion(
         estado: r.estado as EstadoPlanAccion,
         observaciones: r.observaciones,
         adjunto_urls: (r.adjunto_urls as string[] | null) ?? [],
+        cerrado_at: r.cerrado_at ?? null,
+        cerrado_por: r.cerrado_por ?? null,
         created_by: r.created_by,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -165,7 +187,9 @@ export async function listPlanesAccion(
         responsable_email: r.responsable?.email ?? null,
         tarea_rubro: r.tarea?.rubro ?? null,
         tarea_mes: r.tarea?.mes ?? null,
+        cerrado_por_nombre: r.cerrador?.nombre ?? null,
         pasos,
+        avances,
       }
     })
 
@@ -339,6 +363,165 @@ export async function eliminarPlanAccion(
 }
 
 // =============================================
+// Mutaciones — cierre del plan
+// =============================================
+
+/**
+ * Cierra el plan dejando rastro: quién, cuándo y con qué comentario.
+ * `cerrado_at` lo sella el trigger de la migración 20260722150000.
+ */
+export async function cerrarPlanAccion(
+  id: string,
+  comentario: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const texto = comentario.trim()
+    if (!texto) {
+      return { error: "Contá en una línea con qué resultado se cierra el plan" }
+    }
+
+    const { data: plan, error: errPlan } = await supabase
+      .from("presupuestos_planes_accion")
+      .select("estado")
+      .eq("id", id)
+      .single()
+
+    if (errPlan) return { error: errPlan.message }
+    if (plan?.estado === "cerrado") return { error: "El plan ya está cerrado" }
+
+    const { error } = await supabase
+      .from("presupuestos_planes_accion")
+      .update({ estado: "cerrado", cerrado_por: profile.id })
+      .eq("id", id)
+
+    if (error) return { error: error.message }
+
+    // El comentario de cierre queda en la bitácora, no pisa observaciones.
+    await supabase.from("presupuestos_planes_accion_avances").insert({
+      plan_id: id,
+      paso_id: null,
+      comentario: texto,
+      estado_snapshot: "cerrado",
+      tipo: "cierre",
+      created_by: profile.id,
+    })
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cerrando el plan",
+    }
+  }
+}
+
+/** Reabre un plan cerrado. El trigger limpia cerrado_at / cerrado_por. */
+export async function reabrirPlanAccion(
+  id: string,
+  motivo: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const texto = motivo.trim()
+    if (!texto) return { error: "Indicá por qué se reabre el plan" }
+
+    const { error } = await supabase
+      .from("presupuestos_planes_accion")
+      .update({ estado: "en_progreso" })
+      .eq("id", id)
+
+    if (error) return { error: error.message }
+
+    await supabase.from("presupuestos_planes_accion_avances").insert({
+      plan_id: id,
+      paso_id: null,
+      comentario: texto,
+      estado_snapshot: "en_progreso",
+      tipo: "reapertura",
+      created_by: profile.id,
+    })
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error reabriendo el plan",
+    }
+  }
+}
+
+// =============================================
+// Mutaciones — bitácora de avances
+// =============================================
+
+/**
+ * Agrega un avance a la bitácora. Si es de un paso, además refresca
+ * `pasos.avance` para que el "último avance" que ya se mostraba siga vigente.
+ */
+export async function registrarAvance(
+  planId: string,
+  pasoId: string | null,
+  comentario: string,
+): Promise<Result<{ ok: true }>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const texto = comentario.trim()
+    if (!texto) return { error: "El avance no puede estar vacío" }
+
+    let estadoSnapshot: string | null = null
+    if (pasoId) {
+      const { data: paso } = await supabase
+        .from("presupuestos_planes_accion_pasos")
+        .select("estado")
+        .eq("id", pasoId)
+        .single()
+      estadoSnapshot = (paso?.estado as string) ?? null
+    } else {
+      const { data: plan } = await supabase
+        .from("presupuestos_planes_accion")
+        .select("estado")
+        .eq("id", planId)
+        .single()
+      estadoSnapshot = (plan?.estado as string) ?? null
+    }
+
+    const { error } = await supabase
+      .from("presupuestos_planes_accion_avances")
+      .insert({
+        plan_id: planId,
+        paso_id: pasoId,
+        comentario: texto,
+        estado_snapshot: estadoSnapshot,
+        tipo: "avance",
+        created_by: profile.id,
+      })
+
+    if (error) return { error: error.message }
+
+    if (pasoId) {
+      await supabase
+        .from("presupuestos_planes_accion_pasos")
+        .update({ avance: texto })
+        .eq("id", pasoId)
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: { ok: true } }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error registrando el avance",
+    }
+  }
+}
+
+// =============================================
 // Mutaciones — pasos / acciones
 // =============================================
 
@@ -383,8 +566,22 @@ export async function crearPaso(
 
     if (error) return { error: error.message }
 
+    const nuevoId = (data as { id: string }).id
+
+    // Si nace con avance cargado, arranca la bitácora.
+    if (campos.avance) {
+      await supabase.from("presupuestos_planes_accion_avances").insert({
+        plan_id: planId,
+        paso_id: nuevoId,
+        comentario: campos.avance,
+        estado_snapshot: campos.estado,
+        tipo: "avance",
+        created_by: profile.id,
+      })
+    }
+
     revalidatePath(REVALIDATE_PATH)
-    return { data: { id: (data as { id: string }).id } }
+    return { data: { id: nuevoId } }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error creando la acción",
@@ -397,11 +594,18 @@ export async function actualizarPaso(
   formData: FormData,
 ): Promise<Result<{ id: string }>> {
   try {
-    await requireEditor()
+    const profile = await requireEditor()
     const supabase = await createClient()
 
     const campos = camposPasoDesdeForm(formData)
     if (!campos.que) return { error: "La acción (qué) es obligatoria" }
+
+    // El avance previo se conserva en la bitácora antes de que el update lo pise.
+    const { data: previo } = await supabase
+      .from("presupuestos_planes_accion_pasos")
+      .select("plan_id, avance")
+      .eq("id", id)
+      .single()
 
     const { error } = await supabase
       .from("presupuestos_planes_accion_pasos")
@@ -409,6 +613,18 @@ export async function actualizarPaso(
       .eq("id", id)
 
     if (error) return { error: error.message }
+
+    const avanceAnterior = (previo?.avance as string | null) ?? null
+    if (campos.avance && campos.avance !== avanceAnterior && previo?.plan_id) {
+      await supabase.from("presupuestos_planes_accion_avances").insert({
+        plan_id: previo.plan_id,
+        paso_id: id,
+        comentario: campos.avance,
+        estado_snapshot: campos.estado,
+        tipo: "avance",
+        created_by: profile.id,
+      })
+    }
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { id } }

@@ -12,6 +12,9 @@ import {
   CheckCircle2,
   Link2,
   Paperclip,
+  CheckCheck,
+  MessageSquarePlus,
+  RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +43,9 @@ import {
 } from "./planes-accion-constantes"
 import { PlanAccionFormDialog } from "./plan-accion-form-dialog"
 import { PasoPlanAccionDialog } from "./paso-plan-accion-dialog"
+import { CerrarPlanAccionDialog } from "./cerrar-plan-accion-dialog"
+import { AvancePlanAccionDialog } from "./avance-plan-accion-dialog"
+import { SeguimientoTimeline } from "./seguimiento-timeline"
 
 interface ResponsableOpt {
   id: string
@@ -62,6 +68,16 @@ function formatDate(iso: string | null): string {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  })
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   })
 }
 
@@ -111,6 +127,18 @@ export function PlanesAccionSection({
   const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(
     null,
   )
+
+  // Cierre / reapertura del plan
+  const [cierre, setCierre] = useState<{
+    plan: PlanAccionPresupuestoConDetalle
+    modo: "cerrar" | "reabrir"
+  } | null>(null)
+
+  // Alta de avance: plan + paso (null = avance del plan entero)
+  const [avance, setAvance] = useState<{
+    plan: PlanAccionPresupuestoConDetalle
+    paso: PlanAccionPaso | null
+  } | null>(null)
 
   function refrescar() {
     router.refresh()
@@ -309,6 +337,13 @@ export function PlanesAccionSection({
                         {plan.fecha_limite &&
                           ` · Límite: ${formatDate(plan.fecha_limite)}`}
                       </p>
+                      {plan.cerrado_at && (
+                        <p className="text-xs text-emerald-700">
+                          Cerrado el {formatDateTime(plan.cerrado_at)}
+                          {plan.cerrado_por_nombre &&
+                            ` por ${plan.cerrado_por_nombre}`}
+                        </p>
+                      )}
                       {plan.desvio_detectado && (
                         <p className="mt-1 text-sm text-slate-600">
                           <span className="font-medium text-slate-700">
@@ -326,9 +361,47 @@ export function PlanesAccionSection({
                         </p>
                       )}
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       {puedeEditar && (
                         <>
+                          {plan.estado === "cerrado" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setCierre({ plan, modo: "reabrir" })
+                              }
+                              title="Reabrir plan"
+                            >
+                              <RotateCcw className="mr-1 size-3.5" />
+                              Reabrir
+                            </Button>
+                          ) : (
+                            plan.estado !== "cancelado" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() =>
+                                  setCierre({ plan, modo: "cerrar" })
+                                }
+                                title="Cerrar plan"
+                                className="bg-emerald-600 hover:bg-emerald-700"
+                              >
+                                <CheckCheck className="mr-1 size-3.5" />
+                                Cerrar
+                              </Button>
+                            )
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setAvance({ plan, paso: null })}
+                            title="Registrar avance del plan"
+                          >
+                            <MessageSquarePlus className="size-3.5" />
+                          </Button>
                           <Button
                             type="button"
                             variant="outline"
@@ -441,6 +514,15 @@ export function PlanesAccionSection({
                                     type="button"
                                     variant="outline"
                                     size="sm"
+                                    onClick={() => setAvance({ plan, paso })}
+                                    title="Registrar avance de esta acción"
+                                  >
+                                    <MessageSquarePlus className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => abrirEditarPaso(plan, paso)}
                                     title="Editar acción"
                                   >
@@ -507,6 +589,11 @@ export function PlanesAccionSection({
                     </div>
                   )}
 
+                  <SeguimientoTimeline
+                    avances={plan.avances}
+                    pasos={plan.pasos}
+                  />
+
                   {plan.observaciones && (
                     <p className="text-xs text-muted-foreground">
                       <span className="font-medium">Observaciones:</span>{" "}
@@ -563,6 +650,26 @@ export function PlanesAccionSection({
           )}
         </DialogContent>
       </Dialog>
+
+      {puedeEditar && cierre && (
+        <CerrarPlanAccionDialog
+          open={true}
+          onOpenChange={(o) => !o && setCierre(null)}
+          plan={cierre.plan}
+          modo={cierre.modo}
+          onSaved={refrescar}
+        />
+      )}
+
+      {puedeEditar && avance && (
+        <AvancePlanAccionDialog
+          open={true}
+          onOpenChange={(o) => !o && setAvance(null)}
+          plan={avance.plan}
+          paso={avance.paso}
+          onSaved={refrescar}
+        />
+      )}
 
       {puedeEditar && pasoPlan && (
         <PasoPlanAccionDialog

@@ -3080,6 +3080,25 @@ export interface PlanAccionPaso {
   responsable_nombre: string | null
 }
 
+export type TipoAvancePlanAccion =
+  | "avance"
+  | "cierre"
+  | "reapertura"
+  | "backfill"
+
+/** Bitácora append-only de seguimiento. paso_id null = avance del plan. */
+export interface PlanAccionAvance {
+  id: string
+  plan_id: string
+  paso_id: string | null
+  comentario: string
+  estado_snapshot: string | null
+  tipo: TipoAvancePlanAccion
+  created_by: string | null
+  created_at: string
+  autor_nombre: string | null
+}
+
 export interface PlanAccionPresupuesto {
   id: string
   anio: number
@@ -3092,6 +3111,8 @@ export interface PlanAccionPresupuesto {
   estado: EstadoPlanAccion
   observaciones: string | null
   adjunto_urls: string[]
+  cerrado_at: string | null
+  cerrado_por: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -3103,7 +3124,9 @@ export interface PlanAccionPresupuestoConDetalle extends PlanAccionPresupuesto {
   // Datos de la tarea de análisis vinculada (si la hay)
   tarea_rubro: string | null
   tarea_mes: number | null
+  cerrado_por_nombre: string | null
   pasos: PlanAccionPaso[]
+  avances: PlanAccionAvance[]
 }
 
 // =============================================
