@@ -4143,6 +4143,37 @@ export interface SkapPersonaRow {
   gaps_criticos: number
 }
 
+/** Una habilidad tal como la ve el propio evaluado en /visibilidad-resultados. */
+export interface SkapHabilidadEmpleado {
+  habilidad_id: string
+  bloque: string
+  criticidad: SkapCriticidad
+  habilidad: string
+  nivel: number | null
+  /** El individual si existe, si no el general del rol. */
+  estandar: number
+  gap: number | null
+  estado: SkapEstadoGap
+  fecha_evaluacion: string | null
+  /** Ascendente por fecha, para ver la evolución tras cada capacitación. */
+  historial: { fecha: string; nivel: number | null }[]
+}
+
+export interface SkapRolEmpleado {
+  rol: SkapRol
+  label: string
+  habilidades: SkapHabilidadEmpleado[]
+  /** % de habilidades CRÍTICAS (A) que llegan al estándar. Es el KPI del 4.4. */
+  pct_criticas: number | null
+  evaluadas: number
+  total: number
+  gaps: number
+}
+
+export interface SkapEmpleadoData {
+  roles: SkapRolEmpleado[]
+}
+
 export interface SkapMatrizRol {
   rol: SkapRol
   habilidades: SkapHabilidad[]

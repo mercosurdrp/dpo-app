@@ -5,6 +5,7 @@ import {
   getVisibilidadEmpleado,
   getVisibilidadEquipo,
 } from "@/actions/visibilidad-resultados"
+import { getMisHabilidades } from "@/actions/skap-empleado"
 import { VisibilidadEmpleadoClient } from "./visibilidad-empleado-client"
 import { VisibilidadEquipoClient } from "./visibilidad-equipo-client"
 
@@ -24,11 +25,11 @@ export default async function VisibilidadResultadosPage({
   const { mes } = await searchParams
 
   if (profile.role === "empleado") {
-    const res = await getVisibilidadEmpleado(mes)
+    const [res, skap] = await Promise.all([getVisibilidadEmpleado(mes), getMisHabilidades()])
     if ("error" in res) {
       return <MensajeError mensaje={res.error} />
     }
-    return <VisibilidadEmpleadoClient data={res.data} />
+    return <VisibilidadEmpleadoClient data={res.data} skap={skap} />
   }
 
   if (["admin", "supervisor", "admin_rrhh", "auditor"].includes(profile.role)) {

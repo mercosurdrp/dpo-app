@@ -3,11 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { getProfile, requireAuth, getEmpleadoIdFromAuth } from "@/lib/session"
+import { calcularCelda } from "@/lib/skap/gap"
 import type {
   SkapRol,
   SkapHabilidad,
-  SkapCelda,
-  SkapEstadoGap,
   SkapPersonaRow,
   SkapMatrizRol,
   SkapPlanFormacion,
@@ -25,53 +24,6 @@ const SECTOR_DE_ROL: Record<SkapRol, string> = {
   autoelevadorista: "Depósito",
   mantenimiento: "Depósito",
   administrativo: "Distribución",
-}
-
-/**
- * Semáforo del gap, tal cual el instructivo del Excel:
- *   gap <= -2  crítico | gap == -1  brecha | gap >= 0  cumple
- */
-function calcularCelda(
-  habilidad: SkapHabilidad,
-  evaluacion: { nivel: number | null; estandar_individual: number | null; fecha_evaluacion: string } | undefined,
-): SkapCelda {
-  const estandar = evaluacion?.estandar_individual ?? habilidad.estandar
-
-  if (!evaluacion) {
-    return {
-      habilidad_id: habilidad.id,
-      nivel: null,
-      estandar,
-      gap: null,
-      estado: "sin_evaluar",
-      fecha_evaluacion: null,
-    }
-  }
-  if (evaluacion.nivel === null) {
-    return {
-      habilidad_id: habilidad.id,
-      nivel: null,
-      estandar,
-      gap: null,
-      estado: "no_aplica",
-      fecha_evaluacion: evaluacion.fecha_evaluacion,
-    }
-  }
-
-  const gap = evaluacion.nivel - estandar
-  let estado: SkapEstadoGap
-  if (gap >= 0) estado = "cumple"
-  else if (gap === -1) estado = "brecha"
-  else estado = "critico"
-
-  return {
-    habilidad_id: habilidad.id,
-    nivel: evaluacion.nivel,
-    estandar,
-    gap,
-    estado,
-    fecha_evaluacion: evaluacion.fecha_evaluacion,
-  }
 }
 
 /**

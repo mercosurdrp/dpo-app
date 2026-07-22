@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { AlertTriangle, GraduationCap, ShieldCheck, Users, Wand2, BookOpen, ListChecks } from "lucide-react"
 import { useRefrescarConScroll } from "@/lib/use-refrescar-con-scroll"
+import { COLOR_GAP, ESCALA_SKAP, LABEL_GAP } from "@/lib/skap/gap"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -37,31 +38,6 @@ import type {
   SkapHabilidad,
   SkapCelda,
 } from "@/types/database"
-
-/** Escala del instructivo: qué significa cada nivel. */
-const ESCALA: Record<number, string> = {
-  0: "No conoce. No recibió instrucción.",
-  1: "Opera con limitaciones, necesita ayuda o supervisión frecuente.",
-  2: "Opera sin ayuda, pero no domina los fundamentos teóricos.",
-  3: "Aplica teoría y práctica. Trabaja sin errores en cualquier momento y lugar.",
-  4: "Puede instruir a otros. Es un experto.",
-}
-
-const COLOR_GAP: Record<SkapEstadoGap, string> = {
-  critico: "bg-red-500 text-white",
-  brecha: "bg-amber-400 text-amber-950",
-  cumple: "bg-emerald-500 text-white",
-  sin_evaluar: "bg-slate-100 text-slate-400",
-  no_aplica: "bg-slate-200 text-slate-500",
-}
-
-const LABEL_GAP: Record<SkapEstadoGap, string> = {
-  critico: "Gap crítico (2 o más niveles por debajo)",
-  brecha: "Brecha (1 nivel por debajo)",
-  cumple: "Cumple el estándar",
-  sin_evaluar: "Sin evaluar",
-  no_aplica: "No aplica",
-}
 
 const ESTADOS_ACCION: SkapEstadoAccion[] = ["pendiente", "programada", "realizada", "cerrada"]
 
@@ -580,7 +556,7 @@ function DialogNota({
                 <button
                   key={v}
                   disabled={pending}
-                  title={v === "NA" ? "No aplica" : ESCALA[Number(v)]}
+                  title={v === "NA" ? "No aplica" : ESCALA_SKAP[Number(v)]}
                   onClick={() => guardar(v)}
                   className={`h-11 flex-1 rounded-md text-base font-bold shadow-sm transition disabled:opacity-50 ${color} ${
                     actual === v ? "ring-2 ring-slate-900 ring-offset-2" : ""
@@ -593,7 +569,7 @@ function DialogNota({
           </div>
 
           <ul className="space-y-0.5 text-xs text-slate-500">
-            {Object.entries(ESCALA).map(([n, d]) => (
+            {Object.entries(ESCALA_SKAP).map(([n, d]) => (
               <li key={n}>
                 <span className="font-bold text-slate-700">{n}</span> — {d}
               </li>
@@ -688,7 +664,7 @@ function DialogEvaluar({
                   return (
                     <button
                       key={v}
-                      title={v === "NA" ? "No aplica" : ESCALA[Number(v)]}
+                      title={v === "NA" ? "No aplica" : ESCALA_SKAP[Number(v)]}
                       onClick={() => setNiveles((n) => ({ ...n, [h.id]: sel ? "" : v }))}
                       className={`h-8 w-10 rounded border text-sm font-semibold ${
                         sel

@@ -9,7 +9,9 @@ import { ChevronLeft, ChevronRight, Clock, Package, Trophy, TrendingDown, Trendi
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { OBJETIVO_VISIBILIDAD } from "@/lib/visibilidad/objetivos"
+import { MisHabilidadesCard } from "./mis-habilidades-card"
 import type { VisibilidadEmpleadoData, VisibilidadDia } from "@/actions/visibilidad-resultados"
+import type { SkapEmpleadoData } from "@/types/database"
 
 const NOMBRES_MES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -38,7 +40,13 @@ function Delta({ actual, anterior, unidad }: { actual: number; anterior: number;
   )
 }
 
-export function VisibilidadEmpleadoClient({ data }: { data: VisibilidadEmpleadoData }) {
+export function VisibilidadEmpleadoClient({
+  data,
+  skap,
+}: {
+  data: VisibilidadEmpleadoData
+  skap?: SkapEmpleadoData | null
+}) {
   const router = useRouter()
   const { mes, meses_disponibles, hhee, bultos, dias } = data
   const idx = meses_disponibles.indexOf(mes)
@@ -148,6 +156,9 @@ export function VisibilidadEmpleadoClient({ data }: { data: VisibilidadEmpleadoD
           )}
         </CardContent>
       </Card>
+
+      {/* Matriz de habilidades (SKAP) — cómo lo evaluó su supervisor */}
+      {skap && <MisHabilidadesCard data={skap} />}
 
       {/* Incentivo / cómo se calcula */}
       <Card>
