@@ -71,9 +71,10 @@ const ESTADO_CLASSES: Record<PlanTableroEstado, string> = {
 const KPI_CHIPS: {
   key: "total" | PlanTableroEstado
   label: string
-  color: string
+  color: string | null
 }[] = [
-  { key: "total", label: "Total", color: "#0f172a" },
+  // "Total" va sin franja de color, igual que en el resto del módulo.
+  { key: "total", label: "Total", color: null },
   { key: "pendiente", label: "Pendiente", color: "#64748b" },
   { key: "en_curso", label: "En curso", color: "#F59E0B" },
   { key: "terminado", label: "Terminado", color: "#10b981" },
@@ -172,26 +173,27 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* KPIs + filtros en una sola barra: el tablero necesita el alto para la tabla */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-2">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {/* Tarjetas de KPI y filtros comparten fila: el tablero necesita el alto
+          para la tabla, pero las tarjetas se leen mejor que un texto suelto. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {KPI_CHIPS.map((c) => (
-            <div key={c.key} className="flex items-center gap-2">
-              <span
-                className="h-6 w-1 rounded-full"
-                style={{ backgroundColor: c.color }}
-              />
-              <div className="leading-tight">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {c.label}
-                </p>
-                <p className="text-lg font-bold text-slate-900">{kpis[c.key]}</p>
-              </div>
+            <div
+              key={c.key}
+              className="min-w-[6.5rem] flex-1 rounded-lg border bg-card px-3 py-1.5"
+              style={c.color ? { borderLeft: `4px solid ${c.color}` } : undefined}
+            >
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {c.label}
+              </p>
+              <p className="text-xl leading-tight font-bold text-slate-900">
+                {kpis[c.key]}
+              </p>
             </div>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-2">
           <div className="flex items-center gap-1.5">
             <Label className="text-xs text-muted-foreground">Estado</Label>
             <Select
