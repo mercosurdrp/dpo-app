@@ -15,6 +15,10 @@ import {
   getKpiPerdidas,
   type KpiPerdidas,
 } from "@/actions/presupuesto-perdidas-kpi"
+import {
+  getKpiCombustible,
+  type KpiCombustible,
+} from "@/actions/presupuesto-combustible-kpi"
 import { listPlanesAccion } from "@/actions/presupuesto-planes-accion"
 import { listInversiones } from "@/actions/presupuesto-inversiones"
 import { getProfile } from "@/lib/session"
@@ -79,6 +83,7 @@ export default async function PresupuestoPage({
     inversionesRes,
     ejecucionRes,
     kpiPerdidasRes,
+    kpiCombustibleRes,
   ] = await Promise.all([
     getPresupuestoAnual(anioActivo),
     getEerrAnual(anioActivo),
@@ -105,6 +110,11 @@ export default async function PresupuestoPage({
     mostrarIniciativas
       ? getKpiPerdidas(anioActivo)
       : Promise.resolve<{ data: Record<string, KpiPerdidas> }>({ data: {} }),
+    // KPI físico de las iniciativas de flota (km/l). Sale del registro de
+    // combustible propio, así que no depende de servicios externos.
+    mostrarIniciativas
+      ? getKpiCombustible(anioActivo)
+      : Promise.resolve<{ data: Record<string, KpiCombustible> }>({ data: {} }),
   ])
 
   if ("error" in tareasRes) {
@@ -130,6 +140,9 @@ export default async function PresupuestoPage({
       iniciativas={"data" in iniciativasRes ? iniciativasRes.data : []}
       ejecucionRubros={"data" in ejecucionRes ? ejecucionRes.data : {}}
       kpiPerdidas={"data" in kpiPerdidasRes ? kpiPerdidasRes.data : {}}
+      kpiCombustible={
+        "data" in kpiCombustibleRes ? kpiCombustibleRes.data : {}
+      }
       mostrarPlanesAccion={mostrarPlanesAccion}
       planesAccion={"data" in planesAccionRes ? planesAccionRes.data : []}
       mostrarInversiones={mostrarInversiones}

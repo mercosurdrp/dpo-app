@@ -21,6 +21,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
 } from "recharts"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +37,7 @@ import { getSignedUrl } from "@/actions/presupuesto"
 import { eliminarIniciativa } from "@/actions/presupuesto-iniciativas"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
+import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
 import type { IniciativaAhorroConDetalle } from "@/types/database"
 import {
   ESTADO_BADGE_CLASS,
@@ -59,6 +61,8 @@ interface Props {
   ejecucionRubros: Record<string, EjecucionRubro>
   /** KPI físico por rubro (lo perdido por HL vendido). Vacío si no aplica. */
   kpiPerdidas: Record<string, KpiPerdidas>
+  /** KPI físico de combustible (km/l), indexado por nombre de KPI. */
+  kpiCombustible: Record<string, KpiCombustible>
   responsables: ResponsableOpt[]
   puedeEditar: boolean
 }
@@ -132,6 +136,11 @@ function barColor(frac: number | null): string {
   if (frac >= 0) return "bg-orange-500"
   return "bg-red-500"
 }
+
+/** Paleta de las series del KPI de combustible. */
+const COMB_COLOR_GRUPO = "#0f766e"
+const COMB_COLOR_INTERVENIDOS = "#2563eb"
+const COMB_COLOR_REF = "#94a3b8"
 
 const MES_CORTO = [
   "",
@@ -390,6 +399,239 @@ function KpiPerdidasBlock({
   )
 }
 
+/**
+ * KPI físico de las iniciativas de combustible: km por litro mes a mes.
+ *
+ * A diferencia del de pérdidas, acá **más alto es mejor** y el target no viene
+ * del presupuesto sino del objetivo cargado en la propia iniciativa, así que se
+ * dibuja como línea horizontal junto con la línea base.
+ *
+ * Cuando la mejora se instaló sólo en parte del grupo, se separa la serie de
+ * los camiones intervenidos: los no intervenidos funcionan como grupo de
+ * control y es la única forma de distinguir el efecto de la iniciativa de la
+ * variación normal del rendimiento entre meses.
+ */
+function KpiCombustibleBlock({
+  kpi,
+  unidad,
+  lineaBase,
+  objetivo,
+  mesInstalacion,
+}: {
+  kpi: KpiCombustible
+  unidad: string
+  lineaBase: number | null
+  objetivo: number | null
+  mesInstalacion: number | null
+}) {
+  const hayControl =
+    kpi.dominiosIntervenidos.length > 0 &&
+    kpi.dominiosIntervenidos.length < kpi.dominios.length
+
+  // Referencia contra la que se pinta el semáforo: el objetivo si está cargado,
+  // si no la línea base (mejorar respecto del punto de partida).
+  const referencia = objetivo ?? lineaBase
+  const cumpleAcum =
+    kpi.realAcum !== null && referencia !== null && kpi.realAcum >= referencia
+
+  const datos = kpi.meses.map((m) => ({
+    mes: MES_CORTO[m.mes],
+    real: m.real,
+    intervenidos: hayControl ? m.intervenidos : null,
+    objetivo,
+    base: lineaBase,
+  }))
+
+  // El eje NO arranca en cero: todos los valores viven entre 3 y 4 km/l, y con
+  // el cero adentro las diferencias que importan (±0,1) se vuelven invisibles.
+  const valores = [
+    ...kpi.meses.flatMap((m) =>
+      [m.real, hayControl ? m.intervenidos : null].filter(
+        (v): v is number => v !== null,
+      ),
+    ),
+    ...(objetivo !== null ? [objetivo] : []),
+    ...(lineaBase !== null ? [lineaBase] : []),
+  ]
+  const minVal = valores.length > 0 ? Math.min(...valores) : 0
+  const maxVal = valores.length > 0 ? Math.max(...valores) : 1
+  const pad = Math.max((maxVal - minVal) * 0.15, 0.1)
+  const dominioY: [number, number] = [
+    Math.max(0, Number((minVal - pad).toFixed(2))),
+    Number((maxVal + pad).toFixed(2)),
+  ]
+
+  const mesInstalCorto =
+    mesInstalacion !== null && mesInstalacion >= 1 && mesInstalacion <= 12
+      ? MES_CORTO[mesInstalacion]
+      : null
+  const mostrarMarcaInstal =
+    mesInstalCorto !== null && datos.some((d) => d.mes === mesInstalCorto)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+        <span className="text-muted-foreground">
+          Rendimiento ({unidad})
+          {hayControl && (
+            <span className="ml-1 text-xs opacity-70">
+              · {kpi.dominiosIntervenidos.length} de {kpi.dominios.length}{" "}
+              con la mejora
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-slate-900">
+            {objetivo !== null && (
+              <>
+                objetivo <strong>{formatNum(objetivo)}</strong>
+                <span className="text-muted-foreground"> · </span>
+              </>
+            )}
+            real <strong>{formatNum(kpi.realAcum)}</strong>
+          </span>
+          <Badge
+            className={
+              cumpleAcum
+                ? "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                : "border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100"
+            }
+          >
+            {cumpleAcum ? "Cumple" : "En progreso"}
+          </Badge>
+        </span>
+      </div>
+      <div className="h-40 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={datos} margin={{ top: 5, right: 14, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="mes" tick={{ fontSize: 11 }} className="capitalize" />
+            <YAxis tick={{ fontSize: 11 }} width={44} domain={dominioY} />
+            <Tooltip
+              formatter={(v, n) => [
+                v === null ? "—" : `${formatNum(Number(v))} ${unidad}`,
+                n === "real"
+                  ? "Grupo"
+                  : n === "intervenidos"
+                    ? "Con la mejora"
+                    : n === "objetivo"
+                      ? "Objetivo"
+                      : "Línea base",
+              ]}
+              labelClassName="capitalize"
+              contentStyle={{ fontSize: 12 }}
+            />
+            {/* Desde este mes corre la iniciativa: sin la marca, el gráfico no
+                dice qué parte de la serie es "antes" y qué parte "después". */}
+            {mostrarMarcaInstal && (
+              <ReferenceLine
+                x={mesInstalCorto}
+                stroke="#0f172a"
+                strokeDasharray="2 2"
+                label={{
+                  value: "instalación",
+                  position: "insideTopRight",
+                  fontSize: 10,
+                  fill: "#0f172a",
+                }}
+              />
+            )}
+            {lineaBase !== null && (
+              <Line
+                type="monotone"
+                dataKey="base"
+                name="base"
+                stroke={COMB_COLOR_REF}
+                strokeDasharray="2 4"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {objetivo !== null && (
+              <Line
+                type="monotone"
+                dataKey="objetivo"
+                name="objetivo"
+                stroke={COMB_COLOR_REF}
+                strokeDasharray="4 3"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {hayControl && (
+              <Line
+                type="monotone"
+                dataKey="intervenidos"
+                name="intervenidos"
+                stroke={COMB_COLOR_INTERVENIDOS}
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+            <Line
+              type="monotone"
+              dataKey="real"
+              name="real"
+              stroke={COMB_COLOR_GRUPO}
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              connectNulls
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      {/* Un mes con pocas cargas mueve el número varios puntos: el conteo va a
+          la vista para no leer como tendencia lo que es ruido de muestra. */}
+      <div className="flex flex-wrap gap-1.5">
+        {kpi.meses.map((m) => {
+          const ok =
+            m.real !== null && referencia !== null && m.real >= referencia
+          return (
+            <span
+              key={m.mes}
+              title={`${m.cargas} cargas · ${m.km.toLocaleString("es-AR")} km · ${m.litros.toLocaleString("es-AR")} lts`}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize ${
+                ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              {MES_CORTO[m.mes]} {formatNum(m.real)}
+              <span className="ml-1 opacity-60">({m.cargas})</span>
+            </span>
+          )
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {kpi.dominios.join(" · ")}
+        {hayControl && (
+          <>
+            {" "}
+            — con la mejora: {kpi.dominiosIntervenidos.join(" y ")}
+            {kpi.controlAcum !== null && (
+              <> · control {formatNum(kpi.controlAcum)} {unidad}</>
+            )}
+          </>
+        )}
+        {kpi.cargasDescartadas > 0 && (
+          <>
+            {" "}
+            · {kpi.cargasDescartadas} carga
+            {kpi.cargasDescartadas === 1 ? "" : "s"} descartada
+            {kpi.cargasDescartadas === 1 ? "" : "s"} por odómetro o carga
+            incompleta
+          </>
+        )}
+      </p>
+    </div>
+  )
+}
+
 function FilaDetalle({
   etiqueta,
   valor,
@@ -637,6 +879,7 @@ export function IniciativasAhorroSection({
   iniciativas,
   ejecucionRubros,
   kpiPerdidas,
+  kpiCombustible,
   responsables,
   puedeEditar,
 }: Props) {
@@ -836,6 +1079,14 @@ export function IniciativasAhorroSection({
             const kpiPerd = ini.rubro
               ? kpiPerdidas[ini.rubro.trim().toUpperCase()]
               : undefined
+            // Las iniciativas de flota no tienen rubro del EERR: su serie se
+            // indexa por el nombre del KPI comprometido.
+            const kpiComb = ini.kpi_nombre
+              ? kpiCombustible[ini.kpi_nombre.trim().toUpperCase()]
+              : undefined
+            const mesInstalacion = ini.fecha_implementacion
+              ? Number(ini.fecha_implementacion.slice(5, 7))
+              : null
             const {
               real: realAcum,
               meses: mesesEerr,
@@ -1084,6 +1335,14 @@ export function IniciativasAhorroSection({
                       rubro={ini.rubro!}
                       ejec={ejec}
                       mesInicio={mesInicio}
+                    />
+                  ) : kpiComb ? (
+                    <KpiCombustibleBlock
+                      kpi={kpiComb}
+                      unidad={ini.kpi_unidad || "km/l"}
+                      lineaBase={ini.kpi_linea_base}
+                      objetivo={ini.kpi_objetivo}
+                      mesInstalacion={mesInstalacion}
                     />
                   ) : (
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
