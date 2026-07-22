@@ -16,10 +16,13 @@
  * ya conoce, y no hay tablas nuevas.
  */
 
-import { useEffect, useState } from "react"
-import { CalendarRange } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { toast } from "sonner"
+import { CalendarRange, Check, Save } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { SeccionGaleriaFotos } from "./seccion-galeria-fotos"
 import type { ReunionActividadConResponsable } from "@/types/database"
 
@@ -62,12 +65,15 @@ function diasHasta(inicio: string, hoy: string): number {
 
 export function SeccionPeriodosCriticos({
   reunionId,
+  fecha,
   actividades,
   responsables,
   puedeEditar,
   onActividadesChanged,
 }: {
   reunionId: string
+  /** Fecha de la reunión (ISO). De acá salen el año y el mes de la revisión. */
+  fecha: string
   actividades: ReunionActividadConResponsable[]
   responsables: ResponsableOpt[]
   puedeEditar: boolean
@@ -75,6 +81,12 @@ export function SeccionPeriodosCriticos({
 }) {
   const [periodos, setPeriodos] = useState<PeriodoFoco[] | null>(null)
   const [hoy, setHoy] = useState<string>("")
+  const [conclusiones, setConclusiones] = useState("")
+  const [registrada, setRegistrada] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  const anio = Number(fecha.slice(0, 4))
+  const mes = Number(fecha.slice(5, 7))
 
   useEffect(() => {
     let vivo = true
@@ -93,13 +105,77 @@ export function SeccionPeriodosCriticos({
     }
   }, [])
 
+  // Revisión mensual del mes de esta reunión. Se edita acá y no sólo en el
+  // módulo de Planeamiento: quien está en la reunión no debería tener que ir a
+  // otra pantalla para dejar registrada la conclusión (R3.4.2).
+  const cargarRevision = useCallback(() => {
+    fetch(`/api/planeamiento/periodos-criticos/revision-mensual?anio=${anio}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const mia = (j.revisiones ?? []).find(
+          (r: { mes: number }) => r.mes === mes,
+        )
+        if (mia) {
+          setConclusiones(mia.conclusiones ?? "")
+          setRegistrada(mia.estado === "realizada")
+        }
+      })
+      .catch(() => {
+        /* la sección sigue usable sin la revisión */
+      })
+  }, [anio, mes])
+
+  useEffect(() => {
+    cargarRevision()
+  }, [cargarRevision])
+
+  async function guardarRevision() {
+    setGuardando(true)
+    try {
+      const res = await fetch(
+        "/api/planeamiento/periodos-criticos/revision-mensual",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            anio,
+            mes,
+            reunion_id: reunionId,
+            conclusiones,
+            periodos_revisados: (periodos ?? []).map((p) => ({
+              nombre: p.nombre,
+              fecha_inicio: p.fecha_inicio,
+              fecha_fin: p.fecha_fin,
+              prioridad: p.prioridad,
+            })),
+          }),
+        },
+      )
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      toast.success("Revisión mensual registrada")
+      cargarRevision()
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "No se pudo guardar la revisión",
+      )
+    } finally {
+      setGuardando(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
       <Card className="border-amber-200 bg-amber-50/30">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold text-amber-900">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-lg font-bold text-amber-900">
             <CalendarRange className="size-5" />
             Períodos críticos — revisión mensual
+            {registrada && (
+              <Badge className="gap-1 bg-emerald-600 text-[10px]">
+                <Check className="size-3" /> Registrada
+              </Badge>
+            )}
           </CardTitle>
           <p className="text-xs text-amber-800">
             Revisión mensual del plan de períodos críticos (DPO 3.4). Repasar el
@@ -149,6 +225,38 @@ export function SeccionPeriodosCriticos({
               )
             })
           )}
+
+          {/* Conclusión de la revisión del mes. Es lo que se audita en R3.4.2,
+              así que se carga acá mismo y no en otra pantalla. */}
+          <div className="space-y-1.5 border-t pt-3">
+            <label className="text-xs font-medium text-slate-700">
+              Conclusiones de la revisión de{" "}
+              {new Date(fecha + "T12:00:00").toLocaleDateString("es-AR", {
+                month: "long",
+                year: "numeric",
+              })}
+            </label>
+            <Textarea
+              value={conclusiones}
+              onChange={(e) => setConclusiones(e.target.value)}
+              disabled={!puedeEditar}
+              rows={4}
+              className="bg-white text-sm"
+              placeholder="Qué se revisó, en qué estado está cada período y qué se definió. Si finalizó un período, actualizar también el análisis FODA."
+            />
+            {puedeEditar && (
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => void guardarRevision()}
+                  disabled={guardando || !conclusiones.trim()}
+                >
+                  <Save className="mr-1 size-4" />
+                  {guardando ? "Guardando…" : "Registrar revisión del mes"}
+                </Button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

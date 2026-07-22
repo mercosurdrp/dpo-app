@@ -1491,6 +1491,7 @@ export function ReunionDetallePageClient({
         esUltimoMartesDelMes(detalle.fecha) && (
           <SeccionPeriodosCriticos
             reunionId={detalle.id}
+            fecha={detalle.fecha}
             actividades={actividadesPeriodosCriticos}
             responsables={responsables}
             puedeEditar={puedeEditar}
