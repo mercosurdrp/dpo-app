@@ -20,14 +20,19 @@ export function claveFleteroGescom(codigo: string): string {
   return `${PREFIJO_GESCOM}${codigo}`
 }
 
+// Case-insensitive a propósito: el sync escribe siempre en mayúsculas, pero
+// algunos consumidores normalizan `ds_fletero_carga` y otros no. Si un registro
+// entrara como "Gestion-20012", una comparación estricta lo dejaría pasar como
+// patente normal y el código volvería a la pantalla.
 export function esFleteroGescom(ds: string | null | undefined): boolean {
   if (!ds) return false
-  return ds.startsWith(PREFIJO_GESCOM) || ds === FLETERO_GESCOM_SIN_CODIGO
+  const v = ds.toUpperCase()
+  return v.startsWith(PREFIJO_GESCOM) || v === FLETERO_GESCOM_SIN_CODIGO
 }
 
 /** `"GESTION-20014"` → `"20014"`. `null` si no es un fletero de GESCOM. */
 export function codigoFleteroGescom(ds: string | null | undefined): string | null {
-  if (!ds || !ds.startsWith(PREFIJO_GESCOM)) return null
+  if (!ds || !ds.toUpperCase().startsWith(PREFIJO_GESCOM)) return null
   return ds.slice(PREFIJO_GESCOM.length) || null
 }
 

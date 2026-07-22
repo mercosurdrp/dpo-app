@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select"
 import { FilterMultiSelect } from "./filter-multi-select"
 import type { RechazosFilterOptions, ComparisonMode } from "@/lib/types/rechazos"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 const COMPARISON_MODES: { value: ComparisonMode; label: string }[] = [
   { value: "mes_en_curso", label: "Mes en curso" },
@@ -129,9 +130,15 @@ export function Filtros({
           label="Patentes"
           placeholder="Todas las patentes"
           options={filterOptions.fleteros.map(f => ({
+            // `value` es la clave real (viaja a la URL y a la query): NO se toca.
+            // El sublabel es lo único que ve el usuario, y ahí el reparto de
+            // GESCOM aparecía como "GESTION-<cod>".
             value: f.patente,
             label: f.chofer_display,
-            sublabel: f.chofer_display !== f.patente ? f.patente : undefined,
+            sublabel:
+              f.chofer_display !== etiquetaFletero(f.patente)
+                ? etiquetaFletero(f.patente)
+                : undefined,
           }))}
           selected={fleteros}
           onChange={(next) => setQ({ fleteros: next.length ? next : null })}

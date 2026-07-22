@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import type { ChoferDetalle, ChoferDetalleDia } from "@/actions/choferes"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 interface Props {
   data: ChoferDetalle
@@ -181,7 +182,7 @@ function DiaRow({ dia }: { dia: ChoferDetalleDia }) {
         {dia.fecha}
       </TableCell>
       <TableCell className="font-mono text-xs text-muted-foreground">
-        {dia.patentes.join(", ")}
+        {dia.patentes.map((p) => etiquetaFletero(p)).join(", ")}
       </TableCell>
       <TableCell className="text-right font-semibold tabular-nums">
         {formatInt(dia.bultos)}
