@@ -241,7 +241,9 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
             escondida al pie de la página. */}
         <div className="max-h-[calc(100vh-15rem)] min-h-[18rem] overflow-auto [&>[data-slot=table-container]]:overflow-visible">
           <Table className="table-fixed">
-            <TableHeader className="sticky top-0 z-10 bg-card">
+            {/* El fondo y la línea van en los th: con border-collapse el thead
+                sticky no los arrastra y las filas se ven pasar por detrás. */}
+            <TableHeader className="sticky top-0 z-10 bg-card [&_th]:bg-card [&_th]:shadow-[inset_0_-1px_0_#e2e8f0]">
               <TableRow>
                 <TableHead className="w-[22%]">Reporte</TableHead>
                 <TableHead>Plan de acción</TableHead>
