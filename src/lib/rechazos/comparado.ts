@@ -38,7 +38,8 @@ import type {
   TopVariacion,
   TopVariaciones,
 } from "@/lib/types/rechazos"
-import { claveFleteroGescom, etiquetaChofer, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
+import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
+import { cargarChoferesPorPatente, cargarIndiceChoferes } from "@/lib/gescom/indice-choferes"
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Tipos internos
@@ -387,35 +388,10 @@ async function loadCatalogo(supa: SupaClient): Promise<CatalogoMotivo[]> {
 }
 
 async function loadMapeoChoferes(supa: SupaClient): Promise<MapeoChofer[]> {
-  // Dos padrones distintos bajo la misma "patente": las de Chess salen de
-  // `mapeo_patente_chofer`; los repartos de GESCOM entran como
-  // `GESTION-<codigo>` (GESCOM no informa patente) y su nombre vive en
-  // `mapeo_chofer_gescom`. Se unifican acá para que todo lo que consume
-  // `mapeoMap` — ranking, filtros, top variaciones — muestre el nombre del
-  // chofer en vez del código crudo.
-  const [chessRes, gescomRes] = await Promise.all([
-    supa.from("mapeo_patente_chofer").select("patente, catalogo_choferes(nombre)"),
-    supa.from("mapeo_chofer_gescom").select("codigo, nombre").eq("activo", true),
-  ])
-  if (chessRes.error) throw new Error(`mapeo_patente_chofer: ${chessRes.error.message}`)
-
-  type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
-  const out: MapeoChofer[] = ((chessRes.data ?? []) as unknown as Row[]).map(r => ({
-    patente: r.patente,
-    chofer_nombre: r.catalogo_choferes?.nombre ?? null,
-  }))
-
-  // Si el mapeo de GESCOM falla, el reparto cae a "Rep. <codigo>" (nunca al
-  // código crudo): no vale romper todo el tablero de rechazos por eso.
-  if (!gescomRes.error) {
-    for (const g of (gescomRes.data ?? []) as Array<{ codigo: string; nombre: string }>) {
-      out.push({
-        patente: claveFleteroGescom(g.codigo.trim()),
-        chofer_nombre: limpiarNombreChofer(g.nombre),
-      })
-    }
-  }
-  return out
+  // Chess + GESCOM. Ver `lib/gescom/indice-choferes.ts`: con solo el padrón de
+  // Chess, los repartos `GESTION-<cod>` caían al código crudo en el ranking,
+  // los filtros y el top de variaciones.
+  return await cargarChoferesPorPatente(supa)
 }
 
 /**
@@ -498,12 +474,13 @@ async function resolveFilters(supa: SupaClient, filters: RechazosFilters): Promi
   }
   if (filters.ds_fletero_carga?.length) {
     tasks.push((async () => {
-      const { data } = await supa.from("mapeo_patente_chofer")
-        .select("patente, catalogo_choferes(nombre)")
-        .in("patente", filters.ds_fletero_carga!)
-      type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
-      out.ds_fletero_carga = ((data ?? []) as unknown as Row[])
-        .map(r => ({ patente: r.patente, chofer_display: etiquetaChofer(r.catalogo_choferes?.nombre, r.patente, r.patente) }))
+      // Los dos padrones: el chip del filtro mostraba el código del reparto.
+      const idx = await cargarIndiceChoferes(supa)
+      const seleccionadas = filters.ds_fletero_carga!
+      out.ds_fletero_carga = seleccionadas.map(patente => ({
+        patente,
+        chofer_display: etiquetaChofer(idx.get(patente), patente, patente),
+      }))
     })())
   }
   if (filters.categoria?.length)     out.categoria = filters.categoria

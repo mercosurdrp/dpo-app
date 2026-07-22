@@ -10,6 +10,8 @@ import {
   type PorMotivo,
   type RechazosEmpleadoData,
 } from "./rechazos-empleado-tipos"
+import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
+import { cargarChoferesPorPatente } from "@/lib/gescom/indice-choferes"
 
 /**
  * Vista AMIGABLE de rechazos para el empleado, orientada a OBJETIVO + premio.
@@ -88,7 +90,7 @@ export async function getRechazosRankingEmpleado(
     const supabase = await createClient()
     const { desde, hasta, label } = ventana(periodo)
 
-    const [rechRes, ventasRes, mapeoRes] = await Promise.all([
+    const [rechRes, ventasRes, choferesMapeo] = await Promise.all([
       supabase
         .from("rechazos")
         .select("fecha_venta, ds_fletero_carga, bultos_rechazados, hl_rechazados, ds_rechazo")
@@ -99,7 +101,7 @@ export async function getRechazosRankingEmpleado(
         .select("fecha, ds_fletero_carga, total_hl")
         .gte("fecha", desde)
         .lte("fecha", hasta),
-      supabase.from("mapeo_patente_chofer").select("patente, catalogo_choferes(nombre)"),
+      cargarChoferesPorPatente(supabase, norm),
     ])
 
     if (rechRes.error) return { error: rechRes.error.message }
@@ -108,12 +110,10 @@ export async function getRechazosRankingEmpleado(
     const rechazos = (rechRes.data ?? []) as unknown as RawRechazo[]
     const ventas = (ventasRes.data ?? []) as unknown as RawVenta[]
 
-    // mapeo patente → chofer
-    type MapeoRow = { patente: string; catalogo_choferes: { nombre: string | null } | null }
+    // patente/reparto → chofer (Chess + GESCOM, ya normalizado con `norm`)
     const choferPorPatente = new Map<string, string>()
-    for (const m of (mapeoRes.data ?? []) as unknown as MapeoRow[]) {
-      const nombre = m.catalogo_choferes?.nombre
-      if (m.patente && nombre) choferPorPatente.set(norm(m.patente), nombre)
+    for (const m of choferesMapeo) {
+      if (m.patente && m.chofer_nombre) choferPorPatente.set(m.patente, m.chofer_nombre)
     }
 
     // Entregado (denominador) por patente y por día — HL
@@ -169,7 +169,7 @@ export async function getRechazosRankingEmpleado(
       const tasa = hlEnt > 0 ? (p.hl / hlEnt) * 100 : 0
       return {
         patente: p.patente,
-        display: choferPorPatente.get(p.patente) ?? p.patente,
+        display: etiquetaChofer(choferPorPatente.get(p.patente), p.patente, p.patente),
         eventos: p.eventos,
         bultos: round1(p.bultos),
         hl: round1(p.hl),

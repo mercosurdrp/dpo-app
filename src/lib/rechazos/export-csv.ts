@@ -16,6 +16,7 @@
 import type { SupaClient } from "./comparado"
 import type { RechazoCategoria, RechazosFilters } from "@/lib/types/rechazos"
 import { etiquetaChofer, etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
+import { cargarChoferesPorPatente } from "@/lib/gescom/indice-choferes"
 
 export const EXPORT_MAX_ROWS = 50_000
 
@@ -170,15 +171,8 @@ async function loadCatalogo(supa: SupaClient): Promise<CatalogoEntry[]> {
 }
 
 async function loadMapeo(supa: SupaClient): Promise<{ patente: string; chofer_nombre: string | null }[]> {
-  const { data, error } = await supa
-    .from("mapeo_patente_chofer")
-    .select("patente, catalogo_choferes(nombre)")
-  if (error) throw new Error(`mapeo_patente_chofer: ${error.message}`)
-  type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
-  return ((data ?? []) as unknown as Row[]).map(r => ({
-    patente: r.patente,
-    chofer_nombre: r.catalogo_choferes?.nombre ?? null,
-  }))
+  // Los dos padrones (Chess + GESCOM), si no el reparto cae al código crudo.
+  return await cargarChoferesPorPatente(supa)
 }
 
 function renderCSV(

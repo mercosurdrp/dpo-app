@@ -11,6 +11,7 @@ import type {
   RechazosDetalleRow,
 } from "@/lib/types/rechazos"
 import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
+import { cargarChoferesPorPatente } from "@/lib/gescom/indice-choferes"
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 1000
@@ -164,15 +165,8 @@ async function loadCatalogoMin(supa: SupaClient): Promise<CatalogoEntry[]> {
 }
 
 async function loadMapeoMin(supa: SupaClient): Promise<MapeoEntry[]> {
-  const { data, error } = await supa
-    .from("mapeo_patente_chofer")
-    .select("patente, catalogo_choferes(nombre)")
-  if (error) throw new Error(`mapeo_patente_chofer: ${error.message}`)
-  type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
-  return ((data ?? []) as unknown as Row[]).map(r => ({
-    patente: r.patente,
-    chofer_nombre: r.catalogo_choferes?.nombre ?? null,
-  }))
+  // Los dos padrones (Chess + GESCOM), si no el reparto cae al código crudo.
+  return await cargarChoferesPorPatente(supa)
 }
 
 // el alias Query queda para futuras tipificaciones más estrictas — TS lo deja como warning

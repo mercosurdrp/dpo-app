@@ -8,6 +8,7 @@
  * El volumen se mide en HL (primario), con bultos como dato secundario.
  */
 import type { SupaClient } from "./comparado"
+import { cargarChoferesPorPatente } from "@/lib/gescom/indice-choferes"
 
 export interface RechazosResumenDiaKPIs {
   hl_rechazados: number
@@ -124,13 +125,12 @@ export async function getRechazosResumenDia(
     ? ventasQ.gte("fecha", desde).lte("fecha", hastaFecha)
     : ventasQ.eq("fecha", fecha)
 
-  const [rechazosRaw, ventasRaw, catalogoRaw, mapeoRaw] = await Promise.all([
+  const [rechazosRaw, ventasRaw, catalogoRaw, mapeo] = await Promise.all([
     rechazosQ,
     ventasQ,
     supa.from("catalogo_rechazos").select("id_rechazo,ds_rechazo,categoria"),
-    supa
-      .from("mapeo_patente_chofer")
-      .select("patente, catalogo_choferes(nombre)"),
+    // Chess + GESCOM: con solo el primero el reparto quedaba "(sin asignar)".
+    cargarChoferesPorPatente(supa),
   ])
 
   if (rechazosRaw.error) {
@@ -146,18 +146,13 @@ export async function getRechazosResumenDia(
     total_hl: number | null
   }>
   const catalogo = (catalogoRaw.data ?? []) as CatalogoEntry[]
-  type MapeoRow = {
-    patente: string
-    catalogo_choferes: { nombre: string | null } | null
-  }
-  const mapeo = (mapeoRaw.data ?? []) as unknown as MapeoRow[]
 
   const catalogoIdx = new Map<number, CatalogoEntry>()
   for (const c of catalogo) catalogoIdx.set(c.id_rechazo, c)
 
   const choferIdx = new Map<string, string | null>()
   for (const m of mapeo) {
-    choferIdx.set(m.patente, m.catalogo_choferes?.nombre ?? null)
+    choferIdx.set(m.patente, m.chofer_nombre)
   }
 
   // KPIs — denominador en HL (primario) y bultos (secundario)
