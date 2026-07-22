@@ -285,12 +285,41 @@ export interface ZonaReparto {
   peso: number              // fracción del volumen diario (0–1)
   camiones_minimos: number  // piso de cobertura por distancia
   orden: number
+  absorbe_crecimiento: boolean // el volumen por encima del base cae solo en estas zonas
 }
 
 // camiones necesarios para un volumen CEq, por zona: máx(mínimo de cobertura, volumen×peso ÷ capacidad).
-function camionesPorZonas(volCeq: number, zonas: ZonaReparto[], capCamionViaje: number): number {
+/**
+ * Volumen que le toca a cada zona. El volumen BASE (el del mes en curso) se
+ * reparte por peso; todo lo que exceda ese base —crecimiento del mes o día
+ * pico— cae solo en las zonas marcadas `absorbe_crecimiento`, repartido por su
+ * peso relativo. Es cómo opera realmente el reparto: las zonas chicas se cubren
+ * con su camión de siempre y el camión extra sale a San Nicolás o a Ramallo.
+ *
+ * Si no hay ninguna zona marcada, se cae al reparto por peso puro (comportamiento
+ * anterior), para no romper si alguien destilda todas.
+ */
+function volumenPorZona(volCeq: number, volBase: number, zonas: ZonaReparto[]): Map<string, number> {
+  const out = new Map<string, number>()
+  const absorben = zonas.filter((z) => z.absorbe_crecimiento)
+  const pesoAbsorbente = absorben.reduce((s, z) => s + z.peso, 0)
+  const base = Math.min(volCeq, volBase)
+  const excedente = Math.max(0, volCeq - base)
+  for (const z of zonas) {
+    let v = base * z.peso
+    if (excedente > 0) {
+      if (absorben.length === 0 || pesoAbsorbente <= 0) v += excedente * z.peso
+      else if (z.absorbe_crecimiento) v += excedente * (z.peso / pesoAbsorbente)
+    }
+    out.set(z.zona, v)
+  }
+  return out
+}
+
+function camionesPorZonas(volCeq: number, zonas: ZonaReparto[], capCamionViaje: number, volBase: number): number {
   if (capCamionViaje <= 0 || zonas.length === 0) return 0
-  return zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((volCeq * z.peso) / capCamionViaje)), 0)
+  const vol = volumenPorZona(volCeq, volBase, zonas)
+  return zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((vol.get(z.zona) ?? 0) / capCamionViaje)), 0)
 }
 
 export interface DimData {
@@ -326,12 +355,13 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
         supabase.from("dim_planes").select("*").order("created_at", { ascending: false }).limit(100),
-        supabase.from("dim_zonas_reparto").select("id, zona, peso, camiones_minimos, orden").order("orden"),
+        supabase.from("dim_zonas_reparto").select("id, zona, peso, camiones_minimos, orden, absorbe_crecimiento").order("orden"),
       ])
 
     const zonas: ZonaReparto[] = (zonasRes.data ?? []).map((z) => ({
       id: z.id as string, zona: z.zona as string,
       peso: Number(z.peso ?? 0), camiones_minimos: Number(z.camiones_minimos ?? 1), orden: Number(z.orden ?? 0),
+      absorbe_crecimiento: Boolean((z as { absorbe_crecimiento?: boolean }).absorbe_crecimiento),
     }))
 
     const config: DimConfig = {
@@ -436,8 +466,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       // capUnidad = capacidad de un camión por día (capacidadInstaladaDiaria ya incluye viajes/día).
       const capUnidad = disponibles.length > 0 ? capacidadInstaladaDiaria / disponibles.length : 0
       // Camiones por COBERTURA DE ZONAS: máx(mínimo, volumen×peso ÷ capacidad) por zona; fallback a capacidad pura.
+      // El promedio del mes ES el volumen base: en el día pico, el excedente cae en
+      // las zonas que absorben (San Nicolás / Ramallo), no repartido entre las 5.
       const camionesNec = (vol: number) => zonas.length > 0
-        ? camionesPorZonas(vol, zonas, capUnidad)
+        ? camionesPorZonas(vol, zonas, capUnidad, volProm)
         : (capUnidad > 0 ? Math.ceil(vol / capUnidad) : 0)
       metricas = {
         mes: mesAA,
@@ -755,7 +787,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 const w = pesoDe(wd)
                 if (w <= 0) continue
                 const ceqDia = ceqMes * DIAS_SEMANA * w
-                const camionesDia = zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
+                const camionesDia = zonas.length > 0 ? camionesPorZonas(ceqDia, zonas, capCamionViaje, ceqProm) : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
                 const necesarios = camionesDia * rf.tripulacion
                 if (necesarios > rf.dotacion) { dias++; pdias += necesarios - rf.dotacion }
                 if (camionesDia > camionesDisp) sv = true
@@ -949,7 +981,7 @@ export async function guardarCostoHh(anio: number, filas: Array<{ mes: number; a
 }
 
 // Reemplaza el set completo de zonas de reparto (cobertura de flota).
-export async function guardarZonasReparto(zonas: { zona: string; peso: number; camiones_minimos: number }[]): Promise<Result<true>> {
+export async function guardarZonasReparto(zonas: { zona: string; peso: number; camiones_minimos: number; absorbe_crecimiento?: boolean }[]): Promise<Result<true>> {
   try {
     const profile = await requireRole(ROLES_EDICION)
     if (IS_MISIONES) return { error: SOLO_PAMPEANA }
@@ -961,6 +993,7 @@ export async function guardarZonasReparto(zonas: { zona: string; peso: number; c
         zona: z.zona.trim(),
         peso: Math.max(0, Number(z.peso) || 0),
         camiones_minimos: Math.max(0, Math.round(Number(z.camiones_minimos) || 0)),
+        absorbe_crecimiento: Boolean(z.absorbe_crecimiento),
         orden: i + 1,
         updated_by: profile.id,
       }))

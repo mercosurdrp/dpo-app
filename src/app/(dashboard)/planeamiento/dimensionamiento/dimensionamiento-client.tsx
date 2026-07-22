@@ -23,6 +23,34 @@ function fmt(v: number) {
   return v.toLocaleString("es-AR")
 }
 
+/**
+ * Réplica de `volumenPorZona` del server (src/actions/dimensionamiento.ts): el
+ * volumen base se reparte por peso y el excedente cae solo en las zonas que
+ * absorben el crecimiento. Si se toca el modelo allá, tocar acá también.
+ */
+function volumenPorZonaCli(volCeq: number, volBase: number, zonas: ZonaReparto[]): Map<string, number> {
+  const out = new Map<string, number>()
+  const absorben = zonas.filter((z) => z.absorbe_crecimiento)
+  const pesoAbsorbente = absorben.reduce((s, z) => s + z.peso, 0)
+  const base = Math.min(volCeq, volBase)
+  const excedente = Math.max(0, volCeq - base)
+  for (const z of zonas) {
+    let v = base * z.peso
+    if (excedente > 0) {
+      if (absorben.length === 0 || pesoAbsorbente <= 0) v += excedente * z.peso
+      else if (z.absorbe_crecimiento) v += excedente * (z.peso / pesoAbsorbente)
+    }
+    out.set(z.zona, v)
+  }
+  return out
+}
+
+function camionesPorZonasCli(volCeq: number, volBase: number, zonas: ZonaReparto[], capCamionViaje: number): number {
+  if (capCamionViaje <= 0 || zonas.length === 0) return 0
+  const vol = volumenPorZonaCli(volCeq, volBase, zonas)
+  return zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((vol.get(z.zona) ?? 0) / capCamionViaje)), 0)
+}
+
 // ─── TOR (reuniones_tor tipo=dimensionamiento) ───────────────────────────────
 
 interface TorData {
@@ -124,7 +152,7 @@ function recalcularProyeccion(proy: ProyeccionData, zonas: ZonaReparto[], pct: R
   })
 
   const camionesDe = (ceqDia: number) => zonas.length > 0 && proy.capCamionViaje > 0
-    ? zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((ceqDia * z.peso) / proy.capCamionViaje)), 0)
+    ? camionesPorZonasCli(ceqDia, proy.flotaCeqPromBase, zonas, proy.capCamionViaje)
     : (proy.capCamionViaje > 0 ? Math.ceil(ceqDia / proy.capCamionViaje) : 0)
   const flota = proy.flota.map((rf) => {
     const diasRefuerzo: number[] = [], picoNecesario: number[] = [], segundaVueltaMeses: boolean[] = [], personaDias: number[] = []
@@ -463,7 +491,7 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
   const ceqProm = ceqPromBase * mes.indice
   // camiones por cobertura de zonas (mismo criterio que el cálculo del backend)
   const camionesDeVol = (ceqDia: number) => zonas.length > 0 && capCamionViaje > 0
-    ? zonas.reduce((s, z) => s + Math.max(z.camiones_minimos, Math.ceil((ceqDia * z.peso) / capCamionViaje)), 0)
+    ? camionesPorZonasCli(ceqDia, ceqPromBase, zonas, capCamionViaje)
     : (capCamionViaje > 0 ? Math.ceil(ceqDia / capCamionViaje) : 0)
   const filas = DIAS_SEM.map((d, i) => {
     const ceqDia = Math.round(ceqProm * 6 * (pesos[i] ?? 0))
@@ -509,13 +537,24 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
 function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, viajes }: {
   m: MetricasDistribucion; zonas: ZonaReparto[]; capCamVj: number; dispo: number; totalFlota: number; viajes: number
 }) {
-  const camZona = (peso: number, min: number, vol: number) => Math.max(min, capCamVj > 0 ? Math.ceil((vol * peso) / capCamVj) : 0)
-  const filas = zonas.map((z) => ({
-    zona: z.zona, peso: z.peso, min: z.camiones_minimos,
-    porVol: capCamVj > 0 ? Math.ceil((m.volumenCeqPromedio * z.peso) / capCamVj) : 0,
-    usa: camZona(z.peso, z.camiones_minimos, m.volumenCeqPromedio),
-  }))
+  // El promedio del mes es el volumen base; el excedente del día pico cae solo
+  // en las zonas que absorben el crecimiento.
+  const volProm = volumenPorZonaCli(m.volumenCeqPromedio, m.volumenCeqPromedio, zonas)
+  const volPico = volumenPorZonaCli(m.volumenCeqPico, m.volumenCeqPromedio, zonas)
+  const cam = (v: number, min: number) => Math.max(min, capCamVj > 0 ? Math.ceil(v / capCamVj) : 0)
+  const filas = zonas.map((z) => {
+    const vp = volProm.get(z.zona) ?? 0
+    const vk = volPico.get(z.zona) ?? 0
+    return {
+      zona: z.zona, peso: z.peso, min: z.camiones_minimos, absorbe: z.absorbe_crecimiento,
+      volProm: vp, volPico: vk,
+      usa: cam(vp, z.camiones_minimos),
+      usaPico: cam(vk, z.camiones_minimos),
+      porVol: capCamVj > 0 ? Math.ceil(vp / capCamVj) : 0,
+    }
+  })
   const totalZonas = filas.reduce((s, f) => s + f.usa, 0)
+  const totalPico = filas.reduce((s, f) => s + f.usaPico, 0)
   const porVolPuro = capCamVj > 0 ? Math.ceil(m.volumenCeqPromedio / capCamVj) : 0
   const estadoTxt = m.camionesNecesariosPico <= dispo ? "Cubre" : m.camionesNecesariosPromedio <= dispo ? "Refuerzo en pico" : `Faltan ${m.camionesNecesariosPromedio - dispo}`
   return (
@@ -528,23 +567,32 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, viajes
       </p>
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Zona</TableHead><TableHead className="text-right">Peso</TableHead><TableHead className="text-right">Por volumen</TableHead>
-          <TableHead className="text-right">Mínimo</TableHead><TableHead className="text-right">Usa</TableHead>
+          <TableHead>Zona</TableHead><TableHead className="text-right">Peso</TableHead>
+          <TableHead className="text-right">Mínimo</TableHead>
+          <TableHead className="text-right">CEq día prom</TableHead><TableHead className="text-right">Camiones</TableHead>
+          <TableHead className="text-right">CEq día pico</TableHead><TableHead className="text-right">Camiones</TableHead>
         </TableRow></TableHeader>
         <TableBody>
           {filas.map((f) => (
-            <TableRow key={f.zona}>
-              <TableCell className="font-medium">{f.zona}</TableCell>
+            <TableRow key={f.zona} className={f.absorbe ? "bg-sky-50/60" : ""}>
+              <TableCell className="font-medium">
+                {f.zona}
+                {f.absorbe ? <span className="ml-1 text-[10px] font-normal text-sky-700">absorbe</span> : null}
+              </TableCell>
               <TableCell className="text-right">{Math.round(f.peso * 100)}%</TableCell>
-              <TableCell className="text-right text-muted-foreground">{f.porVol}</TableCell>
               <TableCell className="text-right text-muted-foreground">{f.min}</TableCell>
+              <TableCell className="text-right text-muted-foreground">{fmt(Math.round(f.volProm))}</TableCell>
               <TableCell className={`text-right font-semibold ${f.usa > f.porVol ? "text-amber-700" : ""}`}>{f.usa}</TableCell>
+              <TableCell className="text-right text-muted-foreground">{fmt(Math.round(f.volPico))}</TableCell>
+              <TableCell className={`text-right font-semibold ${f.usaPico > f.usa ? "text-red-700" : ""}`}>{f.usaPico}</TableCell>
             </TableRow>
           ))}
           <TableRow className="border-t-2">
-            <TableCell className="font-bold">Total necesarios (promedio)</TableCell>
+            <TableCell className="font-bold">Total necesarios</TableCell>
             <TableCell colSpan={3} className="text-right text-xs text-muted-foreground">contra {fmt(dispo)} operativas</TableCell>
             <TableCell className="text-right font-bold">{totalZonas}</TableCell>
+            <TableCell />
+            <TableCell className="text-right font-bold">{totalPico}</TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -556,6 +604,10 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, viajes
           {m.camionesNecesariosPico > m.camionesNecesariosPromedio
             ? <> En el día pico ({fmt(m.volumenCeqPico)} CEq) suben a <b>{m.camionesNecesariosPico}</b>.</>
             : null}
+          {zonas.some((z) => z.absorbe_crecimiento) && (
+            <> El volumen que excede el día promedio no se reparte entre las cinco zonas: cae en{" "}
+              <b>{zonas.filter((z) => z.absorbe_crecimiento).map((z) => z.zona).join(" y ")}</b>, que es donde sale el camión extra.</>
+          )}
           {" "}
           {m.camionesNecesariosPico <= dispo
             ? <><b className="text-emerald-700">La flota operativa cubre incluso el pico.</b></>
@@ -641,7 +693,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
     dotacion_ayudantes: String(data.config.dotacion_ayudantes),
     ausentismo_reparto: String(data.config.ausentismo_reparto),
   })
-  const [zonas, setZonas] = useState(data.zonas.map((z) => ({ zona: z.zona, peso: String(z.peso), camiones_minimos: String(z.camiones_minimos) })))
+  const [zonas, setZonas] = useState(data.zonas.map((z) => ({ zona: z.zona, peso: String(z.peso), camiones_minimos: String(z.camiones_minimos), absorbe: z.absorbe_crecimiento })))
   const estado = (nec: number, dot: number, pico: number) =>
     pico <= dot ? { t: "Cubre", c: "text-emerald-700" } : nec <= dot ? { t: "Refuerzo en pico", c: "text-amber-700" } : { t: `Faltan ${nec - dot}`, c: "text-red-700 font-semibold" }
   // capacidad de un camión por día (CEq) para el desglose por zona
@@ -681,7 +733,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
             <CardContent className="space-y-3">
               <Table>
                 <TableHeader><TableRow>
-                  <TableHead>Zona</TableHead><TableHead className="text-right">Peso (%)</TableHead><TableHead className="text-right">Camiones mín.</TableHead><TableHead className="text-right">Camiones hoy</TableHead><TableHead></TableHead>
+                  <TableHead>Zona</TableHead><TableHead className="text-right">Peso (%)</TableHead><TableHead className="text-right">Camiones mín.</TableHead><TableHead className="text-center">Absorbe crecimiento</TableHead><TableHead className="text-right">Camiones hoy</TableHead><TableHead></TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {zonas.map((z, i) => (
@@ -689,6 +741,10 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                       <TableCell><Input className="h-8 w-44" value={z.zona} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, zona: e.target.value } : x))} /></TableCell>
                       <TableCell className="text-right"><Input type="number" step="0.01" className="h-8 w-20" value={z.peso} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, peso: e.target.value } : x))} /></TableCell>
                       <TableCell className="text-right"><Input type="number" step="1" className="h-8 w-20" value={z.camiones_minimos} onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, camiones_minimos: e.target.value } : x))} /></TableCell>
+                      <TableCell className="text-center">
+                        <input type="checkbox" className="h-4 w-4 cursor-pointer accent-sky-600" checked={z.absorbe}
+                          onChange={(e) => setZonas((s) => s.map((x, j) => j === i ? { ...x, absorbe: e.target.checked } : x))} />
+                      </TableCell>
                       <TableCell className="text-right font-semibold">{camZona(Number(z.peso) || 0, Number(z.camiones_minimos) || 0)}</TableCell>
                       <TableCell className="text-right"><button className="text-xs text-red-600 hover:underline" onClick={() => setZonas((s) => s.filter((_, j) => j !== i))}>quitar</button></TableCell>
                     </TableRow>
@@ -697,17 +753,21 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                     <TableCell className="font-bold">Total</TableCell>
                     <TableCell className={`text-right font-bold ${Math.abs(sumaPesos - 1) > 0.001 ? "text-amber-600" : ""}`}>{Math.round(sumaPesos * 100)}%</TableCell>
                     <TableCell className="text-right font-bold">{zonas.reduce((s, z) => s + (Number(z.camiones_minimos) || 0), 0)}</TableCell>
+                    <TableCell />
                     <TableCell className="text-right font-bold">{zonas.reduce((s, z) => s + camZona(Number(z.peso) || 0, Number(z.camiones_minimos) || 0), 0)}</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
               <div className="flex items-center gap-3">
-                <Button size="sm" variant="outline" onClick={() => setZonas((s) => [...s, { zona: "", peso: "0", camiones_minimos: "1" }])}>+ Zona</Button>
-                <Button size="sm" disabled={isPending} onClick={() => run(() => guardarZonasReparto(zonas.map((z) => ({ zona: z.zona, peso: Number(z.peso), camiones_minimos: Number(z.camiones_minimos) }))), "Zonas guardadas")}>Guardar zonas</Button>
+                <Button size="sm" variant="outline" onClick={() => setZonas((s) => [...s, { zona: "", peso: "0", camiones_minimos: "1", absorbe: false }])}>+ Zona</Button>
+                <Button size="sm" disabled={isPending} onClick={() => run(() => guardarZonasReparto(zonas.map((z) => ({ zona: z.zona, peso: Number(z.peso), camiones_minimos: Number(z.camiones_minimos), absorbe_crecimiento: z.absorbe }))), "Zonas guardadas")}>Guardar zonas</Button>
                 {Math.abs(sumaPesos - 1) > 0.001 && <span className="text-xs text-amber-600">Los pesos suman {Math.round(sumaPesos * 100)}% (idealmente 100%).</span>}
               </div>
-              <p className="text-xs text-muted-foreground">Cada zona toma su parte del volumen (peso) y necesita un mínimo de camiones por distancia. «Camiones hoy» = máx(mínimo, volumen×peso ÷ capacidad) con el volumen promedio del mes ({fmt(volProm)} CEq). El total es la flota que se necesita por cobertura, aunque por capacidad pura entrarían menos.</p>
+              <p className="text-xs text-muted-foreground">
+                Cada zona toma su parte del volumen (peso) y necesita un mínimo de camiones por distancia. «Camiones hoy» = máx(mínimo, volumen×peso ÷ capacidad) con el volumen promedio del mes ({fmt(volProm)} CEq). El total es la flota que se necesita por cobertura, aunque por capacidad pura entrarían menos.
+                {" "}<b>Absorbe crecimiento</b>: el volumen que supera el día promedio —porque crece el mes o porque es un día pico— no se reparte entre todas las zonas, cae solo en las tildadas. Es lo que pasa en la calle: las zonas chicas se cubren con su camión de siempre y el camión extra sale a las grandes.
+              </p>
             </CardContent>
           </Card>
           {proy && (
