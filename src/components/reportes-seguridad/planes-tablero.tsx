@@ -245,17 +245,17 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                 sticky no los arrastra y las filas se ven pasar por detrás. */}
             <TableHeader className="sticky top-0 z-10 bg-card [&_th]:bg-card [&_th]:shadow-[inset_0_-1px_0_#e2e8f0]">
               <TableRow>
-                <TableHead className="w-[22%]">Reporte</TableHead>
+                <TableHead className="w-[20%]">Reporte</TableHead>
                 <TableHead>Plan de acción</TableHead>
-                <TableHead className="w-[13%] whitespace-normal">
+                <TableHead className="w-[12%] whitespace-normal">
                   Responsable
                 </TableHead>
-                <TableHead className="w-[9%] whitespace-normal">F. plan.</TableHead>
-                <TableHead className="hidden w-[9%] whitespace-normal lg:table-cell">
+                <TableHead className="w-[10%]">F. plan.</TableHead>
+                <TableHead className="hidden w-[10%] lg:table-cell">
                   F. compl.
                 </TableHead>
                 <TableHead className="w-[10%]">Estado</TableHead>
-                <TableHead className="w-[9%] text-right">Acción</TableHead>
+                <TableHead className="w-[10%] text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -307,29 +307,29 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                               {reporteLabel}
                             </Badge>
                           </div>
-                          <p className="line-clamp-2 text-xs text-slate-700">
+                          <p className="line-clamp-2 text-xs break-words text-slate-700">
                             {f.reporte_descripcion ?? "—"}
                           </p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="whitespace-pre-wrap text-sm text-slate-800">
+                        <p className="whitespace-pre-wrap break-words text-sm text-slate-800">
                           {f.plan_descripcion || "—"}
                         </p>
                       </TableCell>
                       <TableCell className="text-sm whitespace-normal break-words text-muted-foreground">
                         {f.responsable_nombre ?? "—"}
                       </TableCell>
-                      <TableCell className="text-sm whitespace-normal">
+                      <TableCell className="text-xs whitespace-nowrap">
                         {formatDate(f.fecha_planificada)}
                       </TableCell>
-                      <TableCell className="hidden text-sm whitespace-normal lg:table-cell">
+                      <TableCell className="hidden text-xs whitespace-nowrap lg:table-cell">
                         {formatDate(f.fecha_completado)}
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <Badge
                           variant="secondary"
-                          className={ESTADO_CLASSES[f.estado]}
+                          className={`${ESTADO_CLASSES[f.estado]} whitespace-nowrap`}
                         >
                           {ESTADO_LABELS[f.estado]}
                         </Badge>
