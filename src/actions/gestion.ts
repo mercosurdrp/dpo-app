@@ -518,8 +518,28 @@ export async function deleteEvidencia(
   id: string
 ): Promise<{ success: true } | { error: string }> {
   try {
-    await requireAuth()
+    const profile = await requireAuth()
     const supabase = await createClient()
+
+    const { data: evidencia } = await supabase
+      .from("evidencias")
+      .select("id, file_path, created_by")
+      .eq("id", id)
+      .maybeSingle()
+    if (!evidencia) return { error: "La evidencia ya no existe" }
+
+    // La RLS de `evidencias` solo deja escribir a admin/auditor; validamos acá
+    // también para dar un mensaje claro en vez de un delete que no borra nada.
+    const puede =
+      profile.role === "admin" ||
+      profile.role === "auditor" ||
+      evidencia.created_by === profile.id
+    if (!puede) return { error: "No tenés permiso para eliminar esta evidencia" }
+
+    // `evidencia_planes` cae por FK ON DELETE CASCADE; el archivo del bucket no.
+    if (evidencia.file_path) {
+      await supabase.storage.from("evidencias").remove([evidencia.file_path])
+    }
 
     const { error } = await supabase.from("evidencias").delete().eq("id", id)
     if (error) return { error: error.message }

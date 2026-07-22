@@ -89,6 +89,7 @@ import {
   updatePlanAccion,
   deletePlanAccion,
   createEvidencia,
+  deleteEvidencia,
 } from "@/actions/gestion"
 import { getDownloadUrl } from "@/actions/dpo-evidencia"
 import {
@@ -807,12 +808,23 @@ function PlanesTab({
 
 // ==================== EVIDENCIAS TAB (historial de archivos de respuestas) ====================
 
-function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
+function EvidenciasTab({
+  preguntaId,
+  isAdmin = false,
+}: {
+  preguntaId: string
+  isAdmin?: boolean
+}) {
   const [archivos, setArchivos] = useState<ArchivoRespuesta[]>([])
   const [loading, setLoading] = useState(true)
   const [lightbox, setLightbox] = useState<{ url: string; titulo: string } | null>(
     null
   )
+
+  // Baja de evidencias cargadas manualmente (las de respuestas se borran
+  // desde la tarea). Confirmación aparte porque no tiene vuelta atrás.
+  const [aEliminar, setAEliminar] = useState<ArchivoRespuesta | null>(null)
+  const [eliminando, setEliminando] = useState(false)
 
   // --- Formulario "Agregar evidencia" (archivo subido o link) ---
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -928,6 +940,22 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleDeleteEvidencia() {
+    if (!aEliminar) return
+    // el id del ítem manual viene como `ev-<uuid>` desde listarArchivosDeRespuestas
+    const evidenciaId = aEliminar.id.replace(/^ev-/, "")
+    setEliminando(true)
+    const res = await deleteEvidencia(evidenciaId)
+    setEliminando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    setArchivos((prev) => prev.filter((a) => a.id !== aEliminar.id))
+    setAEliminar(null)
+    toast.success("Evidencia eliminada")
   }
 
   function esImg(mime: string | null, nombre: string | null): boolean {
@@ -1140,12 +1168,56 @@ function EvidenciasTab({ preguntaId }: { preguntaId: string }) {
                       <FileDown className="h-4 w-4" />
                     </Button>
                   )}
+                  {isAdmin && a.fuente === "manual" && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setAEliminar(a)}
+                      title="Eliminar evidencia"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
       )}
+
+      <Dialog
+        open={aEliminar !== null}
+        onOpenChange={(o) => !o && !eliminando && setAEliminar(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar evidencia</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Se va a eliminar{" "}
+            <span className="font-medium text-slate-800">
+              {aEliminar?.archivo_nombre ?? "esta evidencia"}
+            </span>
+            . No se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAEliminar(null)}
+              disabled={eliminando}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteEvidencia}
+              disabled={eliminando}
+            >
+              {eliminando ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={lightbox !== null}
@@ -1616,7 +1688,7 @@ export function PreguntaGestionClient({
           />
         </TabsContent>
         <TabsContent value="evidencias">
-          <EvidenciasTab preguntaId={pregunta.id} />
+          <EvidenciasTab preguntaId={pregunta.id} isAdmin={isAdmin} />
         </TabsContent>
         <TabsContent value="capacitaciones">
           <CapacitacionesTab capacitaciones={capacitaciones} />
