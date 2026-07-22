@@ -20,8 +20,13 @@ const TTL_MS = 60 * 60 * 1000 // 1h: el blob del WMS se regenera 1 vez al día
 export interface ResumenExternoMes {
   mes: number
   valor: number | null
-  /** Tamaño del mes: nº de registros (picking) u horas-hombre (WNP). */
+  /**
+   * Tamaño del mes: nº de registros (picking), horas-hombre (WNP) u horas
+   * extras (hs_extras).
+   */
   registros: number
+  /** Solo `hs_extras`: bultos entregados del mes (denominador del ratio). */
+  bultos?: number
 }
 export interface ResumenExterno {
   anio: number
@@ -41,6 +46,8 @@ export const KPI_EXTERNOS: Record<
     explicacion: string
     /** Encabezado de la columna "detalle" del popover (default: "Registros"). */
     detalleLabel?: string
+    /** Encabezado de la 2ª columna de detalle; sin esto no se dibuja. */
+    detalle2Label?: string
   }
 > = {
   prod_picking: {
@@ -59,6 +66,20 @@ export const KPI_EXTERNOS: Record<
       "promedio de los meses; el detalle muestra el WNP de cada mes y las horas que " +
       "lo componen. Fuente: depósito (deposito-esteban /indicadores).",
     detalleLabel: "Horas",
+  },
+  hs_extras: {
+    resumen: fetchHsExtrasResumen,
+    explicacion:
+      "HS Extras = horas extras del almacén cada 1.000 bultos vendidos. El número " +
+      "anual es el ratio ACUMULADO real (Σ horas extras ÷ Σ bultos del año), no el " +
+      "promedio de los meses; el detalle muestra el ratio de cada mes con las horas " +
+      "y los bultos que lo componen. Las horas son el indicador DPO #39 (carga " +
+      "manual del depósito) y los bultos son los entregados de Chess, netos de notas " +
+      "de crédito. OJO: el ratio no sigue al volumen — los picos de horas extras se " +
+      "explican más por ausentismo que por cuántos bultos se movieron, así que no " +
+      "hay que leerlo como una medida de eficiencia.",
+    detalleLabel: "HS Extras",
+    detalle2Label: "Bultos",
   },
 }
 
@@ -94,6 +115,12 @@ async function fetchPickingResumen(anio: number): Promise<ResumenExterno | null>
 async function fetchWnpResumen(anio: number): Promise<ResumenExterno | null> {
   return fetchJsonCached<ResumenExterno>(
     `${DEPOSITO_API_BASE}/api/productividad/wnp-resumen?anio=${anio}`,
+  )
+}
+
+async function fetchHsExtrasResumen(anio: number): Promise<ResumenExterno | null> {
+  return fetchJsonCached<ResumenExterno>(
+    `${DEPOSITO_API_BASE}/api/productividad/hs-extras-resumen?anio=${anio}`,
   )
 }
 

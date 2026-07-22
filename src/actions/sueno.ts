@@ -237,6 +237,8 @@ export interface SuenoDetalleMes {
   etiqueta: string
   valor: number
   detalle: number | null
+  /** 2° dato del mes, opcional (hoy solo `hs_extras`: bultos vendidos). */
+  detalle2?: number | null
 }
 
 export interface SuenoDetalle {
@@ -248,6 +250,8 @@ export interface SuenoDetalle {
   meses: SuenoDetalleMes[]
   /** Encabezado de la columna "detalle" (default: "Bultos rech."). */
   detalleLabel?: string
+  /** Encabezado de la 2ª columna de detalle; sin esto la columna no se dibuja. */
+  detalle2Label?: string
 }
 
 /** Detalle mensual de un KPI (para el modal que explica el número). */
@@ -347,6 +351,7 @@ export async function getSuenoDetalle(
           etiqueta: MES_LABEL[m.mes - 1] ?? String(m.mes),
           valor: Number(m.valor ?? 0),
           detalle: m.registros,
+          detalle2: m.bultos ?? null,
         }))
       return {
         data: {
@@ -359,6 +364,7 @@ export async function getSuenoDetalle(
             : "No se pudo leer la productividad del depósito en este momento.",
           meses,
           detalleLabel: ext.detalleLabel ?? "Registros",
+          detalle2Label: ext.detalle2Label,
         },
       }
     }

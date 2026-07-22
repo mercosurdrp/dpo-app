@@ -97,7 +97,7 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
 
   // ---- Estación de trabajo / Tarea ----
   { key: "tiempo_pdv", label: "Tiempo en PDV", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "min", mejorSi: "menor", metaDefault: 8 },
-  { key: "hs_extras", label: "HS Extras", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "hs", mejorSi: "menor", metaDefault: 5.6 },
+  { key: "hs_extras", label: "HS Extras", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "HHEE/1.000 bul", mejorSi: "menor", metaDefault: 1.5 },
   { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
   { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
 ]
@@ -118,7 +118,10 @@ export type AgregacionMensual = "promedio" | "suma"
  */
 export const KPI_AGREGACION_MENSUAL: Record<string, AgregacionMensual> = {
   wnp: "promedio",
-  hs_extras: "promedio",
+  // `hs_extras` salió de acá el 2026-07-22: pasó a ser un KPI externo (horas
+  // extras ÷ bultos vendidos, calculado en el depósito). La carga mensual a
+  // mano guardaba HORAS ABSOLUTAS, que con la unidad y la meta nuevas darían
+  // un valor sin sentido si el depósito no respondiera.
 }
 
 export function esKpiManualMensual(key: string): boolean {

@@ -42,6 +42,10 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
       ? Math.max(...detalle.meses.map((m) => Math.abs(m.valor)), 1)
       : 1
   const hayBultos = detalle?.meses.some((m) => m.detalle != null) ?? false
+  // 2ª columna de detalle (hoy: los bultos vendidos de HS Extras). Se dibuja
+  // solo si el KPI la rotuló Y algún mes trae el dato.
+  const hayDetalle2 =
+    !!detalle?.detalle2Label && detalle.meses.some((m) => m.detalle2 != null)
 
   return (
     <>
@@ -109,6 +113,11 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
               <th className="py-1.5 text-right font-medium">
                 {hayBultos ? (detalle?.detalleLabel ?? "Bultos rech.") : ""}
               </th>
+              {hayDetalle2 && (
+                <th className="py-1.5 text-right font-medium">
+                  {detalle.detalle2Label}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -132,6 +141,11 @@ function DetalleContent({ nodo }: { nodo: SuenoNodo }) {
                 <td className="py-1.5 text-right tabular-nums text-slate-500">
                   {m.detalle == null ? "" : nfAR.format(m.detalle)}
                 </td>
+                {hayDetalle2 && (
+                  <td className="py-1.5 text-right tabular-nums text-slate-500">
+                    {m.detalle2 == null ? "" : nfAR.format(m.detalle2)}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
