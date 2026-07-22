@@ -59,6 +59,7 @@ import { ResponderTareaDialog } from "@/components/presupuesto/responder-tarea-d
 import { VerTareaDialog } from "@/components/presupuesto/ver-tarea-dialog"
 import type { EjecucionRubro } from "@/actions/presupuesto-generador"
 import type { KpiPerdidas } from "@/actions/presupuesto-perdidas-kpi"
+import type { KpiCombustible } from "@/actions/presupuesto-combustible-kpi"
 import type {
   EstadoPresupuestoTarea,
   IniciativaAhorroConDetalle,
@@ -89,6 +90,7 @@ interface Props {
   /** Ejecución (presup. vs real) por rubro del EERR: de acá sale el ahorro real. */
   ejecucionRubros: Record<string, EjecucionRubro>
   kpiPerdidas: Record<string, KpiPerdidas>
+  kpiCombustible: Record<string, KpiCombustible>
   mostrarPlanesAccion: boolean
   planesAccion: PlanAccionPresupuestoConDetalle[]
   mostrarInversiones: boolean
@@ -174,6 +176,7 @@ export function PresupuestoClient({
   iniciativas,
   ejecucionRubros,
   kpiPerdidas,
+  kpiCombustible,
   mostrarPlanesAccion,
   planesAccion,
   mostrarInversiones,
@@ -807,6 +810,7 @@ export function PresupuestoClient({
               iniciativas={iniciativas}
               ejecucionRubros={ejecucionRubros}
               kpiPerdidas={kpiPerdidas}
+              kpiCombustible={kpiCombustible}
               responsables={responsables}
               puedeEditar={puedeEditar}
             />
