@@ -94,6 +94,10 @@ export function ReportesSeguridadClient({
   currentProfileId: string
   currentRole: UserRole
 }) {
+  const [tab, setTab] = useState("reportes")
+  // En "Planes de acción" el tablero necesita todo el alto disponible, así que
+  // el encabezado se muestra compacto (sin bajada ni tarjeta de días sin accidente).
+  const esPlanes = tab === "planes"
   const [openNuevo, setOpenNuevo] = useState(false)
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [filtroTipo, setFiltroTipo] = useState<ReporteSeguridadTipo | "all">("all")
@@ -227,47 +231,60 @@ export function ReportesSeguridadClient({
   }, [reportes, filtroTipo, filtroLocalidad, fechaDesde, fechaHasta])
 
   return (
-    <div className="space-y-5">
+    <div className={esPlanes ? "space-y-3" : "space-y-5"}>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-            <ShieldAlert className="size-6 text-red-500" />
+          <h1
+            className={`flex items-center gap-2 font-bold text-slate-900 ${
+              esPlanes ? "text-lg" : "text-2xl"
+            }`}
+          >
+            <ShieldAlert
+              className={esPlanes ? "size-5 text-red-500" : "size-6 text-red-500"}
+            />
             Reportes de Seguridad
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Accidentes, incidentes, actos/condiciones inseguras, rutas de riesgo y
-            reconocimientos.
-          </p>
+          {!esPlanes && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Accidentes, incidentes, actos/condiciones inseguras, rutas de riesgo y
+              reconocimientos.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div
-            className="flex items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-sm"
-            style={{ borderLeft: "4px solid #16a34a" }}
-          >
-            <ShieldCheck className="size-7 text-green-600" />
-            <div className="leading-tight">
-              {diasSinAccidente === null ? (
-                <>
-                  <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
-                  <p className="text-[11px] text-muted-foreground">registrados</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {diasSinAccidente}{" "}
-                    <span className="text-sm font-medium text-muted-foreground">
-                      {diasSinAccidente === 1 ? "día" : "días"}
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    sin accidentes · último {formatDate(ultimoAccidente!)}
-                  </p>
-                </>
-              )}
+          {!esPlanes && (
+            <div
+              className="flex items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-sm"
+              style={{ borderLeft: "4px solid #16a34a" }}
+            >
+              <ShieldCheck className="size-7 text-green-600" />
+              <div className="leading-tight">
+                {diasSinAccidente === null ? (
+                  <>
+                    <p className="text-lg font-bold text-slate-900">Sin accidentes</p>
+                    <p className="text-[11px] text-muted-foreground">registrados</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {diasSinAccidente}{" "}
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {diasSinAccidente === 1 ? "día" : "días"}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      sin accidentes · último {formatDate(ultimoAccidente!)}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-          <Button onClick={() => setOpenNuevo(true)}>
+          )}
+          <Button
+            onClick={() => setOpenNuevo(true)}
+            size={esPlanes ? "sm" : "default"}
+          >
             <Plus className="mr-2 size-4" />
             Nuevo reporte
           </Button>
@@ -275,7 +292,11 @@ export function ReportesSeguridadClient({
       </div>
 
       {/* Tabs: Reportes / Planes de acción */}
-      <Tabs defaultValue="reportes" className="gap-4">
+      <Tabs
+        value={tab}
+        onValueChange={setTab}
+        className={esPlanes ? "gap-2" : "gap-4"}
+      >
         <TabsList>
           <TabsTrigger value="reportes">Reportes</TabsTrigger>
           <TabsTrigger value="planes">Planes de acción</TabsTrigger>

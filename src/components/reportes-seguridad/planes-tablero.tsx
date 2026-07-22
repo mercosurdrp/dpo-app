@@ -68,6 +68,17 @@ const ESTADO_CLASSES: Record<PlanTableroEstado, string> = {
   terminado: "bg-emerald-100 text-emerald-700",
 }
 
+const KPI_CHIPS: {
+  key: "total" | PlanTableroEstado
+  label: string
+  color: string
+}[] = [
+  { key: "total", label: "Total", color: "#0f172a" },
+  { key: "pendiente", label: "Pendiente", color: "#64748b" },
+  { key: "en_curso", label: "En curso", color: "#F59E0B" },
+  { key: "terminado", label: "Terminado", color: "#10b981" },
+]
+
 const ESTADOS: (PlanTableroEstado | "all")[] = [
   "all",
   "pendiente",
@@ -160,100 +171,89 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
   }, [filas])
 
   return (
-    <div className="space-y-4">
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border bg-card p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Total
-          </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.total}</p>
+    <div className="space-y-3">
+      {/* KPIs + filtros en una sola barra: el tablero necesita el alto para la tabla */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {KPI_CHIPS.map((c) => (
+            <div key={c.key} className="flex items-center gap-2">
+              <span
+                className="h-6 w-1 rounded-full"
+                style={{ backgroundColor: c.color }}
+              />
+              <div className="leading-tight">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {c.label}
+                </p>
+                <p className="text-lg font-bold text-slate-900">{kpis[c.key]}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <div
-          className="rounded-lg border bg-card p-3"
-          style={{ borderLeft: "4px solid #64748b" }}
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Pendiente
-          </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.pendiente}</p>
-        </div>
-        <div
-          className="rounded-lg border bg-card p-3"
-          style={{ borderLeft: "4px solid #F59E0B" }}
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            En curso
-          </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.en_curso}</p>
-        </div>
-        <div
-          className="rounded-lg border bg-card p-3"
-          style={{ borderLeft: "4px solid #10b981" }}
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Terminado
-          </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.terminado}</p>
-        </div>
-      </div>
 
-      {/* Filtros */}
-      <div className="grid grid-cols-1 gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2">
-        <div>
-          <Label className="text-xs">Estado</Label>
-          <Select
-            value={filtroEstado}
-            onValueChange={(v) =>
-              setFiltroEstado((v ?? "all") as PlanTableroEstado | "all")
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ESTADOS.map((e) => (
-                <SelectItem key={e} value={e}>
-                  {e === "all" ? "Todos" : ESTADO_LABELS[e]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">Responsable</Label>
-          <Select
-            value={filtroResponsable}
-            onValueChange={(v) => setFiltroResponsable(v ?? "all")}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {responsables.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Estado</Label>
+            <Select
+              value={filtroEstado}
+              onValueChange={(v) =>
+                setFiltroEstado((v ?? "all") as PlanTableroEstado | "all")
+              }
+            >
+              <SelectTrigger className="h-8 w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ESTADOS.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e === "all" ? "Todos" : ESTADO_LABELS[e]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">Responsable</Label>
+            <Select
+              value={filtroResponsable}
+              onValueChange={(v) => setFiltroResponsable(v ?? "all")}
+            >
+              <SelectTrigger className="h-8 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {responsables.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
       {/* Tabla */}
       <div className="rounded-lg border bg-card">
-        <div className="max-h-[70vh] overflow-auto">
-          <Table>
+        {/* Un único contenedor de scroll: el wrapper interno de <Table> se neutraliza
+            para que el encabezado sticky se ancle acá y no haya barra horizontal
+            escondida al pie de la página. */}
+        <div className="max-h-[calc(100vh-15rem)] min-h-[18rem] overflow-auto [&>[data-slot=table-container]]:overflow-visible">
+          <Table className="table-fixed">
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <TableHead className="w-60">Reporte</TableHead>
+                <TableHead className="w-[22%]">Reporte</TableHead>
                 <TableHead>Plan de acción</TableHead>
-                <TableHead className="w-40">Responsable</TableHead>
-                <TableHead className="w-32">F. planificada</TableHead>
-                <TableHead className="w-32">F. completado</TableHead>
-                <TableHead className="w-28">Estado</TableHead>
-                <TableHead className="w-24 text-right">Acción</TableHead>
+                <TableHead className="w-[13%] whitespace-normal">
+                  Responsable
+                </TableHead>
+                <TableHead className="w-[9%] whitespace-normal">F. plan.</TableHead>
+                <TableHead className="hidden w-[9%] whitespace-normal lg:table-cell">
+                  F. compl.
+                </TableHead>
+                <TableHead className="w-[10%]">Estado</TableHead>
+                <TableHead className="w-[9%] text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -315,16 +315,16 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                           {f.plan_descripcion || "—"}
                         </p>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm whitespace-normal break-words text-muted-foreground">
                         {f.responsable_nombre ?? "—"}
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="text-sm whitespace-normal">
                         {formatDate(f.fecha_planificada)}
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="hidden text-sm whitespace-normal lg:table-cell">
                         {formatDate(f.fecha_completado)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <Badge
                           variant="secondary"
                           className={ESTADO_CLASSES[f.estado]}
@@ -333,7 +333,7 @@ export function PlanesTablero({ currentProfileId, currentRole }: Props) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <Button
                             variant="outline"
                             size="sm"
