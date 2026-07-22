@@ -88,6 +88,11 @@ import {
   SeccionPeriodosCriticos,
   SECCION_PERIODOS_CRITICOS,
 } from "@/components/reuniones/seccion-periodos-criticos"
+import {
+  SeccionDimensionamiento,
+  SECCION_DIMENSIONAMIENTO,
+} from "@/components/reuniones/seccion-dimensionamiento"
+import { esFeriado } from "@/lib/feriados-ar"
 import { RechazosDetalleDiaDialog } from "@/components/reuniones/rechazos-detalle-dia-dialog"
 import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-dia-dialog"
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
@@ -267,6 +272,25 @@ function esLunes(iso: string): boolean {
  * Se resuelve por fecha y no por configuración porque el tipo de reunión ya se
  * crea todos los martes; lo único que cambia es qué se muestra ese día.
  */
+function esUltimoDiaHabilDelMes(iso: string): boolean {
+  const d = new Date(iso + "T12:00:00")
+  const dow = d.getDay()
+  if (dow === 0 || dow === 6) return false
+  if (esFeriado(iso)) return false
+  // Es el último hábil si no queda ningún otro día hábil por delante en el mes.
+  const anio = d.getFullYear()
+  const mes = d.getMonth()
+  const ultimoDia = new Date(anio, mes + 1, 0).getDate()
+  for (let dia = d.getDate() + 1; dia <= ultimoDia; dia++) {
+    const w = new Date(anio, mes, dia).getDay()
+    if (w === 0 || w === 6) continue
+    const isoDia = `${anio}-${String(mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+    if (esFeriado(isoDia)) continue
+    return false
+  }
+  return true
+}
+
 function esUltimoMartesDelMes(iso: string): boolean {
   const d = new Date(iso + "T12:00:00")
   if (d.getDay() !== 2) return false
@@ -1101,6 +1125,10 @@ export function ReunionDetallePageClient({
   )
   const actividadesPeriodosCriticos = useMemo(
     () => actividadesAll.filter((a) => a.seccion === SECCION_PERIODOS_CRITICOS),
+    [actividadesAll],
+  )
+  const actividadesDimensionamiento = useMemo(
+    () => actividadesAll.filter((a) => a.seccion === SECCION_DIMENSIONAMIENTO),
     [actividadesAll],
   )
 
@@ -2230,6 +2258,22 @@ export function ReunionDetallePageClient({
             onActividadesChanged={refrescar}
           />
         </>
+      )}
+
+      {/* Dimensionamiento — sólo en la reunión de Logística del ÚLTIMO DÍA HÁBIL
+          del mes. El manual DPO (Planeamiento 2.3, R2.3.4) pide comunicar el
+          dimensionamiento a almacén y entrega dentro del mes de la ejecución:
+          este es el momento natural, con los dos sectores en la misma mesa.
+          Sólo Pampeana: el módulo de dimensionamiento no existe en Misiones. */}
+      {!IS_MISIONES && detalle.tipo === "logistica" && esUltimoDiaHabilDelMes(detalle.fecha) && (
+        <SeccionDimensionamiento
+          reunionId={detalle.id}
+          fechaReunion={detalle.fecha}
+          actividades={actividadesDimensionamiento}
+          responsables={responsables}
+          puedeEditar={puedeEditar}
+          onActividadesChanged={refrescar}
+        />
       )}
 
 
