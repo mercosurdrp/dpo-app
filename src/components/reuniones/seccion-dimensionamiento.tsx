@@ -19,6 +19,10 @@
  * porque el módulo proyecta siempre desde el mes en curso: sin congelar, la
  * reunión de julio mostraría meses de octubre y no serviría como evidencia.
  *
+ * En pantalla se muestra la fecha de la REUNIÓN, no la de carga: el resumen
+ * pertenece a esa reunión aunque se haya volcado después (el módulo puede no
+ * haber existido ese día). La fecha real de carga queda igual en `updated_at`.
+ *
  * La evidencia y los compromisos reusan `SeccionGaleriaFotos`, igual que el resto
  * de las secciones de la reunión.
  */
@@ -113,7 +117,7 @@ export function SeccionDimensionamiento({
             <p className="mt-1 text-xs text-muted-foreground">
               Recursos que va a pedir el mes que entra contra la dotación actual — para que almacén y distribución sepan con qué cuentan.
               {d ? ` · ${fmt(d.hlProyectados)} HL proyectados${d.ajustePct !== 0 ? ` (escenario ${d.ajustePct > 0 ? "+" : ""}${d.ajustePct}%)` : ""}` : ""}
-              {snap ? ` · Congelado el ${new Date(snap.updatedAt).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}` : ""}
+              {snap ? ` · Fijado en la reunión del ${new Date(fechaReunion + "T12:00:00").toLocaleDateString("es-AR")}` : ""}
             </p>
           </div>
           {puedeEditar && (
