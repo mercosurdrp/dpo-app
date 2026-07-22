@@ -939,7 +939,7 @@ function DetalleCeldaModal({ rol, mes, pesos, horasExtraMes, volDiaMes }: { rol:
 // Modal del MES EN CURSO: abre desde la columna Estado y explica paso a paso de dónde
 // sale el «Cubre» / «Extras en pico» / «Faltan N», con la fuente de cada dato. El caso
 // típico es «Faltan 0,2»: no falta gente, es el colchón de ausentismo contra un
-// necesario que se redondea a personas enteras — por eso además va el chequeo por volumen.
+// necesario, expresado con un decimal para que ambos lados sean comparables.
 function DetalleHoyAlmacenModal({ nombre, r, mes, unidad, esHL, horasTurno, ausentismo, fuente }: {
   nombre: string; r: RolFte; mes: string; unidad: string; esHL: boolean; horasTurno: number; ausentismo: number; fuente: string
 }) {
@@ -963,8 +963,8 @@ function DetalleHoyAlmacenModal({ nombre, r, mes, unidad, esHL, horasTurno, ause
     ["Productividad", `${fmt(r.productividad)} ${esHL ? "HL" : unidad}/HH`, esHL ? "estándar en pal/HH × 6 HL/paleta" : "por hora-hombre trabajada"],
     ["Horas de turno × utilización", `${fmt(horasTurno)} h × ${Math.round(r.utilizacion * 100)}% = ${fmt(Math.round(horasTurno * r.utilizacion * 10) / 10)} h`, "horas efectivas sobre la tarea"],
     ["Capacidad por persona / día", uv(r.capDiariaFte), "productividad × horas × utilización"],
-    ["Necesarios (promedio)", `${r.fteNecesariosProm}`, `${fmt(r.volumenProm)} ÷ ${fmt(r.capDiariaFte)}, redondeado hacia arriba`],
-    ["Necesarios (pico)", `${r.fteNecesariosPico}`, `${fmt(r.volumenPico)} ÷ ${fmt(r.capDiariaFte)}, redondeado hacia arriba`],
+    ["Necesarios (promedio)", `${fmt(r.fteNecesariosProm)}`, `${fmt(r.volumenProm)} ÷ ${fmt(r.capDiariaFte)} por persona`],
+    ["Necesarios (pico)", `${fmt(r.fteNecesariosPico)}`, `${fmt(r.volumenPico)} ÷ ${fmt(r.capDiariaFte)} por persona`],
     ["Dotación nominal", `${fmt(r.dotacion)}`, "personas cargadas en Datos de entrada"],
     ["Ausentismo", `${Math.round(ausentismo * 100)}%`, "vacaciones, licencias y faltas"],
     ["Dotación efectiva", `${fmt(r.dotacionEfectiva)}`, `${fmt(r.dotacion)} × (1 − ${Math.round(ausentismo * 100)}%) — contra esto se compara`],
@@ -1028,7 +1028,7 @@ function DetalleHoyAlmacenModal({ nombre, r, mes, unidad, esHL, horasTurno, ause
             (necesarios {r.fteNecesariosProm}), pero al descontar el ausentismo del {Math.round(ausentismo * 100)}% la
             dotación efectiva baja a <b>{fmt(r.dotacionEfectiva)}</b> y aparece la brecha de <b>{fmt(brechaProm)}</b>.
             {cubrePorVolumen
-              ? <> Además, por volumen el equipo cubre la demanda promedio, así que el faltante viene del redondeo a personas enteras.</>
+              ? <> Además, por volumen el equipo cubre la demanda promedio del mes.</>
               : <> Traducido: los días en que falta alguien hay que cubrir ~{uv(deficitProm)} con horas extra o reasignando.</>}
             {" "}Es el colchón de ausentismo, no un déficit estructural.
           </p>
@@ -1180,7 +1180,14 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                   return (
                     <TableRow key={n}>
                       <TableCell className="font-medium">{n}</TableCell>
-                      <TableCell className="text-right">{fmt(r.dotacion)}{r.dotacionEfectiva < r.dotacion ? <span className="block text-[10px] text-muted-foreground">ef. {fmt(r.dotacionEfectiva)}</span> : null}</TableCell>
+                      <TableCell className="text-right">
+                        {fmt(r.dotacion)}
+                        {r.dotacionEfectiva < r.dotacion ? (
+                          <span className="block text-[10px] text-muted-foreground">
+                            −{fmt(Math.round((r.dotacion - r.dotacionEfectiva) * 100) / 100)} ausent. = {fmt(r.dotacionEfectiva)}
+                          </span>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="text-right">
                         {fmt(r.productividad)} {unidadProd}
                         {hl && real != null && (
@@ -1198,7 +1205,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                           ? <span className="text-xs text-muted-foreground"> ({paletas(vol)} pal/día)</span>
                           : <span className="text-xs text-muted-foreground"> (pico {fmt(r.volumenPico)})</span>}
                       </TableCell>
-                      <TableCell className="text-right font-semibold">{r.fteNecesariosProm}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${r.fteNecesariosPico})` : ""}</TableCell>
+                      <TableCell className="text-right font-semibold">{fmt(r.fteNecesariosProm)}{r.fteNecesariosPico > r.fteNecesariosProm ? ` (pico ${fmt(r.fteNecesariosPico)})` : ""}</TableCell>
                       <TableCell className="p-0">
                         <Dialog>
                           <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${e.cls}`}>
@@ -1212,7 +1219,7 @@ function AlmacenTab({ data, proyLive, escenario, canEdit, run, isPending }: { da
                 })}
               </TableBody>
             </Table>
-            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Cap/día = dotación <b>efectiva</b> (descontado el ausentismo) × productividad × horas/turno × utilización. Clasificadores: la demanda son los HL de cerveza retornable presupuestados para retirar de Quilmes (acarreo-rdf) repartidos entre los días hábiles del mes; se convierten a paletas con 6 HL/paleta. Productividad = estándar de junio (4,35 pal/HH ≈ 26 HL/HH). «Cubre» = alcanza incluso en el pico · «Extras en pico» = alcanza en promedio, el pico requiere horas extra · «Faltan N» = no alcanza ni en promedio. Los <b>necesarios van con un decimal</b> (no redondeados hacia arriba) para que sean comparables con la dotación efectiva: 2,7 necesarios contra 2,76 efectivos <b>cubre</b>. <b>Tocá el estado</b> para ver el cálculo paso a paso, la fuente de cada dato y qué significa la brecha.</p>
           </CardContent>
         </Card>
       )}

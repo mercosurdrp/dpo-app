@@ -149,7 +149,7 @@ export interface RolFte {
   volumenPico: number
   productividad: number         // bul/HH (pickeros) o pal/HH (maquinistas)
   diasConDatos: number
-  fteNecesariosProm: number
+  fteNecesariosProm: number     // con 1 decimal: comparable con la dotación efectiva
   fteNecesariosPico: number
   dotacion: number
   dotacionEfectiva: number      // dotación × (1 − ausentismo): contra esto se compara
@@ -506,8 +506,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const pickeros: RolFte = {
         volumenProm: Math.round(pk.prom), volumenPico: Math.round(pk.pico), productividad: prodPicking,
         diasConDatos: pk.dias,
-        fteNecesariosProm: capPicker > 0 ? Math.ceil(pk.prom / capPicker) : 0,
-        fteNecesariosPico: capPicker > 0 ? Math.ceil(pk.pico / capPicker) : 0,
+        fteNecesariosProm: capPicker > 0 ? Math.round((pk.prom / capPicker) * 10) / 10 : 0,
+        fteNecesariosPico: capPicker > 0 ? Math.round((pk.pico / capPicker) * 10) / 10 : 0,
         dotacion: config.dotacion_almacen,
         dotacionEfectiva: efAlmacen(config.dotacion_almacen),
         utilizacion: config.util_pickeros,
@@ -547,8 +547,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const maquinistas = {
         volumenProm: Math.round(mq.prom), volumenPico: Math.round(mq.pico), productividad: config.prod_pal_h,
         diasConDatos: mq.dias,
-        fteNecesariosProm: capMaq > 0 ? Math.ceil(mq.prom / capMaq) : 0,
-        fteNecesariosPico: capMaq > 0 ? Math.ceil(mq.pico / capMaq) : 0,
+        fteNecesariosProm: capMaq > 0 ? Math.round((mq.prom / capMaq) * 10) / 10 : 0,
+        fteNecesariosPico: capMaq > 0 ? Math.round((mq.pico / capMaq) * 10) / 10 : 0,
         dotacion: config.dotacion_maquinistas,
         dotacionEfectiva: efAlmacen(config.dotacion_maquinistas),
         utilizacion: config.util_maquinistas,
@@ -576,7 +576,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         palClasifReal += Number(r.pallets_total ?? 0) - Number(r.pallets_rotos ?? 0)
       }
       const prodRealPalHH = horasClasif > 0 ? Math.round((palClasifReal / horasClasif) * 100) / 100 : null
-      const fteClasif = capClasif > 0 && hlClasifDia > 0 ? Math.ceil(hlClasifDia / capClasif) : 0
+      const fteClasif = capClasif > 0 && hlClasifDia > 0 ? Math.round((hlClasifDia / capClasif) * 10) / 10 : 0
       const clasificadores: RolFte & { prodRealPalHH: number | null } = {
         // reparto uniforme → promedio = pico
         volumenProm: Math.round(hlClasifDia), volumenPico: Math.round(hlClasifDia),
@@ -603,8 +603,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const reempaque: RolFte = {
         volumenProm: Math.round(re.prom), volumenPico: Math.round(re.pico), productividad: config.prod_reempaque_bul_hh,
         diasConDatos: re.dias,
-        fteNecesariosProm: capReempaque > 0 ? Math.ceil(re.prom / capReempaque) : 0,
-        fteNecesariosPico: capReempaque > 0 ? Math.ceil(re.pico / capReempaque) : 0,
+        fteNecesariosProm: capReempaque > 0 ? Math.round((re.prom / capReempaque) * 10) / 10 : 0,
+        fteNecesariosPico: capReempaque > 0 ? Math.round((re.pico / capReempaque) * 10) / 10 : 0,
         dotacion: config.dotacion_reempaque,
         dotacionEfectiva: efAlmacen(config.dotacion_reempaque),
         utilizacion: config.util_reempaque,
