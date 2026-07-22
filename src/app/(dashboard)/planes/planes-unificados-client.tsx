@@ -37,6 +37,7 @@ const ORIGENES: { value: PlanOrigen; label: string; color: string }[] = [
   { value: "tiempo_pdv", label: "Tiempo por PDV", color: "#EA580C" },
   { value: "reunion", label: "Reunión", color: "#6366F1" },
   { value: "presupuesto", label: "Presupuesto", color: "#A16207" },
+  { value: "presupuesto_plan", label: "Plan de presupuesto", color: "#B45309" },
   { value: "riesgo", label: "Riesgo externo", color: "#BE123C" },
 ]
 const ORIGEN_COLOR: Record<PlanOrigen, string> = Object.fromEntries(

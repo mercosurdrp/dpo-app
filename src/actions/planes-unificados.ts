@@ -29,6 +29,7 @@ export type PlanOrigen =
   | "tiempo_pdv"
   | "reunion"
   | "presupuesto"
+  | "presupuesto_plan"
   | "riesgo"
   | "clusterizacion"
 
@@ -61,6 +62,9 @@ const ORIGEN_LABEL: Record<PlanOrigen, string> = {
   tiempo_pdv: "Tiempo por PDV",
   reunion: "Reunión",
   presupuesto: "Presupuesto",
+  // Distinto de "Presupuesto": esas son tareas de ANÁLISIS del desvío;
+  // esto es el plan para EJECUTAR la corrección.
+  presupuesto_plan: "Plan de presupuesto",
   riesgo: "Riesgo externo",
   clusterizacion: "Clusterización",
 }
@@ -486,6 +490,59 @@ export async function getPlanesUnificados(opts?: {
           id: r.id,
           titulo: r.descripcion || r.rubro || "Tarea de presupuesto",
           descripcion: r.descripcion,
+          estado_unificado: estado,
+          fecha_limite: r.fecha_limite,
+          is_overdue: calcOverdue(r.fecha_limite, estado, hoyISO),
+          prioridad: null,
+          responsable_id: r.responsable_id,
+          responsable_nombre: null,
+          href: "/presupuesto",
+          created_at: r.created_at,
+        })
+      }
+    }
+
+    // ---- 8 bis) presupuestos_planes_accion ----
+    // Van aparte de presupuestos_tareas: la tarea es analizar el desvío y el
+    // plan es ejecutarlo. En la práctica la tarea queda completada mientras el
+    // plan sigue abierto, así que sin esto el tablero muestra el análisis
+    // cerrado y esconde la ejecución pendiente.
+    {
+      let q = supabase
+        .from("presupuestos_planes_accion")
+        .select(
+          "id, titulo, desvio_detectado, estado, responsable_id, fecha_limite, created_at"
+        )
+        .order("created_at", { ascending: false })
+      if (soloMios) q = q.eq("responsable_id", soloMios)
+
+      const { data: rows, error } = await q
+      if (error) return { error: `presupuestos_planes_accion: ${error.message}` }
+
+      for (const r of (rows ?? []) as Array<{
+        id: string
+        titulo: string
+        desvio_detectado: string | null
+        estado: string
+        responsable_id: string | null
+        fecha_limite: string | null
+        created_at: string
+      }>) {
+        if (r.responsable_id) profileIds.add(r.responsable_id)
+        // mapEstado() no conoce 'cerrado'/'cancelado' (masculino) y los mandaría
+        // a "no comenzada". Se mapea acá para no cambiarle el criterio al resto.
+        const estado: EstadoUnificado =
+          r.estado === "cerrado" || r.estado === "cancelado"
+            ? "cerrada"
+            : r.estado === "en_progreso"
+              ? "en_curso"
+              : "no_comenzada"
+        items.push({
+          origen: "presupuesto_plan",
+          origen_label: ORIGEN_LABEL.presupuesto_plan,
+          id: r.id,
+          titulo: r.titulo,
+          descripcion: r.desvio_detectado,
           estado_unificado: estado,
           fecha_limite: r.fecha_limite,
           is_overdue: calcOverdue(r.fecha_limite, estado, hoyISO),
