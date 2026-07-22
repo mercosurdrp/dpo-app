@@ -19,6 +19,7 @@ import type {
   DrillDim,
 } from "@/lib/types/rechazos"
 import { formatBultos, formatFecha, formatHl, formatMonto } from "@/lib/format/rechazos"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 export interface DrillTo {
   tipo: DrillDim
@@ -206,7 +207,7 @@ function DetalleRowItem({ row }: { row: RechazosDetalleRow }) {
       <div className="text-slate-700">
         <span className="font-medium">{row.chofer_display}</span>
         {row.chofer_display !== row.patente && (
-          <span className="ml-1 text-muted-foreground">· {row.patente}</span>
+          <span className="ml-1 text-muted-foreground">· {etiquetaFletero(row.patente)}</span>
         )}
       </div>
       <div className="text-slate-700 truncate" title={row.nombre_cliente ?? ""}>

@@ -10,6 +10,7 @@ import type {
   RechazosDetalleResponse,
   RechazosDetalleRow,
 } from "@/lib/types/rechazos"
+import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 1000
@@ -63,7 +64,7 @@ export async function getRechazosDetalle(
       fecha: r.fecha,
       fecha_venta: r.fecha_venta,
       patente: r.ds_fletero_carga,
-      chofer_display: chofer_nombre ?? r.ds_fletero_carga,
+      chofer_display: etiquetaChofer(chofer_nombre, r.ds_fletero_carga, r.ds_fletero_carga),
       id_rechazo: r.id_rechazo,
       ds_rechazo: cat?.ds_rechazo ?? r.ds_rechazo,
       categoria: cat?.categoria ?? "POR_CLASIFICAR",

@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { ChoferesResumenMes, ChoferResumenRow } from "@/actions/choferes"
 import { SIN_ASIGNAR_SENTINEL } from "@/lib/choferes/detalle-chofer"
+import { etiquetaFletero, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 
 type SortKey =
   | "bultos"
@@ -171,7 +172,7 @@ export function ChoferesRankingClient({ data, desde, hasta }: Props) {
                 Estas patentes vendieron en el período pero no tienen egreso
                 de TML del día ni mapeo nominal:{" "}
                 <span className="font-mono">
-                  {data.patentes_sin_resolver.slice(0, 10).join(", ")}
+                  {data.patentes_sin_resolver.slice(0, 10).map((p) => etiquetaFletero(p)).join(", ")}
                   {data.patentes_sin_resolver.length > 10 ? "…" : ""}
                 </span>
                 . El supervisor debería cargarlas en seguridad o asignar el
@@ -227,7 +228,7 @@ export function ChoferesRankingClient({ data, desde, hasta }: Props) {
                         {i + 1}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {f.chofer_nombre}
+                        {limpiarNombreChofer(f.chofer_nombre)}
                         {esSinAsignar && (
                           <Badge
                             variant="outline"
@@ -276,7 +277,7 @@ export function ChoferesRankingClient({ data, desde, hasta }: Props) {
                           : `${f.rechazos_pct.toFixed(2)}%`}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {f.patentes_usadas.slice(0, 3).join(", ")}
+                        {f.patentes_usadas.slice(0, 3).map((p) => etiquetaFletero(p)).join(", ")}
                         {f.patentes_usadas.length > 3
                           ? ` +${f.patentes_usadas.length - 3}`
                           : ""}

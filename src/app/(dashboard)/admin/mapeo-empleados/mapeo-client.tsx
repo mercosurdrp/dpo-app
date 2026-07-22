@@ -58,6 +58,7 @@ import {
   type SectorEmpleado,
 } from "@/actions/mapeo-empleados.types"
 import type { EmpleadoCompleto } from "@/types/database"
+import { etiquetaFletero, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 
 type EmpleadoLite = {
   id: string
@@ -221,7 +222,7 @@ export function MapeoClient({
     if ("error" in result) {
       toast.error(result.error)
     } else {
-      toast.success(`Fletero "${dsFletero}" vinculado`)
+      toast.success(`Fletero "${etiquetaFletero(dsFletero)}" vinculado`)
       startTransition(() => router.refresh())
     }
     setSavingFletero(null)
@@ -309,7 +310,7 @@ export function MapeoClient({
                       </TableCell>
                       <TableCell>
                         {m.nombre_chofer ? (
-                          <span className="text-sm">{m.nombre_chofer}</span>
+                          <span className="text-sm">{limpiarNombreChofer(m.nombre_chofer)}</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             —
@@ -319,7 +320,7 @@ export function MapeoClient({
                       <TableCell>
                         {m.ds_fletero_carga ? (
                           <span className="font-mono text-sm">
-                            {m.ds_fletero_carga}
+                            {etiquetaFletero(m.ds_fletero_carga)}
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -445,7 +446,7 @@ export function MapeoClient({
                   {unmappedFleteros.map((f) => (
                     <TableRow key={f}>
                       <TableCell className="font-mono font-medium">
-                        {f}
+                        {etiquetaFletero(f)}
                       </TableCell>
                       <TableCell>
                         <Select

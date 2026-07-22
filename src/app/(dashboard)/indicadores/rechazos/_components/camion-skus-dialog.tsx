@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 import { formatBultos, formatFecha, formatHl } from "@/lib/format/rechazos"
 import { getCamionDiaSkus, type CamionDiaSkus } from "@/actions/camion-dia-skus"
 
@@ -65,7 +66,7 @@ export function CamionSkusDialog({ open, onOpenChange, fecha, fletero, etiqueta 
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-[640px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {etiqueta ?? fletero?.replace(/^GESTION-/, "Rep. ")}
+            {etiqueta ?? etiquetaFletero(fletero)}
             {fecha && (
               <span className="ml-2 text-base font-normal text-muted-foreground">
                 · {formatFecha(fecha)}

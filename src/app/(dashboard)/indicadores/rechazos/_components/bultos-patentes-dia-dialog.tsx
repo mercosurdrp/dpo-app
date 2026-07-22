@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { etiquetaFletero, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 import { cn } from "@/lib/utils"
 import { formatBultos, formatFecha } from "@/lib/format/rechazos"
 import {
@@ -123,8 +124,9 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
                 )}
                 {data.patentes.map((p, i) => {
                   const pct = data.total_bultos > 0 ? (p.bultos / data.total_bultos) * 100 : 0
-                  const etiqueta = (p.patente ?? p.ds_fletero_carga.replace(/^GESTION-/, "Rep. ")) +
-                    (p.chofer_nombre ? ` · ${p.chofer_nombre}` : "")
+                  const etiqueta =
+                    etiquetaFletero(p.ds_fletero_carga, { patente: p.patente }) +
+                    (p.chofer_nombre ? ` · ${limpiarNombreChofer(p.chofer_nombre)}` : "")
                   return (
                     <TableRow
                       key={p.ds_fletero_carga}
@@ -133,15 +135,15 @@ export function BultosPatentesDiaDialog({ open, onOpenChange, fecha }: Props) {
                     >
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell className="font-mono text-xs">
-                        {p.patente ?? p.ds_fletero_carga.replace(/^GESTION-/, "Rep. ")}
+                        {etiquetaFletero(p.ds_fletero_carga, { patente: p.patente })}
                         {p.origen === "gestion" && p.patente && (
                           <span className="ml-1 text-[10px] text-muted-foreground">
-                            ({p.ds_fletero_carga.replace(/^GESTION-/, "Rep. ")})
+                            ({etiquetaFletero(p.ds_fletero_carga)})
                           </span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {p.chofer_nombre ?? (
+                        {limpiarNombreChofer(p.chofer_nombre) ?? (
                           <span className="italic text-muted-foreground">(sin asignar)</span>
                         )}
                       </TableCell>

@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { etiquetaFletero, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 import { formatHl } from "@/lib/format/rechazos"
 import {
   getRechazosResumenDia,
@@ -347,9 +348,11 @@ export function RechazosDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                   {data.por_patente.map((p, i) => (
                     <TableRow key={p.patente}>
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                      <TableCell className="font-mono text-xs">{p.patente}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {etiquetaFletero(p.patente)}
+                      </TableCell>
                       <TableCell>
-                        {p.chofer_nombre ?? (
+                        {limpiarNombreChofer(p.chofer_nombre) ?? (
                           <span className="text-muted-foreground italic">(sin asignar)</span>
                         )}
                       </TableCell>

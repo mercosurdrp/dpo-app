@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button"
 import type { RechazosAggChofer, TopVariacionDim } from "@/lib/types/rechazos"
 import { formatBultos, formatHl, formatMonto, formatTasa } from "@/lib/format/rechazos"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 type SortKey = "hl" | "bultos" | "monto" | "tasa" | "eventos"
 type DrillTo = { tipo: TopVariacionDim; id: string | number }
@@ -85,7 +86,7 @@ export function RankingChoferes({
                       <TableCell>
                         <div className="font-medium text-slate-900">{c.display}</div>
                         {c.chofer_nombre && (
-                          <div className="text-[11px] text-muted-foreground">{c.patente}</div>
+                          <div className="text-[11px] text-muted-foreground">{etiquetaFletero(c.patente)}</div>
                         )}
                       </TableCell>
                       <TableCell className="tabular-nums font-medium text-slate-900">{formatHl(c.hl)}</TableCell>

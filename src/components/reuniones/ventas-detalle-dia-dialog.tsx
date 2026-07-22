@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { etiquetaChofer, etiquetaFletero, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 import {
   getVentasResumenDia,
   getVentasCamionSkuDia,
@@ -274,7 +275,9 @@ export function VentasDetalleDiaDialog({
                                     {o.patentes.map((p, i) => {
                                       const pPct =
                                         valor > 0 ? (valorPrimario(p) / valor) * 100 : 0
-                                      const label = p.patente.replace(/^GESTION-/, "Rep. ")
+                                      const label = etiquetaFletero(p.patente, {
+                                        chofer: p.chofer_nombre,
+                                      })
                                       return (
                                         <TableRow
                                           key={p.patente}
@@ -292,7 +295,7 @@ export function VentasDetalleDiaDialog({
                                             </span>
                                           </TableCell>
                                           <TableCell>
-                                            {p.chofer_nombre?.replace(/ \(Gestión\)$/, "") ?? (
+                                            {limpiarNombreChofer(p.chofer_nombre) ?? (
                                               <span className="italic text-muted-foreground">
                                                 (sin asignar)
                                               </span>
@@ -418,7 +421,7 @@ export function VentasDetalleDiaDialog({
                           const camiones = [
                             ...new Set(
                               c.origenes.map(
-                                (o) => o.patente ?? o.ds_fletero_carga.replace(/^GESTION-/, "Rep. "),
+                                (o) => etiquetaFletero(o.ds_fletero_carga, { patente: o.patente }),
                               ),
                             ),
                           ]
@@ -509,7 +512,7 @@ export function VentasDetalleDiaDialog({
                   {patentes.map((p, i) => {
                     const pct =
                       totalPrimario > 0 ? (valorPrimario(p) / totalPrimario) * 100 : 0
-                    const label = p.patente.replace(/^GESTION-/, "Rep. ")
+                    const label = etiquetaFletero(p.patente, { chofer: p.chofer_nombre })
                     return (
                       <TableRow
                         key={p.patente}
@@ -529,7 +532,7 @@ export function VentasDetalleDiaDialog({
                           </span>
                         </TableCell>
                         <TableCell>
-                          {p.chofer_nombre ?? (
+                          {limpiarNombreChofer(p.chofer_nombre) ?? (
                             <span className="italic text-muted-foreground">
                               (sin asignar)
                             </span>
@@ -622,9 +625,7 @@ function CamionSkuModal({
             Detalle por SKU · {camion?.label ?? ""}
           </DialogTitle>
           <DialogDescription>
-            {camion?.chofer
-              ? `Chofer: ${camion.chofer.replace(/ \(Gestión\)$/, "")} · `
-              : ""}
+            {camion?.chofer ? `Chofer: ${limpiarNombreChofer(camion.chofer)} · ` : ""}
             {fecha ? formatFechaLarga(fecha) : ""}
           </DialogDescription>
         </DialogHeader>

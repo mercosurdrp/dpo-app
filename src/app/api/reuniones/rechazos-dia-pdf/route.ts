@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { etiquetaChofer, etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 import {
   getRechazosResumenDia,
   type RechazosResumenDia,
@@ -449,11 +450,15 @@ function drawTablaPatentes(doc: Doc, rows: RechazosResumenDia["por_patente"]) {
   drawSectionTitle(doc, "HL rechazados por patente")
   drawTable<RechazosResumenDia["por_patente"][number]>(doc, rows, [
     { header: "#", width: 18, align: "right", get: (r) => String(rows.indexOf(r) + 1) },
-    { header: "Patente", width: 80, get: (r) => r.patente },
+    {
+      header: "Patente",
+      width: 80,
+      get: (r) => etiquetaFletero(r.patente),
+    },
     {
       header: "Chofer",
       width: 215,
-      get: (r) => r.chofer_nombre ?? "(sin asignar)",
+      get: (r) => etiquetaChofer(r.chofer_nombre, r.patente),
     },
     { header: "HL", width: 50, align: "right", get: (r) => formatHl(r.hl) },
     { header: "Bultos", width: 50, align: "right", get: (r) => formatInt(r.bultos) },

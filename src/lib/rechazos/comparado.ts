@@ -38,6 +38,7 @@ import type {
   TopVariacion,
   TopVariaciones,
 } from "@/lib/types/rechazos"
+import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Tipos internos
@@ -209,7 +210,7 @@ export async function getRechazosComparado(
         categoria: c.categoria, controlable: c.controlable,
       })),
       fleteros: mapeoChoferes
-        .map(m => ({ patente: m.patente, chofer_display: m.chofer_nombre ?? m.patente }))
+        .map(m => ({ patente: m.patente, chofer_display: etiquetaChofer(m.chofer_nombre, m.patente, m.patente) }))
         .sort((a, b) => a.patente.localeCompare(b.patente)),
       canales: filterDistincts.canales,
       supervisores: filterDistincts.supervisores,
@@ -482,7 +483,7 @@ async function resolveFilters(supa: SupaClient, filters: RechazosFilters): Promi
         .in("patente", filters.ds_fletero_carga!)
       type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
       out.ds_fletero_carga = ((data ?? []) as unknown as Row[])
-        .map(r => ({ patente: r.patente, chofer_display: r.catalogo_choferes?.nombre ?? r.patente }))
+        .map(r => ({ patente: r.patente, chofer_display: etiquetaChofer(r.catalogo_choferes?.nombre, r.patente, r.patente) }))
     })())
   }
   if (filters.categoria?.length)     out.categoria = filters.categoria
@@ -826,7 +827,7 @@ function computeAggChofer(
     const patente = r.ds_fletero_carga
     const mapeo = mapeoMap.get(patente)
     const chofer_nombre = mapeo?.chofer_nombre ?? null
-    const display = chofer_nombre ?? patente
+    const display = etiquetaChofer(chofer_nombre, patente, patente)
     const cur = map.get(patente) ?? {
       display, patente, chofer_nombre,
       hl: 0, bultos: 0, eventos: 0, monto: 0, tasa: 0,

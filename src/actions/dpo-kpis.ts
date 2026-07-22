@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { calcularKpisConClient } from "@/lib/dpo-kpis-calc"
+import { etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 // ---------- Types ----------
 
@@ -158,7 +159,7 @@ export async function getDpoKpiDrilldown(
         : (rechazos ?? [])
 
       const rows: DrilldownRow[] = filtered.map((r) => ({
-        label: `${r.fecha} — ${r.ds_fletero_carga}`,
+        label: `${r.fecha} — ${etiquetaFletero(r.ds_fletero_carga)}`,
         detalle: `${r.ds_articulo} → ${r.nombre_cliente ?? "S/N"} (${r.ds_rechazo})`,
         valor: Math.abs(Number(r.bultos_rechazados) || 0),
       }))
@@ -196,14 +197,14 @@ export async function getDpoKpiDrilldown(
         }
         const rows: DrilldownRow[] = [...porFletero.entries()]
           .sort((a, b) => b[1] - a[1])
-          .map(([f, viajes]) => ({ label: f, detalle: "Patente", valor: viajes }))
+          .map(([f, viajes]) => ({ label: etiquetaFletero(f), detalle: "Patente", valor: viajes }))
         return { data: { titulo: "Viajes por Fletero", columnas: { label: "Fletero", detalle: "", valor: "Viajes" }, rows, total: rows.reduce((s, r) => s + r.valor, 0) } }
       }
 
       if (numero === 17) {
         // Camiones distintos
         const fleteros = new Set(ventasArr.map((v) => v.ds_fletero_carga))
-        const rows: DrilldownRow[] = [...fleteros].sort().map((f) => ({ label: f, detalle: "Patente", valor: 1 }))
+        const rows: DrilldownRow[] = [...fleteros].sort().map((f) => ({ label: etiquetaFletero(f), detalle: "Patente", valor: 1 }))
         return { data: { titulo: "Camiones en Flota", columnas: { label: "Patente", detalle: "", valor: "" }, rows, total: fleteros.size } }
       }
 
@@ -215,7 +216,7 @@ export async function getDpoKpiDrilldown(
         }
         const rows: DrilldownRow[] = [...porFletero.entries()]
           .sort((a, b) => b[1] - a[1])
-          .map(([f, val]) => ({ label: f, detalle: "Patente", valor: Math.round(val * 100) / 100 }))
+          .map(([f, val]) => ({ label: etiquetaFletero(f), detalle: "Patente", valor: Math.round(val * 100) / 100 }))
         return { data: { titulo: "Cajas Equivalentes por Fletero", columnas: { label: "Fletero", detalle: "", valor: "Cajas" }, rows, total: rows.reduce((s, r) => s + r.valor, 0) } }
       }
 
@@ -227,7 +228,7 @@ export async function getDpoKpiDrilldown(
         }
         const rows: DrilldownRow[] = [...porFletero.entries()]
           .sort((a, b) => b[1] - a[1])
-          .map(([f, val]) => ({ label: f, detalle: "Patente", valor: Math.round(val * 100) / 100 }))
+          .map(([f, val]) => ({ label: etiquetaFletero(f), detalle: "Patente", valor: Math.round(val * 100) / 100 }))
         return { data: { titulo: "Volumen Ordenado por Fletero", columnas: { label: "Fletero", detalle: "", valor: "Bultos" }, rows, total: rows.reduce((s, r) => s + r.valor, 0) } }
       }
 
@@ -239,7 +240,7 @@ export async function getDpoKpiDrilldown(
         }
         const rows: DrilldownRow[] = [...porFletero.entries()]
           .sort((a, b) => b[1] - a[1])
-          .map(([f, val]) => ({ label: f, detalle: "Patente", valor: Math.round(val * 10000) / 10000 }))
+          .map(([f, val]) => ({ label: etiquetaFletero(f), detalle: "Patente", valor: Math.round(val * 10000) / 10000 }))
         return { data: { titulo: "Volumen Entregado por Fletero (HL)", columnas: { label: "Fletero", detalle: "", valor: "HL" }, rows, total: rows.reduce((s, r) => s + r.valor, 0) } }
       }
 
@@ -253,7 +254,7 @@ export async function getDpoKpiDrilldown(
         }
         const rows: DrilldownRow[] = [...porDia.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([fecha, fleteros]) => ({ label: fecha, detalle: [...fleteros].join(", "), valor: fleteros.size }))
+          .map(([fecha, fleteros]) => ({ label: fecha, detalle: [...fleteros].map((f) => etiquetaFletero(f)).join(", "), valor: fleteros.size }))
         const avg = rows.length > 0 ? Math.round((rows.reduce((s, r) => s + r.valor, 0) / rows.length) * 100) / 100 : 0
         return { data: { titulo: "FTE Diario de Entrega", columnas: { label: "Fecha", detalle: "Fleteros", valor: "Cant." }, rows, total: avg } }
       }
@@ -262,7 +263,7 @@ export async function getDpoKpiDrilldown(
         // Segundas vueltas: fleteros con >1 viaje en un día
         const rows: DrilldownRow[] = ventasArr
           .filter((v) => (Number(v.viajes) || 0) > 1)
-          .map((v) => ({ label: String(v.fecha), detalle: v.ds_fletero_carga, valor: Number(v.viajes) || 0 }))
+          .map((v) => ({ label: String(v.fecha), detalle: etiquetaFletero(v.ds_fletero_carga), valor: Number(v.viajes) || 0 }))
         return { data: { titulo: "Segundas Vueltas", columnas: { label: "Fecha", detalle: "Fletero", valor: "Viajes" }, rows, total: rows.length } }
       }
     }
