@@ -3094,6 +3094,7 @@ export interface PlanAccionAvance {
   comentario: string
   estado_snapshot: string | null
   tipo: TipoAvancePlanAccion
+  adjunto_urls: string[]
   created_by: string | null
   created_at: string
   autor_nombre: string | null

@@ -96,6 +96,30 @@ function pathsDesdeUrls(urls: string[]): string[] {
   return urls.map((u) => u.split(`/${BUCKET}/`)[1]).filter(Boolean) as string[]
 }
 
+/**
+ * Adjuntos de los avances que van a desaparecer por CASCADE.
+ * Storage no tiene FK, así que si no se juntan acá quedan huérfanos para
+ * siempre en el bucket. `paso` filtra por paso; si no, por plan entero.
+ */
+async function adjuntosDeAvances(
+  supabase: SupabaseServerClient,
+  filtro: { plan_id: string } | { paso_id: string },
+): Promise<string[]> {
+  let query = supabase
+    .from("presupuestos_planes_accion_avances")
+    .select("adjunto_urls")
+
+  query =
+    "plan_id" in filtro
+      ? query.eq("plan_id", filtro.plan_id)
+      : query.eq("paso_id", filtro.paso_id)
+
+  const { data } = await query
+  return ((data ?? []) as { adjunto_urls: string[] | null }[]).flatMap(
+    (a) => a.adjunto_urls ?? [],
+  )
+}
+
 export async function puedeEditarPlanesAccion(): Promise<boolean> {
   const profile = await getProfile()
   if (!profile) return false
@@ -157,6 +181,7 @@ export async function listPlanesAccion(
           comentario: a.comentario as string,
           estado_snapshot: (a.estado_snapshot as string) ?? null,
           tipo: a.tipo as TipoAvancePlanAccion,
+          adjunto_urls: (a.adjunto_urls as string[] | null) ?? [],
           created_by: (a.created_by as string) ?? null,
           created_at: a.created_at as string,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,7 +366,10 @@ export async function eliminarPlanAccion(
       .eq("id", id)
       .single()
 
-    // Los pasos caen por CASCADE
+    // Se juntan ANTES del delete: después las filas ya no existen.
+    const urlsAvances = await adjuntosDeAvances(supabase, { plan_id: id })
+
+    // Los pasos y los avances caen por CASCADE
     const { error } = await supabase
       .from("presupuestos_planes_accion")
       .delete()
@@ -349,7 +377,10 @@ export async function eliminarPlanAccion(
 
     if (error) return { error: error.message }
 
-    const paths = pathsDesdeUrls((actual?.adjunto_urls as string[] | null) ?? [])
+    const paths = pathsDesdeUrls([
+      ...((actual?.adjunto_urls as string[] | null) ?? []),
+      ...urlsAvances,
+    ])
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
 
     revalidatePath(REVALIDATE_PATH)
@@ -372,13 +403,13 @@ export async function eliminarPlanAccion(
  */
 export async function cerrarPlanAccion(
   id: string,
-  comentario: string,
+  formData: FormData,
 ): Promise<Result<{ ok: true }>> {
   try {
     const profile = await requireEditor()
     const supabase = await createClient()
 
-    const texto = comentario.trim()
+    const texto = String(formData.get("comentario") ?? "").trim()
     if (!texto) {
       return { error: "Contá en una línea con qué resultado se cierra el plan" }
     }
@@ -392,12 +423,19 @@ export async function cerrarPlanAccion(
     if (errPlan) return { error: errPlan.message }
     if (plan?.estado === "cerrado") return { error: "El plan ya está cerrado" }
 
+    const subida = await subirAdjuntos(supabase, formData)
+    if ("error" in subida) return { error: subida.error }
+
     const { error } = await supabase
       .from("presupuestos_planes_accion")
       .update({ estado: "cerrado", cerrado_por: profile.id })
       .eq("id", id)
 
-    if (error) return { error: error.message }
+    if (error) {
+      if (subida.data.paths.length)
+        await supabase.storage.from(BUCKET).remove(subida.data.paths)
+      return { error: error.message }
+    }
 
     // El comentario de cierre queda en la bitácora, no pisa observaciones.
     await supabase.from("presupuestos_planes_accion_avances").insert({
@@ -406,6 +444,7 @@ export async function cerrarPlanAccion(
       comentario: texto,
       estado_snapshot: "cerrado",
       tipo: "cierre",
+      adjunto_urls: subida.data.urls,
       created_by: profile.id,
     })
 
@@ -421,13 +460,13 @@ export async function cerrarPlanAccion(
 /** Reabre un plan cerrado. El trigger limpia cerrado_at / cerrado_por. */
 export async function reabrirPlanAccion(
   id: string,
-  motivo: string,
+  formData: FormData,
 ): Promise<Result<{ ok: true }>> {
   try {
     const profile = await requireEditor()
     const supabase = await createClient()
 
-    const texto = motivo.trim()
+    const texto = String(formData.get("comentario") ?? "").trim()
     if (!texto) return { error: "Indicá por qué se reabre el plan" }
 
     const { error } = await supabase
@@ -466,13 +505,13 @@ export async function reabrirPlanAccion(
 export async function registrarAvance(
   planId: string,
   pasoId: string | null,
-  comentario: string,
+  formData: FormData,
 ): Promise<Result<{ ok: true }>> {
   try {
     const profile = await requireEditor()
     const supabase = await createClient()
 
-    const texto = comentario.trim()
+    const texto = String(formData.get("comentario") ?? "").trim()
     if (!texto) return { error: "El avance no puede estar vacío" }
 
     let estadoSnapshot: string | null = null
@@ -492,6 +531,9 @@ export async function registrarAvance(
       estadoSnapshot = (plan?.estado as string) ?? null
     }
 
+    const subida = await subirAdjuntos(supabase, formData)
+    if ("error" in subida) return { error: subida.error }
+
     const { error } = await supabase
       .from("presupuestos_planes_accion_avances")
       .insert({
@@ -500,10 +542,15 @@ export async function registrarAvance(
         comentario: texto,
         estado_snapshot: estadoSnapshot,
         tipo: "avance",
+        adjunto_urls: subida.data.urls,
         created_by: profile.id,
       })
 
-    if (error) return { error: error.message }
+    if (error) {
+      if (subida.data.paths.length)
+        await supabase.storage.from(BUCKET).remove(subida.data.paths)
+      return { error: error.message }
+    }
 
     if (pasoId) {
       await supabase
@@ -642,12 +689,18 @@ export async function eliminarPaso(
     await requireEditor()
     const supabase = await createClient()
 
+    // Los avances del paso caen por CASCADE: sus archivos hay que juntarlos antes.
+    const urlsAvances = await adjuntosDeAvances(supabase, { paso_id: id })
+
     const { error } = await supabase
       .from("presupuestos_planes_accion_pasos")
       .delete()
       .eq("id", id)
 
     if (error) return { error: error.message }
+
+    const paths = pathsDesdeUrls(urlsAvances)
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
 
     revalidatePath(REVALIDATE_PATH)
     return { data: { ok: true } }

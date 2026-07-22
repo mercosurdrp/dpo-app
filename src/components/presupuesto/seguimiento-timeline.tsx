@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronRight, History } from "lucide-react"
+import { ChevronDown, ChevronRight, History, Paperclip } from "lucide-react"
 import type {
   PlanAccionAvance,
   PlanAccionPaso,
@@ -17,6 +17,12 @@ const TIPO_ESTILO: Record<string, { label: string; clase: string }> = {
   cierre: { label: "Cierre", clase: "bg-emerald-500" },
   reapertura: { label: "Reapertura", clase: "bg-amber-500" },
   backfill: { label: "Avance previo", clase: "bg-slate-400" },
+}
+
+/** Quita el prefijo timestamp que le pone el uploader al path. */
+function nombreAdjunto(url: string): string {
+  const base = decodeURIComponent(url.split("/").pop() ?? "adjunto")
+  return base.replace(/^\d{10,}-/, "")
 }
 
 function formatFechaHora(iso: string): string {
@@ -86,6 +92,22 @@ export function SeguimientoTimeline({ avances, pasos }: Props) {
                   <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
                     {a.comentario}
                   </p>
+                  {a.adjunto_urls.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {a.adjunto_urls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex max-w-48 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 hover:underline"
+                        >
+                          <Paperclip className="size-3 shrink-0" />
+                          <span className="truncate">{nombreAdjunto(url)}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </li>
             )

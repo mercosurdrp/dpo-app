@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { registrarAvance } from "@/actions/presupuesto-planes-accion"
+import { AdjuntosPicker } from "./adjuntos-picker"
 import type {
   PlanAccionPaso,
   PlanAccionPresupuestoConDetalle,
@@ -39,15 +40,21 @@ export function AvancePlanAccionDialog({
   // Sin reset por efecto: el padre monta este diálogo recién al abrirlo y lo
   // desmonta al cerrarlo, así que el estado ya nace limpio en cada apertura.
   const [comentario, setComentario] = useState("")
+  const [adjuntos, setAdjuntos] = useState<File[]>([])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+
+    const formData = new FormData()
+    formData.set("comentario", comentario)
+    for (const file of adjuntos) formData.append("adjuntos", file)
+
     startTransition(async () => {
       const result = await registrarAvance(
         plan.id,
         paso?.id ?? null,
-        comentario,
+        formData,
       )
       if ("error" in result) {
         setError(result.error)
@@ -84,6 +91,13 @@ export function AvancePlanAccionDialog({
               Se suma al historial: los avances anteriores no se pisan.
             </p>
           </div>
+
+          <AdjuntosPicker
+            archivos={adjuntos}
+            onChange={setAdjuntos}
+            label="Evidencia (opcional)"
+            ayuda="Queda pegada a este avance, no al plan entero."
+          />
 
           {error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

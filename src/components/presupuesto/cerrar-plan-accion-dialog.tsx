@@ -16,6 +16,7 @@ import {
   cerrarPlanAccion,
   reabrirPlanAccion,
 } from "@/actions/presupuesto-planes-accion"
+import { AdjuntosPicker } from "./adjuntos-picker"
 import type { PlanAccionPresupuestoConDetalle } from "@/types/database"
 
 interface Props {
@@ -39,6 +40,7 @@ export function CerrarPlanAccionDialog({
   // Sin reset por efecto: el padre monta este diálogo recién al abrirlo y lo
   // desmonta al cerrarlo, así que el estado ya nace limpio en cada apertura.
   const [comentario, setComentario] = useState("")
+  const [adjuntos, setAdjuntos] = useState<File[]>([])
 
   const cerrando = modo === "cerrar"
 
@@ -46,16 +48,24 @@ export function CerrarPlanAccionDialog({
     (p) => p.estado !== "completado",
   ).length
   // Se cierra "a ciegas" si no hay ni bitácora ni adjuntos que respalden.
+  // Si adjunta evidencia acá mismo, el aviso ya no corresponde.
   const sinRespaldo =
-    plan.avances.length === 0 && plan.adjunto_urls.length === 0
+    plan.avances.length === 0 &&
+    plan.adjunto_urls.length === 0 &&
+    adjuntos.length === 0
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+
+    const formData = new FormData()
+    formData.set("comentario", comentario)
+    for (const file of adjuntos) formData.append("adjuntos", file)
+
     startTransition(async () => {
       const result = cerrando
-        ? await cerrarPlanAccion(plan.id, comentario)
-        : await reabrirPlanAccion(plan.id, comentario)
+        ? await cerrarPlanAccion(plan.id, formData)
+        : await reabrirPlanAccion(plan.id, formData)
       if ("error" in result) {
         setError(result.error)
         return
@@ -120,6 +130,14 @@ export function CerrarPlanAccionDialog({
               Queda en el seguimiento del plan, con tu nombre y la fecha.
             </p>
           </div>
+
+          {cerrando && (
+            <AdjuntosPicker
+              archivos={adjuntos}
+              onChange={setAdjuntos}
+              label="Evidencia del cierre (opcional)"
+            />
+          )}
 
           {error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
