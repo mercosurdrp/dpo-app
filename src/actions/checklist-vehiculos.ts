@@ -113,16 +113,30 @@ export async function createChecklist(
     // Fetch items to determine criticality
     const { data: items } = await supabase
       .from("checklist_items")
-      .select("id, critico")
+      .select("id, critico, tipo_check")
       .eq("active", true)
 
+    type ItemMeta = { id: string; critico: boolean; tipo_check: TipoChecklist | null }
     const criticosMap = new Map(
-      (items || []).map((i: { id: string; critico: boolean }) => [i.id, i.critico])
+      (items || []).map((i: ItemMeta) => [i.id, i.critico])
     )
+    const tipoCheckMap = new Map(
+      (items || []).map((i: ItemMeta) => [i.id, i.tipo_check ?? null])
+    )
+
+    // El cliente arma la lista de ítems con la hora de cuando abrió el form, y
+    // acá el tipo se recalcula en firme con la hora del envío. Si cruzó las
+    // 09:00 con el form abierto puede llegar una respuesta de un ítem que solo
+    // corresponde al otro momento del día (la llave, por ejemplo): se descarta
+    // para no guardarla contra un checklist donde nunca se pregunta.
+    const respuestas = input.respuestas.filter((r) => {
+      const tc = tipoCheckMap.get(r.item_id)
+      return tc == null || tc === tipo
+    })
 
     // Determine resultado: if any critical item is "nook" or "malo" → rechazado
     let resultado: ResultadoChecklist = "aprobado"
-    for (const r of input.respuestas) {
+    for (const r of respuestas) {
       const esCritico = criticosMap.get(r.item_id)
       if (esCritico && (r.valor === "nook" || r.valor === "malo")) {
         resultado = "rechazado"
@@ -177,7 +191,7 @@ export async function createChecklist(
     if (chkError) return { error: chkError.message }
 
     // Insert responses
-    const respuestasToInsert = input.respuestas.map((r) => ({
+    const respuestasToInsert = respuestas.map((r) => ({
       checklist_id: checklist.id,
       item_id: r.item_id,
       valor: r.valor,

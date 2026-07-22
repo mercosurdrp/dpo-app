@@ -155,18 +155,22 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const esCamioneta = vehiculoSel?.tipo === "camioneta"
   const esControlUnico = esAutoelevador || esCamioneta
 
+  // Para mostrar/colorear el botón: el control único siempre es "liberación".
+  const tipoVisual: TipoChecklist = esControlUnico ? "liberacion" : tipo
+
   // Ítems que aplican al vehículo elegido: los del autoelevador, los de la
   // camioneta, o los generales (camiones) cuando tipo_vehiculo es NULL.
-  const itemsAplicables = items.filter((i) =>
-    esAutoelevador
+  // Además se descartan los ítems acotados al otro momento del día: con
+  // tipo_check NULL el ítem va en los dos checklists (los 30 originales), y si
+  // trae un tipo solo aparece en ese (p. ej. la llave, solo en la liberación).
+  const itemsAplicables = items.filter((i) => {
+    const aplicaAlVehiculo = esAutoelevador
       ? i.tipo_vehiculo === "autoelevador"
       : esCamioneta
       ? i.tipo_vehiculo === "camioneta"
       : i.tipo_vehiculo == null
-  )
-
-  // Para mostrar/colorear el botón: el control único siempre es "liberación".
-  const tipoVisual: TipoChecklist = esControlUnico ? "liberacion" : tipo
+    return aplicaAlVehiculo && (i.tipo_check == null || i.tipo_check === tipoVisual)
+  })
 
   // Choferes de reparto (camiones) vs maquinistas (autoelevador): cada flujo
   // tiene su propia lista habilitada.

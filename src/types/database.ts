@@ -741,6 +741,8 @@ export interface ChecklistItem {
   created_at: string
   // NULL = checklist general (camiones); "autoelevador" = checklist propio de autoelevadores
   tipo_vehiculo: VehiculoTipo | null
+  // NULL = el ítem se pregunta en liberación y retorno; si no, solo en ese tipo
+  tipo_check: TipoChecklist | null
 }
 
 // Ficha técnica de la unidad (datos maestros, sync Cloudfleet + edición manual)
