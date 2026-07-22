@@ -98,8 +98,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // ---- Estación de trabajo / Tarea ----
   { key: "tiempo_pdv", label: "Tiempo en PDV", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "min", mejorSi: "menor", metaDefault: 8 },
   { key: "hs_extras", label: "HS Extras", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "HHEE/1.000 bul", mejorSi: "menor", metaDefault: 1.5 },
-  { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
-  { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "cant.", mejorSi: "menor", metaDefault: null },
+  // % de pedidos del período que terminaron en ese rechazo (veces cliente×fecha
+  // ÷ pedidos). Medían la CANTIDAD acumulada del año, que no se puede
+  // semaforizar: contra una meta fija siempre termina en rojo, y no es
+  // comparable entre meses porque el volumen entregado se mueve fuerte.
+  // Ver 20260722160000_sueno_rechazos_cerrado_sin_dinero_pct.sql.
+  { key: "sin_dinero", label: "Sin Dinero", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 1.5 },
+  { key: "cerrado", label: "Cerrado", nivel: "estacion", rama: "cliente", parentKey: "rechazo", unidad: "%", mejorSi: "menor", metaDefault: 0.5 },
 ]
 
 /** KPIs estratégicos (raíces del árbol), en orden de rama. */

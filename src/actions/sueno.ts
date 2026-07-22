@@ -219,9 +219,9 @@ const EXPLICACION: Record<string, string> = {
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
   sin_dinero:
-    "Cantidad de VECES que los clientes rechazaron por «Sin dinero»: cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Por mes, con los bultos rechazados.",
+    "% de los pedidos que terminó rechazado por «Sin dinero» = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
   cerrado:
-    "Cantidad de VECES que los clientes rechazaron por «Cerrado»: cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Por mes, con los bultos rechazados.",
+    "% de los pedidos que terminó rechazado por «Cerrado» = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
 }
 
 /** Encabezado de la columna "detalle" del modal para KPIs automáticos
@@ -230,6 +230,8 @@ const DETALLE_LABEL: Record<string, string> = {
   vlc_hl: "HL vendidos",
   tri: "Accidentes del mes",
   lti: "Accidentes del mes",
+  sin_dinero: "Veces",
+  cerrado: "Veces",
 }
 
 export interface SuenoDetalleMes {
