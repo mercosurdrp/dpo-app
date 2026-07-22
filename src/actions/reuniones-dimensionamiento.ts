@@ -5,9 +5,13 @@
  * del mes (DPO Planeamiento 2.3 — R2.3.4: "el distribuidor comunica este tamaño a
  * los equipos de almacén, entrega y acarreo dentro de 1 mes de la ejecución").
  *
- * El módulo `/planeamiento/dimensionamiento` calcula siempre contra el mes EN CURSO.
- * Acá se congela en un snapshot por reunión: lo que se comunicó ese día queda tal
- * cual, aunque se lo mire meses después. Recalcular es explícito (botón).
+ * Es MIRANDO HACIA ADELANTE: no interesa cómo cerró el mes que termina, sino cómo
+ * se va a afrontar el que entra. Por eso todo el cuadro sale de la proyección del
+ * mes siguiente al de la reunión — dotación actual contra la demanda que viene,
+ * con las horas extra y los refuerzos que van a hacer falta.
+ *
+ * Se congela en un snapshot por reunión: el módulo proyecta siempre desde el mes
+ * en curso, así que sin congelar la reunión de julio mostraría meses de octubre.
  *
  * El resumen se arma sobre `getDatosDimensionamiento()` para no duplicar el modelo:
  * una sola fuente de verdad para dotaciones, capacidades y costos.
@@ -21,50 +25,45 @@ type Result<T> = { data: T } | { error: string }
 
 const ROLES_EDICION: ("admin" | "admin_rrhh" | "supervisor")[] = ["admin", "admin_rrhh", "supervisor"]
 
-export interface ResumenRolAlmacen {
+type Estado = "cubre" | "extras_pico" | "faltan"
+
+export interface ResumenAlmacenRol {
   rol: string
   unidad: string
   dotacion: number
   dotacionEfectiva: number
-  necesariosProm: number
-  necesariosPico: number
-  volumenProm: number
-  capacidadEquipo: number
-  estado: "cubre" | "extras_pico" | "faltan"
-  brecha: number            // necesarios − dotación efectiva (>0 = faltan)
+  capacidadDia: number      // lo que mueve el equipo por día en jornada normal
+  volPromDia: number        // demanda diaria promedio del mes que viene
+  volPicoDia: number        // demanda del día más cargado
+  horasExtra: number        // hora-hombre extra del mes
+  costoHorasExtra: number
+  faltanPico: number        // personas que faltarían en el día pico
+  estado: Estado
 }
 
-export interface ResumenRecursoFlota {
+export interface ResumenFlotaRecurso {
   recurso: string
   dotacion: number
-  necesariosProm: number
-  necesariosPico: number
-  estado: "cubre" | "extras_pico" | "faltan"
-  brecha: number
-}
-
-export interface ResumenMesQueViene {
-  mes: string               // "2026-08"
-  hlProyectados: number
-  hhAlmacen: number
-  costoAlmacen: number
-  hhDistribucion: number
-  costoDistribucion: number
-  costoTotal: number
-  costoPorHl: number
-  diasRefuerzoFlota: number
-  segundaVueltaObligada: boolean
-  rolesConFalta: string[]   // roles de almacén que no llegan ni en promedio
+  picoNecesario: number     // necesarios el día más cargado
+  diasRefuerzo: number      // días del mes que piden más de lo que hay
+  horasExtra: number        // hora-hombre extra (solo choferes/ayudantes)
+  costoHorasExtra: number
+  segundaVuelta: boolean
+  estado: Estado
 }
 
 export interface ResumenDimensionamiento {
-  mes: string                          // mes de la operación medida
+  mesEntrante: string       // "2026-08" — el mes que se está comunicando
+  mesReunion: string        // mes de la reunión, para detectar desfasajes
+  desfasado: boolean        // true si el mes entrante no es el siguiente a la reunión
   generadoEl: string
-  almacen: ResumenRolAlmacen[]
-  flota: ResumenRecursoFlota[]
-  camiones: { operativos: number; capacidadCeqDia: number; volumenCeqProm: number; volumenCeqPico: number }
-  proximoMes: ResumenMesQueViene | null
-  vlc: { valorMes: number | null; mesBase: string | null; ytd: number | null; meta: number | null }
+  hlProyectados: number
+  ajustePct: number         // % de escenario cargado para ese mes
+  almacen: ResumenAlmacenRol[]
+  flota: ResumenFlotaRecurso[]
+  costoTotal: number
+  costoPorHl: number
+  vlc: { valorMes: number | null; mesBase: string | null; meta: number | null }
 }
 
 export interface SnapshotDimReunion {
@@ -72,117 +71,86 @@ export interface SnapshotDimReunion {
   updatedAt: string
 }
 
-function estadoDe(necProm: number, necPico: number, dot: number) {
-  if (necPico <= dot) return "cubre" as const
-  if (necProm <= dot) return "extras_pico" as const
-  return "faltan" as const
+/** Mes siguiente al de la fecha dada, en formato "YYYY-MM". */
+function mesSiguiente(fechaIso: string): string {
+  const [a, m] = fechaIso.split("-").map(Number)
+  return m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, "0")}`
 }
 
-/** Arma el resumen desde el módulo de dimensionamiento (sin persistir). */
-async function construirResumen(): Promise<Result<ResumenDimensionamiento>> {
+async function construirResumen(fechaReunion: string): Promise<Result<ResumenDimensionamiento>> {
   const res = await getDatosDimensionamiento()
   if ("error" in res) return { error: res.error }
-  const d = res.data
-
-  const almacen: ResumenRolAlmacen[] = []
-  if (d.almacen) {
-    const roles = [
-      { rol: "Pickeros", r: d.almacen.pickeros, unidad: "bultos" },
-      { rol: "Clasificadores", r: d.almacen.clasificadores, unidad: "HL" },
-      { rol: "Tareas generales", r: d.almacen.reempaque, unidad: "bultos" },
-      { rol: "Maquinistas", r: d.almacen.maquinistas, unidad: "pallets" },
-    ]
-    for (const { rol, r, unidad } of roles) {
-      almacen.push({
-        rol,
-        unidad,
-        dotacion: r.dotacion,
-        dotacionEfectiva: r.dotacionEfectiva,
-        necesariosProm: r.fteNecesariosProm,
-        necesariosPico: r.fteNecesariosPico,
-        volumenProm: r.volumenProm,
-        capacidadEquipo: Math.round(r.capDiariaFte * r.dotacionEfectiva),
-        estado: estadoDe(r.fteNecesariosProm, r.fteNecesariosPico, r.dotacionEfectiva),
-        brecha: Math.round((r.fteNecesariosProm - r.dotacionEfectiva) * 10) / 10,
-      })
-    }
+  const p = res.data.proyeccion
+  if (!p || p.meses.length === 0) {
+    return { error: "No hay proyección de volumen: cargá el presupuesto anual en el módulo de dimensionamiento." }
   }
 
-  const flota: ResumenRecursoFlota[] = []
-  if (d.metricas) {
-    flota.push({
-      recurso: "Camiones",
-      dotacion: d.unidadesDisponibles,
-      necesariosProm: d.metricas.camionesNecesariosPromedio,
-      necesariosPico: d.metricas.camionesNecesariosPico,
-      estado: estadoDe(d.metricas.camionesNecesariosPromedio, d.metricas.camionesNecesariosPico, d.unidadesDisponibles),
-      brecha: d.metricas.camionesNecesariosPromedio - d.unidadesDisponibles,
-    })
-  }
-  if (d.reparto) {
-    for (const [k, label] of [["choferes", "Choferes"], ["ayudantes", "Ayudantes"]] as const) {
-      const r = d.reparto[k]
-      const dot = Math.round(r.dotacionProm)
-      flota.push({
-        recurso: label,
-        dotacion: dot,
-        necesariosProm: r.fteNecesariosProm,
-        necesariosPico: r.fteNecesariosPico,
-        estado: estadoDe(r.fteNecesariosProm, r.fteNecesariosPico, dot),
-        brecha: r.fteNecesariosProm - dot,
-      })
-    }
-  }
+  // El mes a comunicar es el siguiente al de la reunión. Si no está en la
+  // proyección (ya pasó a ser presente o pasado), se usa el primero disponible
+  // y se marca el desfasaje para avisarlo en pantalla.
+  const objetivo = mesSiguiente(fechaReunion)
+  let i = p.meses.findIndex((m) => m.mes === objetivo)
+  const desfasado = i < 0
+  if (i < 0) i = 0
+  const mm = p.meses[i]
+  const mesN = Number(mm.mes.split("-")[1])
+  const tar = p.costoHh.find((c) => c.mes === mesN)
+  const costoHhAlmacen = tar?.almacen ?? 0
+  const costoHhEntrega = tar?.entrega ?? 0
 
-  // Mes que viene: primer mes de la proyección (es a donde apunta la comunicación).
-  let proximoMes: ResumenMesQueViene | null = null
-  const p = d.proyeccion
-  if (p && p.meses.length > 0) {
-    const i = 0
-    const mm = p.meses[i]
-    const mesN = Number(mm.mes.split("-")[1])
-    const tar = p.costoHh.find((c) => c.mes === mesN)
-    const hhAlmacen = Math.round(p.almacen.reduce((s, r) => s + (r.horasExtra[i] ?? 0), 0) * 10) / 10
-    const hhDistribucion = Math.round(
-      p.flota.filter((r) => r.rol !== "Camiones")
-        .reduce((s, r) => s + (r.personaDias?.[i] ?? 0), 0) * p.horasVueltaExtra * 10) / 10
-    const costoAlmacen = hhAlmacen * (tar?.almacen ?? 0)
-    const costoDistribucion = hhDistribucion * (tar?.entrega ?? 0)
-    const costoTotal = costoAlmacen + costoDistribucion
-    proximoMes = {
-      mes: mm.mes,
-      hlProyectados: Math.round(mm.hl),
-      hhAlmacen,
-      costoAlmacen: Math.round(costoAlmacen),
-      hhDistribucion,
-      costoDistribucion: Math.round(costoDistribucion),
-      costoTotal: Math.round(costoTotal),
-      costoPorHl: mm.hl > 0 ? Math.round((costoTotal / mm.hl) * 10) / 10 : 0,
-      diasRefuerzoFlota: Math.max(0, ...p.flota.map((r) => r.diasRefuerzo[i] ?? 0)),
-      segundaVueltaObligada: p.flota.some((r) => r.segundaVueltaMeses[i]),
-      rolesConFalta: p.almacen.filter((r) => (r.faltanPico[i] ?? 0) > 0).map((r) => r.rol),
+  const almacen: ResumenAlmacenRol[] = p.almacen.map((r) => {
+    const hh = r.horasExtra[i] ?? 0
+    const faltan = r.faltanPico[i] ?? 0
+    const estado: Estado = faltan > 0 ? "faltan" : hh > 0 ? "extras_pico" : "cubre"
+    return {
+      rol: r.rol,
+      unidad: r.unidadVol,
+      dotacion: r.dotacion,
+      dotacionEfectiva: r.dotacionEfectiva,
+      capacidadDia: r.capDiaria,
+      volPromDia: Math.round(r.volPromBase * mm.indice),
+      volPicoDia: r.volPicoDia[i] ?? 0,
+      horasExtra: hh,
+      costoHorasExtra: Math.round(hh * costoHhAlmacen),
+      faltanPico: faltan,
+      estado,
     }
-  }
+  })
+
+  const flota: ResumenFlotaRecurso[] = p.flota.map((r) => {
+    const dias = r.diasRefuerzo[i] ?? 0
+    const sv = r.segundaVueltaMeses[i] ?? false
+    // Los camiones son un activo, no hora-hombre: no generan horas extra.
+    const hh = r.rol === "Camiones" ? 0 : Math.round((r.personaDias?.[i] ?? 0) * p.horasVueltaExtra * 10) / 10
+    const estado: Estado = sv ? "faltan" : dias > 0 ? "extras_pico" : "cubre"
+    return {
+      recurso: r.rol,
+      dotacion: r.dotacion,
+      picoNecesario: r.picoNecesario[i] ?? 0,
+      diasRefuerzo: dias,
+      horasExtra: hh,
+      costoHorasExtra: Math.round(hh * costoHhEntrega),
+      segundaVuelta: sv,
+      estado,
+    }
+  })
+
+  const costoTotal =
+    almacen.reduce((s, r) => s + r.costoHorasExtra, 0) + flota.reduce((s, r) => s + r.costoHorasExtra, 0)
 
   return {
     data: {
-      mes: d.almacen?.mes ?? d.metricas?.mes ?? "",
+      mesEntrante: mm.mes,
+      mesReunion: fechaReunion.slice(0, 7),
+      desfasado,
       generadoEl: new Date().toISOString(),
+      hlProyectados: Math.round(mm.hl),
+      ajustePct: mm.ajustePct,
       almacen,
       flota,
-      camiones: {
-        operativos: d.unidadesDisponibles,
-        capacidadCeqDia: Math.round(d.capacidadInstaladaDiaria),
-        volumenCeqProm: d.metricas?.volumenCeqPromedio ?? 0,
-        volumenCeqPico: d.metricas?.volumenCeqPico ?? 0,
-      },
-      proximoMes,
-      vlc: {
-        valorMes: p?.vlc.valorMes ?? null,
-        mesBase: p?.vlc.mesBase ?? null,
-        ytd: p?.vlc.ytd ?? null,
-        meta: p?.vlc.meta ?? null,
-      },
+      costoTotal,
+      costoPorHl: mm.hl > 0 ? Math.round((costoTotal / mm.hl) * 10) / 10 : 0,
+      vlc: { valorMes: p.vlc.valorMes, mesBase: p.vlc.mesBase, meta: p.vlc.meta },
     },
   }
 }
@@ -206,12 +174,15 @@ export async function getResumenDimReunion(reunionId: string): Promise<Result<Sn
   }
 }
 
-/** Recalcula el resumen desde el módulo de dimensionamiento y lo congela en la reunión. */
-export async function actualizarResumenDimReunion(reunionId: string): Promise<Result<SnapshotDimReunion>> {
+/** Recalcula el resumen del mes entrante y lo congela en la reunión. */
+export async function actualizarResumenDimReunion(
+  reunionId: string,
+  fechaReunion: string,
+): Promise<Result<SnapshotDimReunion>> {
   try {
     const profile = await requireRole(ROLES_EDICION)
     if (!profile) return { error: "Sin permisos" }
-    const res = await construirResumen()
+    const res = await construirResumen(fechaReunion)
     if ("error" in res) return { error: res.error }
     const supabase = await createClient()
     const now = new Date().toISOString()
