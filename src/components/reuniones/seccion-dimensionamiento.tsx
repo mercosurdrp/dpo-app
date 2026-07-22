@@ -50,6 +50,10 @@ const MES_LARGO = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "j
 const mesLargo = (s: string) => MES_LARGO[Number(s.split("-")[1])] ?? s
 const fmt = (v: number) => v.toLocaleString("es-AR")
 const money = (v: number) => `$${Math.round(v).toLocaleString("es-AR")}`
+/** HL por paleta de cerveza retornable (156 HL/camión ÷ 26 paletas). */
+const HL_POR_PALETA = 6
+/** Clasificadores trabaja en paletas: el volumen va en HL con las paletas al lado. */
+const paletas = (v: number) => `${fmt(Math.round(v / HL_POR_PALETA))} pal`
 
 const ESTADO_BADGE = {
   cubre: { txt: "Cubre", cls: "bg-emerald-500 hover:bg-emerald-500" },
@@ -153,6 +157,7 @@ export function SeccionDimensionamiento({
                   <TableBody>
                     {d.almacen.map((r: ResumenAlmacenRol) => {
                       const b = ESTADO_BADGE[r.estado]
+                      const esHL = r.unidad === "HL"
                       return (
                         <TableRow key={r.rol}>
                           <TableCell className="font-medium">{r.rol}</TableCell>
@@ -160,9 +165,18 @@ export function SeccionDimensionamiento({
                             {fmt(r.dotacion)}
                             {r.dotacionEfectiva < r.dotacion ? <span className="block text-[10px] text-muted-foreground">ef. {fmt(r.dotacionEfectiva)}</span> : null}
                           </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{fmt(r.capacidadDia)} {r.unidad}</TableCell>
-                          <TableCell className="text-right">{fmt(r.volPromDia)} {r.unidad}</TableCell>
-                          <TableCell className={`text-right ${r.volPicoDia > r.capacidadDia ? "text-amber-700 font-semibold" : "text-muted-foreground"}`}>{fmt(r.volPicoDia)}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {fmt(r.capacidadDia)} {r.unidad}
+                            {esHL ? <span className="block text-[10px]">({paletas(r.capacidadDia)})</span> : null}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {fmt(r.volPromDia)} {r.unidad}
+                            {esHL ? <span className="block text-[10px] text-muted-foreground">({paletas(r.volPromDia)})</span> : null}
+                          </TableCell>
+                          <TableCell className={`text-right ${r.volPicoDia > r.capacidadDia ? "text-amber-700 font-semibold" : "text-muted-foreground"}`}>
+                            {fmt(r.volPicoDia)}
+                            {esHL ? <span className="block text-[10px] font-normal text-muted-foreground">({paletas(r.volPicoDia)})</span> : null}
+                          </TableCell>
                           <TableCell className="text-right font-semibold">
                             {r.horasExtra > 0 ? <>{fmt(r.horasExtra)} h<span className="block text-[10px] font-normal text-muted-foreground">{money(r.costoHorasExtra)}</span></> : "—"}
                           </TableCell>

@@ -1266,7 +1266,9 @@ function VolumenProyectadoTable({ proy, saved, escenario, canEdit, run, isPendin
   // El mes base también es ajustable: su escenario recalibra el índice de TODOS los meses.
   const { pct, setPct } = escenario
   const pctDe = (mes: string) => Number(pct[mes]) || 0
-  const todos = [{ mes: proy.mesBase, hlPresupuesto: proy.hlBasePresupuesto }, ...proy.meses]
+  // proy.meses ya incluye el mes base (arranca en el mes en curso): se lo filtra
+  // para no mostrarlo dos veces, porque acá va como columna «(base)» aparte.
+  const todos = [{ mes: proy.mesBase, hlPresupuesto: proy.hlBasePresupuesto }, ...proy.meses.filter((m) => m.mes !== proy.mesBase)]
   const savedPct = new Map<string, number>(saved ? [[saved.mesBase, saved.ajusteBasePct], ...saved.meses.map((m): [string, number] => [m.mes, m.ajustePct])] : [])
   const hayAjuste = todos.some((m) => pctDe(m.mes) !== 0)
   const sinGuardar = todos.some((m) => pctDe(m.mes) !== (savedPct.get(m.mes) ?? 0))

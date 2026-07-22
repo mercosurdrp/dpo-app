@@ -695,7 +695,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
       const hlBase = hlBasePresupuesto * (1 + ajusteBasePct / 100)
       if (hlBase > 0) {
         const meses: ProyeccionMes[] = []
-        for (let m = mesActual + 1; m <= 12; m++) {
+        // Arranca en el mes EN CURSO (no en el siguiente): la reunión de cierre del
+        // mes anterior necesita comunicar este mes, que para ella es "el que entra".
+        // Su índice es 1,0 por definición, así que no altera el resto de la serie.
+        for (let m = mesActual; m <= 12; m++) {
           const v = hlPorMes.get(m)
           if (v && v.hl > 0) {
             // escenario: el % de ajuste del mes escala el HL del presupuesto (y por lo tanto el índice)
