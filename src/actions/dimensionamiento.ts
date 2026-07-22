@@ -131,8 +131,10 @@ export interface DimConfig {
 // Costo de la hora-hombre EXTRA por sector (EERR PxQ; recargo 50/100% ya incluido).
 export interface CostoHhMes {
   mes: number
-  almacen: number
-  entrega: number
+  almacen: number       // $/hora extra almacén
+  entrega: number       // $/hora extra entrega
+  hhPptoAlmacen: number // horas extra PRESUPUESTADAS del mes (EERR), almacén
+  hhPptoEntrega: number // ídem entrega
 }
 
 // Costo/HL de referencia: lo que hoy cuesta la logística por HL (VLC/HL del Árbol del Sueño).
@@ -807,7 +809,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           const costoHh: CostoHhMes[] = []
           try {
             const { data: ch } = await supabase
-              .from("dim_costo_hh").select("mes, costo_hh_almacen, costo_hh_entrega").eq("anio", anioActual)
+              .from("dim_costo_hh").select("mes, costo_hh_almacen, costo_hh_entrega, hh_ppto_almacen, hh_ppto_entrega").eq("anio", anioActual)
             const porMes = new Map((ch ?? []).map((r) => [Number(r.mes), r]))
             for (const mm of meses) {
               const r = porMes.get(Number(mm.mes.split("-")[1]))
@@ -815,6 +817,8 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
                 mes: Number(mm.mes.split("-")[1]),
                 almacen: Number(r?.costo_hh_almacen ?? 0),
                 entrega: Number(r?.costo_hh_entrega ?? 0),
+                hhPptoAlmacen: Number((r as { hh_ppto_almacen?: number } | undefined)?.hh_ppto_almacen ?? 0),
+                hhPptoEntrega: Number((r as { hh_ppto_entrega?: number } | undefined)?.hh_ppto_entrega ?? 0),
               })
             }
           } catch {
@@ -957,7 +961,7 @@ export async function guardarConfigDim(config: DimConfig): Promise<Result<true>>
 }
 
 // Costo de la hora extra por mes y sector. Se pisa el set completo del año.
-export async function guardarCostoHh(anio: number, filas: Array<{ mes: number; almacen: number; entrega: number }>) {
+export async function guardarCostoHh(anio: number, filas: Array<{ mes: number; almacen: number; entrega: number; pptoAlmacen?: number; pptoEntrega?: number }>) {
   try {
     if (IS_MISIONES) return { error: SOLO_PAMPEANA }
     const profile = await requireRole(ROLES_EDICION)
@@ -970,6 +974,8 @@ export async function guardarCostoHh(anio: number, filas: Array<{ mes: number; a
         mes: Number(f.mes),
         costo_hh_almacen: Math.max(0, Number(f.almacen) || 0),
         costo_hh_entrega: Math.max(0, Number(f.entrega) || 0),
+        hh_ppto_almacen: Math.max(0, Number(f.pptoAlmacen) || 0),
+        hh_ppto_entrega: Math.max(0, Number(f.pptoEntrega) || 0),
         updated_by: profile.id,
         updated_at: new Date().toISOString(),
       }))
