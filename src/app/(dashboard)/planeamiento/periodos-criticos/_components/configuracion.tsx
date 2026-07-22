@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Upload, Save, FileSpreadsheet } from "lucide-react"
+import { ExplicacionUmbrales } from "./explicacion-umbrales"
 import type { CfgPC, UmbralesPC, PlanAccion } from "./client"
 
 const CODIGOS = ["PPPP", "PPP", "PP", "P", ""]
@@ -152,6 +153,7 @@ function UmbralesCard({ umbrales }: { umbrales: UmbralesPC }) {
         <p className="text-xs text-slate-500">
           Cada variable gatilla &quot;A&quot; cuando cruza su umbral. CRITICO si trigger_count ≥ min_triggers.
         </p>
+        <ExplicacionUmbrales />
       </CardHeader>
       <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <NumField label="Vol PICO (HL)" value={vol_pico} onChange={setVP} step={100} min={0} max={20000} />
