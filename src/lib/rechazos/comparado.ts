@@ -38,7 +38,7 @@ import type {
   TopVariacion,
   TopVariaciones,
 } from "@/lib/types/rechazos"
-import { etiquetaChofer } from "@/lib/gescom/etiqueta-fletero"
+import { claveFleteroGescom, etiquetaChofer, limpiarNombreChofer } from "@/lib/gescom/etiqueta-fletero"
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Tipos internos
@@ -387,15 +387,35 @@ async function loadCatalogo(supa: SupaClient): Promise<CatalogoMotivo[]> {
 }
 
 async function loadMapeoChoferes(supa: SupaClient): Promise<MapeoChofer[]> {
-  const { data, error } = await supa
-    .from("mapeo_patente_chofer")
-    .select("patente, catalogo_choferes(nombre)")
-  if (error) throw new Error(`mapeo_patente_chofer: ${error.message}`)
+  // Dos padrones distintos bajo la misma "patente": las de Chess salen de
+  // `mapeo_patente_chofer`; los repartos de GESCOM entran como
+  // `GESTION-<codigo>` (GESCOM no informa patente) y su nombre vive en
+  // `mapeo_chofer_gescom`. Se unifican acá para que todo lo que consume
+  // `mapeoMap` — ranking, filtros, top variaciones — muestre el nombre del
+  // chofer en vez del código crudo.
+  const [chessRes, gescomRes] = await Promise.all([
+    supa.from("mapeo_patente_chofer").select("patente, catalogo_choferes(nombre)"),
+    supa.from("mapeo_chofer_gescom").select("codigo, nombre").eq("activo", true),
+  ])
+  if (chessRes.error) throw new Error(`mapeo_patente_chofer: ${chessRes.error.message}`)
+
   type Row = { patente: string; catalogo_choferes: { nombre: string | null } | null }
-  return ((data ?? []) as unknown as Row[]).map(r => ({
+  const out: MapeoChofer[] = ((chessRes.data ?? []) as unknown as Row[]).map(r => ({
     patente: r.patente,
     chofer_nombre: r.catalogo_choferes?.nombre ?? null,
   }))
+
+  // Si el mapeo de GESCOM falla, el reparto cae a "Rep. <codigo>" (nunca al
+  // código crudo): no vale romper todo el tablero de rechazos por eso.
+  if (!gescomRes.error) {
+    for (const g of (gescomRes.data ?? []) as Array<{ codigo: string; nombre: string }>) {
+      out.push({
+        patente: claveFleteroGescom(g.codigo.trim()),
+        chofer_nombre: limpiarNombreChofer(g.nombre),
+      })
+    }
+  }
+  return out
 }
 
 /**
@@ -1112,7 +1132,7 @@ function computeTopVariaciones(
   const tasaPreviousF = new Map([...tasaPrevious].filter(([k]) => patentesConfiables.has(k)))
   const choferDeltas = pairDeltas(
     tasaActualF, tasaPreviousF, pChoferEv,
-    (pat) => mapeoMap.get(pat as string)?.chofer_nombre ?? String(pat),
+    (pat) => etiquetaChofer(mapeoMap.get(pat as string)?.chofer_nombre, String(pat), String(pat)),
     "chofer", "tasa",
   )
   const chofer_empeoro = topByDeltaAbs(choferDeltas, "up")

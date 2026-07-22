@@ -15,6 +15,7 @@
 
 import type { SupaClient } from "./comparado"
 import type { RechazoCategoria, RechazosFilters } from "@/lib/types/rechazos"
+import { etiquetaChofer, etiquetaFletero } from "@/lib/gescom/etiqueta-fletero"
 
 export const EXPORT_MAX_ROWS = 50_000
 
@@ -194,8 +195,8 @@ function renderCSV(
     const record: Record<string, unknown> = {
       fecha:              r.fecha,
       fecha_venta:        r.fecha_venta,
-      chofer:             choferNombre ?? r.ds_fletero_carga, // COALESCE
-      patente:            r.ds_fletero_carga,
+      chofer:             etiquetaChofer(choferNombre, r.ds_fletero_carga, r.ds_fletero_carga),
+      patente:            etiquetaFletero(r.ds_fletero_carga),
       vendedor:           r.ds_vendedor ?? "",
       cliente_id:         r.id_cliente ?? "",
       nombre_cliente:     r.nombre_cliente ?? "",
