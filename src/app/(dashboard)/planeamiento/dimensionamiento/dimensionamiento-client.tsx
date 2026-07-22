@@ -506,8 +506,8 @@ function DetalleFlotaModal({ rol, mes, pesos, ceqPromBase, capCamionViaje, camio
 
 // Modal del MES EN CURSO para camiones: cómo se llega a los camiones necesarios
 // (piso por cobertura de zonas, no solo volumen ÷ capacidad).
-function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, enTaller, viajes }: {
-  m: MetricasDistribucion; zonas: ZonaReparto[]; capCamVj: number; dispo: number; totalFlota: number; enTaller: number; viajes: number
+function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, viajes }: {
+  m: MetricasDistribucion; zonas: ZonaReparto[]; capCamVj: number; dispo: number; totalFlota: number; viajes: number
 }) {
   const camZona = (peso: number, min: number, vol: number) => Math.max(min, capCamVj > 0 ? Math.ceil((vol * peso) / capCamVj) : 0)
   const filas = zonas.map((z) => ({
@@ -523,7 +523,7 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, enTall
       <DialogHeader><DialogTitle>Camiones — {m.mes} · {estadoTxt}</DialogTitle></DialogHeader>
       <p className="text-sm text-muted-foreground">
         Demanda: volumen ruteado del mes (ruteo_cierres, {fmt(m.diasCerrados)} días cerrados) convertido a cajas equivalentes.
-        Flota: {fmt(totalFlota)} unidades de distribución{enTaller > 0 ? `, ${fmt(enTaller)} en taller` : ""} → <b>{fmt(dispo)} disponibles</b>.
+        Flota: {fmt(totalFlota)} unidades de distribución, <b>{fmt(dispo)} operativas</b> (el dimensionamiento las toma todas operativas; no descuenta las que estén en taller).
         Capacidad de un camión: <b>{fmt(Math.round(capCamVj))} CEq/día</b> ({fmt(viajes)} viaje{viajes === 1 ? "" : "s"}/día).
       </p>
       <Table>
@@ -543,7 +543,7 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, enTall
           ))}
           <TableRow className="border-t-2">
             <TableCell className="font-bold">Total necesarios (promedio)</TableCell>
-            <TableCell colSpan={3} className="text-right text-xs text-muted-foreground">contra {fmt(dispo)} disponibles</TableCell>
+            <TableCell colSpan={3} className="text-right text-xs text-muted-foreground">contra {fmt(dispo)} operativas</TableCell>
             <TableCell className="text-right font-bold">{totalZonas}</TableCell>
           </TableRow>
         </TableBody>
@@ -558,7 +558,7 @@ function DetalleHoyCamionesModal({ m, zonas, capCamVj, dispo, totalFlota, enTall
             : null}
           {" "}
           {m.camionesNecesariosPico <= dispo
-            ? <><b className="text-emerald-700">La flota disponible cubre incluso el pico.</b></>
+            ? <><b className="text-emerald-700">La flota operativa cubre incluso el pico.</b></>
             : m.camionesNecesariosPromedio <= dispo
               ? <><b className="text-amber-700">En el pico faltan {m.camionesNecesariosPico - dispo}</b> → 2ª vuelta o refuerzo esos días.</>
               : <><b className="text-red-700">Faltan {m.camionesNecesariosPromedio - dispo} en un día promedio</b> → 2ª vuelta obligada o sumar unidades.</>}
@@ -743,7 +743,7 @@ function FlotaTab({ data, proyLive, escenario, canEdit, run, isPending }: { data
                       <DialogTrigger className={`block w-full cursor-pointer px-3 py-2 text-left underline decoration-dotted underline-offset-4 hover:brightness-95 ${estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).c}`}>
                         {estado(m.camionesNecesariosPromedio, dispo, m.camionesNecesariosPico).t} <span className="text-[10px] font-normal text-muted-foreground">¿por qué?</span>
                       </DialogTrigger>
-                      <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} enTaller={data.flota.filter((u) => u.enTaller).length} viajes={data.config.viajes_por_dia} />
+                      <DetalleHoyCamionesModal m={m} zonas={data.zonas} capCamVj={capCamVj} dispo={dispo} totalFlota={data.flota.length} viajes={data.config.viajes_por_dia} />
                     </Dialog>
                   </TableCell>
                 </TableRow>
@@ -1341,7 +1341,7 @@ function FlotaRow({ u, canEdit, run, isPending }: { u: FlotaUnidad; canEdit: boo
         {canEdit ? <Input type="number" className="h-8 w-24 text-right" value={kg} onChange={(e) => setKg(e.target.value)} placeholder="—" /> : (u.capacidad_kg ?? "—")}
       </TableCell>
       <TableCell>
-        {u.enTaller ? <Badge variant="destructive">En taller</Badge> : activo ? <Badge className="bg-emerald-500 hover:bg-emerald-500">Disponible</Badge> : <Badge variant="secondary">Inactiva</Badge>}
+        {activo ? <Badge className="bg-emerald-500 hover:bg-emerald-500">Operativa</Badge> : <Badge variant="secondary">Inactiva</Badge>}
       </TableCell>
       {canEdit && (
         <TableCell className="space-x-2 whitespace-nowrap text-right">

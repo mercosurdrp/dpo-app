@@ -180,7 +180,6 @@ export interface FlotaUnidad {
   capacidad_ceq: number
   capacidad_kg: number | null
   activo: boolean
-  enTaller: boolean
 }
 
 export interface MetricasDistribucion {
@@ -299,8 +298,8 @@ export interface DimData {
   objetivos: KpiObjetivo[]
   flota: FlotaUnidad[]
   zonas: ZonaReparto[]
-  capacidadInstaladaDiaria: number // CEq: Σ capacidad_ceq (disponibles) × viajes_por_dia
-  unidadesDisponibles: number
+  capacidadInstaladaDiaria: number // CEq: Σ capacidad_ceq (unidades activas, todas operativas) × viajes_por_dia
+  unidadesDisponibles: number   // unidades activas; NO descuenta taller (capacidad instalada)
   metricas: MetricasDistribucion | null
   metricasError: string | null
   almacen: AlmacenData | null
@@ -320,13 +319,12 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     if (IS_MISIONES) return { error: SOLO_PAMPEANA }
     const supabase = await createClient()
 
-    const [configRes, objetivosRes, capacidadRes, vehiculosRes, tallerRes, planesRes, zonasRes] =
+    const [configRes, objetivosRes, capacidadRes, vehiculosRes, planesRes, zonasRes] =
       await Promise.all([
         supabase.from("dim_config").select("peso_kg_bulto, dias_operativos_mes, viajes_por_dia, factor_ceq_bulto, prod_bul_hh, horas_turno, dotacion_almacen, prod_pal_h, dotacion_maquinistas, factor_retorno_distrib, util_pickeros, util_maquinistas, choferes_por_camion, ayudantes_por_camion, dotacion_choferes, dotacion_ayudantes, peso_lun, peso_mar, peso_mie, peso_jue, peso_vie, peso_sab, prod_clasif_pal_h, util_clasif, dotacion_clasif, prod_reempaque_bul_hh, util_reempaque, dotacion_reempaque, ausentismo_almacen, ausentismo_reparto").eq("id", 1).maybeSingle(),
         supabase.from("dim_kpi_objetivos").select("kpi, nombre, unidad, objetivo, mejor_si").order("kpi"),
         supabase.from("dim_flota_capacidad").select("dominio, capacidad_ceq, capacidad_kg, activo"),
         supabase.from("catalogo_vehiculos").select("dominio, descripcion, tipo, active").eq("sector", "distribucion").eq("active", true),
-        supabase.from("mantenimiento_realizados").select("dominio").eq("estado", "en_taller"),
         supabase.from("dim_planes").select("*").order("created_at", { ascending: false }).limit(100),
         supabase.from("dim_zonas_reparto").select("id, zona, peso, camiones_minimos, orden").order("orden"),
       ])
@@ -382,8 +380,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
     const capMap = new Map(
       (capacidadRes.data ?? []).map((c) => [c.dominio as string, c]),
     )
-    const enTaller = new Set((tallerRes.data ?? []).map((t) => t.dominio as string))
 
+    // El dimensionamiento mide CAPACIDAD INSTALADA, no disponibilidad del día: se
+    // consideran operativas TODAS las unidades activas, sin descontar las que el
+    // módulo de mantenimiento tenga en taller (pedido del usuario 2026-07-22).
     const flota: FlotaUnidad[] = (vehiculosRes.data ?? []).map((v) => {
       const cap = capMap.get(v.dominio as string)
       return {
@@ -393,11 +393,10 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
         capacidad_ceq: Number(cap?.capacidad_ceq ?? 0),
         capacidad_kg: cap?.capacidad_kg != null ? Number(cap.capacidad_kg) : null,
         activo: cap ? Boolean(cap.activo) : true,
-        enTaller: enTaller.has(v.dominio as string),
       }
     })
 
-    const disponibles = flota.filter((u) => u.activo && !u.enTaller)
+    const disponibles = flota.filter((u) => u.activo)
     const capacidadInstaladaDiaria =
       disponibles.reduce((s, u) => s + u.capacidad_ceq, 0) * config.viajes_por_dia
 
@@ -734,7 +733,7 @@ export async function getDatosDimensionamiento(): Promise<Result<DimData>> {
           })
 
           // Flota → por recurso, días que requieren refuerzo (2ª vuelta o contratar).
-          const dispCap = flota.filter((f) => f.activo && !f.enTaller && f.capacidad_ceq > 0)
+          const dispCap = flota.filter((f) => f.activo && f.capacidad_ceq > 0)
           const camionesDisp = dispCap.length
           const capCamion = camionesDisp > 0 ? dispCap.reduce((s, f) => s + f.capacidad_ceq, 0) / camionesDisp : 0
           const viajes = config.viajes_por_dia || 1
