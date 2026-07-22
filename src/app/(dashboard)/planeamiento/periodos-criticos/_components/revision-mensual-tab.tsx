@@ -49,9 +49,14 @@ type ReunionLite = { id: string; fecha: string }
 export function RevisionMensualTab({
   dias,
   anio,
+  minVars,
 }: {
   dias: DiaCalendario[]
   anio: number
+  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers).
+   *  Sin esto la detección cae a su default y lista períodos que la
+   *  configuración vigente NO considera críticos. */
+  minVars: number
 }) {
   const [revisiones, setRevisiones] = useState<Revision[]>([])
   const [reuniones, setReuniones] = useState<ReunionLite[]>([])
@@ -67,11 +72,11 @@ export function RevisionMensualTab({
   // Períodos críticos próximos (que aún no terminaron) para planificar.
   const proximos = useMemo(() => {
     const hoyStr = hoy.toISOString().slice(0, 10)
-    return detectarPeriodosCriticos(dias)
+    return detectarPeriodosCriticos(dias, minVars)
       .filter((p) => p.fechaFin >= hoyStr)
       .sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dias])
+  }, [dias, minVars])
 
   async function cargar() {
     setCargando(true)

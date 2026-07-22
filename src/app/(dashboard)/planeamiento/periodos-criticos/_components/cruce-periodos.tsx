@@ -39,6 +39,7 @@ export function CrucePeriodos({
   anioBase,
   anioComparar,
   soloNuevos = false,
+  minVars,
 }: {
   diasBase: DiaCalendario[]
   diasComparar: DiaCalendario[]
@@ -50,6 +51,12 @@ export function CrucePeriodos({
    * nueva). Si es false (default), muestra todos los críticos de `anioBase`.
    */
   soloNuevos?: boolean
+  /**
+   * Condicionantes simultáneos que exige un día crítico. Viene de
+   * `pc_umbrales.min_triggers`: si no se pasa, la detección cae a su default y
+   * muestra períodos que la configuración vigente NO considera críticos.
+   */
+  minVars?: number
 }) {
   // Índice del año a comparar por "mm-dd" para encontrar el día equivalente.
   const mapB = useMemo(() => {
@@ -59,7 +66,7 @@ export function CrucePeriodos({
   }, [diasComparar])
 
   const periodos = useMemo(() => {
-    const todos = detectarPeriodosCriticos(diasBase)
+    const todos = detectarPeriodosCriticos(diasBase, minVars)
     if (!soloNuevos) return todos
     return todos.filter((p) => {
       const diasEq = p.dias
@@ -68,7 +75,7 @@ export function CrucePeriodos({
       // "Nuevo" = ningún día equivalente del año a comparar fue crítico.
       return !diasEq.some((d) => d.estatus === "CRITICO")
     })
-  }, [diasBase, mapB, soloNuevos])
+  }, [diasBase, mapB, soloNuevos, minVars])
 
   if (periodos.length === 0) {
     return (

@@ -368,22 +368,24 @@ export function PeriodosCriticosClient({
           <ComparativoTab
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
+            minVars={umbrales.min_triggers}
           />
         </TabsContent>
         <TabsContent value="comparativo-inverso">
           <ComparativoInversoTab
             aniosDisponibles={aniosDisponibles}
             diasPorAnio={diasPorAnio}
+            minVars={umbrales.min_triggers}
           />
         </TabsContent>
         <TabsContent value="simulador">
           <SimuladorTab dias={diasActivos} cfg={cfg} umbrales={umbrales} />
         </TabsContent>
         <TabsContent value="revision">
-          <RevisionMensualTab dias={diasActivos} anio={anioActivo} />
+          <RevisionMensualTab dias={diasActivos} anio={anioActivo} minVars={umbrales.min_triggers} />
         </TabsContent>
         <TabsContent value="swot">
-          <SwotTab dias={diasActivos} anio={anioActivo} />
+          <SwotTab dias={diasActivos} anio={anioActivo} minVars={umbrales.min_triggers} />
         </TabsContent>
         <TabsContent value="incentivos">
           <IncentivosTab anioActivo={anioActivo} />
@@ -525,9 +527,12 @@ function UInput({
 function ComparativoTab({
   aniosDisponibles,
   diasPorAnio,
+  minVars,
 }: {
   aniosDisponibles: number[]
   diasPorAnio: Record<number, DiaCalendario[]>
+  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers). */
+  minVars: number
 }) {
   const ultimo = aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
   const anterior = aniosDisponibles[aniosDisponibles.length - 2] ?? ultimo - 1
@@ -571,7 +576,7 @@ function ComparativoTab({
       </Card>
 
       {/* Cruce de períodos: qué pasó en B con los períodos críticos de A */}
-      <CrucePeriodos diasBase={diasA} diasComparar={diasB} anioBase={anioA} anioComparar={anioB} />
+      <CrucePeriodos diasBase={diasA} diasComparar={diasB} anioBase={anioA} anioComparar={anioB} minVars={minVars} />
 
       <TooltipProvider delay={150}>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -588,9 +593,12 @@ function ComparativoTab({
 function ComparativoInversoTab({
   aniosDisponibles,
   diasPorAnio,
+  minVars,
 }: {
   aniosDisponibles: number[]
   diasPorAnio: Record<number, DiaCalendario[]>
+  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers). */
+  minVars: number
 }) {
   const ultimo =
     aniosDisponibles[aniosDisponibles.length - 1] ?? new Date().getFullYear()
@@ -656,6 +664,7 @@ function ComparativoInversoTab({
         anioBase={anioBase}
         anioComparar={anioComp}
         soloNuevos
+        minVars={minVars}
       />
     </div>
   )

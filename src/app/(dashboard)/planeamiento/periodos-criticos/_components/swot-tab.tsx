@@ -90,9 +90,14 @@ const IMPACTOS: Impacto[] = ["alto", "medio", "bajo"]
 export function SwotTab({
   dias,
   anio,
+  minVars,
 }: {
   dias: DiaCalendario[]
   anio: number
+  /** Condicionantes simultáneos que exige un día crítico (pc_umbrales.min_triggers).
+   *  Sin esto la detección cae a su default y lista períodos que la
+   *  configuración vigente NO considera críticos. */
+  minVars: number
 }) {
   const [items, setItems] = useState<SwotItem[]>([])
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
@@ -105,13 +110,13 @@ export function SwotTab({
 
   // Períodos críticos del año visible, para taggear de cuál surgió un item.
   const periodos = useMemo<PeriodoOpcion[]>(() => {
-    return detectarPeriodosCriticos(dias).map((p) => ({
+    return detectarPeriodosCriticos(dias, minVars).map((p) => ({
       nombre: p.nombre,
       fechaInicio: p.fechaInicio,
       fechaFin: p.fechaFin,
       anio,
     }))
-  }, [dias, anio])
+  }, [dias, anio, minVars])
 
   async function cargar() {
     setCargando(true)
