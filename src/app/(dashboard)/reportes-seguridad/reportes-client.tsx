@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Plus, ShieldAlert, ShieldCheck } from "lucide-react"
+import { FileText, Plus, ShieldAlert, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -474,6 +474,14 @@ export function ReportesSeguridadClient({
                     >
                       {REPORTE_SEGURIDAD_TIPO_LABELS[r.tipo]}
                     </Badge>
+                    {r.tiene_investigacion && (
+                      <span
+                        className="ml-1 inline-flex align-middle text-emerald-600"
+                        title="Investigación cargada"
+                      >
+                        <FileText className="size-3.5" />
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-sm">
                     {r.descripcion}

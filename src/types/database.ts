@@ -2166,6 +2166,8 @@ export interface ReporteSeguridadAdjunto {
 
 export interface ReporteSeguridadConAutor extends ReporteSeguridad {
   autor_nombre: string
+  /** Sólo aplica a accidentes / incidentes: hay informe de investigación cargado. */
+  tiene_investigacion?: boolean
 }
 
 export interface ReporteSeguridadPlan {
@@ -2197,9 +2199,30 @@ export interface ReporteSeguridadPlanConFoto extends ReporteSeguridadPlan {
   evidencias: (ReporteSeguridadPlanEvidencia & { url: string })[]
 }
 
+/** Informe de investigación (PDF) de un accidente / incidente. */
+export interface ReporteSeguridadInvestigacion {
+  id: string
+  reporte_id: string
+  titulo: string | null
+  nombre_original: string | null
+  storage_path: string
+  mime_type: string
+  tamaño_bytes: number
+  fecha_investigacion: string | null
+  creado_por: string
+  created_at: string
+}
+
+export interface ReporteSeguridadInvestigacionConUrl
+  extends ReporteSeguridadInvestigacion {
+  url: string
+  autor_nombre: string
+}
+
 export interface ReporteSeguridadDetalle extends ReporteSeguridadConAutor {
   adjuntos: (ReporteSeguridadAdjunto & { url: string })[]
   plan: ReporteSeguridadPlanConFoto | null
+  investigaciones: ReporteSeguridadInvestigacionConUrl[]
 }
 
 // Labels + colors

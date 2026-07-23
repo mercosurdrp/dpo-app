@@ -10,6 +10,7 @@ import type {
   ReporteSeguridadPlan,
   ReporteSeguridadPlanConFoto,
   ReporteSeguridadPlanEvidencia,
+  ReporteSeguridadInvestigacionConUrl,
   ReporteSeguridadTipo,
   ReporteSeguridadLocalidad,
   ReporteSeguridadArea,
@@ -71,6 +72,15 @@ interface UploadedEvidencia {
   tamano_bytes: number
 }
 
+interface UploadedInvestigacion {
+  titulo?: string | null
+  nombre_original: string
+  storage_path: string
+  mime_type: string
+  tamano_bytes: number
+  fecha_investigacion?: string | null // YYYY-MM-DD
+}
+
 function isAccidenteOIncidente(tipo: ReporteSeguridadTipo): boolean {
   return tipo === "accidente" || tipo === "incidente"
 }
@@ -109,7 +119,9 @@ export async function getReportes(
 
     let query = supabase
       .from("reportes_seguridad")
-      .select("*, autor:profiles!reportes_seguridad_creado_por_fkey(id, nombre)")
+      .select(
+        "*, autor:profiles!reportes_seguridad_creado_por_fkey(id, nombre), investigaciones:reporte_seguridad_investigaciones(id)"
+      )
       .order("fecha", { ascending: false })
       .order("hora", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
@@ -144,6 +156,7 @@ export async function getReportes(
       created_at: row.created_at,
       updated_at: row.updated_at,
       autor_nombre: row.autor?.nombre ?? "Desconocido",
+      tiene_investigacion: (row.investigaciones ?? []).length > 0,
     }))
 
     return { data: enriched }
@@ -216,6 +229,33 @@ export async function getReporte(
       plan = { ...p, foto_url, evidencias }
     }
 
+    const { data: invs } = await supabase
+      .from("reporte_seguridad_investigaciones")
+      .select(
+        "*, autor:profiles!reporte_seguridad_investigaciones_creado_por_fkey(id, nombre)"
+      )
+      .eq("reporte_id", id)
+      .order("created_at", { ascending: false })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const investigaciones: ReporteSeguridadInvestigacionConUrl[] = ((invs ??
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      []) as any[]).map((row) => ({
+      id: row.id,
+      reporte_id: row.reporte_id,
+      titulo: row.titulo,
+      nombre_original: row.nombre_original,
+      storage_path: row.storage_path,
+      mime_type: row.mime_type,
+      "tamaño_bytes": row["tamaño_bytes"],
+      fecha_investigacion: row.fecha_investigacion,
+      creado_por: row.creado_por,
+      created_at: row.created_at,
+      url: supabase.storage.from(BUCKET).getPublicUrl(row.storage_path).data
+        .publicUrl,
+      autor_nombre: row.autor?.nombre ?? "Desconocido",
+    }))
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = rep as any
     const detalle: ReporteSeguridadDetalle = {
@@ -241,6 +281,7 @@ export async function getReporte(
       autor_nombre: row.autor?.nombre ?? "Desconocido",
       adjuntos: adjuntosConUrl,
       plan,
+      investigaciones,
     }
 
     return { data: detalle }
@@ -383,6 +424,14 @@ export async function deleteReporte(
       for (const e of (evs ?? []) as { storage_path: string }[]) {
         paths.push(e.storage_path)
       }
+    }
+
+    const { data: invs } = await supabase
+      .from("reporte_seguridad_investigaciones")
+      .select("storage_path")
+      .eq("reporte_id", id)
+    for (const i of (invs ?? []) as { storage_path: string }[]) {
+      paths.push(i.storage_path)
     }
 
     if (paths.length > 0) {
@@ -637,6 +686,105 @@ export async function addReportePlanEvidencias(
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error guardando evidencia",
+    }
+  }
+}
+
+// ===================================================
+// Investigación del accidente / incidente (PDF, sólo admin)
+// ===================================================
+
+export async function addReporteInvestigaciones(
+  reporteId: string,
+  documentos: UploadedInvestigacion[]
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return { error: "Sólo un admin puede cargar la investigación." }
+    }
+    if (documentos.length === 0) return { success: true }
+    const supabase = await createClient()
+
+    const { data: rep } = await supabase
+      .from("reportes_seguridad")
+      .select("tipo")
+      .eq("id", reporteId)
+      .maybeSingle()
+
+    if (!rep) return { error: "Reporte no encontrado." }
+    if (!isAccidenteOIncidente(rep.tipo as ReporteSeguridadTipo)) {
+      return {
+        error: "La investigación sólo aplica a accidentes e incidentes.",
+      }
+    }
+
+    const rows = documentos.map((d) => ({
+      reporte_id: reporteId,
+      titulo: d.titulo?.trim() || null,
+      nombre_original: d.nombre_original,
+      storage_path: d.storage_path,
+      mime_type: d.mime_type,
+      "tamaño_bytes": d.tamano_bytes,
+      fecha_investigacion: d.fecha_investigacion || null,
+      creado_por: profile.id,
+    }))
+
+    const { error } = await supabase
+      .from("reporte_seguridad_investigaciones")
+      .insert(rows)
+
+    if (error) {
+      // Cleanup: borrar los archivos recién subidos
+      await supabase.storage
+        .from(BUCKET)
+        .remove(documentos.map((d) => d.storage_path))
+      return { error: `Error registrando la investigación: ${error.message}` }
+    }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error guardando la investigación",
+    }
+  }
+}
+
+export async function deleteReporteInvestigacion(
+  investigacionId: string
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (profile.role !== "admin") {
+      return { error: "Sólo un admin puede borrar la investigación." }
+    }
+    const supabase = await createClient()
+
+    const { data: inv } = await supabase
+      .from("reporte_seguridad_investigaciones")
+      .select("storage_path")
+      .eq("id", investigacionId)
+      .maybeSingle()
+
+    const { error } = await supabase
+      .from("reporte_seguridad_investigaciones")
+      .delete()
+      .eq("id", investigacionId)
+
+    if (error) return { error: error.message }
+
+    if (inv?.storage_path) {
+      await supabase.storage.from(BUCKET).remove([inv.storage_path])
+    }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error borrando la investigación",
     }
   }
 }

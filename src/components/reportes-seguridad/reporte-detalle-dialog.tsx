@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { deleteReporte, getReporte } from "@/actions/reportes-seguridad"
 import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-reporte-dialog"
 import { PlanAccionSection } from "@/components/reportes-seguridad/plan-accion-section"
+import { InvestigacionSection } from "@/components/reportes-seguridad/investigacion-section"
 import { ReporteHerramientasSection } from "@/components/reportes-seguridad/reporte-herramientas-section"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
@@ -316,6 +317,16 @@ export function ReporteDetalleDialog({
                     })}
                   </div>
                 </div>
+              )}
+
+              {/* Investigación (sólo accidentes e incidentes) */}
+              {esAccIncid && (
+                <InvestigacionSection
+                  reporteId={detalle.id}
+                  investigaciones={detalle.investigaciones}
+                  isAdmin={isAdmin}
+                  onChanged={() => setRefreshKey((k) => k + 1)}
+                />
               )}
 
               {/* Plan de acción */}
