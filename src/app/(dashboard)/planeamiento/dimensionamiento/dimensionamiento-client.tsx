@@ -473,11 +473,13 @@ export function DimensionamientoClient({ data, canEdit }: { data: DimData; canEd
 
         {/* ─── Flota / Entrega ─── */}
         <TabsContent value="flotaentrega" className="space-y-4">
+          <BotonHistoricoPdf sector="flota" />
           <FlotaTab data={data} proyLive={proyLive} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
         {/* ─── Almacén ─── */}
         <TabsContent value="almacen" className="space-y-4">
+          <BotonHistoricoPdf sector="almacen" />
           <AlmacenTab data={data} proyLive={proyLive} escenario={escenario} canEdit={canEdit} run={run} isPending={isPending} />
         </TabsContent>
 
@@ -718,6 +720,21 @@ function DetalleHoyRepartoModal({ nombre, r, mes, camionesProm, camionesPico, us
         </p>
       </div>
     </DialogContent>
+  )
+}
+
+/** Botón que descarga el PDF "Cómo fue enero–junio" del sector (volumen presupuestado). */
+function BotonHistoricoPdf({ sector }: { sector: "flota" | "almacen" }) {
+  return (
+    <div className="flex justify-end">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => window.open(`/api/planeamiento/dimensionamiento/historico/pdf?sector=${sector}`, "_blank")}
+      >
+        📄 Cómo fue enero–junio (PDF)
+      </Button>
+    </div>
   )
 }
 
