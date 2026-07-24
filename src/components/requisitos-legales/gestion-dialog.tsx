@@ -256,7 +256,14 @@ export function GestionDialog({
 
           {/* Alta de movimiento */}
           {puedeGestionar ? (
-            <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border p-3">
+            // La key remonta el form cuando cambia el requisito o entra un
+            // movimiento nuevo: sin esto los defaultValue quedan pegados a la
+            // gestión anterior.
+            <form
+              key={`${requisito.id}-${abierta?.updated_at ?? "sin-gestion"}`}
+              onSubmit={handleSubmit}
+              className="space-y-3 rounded-lg border p-3"
+            >
               <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <Plus className="size-4" />
                 Registrar movimiento
