@@ -1092,6 +1092,38 @@ function PlanCard({
           </p>
         )}
 
+        {plan.avances.length > 0 && (
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-xs font-semibold text-muted-foreground">
+              Avances ({plan.avances.length})
+            </p>
+            {plan.avances.map((a) => (
+              <div key={a.id} className="rounded-md bg-slate-50 p-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {a.created_at.slice(8, 10)}/{a.created_at.slice(5, 7)}/
+                    {a.created_at.slice(0, 4)}
+                    {a.autor_nombre ? ` · ${a.autor_nombre}` : ""}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {a.costo_x_hl != null && (
+                      <Badge variant="secondary">{pesos(a.costo_x_hl)} /HL</Badge>
+                    )}
+                    {a.estado_resultante && (
+                      <Badge variant="outline">
+                        {ESTADO_LABEL[a.estado_resultante] ?? a.estado_resultante}
+                      </Badge>
+                    )}
+                  </span>
+                </div>
+                {a.comentario && (
+                  <p className="mt-1 whitespace-pre-wrap">{a.comentario}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {esEditor && (
           <div className="flex flex-wrap gap-2">
             <NuevoAvanceDialog plan={plan} costoActual={actual} />

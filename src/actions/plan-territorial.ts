@@ -442,6 +442,8 @@ export interface PlanTerritorial {
   created_at: string
   updated_at: string
   avances_count: number
+  /** Los avances cargados, más nuevo primero. Es la bitácora del plan. */
+  avances: AvanceTerritorial[]
   /** $/HL vigente de la ciudad. Se completa en la página con el territorio. */
   costo_actual?: number | null
 }
@@ -464,14 +466,35 @@ export async function listarPlanesTerritoriales(): Promise<
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>
     const ids = rows.map((r) => String(r.id))
 
-    const countMap = new Map<string, number>()
+    // Traemos los avances enteros (no sólo el conteo): la tarjeta del plan los
+    // lista como bitácora. Antes esto sólo contaba y el avance cargado no se
+    // veía en ningún lado.
+    const avancesMap = new Map<string, AvanceTerritorial[]>()
     if (ids.length) {
       const { data: avs } = await supabase
         .from("territorial_planes_avances")
-        .select("plan_id")
+        .select(
+          "*, autor:profiles!territorial_planes_avances_autor_id_fkey(id, nombre)",
+        )
         .in("plan_id", ids)
-      for (const a of (avs ?? []) as Array<{ plan_id: string }>) {
-        countMap.set(a.plan_id, (countMap.get(a.plan_id) ?? 0) + 1)
+        .order("created_at", { ascending: false })
+      for (const row of (avs ?? []) as unknown as Array<
+        Record<string, unknown>
+      >) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const a = row as any
+        const av: AvanceTerritorial = {
+          id: a.id,
+          plan_id: a.plan_id,
+          comentario: a.comentario ?? null,
+          estado_resultante: (a.estado_resultante as EstadoPlan | null) ?? null,
+          costo_x_hl: a.costo_x_hl != null ? Number(a.costo_x_hl) : null,
+          autor_nombre: a.autor?.nombre ?? null,
+          created_at: a.created_at,
+        }
+        const arr = avancesMap.get(av.plan_id) ?? []
+        arr.push(av)
+        avancesMap.set(av.plan_id, arr)
       }
     }
 
@@ -499,7 +522,8 @@ export async function listarPlanesTerritoriales(): Promise<
           fecha_objetivo: r.fecha_objetivo ?? null,
           created_at: r.created_at,
           updated_at: r.updated_at,
-          avances_count: countMap.get(String(r.id)) ?? 0,
+          avances_count: avancesMap.get(String(r.id))?.length ?? 0,
+          avances: avancesMap.get(String(r.id)) ?? [],
         }
       }),
     }
