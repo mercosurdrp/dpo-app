@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -52,14 +52,12 @@ import {
   actualizarPlanTerritorial,
   agregarAvancePlanTerritorial,
   registrarRevision,
-  simularRelocalizacion,
   type Territorio,
   type CiudadResumen,
   type Escenario,
   type PlanTerritorial,
   type RevisionTerritorial,
   type PalancaPlan,
-  type Simulacion,
 } from "@/actions/plan-territorial"
 
 const PILAR_PLANEAMIENTO_COLOR = "#EC4899"
@@ -336,13 +334,7 @@ export function PlanTerritorialClient({
             totalHl={territorio?.total.hl ?? 0}
           />
 
-          {dream && (
-            <EscenarioDreamCard
-              dream={dream}
-              anio={anio}
-              mesesDisponibles={territorio?.meses ?? []}
-            />
-          )}
+          {dream && <EscenarioDreamCard dream={dream} />}
         </TabsContent>
 
         {/* ---------------- Diagnóstico por ciudad ---------------- */}
@@ -601,47 +593,15 @@ function SerieCiudad({
 }
 
 /**
- * Escenario de ensueño: el ahorro por "costo por llegar" + el simulador de
- * relocalización embebido (km editables por ciudad).
+ * Escenario de ensueño: el CD en San Nicolás. Muestra los supuestos, la matriz
+ * de km desde San Nicolás (solo lectura) y el ahorro por "costo por llegar".
  *
- * El motor es el mismo que Costo por PDV (getCostoPorPdvSim): lo corremos acá
- * para poder demostrar el 5.1 sin salir de la pantalla, y linkeamos a Costo por
- * PDV para el desglose fino. 🚨 El VLC/HL total NO se mueve al cambiar los km
- * (el modelo reparte un pool fijo): lo que la simulación muestra es la
- * redistribución y el peso de la distancia. El ahorro en pesos de la mudanza es
- * el de arriba (costo por llegar), que es un cálculo aparte.
+ * Probar OTRAS ubicaciones (km editables) no va acá: para eso está el simulador
+ * de Costo por PDV, al que se linkea — no se duplica el motor.
  */
-function EscenarioDreamCard({
-  dream,
-  anio,
-  mesesDisponibles,
-}: {
-  dream: Escenario
-  anio: number
-  mesesDisponibles: number[]
-}) {
-  const [km, setKm] = useState<Record<string, number>>(dream.km_ciudad ?? {})
-  const [mes, setMes] = useState<number>(
-    mesesDisponibles[mesesDisponibles.length - 1] ?? 1,
-  )
-  const [sim, setSim] = useState<Simulacion | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [pendiente, startTransition] = useTransition()
-
-  const ciudades = useMemo(() => Object.keys(km).sort(), [km])
-
-  function correr() {
-    setError(null)
-    startTransition(async () => {
-      const r = await simularRelocalizacion(anio, mes, km)
-      if ("error" in r) {
-        setError(r.error)
-        setSim(null)
-      } else {
-        setSim(r.data)
-      }
-    })
-  }
+function EscenarioDreamCard({ dream }: { dream: Escenario }) {
+  const km = dream.km_ciudad ?? {}
+  const ciudades = Object.keys(km).sort((a, b) => (km[b] ?? 0) - (km[a] ?? 0))
 
   return (
     <Card>
@@ -656,6 +616,23 @@ function EscenarioDreamCard({
             {dream.supuestos}
           </p>
         )}
+
+        <div>
+          <p className="mb-2 text-xs font-semibold text-muted-foreground">
+            Km de ruta desde San Nicolás
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {ciudades.map((c) => (
+              <div
+                key={c}
+                className="rounded-lg border border-slate-200 px-3 py-2"
+              >
+                <p className="text-xs text-muted-foreground">{c}</p>
+                <p className="font-semibold">{num(km[c], 0)} km</p>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <Card className="border-slate-200 bg-slate-50">
           <CardContent className="space-y-2 pt-6 text-sm text-slate-700">
@@ -676,138 +653,11 @@ function EscenarioDreamCard({
           </CardContent>
         </Card>
 
-        {/* -------- Simulador de relocalización (km editables) -------- */}
-        <div className="space-y-3 rounded-lg border border-slate-200 p-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">
-              Simulador — ¿y si el CD estuviera en otro lado?
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Recalcula el costo del mes con otra matriz de distancias, sin tocar
-              nada real. Es el mismo motor del costo vigente: lo único que cambia
-              son los km.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label className="text-xs">Mes base</Label>
-              <select
-                className="mt-1 block h-9 rounded-md border border-slate-300 px-2 text-sm"
-                value={mes}
-                onChange={(e) => setMes(Number(e.target.value))}
-              >
-                {mesesDisponibles.map((m) => (
-                  <option key={m} value={m}>
-                    {MESES[m]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {ciudades.map((c) => (
-              <div key={c}>
-                <Label className="text-xs">{c}</Label>
-                <Input
-                  type="number"
-                  className="mt-1 w-24"
-                  value={km[c] ?? 0}
-                  onChange={(e) => setKm({ ...km, [c]: Number(e.target.value) })}
-                />
-              </div>
-            ))}
-            <Button onClick={correr} disabled={pendiente}>
-              {pendiente ? "Calculando…" : "Simular"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-amber-700">
-            Los km precargados son estimados de ruta desde San Nicolás. Hay que
-            validarlos contra distancias reales antes de presentar el número.
-          </p>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          {sim && (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-6">
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    VLC/HL total (hoy y simulado)
-                  </p>
-                  <p className="text-2xl font-bold">
-                    {pesos(sim.vlc_hl_actual)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    Peso de la distancia
-                  </p>
-                  <p className="text-2xl font-bold text-emerald-600">
-                    {num(sim.distancia_delta_pct, 1)}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {pesos(sim.costo_distancia_actual)} →{" "}
-                    {pesos(sim.costo_distancia_simulado)}
-                  </p>
-                </div>
-              </div>
-
-              <Card className="border-amber-300 bg-amber-50">
-                <CardContent className="flex items-start gap-2 pt-6 text-sm text-amber-900">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>
-                    <strong>
-                      El VLC/HL total no se mueve, y es correcto que así sea.
-                    </strong>{" "}
-                    El modelo parte del costo que Finanzas cargó para el mes y lo
-                    reparte entre los PDV: cambiar los km cambia{" "}
-                    <em>cómo se reparte</em>, no cuánto se gasta. Lo que ves acá
-                    es la redistribución entre ciudades y cuánto menos pesa la
-                    distancia. El ahorro en pesos de la mudanza es el de arriba
-                    (costo por llegar), que es un cálculo aparte.
-                  </span>
-                </CardContent>
-              </Card>
-
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Ciudad</TableHead>
-                    <TableHead className="text-right">Km hoy</TableHead>
-                    <TableHead className="text-right">Km simulado</TableHead>
-                    <TableHead className="text-right">$/HL hoy</TableHead>
-                    <TableHead className="text-right">$/HL simulado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sim.por_ciudad.map((c) => (
-                    <TableRow key={c.ciudad}>
-                      <TableCell>{c.ciudad}</TableCell>
-                      <TableCell className="text-right">
-                        {c.km_actual == null ? "—" : num(c.km_actual, 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {c.km_simulado == null ? "—" : num(c.km_simulado, 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {pesos(c.costo_x_hl_actual)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {pesos(c.costo_x_hl_simulado)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
-
         <Link
           href="/planeamiento/costo-por-pdv"
           className={buttonVariants({ variant: "secondary" })}
         >
-          Ver el desglose completo en Costo por PDV{" "}
+          Ver el desglose y simular en Costo por PDV{" "}
           <ChevronRight className="h-4 w-4" />
         </Link>
       </CardContent>
