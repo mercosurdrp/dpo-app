@@ -89,6 +89,14 @@ export async function GET(req: Request) {
   const detalle: Array<{ requisito: string; alertas: number }> = []
   const hoyIso = isoDate(hoy)
 
+  // Gestión declarada por el responsable (turno sacado, trámite presentado…).
+  // Se suma al aviso para que quien lo recibe sepa que el tema ya está en
+  // movimiento y no vuelva a pedir lo mismo.
+  const gestionPorRequisito = await cargarGestionesAbiertas(
+    supabase,
+    requisitos.map((r) => r.id),
+  )
+
   for (const r of requisitos) {
     const venc = new Date(r.fecha_vencimiento + "T00:00:00")
     const ms = venc.getTime() - hoy.getTime()
@@ -141,10 +149,16 @@ export async function GET(req: Request) {
             ? `Requisito vence HOY: ${r.nombre}`
             : `Requisito por vencer en ${dias}d: ${r.nombre}`
 
+      const gestion = gestionPorRequisito.get(r.id)
+      const sufijoGestion = gestion
+        ? ` Gestión: ${describirGestion(gestion)}.`
+        : " Sin gestión declarada: registrala en Requisitos Legales → Gestión de vencimientos."
+
       const mensaje =
-        dias < 0
+        (dias < 0
           ? `Venció hace ${Math.abs(dias)} día(s) (${r.fecha_vencimiento}).`
-          : `Vence el ${r.fecha_vencimiento}. Renovar antes para mantener el derecho a operar.`
+          : `Vence el ${r.fecha_vencimiento}. Renovar antes para mantener el derecho a operar.`) +
+        sufijoGestion
 
       const { error: errNotif } = await supabase
         .from("notificaciones")
@@ -185,6 +199,44 @@ export async function GET(req: Request) {
     indisponibilidad,
     detalle,
   })
+}
+
+interface GestionAbierta {
+  requisito_id: string
+  estado: string
+  fecha_turno: string | null
+}
+
+/**
+ * Gestiones abiertas de los requisitos en alerta. Si el tenant no tiene las
+ * tablas (Misiones), devuelve un mapa vacío y el aviso sale como antes.
+ */
+async function cargarGestionesAbiertas(
+  supabase: ReturnType<typeof createAdminClient>,
+  requisitoIds: string[],
+): Promise<Map<string, GestionAbierta>> {
+  const mapa = new Map<string, GestionAbierta>()
+  if (requisitoIds.length === 0) return mapa
+  try {
+    const { data, error } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("requisito_id, estado, fecha_turno")
+      .eq("abierta", true)
+      .in("requisito_id", requisitoIds)
+    if (error) return mapa
+    for (const g of data ?? []) mapa.set(g.requisito_id, g as GestionAbierta)
+  } catch {
+    // tablas ausentes: el aviso sigue funcionando sin el dato de gestión
+  }
+  return mapa
+}
+
+function describirGestion(g: GestionAbierta): string {
+  if (g.estado === "turno_asignado") {
+    return g.fecha_turno ? `turno asignado ${g.fecha_turno}` : "turno asignado"
+  }
+  if (g.estado === "en_tramite") return "presentado, en trámite"
+  return "solicitado"
 }
 
 const MOTIVO_DOC = "Documentación vencida"

@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   XCircle,
   LayoutGrid,
+  ClipboardList,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -48,11 +49,15 @@ import { RequisitoFormDialog } from "@/components/requisitos-legales/requisito-f
 import { RenovarDialog } from "@/components/requisitos-legales/renovar-dialog"
 import { CategoriaFormDialog } from "@/components/requisitos-legales/categoria-form-dialog"
 import { RaciTab } from "@/components/requisitos-legales/raci-tab"
+import { GestionTab } from "@/components/requisitos-legales/gestion-tab"
+import { GestionDialog } from "@/components/requisitos-legales/gestion-dialog"
+import { GestionBadge } from "@/components/requisitos-legales/gestion-badge"
 import type {
   EstadoRequisitoLegal,
   Profile,
   RequisitoLegalCategoria,
   RequisitoLegalConResponsable,
+  RequisitoLegalGestion,
   RequisitoLegalRaci,
   TipoIdentificadorRequisito,
 } from "@/types/database"
@@ -63,6 +68,9 @@ interface Props {
   responsables: Pick<Profile, "id" | "nombre" | "email">[]
   puedeEditar: boolean
   raci: RequisitoLegalRaci | null
+  /** null = el tenant no tiene el módulo de gestión (Misiones) */
+  gestiones: RequisitoLegalGestion[] | null
+  usuarioId: string | null
 }
 
 function formatDate(iso: string | null): string {
@@ -125,9 +133,12 @@ interface CategoriaTablaProps {
   responsables: Pick<Profile, "id" | "nombre" | "email">[]
   responsablePrincipalNombre: string | null
   puedeEditar: boolean
+  /** requisito_id → gestión abierta. null = tenant sin módulo de gestión. */
+  gestiones: Map<string, RequisitoLegalGestion> | null
   onCrear: () => void
   onEditar: (r: RequisitoLegalConResponsable) => void
   onRenovar: (r: RequisitoLegalConResponsable) => void
+  onGestionar: (r: RequisitoLegalConResponsable) => void
   onEliminar: (r: RequisitoLegalConResponsable) => void
   onAbrirArchivo: (archivoUrl: string) => void
 }
@@ -137,9 +148,11 @@ function CategoriaTabla({
   requisitos,
   responsablePrincipalNombre,
   puedeEditar,
+  gestiones,
   onCrear,
   onEditar,
   onRenovar,
+  onGestionar,
   onEliminar,
   onAbrirArchivo,
 }: CategoriaTablaProps) {
@@ -240,6 +253,7 @@ function CategoriaTabla({
               <TableHead>Emisión</TableHead>
               <TableHead>Vencimiento</TableHead>
               <TableHead>Estado</TableHead>
+              {gestiones && <TableHead>Gestión</TableHead>}
               <TableHead>Responsable</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -248,7 +262,7 @@ function CategoriaTabla({
             {items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={gestiones ? 7 : 6}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   Sin items en esta categoría
@@ -287,6 +301,16 @@ function CategoriaTabla({
                 <TableCell>
                   <EstadoBadge estado={r.estado} dias={r.dias_para_vencer} />
                 </TableCell>
+                {gestiones && (
+                  <TableCell>
+                    <GestionBadge
+                      gestion={gestiones.get(r.id) ?? null}
+                      // Un item vigente sin trámite no necesita el cartel:
+                      // todavía no hay nada para gestionar.
+                      mostrarSinGestion={r.estado !== "vigente"}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   {r.responsable_nombre ?? (
                     <span className="italic text-muted-foreground">
@@ -320,6 +344,17 @@ function CategoriaTabla({
                       >
                         <FileDown className="size-3.5" />
                         <span className="ml-0.5 text-[10px] font-semibold">2</span>
+                      </Button>
+                    )}
+                    {gestiones && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onGestionar(r)}
+                        title="Gestión del trámite de renovación"
+                      >
+                        <ClipboardList className="size-3.5" />
                       </Button>
                     )}
                     {puedeEditar && (
@@ -371,6 +406,8 @@ export function RequisitosLegalesClient({
   responsables,
   puedeEditar,
   raci,
+  gestiones,
+  usuarioId,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -384,6 +421,9 @@ export function RequisitosLegalesClient({
   const [renovando, setRenovando] = useState<RequisitoLegalConResponsable | null>(
     null,
   )
+  const [openGestion, setOpenGestion] = useState(false)
+  const [gestionando, setGestionando] =
+    useState<RequisitoLegalConResponsable | null>(null)
   const [openCategoria, setOpenCategoria] = useState(false)
   const [editingCategoria, setEditingCategoria] =
     useState<RequisitoLegalCategoria | null>(null)
@@ -392,6 +432,26 @@ export function RequisitosLegalesClient({
     () => new Map(responsables.map((r) => [r.id, r.nombre])),
     [responsables],
   )
+
+  // requisito_id → gestión abierta. null cuando el tenant no tiene el módulo.
+  const gestionesMap = useMemo(() => {
+    if (!gestiones) return null
+    return new Map(gestiones.map((g) => [g.requisito_id, g]))
+  }, [gestiones])
+
+  // Lo accionable para el contador de la solapa: vencido, por vencer, o con
+  // trámite abierto.
+  const pendientesGestion = useMemo(() => {
+    if (!gestionesMap) return 0
+    return requisitos.filter(
+      (r) => r.estado !== "vigente" || gestionesMap.has(r.id),
+    ).length
+  }, [requisitos, gestionesMap])
+
+  function abrirGestion(r: RequisitoLegalConResponsable) {
+    setGestionando(r)
+    setOpenGestion(true)
+  }
 
   const resumenPorCategoria = useMemo(() => {
     return categorias.map((c) => {
@@ -482,8 +542,35 @@ export function RequisitosLegalesClient({
       <Tabs value={vista} onValueChange={(v: string | null) => setVista(v ?? "general")}>
         <TabsList>
           <TabsTrigger value="general">Matriz general</TabsTrigger>
+          {gestionesMap && (
+            <TabsTrigger value="gestion">
+              Gestión de vencimientos
+              {pendientesGestion > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                  {pendientesGestion}
+                </span>
+              )}
+            </TabsTrigger>
+          )}
           {raci && <TabsTrigger value="raci">RACI</TabsTrigger>}
         </TabsList>
+
+        {gestionesMap && (
+          <TabsContent value="gestion" className="mt-4">
+            <GestionTab
+              requisitos={requisitos}
+              categorias={categorias}
+              gestiones={gestionesMap}
+              puedeEditar={puedeEditar}
+              usuarioId={usuarioId}
+              onGestionar={abrirGestion}
+              onRenovar={(r) => {
+                setRenovando(r)
+                setOpenRenovar(true)
+              }}
+            />
+          </TabsContent>
+        )}
 
         {raci && (
           <TabsContent value="raci" className="mt-4">
@@ -650,6 +737,7 @@ export function RequisitosLegalesClient({
                   : null
               }
               puedeEditar={puedeEditar}
+              gestiones={gestionesMap}
               onCrear={() => {
                 setEditing(null)
                 setTab(c.id)
@@ -663,6 +751,7 @@ export function RequisitosLegalesClient({
                 setRenovando(r)
                 setOpenRenovar(true)
               }}
+              onGestionar={abrirGestion}
               onEliminar={handleEliminar}
               onAbrirArchivo={abrirArchivo}
             />
@@ -697,6 +786,21 @@ export function RequisitosLegalesClient({
             onSaved={refrescar}
           />
         </>
+      )}
+
+      {/* La gestión la ve cualquiera; cargar movimientos queda restringido al
+          responsable del item o a un editor. */}
+      {gestionesMap && (
+        <GestionDialog
+          open={openGestion}
+          onOpenChange={setOpenGestion}
+          requisito={gestionando}
+          puedeGestionar={
+            puedeEditar ||
+            (!!usuarioId && gestionando?.responsable_id === usuarioId)
+          }
+          onSaved={refrescar}
+        />
       )}
     </div>
   )

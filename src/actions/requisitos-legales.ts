@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth, getProfile } from "@/lib/session"
 import type {
   Profile,
@@ -14,6 +15,8 @@ import type {
   RequisitoLegalRaciFila,
   RequisitoLegalRaciRol,
   RaciLetra,
+  RequisitoLegalGestion,
+  EstadoGestionRequisito,
 } from "@/types/database"
 
 const BUCKET = "requisitos-legales"
@@ -582,7 +585,7 @@ export async function renovarRequisito(
   formData: FormData,
 ): Promise<Result<RequisitoLegal>> {
   try {
-    await requireEditor()
+    const profile = await requireEditor()
     const supabase = await createClient()
 
     const fecha_emision = String(formData.get("fecha_emision") ?? "").trim()
@@ -646,12 +649,53 @@ export async function renovarRequisito(
 
     if (aBorrar.length) await supabase.storage.from(BUCKET).remove(aBorrar)
 
+    // El documento nuevo ya está arriba: el trámite que estaba en curso se
+    // cierra solo. Si el tenant no tiene las tablas de gestión (Misiones), el
+    // error se ignora — la renovación en sí ya se guardó.
+    await cerrarGestionPorRenovacion(supabase, id, profile.id)
+
     revalidatePath(REVALIDATE_PATH)
     return { data: data as RequisitoLegal }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error renovando requisito",
     }
+  }
+}
+
+async function cerrarGestionPorRenovacion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  requisitoId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    const { data: abierta } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("id")
+      .eq("requisito_id", requisitoId)
+      .eq("abierta", true)
+      .maybeSingle()
+    if (!abierta) return
+
+    await supabase
+      .from("requisitos_legales_gestiones")
+      .update({
+        abierta: false,
+        cierre_motivo: "renovado",
+        cerrada_at: new Date().toISOString(),
+        cerrada_por: userId,
+      })
+      .eq("id", abierta.id)
+
+    await supabase.from("requisitos_legales_gestion_eventos").insert({
+      gestion_id: abierta.id,
+      estado: "renovado",
+      comentario: "Documento renovado y cargado en el sistema",
+      created_by: userId,
+    })
+  } catch {
+    // sin gestión / tablas ausentes: no rompe la renovación
   }
 }
 
@@ -699,6 +743,348 @@ export async function puedeEditarRequisitos(): Promise<boolean> {
   const profile = await getProfile()
   if (!profile) return false
   return ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+}
+
+/**
+ * Id del usuario logueado. La UI lo usa para saber si es el responsable de un
+ * requisito y por lo tanto puede cargar la gestión sin ser editor.
+ */
+export async function getUsuarioActualId(): Promise<string | null> {
+  const profile = await getProfile()
+  return profile?.id ?? null
+}
+
+// =============================================
+// Gestión del trámite de renovación
+// =============================================
+
+const ESTADOS_GESTION = ["solicitado", "turno_asignado", "en_tramite"] as const
+
+/** Mapea filas de gestión + eventos al tipo del cliente. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapGestion(row: any, eventos: any[]): RequisitoLegalGestion {
+  return {
+    id: row.id,
+    requisito_id: row.requisito_id,
+    estado: row.estado,
+    fecha_turno: row.fecha_turno,
+    organismo: row.organismo,
+    nro_tramite: row.nro_tramite,
+    vencimiento_objetivo: row.vencimiento_objetivo,
+    abierta: row.abierta,
+    cierre_motivo: row.cierre_motivo,
+    cerrada_at: row.cerrada_at,
+    cerrada_por: row.cerrada_por,
+    created_by: row.created_by,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    eventos: eventos
+      .filter((e) => e.gestion_id === row.id)
+      .map((e) => ({
+        id: e.id,
+        gestion_id: e.gestion_id,
+        estado: e.estado,
+        fecha_turno: e.fecha_turno,
+        comentario: e.comentario,
+        archivo_url: e.archivo_url,
+        archivo_nombre: e.archivo_nombre,
+        created_by: e.created_by,
+        created_by_nombre: e.autor?.nombre ?? null,
+        created_at: e.created_at,
+      })),
+  }
+}
+
+const SELECT_EVENTOS =
+  "*, autor:profiles!requisitos_legales_gestion_eventos_created_by_fkey(id, nombre)"
+
+/**
+ * Gestiones ABIERTAS con su bitácora. Si las tablas no existen en el tenant
+ * (Misiones no las tiene), devuelve error y la UI oculta la solapa/columna.
+ */
+export async function listGestionesAbiertas(): Promise<
+  Result<RequisitoLegalGestion[]>
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: gestiones, error } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("*")
+      .eq("abierta", true)
+      .order("created_at", { ascending: false })
+
+    if (error) return { error: error.message }
+    if (!gestiones || gestiones.length === 0) return { data: [] }
+
+    const { data: eventos, error: errEv } = await supabase
+      .from("requisitos_legales_gestion_eventos")
+      .select(SELECT_EVENTOS)
+      .in(
+        "gestion_id",
+        gestiones.map((g) => g.id),
+      )
+      .order("created_at", { ascending: false })
+
+    if (errEv) return { error: errEv.message }
+
+    return { data: gestiones.map((g) => mapGestion(g, eventos ?? [])) }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando gestiones",
+    }
+  }
+}
+
+/** Todas las gestiones de un requisito (abierta + cerradas), para el historial. */
+export async function listGestionesDeRequisito(
+  requisitoId: string,
+): Promise<Result<RequisitoLegalGestion[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data: gestiones, error } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("*")
+      .eq("requisito_id", requisitoId)
+      .order("created_at", { ascending: false })
+
+    if (error) return { error: error.message }
+    if (!gestiones || gestiones.length === 0) return { data: [] }
+
+    const { data: eventos, error: errEv } = await supabase
+      .from("requisitos_legales_gestion_eventos")
+      .select(SELECT_EVENTOS)
+      .in(
+        "gestion_id",
+        gestiones.map((g) => g.id),
+      )
+      .order("created_at", { ascending: false })
+
+    if (errEv) return { error: errEv.message }
+
+    return { data: gestiones.map((g) => mapGestion(g, eventos ?? [])) }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando el historial",
+    }
+  }
+}
+
+/**
+ * Registra un movimiento del trámite. Abre la gestión si todavía no existe y
+ * la deja en el estado declarado. El responsable del requisito puede cargar
+ * aunque no sea editor: es quien recibe la alerta por mail.
+ */
+export async function registrarMovimientoGestion(
+  requisitoId: string,
+  formData: FormData,
+): Promise<Result<RequisitoLegalGestion>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: requisito, error: errReq } = await supabase
+      .from("requisitos_legales")
+      .select("id, responsable_id, fecha_vencimiento")
+      .eq("id", requisitoId)
+      .single()
+    if (errReq || !requisito) {
+      return { error: errReq?.message ?? "No se encontró el requisito" }
+    }
+
+    const esEditor = ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+    if (!esEditor && requisito.responsable_id !== profile.id) {
+      return {
+        error:
+          "Solo el responsable del requisito o un editor pueden cargar la gestión",
+      }
+    }
+
+    const estado = String(
+      formData.get("estado") ?? "",
+    ).trim() as EstadoGestionRequisito
+    if (!ESTADOS_GESTION.includes(estado)) {
+      return { error: "Estado de gestión inválido" }
+    }
+
+    const fecha_turno = String(formData.get("fecha_turno") ?? "").trim() || null
+    const organismo = String(formData.get("organismo") ?? "").trim() || null
+    const nro_tramite = String(formData.get("nro_tramite") ?? "").trim() || null
+    const comentario = String(formData.get("comentario") ?? "").trim() || null
+    const file = formData.get("archivo") as File | null
+    const tieneArchivo = !!(file && file instanceof File && file.size > 0)
+
+    if (estado === "turno_asignado" && !fecha_turno) {
+      return { error: "Cargá la fecha del turno" }
+    }
+
+    // Gestión abierta o nueva
+    const { data: abierta, error: errAbierta } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("*")
+      .eq("requisito_id", requisitoId)
+      .eq("abierta", true)
+      .maybeSingle()
+    if (errAbierta) return { error: errAbierta.message }
+
+    let gestionId: string
+    if (abierta) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const update: Record<string, any> = { estado }
+      // Los datos del trámite solo se pisan si el movimiento trae valor nuevo:
+      // pasar a "en trámite" no debe borrar el turno ya cargado.
+      if (fecha_turno) update.fecha_turno = fecha_turno
+      if (organismo) update.organismo = organismo
+      if (nro_tramite) update.nro_tramite = nro_tramite
+
+      const { error } = await supabase
+        .from("requisitos_legales_gestiones")
+        .update(update)
+        .eq("id", abierta.id)
+      if (error) return { error: error.message }
+      gestionId = abierta.id
+    } else {
+      const { data: creada, error } = await supabase
+        .from("requisitos_legales_gestiones")
+        .insert({
+          requisito_id: requisitoId,
+          estado,
+          fecha_turno,
+          organismo,
+          nro_tramite,
+          vencimiento_objetivo: requisito.fecha_vencimiento,
+          created_by: profile.id,
+        })
+        .select("id")
+        .single()
+      if (error) return { error: error.message }
+      gestionId = creada.id as string
+    }
+
+    // Comprobante opcional (turno, constancia de inicio de trámite…).
+    // Se sube con el cliente admin porque el responsable puede no tener rol
+    // editor y la policy de storage del bucket exige editor para escribir.
+    let archivo_url: string | null = null
+    let archivo_nombre: string | null = null
+    if (tieneArchivo) {
+      const admin = createAdminClient()
+      const cleanName = file!.name.replace(/[^a-zA-Z0-9._-]/g, "_")
+      const path = `gestiones/${requisitoId}/${gestionId}/${Date.now()}-${cleanName}`
+      const arrayBuffer = await file!.arrayBuffer()
+      const { error: errUp } = await admin.storage
+        .from(BUCKET)
+        .upload(path, arrayBuffer, {
+          contentType: file!.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (errUp) return { error: `Subiendo comprobante: ${errUp.message}` }
+      archivo_url = path
+      archivo_nombre = file!.name
+    }
+
+    const { error: errEvento } = await supabase
+      .from("requisitos_legales_gestion_eventos")
+      .insert({
+        gestion_id: gestionId,
+        estado,
+        fecha_turno,
+        comentario,
+        archivo_url,
+        archivo_nombre,
+        created_by: profile.id,
+      })
+    if (errEvento) {
+      if (archivo_url) {
+        await createAdminClient().storage.from(BUCKET).remove([archivo_url])
+      }
+      return { error: errEvento.message }
+    }
+
+    revalidatePath(REVALIDATE_PATH)
+
+    const { data: gestionFinal, error: errFinal } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("*")
+      .eq("id", gestionId)
+      .single()
+    if (errFinal) return { error: errFinal.message }
+
+    const { data: eventos } = await supabase
+      .from("requisitos_legales_gestion_eventos")
+      .select(SELECT_EVENTOS)
+      .eq("gestion_id", gestionId)
+      .order("created_at", { ascending: false })
+
+    return { data: mapGestion(gestionFinal, eventos ?? []) }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error registrando el movimiento",
+    }
+  }
+}
+
+/**
+ * Cierra la gestión abierta sin renovar (se cargó por error o el trámite se
+ * cayó). El cierre por documento conseguido lo hace `renovarRequisito`.
+ */
+export async function cancelarGestion(
+  gestionId: string,
+  motivo?: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+
+    const { data: gestion, error: errG } = await supabase
+      .from("requisitos_legales_gestiones")
+      .select("id, requisito_id, abierta")
+      .eq("id", gestionId)
+      .single()
+    if (errG || !gestion) {
+      return { error: errG?.message ?? "No se encontró la gestión" }
+    }
+    if (!gestion.abierta) return { error: "La gestión ya está cerrada" }
+
+    const { data: requisito } = await supabase
+      .from("requisitos_legales")
+      .select("responsable_id")
+      .eq("id", gestion.requisito_id)
+      .single()
+
+    const esEditor = ["admin", "supervisor", "admin_rrhh"].includes(profile.role)
+    if (!esEditor && requisito?.responsable_id !== profile.id) {
+      return { error: "No tenés permiso para cancelar esta gestión" }
+    }
+
+    const { error } = await supabase
+      .from("requisitos_legales_gestiones")
+      .update({
+        abierta: false,
+        cierre_motivo: "cancelada",
+        cerrada_at: new Date().toISOString(),
+        cerrada_por: profile.id,
+      })
+      .eq("id", gestionId)
+    if (error) return { error: error.message }
+
+    await supabase.from("requisitos_legales_gestion_eventos").insert({
+      gestion_id: gestionId,
+      estado: "cancelada",
+      comentario: motivo?.trim() || null,
+      created_by: profile.id,
+    })
+
+    revalidatePath(REVALIDATE_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cancelando la gestión",
+    }
+  }
 }
 
 // =============================================

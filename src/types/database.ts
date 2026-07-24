@@ -2917,6 +2917,51 @@ export interface RequisitoLegalAlertaConfig {
   created_at: string
 }
 
+// ---- Gestión del trámite de renovación ----
+
+/** Estado del trámite en curso (lo que el responsable declara). */
+export type EstadoGestionRequisito =
+  | "solicitado"
+  | "turno_asignado"
+  | "en_tramite"
+
+/** Estados que puede tener un movimiento de la bitácora (incluye los de cierre). */
+export type EstadoEventoGestionRequisito =
+  | EstadoGestionRequisito
+  | "renovado"
+  | "cancelada"
+
+export interface RequisitoLegalGestionEvento {
+  id: string
+  gestion_id: string
+  estado: EstadoEventoGestionRequisito
+  fecha_turno: string | null
+  comentario: string | null
+  archivo_url: string | null
+  archivo_nombre: string | null
+  created_by: string | null
+  created_by_nombre: string | null
+  created_at: string
+}
+
+export interface RequisitoLegalGestion {
+  id: string
+  requisito_id: string
+  estado: EstadoGestionRequisito
+  fecha_turno: string | null
+  organismo: string | null
+  nro_tramite: string | null
+  vencimiento_objetivo: string
+  abierta: boolean
+  cierre_motivo: "renovado" | "cancelada" | null
+  cerrada_at: string | null
+  cerrada_por: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  eventos: RequisitoLegalGestionEvento[]
+}
+
 export type RaciLetra = "R" | "A" | "C" | "I"
 
 export interface RequisitoLegalRaciRol {

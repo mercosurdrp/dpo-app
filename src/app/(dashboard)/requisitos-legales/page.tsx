@@ -1,6 +1,8 @@
 import {
   getRaci,
+  getUsuarioActualId,
   listCategorias,
+  listGestionesAbiertas,
   listRequisitos,
   listResponsablesPosibles,
   puedeEditarRequisitos,
@@ -8,13 +10,16 @@ import {
 import { RequisitosLegalesClient } from "./requisitos-legales-client"
 
 export default async function RequisitosLegalesPage() {
-  const [catRes, reqRes, respRes, puedeEditar, raciRes] = await Promise.all([
-    listCategorias(),
-    listRequisitos(),
-    listResponsablesPosibles(),
-    puedeEditarRequisitos(),
-    getRaci(),
-  ])
+  const [catRes, reqRes, respRes, puedeEditar, raciRes, gestRes, usuarioId] =
+    await Promise.all([
+      listCategorias(),
+      listRequisitos(),
+      listResponsablesPosibles(),
+      puedeEditarRequisitos(),
+      getRaci(),
+      listGestionesAbiertas(),
+      getUsuarioActualId(),
+    ])
 
   if ("error" in catRes) {
     return (
@@ -40,6 +45,10 @@ export default async function RequisitosLegalesPage() {
       responsables={"data" in respRes ? respRes.data : []}
       puedeEditar={puedeEditar}
       raci={"data" in raciRes ? raciRes.data : null}
+      // Si las tablas de gestión no existen en el tenant, la solapa se oculta
+      // sola (mismo criterio que la RACI).
+      gestiones={"data" in gestRes ? gestRes.data : null}
+      usuarioId={usuarioId}
     />
   )
 }
