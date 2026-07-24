@@ -24,12 +24,11 @@ function rangoMesActualARG(): { desde: string; hasta: string } {
 
 const esFecha = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s)
 
-// Remapeo de autoría: algunos usuarios físicos cargan con la cuenta de otro.
+// Remapeo de autoría: para cuando un usuario físico carga con la cuenta de otro.
 // Clave = id del perfil dueño de la cuenta; valor = nombre real a atribuir.
-// Pablo Selenzo usa la cuenta de CEJAS EZEQUIEL (42323256@mercosur.local).
-const REMAP_NOMBRE: Record<string, string> = {
-  "d15c10b7-b45c-4fcf-b603-9175ab9a2cea": "Pablo Selenzo",
-}
+// Hoy vacío: la cuenta 42323256@mercosur.local la usa su propio dueño,
+// CEJAS EZEQUIEL (antes se atribuía a Pablo Selenzo por error).
+const REMAP_NOMBRE: Record<string, string> = {}
 
 export async function GET(request: NextRequest) {
   // En el deploy compartido de Misiones esta tabla no existe.
