@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -52,12 +52,14 @@ import {
   actualizarPlanTerritorial,
   agregarAvancePlanTerritorial,
   registrarRevision,
+  simularRelocalizacion,
   type Territorio,
   type CiudadResumen,
   type Escenario,
   type PlanTerritorial,
   type RevisionTerritorial,
   type PalancaPlan,
+  type Simulacion,
 } from "@/actions/plan-territorial"
 
 const PILAR_PLANEAMIENTO_COLOR = "#EC4899"
@@ -94,6 +96,82 @@ function num(n: number | null | undefined, dec = 2): string {
   })
 }
 
+interface AportePlan {
+  ciudad: string
+  base: number
+  meta: number
+  hl: number
+  /** Cuánto baja el $/HL de TODA la red si esta ciudad llega a su meta. */
+  aporte_red: number
+}
+
+/**
+ * Serie mensual del VLC/HL de toda la red: para cada mes se suma el costo y los
+ * HL de todas las ciudades y recién ahí se divide. Nunca se promedian los $/HL
+ * por ciudad: eso sobre-pondera las ciudades chicas y da otro número.
+ */
+function serieRedTotal(
+  territorio: Territorio | null,
+): { mes: number; vlc: number }[] {
+  if (!territorio) return []
+  const acc = new Map<number, { costo: number; hl: number }>()
+  for (const c of territorio.ciudades) {
+    for (const m of c.serie) {
+      const a = acc.get(m.mes) ?? { costo: 0, hl: 0 }
+      a.costo += m.costo_total
+      a.hl += m.hl
+      acc.set(m.mes, a)
+    }
+  }
+  return [...acc.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([mes, a]) => ({ mes, vlc: a.hl ? a.costo / a.hl : 0 }))
+}
+
+/**
+ * Objetivo de VLC/HL de la red DERIVADO de los planes: si cada ciudad con plan
+ * llega a su meta, ¿en cuánto queda el $/HL de toda la red? Así el objetivo no
+ * es un número suelto sino la consecuencia de los planes cargados — es lo que
+ * ata R5.1.1 (escenario objetivo) con R5.1.2 (planes).
+ */
+function objetivoDerivado(
+  territorio: Territorio | null,
+  planes: PlanTerritorial[],
+): { vlc: number | null; aportes: AportePlan[] } {
+  if (!territorio || !territorio.total.hl) return { vlc: null, aportes: [] }
+
+  // Una ciudad puede tener más de un plan: nos quedamos con la meta más
+  // ambiciosa (la más baja) para no contar el ahorro dos veces.
+  const metaPorCiudad = new Map<string, number>()
+  for (const p of planes) {
+    if (p.meta == null) continue
+    const actual = metaPorCiudad.get(p.ciudad)
+    if (actual == null || p.meta < actual) metaPorCiudad.set(p.ciudad, p.meta)
+  }
+
+  const totalHl = territorio.total.hl
+  let ahorro = 0
+  const aportes: AportePlan[] = []
+  for (const [ciudad, meta] of metaPorCiudad) {
+    const c = territorio.ciudades.find((x) => x.ciudad === ciudad)
+    if (!c) continue
+    const delta = c.costo_x_hl - meta
+    if (delta <= 0) continue
+    const ahorroRed = delta * c.hl
+    ahorro += ahorroRed
+    aportes.push({
+      ciudad,
+      base: c.costo_x_hl,
+      meta,
+      hl: c.hl,
+      aporte_red: ahorroRed / totalHl,
+    })
+  }
+  aportes.sort((a, b) => b.aporte_red - a.aporte_red)
+  const vlc = (territorio.total.costo_total - ahorro) / totalHl
+  return { vlc, aportes }
+}
+
 interface Props {
   anio: number
   rol: string
@@ -123,6 +201,11 @@ export function PlanTerritorialClient({
 
   // El VLC/HL "base" no se carga a mano: es el del territorio vivo.
   const vlcBase = territorio?.total.costo_x_hl ?? null
+
+  // El objetivo de la red sale de las metas de los planes. Si además alguien
+  // cargó un número a mano en el escenario objetivo, ese manda.
+  const obj = objetivoDerivado(territorio, planes)
+  const vlcObjetivo = objetivo?.vlc_hl ?? obj.vlc
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -192,11 +275,11 @@ export function PlanTerritorialClient({
               icono={<Target className="h-5 w-5" />}
               titulo="Objetivo 2026"
               subtitulo={objetivo?.nombre ?? "Meta del año"}
-              valor={objetivo?.vlc_hl ?? null}
+              valor={vlcObjetivo}
               detalle={
-                vlcBase && objetivo?.vlc_hl
-                  ? `${num((100 * (objetivo.vlc_hl - vlcBase)) / vlcBase, 1)}% vs base`
-                  : "Sin meta cargada"
+                vlcBase && vlcObjetivo != null
+                  ? `${num((100 * (vlcObjetivo - vlcBase)) / vlcBase, 1)}% vs base`
+                  : "Cargá planes con meta para calcularlo"
               }
               color="#0d9488"
             />
@@ -238,7 +321,28 @@ export function PlanTerritorialClient({
             </CardContent>
           </Card>
 
-          {dream && <EscenarioDreamCard dream={dream} />}
+          <SerieRedTotal
+            anio={anio}
+            territorio={territorio}
+            planes={planes}
+            objetivo={vlcObjetivo}
+            dream={dream?.vlc_hl ?? null}
+          />
+
+          <PuenteObjetivo
+            base={vlcBase}
+            objetivo={vlcObjetivo}
+            aportes={obj.aportes}
+            totalHl={territorio?.total.hl ?? 0}
+          />
+
+          {dream && (
+            <EscenarioDreamCard
+              dream={dream}
+              anio={anio}
+              mesesDisponibles={territorio?.meses ?? []}
+            />
+          )}
         </TabsContent>
 
         {/* ---------------- Diagnóstico por ciudad ---------------- */}
@@ -497,22 +601,53 @@ function SerieCiudad({
 }
 
 /**
- * Escenario de ensueño: matriz de km + acceso al simulador.
+ * Escenario de ensueño: el ahorro por "costo por llegar" + el simulador de
+ * relocalización embebido (km editables por ciudad).
  *
- * El simulador NO se re-implementa acá: ya existe en Costo por PDV > Simulación,
- * con el desglose por componente y el delta contra el modelo real. Tener dos
- * simuladores del mismo escenario es garantía de que en algún momento den
- * distinto, así que esta página muestra los supuestos y manda al que ya está.
+ * El motor es el mismo que Costo por PDV (getCostoPorPdvSim): lo corremos acá
+ * para poder demostrar el 5.1 sin salir de la pantalla, y linkeamos a Costo por
+ * PDV para el desglose fino. 🚨 El VLC/HL total NO se mueve al cambiar los km
+ * (el modelo reparte un pool fijo): lo que la simulación muestra es la
+ * redistribución y el peso de la distancia. El ahorro en pesos de la mudanza es
+ * el de arriba (costo por llegar), que es un cálculo aparte.
  */
-function EscenarioDreamCard({ dream }: { dream: Escenario }) {
-  const km = dream.km_ciudad ?? {}
-  const ciudades = Object.keys(km).sort((a, b) => (km[b] ?? 0) - (km[a] ?? 0))
+function EscenarioDreamCard({
+  dream,
+  anio,
+  mesesDisponibles,
+}: {
+  dream: Escenario
+  anio: number
+  mesesDisponibles: number[]
+}) {
+  const [km, setKm] = useState<Record<string, number>>(dream.km_ciudad ?? {})
+  const [mes, setMes] = useState<number>(
+    mesesDisponibles[mesesDisponibles.length - 1] ?? 1,
+  )
+  const [sim, setSim] = useState<Simulacion | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pendiente, startTransition] = useTransition()
+
+  const ciudades = useMemo(() => Object.keys(km).sort(), [km])
+
+  function correr() {
+    setError(null)
+    startTransition(async () => {
+      const r = await simularRelocalizacion(anio, mes, km)
+      if ("error" in r) {
+        setError(r.error)
+        setSim(null)
+      } else {
+        setSim(r.data)
+      }
+    })
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Escenario de ensueño — supuestos
+          Escenario de ensueño — {dream.nombre}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -521,15 +656,6 @@ function EscenarioDreamCard({ dream }: { dream: Escenario }) {
             {dream.supuestos}
           </p>
         )}
-
-        <div className="flex flex-wrap gap-4">
-          {ciudades.map((c) => (
-            <div key={c} className="rounded-lg border border-slate-200 px-3 py-2">
-              <p className="text-xs text-muted-foreground">{c}</p>
-              <p className="font-semibold">{num(km[c], 0)} km</p>
-            </div>
-          ))}
-        </div>
 
         <Card className="border-slate-200 bg-slate-50">
           <CardContent className="space-y-2 pt-6 text-sm text-slate-700">
@@ -544,19 +670,333 @@ function EscenarioDreamCard({ dream }: { dream: Escenario }) {
             <p>
               <strong>Ene–jun 2026:</strong> el costo de llegar baja{" "}
               <strong>$60.733.313</strong> (entre 10,4% y 14,0% según el mes),
-              sobre un costo logístico de $922.006.318 y 48.238 HL ⇒ VLC/HL de{" "}
-              <strong>19.114 a 17.855</strong>, un <strong>6,59%</strong> menos.
+              sobre un costo logístico de $863.552.156 y 48.238 HL ⇒ VLC/HL de{" "}
+              <strong>17.902 a 16.643</strong>, un <strong>7,03%</strong> menos.
             </p>
           </CardContent>
         </Card>
+
+        {/* -------- Simulador de relocalización (km editables) -------- */}
+        <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Simulador — ¿y si el CD estuviera en otro lado?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Recalcula el costo del mes con otra matriz de distancias, sin tocar
+              nada real. Es el mismo motor del costo vigente: lo único que cambia
+              son los km.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs">Mes base</Label>
+              <select
+                className="mt-1 block h-9 rounded-md border border-slate-300 px-2 text-sm"
+                value={mes}
+                onChange={(e) => setMes(Number(e.target.value))}
+              >
+                {mesesDisponibles.map((m) => (
+                  <option key={m} value={m}>
+                    {MESES[m]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {ciudades.map((c) => (
+              <div key={c}>
+                <Label className="text-xs">{c}</Label>
+                <Input
+                  type="number"
+                  className="mt-1 w-24"
+                  value={km[c] ?? 0}
+                  onChange={(e) => setKm({ ...km, [c]: Number(e.target.value) })}
+                />
+              </div>
+            ))}
+            <Button onClick={correr} disabled={pendiente}>
+              {pendiente ? "Calculando…" : "Simular"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-amber-700">
+            Los km precargados son estimados de ruta desde San Nicolás. Hay que
+            validarlos contra distancias reales antes de presentar el número.
+          </p>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {sim && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    VLC/HL total (hoy y simulado)
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {pesos(sim.vlc_hl_actual)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    Peso de la distancia
+                  </p>
+                  <p className="text-2xl font-bold text-emerald-600">
+                    {num(sim.distancia_delta_pct, 1)}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {pesos(sim.costo_distancia_actual)} →{" "}
+                    {pesos(sim.costo_distancia_simulado)}
+                  </p>
+                </div>
+              </div>
+
+              <Card className="border-amber-300 bg-amber-50">
+                <CardContent className="flex items-start gap-2 pt-6 text-sm text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>
+                      El VLC/HL total no se mueve, y es correcto que así sea.
+                    </strong>{" "}
+                    El modelo parte del costo que Finanzas cargó para el mes y lo
+                    reparte entre los PDV: cambiar los km cambia{" "}
+                    <em>cómo se reparte</em>, no cuánto se gasta. Lo que ves acá
+                    es la redistribución entre ciudades y cuánto menos pesa la
+                    distancia. El ahorro en pesos de la mudanza es el de arriba
+                    (costo por llegar), que es un cálculo aparte.
+                  </span>
+                </CardContent>
+              </Card>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ciudad</TableHead>
+                    <TableHead className="text-right">Km hoy</TableHead>
+                    <TableHead className="text-right">Km simulado</TableHead>
+                    <TableHead className="text-right">$/HL hoy</TableHead>
+                    <TableHead className="text-right">$/HL simulado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sim.por_ciudad.map((c) => (
+                    <TableRow key={c.ciudad}>
+                      <TableCell>{c.ciudad}</TableCell>
+                      <TableCell className="text-right">
+                        {c.km_actual == null ? "—" : num(c.km_actual, 0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {c.km_simulado == null ? "—" : num(c.km_simulado, 0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {pesos(c.costo_x_hl_actual)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {pesos(c.costo_x_hl_simulado)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
 
         <Link
           href="/planeamiento/costo-por-pdv"
           className={buttonVariants({ variant: "secondary" })}
         >
-          Abrir el simulador en Costo por PDV{" "}
+          Ver el desglose completo en Costo por PDV{" "}
           <ChevronRight className="h-4 w-4" />
         </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * R5.1.4 — "mostrar la mejora del VLC/HL". La serie mensual del $/HL de TODA la
+ * red, con las líneas del objetivo y del ensueño y la marca de cuándo se
+ * implementó cada plan, para leer el antes/después a nivel red (no sólo por
+ * ciudad, que ya está en la solapa de diagnóstico).
+ */
+function SerieRedTotal({
+  anio,
+  territorio,
+  planes,
+  objetivo,
+  dream,
+}: {
+  anio: number
+  territorio: Territorio | null
+  planes: PlanTerritorial[]
+  objetivo: number | null
+  dream: number | null
+}) {
+  const datos = serieRedTotal(territorio).map((d) => ({
+    mes: MESES[d.mes],
+    vlc: Math.round(d.vlc),
+  }))
+  if (datos.length < 2) return null
+
+  // Sólo marcamos meses de implementación que existan en la serie cargada, así
+  // no queda una línea colgada en un mes sin datos.
+  const marcas = planes
+    .filter((p) => p.fecha_implementacion)
+    .map((p) => ({
+      mes: MESES[Number(p.fecha_implementacion!.slice(5, 7))],
+      titulo: p.titulo,
+    }))
+    .filter((m) => datos.some((d) => d.mes === m.mes))
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          VLC/HL total de la red — evolución {anio}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={datos} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="mes" fontSize={12} />
+            <YAxis
+              fontSize={12}
+              domain={["auto", "auto"]}
+              tickFormatter={(v) => `${Math.round(v / 1000)}k`}
+            />
+            <RTooltip formatter={(v) => [pesos(Number(v)), "$/HL red"]} />
+            {objetivo != null && (
+              <ReferenceLine
+                y={Math.round(objetivo)}
+                stroke="#0d9488"
+                strokeDasharray="5 4"
+                label={{
+                  value: "Objetivo",
+                  fontSize: 10,
+                  position: "insideTopRight",
+                  fill: "#0d9488",
+                }}
+              />
+            )}
+            {dream != null && (
+              <ReferenceLine
+                y={Math.round(dream)}
+                stroke={PILAR_PLANEAMIENTO_COLOR}
+                strokeDasharray="5 4"
+                label={{
+                  value: "Ensueño",
+                  fontSize: 10,
+                  position: "insideBottomRight",
+                  fill: PILAR_PLANEAMIENTO_COLOR,
+                }}
+              />
+            )}
+            {marcas.map((m, i) => (
+              <ReferenceLine
+                key={`${m.mes}-${i}`}
+                x={m.mes}
+                stroke="#64748b"
+                strokeDasharray="4 4"
+                label={{ value: "implementación", fontSize: 10, position: "top" }}
+              />
+            ))}
+            <Line
+              type="monotone"
+              dataKey="vlc"
+              stroke="#334155"
+              strokeWidth={2.5}
+              dot={{ r: 3 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Puente base → objetivo: deja ver que el objetivo de la red es exactamente la
+ * suma de lo que aporta cada plan de ciudad, ponderado por volumen. Ata R5.1.2
+ * (planes) con R5.1.1 (escenario objetivo con su VLC/HL).
+ */
+function PuenteObjetivo({
+  base,
+  objetivo,
+  aportes,
+  totalHl,
+}: {
+  base: number | null
+  objetivo: number | null
+  aportes: AportePlan[]
+  totalHl: number
+}) {
+  if (!aportes.length || base == null || objetivo == null) return null
+  const reduccion = base ? (100 * (objetivo - base)) / base : null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          De la base al objetivo — qué aporta cada plan
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          El objetivo de VLC/HL de la red no es un número suelto: es lo que queda
+          cuando cada ciudad con plan llega a su meta, ponderado por su volumen.
+          Por eso las ciudades chicas mueven poco el total aunque su $/HL baje
+          bastante.
+        </p>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Concepto</TableHead>
+                <TableHead className="text-right">$/HL ciudad</TableHead>
+                <TableHead className="text-right">HL</TableHead>
+                <TableHead className="text-right">Aporte a la red</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow className="font-semibold">
+                <TableCell>Base de la red — hoy</TableCell>
+                <TableCell className="text-right">{pesos(base)}</TableCell>
+                <TableCell className="text-right">{num(totalHl, 0)}</TableCell>
+                <TableCell className="text-right">—</TableCell>
+              </TableRow>
+              {aportes.map((a) => (
+                <TableRow key={a.ciudad}>
+                  <TableCell>
+                    {a.ciudad}: {pesos(a.base)} → {pesos(a.meta)}
+                  </TableCell>
+                  <TableCell className="text-right text-emerald-600">
+                    −{pesos(a.base - a.meta)}
+                  </TableCell>
+                  <TableCell className="text-right">{num(a.hl, 0)}</TableCell>
+                  <TableCell className="text-right font-medium text-emerald-600">
+                    −{pesos(a.aporte_red)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow className="border-t-2 font-semibold">
+                <TableCell>
+                  Objetivo de la red
+                  {reduccion != null && (
+                    <span className="ml-2 text-xs text-emerald-600">
+                      {num(reduccion, 1)}% vs base
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">{pesos(objetivo)}</TableCell>
+                <TableCell className="text-right">{num(totalHl, 0)}</TableCell>
+                <TableCell className="text-right">—</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   )

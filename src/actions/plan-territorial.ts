@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import { getKmCiudades } from "./costo-pdv"
+import {
+  getKmCiudades,
+  getCostoPorPdv,
+  getCostoPorPdvSim,
+  type CostoPorPdvRow,
+} from "./costo-pdv"
 
 const PATH = "/planeamiento/plan-territorial"
 const ROLES_EDITORES = ["admin", "supervisor", "admin_rrhh"]
@@ -269,19 +274,129 @@ export async function guardarEscenario(input: {
 }
 
 // ==================================================================
-// Simulación de relocalización del CD
+// Simulación de relocalización del CD (el escenario de ensueño)
 //
-// NO vive acá: el simulador ya existe en Costo por PDV > Simulación
-// (simulacion-tab.tsx + getCostoPorPdvSim), con el desglose por componente y
-// el delta contra el modelo real. Duplicarlo era garantizar que en algún
-// momento los dos dieran distinto. La página de Plan Territorial muestra los
-// supuestos del escenario (km por ciudad) y linkea a esa solapa.
+// Recalcula el modelo de costo con OTRA matriz de distancias, sin tocar nada
+// real. Es el mismo motor que el costo vigente (getCostoPorPdvSim, el que usa
+// Costo por PDV): lo único que cambia son los km. Se corre embebido acá para
+// que el 5.1 se pueda demostrar sin salir de la pantalla; el desglose fino por
+// componente sigue estando en Costo por PDV, al que la página linkea.
 //
-// 🚨 Y hay un límite del modelo que ninguna de las dos puede saltear: la RPC
-// parte de un pool de costo FIJO (costo_logistico_mensual) y lo reparte, así
-// que cambiar los km redistribuye entre ciudades pero deja el total idéntico.
-// Verificado sobre jun-2026: $175.769.947 y 27.307 $/HL en ambos escenarios.
+// 🚨 Límite del modelo: la RPC parte de un pool de costo FIJO
+// (costo_logistico_mensual) y lo reparte entre los PDV. Cambiar los km cambia
+// *cómo se reparte*, no cuánto se gasta ⇒ el VLC/HL total da idéntico y
+// delta_pct ≈ 0. Lo que sí se mueve es el peso de la distancia; el ahorro real
+// de la mudanza se calcula aparte por "costo por llegar" (line-haul evitado).
 // ==================================================================
+
+export interface SimulacionCiudad {
+  ciudad: string
+  km_actual: number | null
+  km_simulado: number | null
+  costo_x_hl_actual: number
+  costo_x_hl_simulado: number
+  hl: number
+}
+
+export interface Simulacion {
+  anio: number
+  mes: number
+  por_ciudad: SimulacionCiudad[]
+  vlc_hl_actual: number
+  vlc_hl_simulado: number
+  /** Negativo = ahorro. Siempre ~0 por el pool fijo; ver nota arriba. */
+  delta_pct: number
+  /** Peso del componente de distancia, antes y después: esto sí se mueve. */
+  costo_distancia_actual: number
+  costo_distancia_simulado: number
+  distancia_delta_pct: number
+}
+
+/**
+ * Simula el costo de un mes con el CD en otro lado.
+ *
+ * Se corre sobre UN mes (no sobre todo el año) a propósito: cada mes son varias
+ * RPC pesadas y para dimensionar el escenario alcanza con un mes representativo.
+ */
+export async function simularRelocalizacion(
+  anio: number,
+  mes: number,
+  km: Record<string, number>,
+): Promise<Result<Simulacion>> {
+  try {
+    await requireAuth()
+    const [real, sim, kmCiudades] = await Promise.all([
+      getCostoPorPdv(anio, mes),
+      getCostoPorPdvSim(anio, mes, km),
+      getKmCiudades(),
+    ])
+    if ("error" in real) return { error: real.error }
+    if ("error" in sim) return { error: sim.error }
+    const kmActual = new Map(kmCiudades.map((k) => [k.ciudad, k.km]))
+    const agregar = (filas: CostoPorPdvRow[]) => {
+      const m = new Map<string, { hl: number; costo: number; dist: number }>()
+      for (const f of filas) {
+        const c = f.ciudad || "(sin ciudad)"
+        const cur = m.get(c) ?? { hl: 0, costo: 0, dist: 0 }
+        cur.hl += f.hl
+        cur.costo += f.costo_total
+        cur.dist += f.costo_distancia
+        m.set(c, cur)
+      }
+      return m
+    }
+    const aReal = agregar(real.data)
+    const aSim = agregar(sim.data)
+    const por_ciudad: SimulacionCiudad[] = [...aReal.entries()]
+      .map(([ciudad, r]) => {
+        const s = aSim.get(ciudad) ?? { hl: r.hl, costo: r.costo, dist: r.dist }
+        return {
+          ciudad,
+          km_actual: kmActual.get(ciudad) ?? null,
+          km_simulado: km[ciudad] ?? null,
+          costo_x_hl_actual: r.hl ? r.costo / r.hl : 0,
+          costo_x_hl_simulado: s.hl ? s.costo / s.hl : 0,
+          hl: r.hl,
+        }
+      })
+      .sort((a, b) => b.hl - a.hl)
+    const sumar = (
+      m: Map<string, { hl: number; costo: number; dist: number }>,
+    ) =>
+      [...m.values()].reduce(
+        (t, v) => ({
+          hl: t.hl + v.hl,
+          costo: t.costo + v.costo,
+          dist: t.dist + v.dist,
+        }),
+        { hl: 0, costo: 0, dist: 0 },
+      )
+    const tReal = sumar(aReal)
+    const tSim = sumar(aSim)
+    const vlcReal = tReal.hl ? tReal.costo / tReal.hl : 0
+    const vlcSim = tSim.hl ? tSim.costo / tSim.hl : 0
+    return {
+      data: {
+        anio,
+        mes,
+        por_ciudad,
+        vlc_hl_actual: vlcReal,
+        vlc_hl_simulado: vlcSim,
+        delta_pct: vlcReal ? (100 * (vlcSim - vlcReal)) / vlcReal : 0,
+        costo_distancia_actual: tReal.dist,
+        costo_distancia_simulado: tSim.dist,
+        distancia_delta_pct: tReal.dist
+          ? (100 * (tSim.dist - tReal.dist)) / tReal.dist
+          : 0,
+      },
+    }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error corriendo la simulación",
+    }
+  }
+}
 
 // ==================================================================
 // Planes territoriales (R5.1.2 y R5.1.4)
