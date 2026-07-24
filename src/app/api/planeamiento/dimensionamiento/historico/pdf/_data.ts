@@ -13,7 +13,11 @@
  */
 import { getDatosDimensionamiento } from "@/actions/dimensionamiento"
 import { createClient } from "@/lib/supabase/server"
-import { HL_POR_PALETA_RETORNABLE } from "@/lib/dimensionamiento/retornable"
+import {
+  HL_POR_PALETA_RETORNABLE,
+  diasHabilesDelMes,
+  hlRetornablePorDia,
+} from "@/lib/dimensionamiento/retornable"
 
 export type SectorHistorico = "flota" | "almacen"
 
@@ -209,11 +213,6 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
     { rol: "Tareas grales.", rf: almacen?.reempaque, prodH: config.prod_reempaque_bul_hh, dot: config.dotacion_reempaque },
     { rol: "Maquinistas", rf: almacen?.maquinistas, prodH: config.prod_pal_h, dot: config.dotacion_maquinistas },
   ]
-  if (sector === "almacen")
-    advertencias.push(
-      "Clasificadores se estima escalando su volumen base por el índice del mes (en el mes en curso su demanda sale del retornable real).",
-    )
-
   const dotacionAlmacen = rolesAlm.map((r) => ({
     rol: r.rol,
     dotacion: r.dot,
@@ -225,15 +224,22 @@ export async function construirHistorico(sector: SectorHistorico): Promise<Histo
     const detalle: FilaRolHist[] = []
     let hhTotal = 0
     for (const r of rolesAlm) {
-      const volBase = r.rf?.volumenProm ?? 0
       const capDiaria = (r.rf?.capDiariaFte ?? 0) * efAlmacen(r.dot)
-      const volMes = volBase * indice
       let hh = 0
-      for (const wd of weekdaysDelMes(m)) {
-        const w = pesoDe(wd)
-        if (w <= 0) continue
-        const volDia = volMes * DIAS_SEMANA * w
-        if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
+      if (r.rol === "Clasificadores") {
+        // Demanda del retornable PRESUPUESTADO del mes (Excel de acarreo), repartido
+        // uniforme entre días hábiles → igual que la proyección del mes en curso.
+        const volDia = hlRetornablePorDia(m, anio)
+        const diasHab = diasHabilesDelMes(anio, m)
+        if (volDia > capDiaria && r.prodH > 0) hh = ((volDia - capDiaria) / r.prodH) * diasHab
+      } else {
+        const volMes = (r.rf?.volumenProm ?? 0) * indice
+        for (const wd of weekdaysDelMes(m)) {
+          const w = pesoDe(wd)
+          if (w <= 0) continue
+          const volDia = volMes * DIAS_SEMANA * w
+          if (volDia > capDiaria && r.prodH > 0) hh += (volDia - capDiaria) / r.prodH
+        }
       }
       hh = round1(hh)
       hhTotal += hh
