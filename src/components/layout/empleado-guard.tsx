@@ -21,6 +21,7 @@ const ALLOWED_PATHS = [
   "/mis-buenas-practicas",
   "/mis-roturas",
   "/mi-feedback",
+  "/mis-heladeras",
 ]
 
 function isAllowed(pathname: string) {

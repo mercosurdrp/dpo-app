@@ -18,6 +18,7 @@ import {
   MessageSquare,
   Wrench,
   PackageX,
+  Refrigerator,
   Sparkles,
   Brain,
   ChevronLeft,
@@ -67,6 +68,11 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
     ...(IS_MISIONES
       ? []
       : [{ label: "Feedback", href: "/mi-feedback", icon: <MessageSquare className="size-5" /> }]),
+    // Heladeras: el chofer registra la que dejó en el cliente o levantó al
+    // camión, con foto. Solo Pampeana.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Heladeras", href: "/mis-heladeras", icon: <Refrigerator className="size-5" /> }]),
     { label: "Comunicaciones", href: "/portal/comunicaciones", icon: <Megaphone className="size-5" /> },
     { label: "Servicios", href: "/portal/servicios", icon: <Wrench className="size-5" /> },
     { label: "Reportar", href: "/reportar-seguridad", icon: <ShieldAlert className="size-5" /> },

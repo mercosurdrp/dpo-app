@@ -19,6 +19,7 @@ import {
   Settings,
   Lightbulb,
   MessageSquare,
+  Refrigerator,
   Sparkles,
   ScrollText,
   ShieldAlert,
@@ -305,6 +306,16 @@ export const navItems: NavItem[] = [
     href: "/feedback-empleados",
     icon: <MessageSquare className="size-5" />,
     roles: ["admin", "supervisor", "admin_rrhh"],
+    hideForEmpleado: true,
+  },
+  {
+    // Colocaciones y retiros de heladeras que cargan los choferes desde
+    // /mis-heladeras, con la foto como evidencia.
+    label: "Heladeras",
+    href: "/heladeras",
+    icon: <Refrigerator className="size-5" />,
+    pampeanaOnly: true,
+    roles: ["admin", "supervisor", "admin_rrhh", "auditor"],
     hideForEmpleado: true,
   },
 ]
