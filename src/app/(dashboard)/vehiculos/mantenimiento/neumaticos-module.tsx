@@ -429,13 +429,19 @@ export function NeumaticosModule({
                   neumáticos y sus compras. Antes esas dos eran tablas globales al
                   pie de la página y la hacían larguísima. */}
               <Tabs value={tabUnidad} onValueChange={setTabUnidad}>
-                <TabsList>
-                  <TabsTrigger value="diagrama">Diagrama</TabsTrigger>
-                  <TabsTrigger value="ot">
-                    Órdenes de trabajo ({ordenesUnidad.length})
+                {/* Barra alta y a todo el ancho: con el tamaño por defecto las
+                    pestañas quedaban perdidas entre los datos y el diagrama. */}
+                <TabsList className="h-11 w-full justify-start gap-1">
+                  <TabsTrigger value="diagrama" className="flex-none px-4 text-sm">
+                    <CircleDot className="mr-1 size-4" /> Diagrama
                   </TabsTrigger>
-                  <TabsTrigger value="compras">
-                    Compras y costos ({cubiertasUnidad.length})
+                  <TabsTrigger value="ot" className="flex-none px-4 text-sm">
+                    <ClipboardPlus className="mr-1 size-4" /> Órdenes de trabajo (
+                    {ordenesUnidad.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="compras" className="flex-none px-4 text-sm">
+                    <CircleDollarSign className="mr-1 size-4" /> Compras y costos (
+                    {cubiertasUnidad.length})
                   </TabsTrigger>
                 </TabsList>
 
