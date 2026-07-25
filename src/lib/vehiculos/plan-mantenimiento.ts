@@ -260,10 +260,21 @@ export async function loadEstadoPlan(client?: SupabaseClient): Promise<{
   const kmActuales = kmActualPorDominio(lecturas)
   const actuales = new Map<string, LecturaActual>()
   for (const v of vehiculos) {
-    actuales.set(v.dominio, {
-      kmActual: kmActuales.get(v.dominio)?.odometro ?? null,
-      horasActuales: horasPorDominio.get(v.dominio) ?? null,
-    })
+    const lectura = kmActuales.get(v.dominio)?.odometro ?? null
+    const horasOt = horasPorDominio.get(v.dominio) ?? null
+    // En los autoelevadores la lectura diaria ES el horómetro: el checklist lo
+    // guarda en la misma columna `odometro` (el form solo re-etiqueta el campo).
+    // Sin esto el plan por horas solo veía el horómetro cargado en alguna OT, así
+    // que una unidad con checklists al día podía quedar entera en "sin datos".
+    if ((v.tipo ?? "camion") === "autoelevador") {
+      const candidatas = [lectura, horasOt].filter((h): h is number => h != null)
+      actuales.set(v.dominio, {
+        kmActual: null,
+        horasActuales: candidatas.length > 0 ? Math.max(...candidatas) : null,
+      })
+      continue
+    }
+    actuales.set(v.dominio, { kmActual: lectura, horasActuales: horasOt })
   }
 
   const estados = computeEstadoPlan({ vehiculos, tareas, overrides, ultimos, actuales })
