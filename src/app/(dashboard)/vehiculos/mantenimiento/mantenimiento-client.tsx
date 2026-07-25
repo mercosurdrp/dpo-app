@@ -1050,7 +1050,12 @@ export function MantenimientoClient({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
                 Tareas del plan preventivo por tipo de unidad. Vence lo que ocurra primero
-                (km, meses u horas).
+                (km, meses u horas).{" "}
+                <span className="text-muted-foreground/80">
+                  La rotación, la alineación y el balanceo no están acá: se controlan en la solapa{" "}
+                  <span className="font-medium text-foreground">Neumáticos</span>, cada una con su
+                  intervalo por tipo de unidad.
+                </span>
               </p>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setOverrideOpen(true)}>
@@ -1062,7 +1067,7 @@ export function MantenimientoClient({
               </div>
             </div>
 
-            {(["camion", "camioneta", "autoelevador", "utilitario"] as VehiculoTipo[])
+            {(["camion", "camioneta", "autoelevador", "utilitario", "acoplado"] as VehiculoTipo[])
               .filter((tipo) => tareas.some((t) => t.tipo_vehiculo === tipo))
               .map((tipo) => (
                 <Card key={tipo}>
