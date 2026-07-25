@@ -12,7 +12,9 @@ import {
 } from "@/lib/vehiculos/lecturas"
 import {
   PROFUNDIDAD_CRITICA_MM,
+  type AccionNeumaticos,
   type Alineacion,
+  type IntervaloNeumaticos,
   type Neumatico,
   type NeumaticoMedicion,
   type NeumaticosResumen,
@@ -414,9 +416,11 @@ export async function getAlineaciones(): Promise<
   }
 }
 
-/** Registra una alineación/balanceo de una unidad. */
+/** Registra una alineación y/o balanceo de una unidad. */
 export async function registrarAlineacion(input: {
   dominio: string
+  /** Qué se hizo. Por defecto 'ambos' (como se cargaba históricamente). */
+  tipo?: "alineacion" | "balanceo" | "ambos"
   fecha?: string
   km?: number | null
   proxima_fecha?: string | null
@@ -431,6 +435,7 @@ export async function registrarAlineacion(input: {
     const supabase = await createClient()
     const { error } = await supabase.from("mantenimiento_alineaciones").insert({
       dominio: input.dominio.toUpperCase(),
+      tipo: input.tipo ?? "ambos",
       fecha: input.fecha ?? new Date().toISOString().slice(0, 10),
       km: input.km ?? null,
       proxima_fecha: input.proxima_fecha || null,
@@ -463,18 +468,47 @@ export async function getMantenimientoConfig(): Promise<{ rotacion_km: number }>
   }
 }
 
-/** Cambia el intervalo de km global de rotación/alineación. */
-export async function setRotacionKm(input: {
-  rotacion_km: number
+/**
+ * Intervalos de km por tipo de unidad y acción (rotación / alineación /
+ * balanceo). Camión = 50.000 km en las tres; los tipos sin fila usan el
+ * intervalo global de `mantenimiento_config.rotacion_km`.
+ */
+export async function getIntervalosNeumaticos(): Promise<{
+  data: IntervaloNeumaticos[]
+}> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("mantenimiento_neumaticos_intervalos")
+      .select("tipo_vehiculo, accion, km")
+    return { data: (data || []) as IntervaloNeumaticos[] }
+  } catch {
+    return { data: [] }
+  }
+}
+
+/** Define el intervalo de km de una acción para un tipo de unidad. */
+export async function setIntervaloNeumaticos(input: {
+  tipo_vehiculo: string
+  accion: AccionNeumaticos
+  km: number
 }): Promise<{ success: true } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
-    const km = Math.round(Number(input.rotacion_km))
+    const km = Math.round(Number(input.km))
     if (!Number.isFinite(km) || km <= 0) return { error: "El intervalo debe ser mayor a 0" }
+    if (!input.tipo_vehiculo) return { error: "Falta el tipo de unidad" }
     const supabase = await createClient()
-    const { error } = await supabase
-      .from("mantenimiento_config")
-      .upsert({ id: true, rotacion_km: km, updated_at: new Date().toISOString() })
+    const { error } = await supabase.from("mantenimiento_neumaticos_intervalos").upsert(
+      {
+        tipo_vehiculo: input.tipo_vehiculo,
+        accion: input.accion,
+        km,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "tipo_vehiculo,accion" }
+    )
     if (error) return { error: error.message }
     return { success: true }
   } catch (e) {

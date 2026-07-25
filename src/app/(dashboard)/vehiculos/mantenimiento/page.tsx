@@ -17,6 +17,7 @@ import {
   getAlineaciones,
   getKmFlota,
   getRotaciones,
+  getIntervalosNeumaticos,
   getMantenimientoConfig,
 } from "@/actions/neumaticos"
 import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
@@ -58,6 +59,7 @@ export default async function MantenimientoPage() {
     gastosRes,
     proveedoresRes,
     configRes,
+    intervalosRes,
     siguienteNumeroOtRes,
     gestionRes,
     metasRes,
@@ -84,6 +86,7 @@ export default async function MantenimientoPage() {
     getGastos({ limit: 500 }),
     getProveedores(),
     getMantenimientoConfig(),
+    getIntervalosNeumaticos(),
     getSiguienteNumeroOt(),
     getGestionMtto(),
     getFlotaMetas(),
@@ -202,6 +205,7 @@ export default async function MantenimientoPage() {
       estandares={estandares}
       herramientas={herramientas}
       rotacionKm={configRes.rotacion_km}
+      intervalosNeumaticos={intervalosRes.data}
       puedeEditar={role === "admin" || role === "supervisor"}
       esAdmin={role === "admin"}
     />

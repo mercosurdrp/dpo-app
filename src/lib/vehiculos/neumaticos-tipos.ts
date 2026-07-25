@@ -57,9 +57,21 @@ export interface NeumaticosResumen {
   bajasMes: number
 }
 
+/** Las tres acciones del módulo de neumáticos, cada una con su intervalo de km. */
+export type AccionNeumaticos = "rotacion" | "alineacion" | "balanceo"
+
+/** Intervalo de km de una acción para un tipo de unidad (camión = 50.000). */
+export interface IntervaloNeumaticos {
+  tipo_vehiculo: string
+  accion: AccionNeumaticos
+  km: number
+}
+
 export interface Alineacion {
   id: string
   dominio: string
+  /** Qué se hizo: solo alineación, solo balanceo o las dos juntas. */
+  tipo: "alineacion" | "balanceo" | "ambos"
   fecha: string
   km: number | null
   proxima_fecha: string | null

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -39,6 +40,7 @@ import {
   Plus,
   RotateCw,
   Ruler,
+  Scale,
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -55,7 +57,7 @@ import {
   registrarMedicionNeumatico,
   registrarRotacion,
   eliminarRotacion,
-  setRotacionKm,
+  setIntervaloNeumaticos,
   type KmFlotaUnidad,
 } from "@/actions/neumaticos"
 import {
@@ -64,7 +66,9 @@ import {
 } from "@/actions/mantenimiento-vehiculos"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
+  type AccionNeumaticos,
   type Alineacion,
+  type IntervaloNeumaticos,
   type Neumatico,
   type NeumaticoTipo,
   type Rotacion,
@@ -99,7 +103,10 @@ interface Props {
   kmFlota: Record<string, KmFlotaUnidad>
   rotaciones: Rotacion[]
   unidades: UnidadFlota[]
+  /** Intervalo global (fallback para los tipos sin intervalo propio). */
   rotacionKm: number
+  /** Intervalos por tipo de unidad y acción (camión: 50.000 km). */
+  intervalos: IntervaloNeumaticos[]
   puedeEditar: boolean
 }
 
@@ -127,25 +134,33 @@ function ultimaPresion(n: Neumatico): number | null {
   return n.mediciones?.find((m) => m.presion_psi != null)?.presion_psi ?? null
 }
 
-// Estado de la alineación según la próxima fecha programada.
-// Estado de alineación considerando fecha Y km (vence lo que ocurra primero).
+// Estado de alineación/balanceo considerando fecha Y km (vence lo que ocurra
+// primero). Si el registro no trae una próxima explícita, se deriva del intervalo
+// del tipo de unidad (camión: 50.000 km) sobre el km del último trabajo.
 function estadoAlineacionConKm(
   ultima: Alineacion | null,
-  kmActual: number | null
-): { label: string; clase: string; faltanKm: number | null } {
+  kmActual: number | null,
+  intervaloKm?: number
+): { label: string; clase: string; faltanKm: number | null; proximaKm: number | null } {
+  const proximaKm =
+    ultima?.proxima_km ??
+    (ultima?.km != null && intervaloKm ? Math.round(ultima.km + intervaloKm) : null)
   const faltanKm =
-    ultima?.proxima_km != null && kmActual != null
-      ? Math.round(ultima.proxima_km - kmActual)
-      : null
-  if (!ultima || (!ultima.proxima_fecha && ultima.proxima_km == null)) {
-    return { label: "Sin programar", clase: "bg-muted text-muted-foreground", faltanKm }
+    proximaKm != null && kmActual != null ? Math.round(proximaKm - kmActual) : null
+  if (!ultima || (!ultima.proxima_fecha && proximaKm == null)) {
+    return {
+      label: "Sin programar",
+      clase: "bg-muted text-muted-foreground",
+      faltanKm,
+      proximaKm,
+    }
   }
   const hoy = new Date().toISOString().slice(0, 10)
   const en30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
   const vencidaFecha = ultima.proxima_fecha != null && ultima.proxima_fecha < hoy
   const vencidaKm = faltanKm != null && faltanKm <= 0
   if (vencidaFecha || vencidaKm)
-    return { label: "Vencida", clase: "bg-destructive/10 text-destructive", faltanKm }
+    return { label: "Vencida", clase: "bg-destructive/10 text-destructive", faltanKm, proximaKm }
   const porFecha = ultima.proxima_fecha != null && ultima.proxima_fecha <= en30
   const porKm = faltanKm != null && faltanKm <= 2000
   if (porFecha || porKm)
@@ -153,11 +168,13 @@ function estadoAlineacionConKm(
       label: "Por vencer",
       clase: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
       faltanKm,
+      proximaKm,
     }
   return {
     label: "Al día",
     clase: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     faltanKm,
+    proximaKm,
   }
 }
 
@@ -168,6 +185,7 @@ export function NeumaticosModule({
   rotaciones,
   unidades,
   rotacionKm,
+  intervalos,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -227,8 +245,6 @@ export function NeumaticosModule({
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [alineaciones, unidadSel]
   )
-  const ultimaAlineacion = alineacionesUnidad[0] ?? null
-
   // Km actual / tasa de la unidad (de las lecturas diarias) para la vida útil.
   const kmUnidad = kmFlota[unidadSel] ?? { kmActual: null, kmDia: null, fecha: null }
 
@@ -250,7 +266,8 @@ export function NeumaticosModule({
     return { cambiar, proximo }
   }, [vidaPorId])
 
-  // Rotaciones de la unidad + estado de la próxima rotación.
+  // Rotaciones de la unidad (el estado de la próxima se calcula en el diagrama,
+  // que es quien conoce el intervalo de la acción elegida).
   const rotacionesUnidad = useMemo(
     () =>
       rotaciones
@@ -258,15 +275,6 @@ export function NeumaticosModule({
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [rotaciones, unidadSel]
   )
-  const ultimaRotacion = rotacionesUnidad[0] ?? null
-  // Km base para contar la próxima rotación: SOLO desde la última rotación
-  // registrada. Si no hay ninguna, la rotación queda "sin datos" (no se infiere
-  // del km de instalación) y empieza a contar recién cuando se registra la
-  // primera rotación.
-  const baseRotacionKm = useMemo(() => {
-    return ultimaRotacion?.km ?? null
-  }, [ultimaRotacion])
-  const rotEstado = rotacionEstado(baseRotacionKm, kmUnidad.kmActual, kmUnidad.kmDia, rotacionKm)
 
   const resumen = useMemo(() => {
     let instalados = 0
@@ -386,35 +394,24 @@ export function NeumaticosModule({
                 />
               </div>
 
-              <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-                <Diagrama
-                  layout={layout}
-                  porPosicion={porPosicion}
-                  tipo={unidad?.tipo ?? null}
-                  onPos={(pos) =>
-                    puedeEditar &&
-                    setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
-                  }
-                />
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  <p className="font-medium text-foreground">Convenciones</p>
-                  <div className="space-y-1">
-                    <LeyendaEje clase="border-amber-400" txt="Eje direccional" />
-                    <LeyendaEje clase="border-emerald-500" txt="Eje de tracción" />
-                    <LeyendaEje clase="border-border" txt="Eje libre" />
-                  </div>
-                  <p className="pt-1 font-medium text-foreground">Desgaste (chip de posición)</p>
-                  <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
-                  <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
-                  <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
-                  <Leyenda color="bg-muted-foreground" txt="Sin medición" />
-                  <p className="pt-1 text-muted-foreground/80">
-                    {puedeEditar
-                      ? "Hacé clic en una posición para asignar / medir / dar de baja."
-                      : "Vista de solo lectura."}
-                  </p>
-                </div>
-              </div>
+              {/* Un solo diagrama + selector de acción al costado (cubiertas /
+                  rotación / alineación / balanceo). */}
+              <DiagramaConAcciones
+                unidad={unidad}
+                layout={layout}
+                porPosicion={porPosicion}
+                kmActual={kmUnidad.kmActual}
+                kmDia={kmUnidad.kmDia}
+                rotaciones={rotacionesUnidad}
+                alineaciones={alineacionesUnidad}
+                intervalos={intervalos}
+                intervaloGlobalKm={rotacionKm}
+                puedeEditar={puedeEditar}
+                onPos={(pos) =>
+                  puedeEditar && setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
+                }
+                onRefresh={refresh}
+              />
             </div>
           )}
         </CardContent>
@@ -559,24 +556,6 @@ export function NeumaticosModule({
             )}
           </CardContent>
         </Card>
-      )}
-
-      {/* Rotación + alineación de neumáticos (unificado) */}
-      {unidad && (
-        <RotacionCard
-          unidad={unidad}
-          layout={layout}
-          porPosicion={porPosicion}
-          rotEstado={rotEstado}
-          ultimaRotacion={ultimaRotacion}
-          rotaciones={rotacionesUnidad}
-          alineaciones={alineacionesUnidad}
-          ultimaAlineacion={ultimaAlineacion}
-          kmActual={kmUnidad.kmActual}
-          rotacionKm={rotacionKm}
-          puedeEditar={puedeEditar}
-          onRefresh={refresh}
-        />
       )}
 
       {/* Stock */}
@@ -1141,41 +1120,73 @@ function TireGlyph({
   )
 }
 
+/**
+ * ÚNICO diagrama de la unidad. Antes había tres siluetas iguales (cubiertas,
+ * rotación y alineación); ahora es una sola y lo que se superpone depende de la
+ * acción elegida en el selector de al lado:
+ *   - `badges`: destino sugerido de cada cubierta (rotación).
+ *   - `soloEjes`: resalta los ejes que toca la acción (alineación / balanceo) y
+ *     apaga el resto.
+ * `onPos` solo se pasa en la vista de cubiertas: ahí el diagrama es clickeable
+ * para asignar / medir / dar de baja.
+ */
 function Diagrama({
   layout,
   porPosicion,
   onPos,
   tipo,
+  badges,
+  soloEjes,
 }: {
   layout: PosicionNeumatico[]
   porPosicion: Map<string, Neumatico>
-  onPos: (pos: PosicionNeumatico) => void
+  onPos?: (pos: PosicionNeumatico) => void
   tipo: VehiculoTipo | null
+  badges?: Record<string, string>
+  soloEjes?: PosicionNeumatico["eje"][]
 }) {
   return (
     <div className="relative aspect-[3/4] w-72 shrink-0">
       <SiluetaUnidad layout={layout} tipo={tipo} />
       {layout.map((p) => {
         const n = porPosicion.get(p.code)
-        return (
+        const dest = badges?.[p.code]
+        const enFoco = !soloEjes || soloEjes.includes(p.eje)
+        const glyph = (
+          <TireGlyph
+            label={p.label}
+            sub={n ? n.numero || "s/n" : null}
+            eje={p.eje}
+            wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
+            empty={!n}
+            badge={dest ? `→${dest}` : null}
+          />
+        )
+        const title = `${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}${dest ? ` → ${dest}` : ""}`
+        const pos = { left: `${p.x}%`, top: `${p.y}%` }
+        return onPos ? (
           <button
             key={p.code}
             type="button"
             onClick={() => onPos(p)}
-            title={`${p.label} · ${p.eje ?? "libre"}${n ? ` · ${n.numero || "s/n"} (${n.profundidad_actual_mm ?? "?"} mm${ultimaPresion(n) != null ? `, ${ultimaPresion(n)} psi` : ""})` : " · vacía"}`}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
+            title={title}
+            style={pos}
             className="group absolute -translate-x-1/2 -translate-y-1/2"
           >
-            <div className="transition-transform group-hover:scale-110">
-              <TireGlyph
-                label={p.label}
-                sub={n ? n.numero || "s/n" : null}
-                eje={p.eje}
-                wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
-                empty={!n}
-              />
-            </div>
+            <div className="transition-transform group-hover:scale-110">{glyph}</div>
           </button>
+        ) : (
+          <div
+            key={p.code}
+            title={title}
+            style={pos}
+            className={cn(
+              "absolute -translate-x-1/2 -translate-y-1/2 transition-opacity",
+              !enFoco && "opacity-30"
+            )}
+          >
+            {glyph}
+          </div>
         )
       })}
     </div>
@@ -2771,325 +2782,421 @@ const ROT_BADGE: Record<string, { label: string; clase: string }> = {
   sin_datos: { label: "Sin datos", clase: "bg-muted text-muted-foreground" },
 }
 
-function RotacionCard({
+// ==================== Diagrama único + selector de acción ====================
+
+// Vistas del diagrama de la unidad. "Cubiertas" es el inventario montado (el
+// diagrama es clickeable); las otras tres son las acciones programables, cada una
+// con su intervalo de km por tipo de unidad.
+type VistaDiagrama = "cubiertas" | AccionNeumaticos
+
+const VISTAS: { id: VistaDiagrama; label: string; Icono: typeof CircleDot }[] = [
+  { id: "cubiertas", label: "Cubiertas", Icono: CircleDot },
+  { id: "rotacion", label: "Rotación", Icono: RotateCw },
+  { id: "alineacion", label: "Alineación", Icono: Crosshair },
+  { id: "balanceo", label: "Balanceo", Icono: Scale },
+]
+
+const ACCION_LABEL: Record<AccionNeumaticos, string> = {
+  rotacion: "Rotación",
+  alineacion: "Alineación",
+  balanceo: "Balanceo",
+}
+
+/**
+ * Una sola silueta de la unidad con un selector de acción al costado. Antes esto
+ * eran tres diagramas idénticos repartidos en dos tarjetas (cubiertas, rotación
+ * sugerida y numeración para alineación/balanceo).
+ *
+ * Cada acción muestra su propio estado (intervalo editable, última, próxima), sus
+ * botones de registro / generación de OT y su historial. Alineación y balanceo
+ * comparten tabla (`mantenimiento_alineaciones`) y se distinguen por `tipo`; los
+ * registros cargados como "ambos" cuentan para las dos.
+ */
+function DiagramaConAcciones({
   unidad,
   layout,
   porPosicion,
-  rotEstado,
-  ultimaRotacion,
+  kmActual,
+  kmDia,
   rotaciones,
   alineaciones,
-  ultimaAlineacion,
-  kmActual,
-  rotacionKm,
+  intervalos,
+  intervaloGlobalKm,
   puedeEditar,
+  onPos,
   onRefresh,
 }: {
   unidad: UnidadFlota
   layout: PosicionNeumatico[]
   porPosicion: Map<string, Neumatico>
-  rotEstado: ReturnType<typeof rotacionEstado>
-  ultimaRotacion: Rotacion | null
+  kmActual: number | null
+  kmDia: number | null
   rotaciones: Rotacion[]
   alineaciones: Alineacion[]
-  ultimaAlineacion: Alineacion | null
-  kmActual: number | null
-  rotacionKm: number
+  intervalos: IntervaloNeumaticos[]
+  intervaloGlobalKm: number
   puedeEditar: boolean
+  onPos: (pos: PosicionNeumatico) => void
   onRefresh: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [alinOpen, setAlinOpen] = useState(false)
-  const [intervaloOpen, setIntervaloOpen] = useState(false)
-  // Descripción prellenada de la OT a generar (null = diálogo cerrado)
+  const [vista, setVista] = useState<VistaDiagrama>("cubiertas")
+  const [rotOpen, setRotOpen] = useState(false)
+  // Diálogo de alineación/balanceo: guarda qué se está registrando.
+  const [alinTipo, setAlinTipo] = useState<"alineacion" | "balanceo" | null>(null)
+  const [intervaloAccion, setIntervaloAccion] = useState<AccionNeumaticos | null>(null)
   const [genOtDesc, setGenOtDesc] = useState<string | null>(null)
-  const sugerida = rotacionSugerida(unidad.tipo)
-  const badge = ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
-  const alin = estadoAlineacionConKm(ultimaAlineacion, kmActual)
+
+  const tipoUnidad = unidad.tipo ?? "camion"
+  const intervaloDe = (accion: AccionNeumaticos) =>
+    intervalos.find((i) => i.tipo_vehiculo === tipoUnidad && i.accion === accion)?.km ??
+    intervaloGlobalKm
+
+  const sugerida = useMemo(() => rotacionSugerida(unidad.tipo), [unidad.tipo])
+
+  // Historial por acción. 'ambos' = se hicieron las dos juntas.
+  const historialAlin = useMemo(
+    () => alineaciones.filter((a) => a.tipo === "alineacion" || a.tipo === "ambos"),
+    [alineaciones]
+  )
+  const historialBal = useMemo(
+    () => alineaciones.filter((a) => a.tipo === "balanceo" || a.tipo === "ambos"),
+    [alineaciones]
+  )
+
+  const ultimaRotacion = rotaciones[0] ?? null
+  // La próxima rotación se cuenta SOLO desde la última rotación registrada; sin
+  // registro queda "sin datos" (no se infiere del km de instalación).
+  const rotEstado = rotacionEstado(
+    ultimaRotacion?.km ?? null,
+    kmActual,
+    kmDia,
+    intervaloDe("rotacion")
+  )
+  const estadoAlin = estadoAlineacionConKm(
+    historialAlin[0] ?? null,
+    kmActual,
+    intervaloDe("alineacion")
+  )
+  const estadoBal = estadoAlineacionConKm(
+    historialBal[0] ?? null,
+    kmActual,
+    intervaloDe("balanceo")
+  )
+
+  // Badge resumen de cada opción, para elegir viendo cuál está vencida.
+  const badgeDeVista = (id: VistaDiagrama) => {
+    if (id === "rotacion") return ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos
+    if (id === "alineacion") return { label: estadoAlin.label, clase: estadoAlin.clase }
+    if (id === "balanceo") return { label: estadoBal.label, clase: estadoBal.clase }
+    return null
+  }
+
+  const accion = vista === "cubiertas" ? null : vista
+  const ultimaDeAccion =
+    accion === "rotacion"
+      ? ultimaRotacion
+      : accion === "alineacion"
+        ? (historialAlin[0] ?? null)
+        : accion === "balanceo"
+          ? (historialBal[0] ?? null)
+          : null
+  const estadoDeAccion =
+    accion === "rotacion"
+      ? {
+          label: (ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos).label,
+          clase: (ROT_BADGE[rotEstado.estado] ?? ROT_BADGE.sin_datos).clase,
+          proximaKm: rotEstado.proximaKm,
+          faltanKm: rotEstado.kmRestante,
+        }
+      : accion === "alineacion"
+        ? { ...estadoAlin, faltanKm: estadoAlin.faltanKm }
+        : accion === "balanceo"
+          ? { ...estadoBal, faltanKm: estadoBal.faltanKm }
+          : null
+
+  const registrar = () => {
+    if (accion === "rotacion") setRotOpen(true)
+    else if (accion === "alineacion" || accion === "balanceo") setAlinTipo(accion)
+  }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <RotateCw className="size-4 text-muted-foreground" /> Rotación y alineación · {unidad.dominio}
-        </CardTitle>
-        {puedeEditar && (
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-              <Plus className="mr-1 size-4" /> Registrar rotación
-            </Button>
-            <Button size="sm" onClick={() => setGenOtDesc("Rotación de neumáticos")}>
-              <ClipboardPlus className="mr-1 size-4" /> OT rotación
-            </Button>
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Contador de próxima rotación */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <Badge className={cn("border-0", badge.clase)}>{badge.label}</Badge>
-          <span className="flex items-center gap-1 text-muted-foreground">
-            Cada <span className="font-medium text-foreground">{fmtNum(rotacionKm)} km</span>
-            {puedeEditar && (
-              <button
-                type="button"
-                onClick={() => setIntervaloOpen(true)}
-                title="Editar el intervalo de km (rotación y alineación)"
-                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Pencil className="size-3.5" />
-              </button>
-            )}
-          </span>
-          <span className="text-muted-foreground">
-            Última:{" "}
-            <span className="font-medium text-foreground">
-              {ultimaRotacion ? fmtFecha(ultimaRotacion.fecha) : "sin registro"}
-            </span>
-            {ultimaRotacion?.km != null && <span> · {fmtNum(ultimaRotacion.km)} km</span>}
-          </span>
-          <span className="text-muted-foreground">
-            Próxima:{" "}
-            <span className="font-medium text-foreground">
-              {rotEstado.proximaKm != null ? `${fmtNum(rotEstado.proximaKm)} km` : "—"}
-            </span>
-            {rotEstado.kmRestante != null && (
-              <span
-                className={cn(
-                  rotEstado.kmRestante <= 0 ? "text-destructive" : "text-muted-foreground"
-                )}
-              >
-                {" "}
-                ({rotEstado.kmRestante <= 0 ? "vencida" : `faltan ${fmtNum(rotEstado.kmRestante)} km`}
-                {rotEstado.diasRestantes != null && rotEstado.kmRestante > 0
-                  ? ` · ~${fmtNum(rotEstado.diasRestantes)} días`
-                  : ""}
-                )
-              </span>
-            )}
-          </span>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        {/* ---- El único diagrama ---- */}
+        <div className="flex justify-center lg:justify-start">
+          <Diagrama
+            layout={layout}
+            porPosicion={porPosicion}
+            tipo={unidad.tipo}
+            onPos={vista === "cubiertas" ? onPos : undefined}
+            badges={vista === "rotacion" ? sugerida : undefined}
+            soloEjes={vista === "alineacion" ? ["direccional"] : undefined}
+          />
         </div>
 
-        {/* Diagrama de rotación sugerida */}
-        {Object.keys(sugerida).length > 0 ? (
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-            <RotacionDiagrama
-              layout={layout}
-              porPosicion={porPosicion}
-              sugerida={sugerida}
-              tipo={unidad.tipo}
-            />
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Rotación sugerida</p>
-              {layout
-                .filter((p) => sugerida[p.code])
-                .map((p) => (
-                  <p key={p.code} className="flex items-center gap-1">
-                    <span className="font-medium text-foreground">{p.label}</span>
-                    <ArrowRight className="size-3 text-muted-foreground" />
-                    <span className="font-medium text-foreground">{sugerida[p.code]}</span>
-                  </p>
-                ))}
+        {/* ---- Selector de acción + panel de la elegida ---- */}
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {VISTAS.map((v) => {
+              const b = badgeDeVista(v.id)
+              const activa = vista === v.id
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVista(v.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors",
+                    activa
+                      ? "border-primary bg-primary/10 font-medium text-foreground"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <v.Icono className="size-4" />
+                  {v.label}
+                  {b && (
+                    <Badge className={cn("border-0 px-1.5 py-0 text-[10px]", b.clase)}>
+                      {b.label}
+                    </Badge>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Vista de cubiertas: convenciones del diagrama */}
+          {vista === "cubiertas" && (
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Convenciones</p>
+              <div className="space-y-1">
+                <LeyendaEje clase="border-amber-400" txt="Eje direccional" />
+                <LeyendaEje clase="border-emerald-500" txt="Eje de tracción" />
+                <LeyendaEje clase="border-border" txt="Eje libre" />
+              </div>
+              <p className="pt-1 font-medium text-foreground">Desgaste (chip de posición)</p>
+              <Leyenda color="bg-emerald-500" txt="Profundidad OK (> 5 mm)" />
+              <Leyenda color="bg-amber-400" txt="A vigilar (≤ 5 mm)" />
+              <Leyenda color="bg-red-500" txt={`Crítico (≤${PROFUNDIDAD_CRITICA_MM} mm)`} />
+              <Leyenda color="bg-muted-foreground" txt="Sin medición" />
               <p className="pt-1 text-muted-foreground/80">
-                Sugerencia para emparejar el desgaste. Ajustala según el estado real de cada
-                cubierta.
+                {puedeEditar
+                  ? "Hacé clic en una posición para asignar / medir / dar de baja."
+                  : "Vista de solo lectura."}
               </p>
             </div>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            No hay un patrón de rotación sugerido para este tipo de unidad.
-          </p>
-        )}
+          )}
 
-        {/* Historial */}
-        {rotaciones.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <th className="py-2">Fecha</th>
-                  <th className="text-right">Km</th>
-                  <th>Observaciones</th>
-                  {puedeEditar && <th className="w-10" />}
-                </tr>
-              </thead>
-              <tbody>
-                {rotaciones.map((r, i) => (
-                  <tr
-                    key={r.id}
-                    className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
-                  >
-                    <td className="py-2 font-medium">{fmtFecha(r.fecha)}</td>
-                    <td className="text-right tabular-nums text-muted-foreground">{fmtNum(r.km)}</td>
-                    <td className="text-muted-foreground">{r.observaciones || "—"}</td>
-                    {puedeEditar && (
-                      <td className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 text-muted-foreground hover:text-destructive"
-                          onClick={async () => {
-                            const res = await eliminarRotacion({ id: r.id })
-                            if ("error" in res) toast.error(res.error)
-                            else {
-                              toast.success("Rotación eliminada")
-                              onRefresh()
-                            }
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ---- Alineación ---- */}
-        <div className="border-t pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Crosshair className="size-4 text-muted-foreground" /> Alineación y balanceo
-            </p>
-            {puedeEditar && (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setAlinOpen(true)}>
-                  <Plus className="mr-1 size-4" /> Registrar alineación
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setGenOtDesc("Alineación y balanceo de neumáticos")}
-                >
-                  <ClipboardPlus className="mr-1 size-4" /> OT alineación
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-            {/* Numeración de las cubiertas de la unidad (igual al diagrama de arriba) */}
-            <DiagramaNumeracion layout={layout} porPosicion={porPosicion} tipo={unidad.tipo} />
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              <Badge className={cn("border-0", alin.clase)}>{alin.label}</Badge>
-              <span className="text-muted-foreground">
-                Última:{" "}
-                <span className="font-medium text-foreground">
-                  {ultimaAlineacion ? fmtFecha(ultimaAlineacion.fecha) : "sin registro"}
+          {/* Vista de una acción: estado + botones */}
+          {accion && estadoDeAccion && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                <Badge className={cn("border-0", estadoDeAccion.clase)}>
+                  {estadoDeAccion.label}
+                </Badge>
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  Cada{" "}
+                  <span className="font-medium text-foreground">
+                    {fmtNum(intervaloDe(accion))} km
+                  </span>
+                  <span className="text-muted-foreground/70">
+                    ({unidad.tipo ? VEHICULO_TIPO_LABELS[unidad.tipo] : "unidad"})
+                  </span>
+                  {puedeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => setIntervaloAccion(accion)}
+                      title={`Editar cada cuántos km se hace la ${ACCION_LABEL[accion].toLowerCase()} en este tipo de unidad`}
+                      className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                  )}
                 </span>
-                {ultimaAlineacion?.km != null && <span> · {fmtNum(ultimaAlineacion.km)} km</span>}
-              </span>
-              {(ultimaAlineacion?.proxima_fecha || ultimaAlineacion?.proxima_km != null) && (
+                <span className="text-muted-foreground">
+                  Última:{" "}
+                  <span className="font-medium text-foreground">
+                    {ultimaDeAccion ? fmtFecha(ultimaDeAccion.fecha) : "sin registro"}
+                  </span>
+                  {ultimaDeAccion?.km != null && <span> · {fmtNum(ultimaDeAccion.km)} km</span>}
+                </span>
                 <span className="text-muted-foreground">
                   Próxima:{" "}
                   <span className="font-medium text-foreground">
-                    {fmtFecha(ultimaAlineacion?.proxima_fecha ?? null)}
+                    {estadoDeAccion.proximaKm != null
+                      ? `${fmtNum(estadoDeAccion.proximaKm)} km`
+                      : "—"}
                   </span>
-                  {ultimaAlineacion?.proxima_km != null && (
-                    <span> · {fmtNum(ultimaAlineacion.proxima_km)} km</span>
-                  )}
-                  {alin.faltanKm != null && (
-                    <span className={cn(alin.faltanKm <= 0 ? "text-destructive" : "text-muted-foreground")}>
+                  {estadoDeAccion.faltanKm != null && (
+                    <span
+                      className={cn(
+                        estadoDeAccion.faltanKm <= 0
+                          ? "text-destructive"
+                          : "text-muted-foreground"
+                      )}
+                    >
                       {" "}
-                      ({alin.faltanKm <= 0 ? "vencida" : `faltan ${fmtNum(alin.faltanKm)} km`})
+                      (
+                      {estadoDeAccion.faltanKm <= 0
+                        ? "vencida"
+                        : `faltan ${fmtNum(estadoDeAccion.faltanKm)} km`}
+                      )
                     </span>
                   )}
                 </span>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {alineaciones.length > 0 && (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2">Fecha</th>
-                    <th className="text-right">Km</th>
-                    <th>Próxima</th>
-                    <th className="text-right">Próx. km</th>
-                    <th>Proveedor</th>
-                    <th className="text-right">Costo</th>
-                    <th>Observaciones</th>
-                    {puedeEditar && <th className="w-10" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {alineaciones.map((a, i) => (
-                    <tr
-                      key={a.id}
-                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
-                    >
-                      <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">{fmtNum(a.km)}</td>
-                      <td className="text-muted-foreground">{fmtFecha(a.proxima_fecha)}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">
-                        {fmtNum(a.proxima_km)}
-                      </td>
-                      <td className="text-muted-foreground">{a.proveedor || "—"}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">
-                        {a.costo != null ? fmtMoney(Number(a.costo)) : "—"}
-                      </td>
-                      <td className="text-muted-foreground">{a.observaciones || "—"}</td>
-                      {puedeEditar && (
-                        <td className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-destructive"
-                            onClick={async () => {
-                              const res = await eliminarAlineacion({ id: a.id })
-                              if ("error" in res) toast.error(res.error)
-                              else {
-                                toast.success("Alineación eliminada")
-                                onRefresh()
-                              }
-                            }}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {puedeEditar && (
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={registrar}>
+                    <Plus className="mr-1 size-4" /> Registrar {ACCION_LABEL[accion].toLowerCase()}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setGenOtDesc(
+                        accion === "rotacion"
+                          ? "Rotación de neumáticos"
+                          : accion === "alineacion"
+                            ? "Alineación de neumáticos"
+                            : "Balanceo de neumáticos"
+                      )
+                    }
+                  >
+                    <ClipboardPlus className="mr-1 size-4" /> OT {ACCION_LABEL[accion].toLowerCase()}
+                  </Button>
+                </div>
+              )}
+
+              {/* Rotación: a dónde va cada cubierta (lo que muestra el diagrama) */}
+              {accion === "rotacion" && (
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">Rotación sugerida</p>
+                  {Object.keys(sugerida).length === 0 ? (
+                    <p>No hay un patrón sugerido para este tipo de unidad.</p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {layout
+                          .filter((p) => sugerida[p.code])
+                          .map((p) => (
+                            <span key={p.code} className="flex items-center gap-1">
+                              <span className="font-medium text-foreground">{p.label}</span>
+                              <ArrowRight className="size-3" />
+                              <span className="font-medium text-foreground">
+                                {sugerida[p.code]}
+                              </span>
+                            </span>
+                          ))}
+                      </div>
+                      <p className="text-muted-foreground/80">
+                        Sugerencia para emparejar el desgaste. Ajustala según el estado real de
+                        cada cubierta.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+              {accion === "alineacion" && (
+                <p className="text-xs text-muted-foreground/80">
+                  El diagrama resalta el eje direccional, que es el que define la alineación.
+                </p>
+              )}
+              {accion === "balanceo" && (
+                <p className="text-xs text-muted-foreground/80">
+                  El balanceo se controla por rueda: el diagrama muestra la numeración de cada
+                  posición.
+                </p>
+              )}
             </div>
           )}
         </div>
-      </CardContent>
+      </div>
 
-      {open && (
+      {/* ---- Historial de la acción elegida ---- */}
+      {accion === "rotacion" && rotaciones.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="py-2">Fecha</th>
+                <th className="text-right">Km</th>
+                <th>Observaciones</th>
+                {puedeEditar && <th className="w-10" />}
+              </tr>
+            </thead>
+            <tbody>
+              {rotaciones.map((r, i) => (
+                <tr key={r.id} className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}>
+                  <td className="py-2 font-medium">{fmtFecha(r.fecha)}</td>
+                  <td className="text-right tabular-nums text-muted-foreground">{fmtNum(r.km)}</td>
+                  <td className="text-muted-foreground">{r.observaciones || "—"}</td>
+                  {puedeEditar && (
+                    <td className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-muted-foreground hover:text-destructive"
+                        onClick={async () => {
+                          const res = await eliminarRotacion({ id: r.id })
+                          if ("error" in res) toast.error(res.error)
+                          else {
+                            toast.success("Rotación eliminada")
+                            onRefresh()
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(accion === "alineacion" || accion === "balanceo") && (
+        <HistorialAlineaciones
+          filas={accion === "alineacion" ? historialAlin : historialBal}
+          puedeEditar={puedeEditar}
+          onRefresh={onRefresh}
+        />
+      )}
+
+      {rotOpen && (
         <RegistrarRotacionDialog
           dominio={unidad.dominio}
           kmActual={kmActual}
-          rotacionKm={rotacionKm}
-          onClose={() => setOpen(false)}
+          rotacionKm={intervaloDe("rotacion")}
+          onClose={() => setRotOpen(false)}
           onDone={() => {
-            setOpen(false)
+            setRotOpen(false)
             onRefresh()
           }}
         />
       )}
-      {alinOpen && (
+      {alinTipo && (
         <AlineacionDialog
           dominio={unidad.dominio}
-          onClose={() => setAlinOpen(false)}
+          tipo={alinTipo}
+          kmActual={kmActual}
+          intervaloKm={intervaloDe(alinTipo)}
+          onClose={() => setAlinTipo(null)}
           onDone={() => {
-            setAlinOpen(false)
+            setAlinTipo(null)
             onRefresh()
           }}
         />
       )}
-      {intervaloOpen && (
+      {intervaloAccion && (
         <IntervaloDialog
-          actual={rotacionKm}
-          onClose={() => setIntervaloOpen(false)}
+          actual={intervaloDe(intervaloAccion)}
+          accion={intervaloAccion}
+          tipoVehiculo={tipoUnidad}
+          onClose={() => setIntervaloAccion(null)}
           onDone={() => {
-            setIntervaloOpen(false)
+            setIntervaloAccion(null)
             onRefresh()
           }}
         />
@@ -3106,59 +3213,103 @@ function RotacionCard({
           }}
         />
       )}
-    </Card>
-  )
-}
-
-// Diagrama de solo lectura: muestra cada posición con el número de su cubierta
-// (igual al diagrama principal de la unidad, sin acciones).
-function DiagramaNumeracion({
-  layout,
-  porPosicion,
-  tipo,
-}: {
-  layout: PosicionNeumatico[]
-  porPosicion: Map<string, Neumatico>
-  tipo: VehiculoTipo | null
-}) {
-  return (
-    <div className="relative aspect-[3/4] w-60 shrink-0">
-      <SiluetaUnidad layout={layout} tipo={tipo} />
-      {layout.map((p) => {
-        const n = porPosicion.get(p.code)
-        return (
-          <div
-            key={p.code}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-            title={`${p.label}${n ? ` · ${n.numero || "s/n"}` : " · vacía"}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
-          >
-            <TireGlyph
-              label={p.label}
-              sub={n ? n.numero || "s/n" : null}
-              eje={p.eje}
-              wearClass={n ? colorDesgaste(n.profundidad_actual_mm) : "bg-muted-foreground"}
-              empty={!n}
-            />
-          </div>
-        )
-      })}
     </div>
   )
 }
 
-// Edita el intervalo de km global (rotación y alineación).
+// Historial de alineaciones / balanceos (misma tabla, filtrada por tipo).
+function HistorialAlineaciones({
+  filas,
+  puedeEditar,
+  onRefresh,
+}: {
+  filas: Alineacion[]
+  puedeEditar: boolean
+  onRefresh: () => void
+}) {
+  if (filas.length === 0) return null
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+            <th className="py-2">Fecha</th>
+            <th className="text-right">Km</th>
+            <th>Se hizo</th>
+            <th>Próxima</th>
+            <th className="text-right">Próx. km</th>
+            <th>Proveedor</th>
+            <th className="text-right">Costo</th>
+            <th>Observaciones</th>
+            {puedeEditar && <th className="w-10" />}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((a, i) => (
+            <tr key={a.id} className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}>
+              <td className="py-2 font-medium">{fmtFecha(a.fecha)}</td>
+              <td className="text-right tabular-nums text-muted-foreground">{fmtNum(a.km)}</td>
+              <td className="text-muted-foreground">
+                {a.tipo === "ambos"
+                  ? "Alineación + balanceo"
+                  : a.tipo === "balanceo"
+                    ? "Balanceo"
+                    : "Alineación"}
+              </td>
+              <td className="text-muted-foreground">{fmtFecha(a.proxima_fecha)}</td>
+              <td className="text-right tabular-nums text-muted-foreground">
+                {fmtNum(a.proxima_km)}
+              </td>
+              <td className="text-muted-foreground">{a.proveedor || "—"}</td>
+              <td className="text-right tabular-nums text-muted-foreground">
+                {a.costo != null ? fmtMoney(Number(a.costo)) : "—"}
+              </td>
+              <td className="text-muted-foreground">{a.observaciones || "—"}</td>
+              {puedeEditar && (
+                <td className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                    onClick={async () => {
+                      const res = await eliminarAlineacion({ id: a.id })
+                      if ("error" in res) toast.error(res.error)
+                      else {
+                        toast.success("Registro eliminado")
+                        onRefresh()
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// Edita cada cuántos km se hace una acción en un tipo de unidad.
 function IntervaloDialog({
   actual,
+  accion,
+  tipoVehiculo,
   onClose,
   onDone,
 }: {
   actual: number
+  accion: AccionNeumaticos
+  tipoVehiculo: string
   onClose: () => void
   onDone: () => void
 }) {
   const [km, setKm] = useState(String(actual))
   const [saving, setSaving] = useState(false)
+  const tipoLabel =
+    VEHICULO_TIPO_LABELS[tipoVehiculo as VehiculoTipo] ?? tipoVehiculo
 
   const guardar = async () => {
     const valor = Number(km)
@@ -3167,7 +3318,11 @@ function IntervaloDialog({
       return
     }
     setSaving(true)
-    const res = await setRotacionKm({ rotacion_km: valor })
+    const res = await setIntervaloNeumaticos({
+      tipo_vehiculo: tipoVehiculo,
+      accion,
+      km: valor,
+    })
     setSaving(false)
     if ("error" in res) {
       toast.error(res.error)
@@ -3181,9 +3336,11 @@ function IntervaloDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Intervalo de rotación y alineación</DialogTitle>
+          <DialogTitle>Intervalo de {ACCION_LABEL[accion].toLowerCase()}</DialogTitle>
           <DialogDescription>
-            Cada cuántos km se programa la rotación y la alineación/balanceo de la flota.
+            Cada cuántos km se programa la {ACCION_LABEL[accion].toLowerCase()} en las unidades del
+            tipo <span className="font-medium text-foreground">{tipoLabel}</span>. No afecta a los
+            otros tipos de unidad.
           </DialogDescription>
         </DialogHeader>
         <div>
@@ -3205,44 +3362,6 @@ function IntervaloDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function RotacionDiagrama({
-  layout,
-  porPosicion,
-  sugerida,
-  tipo,
-}: {
-  layout: PosicionNeumatico[]
-  porPosicion: Map<string, Neumatico>
-  sugerida: Record<string, string>
-  tipo: VehiculoTipo | null
-}) {
-  return (
-    <div className="relative aspect-[3/4] w-72 shrink-0">
-      <SiluetaUnidad layout={layout} tipo={tipo} />
-      {layout.map((p) => {
-        const n = porPosicion.get(p.code)
-        const dest = sugerida[p.code]
-        return (
-          <div
-            key={p.code}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-            title={`${p.label}${n ? ` · ${n.numero || "s/n"}` : " · vacía"}${dest ? ` → ${dest}` : ""}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
-          >
-            <TireGlyph
-              label={p.label}
-              eje={p.eje}
-              wearClass="bg-muted-foreground"
-              empty={!n}
-              badge={dest ? `→${dest}` : null}
-            />
-          </div>
-        )
-      })}
-    </div>
   )
 }
 
@@ -3326,27 +3445,41 @@ function RegistrarRotacionDialog({
 
 function AlineacionDialog({
   dominio,
+  tipo,
+  kmActual,
+  intervaloKm,
   onClose,
   onDone,
 }: {
   dominio: string
+  /** Qué se está registrando (define el título y el filtro del historial). */
+  tipo: "alineacion" | "balanceo"
+  kmActual: number | null
+  intervaloKm: number
   onClose: () => void
   onDone: () => void
 }) {
   const hoy = new Date().toISOString().slice(0, 10)
   const [fecha, setFecha] = useState(hoy)
-  const [km, setKm] = useState("")
+  // Km prellenado con el odómetro actual de la unidad (como en la rotación).
+  const [km, setKm] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
   const [proximaFecha, setProximaFecha] = useState("")
   const [proximaKm, setProximaKm] = useState("")
   const [proveedor, setProveedor] = useState("")
   const [costo, setCosto] = useState("")
   const [observaciones, setObservaciones] = useState("")
+  // Se hicieron las dos cosas en la misma visita a la gomería (caso habitual).
+  const [ambos, setAmbos] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const otra = tipo === "alineacion" ? "balanceo" : "alineación"
+  const label = tipo === "alineacion" ? "alineación" : "balanceo"
 
   const guardar = async () => {
     setSaving(true)
     const res = await registrarAlineacion({
       dominio,
+      tipo: ambos ? "ambos" : tipo,
       fecha,
       km: km ? Number(km) : null,
       proxima_fecha: proximaFecha || null,
@@ -3360,7 +3493,7 @@ function AlineacionDialog({
       toast.error(res.error)
       return
     }
-    toast.success("Alineación registrada")
+    toast.success(ambos ? "Alineación y balanceo registrados" : `${label} registrada`)
     onDone()
   }
 
@@ -3368,9 +3501,11 @@ function AlineacionDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Registrar alineación · {dominio}</DialogTitle>
+          <DialogTitle>
+            Registrar {label} · {dominio}
+          </DialogTitle>
           <DialogDescription>
-            Cargá la alineación realizada y, opcionalmente, la próxima programada.
+            Si no cargás la próxima, se cuenta cada {fmtNum(intervaloKm)} km desde estos km.
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
@@ -3387,8 +3522,17 @@ function AlineacionDialog({
               placeholder="ej. 155000"
             />
           </div>
+          <label className="col-span-2 flex items-center gap-2 rounded-md border border-border p-2.5 text-sm">
+            <Checkbox checked={ambos} onCheckedChange={(c) => setAmbos(c === true)} />
+            <span>
+              Se hizo también el {otra} en la misma visita
+              <span className="ml-1 text-xs text-muted-foreground">
+                (cuenta para las dos)
+              </span>
+            </span>
+          </label>
           <div>
-            <Label className="text-xs text-muted-foreground">Próxima alineación (fecha)</Label>
+            <Label className="text-xs text-muted-foreground">Próxima (fecha)</Label>
             <Input
               type="date"
               value={proximaFecha}

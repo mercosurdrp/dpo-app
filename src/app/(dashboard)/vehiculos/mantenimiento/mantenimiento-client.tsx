@@ -124,7 +124,12 @@ import type {
   TableroResumen,
   UnidadBaja,
 } from "@/actions/mantenimiento-vehiculos"
-import type { Neumatico, Alineacion, Rotacion } from "@/lib/vehiculos/neumaticos-tipos"
+import type {
+  Neumatico,
+  Alineacion,
+  IntervaloNeumaticos,
+  Rotacion,
+} from "@/lib/vehiculos/neumaticos-tipos"
 import type { KmFlotaUnidad } from "@/actions/neumaticos"
 import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
 
@@ -398,6 +403,8 @@ interface MantenimientoClientProps {
   estandares: EstandaresFlotaData
   herramientas: Herramienta[]
   rotacionKm: number
+  /** Intervalos de rotación/alineación/balanceo por tipo de unidad. */
+  intervalosNeumaticos: IntervaloNeumaticos[]
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -431,6 +438,7 @@ export function MantenimientoClient({
   estandares,
   herramientas,
   rotacionKm,
+  intervalosNeumaticos,
   puedeEditar,
   esAdmin,
 }: MantenimientoClientProps) {
@@ -696,6 +704,7 @@ export function MantenimientoClient({
             rotaciones={rotaciones}
             unidades={unidades}
             rotacionKm={rotacionKm}
+            intervalos={intervalosNeumaticos}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
