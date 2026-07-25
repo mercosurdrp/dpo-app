@@ -1445,6 +1445,12 @@ export interface MantenimientoRealizado {
   salida_taller: string | null
   /** true = service general/rodado: ancla el contador del próximo service. */
   es_service_general: boolean
+  /**
+   * Rubro de la OT: 'neumaticos' = trabajo de cubiertas (rotación, alineación,
+   * balanceo, reparación, recapado). Se listan en la solapa Neumáticos y NO en la
+   * de Órdenes de Trabajo, que muestra el mantenimiento general.
+   */
+  rubro: "general" | "neumaticos"
   /** Origen del registro: cargado a mano o traído del sync de Cloudfleet. */
   origen: "manual" | "cloudfleet"
   /** Nº de OT en Cloudfleet (clave del upsert del sync). NULL en las manuales. */

@@ -87,7 +87,21 @@ import {
   VIDA_UTIL_DEFAULT_KM,
   type VidaNeumatico,
 } from "@/lib/vehiculos/vida-neumaticos"
-import { VEHICULO_TIPO_LABELS, type VehiculoTipo } from "@/types/database"
+import {
+  VEHICULO_TIPO_LABELS,
+  type MantenimientoPlanTarea,
+  type MantenimientoRealizado,
+  type MantenimientoTareaReprogramada,
+  type VehiculoTipo,
+} from "@/types/database"
+import { DetalleOrdenDialog } from "./_components/detalle-orden-dialog"
+import {
+  ESTADO_MANT_BADGE,
+  TIPO_MANT_BADGE,
+  TIPO_MANT_LABEL,
+  costoTotalOt,
+} from "./_components/ot-formato"
+import { MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
 import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
@@ -112,6 +126,10 @@ interface Props {
   intervalos: IntervaloNeumaticos[]
   /** Lecturas del último mes por unidad (para cargar con fecha retroactiva). */
   historialLecturas: Record<string, LecturaSugerida[]>
+  /** OT de rubro neumáticos (rotación, alineación, balanceo, reparación, recapado). */
+  ordenes: MantenimientoRealizado[]
+  tareasById: Map<string, MantenimientoPlanTarea>
+  reprogramadas: MantenimientoTareaReprogramada[]
   puedeEditar: boolean
 }
 
@@ -192,6 +210,9 @@ export function NeumaticosModule({
   rotacionKm,
   intervalos,
   historialLecturas,
+  ordenes,
+  tareasById,
+  reprogramadas,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -554,6 +575,13 @@ export function NeumaticosModule({
           </CardContent>
         </Card>
       )}
+
+      {/* OT de neumáticos (separadas de las de mantenimiento general) */}
+      <OrdenesNeumaticosCard
+        ordenes={ordenes}
+        tareasById={tareasById}
+        reprogramadas={reprogramadas}
+      />
 
       {/* Compras y costos de cubiertas */}
       <ComprasCubiertasCard neumaticos={neumaticos} />
@@ -954,6 +982,168 @@ function InspeccionMensualCard({
           </div>
         )}
       </CardContent>
+    </Card>
+  )
+}
+
+// ==================== OT de neumáticos ====================
+
+/**
+ * Órdenes de trabajo de cubiertas: las que se generan desde acá (rotación,
+ * alineación, balanceo) y cualquier trabajo de neumáticos —reparación, recapado,
+ * gomería—. Viven en esta solapa y NO en la de Órdenes de Trabajo, que queda para
+ * el mantenimiento general de la unidad.
+ */
+function OrdenesNeumaticosCard({
+  ordenes,
+  tareasById,
+  reprogramadas,
+}: {
+  ordenes: MantenimientoRealizado[]
+  tareasById: Map<string, MantenimientoPlanTarea>
+  reprogramadas: MantenimientoTareaReprogramada[]
+}) {
+  const [ver, setVer] = useState<MantenimientoRealizado | null>(null)
+  const [fDominio, setFDominio] = useState("todos")
+
+  const dominios = useMemo(
+    () => Array.from(new Set(ordenes.map((o) => o.dominio))).sort(),
+    [ordenes]
+  )
+  const filtradas = useMemo(
+    () =>
+      ordenes
+        .filter((o) => fDominio === "todos" || o.dominio === fDominio)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [ordenes, fDominio]
+  )
+  const total = useMemo(
+    () => filtradas.reduce((a, o) => a + costoTotalOt(o), 0),
+    [filtradas]
+  )
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardPlus className="size-4 text-muted-foreground" /> Órdenes de trabajo de
+            neumáticos ({filtradas.length})
+          </CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Rotación, alineación, balanceo, reparaciones y recapados. El resto del mantenimiento
+            está en la solapa <span className="font-medium text-foreground">Órdenes de Trabajo</span>.
+          </p>
+        </div>
+        {dominios.length > 1 && (
+          <Select value={fDominio} onValueChange={(v) => setFDominio(v ?? "todos")}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas las unidades</SelectItem>
+              {dominios.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {filtradas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay órdenes de trabajo de neumáticos cargadas.
+          </p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2">Fecha</th>
+                    <th>Unidad</th>
+                    <th>N° OT</th>
+                    <th>Trabajo</th>
+                    <th>Taller</th>
+                    <th>Tipo</th>
+                    <th>Estado</th>
+                    <th className="text-right">Costo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtradas.map((o, i) => (
+                    <tr
+                      key={o.id}
+                      onClick={() => setVer(o)}
+                      title="Ver la orden de trabajo"
+                      className={cn(
+                        "cursor-pointer border-b last:border-0 hover:bg-sky-50",
+                        i % 2 === 1 && "bg-muted/40"
+                      )}
+                    >
+                      <td className="py-2 font-medium">{fmtFecha(o.fecha)}</td>
+                      <td className="font-medium">{o.dominio}</td>
+                      <td className="text-muted-foreground">{o.numero_ot || "—"}</td>
+                      <td className="max-w-[18rem] truncate text-muted-foreground">
+                        {o.observaciones ||
+                          o.tareas
+                            ?.map((t) =>
+                              t.tarea_id ? tareasById.get(t.tarea_id)?.nombre : t.descripcion
+                            )
+                            .filter(Boolean)
+                            .join(", ") ||
+                          "—"}
+                      </td>
+                      <td className="text-muted-foreground">{o.taller || "—"}</td>
+                      <td>
+                        <Badge variant="outline" className={cn("text-xs", TIPO_MANT_BADGE[o.tipo])}>
+                          {TIPO_MANT_LABEL[o.tipo]}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Badge
+                          variant="outline"
+                          className={cn("text-xs", ESTADO_MANT_BADGE[o.estado])}
+                        >
+                          {MANTENIMIENTO_ESTADO_LABELS[o.estado]}
+                        </Badge>
+                      </td>
+                      <td className="text-right tabular-nums">
+                        {fmtMoney(costoTotalOt(o))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-medium">
+                    <td className="py-2" colSpan={7}>
+                      Total
+                    </td>
+                    <td className="text-right tabular-nums">{fmtMoney(total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80">
+              Click en una fila para ver la orden completa (tareas, repuestos, factura, Excel y
+              PDF). Para editarla, entrá desde la solapa Órdenes de Trabajo.
+            </p>
+          </>
+        )}
+      </CardContent>
+
+      {ver && (
+        <DetalleOrdenDialog
+          mantenimiento={ver}
+          tareasById={tareasById}
+          reprogramadas={reprogramadas.filter((r) => r.mantenimiento_id === ver.id)}
+          puedeEditar={false}
+          onClose={() => setVer(null)}
+          onEditar={() => setVer(null)}
+        />
+      )}
     </Card>
   )
 }
@@ -2614,6 +2804,7 @@ function GenerarOtNeumaticosDialog({
     }
     setSaving(true)
     const res = await createMantenimiento({
+      rubro: "neumaticos",
       dominio,
       fecha,
       tipo: "preventivo",

@@ -663,6 +663,8 @@ interface CreateMantenimientoInput {
   costo_mano_obra?: number | null
   observaciones?: string
   es_service_general?: boolean
+  /** 'neumaticos' para trabajos de cubiertas (se ven en la solapa Neumáticos). */
+  rubro?: "general" | "neumaticos"
   evidencia_urls?: string[] | null
   fuera_servicio_desde?: string | null
   fuera_servicio_hasta?: string | null
@@ -872,6 +874,7 @@ export async function createMantenimiento(
         costo_mano_obra: input.costo_mano_obra ?? null,
         observaciones: input.observaciones?.trim() || null,
         es_service_general: input.es_service_general ?? false,
+        rubro: input.rubro ?? "general",
         evidencia_urls: input.evidencia_urls ?? null,
         entrada_taller: input.entrada_taller || null,
         salida_taller: input.salida_taller || null,
@@ -949,6 +952,7 @@ interface UpdateMantenimientoInput {
   costo_mano_obra?: number | null
   observaciones?: string
   es_service_general?: boolean
+  rubro?: "general" | "neumaticos"
   evidencia_urls?: string[] | null
   fuera_servicio_desde?: string | null
   fuera_servicio_hasta?: string | null
@@ -986,6 +990,7 @@ export async function updateMantenimiento(
       patch.observaciones = input.observaciones?.trim() || null
     if (input.es_service_general !== undefined)
       patch.es_service_general = input.es_service_general
+    if (input.rubro !== undefined) patch.rubro = input.rubro
     if (input.evidencia_urls !== undefined) patch.evidencia_urls = input.evidencia_urls
     if (input.entrada_taller !== undefined) patch.entrada_taller = input.entrada_taller || null
     if (input.salida_taller !== undefined) patch.salida_taller = input.salida_taller || null
