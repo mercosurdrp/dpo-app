@@ -25,6 +25,7 @@ import type {
   MantenimientoPlanOverride,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
+  MantenimientoTareaReprogramada,
   MantenimientoTipo,
   VehiculoTipo,
 } from "@/types/database"
@@ -639,6 +640,14 @@ interface MantenimientoRepuestoInput {
   costoUnitario?: number | null
 }
 
+/** Tarea del plan que quedó sin hacer en esta OT y se reprograma. */
+interface MantenimientoReprogramadaInput {
+  tareaId: string
+  motivo?: string
+  reprogramadaKm?: number | null
+  reprogramadaFecha?: string | null
+}
+
 interface CreateMantenimientoInput {
   dominio: string
   fecha: string
@@ -661,6 +670,8 @@ interface CreateMantenimientoInput {
   salida_taller?: string | null
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
+  /** Tareas del plan que se dejaron sin hacer y quedan reprogramadas. */
+  reprogramadas?: MantenimientoReprogramadaInput[]
 }
 
 const FACTURAS_BUCKET = "mantenimiento-evidencias"
@@ -727,9 +738,110 @@ function derivarFueraServicio(input: {
   return { desde, hasta }
 }
 
+/**
+ * Sincroniza las tareas del plan que quedaron sin hacer en una OT.
+ *
+ * - Registra/actualiza las reprogramadas que vienen en el formulario.
+ * - Borra las que esta OT había dejado abiertas y ya no vienen (se corrigió).
+ * - Cierra automáticamente las que SÍ se hicieron en esta OT (vengan de esta
+ *   orden o de una anterior de la misma unidad).
+ *
+ * Nunca lanza: un problema acá no puede tumbar el guardado de la OT (lección de
+ * los reverts de mantenimiento). Devuelve un aviso para mostrar en la UI.
+ */
+async function sincronizarTareasReprogramadas(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: {
+    mantenimientoId: string
+    dominio: string
+    /** Tareas del plan que sí se hicieron en esta OT. */
+    tareasHechas: string[]
+    reprogramadas: MantenimientoReprogramadaInput[]
+    createdBy: string | null
+  }
+): Promise<string | null> {
+  try {
+    const nuevas = params.reprogramadas.filter((r) => r.tareaId)
+    const idsNuevas = nuevas.map((r) => r.tareaId)
+
+    // 1) Las que esta OT había dejado pendientes y ya no vienen: se resolvieron
+    //    editando la orden, así que dejan de estar abiertas.
+    const delQuery = supabase
+      .from("mantenimiento_tareas_reprogramadas")
+      .delete()
+      .eq("mantenimiento_id", params.mantenimientoId)
+      .eq("estado", "abierta")
+    if (idsNuevas.length > 0) {
+      await delQuery.not("tarea_id", "in", `(${idsNuevas.join(",")})`)
+    } else {
+      await delQuery
+    }
+
+    // 2) Alta/actualización. El índice único parcial admite una sola abierta por
+    //    (dominio, tarea), así que si ya hay una se actualiza en lugar de duplicar.
+    if (nuevas.length > 0) {
+      const { data: abiertas } = await supabase
+        .from("mantenimiento_tareas_reprogramadas")
+        .select("id, tarea_id")
+        .eq("dominio", params.dominio)
+        .eq("estado", "abierta")
+        .in("tarea_id", idsNuevas)
+      const yaAbierta = new Map(
+        ((abiertas || []) as Array<{ id: string; tarea_id: string }>).map((a) => [a.tarea_id, a.id])
+      )
+      for (const r of nuevas) {
+        const fila = {
+          motivo: r.motivo?.trim() || null,
+          reprogramada_km: r.reprogramadaKm ?? null,
+          reprogramada_fecha: r.reprogramadaFecha || null,
+          updated_at: new Date().toISOString(),
+        }
+        const existente = yaAbierta.get(r.tareaId)
+        if (existente) {
+          await supabase
+            .from("mantenimiento_tareas_reprogramadas")
+            .update({ ...fila, mantenimiento_id: params.mantenimientoId })
+            .eq("id", existente)
+        } else {
+          await supabase.from("mantenimiento_tareas_reprogramadas").insert({
+            ...fila,
+            mantenimiento_id: params.mantenimientoId,
+            tarea_id: r.tareaId,
+            dominio: params.dominio,
+            estado: "abierta",
+            created_by: params.createdBy,
+          })
+        }
+      }
+    }
+
+    // 3) Cierre automático: lo que esta OT hizo deja de estar pendiente.
+    const hechas = params.tareasHechas.filter(Boolean)
+    if (hechas.length > 0) {
+      await supabase
+        .from("mantenimiento_tareas_reprogramadas")
+        .update({
+          estado: "resuelta",
+          resuelta_mantenimiento_id: params.mantenimientoId,
+          resuelta_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("dominio", params.dominio)
+        .eq("estado", "abierta")
+        .in("tarea_id", hechas)
+    }
+    return null
+  } catch (e) {
+    console.error("Sync tareas reprogramadas:", e)
+    return e instanceof Error
+      ? `La OT se guardó, pero las tareas reprogramadas no: ${e.message}`
+      : "La OT se guardó, pero las tareas reprogramadas no."
+  }
+}
+
 export async function createMantenimiento(
   input: CreateMantenimientoInput
-): Promise<{ data: MantenimientoRealizado } | { error: string }> {
+): Promise<{ data: MantenimientoRealizado; warning?: string } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     if (input.tareas.length === 0) {
@@ -808,7 +920,15 @@ export async function createMantenimiento(
       console.error("Sync Neumáticos desde OT:", e)
     }
 
-    return { data: mantenimiento }
+    const warning = await sincronizarTareasReprogramadas(supabase, {
+      mantenimientoId: mantenimiento.id,
+      dominio: mantenimiento.dominio,
+      tareasHechas: input.tareas.map((t) => t.tareaId).filter((id): id is string => !!id),
+      reprogramadas: input.reprogramadas ?? [],
+      createdBy: profile.id,
+    })
+
+    return warning ? { data: mantenimiento, warning } : { data: mantenimiento }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
@@ -838,11 +958,13 @@ interface UpdateMantenimientoInput {
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
   repuestos?: MantenimientoRepuestoInput[]
+  /** Si se pasa, reemplaza las tareas del plan que quedaron reprogramadas. */
+  reprogramadas?: MantenimientoReprogramadaInput[]
 }
 
 export async function updateMantenimiento(
   input: UpdateMantenimientoInput
-): Promise<{ data: MantenimientoRealizado } | { error: string }> {
+): Promise<{ data: MantenimientoRealizado; warning?: string } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
@@ -933,7 +1055,72 @@ export async function updateMantenimiento(
       console.error("Sync Neumáticos desde OT:", e)
     }
 
-    return { data: data as MantenimientoRealizado }
+    const orden = data as MantenimientoRealizado
+    // Solo se toca lo reprogramado si el formulario mandó el detalle de tareas
+    // (el diálogo de edición corto no lo hace y no debe borrar nada).
+    if (input.reprogramadas || input.tareas) {
+      const warning = await sincronizarTareasReprogramadas(supabase, {
+        mantenimientoId: orden.id,
+        dominio: orden.dominio,
+        tareasHechas: (input.tareas ?? [])
+          .map((t) => t.tareaId)
+          .filter((id): id is string => !!id),
+        reprogramadas: input.reprogramadas ?? [],
+        createdBy: null,
+      })
+      if (warning) return { data: orden, warning }
+    }
+
+    return { data: orden }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Tareas del plan que quedaron sin hacer en algún service y se reprogramaron.
+ * Trae las abiertas y las ya cerradas (para poder mostrarlas en el detalle de la
+ * OT que las generó). Query aparte del historial de OT: si esto falla, el
+ * historial se sigue viendo.
+ */
+export async function getTareasReprogramadas(): Promise<
+  { data: MantenimientoTareaReprogramada[] } | { error: string }
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("mantenimiento_tareas_reprogramadas")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500)
+    if (error) return { error: error.message }
+    return { data: (data || []) as MantenimientoTareaReprogramada[] }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Cierra a mano una tarea reprogramada: 'resuelta' (se hizo, sin cargar OT) o
+ * 'cancelada' (ya no corresponde hacerla).
+ */
+export async function cerrarTareaReprogramada(
+  id: string,
+  estado: "resuelta" | "cancelada"
+): Promise<{ data: MantenimientoTareaReprogramada } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const ahora = new Date().toISOString()
+    const { data, error } = await supabase
+      .from("mantenimiento_tareas_reprogramadas")
+      .update({ estado, resuelta_at: ahora, updated_at: ahora })
+      .eq("id", id)
+      .select()
+      .single()
+    if (error) return { error: error.message }
+    return { data: data as MantenimientoTareaReprogramada }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }

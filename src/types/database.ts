@@ -1392,6 +1392,32 @@ export interface MantenimientoRealizadoRepuesto {
   created_at: string
 }
 
+/**
+ * Tarea del plan que quedó SIN HACER en una OT y se reprogramó (ej.: el service
+ * de 20.000 km se hizo pero faltaba el filtro de aire). Vive en tabla aparte de
+ * mantenimiento_realizado_tareas justamente para que NO cuente como realizada:
+ * el contador del plan sigue vencido hasta que se haga de verdad.
+ */
+export interface MantenimientoTareaReprogramada {
+  id: string
+  /** OT en la que se detectó que faltaba. */
+  mantenimiento_id: string
+  tarea_id: string
+  dominio: string
+  motivo: string | null
+  /** Km objetivo para hacerla. */
+  reprogramada_km: number | null
+  /** Fecha objetivo para hacerla. */
+  reprogramada_fecha: string | null
+  estado: "abierta" | "resuelta" | "cancelada"
+  /** OT que finalmente la hizo (la cierra automáticamente). */
+  resuelta_mantenimiento_id: string | null
+  resuelta_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface MantenimientoRealizado {
   id: string
   dominio: string

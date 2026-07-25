@@ -10,6 +10,7 @@ import {
   getSiguienteNumeroOt,
   getTableroOperativo,
   getTareasCil,
+  getTareasReprogramadas,
 } from "@/actions/mantenimiento-vehiculos"
 import {
   getNeumaticos,
@@ -66,6 +67,7 @@ export default async function MantenimientoPage() {
     tareasCilRes,
     estandaresRes,
     herramientasRes,
+    reprogramadasRes,
     profile,
   ] = await Promise.all([
     getEstadoPlanFlota(),
@@ -91,6 +93,7 @@ export default async function MantenimientoPage() {
     getTareasCil(),
     getEstandaresFlota(),
     getHerramientas(),
+    getTareasReprogramadas(),
     getProfile(),
   ])
 
@@ -165,6 +168,8 @@ export default async function MantenimientoPage() {
       ? estandaresRes.data
       : { items: [], cumplimiento: [], unidades: [], pct: null }
   const herramientas = "data" in herramientasRes ? herramientasRes.data : []
+  // Query aparte y tolerante: si falla, el resto del módulo se sigue viendo.
+  const reprogramadas = "data" in reprogramadasRes ? reprogramadasRes.data : []
   const role = profile?.role ?? "viewer"
 
   return (
@@ -175,6 +180,7 @@ export default async function MantenimientoPage() {
       ultimasLecturas={estadoRes.data.ultimasLecturas}
       historialLecturas={estadoRes.data.historialLecturas}
       mantenimientos={mantenimientos}
+      reprogramadas={reprogramadas}
       siguienteNumeroOt={siguienteNumeroOt}
       costos={costos}
       tablero={tablero}

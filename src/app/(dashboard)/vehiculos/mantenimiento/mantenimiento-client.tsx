@@ -57,6 +57,7 @@ import {
 import { cn } from "@/lib/utils"
 import { comprimirImagen } from "@/lib/comprimir-imagen"
 import {
+  cerrarTareaReprogramada,
   createMantenimiento,
   createPlanTarea,
   deleteMantenimiento,
@@ -79,6 +80,7 @@ import type {
   MantenimientoProveedor,
   MantenimientoPlanTarea,
   MantenimientoRealizado,
+  MantenimientoTareaReprogramada,
   MantenimientoTipo,
   VehiculoTipo,
 } from "@/types/database"
@@ -362,6 +364,8 @@ interface MantenimientoClientProps {
   ultimasLecturas: Record<string, LecturaSugerida[]>
   historialLecturas: Record<string, LecturaSugerida[]>
   mantenimientos: MantenimientoRealizado[]
+  /** Tareas del plan que quedaron sin hacer en un service y se reprogramaron. */
+  reprogramadas: MantenimientoTareaReprogramada[]
   siguienteNumeroOt: string
   costos: CostosMantenimiento
   tablero: {
@@ -405,6 +409,7 @@ export function MantenimientoClient({
   ultimasLecturas,
   historialLecturas,
   mantenimientos,
+  reprogramadas,
   siguienteNumeroOt,
   costos,
   tablero,
@@ -463,6 +468,13 @@ export function MantenimientoClient({
     for (const arr of map.values()) arr.sort((a, b) => a.orden - b.orden)
     return map
   }, [tareas])
+
+  // Reprogramadas que siguen abiertas: alimentan la tarjeta del tablero y el
+  // aviso al cargar una OT nueva de esa unidad.
+  const reprogramadasAbiertas = useMemo(
+    () => reprogramadas.filter((r) => r.estado === "abierta"),
+    [reprogramadas]
+  )
 
   const kpis = useMemo(() => {
     let vencidas = 0
@@ -623,6 +635,17 @@ export function MantenimientoClient({
               sub="Gasto de flota imputado en el mes"
             />
           </div>
+
+          {reprogramadasAbiertas.length > 0 && (
+            <ReprogramadasCard
+              reprogramadas={reprogramadasAbiertas}
+              tareasById={tareasById}
+              estados={estados}
+              puedeEditar={puedeEditar}
+              onRegistrar={(dominio, tareaId) => abrirRegistro(dominio, tareaId)}
+              onChanged={refresh}
+            />
+          )}
 
           <TableroOperativo
             programacion={tablero.programacion}
@@ -1172,6 +1195,8 @@ export function MantenimientoClient({
         <NuevoMantenimientoDialog
           estados={estados}
           tareasPorTipo={tareasPorTipo}
+          tareasById={tareasById}
+          reprogramadasAbiertas={reprogramadasAbiertas}
           ultimasLecturas={ultimasLecturas}
           historialLecturas={historialLecturas}
           siguienteNumeroOt={siguienteNumeroOt}
@@ -1188,6 +1213,7 @@ export function MantenimientoClient({
         <DetalleOrdenDialog
           mantenimiento={verMant}
           tareasById={tareasById}
+          reprogramadas={reprogramadas.filter((r) => r.mantenimiento_id === verMant.id)}
           puedeEditar={puedeEditar}
           onClose={() => setVerMant(null)}
           onEditar={() => {
@@ -1397,6 +1423,8 @@ function HistorialLecturasMes({
 function NuevoMantenimientoDialog({
   estados,
   tareasPorTipo,
+  tareasById,
+  reprogramadasAbiertas,
   ultimasLecturas,
   historialLecturas,
   siguienteNumeroOt,
@@ -1406,6 +1434,8 @@ function NuevoMantenimientoDialog({
 }: {
   estados: EstadoPlanVehiculo[]
   tareasPorTipo: Map<VehiculoTipo, MantenimientoPlanTarea[]>
+  tareasById: Map<string, MantenimientoPlanTarea>
+  reprogramadasAbiertas: MantenimientoTareaReprogramada[]
   ultimasLecturas: Record<string, LecturaSugerida[]>
   historialLecturas: Record<string, LecturaSugerida[]>
   siguienteNumeroOt: string
@@ -1437,6 +1467,8 @@ function NuevoMantenimientoDialog({
   const [tareasSel, setTareasSel] = useState<Set<string>>(
     () => new Set(prefill.tareaId ? [prefill.tareaId] : [])
   )
+  // Tareas del plan que quedaron sin hacer en este service y se reprograman.
+  const [reprogramadas, setReprogramadas] = useState<Map<string, ReprogramadaForm>>(new Map())
   const [libres, setLibres] = useState<string[]>([])
   const [libreInput, setLibreInput] = useState("")
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>([])
@@ -1465,20 +1497,19 @@ function NuevoMantenimientoDialog({
     : historialUnidad
   const [historialOpen, setHistorialOpen] = useState(false)
 
+  // Tareas ya reprogramadas (abiertas) de la unidad elegida, para avisar que
+  // quedaron pendientes de un service anterior.
+  const abiertasUnidad = useMemo(
+    () => (dominio ? reprogramadasAbiertas.filter((r) => r.dominio === dominio) : []),
+    [reprogramadasAbiertas, dominio]
+  )
+
   const onDominioChange = (d: string) => {
     setDominio(d)
     const e = estados.find((x) => x.vehiculo.dominio === d)
     setOdometro(e?.kmActual != null ? String(e.kmActual) : "")
     setTareasSel(new Set(prefill.tareaId ? [prefill.tareaId] : []))
-  }
-
-  const toggleTarea = (id: string) => {
-    setTareasSel((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setReprogramadas(new Map())
   }
 
   const submit = async () => {
@@ -1525,13 +1556,23 @@ function NuevoMantenimientoDialog({
       entrada_taller: entradaTaller || null,
       salida_taller: salidaTaller || null,
       tareas,
+      reprogramadas: reprogramadasPayload(reprogramadas),
     })
     setSaving(false)
     if ("error" in res) {
       toast.error(res.error)
       return
     }
-    toast.success("Mantenimiento registrado")
+    if (res.warning) toast.warning(res.warning)
+    else if (reprogramadas.size > 0) {
+      toast.success(
+        `Mantenimiento registrado · ${reprogramadas.size} ${
+          reprogramadas.size === 1 ? "tarea reprogramada" : "tareas reprogramadas"
+        }`
+      )
+    } else {
+      toast.success("Mantenimiento registrado")
+    }
     onSaved()
   }
 
@@ -1751,30 +1792,33 @@ function NuevoMantenimientoDialog({
             </span>
           </label>
 
-          {/* Detalle de tareas (opcional): para registrar un service del plan. */}
-          <details className="rounded-md border border-border p-3">
+          {/* Detalle de tareas: qué se hizo en el service y qué quedó pendiente. */}
+          <details
+            className="rounded-md border border-border p-3"
+            open={tareasSel.size > 0 || reprogramadas.size > 0}
+          >
             <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
               Detalle de tareas del plan (opcional)
+              {reprogramadas.size > 0 && (
+                <span className="ml-2 text-xs font-normal text-amber-700">
+                  · {reprogramadas.size} reprogramada{reprogramadas.size === 1 ? "" : "s"}
+                </span>
+              )}
             </summary>
             <div className="mt-3 space-y-3">
               {dominio && (
                 <div>
-                  <Label>Tareas del plan realizadas</Label>
-                  <div className="mt-1.5 grid max-h-48 gap-1.5 overflow-y-auto rounded-md border border-border p-3 sm:grid-cols-2">
-                    {tareasDisponibles.map((t) => (
-                      <label key={t.id} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={tareasSel.has(t.id)}
-                          onCheckedChange={() => toggleTarea(t.id)}
-                        />
-                        <span className="leading-tight">{t.nombre}</span>
-                      </label>
-                    ))}
-                    {tareasDisponibles.length === 0 && (
-                      <p className="text-xs text-muted-foreground/70">
-                        No hay tareas de plan para este tipo de unidad.
-                      </p>
-                    )}
+                  <Label>Tareas del plan</Label>
+                  <div className="mt-1.5">
+                    <TareasPlanEditor
+                      tareas={tareasDisponibles}
+                      hechas={tareasSel}
+                      setHechas={setTareasSel}
+                      pendientes={reprogramadas}
+                      setPendientes={setReprogramadas}
+                      abiertasPrevias={abiertasUnidad}
+                      tareasById={tareasById}
+                    />
                   </div>
                 </div>
               )}
@@ -1839,6 +1883,381 @@ function NuevoMantenimientoDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ==================== Tareas del plan en la OT ====================
+
+// Frecuencia de la tarea del plan en texto corto, para que al tildarla se vea a
+// qué intervalo corresponde (el service de camión es a los 20.000 km).
+function frecuenciaTarea(t: MantenimientoPlanTarea): string {
+  const partes: string[] = []
+  if (t.frecuencia_km != null) partes.push(`${fmtNum(t.frecuencia_km)} km`)
+  if (t.frecuencia_horas != null) partes.push(`${fmtNum(t.frecuencia_horas)} hs`)
+  if (t.frecuencia_meses != null) partes.push(`${t.frecuencia_meses} meses`)
+  return partes.join(" / ")
+}
+
+/**
+ * Tareas que van "de la mano" con el service: la tarea Service del tipo de
+ * unidad y todas las del plan con la MISMA frecuencia en el mismo eje (camión
+ * 20.000 km: aceite + filtro, filtro de combustible + trampa de agua, filtro de
+ * aire, regulación de frenos, cardán y fluidos). Al tildar Service se tildan
+ * todas juntas, así queda registrado qué se le hizo a los 20.000 km.
+ */
+function paqueteDelService(tareas: MantenimientoPlanTarea[]): {
+  service: MantenimientoPlanTarea | null
+  hermanas: MantenimientoPlanTarea[]
+} {
+  const service = tareas.find((t) => t.codigo === "service") ?? null
+  if (!service) return { service: null, hermanas: [] }
+  const hermanas = tareas.filter(
+    (t) =>
+      t.id !== service.id &&
+      ((service.frecuencia_km != null && t.frecuencia_km === service.frecuencia_km) ||
+        (service.frecuencia_horas != null && t.frecuencia_horas === service.frecuencia_horas))
+  )
+  return { service, hermanas }
+}
+
+/** Lo que se carga por cada tarea que quedó sin hacer. */
+interface ReprogramadaForm {
+  motivo: string
+  km: string
+  fecha: string
+}
+
+function reprogramadasPayload(pendientes: Map<string, ReprogramadaForm>) {
+  return Array.from(pendientes.entries()).map(([tareaId, p]) => ({
+    tareaId,
+    motivo: p.motivo,
+    reprogramadaKm: parseNum(p.km),
+    reprogramadaFecha: p.fecha || null,
+  }))
+}
+
+/**
+ * Selector de tareas del plan de la OT. Cada tarea puede quedar:
+ *   - tildada = se hizo (cuenta como realizada y reinicia su contador);
+ *   - "no se hizo" = queda REPROGRAMADA con motivo y para cuándo (no reinicia
+ *     nada y sigue apareciendo como pendiente de la unidad);
+ *   - sin marcar = no formó parte de esta OT.
+ */
+function TareasPlanEditor({
+  tareas,
+  hechas,
+  setHechas,
+  pendientes,
+  setPendientes,
+  abiertasPrevias,
+  tareasById,
+}: {
+  tareas: MantenimientoPlanTarea[]
+  hechas: Set<string>
+  setHechas: (s: Set<string>) => void
+  pendientes: Map<string, ReprogramadaForm>
+  setPendientes: (m: Map<string, ReprogramadaForm>) => void
+  /** Reprogramadas abiertas de esta unidad, de OTs anteriores. */
+  abiertasPrevias: MantenimientoTareaReprogramada[]
+  tareasById: Map<string, MantenimientoPlanTarea>
+}) {
+  const { service, hermanas } = useMemo(() => paqueteDelService(tareas), [tareas])
+  const hermanasIds = useMemo(() => hermanas.map((h) => h.id), [hermanas])
+
+  // Tildar el Service arrastra las tareas del mismo intervalo; destildarlo las
+  // suelta. Cada una se puede corregir después una por una.
+  const marcarHecha = (id: string) => {
+    const next = new Set(hechas)
+    const esService = service?.id === id
+    if (next.has(id)) {
+      next.delete(id)
+      if (esService) for (const h of hermanasIds) next.delete(h)
+    } else {
+      next.add(id)
+      if (esService) for (const h of hermanasIds) next.add(h)
+    }
+    setHechas(next)
+    // Lo que se marca como hecho deja de estar pendiente.
+    const nextPend = new Map(pendientes)
+    nextPend.delete(id)
+    if (esService) for (const h of hermanasIds) nextPend.delete(h)
+    setPendientes(nextPend)
+  }
+
+  const marcarPendiente = (id: string) => {
+    const nextPend = new Map(pendientes)
+    if (nextPend.has(id)) nextPend.delete(id)
+    else nextPend.set(id, { motivo: "", km: "", fecha: "" })
+    setPendientes(nextPend)
+    const next = new Set(hechas)
+    next.delete(id)
+    setHechas(next)
+  }
+
+  const editarPendiente = (id: string, patch: Partial<ReprogramadaForm>) => {
+    const actual = pendientes.get(id)
+    if (!actual) return
+    const nextPend = new Map(pendientes)
+    nextPend.set(id, { ...actual, ...patch })
+    setPendientes(nextPend)
+  }
+
+  const tomarPrevias = () => {
+    const next = new Set(hechas)
+    for (const p of abiertasPrevias) next.add(p.tarea_id)
+    setHechas(next)
+  }
+
+  if (tareas.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground/70">
+        No hay tareas de plan para este tipo de unidad.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {abiertasPrevias.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50/70 p-2.5 text-xs">
+          <p className="font-medium text-amber-900">
+            Esta unidad tiene {abiertasPrevias.length}{" "}
+            {abiertasPrevias.length === 1 ? "tarea reprogramada" : "tareas reprogramadas"} de
+            órdenes anteriores
+          </p>
+          <ul className="mt-1 space-y-0.5 text-amber-800">
+            {abiertasPrevias.map((p) => (
+              <li key={p.id}>
+                • {tareasById.get(p.tarea_id)?.nombre ?? "Tarea"}
+                {p.reprogramada_km != null && ` — para los ${fmtNum(p.reprogramada_km)} km`}
+                {p.reprogramada_fecha && ` — para el ${fmtFecha(p.reprogramada_fecha)}`}
+                {p.motivo && ` (${p.motivo})`}
+              </li>
+            ))}
+          </ul>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2 h-7 text-xs"
+            onClick={tomarPrevias}
+          >
+            Se hicieron en esta OT
+          </Button>
+        </div>
+      )}
+
+      {service && (
+        <p className="text-xs text-muted-foreground">
+          Al tildar <span className="font-medium text-foreground">{service.nombre}</span> se marcan
+          también las {hermanas.length} tareas del mismo intervalo
+          {frecuenciaTarea(service) ? ` (${frecuenciaTarea(service)})` : ""}. Si alguna no se hizo,
+          usá <span className="font-medium text-foreground">No se hizo</span> y queda reprogramada.
+        </p>
+      )}
+
+      <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+        {tareas.map((t) => {
+          const pend = pendientes.get(t.id)
+          return (
+            <div
+              key={t.id}
+              className={cn(
+                "rounded-md border px-2 py-1.5 text-sm",
+                pend ? "border-amber-200 bg-amber-50/70" : "border-transparent"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={hechas.has(t.id)}
+                  disabled={!!pend}
+                  onCheckedChange={() => marcarHecha(t.id)}
+                />
+                <span className="flex-1 leading-tight">
+                  {t.nombre}
+                  {frecuenciaTarea(t) && (
+                    <span className="ml-1.5 text-xs text-muted-foreground/70">
+                      {frecuenciaTarea(t)}
+                    </span>
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant={pend ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 shrink-0 text-xs"
+                  onClick={() => marcarPendiente(t.id)}
+                >
+                  <CalendarClock className="mr-1 size-3.5" />
+                  {pend ? "Cancelar" : "No se hizo"}
+                </Button>
+              </div>
+
+              {pend && (
+                <div className="mt-2 grid grid-cols-1 gap-2 pl-6 sm:grid-cols-3">
+                  <div className="sm:col-span-3">
+                    <Label className="text-xs text-amber-900">Motivo</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      value={pend.motivo}
+                      onChange={(e) => editarPendiente(t.id, { motivo: e.target.value })}
+                      placeholder="Ej: no había filtro de aire en stock"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-amber-900">Reprogramar a (km)</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      type="number"
+                      value={pend.km}
+                      onChange={(e) => editarPendiente(t.id, { km: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-amber-900">o para la fecha</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      type="date"
+                      value={pend.fecha}
+                      onChange={(e) => editarPendiente(t.id, { fecha: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {pendientes.size > 0 && (
+        <p className="text-xs text-amber-700">
+          {pendientes.size} {pendientes.size === 1 ? "tarea queda" : "tareas quedan"} reprogramadas:
+          NO cuentan como hechas y se van a seguir mostrando como pendientes de la unidad hasta que
+          se registren.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Tarjeta del tablero con las tareas que quedaron sin hacer en un service y se
+ * reprogramaron. Es el recordatorio de "faltaba el filtro": desde acá se abre la
+ * OT que las registra, o se cierran a mano.
+ */
+function ReprogramadasCard({
+  reprogramadas,
+  tareasById,
+  estados,
+  puedeEditar,
+  onRegistrar,
+  onChanged,
+}: {
+  reprogramadas: MantenimientoTareaReprogramada[]
+  tareasById: Map<string, MantenimientoPlanTarea>
+  estados: EstadoPlanVehiculo[]
+  puedeEditar: boolean
+  onRegistrar: (dominio: string, tareaId: string) => void
+  onChanged: () => void
+}) {
+  const [cerrando, setCerrando] = useState<string | null>(null)
+  const kmPorDominio = useMemo(
+    () => new Map(estados.map((e) => [e.vehiculo.dominio, e.kmActual])),
+    [estados]
+  )
+
+  const cerrar = async (id: string, estado: "resuelta" | "cancelada") => {
+    setCerrando(id)
+    const res = await cerrarTareaReprogramada(id, estado)
+    setCerrando(null)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(estado === "resuelta" ? "Tarea marcada como hecha" : "Tarea cancelada")
+    onChanged()
+  }
+
+  return (
+    <Card className="border-amber-200">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CalendarClock className="size-4 text-amber-600" />
+          Tareas reprogramadas ({reprogramadas.length})
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Quedaron sin hacer en un service (falta de repuesto, tiempo, etc.). No cuentan como
+          realizadas: el plan las sigue mostrando pendientes hasta que se registren.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {reprogramadas.map((r) => {
+          const kmActual = kmPorDominio.get(r.dominio) ?? null
+          // Ya llegó al km en el que había que hacerla.
+          const vencida =
+            (r.reprogramada_km != null && kmActual != null && kmActual >= r.reprogramada_km) ||
+            (r.reprogramada_fecha != null && hoyISO() >= r.reprogramada_fecha)
+          return (
+            <div
+              key={r.id}
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm",
+                vencida ? "border-red-200 bg-red-50/70" : "border-amber-200 bg-amber-50/50"
+              )}
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-foreground">
+                  {r.dominio} · {tareasById.get(r.tarea_id)?.nombre ?? "Tarea del plan"}
+                  {vencida && (
+                    <Badge
+                      variant="outline"
+                      className="ml-2 border-red-300 bg-red-100 text-xs text-red-700"
+                    >
+                      ya corresponde
+                    </Badge>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {r.motivo || "Sin motivo cargado"}
+                  {r.reprogramada_km != null && ` · para los ${fmtNum(r.reprogramada_km)} km`}
+                  {r.reprogramada_fecha && ` · para el ${fmtFecha(r.reprogramada_fecha)}`}
+                  {kmActual != null && ` · hoy ${fmtNum(kmActual)} km`}
+                </p>
+              </div>
+              {puedeEditar && (
+                <div className="flex shrink-0 flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => onRegistrar(r.dominio, r.tarea_id)}
+                  >
+                    <Wrench className="mr-1 size-3.5" /> Registrar OT
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    disabled={cerrando === r.id}
+                    onClick={() => cerrar(r.id, "resuelta")}
+                  >
+                    Ya se hizo
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    disabled={cerrando === r.id}
+                    onClick={() => cerrar(r.id, "cancelada")}
+                  >
+                    No corresponde
+                  </Button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -2034,12 +2453,15 @@ function totalOt(repuestos: RepuestoForm[], costoManoObra: string): number | nul
 function DetalleOrdenDialog({
   mantenimiento: m,
   tareasById,
+  reprogramadas,
   puedeEditar,
   onClose,
   onEditar,
 }: {
   mantenimiento: MantenimientoRealizado
   tareasById: Map<string, MantenimientoPlanTarea>
+  /** Tareas del plan que esta OT dejó reprogramadas. */
+  reprogramadas: MantenimientoTareaReprogramada[]
   puedeEditar: boolean
   onClose: () => void
   onEditar: () => void
@@ -2201,6 +2623,49 @@ function DetalleOrdenDialog({
               </div>
             )}
           </div>
+
+          {/* Tareas del plan que quedaron sin hacer en esta OT */}
+          {reprogramadas.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-amber-700">
+                Quedó pendiente (reprogramado)
+              </p>
+              <ul className="space-y-1">
+                {reprogramadas.map((r) => (
+                  <li
+                    key={r.id}
+                    className="rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-foreground">
+                        {tareasById.get(r.tarea_id)?.nombre ?? "Tarea del plan"}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "shrink-0 text-xs",
+                          r.estado === "abierta"
+                            ? "border-amber-300 bg-amber-100 text-amber-800"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        )}
+                      >
+                        {r.estado === "abierta"
+                          ? "Pendiente"
+                          : r.estado === "resuelta"
+                            ? "Hecha después"
+                            : "Cancelada"}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 text-xs text-amber-800">
+                      {r.motivo || "Sin motivo cargado"}
+                      {r.reprogramada_km != null && ` · para los ${fmtNum(r.reprogramada_km)} km`}
+                      {r.reprogramada_fecha && ` · para el ${fmtFecha(r.reprogramada_fecha)}`}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Repuestos */}
           {(m.repuestos?.length ?? 0) > 0 && (
