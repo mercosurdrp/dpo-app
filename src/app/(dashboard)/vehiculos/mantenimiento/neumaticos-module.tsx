@@ -343,6 +343,7 @@ export function NeumaticosModule({
       <InspeccionMensualCard
         neumaticos={neumaticos}
         unidades={unidades}
+        dominioSel={unidadSel}
         onIrAUnidad={(dominio) => {
           setUnidadSel(dominio)
           document
@@ -353,22 +354,17 @@ export function NeumaticosModule({
 
       {/* Diagrama por unidad */}
       <Card id="diagrama-unidad">
-        <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+        {/* La unidad se elige en "Inspección mensual" (arriba): ahí están todas
+            listadas y el click trae hasta acá, así que no hace falta un segundo
+            selector. */}
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CircleDot className="size-4 text-muted-foreground" /> Diagrama de la unidad
+            {unidad && <span className="text-muted-foreground">· {unidad.dominio}</span>}
           </CardTitle>
-          <Select value={unidadSel} onValueChange={(v) => setUnidadSel(v ?? "")}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Unidad" />
-            </SelectTrigger>
-            <SelectContent>
-              {unidades.map((u) => (
-                <SelectItem key={u.dominio} value={u.dominio}>
-                  {u.dominio}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Elegí la unidad en <span className="font-medium text-foreground">Inspección mensual</span>.
+          </p>
         </CardHeader>
         <CardContent>
           {!unidad ? (
@@ -769,10 +765,13 @@ const fmtMesLargo = (ym: string) =>
 function InspeccionMensualCard({
   neumaticos,
   unidades,
+  dominioSel,
   onIrAUnidad,
 }: {
   neumaticos: Neumatico[]
   unidades: UnidadFlota[]
+  /** Unidad abierta en el diagrama, para marcarla en el listado. */
+  dominioSel: string
   onIrAUnidad: (dominio: string) => void
 }) {
   const mesActual = hoyLocalISO().slice(0, 7)
@@ -827,6 +826,17 @@ function InspeccionMensualCard({
   const completas = filas.filter((f) => f.estado === "completa").length
   const pct = filas.length > 0 ? Math.round((completas / filas.length) * 100) : 0
 
+  // Unidades sin cubiertas cargadas: no cuentan para el avance de la ronda (no
+  // hay nada que medir), pero se listan igual porque desde acá se elige la unidad
+  // del diagrama — si no, no habría forma de entrar a montarle la primera.
+  const sinCubiertas = useMemo(() => {
+    const conCubiertas = new Set(filas.map((f) => f.dominio))
+    return unidades
+      .filter((u) => !conCubiertas.has(u.dominio))
+      .map((u) => u.dominio)
+      .sort((a, b) => a.localeCompare(b))
+  }, [filas, unidades])
+
   const BADGE: Record<string, string> = {
     completa: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     parcial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -847,7 +857,8 @@ function InspeccionMensualCard({
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Una vez por mes se mide profundidad y presión de todas las cubiertas de la
-            flota. Las mediciones se cargan desde el diagrama de cada unidad.
+            flota. Clickeá una unidad para abrirla en el diagrama de abajo y cargar las
+            mediciones.
           </p>
         </div>
         <Select value={mesSel} onValueChange={(v) => v && setMesSel(v)}>
@@ -889,7 +900,10 @@ function InspeccionMensualCard({
             {filas.map((f) => (
               <button
                 key={f.dominio}
-                className="flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted",
+                  dominioSel === f.dominio && "border-primary bg-primary/5"
+                )}
                 onClick={() => onIrAUnidad(f.dominio)}
                 title="Ir al diagrama de la unidad para cargar mediciones"
               >
@@ -902,6 +916,25 @@ function InspeccionMensualCard({
                 </div>
                 <Badge variant="outline" className={cn("shrink-0", BADGE[f.estado])}>
                   {LABEL[f.estado]}
+                </Badge>
+              </button>
+            ))}
+            {sinCubiertas.map((dominio) => (
+              <button
+                key={dominio}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-md border border-dashed border-border px-2.5 py-1.5 text-left transition-colors hover:bg-muted",
+                  dominioSel === dominio && "border-solid border-primary bg-primary/5"
+                )}
+                onClick={() => onIrAUnidad(dominio)}
+                title="Ir al diagrama de la unidad para montar cubiertas"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">{dominio}</p>
+                  <p className="text-xs text-muted-foreground">sin cubiertas cargadas</p>
+                </div>
+                <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
+                  Sin cargar
                 </Badge>
               </button>
             ))}
