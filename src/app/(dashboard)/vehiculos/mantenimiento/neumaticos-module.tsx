@@ -29,6 +29,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowRight,
+  CircleDollarSign,
   CircleDot,
   ClipboardPlus,
   Crosshair,
@@ -554,6 +555,9 @@ export function NeumaticosModule({
         </Card>
       )}
 
+      {/* Compras y costos de cubiertas */}
+      <ComprasCubiertasCard neumaticos={neumaticos} />
+
       {/* Stock */}
       <Card>
         <CardHeader className="pb-3">
@@ -951,6 +955,238 @@ function InspeccionMensualCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ==================== Compras y costos de cubiertas ====================
+
+interface CompraCubiertas {
+  clave: string
+  fecha: string | null
+  proveedor: string | null
+  marca: string | null
+  medida: string | null
+  tipo: NeumaticoTipo
+  costoUnitario: number | null
+  cantidad: number
+  total: number | null
+  facturas: string[]
+  codigos: string[]
+}
+
+/**
+ * Agrupa las cubiertas por compra (misma fecha + proveedor + tipo/marca/medida +
+ * costo unitario) y muestra el total de cada una: el costo se carga por unidad,
+ * así que si la compra fue de 4 el total es 4 × unitario, y si fue de una el
+ * total es el precio de esa cubierta.
+ *
+ * Toma TODAS las cubiertas (en stock, instaladas y de baja): la compra existió
+ * igual, no importa dónde esté hoy la cubierta.
+ */
+function agruparCompras(neumaticos: Neumatico[]): CompraCubiertas[] {
+  const mapa = new Map<string, CompraCubiertas>()
+  for (const n of neumaticos) {
+    const costo = n.costo_unitario != null ? Number(n.costo_unitario) : null
+    const fecha = n.fecha_compra ?? null
+    const clave = [
+      fecha ?? "sin-fecha",
+      (n.proveedor ?? "").toLowerCase().trim(),
+      n.tipo,
+      (n.marca ?? "").toLowerCase().trim(),
+      (n.medida ?? "").toLowerCase().trim(),
+      costo ?? "sin-costo",
+    ].join("|")
+    const previa = mapa.get(clave)
+    if (previa) {
+      previa.cantidad++
+      previa.total = previa.costoUnitario != null ? previa.costoUnitario * previa.cantidad : null
+      if (n.numero) previa.codigos.push(n.numero)
+      for (const f of n.factura_urls ?? []) {
+        if (!previa.facturas.includes(f)) previa.facturas.push(f)
+      }
+      continue
+    }
+    mapa.set(clave, {
+      clave,
+      fecha,
+      proveedor: n.proveedor,
+      marca: n.marca,
+      medida: n.medida,
+      tipo: n.tipo,
+      costoUnitario: costo,
+      cantidad: 1,
+      total: costo,
+      facturas: [...(n.factura_urls ?? [])],
+      codigos: n.numero ? [n.numero] : [],
+    })
+  }
+  // Más recientes primero; las sin fecha al final.
+  return Array.from(mapa.values()).sort((a, b) =>
+    (b.fecha ?? "").localeCompare(a.fecha ?? "")
+  )
+}
+
+function ComprasCubiertasCard({ neumaticos }: { neumaticos: Neumatico[] }) {
+  const compras = useMemo(() => agruparCompras(neumaticos), [neumaticos])
+  const conCosto = compras.filter((c) => c.total != null)
+
+  const mesActual = hoyLocalISO().slice(0, 7)
+  const anioActual = hoyLocalISO().slice(0, 4)
+  const resumen = useMemo(() => {
+    let mes = 0
+    let anio = 0
+    let totalGeneral = 0
+    let cubiertasConCosto = 0
+    for (const c of compras) {
+      if (c.total == null) continue
+      totalGeneral += c.total
+      cubiertasConCosto += c.cantidad
+      if (c.fecha?.slice(0, 7) === mesActual) mes += c.total
+      if (c.fecha?.slice(0, 4) === anioActual) anio += c.total
+    }
+    return {
+      mes,
+      anio,
+      totalGeneral,
+      promedio: cubiertasConCosto > 0 ? totalGeneral / cubiertasConCosto : null,
+      cubiertasConCosto,
+    }
+  }, [compras, mesActual, anioActual])
+
+  const sinCosto = compras.reduce((a, c) => a + (c.total == null ? c.cantidad : 0), 0)
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CircleDollarSign className="size-4 text-muted-foreground" /> Compras y costos de
+          cubiertas
+        </CardTitle>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          El costo se carga por unidad; acá cada compra muestra su total (unitario × cantidad).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {compras.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Todavía no hay cubiertas cargadas.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <ResumenCosto label="Gasto del mes" valor={fmtMoney(resumen.mes)} />
+              <ResumenCosto label={`Gasto ${anioActual}`} valor={fmtMoney(resumen.anio)} />
+              <ResumenCosto label="Total cargado" valor={fmtMoney(resumen.totalGeneral)} />
+              <ResumenCosto
+                label="Promedio por cubierta"
+                valor={resumen.promedio != null ? fmtMoney(resumen.promedio) : "—"}
+                sub={`${resumen.cubiertasConCosto} con costo${
+                  sinCosto > 0 ? ` · ${sinCosto} sin cargar` : ""
+                }`}
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2">Fecha</th>
+                    <th>Proveedor</th>
+                    <th>Cubierta</th>
+                    <th className="text-right">Cant.</th>
+                    <th className="text-right">Precio unitario</th>
+                    <th className="text-right">Total</th>
+                    <th>Códigos</th>
+                    <th>Factura</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compras.map((c, i) => (
+                    <tr
+                      key={c.clave}
+                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
+                    >
+                      <td className="py-2 font-medium">{fmtFecha(c.fecha)}</td>
+                      <td className="text-muted-foreground">{c.proveedor || "—"}</td>
+                      <td className="text-muted-foreground">
+                        {[TIPO_LABEL[c.tipo], c.marca, c.medida].filter(Boolean).join(" · ")}
+                      </td>
+                      <td className="text-right tabular-nums">{c.cantidad}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">
+                        {c.costoUnitario != null ? fmtMoney(c.costoUnitario) : "—"}
+                      </td>
+                      <td className="text-right font-medium tabular-nums text-foreground">
+                        {c.total != null ? fmtMoney(c.total) : "—"}
+                      </td>
+                      <td className="max-w-[14rem] truncate text-xs text-muted-foreground">
+                        {c.codigos.length > 0 ? c.codigos.join(", ") : "sin código"}
+                      </td>
+                      <td>
+                        {c.facturas.length > 0 ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            {c.facturas.map((url, fi) => (
+                              <span key={url} className="inline-flex items-center gap-1">
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                                >
+                                  <Paperclip className="size-3" />
+                                  {c.facturas.length > 1 ? fi + 1 : "Ver"}
+                                </a>
+                                <LinkFacturaPdf url={url} />
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {conCosto.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 font-medium">
+                      <td className="py-2" colSpan={3}>
+                        Total
+                      </td>
+                      <td className="text-right tabular-nums">
+                        {compras.reduce((a, c) => a + c.cantidad, 0)}
+                      </td>
+                      <td />
+                      <td className="text-right tabular-nums text-foreground">
+                        {fmtMoney(resumen.totalGeneral)}
+                      </td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ResumenCosto({
+  label,
+  valor,
+  sub,
+}: {
+  label: string
+  valor: string
+  sub?: string
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/40 p-3">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">{valor}</p>
+      {sub && <p className="text-[11px] text-muted-foreground/80">{sub}</p>}
+    </div>
   )
 }
 
@@ -1657,6 +1893,7 @@ function CargarCubiertasDialog({
   const [marca, setMarca] = useState("")
   const [medida, setMedida] = useState("")
   const [prof, setProf] = useState("")
+  const [presion, setPresion] = useState("")
   // Códigos: uno en modo "una", varios (o solo cantidad) en modo "varias"
   const [codigo, setCodigo] = useState("")
   const [porCodigos, setPorCodigos] = useState(true)
@@ -1708,6 +1945,7 @@ function CargarCubiertasDialog({
       marca,
       medida,
       profundidad_inicial_mm: prof ? Number(prof) : null,
+      presion_psi: presion ? Number(presion) : null,
       // Con códigos se crea una por código; sin códigos, por cantidad.
       numeros: usaCodigos && listaCodigos.length > 0 ? listaCodigos : undefined,
       cantidad: usaCodigos && listaCodigos.length > 0 ? undefined : total,
@@ -1849,7 +2087,7 @@ function CargarCubiertasDialog({
                 </span>
               )}
             </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-xs text-muted-foreground">Estado</Label>
                 <Select value={tipo} onValueChange={(v) => setTipo((v as NeumaticoTipo) ?? "nuevo")}>
@@ -1886,6 +2124,15 @@ function CargarCubiertasDialog({
                   value={prof}
                   onChange={(e) => setProf(e.target.value)}
                   placeholder="14"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Presión (psi)</Label>
+                <Input
+                  type="number"
+                  value={presion}
+                  onChange={(e) => setPresion(e.target.value)}
+                  placeholder="110"
                 />
               </div>
             </div>
@@ -2498,6 +2745,8 @@ function PosicionDialog({
   const [marcaNueva, setMarcaNueva] = useState("")
   const [medidaNueva, setMedidaNueva] = useState("")
   const [profNueva, setProfNueva] = useState("")
+  // Presión con la que se monta (queda como medición de ese día).
+  const [presionMontaje, setPresionMontaje] = useState("")
   // Medición (posición ocupada)
   const [profMed, setProfMed] = useState("")
   const [kmMed, setKmMed] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
@@ -2707,6 +2956,18 @@ function PosicionDialog({
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Presión (psi)</Label>
+                <Input
+                  type="number"
+                  value={presionMontaje}
+                  onChange={(e) => setPresionMontaje(e.target.value)}
+                  placeholder="110"
+                />
+              </div>
+            </div>
             {/* Mismo historial de lecturas que en el alta de OT: al elegir un
                 día completa la fecha y el odómetro/horómetro. */}
             <HistorialLecturasMes
@@ -2750,6 +3011,7 @@ function PosicionDialog({
                           vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
                           fecha_instalacion: fechaInst || undefined,
                           factura_urls: facturaUrls,
+                          presion_psi: presionMontaje ? Number(presionMontaje) : null,
                         }),
                       "Cubierta cargada e instalada"
                     )
@@ -2774,6 +3036,7 @@ function PosicionDialog({
                           numero: numeroStock,
                           medida: medidaStock,
                           factura_urls: facturaUrls,
+                          presion_psi: presionMontaje ? Number(presionMontaje) : null,
                         }),
                       "Cubierta instalada"
                     )

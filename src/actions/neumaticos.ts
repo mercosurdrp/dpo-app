@@ -122,6 +122,8 @@ export async function crearNeumaticosMasivo(input: {
   fecha_compra?: string | null
   proveedor?: string
   costo_unitario?: number | null
+  /** Presión de inflado con la que entran (queda como primera medición). */
+  presion_psi?: number | null
 }): Promise<{ success: true; creados: number } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -152,8 +154,24 @@ export async function crearNeumaticosMasivo(input: {
         ? numeros.map((numero) => ({ ...base, numero }))
         : Array.from({ length: cantidad }, () => ({ ...base, numero: null }))
 
-    const { error } = await supabase.from("mantenimiento_neumaticos").insert(filas)
+    const { data: creadas, error } = await supabase
+      .from("mantenimiento_neumaticos")
+      .insert(filas)
+      .select("id")
     if (error) return { error: error.message }
+
+    if (input.presion_psi != null) {
+      for (const c of creadas ?? []) {
+        await registrarMedicionInicial(supabase, {
+          neumatico_id: c.id,
+          presion_psi: input.presion_psi,
+          profundidad_mm: input.profundidad_inicial_mm ?? null,
+          fecha: input.fecha_compra ?? null,
+          nota: "Carga al stock",
+          created_by: profile.id,
+        })
+      }
+    }
     return { success: true, creados: filas.length }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -193,6 +211,40 @@ export async function actualizarNeumatico(input: {
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Deja una medición inicial de presión (y profundidad) de la cubierta. La presión
+ * vive en el historial de mediciones, no como campo de la cubierta: así queda la
+ * fecha en que se tomó y alimenta el "última presión" del módulo.
+ * Nunca lanza: la cubierta ya se creó/montó.
+ */
+async function registrarMedicionInicial(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  med: {
+    neumatico_id: string
+    presion_psi?: number | null
+    profundidad_mm?: number | null
+    km?: number | null
+    fecha?: string | null
+    nota?: string
+    created_by?: string | null
+  }
+): Promise<void> {
+  if (med.presion_psi == null && med.profundidad_mm == null) return
+  try {
+    await supabase.from("mantenimiento_neumatico_mediciones").insert({
+      neumatico_id: med.neumatico_id,
+      fecha: med.fecha || new Date().toISOString().slice(0, 10),
+      profundidad_mm: med.profundidad_mm ?? null,
+      km: med.km ?? null,
+      presion_psi: med.presion_psi ?? null,
+      nota: med.nota ?? null,
+      created_by: med.created_by ?? null,
+    })
+  } catch (e) {
+    console.error("Medición inicial de neumático:", e)
   }
 }
 
@@ -259,6 +311,8 @@ export async function asignarNeumatico(input: {
   medida?: string | null
   /** Facturas a agregar a las que ya tenga la cubierta. */
   factura_urls?: string[] | null
+  /** Presión con la que se montó (queda como medición de ese día). */
+  presion_psi?: number | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profileMontaje = await requireRole(["admin", "supervisor"])
@@ -319,6 +373,14 @@ export async function asignarNeumatico(input: {
       factura_urls: input.factura_urls ?? null,
       created_by: profileMontaje.id,
     })
+    await registrarMedicionInicial(supabase, {
+      neumatico_id: input.id,
+      presion_psi: input.presion_psi ?? null,
+      km: input.km_instalacion ?? null,
+      fecha: input.fecha_instalacion ?? null,
+      nota: "Montaje",
+      created_by: profileMontaje.id,
+    })
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -343,6 +405,8 @@ export async function crearYColocarNeumatico(input: {
   fecha_instalacion?: string
   /** Factura de compra (foto o PDF). */
   factura_urls?: string[] | null
+  /** Presión con la que se montó (queda como medición de ese día). */
+  presion_psi?: number | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -395,6 +459,15 @@ export async function crearYColocarNeumatico(input: {
         numero: input.numero ?? null,
         factura_urls: input.factura_urls ?? null,
         observaciones: "Compra y colocación en el momento (no pasó por el stock)",
+        created_by: profile.id,
+      })
+      await registrarMedicionInicial(supabase, {
+        neumatico_id: creada.id,
+        presion_psi: input.presion_psi ?? null,
+        profundidad_mm: input.profundidad_inicial_mm ?? null,
+        km: input.km_instalacion ?? null,
+        fecha: input.fecha_instalacion ?? null,
+        nota: "Montaje",
         created_by: profile.id,
       })
     }
