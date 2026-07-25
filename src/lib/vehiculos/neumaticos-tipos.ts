@@ -45,6 +45,10 @@ export interface Neumatico {
   observaciones: string | null
   /** Foto/PDF de la factura de compra (URLs públicas del bucket de facturas). */
   factura_urls: string[] | null
+  /** Compra: cuándo, a quién y a cuánto (para el costo de flota). */
+  fecha_compra: string | null
+  proveedor: string | null
+  costo_unitario: number | null
   created_at: string
   updated_at: string
   mediciones?: NeumaticoMedicion[]

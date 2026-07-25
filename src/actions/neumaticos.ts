@@ -118,6 +118,10 @@ export async function crearNeumaticosMasivo(input: {
   numeros?: string[]
   /** Factura de compra (misma factura para todo el lote de la carga). */
   factura_urls?: string[]
+  /** Datos de la compra (comunes al lote). */
+  fecha_compra?: string | null
+  proveedor?: string
+  costo_unitario?: number | null
 }): Promise<{ success: true; creados: number } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -138,6 +142,9 @@ export async function crearNeumaticosMasivo(input: {
       profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
       estado: "stock" as const,
       factura_urls: input.factura_urls?.length ? input.factura_urls : null,
+      fecha_compra: input.fecha_compra || null,
+      proveedor: input.proveedor?.trim() || null,
+      costo_unitario: input.costo_unitario ?? null,
       created_by: profile.id,
     }
     const filas: Array<typeof base & { numero: string | null }> =
@@ -160,6 +167,9 @@ export async function actualizarNeumatico(input: {
   marca?: string | null
   medida?: string | null
   factura_urls?: string[] | null
+  fecha_compra?: string | null
+  proveedor?: string | null
+  costo_unitario?: number | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
@@ -171,6 +181,9 @@ export async function actualizarNeumatico(input: {
     if (input.factura_urls !== undefined) {
       update.factura_urls = input.factura_urls?.length ? input.factura_urls : null
     }
+    if (input.fecha_compra !== undefined) update.fecha_compra = input.fecha_compra || null
+    if (input.proveedor !== undefined) update.proveedor = input.proveedor?.trim() || null
+    if (input.costo_unitario !== undefined) update.costo_unitario = input.costo_unitario
     if (Object.keys(update).length === 0) return { success: true }
     const { error } = await supabase
       .from("mantenimiento_neumaticos")

@@ -87,6 +87,8 @@ import {
   type VidaNeumatico,
 } from "@/lib/vehiculos/vida-neumaticos"
 import { VEHICULO_TIPO_LABELS, type VehiculoTipo } from "@/types/database"
+import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
+import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
 
@@ -107,6 +109,8 @@ interface Props {
   rotacionKm: number
   /** Intervalos por tipo de unidad y acción (camión: 50.000 km). */
   intervalos: IntervaloNeumaticos[]
+  /** Lecturas del último mes por unidad (para cargar con fecha retroactiva). */
+  historialLecturas: Record<string, LecturaSugerida[]>
   puedeEditar: boolean
 }
 
@@ -186,6 +190,7 @@ export function NeumaticosModule({
   unidades,
   rotacionKm,
   intervalos,
+  historialLecturas,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -193,7 +198,6 @@ export function NeumaticosModule({
   const refresh = () => startTransition(() => router.refresh())
 
   const [cargaOpen, setCargaOpen] = useState(false)
-  const [individualOpen, setIndividualOpen] = useState(false)
   const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
   const [detalleResumen, setDetalleResumen] = useState<
     "stock" | "instaladas" | "criticas" | "bajas" | null
@@ -329,11 +333,8 @@ export function NeumaticosModule({
           <Button variant="outline" onClick={() => setMontajeOpen(true)}>
             <ArrowDownToLine className="mr-1 size-4" /> Montar / desmontar
           </Button>
-          <Button variant="outline" onClick={() => setIndividualOpen(true)}>
-            <Plus className="mr-1 size-4" /> Carga individual
-          </Button>
           <Button onClick={() => setCargaOpen(true)}>
-            <Plus className="mr-1 size-4" /> Carga masiva
+            <Plus className="mr-1 size-4" /> Cargar cubiertas
           </Button>
         </div>
       )}
@@ -567,11 +568,13 @@ export function NeumaticosModule({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <th className="py-2">Número</th>
+                  <th className="py-2">Código</th>
                   <th>Tipo</th>
                   <th>Marca</th>
                   <th>Medida</th>
                   <th className="text-right">Prof. (mm)</th>
+                  <th>Proveedor</th>
+                  <th className="text-right">Costo</th>
                   <th>Ingreso</th>
                   <th>Factura</th>
                   {puedeEditar && <th className="w-16" />}
@@ -590,7 +593,13 @@ export function NeumaticosModule({
                     <td className="text-right tabular-nums">
                       {n.profundidad_actual_mm ?? "—"}
                     </td>
-                    <td className="text-muted-foreground">{fmtFecha(n.fecha_ingreso)}</td>
+                    <td className="text-muted-foreground">{n.proveedor || "—"}</td>
+                    <td className="text-right tabular-nums text-muted-foreground">
+                      {n.costo_unitario != null ? fmtMoney(Number(n.costo_unitario)) : "—"}
+                    </td>
+                    <td className="text-muted-foreground">
+                      {fmtFecha(n.fecha_compra ?? n.fecha_ingreso)}
+                    </td>
                     <td>
                       {(n.factura_urls?.length ?? 0) > 0 ? (
                         <span className="inline-flex items-center gap-1.5">
@@ -685,12 +694,12 @@ export function NeumaticosModule({
       )}
 
       {cargaOpen && (
-        <CargaMasivaDialog onClose={() => setCargaOpen(false)} onDone={refresh} />
-      )}
-      {individualOpen && (
-        <CargaIndividualDialog
-          onClose={() => setIndividualOpen(false)}
-          onDone={refresh}
+        <CargarCubiertasDialog
+          onClose={() => setCargaOpen(false)}
+          onDone={() => {
+            setCargaOpen(false)
+            refresh()
+          }}
         />
       )}
       {editNeu && (
@@ -721,6 +730,7 @@ export function NeumaticosModule({
           unidadInicial={unidadSel}
           neumaticos={neumaticos}
           kmFlota={kmFlota}
+          historialLecturas={historialLecturas}
           onClose={() => setMontajeOpen(false)}
           onRefresh={refresh}
         />
@@ -728,6 +738,7 @@ export function NeumaticosModule({
       {posDialog && unidad && (
         <PosicionDialog
           unidad={unidad}
+          historial={historialLecturas[unidad.dominio] ?? []}
           pos={posDialog.pos}
           actual={posDialog.actual}
           stock={stock}
@@ -1479,6 +1490,11 @@ function EditarCubiertaDialog({
   const [numero, setNumero] = useState(neumatico.numero ?? "")
   const [marca, setMarca] = useState(neumatico.marca ?? "")
   const [medida, setMedida] = useState(neumatico.medida ?? "")
+  const [fechaCompra, setFechaCompra] = useState(neumatico.fecha_compra ?? "")
+  const [proveedor, setProveedor] = useState(neumatico.proveedor ?? "")
+  const [costo, setCosto] = useState(
+    neumatico.costo_unitario != null ? String(neumatico.costo_unitario) : ""
+  )
   const [urlsExistentes, setUrlsExistentes] = useState<string[]>(
     neumatico.factura_urls ?? [],
   )
@@ -1497,6 +1513,9 @@ function EditarCubiertaDialog({
       numero,
       marca,
       medida,
+      fecha_compra: fechaCompra || null,
+      proveedor,
+      costo_unitario: costo ? Number(costo) : null,
       factura_urls: [...urlsExistentes, ...nuevas],
     })
     setSaving(false)
@@ -1522,7 +1541,7 @@ function EditarCubiertaDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label className="text-xs text-muted-foreground">Número / serie</Label>
+              <Label className="text-xs text-muted-foreground">Código</Label>
               <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
             </div>
             <div>
@@ -1532,6 +1551,32 @@ function EditarCubiertaDialog({
             <div>
               <Label className="text-xs text-muted-foreground">Medida</Label>
               <Input value={medida} onChange={(e) => setMedida(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">Compra</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Fecha</Label>
+                <Input
+                  type="date"
+                  value={fechaCompra}
+                  onChange={(e) => setFechaCompra(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Proveedor</Label>
+                <Input value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Costo ($)</Label>
+                <Input
+                  type="number"
+                  value={costo}
+                  onChange={(e) => setCosto(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -1590,24 +1635,68 @@ function nombreDeFacturaUrl(url: string): string {
   }
 }
 
-function CargaMasivaDialog({
+/**
+ * Carga de cubiertas al stock — UNA sola pantalla para una o varias.
+ *
+ * Antes eran dos diálogos casi iguales ("Carga individual" y "Carga masiva") y el
+ * código de la cubierta aparecía con distinto nombre en cada uno. Ahora se elige
+ * cuántas se cargan y el resto del formulario es el mismo: datos de la cubierta,
+ * códigos, datos de la compra (fecha, proveedor y costo, que antes no se podían
+ * cargar) y la factura.
+ */
+function CargarCubiertasDialog({
   onClose,
   onDone,
 }: {
   onClose: () => void
   onDone: () => void
 }) {
-  const [tipo, setTipo] = useState<"nuevo" | "recapado">("nuevo")
+  const [cuantas, setCuantas] = useState<"una" | "varias">("una")
+  // Datos de la/s cubierta/s
+  const [tipo, setTipo] = useState<NeumaticoTipo>("nuevo")
   const [marca, setMarca] = useState("")
   const [medida, setMedida] = useState("")
   const [prof, setProf] = useState("")
-  const [modo, setModo] = useState<"cantidad" | "numeros">("cantidad")
+  // Códigos: uno en modo "una", varios (o solo cantidad) en modo "varias"
+  const [codigo, setCodigo] = useState("")
+  const [porCodigos, setPorCodigos] = useState(true)
+  const [codigos, setCodigos] = useState("")
   const [cantidad, setCantidad] = useState("4")
-  const [numeros, setNumeros] = useState("")
+  // Compra
+  const [fechaCompra, setFechaCompra] = useState(hoyLocalISO())
+  const [proveedor, setProveedor] = useState("")
+  const [costo, setCosto] = useState("")
   const [facturas, setFacturas] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
 
+  // Códigos tipeados (uno por línea o separados por coma), sin vacíos ni repetidos.
+  const listaCodigos = useMemo(() => {
+    if (cuantas === "una") return codigo.trim() ? [codigo.trim()] : []
+    return Array.from(
+      new Set(
+        codigos
+          .split(/[\n,;]+/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+      )
+    )
+  }, [cuantas, codigo, codigos])
+
+  const usaCodigos = cuantas === "una" || porCodigos
+  const total =
+    cuantas === "una"
+      ? 1
+      : usaCodigos
+        ? listaCodigos.length
+        : Math.max(0, Math.floor(Number(cantidad) || 0))
+  const costoNum = costo ? Number(costo) : null
+  const totalCompra = costoNum != null && total > 0 ? costoNum * total : null
+
   const guardar = async () => {
+    if (total < 1) {
+      toast.error(usaCodigos ? "Ingresá al menos un código" : "Ingresá la cantidad")
+      return
+    }
     setSaving(true)
     const facturaUrls = await subirFacturasNeumaticos(facturas)
     if (facturaUrls === null) {
@@ -1619,113 +1708,249 @@ function CargaMasivaDialog({
       marca,
       medida,
       profundidad_inicial_mm: prof ? Number(prof) : null,
-      cantidad: modo === "cantidad" ? Number(cantidad) : undefined,
-      numeros: modo === "numeros" ? numeros.split(/[\n,]+/) : undefined,
+      // Con códigos se crea una por código; sin códigos, por cantidad.
+      numeros: usaCodigos && listaCodigos.length > 0 ? listaCodigos : undefined,
+      cantidad: usaCodigos && listaCodigos.length > 0 ? undefined : total,
       factura_urls: facturaUrls,
+      fecha_compra: fechaCompra || null,
+      proveedor,
+      costo_unitario: costoNum,
     })
     setSaving(false)
     if ("error" in res) {
       toast.error(res.error)
       return
     }
-    toast.success(`${res.creados} cubierta(s) cargada(s) al stock`)
+    toast.success(
+      res.creados === 1 ? "Cubierta cargada al stock" : `${res.creados} cubiertas cargadas al stock`
+    )
     onDone()
   }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Carga masiva de cubiertas</DialogTitle>
+          <DialogTitle>Cargar cubiertas al stock</DialogTitle>
           <DialogDescription>
-            Ingresan al stock. Después las asignás a una unidad desde el diagrama.
+            Ingresan al stock; después se montan en una unidad desde el diagrama.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">Tipo</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo(v as "nuevo" | "recapado")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="nuevo">Nuevo</SelectItem>
-                  <SelectItem value="recapado">Recapado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Profundidad inicial (mm)</Label>
-              <Input
-                type="number"
-                step="0.1"
-                value={prof}
-                onChange={(e) => setProf(e.target.value)}
-                placeholder="ej. 14"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Marca</Label>
-              <Input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="ej. Firestone" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Medida</Label>
-              <Input value={medida} onChange={(e) => setMedida(e.target.value)} placeholder="ej. 295/80 R22.5" />
+
+        <div className="space-y-4">
+          {/* Cuántas se cargan */}
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { id: "una", label: "Una cubierta", sub: "con su código" },
+                { id: "varias", label: "Varias", sub: "un lote de la misma compra" },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setCuantas(o.id)}
+                className={cn(
+                  "rounded-md border px-3 py-2 text-left transition-colors",
+                  cuantas === o.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-muted"
+                )}
+              >
+                <p className="text-sm font-medium text-foreground">{o.label}</p>
+                <p className="text-xs text-muted-foreground">{o.sub}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Códigos */}
+          <div className="rounded-md border border-border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">
+              {cuantas === "una" ? "Código de la cubierta" : "Códigos del lote"}
+            </p>
+            {cuantas === "una" ? (
+              <div>
+                <Input
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value)}
+                  placeholder="ej. AB1234"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Opcional: si no lo tenés, la cubierta entra sin código y se lo podés poner
+                  después (al editarla o al montarla).
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={porCodigos ? "default" : "outline"}
+                    onClick={() => setPorCodigos(true)}
+                  >
+                    Con códigos
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!porCodigos ? "default" : "outline"}
+                    onClick={() => setPorCodigos(false)}
+                  >
+                    Solo cantidad
+                  </Button>
+                </div>
+                {porCodigos ? (
+                  <div>
+                    <Textarea
+                      rows={4}
+                      value={codigos}
+                      onChange={(e) => setCodigos(e.target.value)}
+                      placeholder={"AB123\nAB124\nAB125"}
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Uno por línea o separados por coma. Se crea una cubierta por código.
+                    </p>
+                    {listaCodigos.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {listaCodigos.map((c) => (
+                          <Badge key={c} variant="outline" className="text-[10px]">
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Cantidad</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={cantidad}
+                      onChange={(e) => setCantidad(e.target.value)}
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Entran sin código; se los cargás cuando las montés.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Datos de la cubierta */}
+          <div className="rounded-md border border-border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">
+              Datos de la cubierta
+              {cuantas === "varias" && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  (iguales para todo el lote)
+                </span>
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <Label className="text-xs text-muted-foreground">Estado</Label>
+                <Select value={tipo} onValueChange={(v) => setTipo((v as NeumaticoTipo) ?? "nuevo")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nuevo">Nuevo</SelectItem>
+                    <SelectItem value="recapado">Recapado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Marca</Label>
+                <Input
+                  value={marca}
+                  onChange={(e) => setMarca(e.target.value)}
+                  placeholder="Bridgestone"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Medida</Label>
+                <Input
+                  value={medida}
+                  onChange={(e) => setMedida(e.target.value)}
+                  placeholder="295/80R22.5"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Prof. inicial (mm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={prof}
+                  onChange={(e) => setProf(e.target.value)}
+                  placeholder="14"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2 pt-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={modo === "cantidad" ? "default" : "outline"}
-              onClick={() => setModo("cantidad")}
-            >
-              Por cantidad
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={modo === "numeros" ? "default" : "outline"}
-              onClick={() => setModo("numeros")}
-            >
-              Por números
-            </Button>
+          {/* Compra */}
+          <div className="rounded-md border border-border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">
+              Compra
+              <span className="ml-1 text-xs font-normal text-muted-foreground">(opcional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Fecha</Label>
+                <Input
+                  type="date"
+                  value={fechaCompra}
+                  onChange={(e) => setFechaCompra(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Proveedor / gomería</Label>
+                <Input
+                  value={proveedor}
+                  onChange={(e) => setProveedor(e.target.value)}
+                  placeholder="Gomería del Centro"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Costo por cubierta ($)</Label>
+                <Input
+                  type="number"
+                  value={costo}
+                  onChange={(e) => setCosto(e.target.value)}
+                  placeholder="520000"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <FacturaField files={facturas} onChange={setFacturas} />
+            </div>
           </div>
 
-          {modo === "cantidad" ? (
-            <div>
-              <Label className="text-xs text-muted-foreground">Cantidad de cubiertas</Label>
-              <Input
-                type="number"
-                min="1"
-                value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
-              />
-            </div>
-          ) : (
-            <div>
-              <Label className="text-xs text-muted-foreground">
-                Numeración (una por línea o separadas por coma)
-              </Label>
-              <Textarea
-                rows={4}
-                value={numeros}
-                onChange={(e) => setNumeros(e.target.value)}
-                placeholder={"AB123\nAB124\nAB125"}
-              />
-            </div>
-          )}
-
-          <FacturaField files={facturas} onChange={setFacturas} />
+          {/* Resumen de lo que se va a cargar */}
+          <div className="rounded-md border border-sky-200 bg-sky-50/70 px-3 py-2 text-sm">
+            <span className="font-medium text-sky-900">
+              {total} {total === 1 ? "cubierta" : "cubiertas"}
+            </span>
+            <span className="text-sky-800">
+              {" · "}
+              {tipo === "recapado" ? "Recapado" : "Nuevo"}
+              {marca ? ` · ${marca}` : ""}
+              {medida ? ` · ${medida}` : ""}
+              {prof ? ` · ${prof} mm` : ""}
+              {totalCompra != null ? ` · ${fmtMoney(totalCompra)} en total` : ""}
+            </span>
+          </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={guardar} disabled={saving}>
-            {saving ? "Guardando…" : "Cargar al stock"}
+          <Button onClick={guardar} disabled={saving || total < 1}>
+            {saving ? "Guardando…" : `Cargar ${total > 1 ? `${total} al stock` : "al stock"}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1733,123 +1958,6 @@ function CargaMasivaDialog({
   )
 }
 
-function CargaIndividualDialog({
-  onClose,
-  onDone,
-}: {
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [numero, setNumero] = useState("")
-  const [tipo, setTipo] = useState<"nuevo" | "recapado">("nuevo")
-  const [marca, setMarca] = useState("")
-  const [medida, setMedida] = useState("")
-  const [prof, setProf] = useState("")
-  const [facturas, setFacturas] = useState<File[]>([])
-  const [saving, setSaving] = useState(false)
-
-  const guardar = async () => {
-    setSaving(true)
-    const facturaUrls = await subirFacturasNeumaticos(facturas)
-    if (facturaUrls === null) {
-      setSaving(false)
-      return
-    }
-    const res = await crearNeumaticosMasivo({
-      tipo,
-      marca,
-      medida,
-      profundidad_inicial_mm: prof ? Number(prof) : null,
-      numeros: numero.trim() ? [numero.trim()] : undefined,
-      cantidad: numero.trim() ? undefined : 1,
-      factura_urls: facturaUrls,
-    })
-    setSaving(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    toast.success("Cubierta cargada al stock")
-    onDone()
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Carga individual de cubierta</DialogTitle>
-          <DialogDescription>
-            Ingresa al stock. Después la asignás a una unidad desde el diagrama.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label className="text-xs text-muted-foreground">Número / serie</Label>
-            <Input
-              value={numero}
-              onChange={(e) => setNumero(e.target.value)}
-              placeholder="ej. 1234"
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Tipo</Label>
-            <Select value={tipo} onValueChange={(v) => setTipo(v as "nuevo" | "recapado")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nuevo">Nuevo</SelectItem>
-                <SelectItem value="recapado">Recapado</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Marca</Label>
-            <Input
-              value={marca}
-              onChange={(e) => setMarca(e.target.value)}
-              placeholder="ej. Bridgestone M736"
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Medida</Label>
-            <Input
-              value={medida}
-              onChange={(e) => setMedida(e.target.value)}
-              placeholder="ej. 275/80R22.5"
-            />
-          </div>
-          <div className="col-span-2">
-            <Label className="text-xs text-muted-foreground">Profundidad inicial (mm)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={prof}
-              onChange={(e) => setProf(e.target.value)}
-              placeholder="ej. 14"
-            />
-          </div>
-          <div className="col-span-2">
-            <FacturaField files={facturas} onChange={setFacturas} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={guardar} disabled={saving}>
-            {saving ? "Guardando…" : "Cargar al stock"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ==================== Montaje / Desmontaje con arrastre ====================
-
-// Elemento que se está arrastrando (o quedó seleccionado con un toque):
-// una cubierta del stock (para montar) o una instalada en el diagrama (para
 // desmontar al stock).
 type MontajeItem =
   | { origen: "stock"; n: Neumatico }
@@ -1862,6 +1970,7 @@ function MontajeDialog({
   unidadInicial,
   neumaticos,
   kmFlota,
+  historialLecturas,
   onClose,
   onRefresh,
 }: {
@@ -1869,6 +1978,7 @@ function MontajeDialog({
   unidadInicial: string
   neumaticos: Neumatico[]
   kmFlota: Record<string, KmFlotaUnidad>
+  historialLecturas: Record<string, LecturaSugerida[]>
   onClose: () => void
   onRefresh: () => void
 }) {
@@ -2163,6 +2273,7 @@ function MontajeDialog({
       {posDialog && unidad && (
         <PosicionDialog
           unidad={unidad}
+          historial={historialLecturas[unidadSel] ?? []}
           pos={posDialog.pos}
           actual={posDialog.actual}
           stock={stock}
@@ -2338,6 +2449,7 @@ function GenerarOtNeumaticosDialog({
 
 function PosicionDialog({
   unidad,
+  historial,
   pos,
   actual,
   stock,
@@ -2348,6 +2460,8 @@ function PosicionDialog({
   onEditar,
 }: {
   unidad: UnidadFlota
+  /** Lecturas del último mes de la unidad (una por día). */
+  historial: LecturaSugerida[]
   pos: PosicionNeumatico
   actual: Neumatico | null
   stock: Neumatico[]
@@ -2370,9 +2484,14 @@ function PosicionDialog({
   const [medidaStock, setMedidaStock] = useState("")
   const [numeroStock, setNumeroStock] = useState("")
   const [facturas, setFacturas] = useState<File[]>([])
+  const [historialOpen, setHistorialOpen] = useState(false)
   // Los autoelevadores miden horas, no km (igual que en el resto del módulo).
   const mideHoras = unidad.tipo === "autoelevador"
   const labelLectura = mideHoras ? "Horómetro (hs)" : "Odómetro (km)"
+  // Para autoelevadores el horómetro se toma en el checklist.
+  const historialUnidad = mideHoras
+    ? historial.filter((h) => h.fuente === "checklist")
+    : historial
   // Carga directa (compra y colocación, sin pasar por stock)
   const [tipoNueva, setTipoNueva] = useState<NeumaticoTipo>("nuevo")
   const [numeroNueva, setNumeroNueva] = useState("")
@@ -2474,7 +2593,7 @@ function PosicionDialog({
 
             {modo === "nueva" ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <Label className="text-xs text-muted-foreground">Estado</Label>
                     <Select value={tipoNueva} onValueChange={(v) => setTipoNueva((v as NeumaticoTipo) ?? "nuevo")}>
@@ -2488,18 +2607,8 @@ function PosicionDialog({
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">N° de cubierta (opcional)</Label>
-                    <Input value={numeroNueva} onChange={(e) => setNumeroNueva(e.target.value)} placeholder="Ej: 45" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
                     <Label className="text-xs text-muted-foreground">Marca</Label>
                     <Input value={marcaNueva} onChange={(e) => setMarcaNueva(e.target.value)} placeholder="Fate" />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Medida</Label>
-                    <Input value={medidaNueva} onChange={(e) => setMedidaNueva(e.target.value)} placeholder="295/80R22.5" />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Prof. (mm)</Label>
@@ -2534,27 +2643,40 @@ function PosicionDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                {/* Al stock entran sin medida ni número: se completan acá. */}
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Medida</Label>
-                    <Input
-                      value={medidaStock}
-                      onChange={(e) => setMedidaStock(e.target.value)}
-                      placeholder="295/80R22.5"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Código (opcional)</Label>
-                    <Input
-                      value={numeroStock}
-                      onChange={(e) => setNumeroStock(e.target.value)}
-                      placeholder="Ej: 45"
-                    />
-                  </div>
-                </div>
               </div>
             )}
+
+            {/* Código y medida de la cubierta que se está montando. Al stock
+                entran sin estos datos y se conocen cuando el gomero la coloca,
+                así que se completan/corrigen acá, en los dos modos. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Código de la cubierta (opcional)
+                </Label>
+                <Input
+                  value={modo === "nueva" ? numeroNueva : numeroStock}
+                  onChange={(e) =>
+                    modo === "nueva"
+                      ? setNumeroNueva(e.target.value)
+                      : setNumeroStock(e.target.value)
+                  }
+                  placeholder="Ej: 45"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Medida</Label>
+                <Input
+                  value={modo === "nueva" ? medidaNueva : medidaStock}
+                  onChange={(e) =>
+                    modo === "nueva"
+                      ? setMedidaNueva(e.target.value)
+                      : setMedidaStock(e.target.value)
+                  }
+                  placeholder="295/80R22.5"
+                />
+              </div>
+            </div>
 
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -2566,8 +2688,14 @@ function PosicionDialog({
                 />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">{labelLectura}</Label>
-                <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
+                <Label className="text-xs text-muted-foreground">{labelLectura} (opcional)</Label>
+                <Input
+                  type="number"
+                  value={kmInst}
+                  onChange={(e) => setKmInst(e.target.value)}
+                  onFocus={() => setHistorialOpen(true)}
+                  placeholder="opcional"
+                />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Vida útil objetivo (km)</Label>
@@ -2579,6 +2707,20 @@ function PosicionDialog({
                 />
               </div>
             </div>
+            {/* Mismo historial de lecturas que en el alta de OT: al elegir un
+                día completa la fecha y el odómetro/horómetro. */}
+            <HistorialLecturasMes
+              open={historialOpen}
+              onToggle={() => setHistorialOpen((o) => !o)}
+              historial={historialUnidad}
+              unidad={mideHoras ? "hs" : "km"}
+              onElegir={(valor, fecha) => {
+                setKmInst(valor)
+                setFechaInst(fecha)
+              }}
+              destino="del montaje"
+            />
+
             <FacturaField files={facturas} onChange={setFacturas} />
             <p className="text-[11px] text-muted-foreground">
               Desde el {mideHoras ? "horómetro" : "km"} de instalación se estima cuánto falta para
