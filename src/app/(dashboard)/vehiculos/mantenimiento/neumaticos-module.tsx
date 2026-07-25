@@ -34,6 +34,7 @@ import {
   Crosshair,
   Gauge,
   Layers,
+  FileDown,
   Paperclip,
   Pencil,
   Plus,
@@ -1450,6 +1451,22 @@ function FacturaField({
   )
 }
 
+// Link para bajar un adjunto como PDF (si es una foto, el endpoint la mete en
+// una página A4; si ya es PDF lo pasa tal cual).
+function LinkFacturaPdf({ url }: { url: string }) {
+  return (
+    <a
+      href={`/api/vehiculos/neumaticos/factura-pdf?url=${encodeURIComponent(url)}`}
+      target="_blank"
+      rel="noreferrer"
+      title="Descargar en PDF"
+      className="inline-flex items-center gap-0.5 text-red-600 hover:underline"
+    >
+      <FileDown className="size-3" /> PDF
+    </a>
+  )
+}
+
 function EditarCubiertaDialog({
   neumatico,
   onClose,
@@ -1533,6 +1550,7 @@ function EditarCubiertaDialog({
                     >
                       {nombreDeFacturaUrl(url)}
                     </a>
+                    <LinkFacturaPdf url={url} />
                     <button
                       type="button"
                       className="text-destructive hover:underline"
@@ -2761,6 +2779,23 @@ function PosicionDialog({
                 }}
               />
             )}
+
+            {/* Comprobante del último movimiento de esta cubierta (montaje /
+                desmontaje / baja). Si no hay movimiento registrado, sale con los
+                datos actuales de la cubierta. */}
+            <Button
+              variant="outline"
+              className="w-full"
+              render={
+                <a
+                  href={`/api/vehiculos/neumaticos/${actual.id}/comprobante`}
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
+            >
+              <FileDown className="mr-1 size-4 text-red-600" /> Comprobante en PDF
+            </Button>
 
             <DialogFooter className="sm:justify-between">
               <Button

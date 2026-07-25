@@ -184,6 +184,48 @@ export async function actualizarNeumatico(input: {
 }
 
 /**
+ * Deja registrado un movimiento de la cubierta (montaje / desmontaje / baja).
+ * De acá sale el comprobante en PDF. Nunca lanza: si falla el registro, la
+ * operación sobre la cubierta ya se hizo y no se puede deshacer por esto.
+ */
+async function registrarMovimientoNeumatico(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  mov: {
+    neumatico_id: string
+    tipo: "montaje" | "desmontaje" | "baja"
+    dominio?: string | null
+    posicion?: string | null
+    eje?: EjeNeumatico | null
+    fecha?: string | null
+    km?: number | null
+    medida?: string | null
+    numero?: string | null
+    factura_urls?: string[] | null
+    observaciones?: string | null
+    created_by?: string | null
+  }
+): Promise<void> {
+  try {
+    await supabase.from("mantenimiento_neumatico_movimientos").insert({
+      neumatico_id: mov.neumatico_id,
+      tipo: mov.tipo,
+      dominio: mov.dominio ?? null,
+      posicion: mov.posicion ?? null,
+      eje: mov.eje ?? null,
+      fecha: mov.fecha || new Date().toISOString().slice(0, 10),
+      km: mov.km ?? null,
+      medida: mov.medida?.trim() || null,
+      numero: mov.numero?.trim() || null,
+      factura_urls: mov.factura_urls?.length ? mov.factura_urls : null,
+      observaciones: mov.observaciones?.trim() || null,
+      created_by: mov.created_by ?? null,
+    })
+  } catch (e) {
+    console.error("Registrar movimiento de neumático:", e)
+  }
+}
+
+/**
  * Instala una cubierta del stock en una unidad/posición.
  *
  * Los datos de la cubierta (código, medida, factura) se pueden completar/corregir
@@ -206,7 +248,7 @@ export async function asignarNeumatico(input: {
   factura_urls?: string[] | null
 }): Promise<{ success: true } | { error: string }> {
   try {
-    await requireRole(["admin", "supervisor"])
+    const profileMontaje = await requireRole(["admin", "supervisor"])
     if (!input.dominio || !input.posicion) return { error: "Falta unidad o posición" }
     const supabase = await createClient()
 
@@ -250,6 +292,20 @@ export async function asignarNeumatico(input: {
       .update(patch)
       .eq("id", input.id)
     if (error) return { error: error.message }
+
+    await registrarMovimientoNeumatico(supabase, {
+      neumatico_id: input.id,
+      tipo: "montaje",
+      dominio: input.dominio.toUpperCase(),
+      posicion: input.posicion,
+      eje: input.eje,
+      fecha: input.fecha_instalacion,
+      km: input.km_instalacion ?? null,
+      medida: input.medida ?? null,
+      numero: input.numero ?? null,
+      factura_urls: input.factura_urls ?? null,
+      created_by: profileMontaje.id,
+    })
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -290,24 +346,45 @@ export async function crearYColocarNeumatico(input: {
       .maybeSingle()
     if (ocupa) return { error: "Esa posición ya tiene una cubierta instalada" }
 
-    const { error } = await supabase.from("mantenimiento_neumaticos").insert({
-      tipo: input.tipo,
-      numero: input.numero?.trim() || null,
-      marca: input.marca?.trim() || null,
-      medida: input.medida?.trim() || null,
-      profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
-      profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
-      estado: "instalado",
-      dominio: input.dominio.toUpperCase(),
-      posicion: input.posicion,
-      eje: input.eje,
-      km_instalacion: input.km_instalacion ?? null,
-      vida_util_km: input.vida_util_km ?? null,
-      fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
-      factura_urls: input.factura_urls?.length ? input.factura_urls : null,
-      created_by: profile.id,
-    })
+    const { data: creada, error } = await supabase
+      .from("mantenimiento_neumaticos")
+      .insert({
+        tipo: input.tipo,
+        numero: input.numero?.trim() || null,
+        marca: input.marca?.trim() || null,
+        medida: input.medida?.trim() || null,
+        profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
+        profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
+        estado: "instalado",
+        dominio: input.dominio.toUpperCase(),
+        posicion: input.posicion,
+        eje: input.eje,
+        km_instalacion: input.km_instalacion ?? null,
+        vida_util_km: input.vida_util_km ?? null,
+        fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
+        factura_urls: input.factura_urls?.length ? input.factura_urls : null,
+        created_by: profile.id,
+      })
+      .select("id")
+      .single()
     if (error) return { error: error.message }
+
+    if (creada?.id) {
+      await registrarMovimientoNeumatico(supabase, {
+        neumatico_id: creada.id,
+        tipo: "montaje",
+        dominio: input.dominio.toUpperCase(),
+        posicion: input.posicion,
+        eje: input.eje,
+        fecha: input.fecha_instalacion,
+        km: input.km_instalacion ?? null,
+        medida: input.medida ?? null,
+        numero: input.numero ?? null,
+        factura_urls: input.factura_urls ?? null,
+        observaciones: "Compra y colocación en el momento (no pasó por el stock)",
+        created_by: profile.id,
+      })
+    }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -319,8 +396,15 @@ export async function quitarNeumatico(input: {
   id: string
 }): Promise<{ success: true } | { error: string }> {
   try {
-    await requireRole(["admin", "supervisor"])
+    const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+    // Dónde estaba puesta: al pasar al stock se limpia, así que se lee antes
+    // para poder dejarlo en el movimiento (y en su comprobante).
+    const { data: previa } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select("dominio, posicion, eje, numero, medida, factura_urls")
+      .eq("id", input.id)
+      .maybeSingle()
     const { error } = await supabase
       .from("mantenimiento_neumaticos")
       .update({
@@ -333,6 +417,19 @@ export async function quitarNeumatico(input: {
       })
       .eq("id", input.id)
     if (error) return { error: error.message }
+
+    await registrarMovimientoNeumatico(supabase, {
+      neumatico_id: input.id,
+      tipo: "desmontaje",
+      dominio: previa?.dominio ?? null,
+      posicion: previa?.posicion ?? null,
+      eje: previa?.eje ?? null,
+      numero: previa?.numero ?? null,
+      medida: previa?.medida ?? null,
+      factura_urls: previa?.factura_urls ?? null,
+      observaciones: "Desmontada al stock",
+      created_by: profile.id,
+    })
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
@@ -346,9 +443,14 @@ export async function darDeBajaNeumatico(input: {
   fecha_baja?: string
 }): Promise<{ success: true } | { error: string }> {
   try {
-    await requireRole(["admin", "supervisor"])
+    const profile = await requireRole(["admin", "supervisor"])
     if (!input.motivo?.trim()) return { error: "Indicá el motivo de baja" }
     const supabase = await createClient()
+    const { data: previa } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select("dominio, posicion, eje, numero, medida, factura_urls")
+      .eq("id", input.id)
+      .maybeSingle()
     const { error } = await supabase
       .from("mantenimiento_neumaticos")
       .update({
@@ -362,6 +464,20 @@ export async function darDeBajaNeumatico(input: {
       })
       .eq("id", input.id)
     if (error) return { error: error.message }
+
+    await registrarMovimientoNeumatico(supabase, {
+      neumatico_id: input.id,
+      tipo: "baja",
+      dominio: previa?.dominio ?? null,
+      posicion: previa?.posicion ?? null,
+      eje: previa?.eje ?? null,
+      numero: previa?.numero ?? null,
+      medida: previa?.medida ?? null,
+      factura_urls: previa?.factura_urls ?? null,
+      fecha: input.fecha_baja,
+      observaciones: input.motivo,
+      created_by: profile.id,
+    })
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
