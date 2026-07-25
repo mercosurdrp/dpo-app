@@ -29,7 +29,6 @@ import {
 import {
   ArrowDownToLine,
   ArrowRight,
-  ArrowUpFromLine,
   CircleDot,
   ClipboardPlus,
   Crosshair,
@@ -198,7 +197,7 @@ export function NeumaticosModule({
   const [detalleResumen, setDetalleResumen] = useState<
     "stock" | "instaladas" | "criticas" | "bajas" | null
   >(null)
-  const [montajeModo, setMontajeModo] = useState<"montar" | "desmontar" | null>(null)
+  const [montajeOpen, setMontajeOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
   const [posDialog, setPosDialog] = useState<{
     pos: PosicionNeumatico
@@ -324,11 +323,10 @@ export function NeumaticosModule({
 
       {puedeEditar && (
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" onClick={() => setMontajeModo("montar")}>
-            <ArrowDownToLine className="mr-1 size-4" /> Montar neumáticos
-          </Button>
-          <Button variant="outline" onClick={() => setMontajeModo("desmontar")}>
-            <ArrowUpFromLine className="mr-1 size-4" /> Desmontar
+          {/* Un solo acceso: adentro se elige qué hacer con cada posición
+              (montar del stock, cargar una nueva o desmontar). */}
+          <Button variant="outline" onClick={() => setMontajeOpen(true)}>
+            <ArrowDownToLine className="mr-1 size-4" /> Montar / desmontar
           </Button>
           <Button variant="outline" onClick={() => setIndividualOpen(true)}>
             <Plus className="mr-1 size-4" /> Carga individual
@@ -716,14 +714,13 @@ export function NeumaticosModule({
           onClose={() => setDetalleResumen(null)}
         />
       )}
-      {montajeModo && (
+      {montajeOpen && (
         <MontajeDialog
-          modo={montajeModo}
           unidades={unidades}
           unidadInicial={unidadSel}
           neumaticos={neumaticos}
           kmFlota={kmFlota}
-          onClose={() => setMontajeModo(null)}
+          onClose={() => setMontajeOpen(false)}
           onRefresh={refresh}
         />
       )}
@@ -1843,7 +1840,6 @@ type MontajeItem =
 // Pantalla de montaje/desmontaje: diagrama de la unidad + panel de stock al
 // costado. Se opera arrastrando (mouse o dedo) o tocando cubierta y destino.
 function MontajeDialog({
-  modo,
   unidades,
   unidadInicial,
   neumaticos,
@@ -1851,7 +1847,6 @@ function MontajeDialog({
   onClose,
   onRefresh,
 }: {
-  modo: "montar" | "desmontar"
   unidades: UnidadFlota[]
   unidadInicial: string
   neumaticos: Neumatico[]
@@ -1879,9 +1874,15 @@ function MontajeDialog({
   const [drag, setDrag] = useState<MontajeItem | null>(null)
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null)
   const [sel, setSel] = useState<MontajeItem | null>(null)
-  // Posición vacía tocada sin cubierta seleccionada → carga directa (compra
-  // y colocación en el momento, sin pasar por el stock).
-  const [cargaPos, setCargaPos] = useState<PosicionNeumatico | null>(null)
+  // Posición tocada → diálogo de acciones (montar del stock / cargar una nueva /
+  // medir / desmontar). Es el MISMO diálogo del diagrama principal, así no hay
+  // dos formularios distintos para lo mismo.
+  const [posDialog, setPosDialog] = useState<{
+    pos: PosicionNeumatico
+    actual: Neumatico | null
+  } | null>(null)
+  // "Editar" desde el diálogo de la posición (datos de la cubierta / factura).
+  const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
 
   const montar = async (n: Neumatico, pos: PosicionNeumatico) => {
     if (!unidad || saving) return
@@ -1945,7 +1946,13 @@ function MontajeDialog({
     const up = (ev: PointerEvent) => {
       limpiar()
       if (!dragging) {
-        // Toque: seleccionar (o deseleccionar si ya estaba)
+        // Toque en una cubierta ya montada: abre el diálogo de acciones de esa
+        // posición. En el stock sigue siendo "seleccionar y tocar el destino".
+        if (item.origen === "diagrama" && item.pos) {
+          setSel(null)
+          setPosDialog({ pos: item.pos, actual: item.n })
+          return
+        }
         setSel((prev) => (prev && prev.n.id === item.n.id ? null : item))
         return
       }
@@ -1977,14 +1984,13 @@ function MontajeDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {modo === "montar" ? "Montar neumáticos" : "Desmontar neumáticos"}
-            {unidad ? ` · ${unidad.dominio}` : ""}
+            Montar / desmontar neumáticos{unidad ? ` · ${unidad.dominio}` : ""}
           </DialogTitle>
           <DialogDescription>
-            Deslizá una cubierta del stock a una posición vacía para montarla, o una del
-            camión hacia el panel de stock para desmontarla. También podés tocar la
-            cubierta y después tocar el destino. Si no tenés stock (compra en el
-            momento), tocá directo una posición vacía y cargala ahí.
+            Tocá una posición del diagrama y elegí qué hacer: montar una del stock,
+            cargar una nueva comprada en el momento o desmontar la que está puesta.
+            También podés arrastrar una cubierta del stock a una posición (o al revés,
+            hacia el panel de stock, para desmontarla).
           </DialogDescription>
         </DialogHeader>
 
@@ -2050,9 +2056,9 @@ function MontajeDialog({
                     data-drop={`pos:${p.code}`}
                     onClick={() => {
                       if (sel?.origen === "stock") void montar(sel.n, p)
-                      else if (!sel) setCargaPos(p)
+                      else if (!sel) setPosDialog({ pos: p, actual: null })
                     }}
-                    title={`${p.label} · vacía — soltá una cubierta del stock o tocá para cargar una nueva`}
+                    title={`${p.label} · vacía — tocá para elegir qué montar, o soltá una cubierta del stock`}
                     style={{ left: `${p.x}%`, top: `${p.y}%` }}
                     className={cn(
                       "absolute -translate-x-1/2 -translate-y-1/2 rounded-lg",
@@ -2135,15 +2141,37 @@ function MontajeDialog({
         </DialogFooter>
       </DialogContent>
 
-      {/* Carga directa en una posición vacía (compra en el momento) */}
-      {cargaPos && unidad && (
-        <CargaEnPosicionDialog
+      {/* Acciones de la posición tocada (montar / cargar / medir / desmontar) */}
+      {posDialog && unidad && (
+        <PosicionDialog
           unidad={unidad}
-          pos={cargaPos}
+          pos={posDialog.pos}
+          actual={posDialog.actual}
+          stock={stock}
           kmActual={kmU.kmActual}
-          onClose={() => setCargaPos(null)}
+          vida={
+            posDialog.actual
+              ? vidaNeumatico(posDialog.actual, kmU.kmActual, kmU.kmDia)
+              : null
+          }
+          onClose={() => setPosDialog(null)}
           onDone={() => {
-            setCargaPos(null)
+            setPosDialog(null)
+            onRefresh()
+          }}
+          onEditar={(n) => {
+            setPosDialog(null)
+            setEditNeu(n)
+          }}
+        />
+      )}
+
+      {editNeu && (
+        <EditarCubiertaDialog
+          neumatico={editNeu}
+          onClose={() => setEditNeu(null)}
+          onDone={() => {
+            setEditNeu(null)
             onRefresh()
           }}
         />
@@ -2168,139 +2196,6 @@ function MontajeDialog({
           </div>,
           document.body
         )}
-    </Dialog>
-  )
-}
-
-// Carga directa en una posición vacía desde la pantalla de montaje: la
-// cubierta se compra en el momento y se coloca sin pasar por el stock
-// (misma acción `crearYColocarNeumatico` que ofrece el diagrama principal).
-function CargaEnPosicionDialog({
-  unidad,
-  pos,
-  kmActual,
-  onClose,
-  onDone,
-}: {
-  unidad: UnidadFlota
-  pos: PosicionNeumatico
-  kmActual: number | null
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [tipo, setTipo] = useState<NeumaticoTipo>("nuevo")
-  const [numero, setNumero] = useState("")
-  const [marca, setMarca] = useState("")
-  const [medida, setMedida] = useState("")
-  const [prof, setProf] = useState("")
-  const [fecha, setFecha] = useState(hoyLocalISO())
-  const [kmInst, setKmInst] = useState(
-    kmActual != null ? String(Math.round(kmActual)) : ""
-  )
-  const [vidaUtil, setVidaUtil] = useState("")
-  const [saving, setSaving] = useState(false)
-  const vidaDefault = VIDA_UTIL_DEFAULT_KM[tipo] ?? null
-
-  const guardar = async () => {
-    setSaving(true)
-    const res = await crearYColocarNeumatico({
-      dominio: unidad.dominio,
-      posicion: pos.code,
-      eje: pos.eje,
-      tipo,
-      numero,
-      marca,
-      medida,
-      profundidad_inicial_mm: prof ? Number(prof) : null,
-      km_instalacion: kmInst ? Number(kmInst) : null,
-      vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
-      fecha_instalacion: fecha || undefined,
-    })
-    setSaving(false)
-    if ("error" in res) toast.error(res.error)
-    else {
-      toast.success(`Cubierta cargada e instalada en ${pos.label}`)
-      onDone()
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            Cargar cubierta · {unidad.dominio} posición {pos.label}{" "}
-            <Badge variant="outline" className="ml-1 align-middle text-[10px]">
-              {pos.eje ?? "libre"}
-            </Badge>
-          </DialogTitle>
-          <DialogDescription>
-            Compra y colocación en el momento: la cubierta queda instalada acá, sin
-            pasar por el stock.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">Estado</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo((v as NeumaticoTipo) ?? "nuevo")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="nuevo">Nuevo</SelectItem>
-                  <SelectItem value="recapado">Recapado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">N° de cubierta (opcional)</Label>
-              <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ej: 45" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">Marca</Label>
-              <Input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Fate" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Medida</Label>
-              <Input value={medida} onChange={(e) => setMedida(e.target.value)} placeholder="295/80R22.5" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Prof. (mm)</Label>
-              <Input type="number" step="0.1" value={prof} onChange={(e) => setProf(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">Fecha de colocación</Label>
-              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Km de instalación</Label>
-              <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Vida útil (km)</Label>
-              <Input
-                type="number"
-                value={vidaUtil}
-                onChange={(e) => setVidaUtil(e.target.value)}
-                placeholder={vidaDefault != null ? `${vidaDefault} (default)` : "—"}
-              />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={guardar} disabled={saving}>
-            {saving ? "Guardando…" : "Cargar e instalar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
     </Dialog>
   )
 }
@@ -2450,6 +2345,16 @@ function PosicionDialog({
   const [stockSel, setStockSel] = useState("")
   const [kmInst, setKmInst] = useState(kmActual != null ? String(Math.round(kmActual)) : "")
   const [vidaUtil, setVidaUtil] = useState("")
+  // Fecha del montaje: las cubiertas se cargan seguido con fecha retroactiva
+  // (la factura del gomero llega después), así que es editable.
+  const [fechaInst, setFechaInst] = useState(hoyLocalISO())
+  // Datos que muchas veces se conocen recién cuando el gomero la coloca.
+  const [medidaStock, setMedidaStock] = useState("")
+  const [numeroStock, setNumeroStock] = useState("")
+  const [facturas, setFacturas] = useState<File[]>([])
+  // Los autoelevadores miden horas, no km (igual que en el resto del módulo).
+  const mideHoras = unidad.tipo === "autoelevador"
+  const labelLectura = mideHoras ? "Horómetro (hs)" : "Odómetro (km)"
   // Carga directa (compra y colocación, sin pasar por stock)
   const [tipoNueva, setTipoNueva] = useState<NeumaticoTipo>("nuevo")
   const [numeroNueva, setNumeroNueva] = useState("")
@@ -2476,6 +2381,31 @@ function PosicionDialog({
   const wrap = async (fn: () => Promise<{ success: true } | { error: string }>, ok: string) => {
     setSaving(true)
     const res = await fn()
+    setSaving(false)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(ok)
+      onDone()
+    }
+  }
+
+  // Igual que wrap, pero sube primero la factura adjunta (si hay) y le pasa las
+  // URLs a la acción. Si la subida falla, no se guarda nada.
+  const wrapConFactura = async (
+    fn: (facturaUrls: string[] | null) => Promise<{ success: true } | { error: string }>,
+    ok: string
+  ) => {
+    setSaving(true)
+    let urls: string[] | null = null
+    if (facturas.length > 0) {
+      const subidas = await subirFacturasNeumaticos(facturas)
+      if (subidas === null) {
+        setSaving(false)
+        return
+      }
+      urls = subidas
+    }
+    const res = await fn(urls)
     setSaving(false)
     if ("error" in res) toast.error(res.error)
     else {
@@ -2562,7 +2492,16 @@ function PosicionDialog({
             ) : (
               <div>
                 <Label className="text-xs text-muted-foreground">Cubierta del stock</Label>
-                <Select value={stockSel} onValueChange={(v) => setStockSel(v ?? "")}>
+                <Select
+                  value={stockSel}
+                  onValueChange={(v) => {
+                    const id = v ?? ""
+                    setStockSel(id)
+                    const n = stock.find((x) => x.id === id)
+                    setMedidaStock(n?.medida ?? "")
+                    setNumeroStock(n?.numero ?? "")
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder={stock.length ? "Elegí una cubierta" : "Sin stock"} />
                   </SelectTrigger>
@@ -2577,12 +2516,39 @@ function PosicionDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Al stock entran sin medida ni número: se completan acá. */}
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Medida</Label>
+                    <Input
+                      value={medidaStock}
+                      onChange={(e) => setMedidaStock(e.target.value)}
+                      placeholder="295/80R22.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Código (opcional)</Label>
+                    <Input
+                      value={numeroStock}
+                      onChange={(e) => setNumeroStock(e.target.value)}
+                      placeholder="Ej: 45"
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label className="text-xs text-muted-foreground">Km de instalación</Label>
+                <Label className="text-xs text-muted-foreground">Fecha</Label>
+                <Input
+                  type="date"
+                  value={fechaInst}
+                  onChange={(e) => setFechaInst(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">{labelLectura}</Label>
                 <Input type="number" value={kmInst} onChange={(e) => setKmInst(e.target.value)} />
               </div>
               <div>
@@ -2595,10 +2561,11 @@ function PosicionDialog({
                 />
               </div>
             </div>
+            <FacturaField files={facturas} onChange={setFacturas} />
             <p className="text-[11px] text-muted-foreground">
-              Desde el km de instalación se estima cuánto falta para el cambio. Si dejás la vida
-              útil vacía, usa el default por tipo (nuevo {VIDA_UTIL_DEFAULT_KM.nuevo} / recapado{" "}
-              {VIDA_UTIL_DEFAULT_KM.recapado} km).
+              Desde el {mideHoras ? "horómetro" : "km"} de instalación se estima cuánto falta para
+              el cambio. Si dejás la vida útil vacía, usa el default por tipo (nuevo{" "}
+              {VIDA_UTIL_DEFAULT_KM.nuevo} / recapado {VIDA_UTIL_DEFAULT_KM.recapado} km).
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
@@ -2608,8 +2575,8 @@ function PosicionDialog({
                 <Button
                   disabled={saving}
                   onClick={() =>
-                    wrap(
-                      () =>
+                    wrapConFactura(
+                      (facturaUrls) =>
                         crearYColocarNeumatico({
                           dominio: unidad.dominio,
                           posicion: pos.code,
@@ -2621,6 +2588,8 @@ function PosicionDialog({
                           profundidad_inicial_mm: profNueva ? Number(profNueva) : null,
                           km_instalacion: kmInst ? Number(kmInst) : null,
                           vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
+                          fecha_instalacion: fechaInst || undefined,
+                          factura_urls: facturaUrls,
                         }),
                       "Cubierta cargada e instalada"
                     )
@@ -2632,8 +2601,8 @@ function PosicionDialog({
                 <Button
                   disabled={saving || !stockSel}
                   onClick={() =>
-                    wrap(
-                      () =>
+                    wrapConFactura(
+                      (facturaUrls) =>
                         asignarNeumatico({
                           id: stockSel,
                           dominio: unidad.dominio,
@@ -2641,6 +2610,10 @@ function PosicionDialog({
                           eje: pos.eje,
                           km_instalacion: kmInst ? Number(kmInst) : null,
                           vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,
+                          fecha_instalacion: fechaInst || undefined,
+                          numero: numeroStock,
+                          medida: medidaStock,
+                          factura_urls: facturaUrls,
                         }),
                       "Cubierta instalada"
                     )

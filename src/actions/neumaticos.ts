@@ -183,7 +183,14 @@ export async function actualizarNeumatico(input: {
   }
 }
 
-/** Instala una cubierta del stock en una unidad/posición. */
+/**
+ * Instala una cubierta del stock en una unidad/posición.
+ *
+ * Los datos de la cubierta (código, medida, factura) se pueden completar/corregir
+ * en el mismo momento del montaje: en la práctica se cargan al stock sin medida ni
+ * número y recién se conocen cuando el gomero la coloca. Si no vienen, se deja lo
+ * que ya tenía.
+ */
 export async function asignarNeumatico(input: {
   id: string
   dominio: string
@@ -192,6 +199,11 @@ export async function asignarNeumatico(input: {
   km_instalacion?: number | null
   vida_util_km?: number | null
   fecha_instalacion?: string
+  /** Código / N° de la cubierta (opcional). */
+  numero?: string | null
+  medida?: string | null
+  /** Facturas a agregar a las que ya tenga la cubierta. */
+  factura_urls?: string[] | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
@@ -209,20 +221,33 @@ export async function asignarNeumatico(input: {
       .maybeSingle()
     if (ocupa) return { error: "Esa posición ya tiene una cubierta instalada" }
 
+    const patch: Record<string, unknown> = {
+      dominio: input.dominio.toUpperCase(),
+      posicion: input.posicion,
+      eje: input.eje,
+      km_instalacion: input.km_instalacion ?? null,
+      vida_util_km: input.vida_util_km ?? null,
+      estado: "instalado",
+      fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
+      fecha_baja: null,
+      motivo_baja: null,
+      updated_at: new Date().toISOString(),
+    }
+    // Datos de la cubierta que se completan al montarla (solo si vienen).
+    if (input.numero !== undefined && input.numero?.trim()) patch.numero = input.numero.trim()
+    if (input.medida !== undefined && input.medida?.trim()) patch.medida = input.medida.trim()
+    if (input.factura_urls?.length) {
+      const { data: previa } = await supabase
+        .from("mantenimiento_neumaticos")
+        .select("factura_urls")
+        .eq("id", input.id)
+        .maybeSingle()
+      patch.factura_urls = [...(previa?.factura_urls ?? []), ...input.factura_urls]
+    }
+
     const { error } = await supabase
       .from("mantenimiento_neumaticos")
-      .update({
-        dominio: input.dominio.toUpperCase(),
-        posicion: input.posicion,
-        eje: input.eje,
-        km_instalacion: input.km_instalacion ?? null,
-        vida_util_km: input.vida_util_km ?? null,
-        estado: "instalado",
-        fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
-        fecha_baja: null,
-        motivo_baja: null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq("id", input.id)
     if (error) return { error: error.message }
     return { success: true }
@@ -247,6 +272,8 @@ export async function crearYColocarNeumatico(input: {
   km_instalacion?: number | null
   vida_util_km?: number | null
   fecha_instalacion?: string
+  /** Factura de compra (foto o PDF). */
+  factura_urls?: string[] | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -277,6 +304,7 @@ export async function crearYColocarNeumatico(input: {
       km_instalacion: input.km_instalacion ?? null,
       vida_util_km: input.vida_util_km ?? null,
       fecha_instalacion: input.fecha_instalacion ?? new Date().toISOString().slice(0, 10),
+      factura_urls: input.factura_urls?.length ? input.factura_urls : null,
       created_by: profile.id,
     })
     if (error) return { error: error.message }
