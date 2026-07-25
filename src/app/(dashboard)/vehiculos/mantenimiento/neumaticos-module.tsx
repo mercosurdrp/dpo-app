@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -230,6 +231,7 @@ export function NeumaticosModule({
     pos: PosicionNeumatico
     actual: Neumatico | null
   } | null>(null)
+  const [tabUnidad, setTabUnidad] = useState("diagrama")
 
   const stock = useMemo(
     () => neumaticos.filter((n) => n.estado === "stock"),
@@ -291,6 +293,17 @@ export function NeumaticosModule({
     }
     return { cambiar, proximo }
   }, [vidaPorId])
+
+  // OT de neumáticos de la unidad elegida (ya vienen cargadas contra su patente).
+  const ordenesUnidad = useMemo(
+    () => ordenes.filter((o) => o.dominio === unidadSel),
+    [ordenes, unidadSel]
+  )
+  // Cubiertas de esta unidad (para sus compras y costos).
+  const cubiertasUnidad = useMemo(
+    () => neumaticos.filter((n) => n.dominio === unidadSel),
+    [neumaticos, unidadSel]
+  )
 
   // Rotaciones de la unidad (el estado de la próxima se calcula en el diagrama,
   // que es quien conoce el intervalo de la acción elegida).
@@ -412,24 +425,52 @@ export function NeumaticosModule({
                 />
               </div>
 
-              {/* Un solo diagrama + selector de acción al costado (cubiertas /
-                  rotación / alineación / balanceo). */}
-              <DiagramaConAcciones
-                unidad={unidad}
-                layout={layout}
-                porPosicion={porPosicion}
-                kmActual={kmUnidad.kmActual}
-                kmDia={kmUnidad.kmDia}
-                rotaciones={rotacionesUnidad}
-                alineaciones={alineacionesUnidad}
-                intervalos={intervalos}
-                intervaloGlobalKm={rotacionKm}
-                puedeEditar={puedeEditar}
-                onPos={(pos) =>
-                  puedeEditar && setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
-                }
-                onRefresh={refresh}
-              />
+              {/* Todo lo de la unidad en pestañas: el diagrama, sus OT de
+                  neumáticos y sus compras. Antes esas dos eran tablas globales al
+                  pie de la página y la hacían larguísima. */}
+              <Tabs value={tabUnidad} onValueChange={setTabUnidad}>
+                <TabsList>
+                  <TabsTrigger value="diagrama">Diagrama</TabsTrigger>
+                  <TabsTrigger value="ot">
+                    Órdenes de trabajo ({ordenesUnidad.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="compras">
+                    Compras y costos ({cubiertasUnidad.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="diagrama" className="pt-4">
+                  <DiagramaConAcciones
+                    unidad={unidad}
+                    layout={layout}
+                    porPosicion={porPosicion}
+                    kmActual={kmUnidad.kmActual}
+                    kmDia={kmUnidad.kmDia}
+                    rotaciones={rotacionesUnidad}
+                    alineaciones={alineacionesUnidad}
+                    intervalos={intervalos}
+                    intervaloGlobalKm={rotacionKm}
+                    puedeEditar={puedeEditar}
+                    onPos={(pos) =>
+                      puedeEditar &&
+                      setPosDialog({ pos, actual: porPosicion.get(pos.code) ?? null })
+                    }
+                    onRefresh={refresh}
+                  />
+                </TabsContent>
+
+                <TabsContent value="ot" className="pt-4">
+                  <OrdenesNeumaticosPanel
+                    ordenes={ordenesUnidad}
+                    tareasById={tareasById}
+                    reprogramadas={reprogramadas}
+                  />
+                </TabsContent>
+
+                <TabsContent value="compras" className="pt-4">
+                  <ComprasCubiertasPanel neumaticos={cubiertasUnidad} />
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </CardContent>
@@ -576,16 +617,6 @@ export function NeumaticosModule({
         </Card>
       )}
 
-      {/* OT de neumáticos (separadas de las de mantenimiento general) */}
-      <OrdenesNeumaticosCard
-        ordenes={ordenes}
-        tareasById={tareasById}
-        reprogramadas={reprogramadas}
-      />
-
-      {/* Compras y costos de cubiertas */}
-      <ComprasCubiertasCard neumaticos={neumaticos} />
-
       {/* Stock */}
       <Card>
         <CardHeader className="pb-3">
@@ -684,6 +715,19 @@ export function NeumaticosModule({
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-medium">
+                  <td className="py-2" colSpan={6}>
+                    Invertido en stock
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {fmtMoney(
+                      stock.reduce((a, n) => a + Number(n.costo_unitario ?? 0), 0)
+                    )}
+                  </td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
             </table>
           )}
         </CardContent>
@@ -989,12 +1033,12 @@ function InspeccionMensualCard({
 // ==================== OT de neumáticos ====================
 
 /**
- * Órdenes de trabajo de cubiertas: las que se generan desde acá (rotación,
- * alineación, balanceo) y cualquier trabajo de neumáticos —reparación, recapado,
- * gomería—. Viven en esta solapa y NO en la de Órdenes de Trabajo, que queda para
- * el mantenimiento general de la unidad.
+ * Órdenes de trabajo de cubiertas DE LA UNIDAD: las que se generan desde acá
+ * (rotación, alineación, balanceo) y cualquier trabajo de neumáticos —reparación,
+ * recapado, gomería—. No hay filtro de unidad: ya se cargan contra su patente y
+ * este panel vive dentro de la unidad elegida.
  */
-function OrdenesNeumaticosCard({
+function OrdenesNeumaticosPanel({
   ordenes,
   tareasById,
   reprogramadas,
@@ -1004,135 +1048,157 @@ function OrdenesNeumaticosCard({
   reprogramadas: MantenimientoTareaReprogramada[]
 }) {
   const [ver, setVer] = useState<MantenimientoRealizado | null>(null)
-  const [fDominio, setFDominio] = useState("todos")
+  const [fMes, setFMes] = useState("todos")
+  const [fTipo, setFTipo] = useState("todos")
 
-  const dominios = useMemo(
-    () => Array.from(new Set(ordenes.map((o) => o.dominio))).sort(),
+  const meses = useMemo(
+    () =>
+      Array.from(new Set(ordenes.map((o) => o.fecha.slice(0, 7)))).sort((a, b) =>
+        b.localeCompare(a)
+      ),
     [ordenes]
   )
+
   const filtradas = useMemo(
     () =>
       ordenes
-        .filter((o) => fDominio === "todos" || o.dominio === fDominio)
+        .filter(
+          (o) =>
+            (fMes === "todos" || o.fecha.slice(0, 7) === fMes) &&
+            (fTipo === "todos" || o.tipo === fTipo)
+        )
         .sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    [ordenes, fDominio]
+    [ordenes, fMes, fTipo]
   )
-  const total = useMemo(
-    () => filtradas.reduce((a, o) => a + costoTotalOt(o), 0),
-    [filtradas]
-  )
+  const total = useMemo(() => filtradas.reduce((a, o) => a + costoTotalOt(o), 0), [filtradas])
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardPlus className="size-4 text-muted-foreground" /> Órdenes de trabajo de
-            neumáticos ({filtradas.length})
-          </CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Rotación, alineación, balanceo, reparaciones y recapados. El resto del mantenimiento
-            está en la solapa <span className="font-medium text-foreground">Órdenes de Trabajo</span>.
-          </p>
-        </div>
-        {dominios.length > 1 && (
-          <Select value={fDominio} onValueChange={(v) => setFDominio(v ?? "todos")}>
-            <SelectTrigger className="w-40">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Rotación, alineación, balanceo, reparaciones y recapados de esta unidad. El resto del
+          mantenimiento está en la solapa{" "}
+          <span className="font-medium text-foreground">Órdenes de Trabajo</span>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Select value={fMes} onValueChange={(v) => setFMes(v ?? "todos")}>
+            <SelectTrigger className="w-40 capitalize">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todas las unidades</SelectItem>
-              {dominios.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
+              <SelectItem value="todos">Todas las fechas</SelectItem>
+              {meses.map((ym) => (
+                <SelectItem key={ym} value={ym} className="capitalize">
+                  {fmtMesLargo(ym)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {filtradas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No hay órdenes de trabajo de neumáticos cargadas.
-          </p>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2">Fecha</th>
-                    <th>Unidad</th>
-                    <th>N° OT</th>
-                    <th>Trabajo</th>
-                    <th>Taller</th>
-                    <th>Tipo</th>
-                    <th>Estado</th>
-                    <th className="text-right">Costo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtradas.map((o, i) => (
-                    <tr
-                      key={o.id}
-                      onClick={() => setVer(o)}
-                      title="Ver la orden de trabajo"
-                      className={cn(
-                        "cursor-pointer border-b last:border-0 hover:bg-sky-50",
-                        i % 2 === 1 && "bg-muted/40"
-                      )}
-                    >
-                      <td className="py-2 font-medium">{fmtFecha(o.fecha)}</td>
-                      <td className="font-medium">{o.dominio}</td>
-                      <td className="text-muted-foreground">{o.numero_ot || "—"}</td>
-                      <td className="max-w-[18rem] truncate text-muted-foreground">
-                        {o.observaciones ||
-                          o.tareas
-                            ?.map((t) =>
-                              t.tarea_id ? tareasById.get(t.tarea_id)?.nombre : t.descripcion
-                            )
-                            .filter(Boolean)
-                            .join(", ") ||
-                          "—"}
-                      </td>
-                      <td className="text-muted-foreground">{o.taller || "—"}</td>
-                      <td>
-                        <Badge variant="outline" className={cn("text-xs", TIPO_MANT_BADGE[o.tipo])}>
-                          {TIPO_MANT_LABEL[o.tipo]}
-                        </Badge>
-                      </td>
-                      <td>
-                        <Badge
-                          variant="outline"
-                          className={cn("text-xs", ESTADO_MANT_BADGE[o.estado])}
-                        >
-                          {MANTENIMIENTO_ESTADO_LABELS[o.estado]}
-                        </Badge>
-                      </td>
-                      <td className="text-right tabular-nums">
-                        {fmtMoney(costoTotalOt(o))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 font-medium">
-                    <td className="py-2" colSpan={7}>
-                      Total
+          <Select value={fTipo} onValueChange={(v) => setFTipo(v ?? "todos")}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todo tipo</SelectItem>
+              <SelectItem value="preventivo">Preventivo</SelectItem>
+              <SelectItem value="correctivo">Correctivo</SelectItem>
+              <SelectItem value="proactivo">Proactivo</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {filtradas.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {ordenes.length === 0
+            ? "Esta unidad no tiene órdenes de trabajo de neumáticos."
+            : "Ninguna orden coincide con los filtros."}
+        </p>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2">Fecha</th>
+                  <th>N° OT</th>
+                  <th>Trabajo</th>
+                  <th>Taller</th>
+                  <th>Tipo</th>
+                  <th>Estado</th>
+                  <th>Factura</th>
+                  <th className="text-right">Costo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtradas.map((o, i) => (
+                  <tr
+                    key={o.id}
+                    onClick={() => setVer(o)}
+                    title="Ver la orden de trabajo"
+                    className={cn(
+                      "cursor-pointer border-b last:border-0 hover:bg-sky-50",
+                      i % 2 === 1 && "bg-muted/40"
+                    )}
+                  >
+                    <td className="py-2 font-medium">{fmtFecha(o.fecha)}</td>
+                    <td className="text-muted-foreground">{o.numero_ot || "—"}</td>
+                    <td className="max-w-[18rem] truncate text-muted-foreground">
+                      {o.observaciones ||
+                        o.tareas
+                          ?.map((t) =>
+                            t.tarea_id ? tareasById.get(t.tarea_id)?.nombre : t.descripcion
+                          )
+                          .filter(Boolean)
+                          .join(", ") ||
+                        "—"}
                     </td>
-                    <td className="text-right tabular-nums">{fmtMoney(total)}</td>
+                    <td className="text-muted-foreground">{o.taller || "—"}</td>
+                    <td>
+                      <Badge variant="outline" className={cn("text-xs", TIPO_MANT_BADGE[o.tipo])}>
+                        {TIPO_MANT_LABEL[o.tipo]}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge
+                        variant="outline"
+                        className={cn("text-xs", ESTADO_MANT_BADGE[o.estado])}
+                      >
+                        {MANTENIMIENTO_ESTADO_LABELS[o.estado]}
+                      </Badge>
+                    </td>
+                    <td>
+                      {(o.evidencia_urls?.length ?? 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                          <Paperclip className="size-3" />
+                          {o.evidencia_urls!.length > 1
+                            ? `${o.evidencia_urls!.length} adj.`
+                            : "Sí"}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/60">sin factura</span>
+                      )}
+                    </td>
+                    <td className="text-right tabular-nums">{fmtMoney(costoTotalOt(o))}</td>
                   </tr>
-                </tfoot>
-              </table>
-            </div>
-            <p className="text-[11px] text-muted-foreground/80">
-              Click en una fila para ver la orden completa (tareas, repuestos, factura, Excel y
-              PDF). Para editarla, entrá desde la solapa Órdenes de Trabajo.
-            </p>
-          </>
-        )}
-      </CardContent>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-medium">
+                  <td className="py-2" colSpan={7}>
+                    Total
+                  </td>
+                  <td className="text-right tabular-nums">{fmtMoney(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="text-[11px] text-muted-foreground/80">
+            Click en una fila para ver la orden completa: tareas, repuestos, la factura adjunta,
+            Excel y PDF. Para editarla, entrá desde la solapa Órdenes de Trabajo.
+          </p>
+        </>
+      )}
 
       {ver && (
         <DetalleOrdenDialog
@@ -1144,7 +1210,7 @@ function OrdenesNeumaticosCard({
           onEditar={() => setVer(null)}
         />
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -1216,20 +1282,41 @@ function agruparCompras(neumaticos: Neumatico[]): CompraCubiertas[] {
   )
 }
 
-function ComprasCubiertasCard({ neumaticos }: { neumaticos: Neumatico[] }) {
-  const compras = useMemo(() => agruparCompras(neumaticos), [neumaticos])
-  const conCosto = compras.filter((c) => c.total != null)
+function ComprasCubiertasPanel({ neumaticos }: { neumaticos: Neumatico[] }) {
+  const [fMes, setFMes] = useState("todos")
+  const [fTipo, setFTipo] = useState("todos")
+  const [ver, setVer] = useState<CompraCubiertas | null>(null)
+
+  const todas = useMemo(() => agruparCompras(neumaticos), [neumaticos])
+
+  const meses = useMemo(
+    () =>
+      Array.from(
+        new Set(todas.filter((c) => c.fecha).map((c) => c.fecha!.slice(0, 7)))
+      ).sort((a, b) => b.localeCompare(a)),
+    [todas]
+  )
+
+  const compras = useMemo(
+    () =>
+      todas.filter(
+        (c) =>
+          (fMes === "todos" || c.fecha?.slice(0, 7) === fMes) &&
+          (fTipo === "todos" || c.tipo === fTipo)
+      ),
+    [todas, fMes, fTipo]
+  )
 
   const mesActual = hoyLocalISO().slice(0, 7)
   const anioActual = hoyLocalISO().slice(0, 4)
   const resumen = useMemo(() => {
     let mes = 0
     let anio = 0
-    let totalGeneral = 0
+    let totalFiltrado = 0
     let cubiertasConCosto = 0
     for (const c of compras) {
       if (c.total == null) continue
-      totalGeneral += c.total
+      totalFiltrado += c.total
       cubiertasConCosto += c.cantidad
       if (c.fecha?.slice(0, 7) === mesActual) mes += c.total
       if (c.fecha?.slice(0, 4) === anioActual) anio += c.total
@@ -1237,8 +1324,8 @@ function ComprasCubiertasCard({ neumaticos }: { neumaticos: Neumatico[] }) {
     return {
       mes,
       anio,
-      totalGeneral,
-      promedio: cubiertasConCosto > 0 ? totalGeneral / cubiertasConCosto : null,
+      totalFiltrado,
+      promedio: cubiertasConCosto > 0 ? totalFiltrado / cubiertasConCosto : null,
       cubiertasConCosto,
     }
   }, [compras, mesActual, anioActual])
@@ -1246,119 +1333,238 @@ function ComprasCubiertasCard({ neumaticos }: { neumaticos: Neumatico[] }) {
   const sinCosto = compras.reduce((a, c) => a + (c.total == null ? c.cantidad : 0), 0)
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <CircleDollarSign className="size-4 text-muted-foreground" /> Compras y costos de
-          cubiertas
-        </CardTitle>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          El costo se carga por unidad; acá cada compra muestra su total (unitario × cantidad).
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Cubiertas de esta unidad. El costo se carga por unidad; cada compra muestra su total
+          (precio unitario × cantidad).
         </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {compras.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Todavía no hay cubiertas cargadas.
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <ResumenCosto label="Gasto del mes" valor={fmtMoney(resumen.mes)} />
-              <ResumenCosto label={`Gasto ${anioActual}`} valor={fmtMoney(resumen.anio)} />
-              <ResumenCosto label="Total cargado" valor={fmtMoney(resumen.totalGeneral)} />
-              <ResumenCosto
-                label="Promedio por cubierta"
-                valor={resumen.promedio != null ? fmtMoney(resumen.promedio) : "—"}
-                sub={`${resumen.cubiertasConCosto} con costo${
-                  sinCosto > 0 ? ` · ${sinCosto} sin cargar` : ""
-                }`}
-              />
-            </div>
+        <div className="flex flex-wrap gap-2">
+          <Select value={fMes} onValueChange={(v) => setFMes(v ?? "todos")}>
+            <SelectTrigger className="w-40 capitalize">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas las fechas</SelectItem>
+              {meses.map((ym) => (
+                <SelectItem key={ym} value={ym} className="capitalize">
+                  {fmtMesLargo(ym)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={fTipo} onValueChange={(v) => setFTipo(v ?? "todos")}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Nuevas y recapadas</SelectItem>
+              <SelectItem value="nuevo">Nuevas</SelectItem>
+              <SelectItem value="recapado">Recapadas</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2">Fecha</th>
-                    <th>Proveedor</th>
-                    <th>Cubierta</th>
-                    <th className="text-right">Cant.</th>
-                    <th className="text-right">Precio unitario</th>
-                    <th className="text-right">Total</th>
-                    <th>Códigos</th>
-                    <th>Factura</th>
+      {compras.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {todas.length === 0
+            ? "Esta unidad no tiene cubiertas cargadas."
+            : "Ninguna compra coincide con los filtros."}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <ResumenCosto label="Gasto del mes" valor={fmtMoney(resumen.mes)} />
+            <ResumenCosto label={`Gasto ${anioActual}`} valor={fmtMoney(resumen.anio)} />
+            <ResumenCosto label="Total (filtrado)" valor={fmtMoney(resumen.totalFiltrado)} />
+            <ResumenCosto
+              label="Promedio por cubierta"
+              valor={resumen.promedio != null ? fmtMoney(resumen.promedio) : "—"}
+              sub={`${resumen.cubiertasConCosto} con costo${
+                sinCosto > 0 ? ` · ${sinCosto} sin cargar` : ""
+              }`}
+            />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2">Fecha</th>
+                  <th>Proveedor</th>
+                  <th>Cubierta</th>
+                  <th className="text-right">Cant.</th>
+                  <th className="text-right">Precio unitario</th>
+                  <th className="text-right">Total</th>
+                  <th>Factura</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compras.map((c, i) => (
+                  <tr
+                    key={c.clave}
+                    onClick={() => setVer(c)}
+                    title="Ver la compra"
+                    className={cn(
+                      "cursor-pointer border-b last:border-0 hover:bg-sky-50",
+                      i % 2 === 1 && "bg-muted/40"
+                    )}
+                  >
+                    <td className="py-2 font-medium">{fmtFecha(c.fecha)}</td>
+                    <td className="text-muted-foreground">{c.proveedor || "—"}</td>
+                    <td className="text-muted-foreground">
+                      {[TIPO_LABEL[c.tipo], c.marca, c.medida].filter(Boolean).join(" · ")}
+                    </td>
+                    <td className="text-right tabular-nums">{c.cantidad}</td>
+                    <td className="text-right tabular-nums text-muted-foreground">
+                      {c.costoUnitario != null ? fmtMoney(c.costoUnitario) : "—"}
+                    </td>
+                    <td className="text-right font-medium tabular-nums text-foreground">
+                      {c.total != null ? fmtMoney(c.total) : "—"}
+                    </td>
+                    <td>
+                      {c.facturas.length > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                          <Paperclip className="size-3" />
+                          {c.facturas.length > 1 ? `${c.facturas.length} adj.` : "Sí"}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/60">sin factura</span>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {compras.map((c, i) => (
-                    <tr
-                      key={c.clave}
-                      className={cn("border-b last:border-0", i % 2 === 1 && "bg-muted/40")}
-                    >
-                      <td className="py-2 font-medium">{fmtFecha(c.fecha)}</td>
-                      <td className="text-muted-foreground">{c.proveedor || "—"}</td>
-                      <td className="text-muted-foreground">
-                        {[TIPO_LABEL[c.tipo], c.marca, c.medida].filter(Boolean).join(" · ")}
-                      </td>
-                      <td className="text-right tabular-nums">{c.cantidad}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">
-                        {c.costoUnitario != null ? fmtMoney(c.costoUnitario) : "—"}
-                      </td>
-                      <td className="text-right font-medium tabular-nums text-foreground">
-                        {c.total != null ? fmtMoney(c.total) : "—"}
-                      </td>
-                      <td className="max-w-[14rem] truncate text-xs text-muted-foreground">
-                        {c.codigos.length > 0 ? c.codigos.join(", ") : "sin código"}
-                      </td>
-                      <td>
-                        {c.facturas.length > 0 ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            {c.facturas.map((url, fi) => (
-                              <span key={url} className="inline-flex items-center gap-1">
-                                <a
-                                  href={url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
-                                >
-                                  <Paperclip className="size-3" />
-                                  {c.facturas.length > 1 ? fi + 1 : "Ver"}
-                                </a>
-                                <LinkFacturaPdf url={url} />
-                              </span>
-                            ))}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/60">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {conCosto.length > 0 && (
-                  <tfoot>
-                    <tr className="border-t-2 font-medium">
-                      <td className="py-2" colSpan={3}>
-                        Total
-                      </td>
-                      <td className="text-right tabular-nums">
-                        {compras.reduce((a, c) => a + c.cantidad, 0)}
-                      </td>
-                      <td />
-                      <td className="text-right tabular-nums text-foreground">
-                        {fmtMoney(resumen.totalGeneral)}
-                      </td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 font-medium">
+                  <td className="py-2" colSpan={3}>
+                    Total
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {compras.reduce((a, c) => a + c.cantidad, 0)}
+                  </td>
+                  <td />
+                  <td className="text-right tabular-nums">{fmtMoney(resumen.totalFiltrado)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="text-[11px] text-muted-foreground/80">
+            Click en una fila para ver la compra completa: códigos de las cubiertas y la factura
+            cargada.
+          </p>
+        </>
+      )}
+
+      {ver && <DetalleCompraDialog compra={ver} onClose={() => setVer(null)} />}
+    </div>
+  )
+}
+
+// Detalle de una compra: qué se compró, a quién, cuánto y con qué factura.
+function DetalleCompraDialog({
+  compra: c,
+  onClose,
+}: {
+  compra: CompraCubiertas
+  onClose: () => void
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CircleDollarSign className="size-4 text-muted-foreground" /> Compra de cubiertas
+          </DialogTitle>
+          <DialogDescription>{fmtFecha(c.fecha)}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 text-sm">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">Proveedor</dt>
+              <dd className="font-medium text-foreground">{c.proveedor || "—"}</dd>
             </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">Cubiertas</dt>
+              <dd className="text-foreground">
+                {c.cantidad} · {TIPO_LABEL[c.tipo]}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">Marca / medida</dt>
+              <dd className="text-foreground">
+                {[c.marca, c.medida].filter(Boolean).join(" · ") || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">Precio unitario</dt>
+              <dd className="tabular-nums text-foreground">
+                {c.costoUnitario != null ? fmtMoney(c.costoUnitario) : "—"}
+              </dd>
+            </div>
+            <div className="col-span-2">
+              <dt className="text-xs font-medium text-muted-foreground">
+                Total de la compra ({c.cantidad} × precio unitario)
+              </dt>
+              <dd className="text-lg font-bold tabular-nums text-foreground">
+                {c.total != null ? fmtMoney(c.total) : "—"}
+              </dd>
+            </div>
+          </dl>
+
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              Códigos de las cubiertas
+            </p>
+            {c.codigos.length === 0 ? (
+              <p className="text-muted-foreground/70">Se cargaron sin código.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {c.codigos.map((cod) => (
+                  <Badge key={cod} variant="outline" className="text-[11px]">
+                    {cod}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Factura</p>
+            {c.facturas.length === 0 ? (
+              <p className="text-muted-foreground/70">No tiene factura cargada.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {c.facturas.map((url) => (
+                  <span
+                    key={url}
+                    className="inline-flex items-center gap-2 rounded-md border bg-white px-2 py-1 text-xs"
+                  >
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                    >
+                      <Paperclip className="size-3" />
+                      {nombreDeFacturaUrl(url)}
+                    </a>
+                    <LinkFacturaPdf url={url} />
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose}>Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
