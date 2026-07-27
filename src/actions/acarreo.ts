@@ -19,10 +19,13 @@ export interface RecepcionPendiente {
   origen: string | null
   remito: string | null
   pallets: number | null
-  estado: "anunciado" | "ingresado" | "descargando"
+  // "finalizado" = descarga terminada pero el camión sigue en planta,
+  // esperando que le den la salida del almacén.
+  estado: "anunciado" | "ingresado" | "descargando" | "finalizado"
   hora_arribo: string
   hora_ingreso_deposito: string | null
   hora_inicio_descarga: string | null
+  hora_fin_descarga: string | null
 }
 
 export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[]>> {
@@ -37,8 +40,9 @@ export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[
 
     const { data, error } = await acarreo
       .from("recepcion_acarreos")
-      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_ingreso_deposito, hora_inicio_descarga")
-      .in("estado", ["anunciado", "ingresado", "descargando"])
+      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_ingreso_deposito, hora_inicio_descarga, hora_fin_descarga")
+      // "finalizado" sigue en la lista: el camión está en planta hasta que le dan la salida.
+      .in("estado", ["anunciado", "ingresado", "descargando", "finalizado"])
       .order("hora_arribo", { ascending: true })
 
     if (error) return { error: error.message }
@@ -95,6 +99,26 @@ export async function ingresarDepositoAcarreo(id: string): Promise<{ error?: str
   const { error } = await acarreo
     .from("recepcion_acarreos")
     .update({ estado: "ingresado", registrado_por: profile.email })
+    .eq("id", id)
+  if (error) return { error: error.message }
+  return {}
+}
+
+// Salida del almacén: el camión se retira de planta. Cierra la estadía total
+// (arribo → salida), distinta del tiempo del SLA (arribo → fin de descarga).
+// Acción reservada, igual que el ingreso a depósito.
+export async function marcarSalidaAcarreo(id: string): Promise<{ error?: string }> {
+  const profile = await requireAuth()
+  if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
+  if (!puedeDarIngreso(profile.role, profile.email)) {
+    return { error: "No tenés permiso para marcar la salida del almacén." }
+  }
+  const acarreo = createAcarreoClient()
+  if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
+  // El trigger de la tabla sella hora_salida.
+  const { error } = await acarreo
+    .from("recepcion_acarreos")
+    .update({ estado: "salido" })
     .eq("id", id)
   if (error) return { error: error.message }
   return {}

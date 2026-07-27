@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, Trash2, Tv, QrCode, Download } from "lucide-react"
+import { Truck, Clock, Package, MapPin, FileText, PlayCircle, CheckCircle2, LogIn, LogOut, Trash2, Tv, QrCode, Download } from "lucide-react"
 import {
   getPendientesAcarreo,
   ingresarDepositoAcarreo,
   iniciarDescargaAcarreo,
   finalizarDescargaAcarreo,
+  marcarSalidaAcarreo,
   borrarRecepcionAcarreo,
   type RecepcionPendiente,
 } from "@/actions/acarreo"
@@ -84,7 +85,7 @@ export function RecepcionClient({
             Recepción de acarreos
           </h1>
           <p className="text-sm text-slate-500">
-            Camiones anunciados y en descarga. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–2h · 🔴 &gt;2h.
+            Camiones en planta: desde el arribo hasta la salida del almacén. El tiempo se actualiza solo. 🟢 &lt;1h · 🟡 1–2h · 🔴 &gt;2h.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -162,7 +163,13 @@ export function RecepcionClient({
             const color = semaforo(estadiaMin)
             const c = ESTILO[color]
             const estadoLabel =
-              r.estado === "descargando" ? "Descargando" : r.estado === "ingresado" ? "En depósito" : "Anunciado"
+              r.estado === "finalizado"
+                ? "Esperando salida"
+                : r.estado === "descargando"
+                  ? "Descargando"
+                  : r.estado === "ingresado"
+                    ? "En depósito"
+                    : "Anunciado"
             return (
               <div key={r.id} className={`rounded-xl border p-4 shadow-sm ${c.card}`}>
                 <div className="flex items-start justify-between">
@@ -186,6 +193,8 @@ export function RecepcionClient({
                 <div className="mt-3 space-y-1 text-sm text-slate-600">
                   <Linea icon={<Clock className="size-3.5" />} t={`Arribo ${horaHHmm(r.hora_arribo)}`} />
                   {r.hora_ingreso_deposito && <Linea icon={<LogIn className="size-3.5" />} t={`Ingreso ${horaHHmm(r.hora_ingreso_deposito)}`} />}
+                  {r.hora_inicio_descarga && <Linea icon={<PlayCircle className="size-3.5" />} t={`Inicio descarga ${horaHHmm(r.hora_inicio_descarga)}`} />}
+                  {r.hora_fin_descarga && <Linea icon={<CheckCircle2 className="size-3.5" />} t={`Fin descarga ${horaHHmm(r.hora_fin_descarga)}`} />}
                   {r.transportista && <Linea icon={<Truck className="size-3.5" />} t={r.transportista} />}
                   {r.origen && <Linea icon={<MapPin className="size-3.5" />} t={r.origen} />}
                   {r.remito && <Linea icon={<FileText className="size-3.5" />} t={`Remito ${r.remito}`} />}
@@ -242,6 +251,26 @@ export function RecepcionClient({
                     >
                       <CheckCircle2 className="size-4" /> Finalizar
                     </button>
+                  )}
+                  {r.estado === "finalizado" && puedeIngreso && (
+                    <button
+                      disabled={pending}
+                      onClick={() =>
+                        start(async () => {
+                          const res = await marcarSalidaAcarreo(r.id)
+                          if (res.error) toast.error(res.error)
+                          await refrescar()
+                        })
+                      }
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
+                    >
+                      <LogOut className="size-4" /> Salida del almacén
+                    </button>
+                  )}
+                  {r.estado === "finalizado" && !puedeIngreso && (
+                    <span className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs italic text-slate-500">
+                      Descarga terminada · esperando salida
+                    </span>
                   )}
                   {esAdmin && (
                     <button
