@@ -5,6 +5,7 @@ import {
   addMonths,
   daysBetween,
   fetchLecturas,
+  KM_DIA_MAX_PLAUSIBLE,
   today,
   type Lectura,
 } from "@/lib/vehiculos/lecturas"
@@ -293,10 +294,6 @@ export function computeServiceGeneral(params: {
 
   return out
 }
-
-// Cota máxima de km/día plausible: por encima se considera lectura errónea
-// (típicamente un cero de más tipeado en el checklist).
-const KM_DIA_MAX_PLAUSIBLE = 1500
 
 /**
  * Km actual ROBUSTO por dominio: replica el criterio de "últ. registro" de la

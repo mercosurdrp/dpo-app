@@ -480,10 +480,21 @@ export function resumenHorasHorometro(
   }
 }
 
+// Cota máxima de km/día plausible: por encima se considera lectura errónea
+// (típicamente un dígito de más tipeado en el checklist o en el registro).
+export const KM_DIA_MAX_PLAUSIBLE = 1500
+
 /**
  * Km actual de cada dominio: odómetro máximo "limpio" (descarta retrocesos
  * tomando la secuencia cronológica y quedándose con el máximo creciente).
  * Devuelve también la fecha de la última lectura usada.
+ *
+ * 🚨 Descarta además los SALTOS IMPOSIBLES (> KM_DIA_MAX_PLAUSIBLE por día
+ * respecto de la última lectura aceptada). Sin ese filtro, un solo dedazo queda
+ * pegado para siempre porque acá gana el máximo histórico: el 15/07/2026 se
+ * cargó 1.030.694 km en el checklist del AE908DG (real: 103.069) y el módulo de
+ * Neumáticos pasó a creer que las cubiertas habían rodado 956.000 km, así que
+ * las marcaba TODAS en rojo. Mismo criterio que `kmActualRobustoPorDominio`.
  */
 export function kmActualPorDominio(
   lecturas: Lectura[]
@@ -501,7 +512,14 @@ export function kmActualPorDominio(
     })
     let max = -Infinity
     let fecha = ""
+    // Última lectura ACEPTADA, para medir el salto contra ella.
+    let prev: { odometro: number; fecha: string } | null = null
     for (const l of arr) {
+      if (prev != null && l.odometro >= prev.odometro) {
+        const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
+        if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue
+      }
+      prev = { odometro: l.odometro, fecha: l.fecha }
       if (l.odometro >= max) {
         max = l.odometro
         fecha = l.fecha
