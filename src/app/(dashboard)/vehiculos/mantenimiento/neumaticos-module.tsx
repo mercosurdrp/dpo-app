@@ -136,6 +136,8 @@ interface Props {
   /** Catálogo de talleres/gomerías compartido con el resto del módulo. */
   proveedores: MantenimientoProveedor[]
   onProveedorCreado: (p: MantenimientoProveedor) => void
+  /** Abre el diálogo de edición de OT (vive en MantenimientoClient). */
+  onEditarOrden: (m: MantenimientoRealizado) => void
   puedeEditar: boolean
 }
 
@@ -221,6 +223,7 @@ export function NeumaticosModule({
   reprogramadas,
   proveedores,
   onProveedorCreado,
+  onEditarOrden,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -478,6 +481,8 @@ export function NeumaticosModule({
                     ordenes={ordenesUnidad}
                     tareasById={tareasById}
                     reprogramadas={reprogramadas}
+                    puedeEditar={puedeEditar}
+                    onEditarOrden={onEditarOrden}
                   />
                 </TabsContent>
 
@@ -1065,10 +1070,14 @@ function OrdenesNeumaticosPanel({
   ordenes,
   tareasById,
   reprogramadas,
+  puedeEditar,
+  onEditarOrden,
 }: {
   ordenes: MantenimientoRealizado[]
   tareasById: Map<string, MantenimientoPlanTarea>
   reprogramadas: MantenimientoTareaReprogramada[]
+  puedeEditar: boolean
+  onEditarOrden: (m: MantenimientoRealizado) => void
 }) {
   const [ver, setVer] = useState<MantenimientoRealizado | null>(null)
   const [fMes, setFMes] = useState("todos")
@@ -1218,7 +1227,7 @@ function OrdenesNeumaticosPanel({
           </div>
           <p className="text-[11px] text-muted-foreground/80">
             Click en una fila para ver la orden completa: tareas, repuestos, la factura adjunta,
-            Excel y PDF. Para editarla, entrá desde la solapa Órdenes de Trabajo.
+            Excel y PDF.{puedeEditar ? " Desde el detalle podés editarla y adjuntar la factura." : ""}
           </p>
         </>
       )}
@@ -1228,9 +1237,13 @@ function OrdenesNeumaticosPanel({
           mantenimiento={ver}
           tareasById={tareasById}
           reprogramadas={reprogramadas.filter((r) => r.mantenimiento_id === ver.id)}
-          puedeEditar={false}
+          puedeEditar={puedeEditar}
           onClose={() => setVer(null)}
-          onEditar={() => setVer(null)}
+          onEditar={() => {
+            const m = ver
+            setVer(null)
+            onEditarOrden(m)
+          }}
         />
       )}
     </div>

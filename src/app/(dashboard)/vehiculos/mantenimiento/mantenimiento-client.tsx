@@ -711,6 +711,7 @@ export function MantenimientoClient({
             reprogramadas={reprogramadas}
             proveedores={provList}
             onProveedorCreado={agregarProveedor}
+            onEditarOrden={(m) => setEditMant(m)}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
