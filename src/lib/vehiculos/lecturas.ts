@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
+// Misma cota que usa la validación de carga (validar-lectura.ts), para que lo
+// que se rechaza al cargar y lo que se descarta al leer sean el mismo criterio.
+export { KM_DIA_MAX_PLAUSIBLE } from "@/lib/vehiculos/validar-lectura"
+import { KM_DIA_MAX_PLAUSIBLE } from "@/lib/vehiculos/validar-lectura"
 
 // Helpers compartidos para reconstruir la actividad de la flota a partir de
 // las 3 fuentes de odómetro: registros_vehiculos, checklist_vehiculos y
@@ -480,10 +484,6 @@ export function resumenHorasHorometro(
   }
 }
 
-// Cota máxima de km/día plausible: por encima se considera lectura errónea
-// (típicamente un dígito de más tipeado en el checklist o en el registro).
-export const KM_DIA_MAX_PLAUSIBLE = 1500
-
 /**
  * Km actual de cada dominio: odómetro máximo "limpio" (descarta retrocesos
  * tomando la secuencia cronológica y quedándose con el máximo creciente).
@@ -514,7 +514,11 @@ export function kmActualPorDominio(
     let fecha = ""
     // Última lectura ACEPTADA, para medir el salto contra ella.
     let prev: { odometro: number; fecha: string } | null = null
-    for (const l of arr) {
+    // La primera lectura no tiene contra qué compararse: si es muy superior a
+    // la siguiente, es ella la errónea (si no, un outlier al inicio de la
+    // ventana quedaría como km actual y bloquearía las cargas siguientes).
+    const desde = arr.length >= 2 && arr[0].odometro > arr[1].odometro * 1.2 ? 1 : 0
+    for (const l of arr.slice(desde)) {
       if (prev != null && l.odometro >= prev.odometro) {
         const dias = Math.max(1, daysBetween(prev.fecha, l.fecha))
         if ((l.odometro - prev.odometro) / dias > KM_DIA_MAX_PLAUSIBLE) continue

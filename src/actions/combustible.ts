@@ -3,6 +3,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { validarLitros } from "@/lib/vehiculos/combustible-limites"
+import { validarLectura } from "@/lib/vehiculos/validar-lectura"
+import { addDays, fetchLecturas, kmActualPorDominio } from "@/lib/vehiculos/lecturas"
 import type {
   RegistroCombustible,
   RendimientoSemanal,
@@ -32,6 +34,22 @@ export async function createRegistroCombustible(
     const errorLitros = validarLitros(input.litros)
     if (errorLitros) return { error: errorLitros }
     const supabase = await createClient()
+
+    // 🚨 Odómetro mal tipeado: se rechaza antes de guardar. Además de romper el
+    // rendimiento (km recorridos), la lectura queda como km actual de la unidad
+    // y descoloca el plan de mantenimiento y el estado de las cubiertas.
+    const dominioNorm = input.dominio.trim().toUpperCase()
+    const lecturasPrevias = await fetchLecturas({
+      dominio: dominioNorm,
+      fechaDesde: addDays(input.fecha, -120),
+      fechaHasta: input.fecha,
+    })
+    const errorLectura = validarLectura({
+      valor: input.odometro,
+      previa: kmActualPorDominio(lecturasPrevias).get(dominioNorm) ?? null,
+      fecha: input.fecha,
+    })
+    if (errorLectura) return { error: errorLectura }
 
     // Find previous record for same vehicle to calculate km_recorridos
     const { data: prevRecord } = await supabase

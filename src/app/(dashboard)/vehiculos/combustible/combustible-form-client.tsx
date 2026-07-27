@@ -21,15 +21,25 @@ import type {
 } from "@/types/database"
 import { VEHICULO_SECTOR_LABELS } from "@/types/database"
 import { LITROS_MAX, validarLitros } from "@/lib/vehiculos/combustible-limites"
+import {
+  validarLectura,
+  type LecturaPrevia,
+} from "@/lib/vehiculos/validar-lectura"
 import { Fuel, Loader2, Gauge } from "lucide-react"
 import { createRegistroCombustible } from "@/actions/combustible"
 
 interface Props {
   vehiculos: CatalogoVehiculo[]
   choferes: CatalogoChofer[]
+  /** Última lectura conocida por dominio, para validar el odómetro al tipearlo. */
+  ultimasLecturas: Record<string, LecturaPrevia>
 }
 
-export function CombustibleFormClient({ vehiculos, choferes }: Props) {
+export function CombustibleFormClient({
+  vehiculos,
+  choferes,
+  ultimasLecturas,
+}: Props) {
   const router = useRouter()
   const [sectorFiltro, setSectorFiltro] = useState<VehiculoSector | "todos">(
     "todos"
@@ -43,6 +53,20 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
   const [odometro, setOdometro] = useState("")
   const [litros, setLitros] = useState("")
   const [saving, setSaving] = useState(false)
+  // Fecha de hoy fijada al montar (no se recalcula en cada render).
+  const [hoyISO] = useState(() => new Date().toISOString().slice(0, 10))
+  // Mismo control que en el checklist: un odómetro con un dígito de más queda
+  // pegado como km actual de la unidad y descoloca rendimiento, plan y cubiertas.
+  const vehiculoSel = vehiculos.find((v) => v.dominio === dominio)
+  const lecturaPrevia = dominio ? (ultimasLecturas[dominio] ?? null) : null
+  const errorOdometro = odometro
+    ? validarLectura({
+        valor: parseInt(odometro, 10),
+        previa: lecturaPrevia,
+        fecha: hoyISO,
+        esHorometro: vehiculoSel?.tipo === "autoelevador",
+      })
+    : null
 
   async function handleSubmit() {
     if (!dominio || !chofer) {
@@ -56,6 +80,10 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
     const errorLitros = validarLitros(parseFloat(litros))
     if (errorLitros) {
       toast.error(errorLitros)
+      return
+    }
+    if (errorOdometro) {
+      toast.error(errorOdometro)
       return
     }
 
@@ -150,8 +178,22 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
                 placeholder="Ej: 125430"
                 value={odometro}
                 onChange={(e) => setOdometro(e.target.value)}
-                className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+                className={`h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:ring-2 ${
+                  errorOdometro
+                    ? "border-red-400 focus-visible:border-red-500 focus-visible:ring-red-200"
+                    : "focus-visible:border-blue-400 focus-visible:ring-blue-200"
+                }`}
               />
+              {errorOdometro ? (
+                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {errorOdometro}
+                </p>
+              ) : lecturaPrevia ? (
+                <p className="text-xs text-slate-500">
+                  Última lectura: {new Intl.NumberFormat("es-AR").format(lecturaPrevia.odometro)} km (
+                  {lecturaPrevia.fecha.slice(0, 10).split("-").reverse().join("/")})
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-2 sm:col-span-2">
@@ -196,7 +238,7 @@ export function CombustibleFormClient({ vehiculos, choferes }: Props) {
       <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
         <Button
           onClick={handleSubmit}
-          disabled={saving || !dominio || !chofer || !odometro || !litros}
+          disabled={saving || !dominio || !chofer || !odometro || !litros || !!errorOdometro}
           className="h-14 w-full bg-blue-600 text-base font-semibold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto sm:min-w-[260px] sm:text-lg sm:ml-auto sm:flex disabled:opacity-60"
         >
           {saving ? (

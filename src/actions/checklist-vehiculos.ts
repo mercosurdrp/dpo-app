@@ -2,6 +2,13 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import {
+  addDays,
+  fetchLecturas,
+  kmActualPorDominio,
+  today,
+} from "@/lib/vehiculos/lecturas"
+import { validarLectura, type LecturaPrevia } from "@/lib/vehiculos/validar-lectura"
 import type {
   ChecklistItem,
   ChecklistVehiculo,
@@ -57,6 +64,46 @@ export async function getChecklistItems(): Promise<
   }
 }
 
+/**
+ * Última lectura conocida de una unidad (checklist + registros + combustible),
+ * ya filtrada de outliers por `kmActualPorDominio`. Ventana de 120 días: si la
+ * unidad estuvo parada más que eso, se valida como si fuera la primera lectura.
+ */
+export async function getUltimaLectura(
+  dominio: string
+): Promise<{ data: LecturaPrevia | null } | { error: string }> {
+  try {
+    await requireAuth()
+    const dom = dominio.trim().toUpperCase()
+    const lecturas = await fetchLecturas({
+      dominio: dom,
+      fechaDesde: addDays(today(), -120),
+    })
+    const previa = kmActualPorDominio(lecturas).get(dom) ?? null
+    return { data: previa }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/** Todas las últimas lecturas de la flota, para validar en el form sin ida y vuelta. */
+export async function getUltimasLecturasFlota(): Promise<
+  Record<string, LecturaPrevia>
+> {
+  try {
+    await requireAuth()
+    const lecturas = await fetchLecturas({ fechaDesde: addDays(today(), -120) })
+    const map = kmActualPorDominio(lecturas)
+    const out: Record<string, LecturaPrevia> = {}
+    for (const [dom, v] of map) out[dom] = v
+    return out
+  } catch {
+    // Query tolerante: si falla, el checklist se sigue pudiendo cargar (la
+    // validación firme corre igual en el servidor al guardar).
+    return {}
+  }
+}
+
 // ==================== CREAR CHECKLIST ====================
 
 interface CreateChecklistInput {
@@ -108,6 +155,25 @@ export async function createChecklist(
             ? "Falta el horómetro: cargá las horas que marca el autoelevador."
             : "Faltan los km: cargá el odómetro de la camioneta.",
       }
+    }
+
+    // 🚨 Lectura mal tipeada: se rechaza ANTES de guardar. Un dígito de más
+    // queda pegado como "km actual" de la unidad y desde ahí el módulo de
+    // Neumáticos calcula km rodados absurdos y marca las cubiertas en rojo.
+    if (input.odometro != null) {
+      const lecturas = await fetchLecturas({
+        dominio: dominioNorm,
+        fechaDesde: addDays(input.fecha, -120),
+        fechaHasta: input.fecha,
+      })
+      const previa = kmActualPorDominio(lecturas).get(dominioNorm) ?? null
+      const errorLectura = validarLectura({
+        valor: input.odometro,
+        previa,
+        fecha: input.fecha,
+        esHorometro: veh?.tipo === "autoelevador",
+      })
+      if (errorLectura) return { error: errorLectura }
     }
 
     // Fetch items to determine criticality

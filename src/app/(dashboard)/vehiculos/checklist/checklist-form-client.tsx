@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import {
+  validarLectura,
+  type LecturaPrevia,
+} from "@/lib/vehiculos/validar-lectura"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -45,6 +49,8 @@ interface Props {
   items: ChecklistItem[]
   vehiculos: CatalogoVehiculo[]
   choferes: CatalogoChofer[]
+  /** Última lectura conocida por dominio, para validar el odómetro al tipearlo. */
+  ultimasLecturas: Record<string, LecturaPrevia>
 }
 
 // Group items by category
@@ -124,7 +130,12 @@ const opcionesMap: Record<string, { value: string; label: string; color: string 
 // HORA_CORTE_LIBERACION del servidor (que es quien decide en firme).
 const HORA_CORTE_LIBERACION = 9
 
-export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
+export function ChecklistFormClient({
+  items,
+  vehiculos,
+  choferes,
+  ultimasLecturas,
+}: Props) {
   const router = useRouter()
   // El chofer ya no elige el tipo: se deriva de la hora actual. Mantenemos un
   // reloj en vivo para que el cartel se actualice si cruza las 09:00 con el
@@ -181,6 +192,18 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
   const [chofer, setChofer] = useState("")
   const [odometro, setOdometro] = useState("")
   const [observaciones, setObservaciones] = useState("")
+  // 🚨 Aviso en vivo si la lectura no cierra contra la última de esa unidad: un
+  // dígito de más queda pegado como "km actual" y descoloca el plan de
+  // mantenimiento y el estado de las cubiertas. El servidor vuelve a validar.
+  const lecturaPrevia = dominio ? (ultimasLecturas[dominio] ?? null) : null
+  const errorOdometro = odometro
+    ? validarLectura({
+        valor: parseInt(odometro, 10),
+        previa: lecturaPrevia,
+        fecha: ahora.toISOString().slice(0, 10),
+        esHorometro: esAutoelevador,
+      })
+    : null
   const [respuestas, setRespuestas] = useState<Record<string, string>>({})
   const [comentarios, setComentarios] = useState<Record<string, string>>({})
   // Foto opcional (camionetas): se comprime en el navegador y se sube directo
@@ -243,6 +266,10 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
     }
     if (!todosCompletados) {
       toast.error(`Faltan ${totalItems - completados} ítems por completar`)
+      return
+    }
+    if (errorOdometro) {
+      toast.error(errorOdometro)
       return
     }
     // El checklist de camioneta existe justamente para registrar los km.
@@ -484,8 +511,23 @@ export function ChecklistFormClient({ items, vehiculos, choferes }: Props) {
                 placeholder={esAutoelevador ? "Ej: 1240" : "Ej: 125430"}
                 value={odometro}
                 onChange={(e) => setOdometro(e.target.value)}
-                className="h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+                className={`h-14 text-lg font-semibold tracking-wide text-slate-900 focus-visible:ring-2 ${
+                  errorOdometro
+                    ? "border-red-400 focus-visible:border-red-500 focus-visible:ring-red-200"
+                    : "focus-visible:border-blue-400 focus-visible:ring-blue-200"
+                }`}
               />
+              {errorOdometro ? (
+                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {errorOdometro}
+                </p>
+              ) : lecturaPrevia ? (
+                <p className="text-xs text-slate-500">
+                  Última lectura: {new Intl.NumberFormat("es-AR").format(lecturaPrevia.odometro)}{" "}
+                  {esAutoelevador ? "hs" : "km"} (
+                  {lecturaPrevia.fecha.slice(0, 10).split("-").reverse().join("/")})
+                </p>
+              ) : null}
             </div>
             )}
 

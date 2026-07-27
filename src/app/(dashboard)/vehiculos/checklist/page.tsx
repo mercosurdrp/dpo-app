@@ -1,14 +1,18 @@
-import { getChecklistItems } from "@/actions/checklist-vehiculos"
+import {
+  getChecklistItems,
+  getUltimasLecturasFlota,
+} from "@/actions/checklist-vehiculos"
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
 import { ChecklistFormClient } from "./checklist-form-client"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
 export default async function ChecklistPage() {
-  const [itemsRes, vehiculosRes, choferesRes] = await Promise.all([
+  const [itemsRes, vehiculosRes, choferesRes, ultimasLecturas] = await Promise.all([
     getChecklistItems(),
     getVehiculos(),
     getChoferes(),
+    getUltimasLecturasFlota(),
   ])
 
   if ("error" in itemsRes) {
@@ -35,6 +39,7 @@ export default async function ChecklistPage() {
         items={itemsRes.data}
         vehiculos={vehiculos}
         choferes={choferes}
+        ultimasLecturas={ultimasLecturas}
       />
     </div>
   )

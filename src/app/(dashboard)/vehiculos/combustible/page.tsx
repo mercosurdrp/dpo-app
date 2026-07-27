@@ -1,12 +1,14 @@
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
+import { getUltimasLecturasFlota } from "@/actions/checklist-vehiculos"
 import { CombustibleFormClient } from "./combustible-form-client"
 import Link from "next/link"
 import { ArrowLeft, BarChart3 } from "lucide-react"
 
 export default async function CombustiblePage() {
-  const [vehiculosRes, choferesRes] = await Promise.all([
+  const [vehiculosRes, choferesRes, ultimasLecturas] = await Promise.all([
     getVehiculos(),
     getChoferes(),
+    getUltimasLecturasFlota(),
   ])
 
   const vehiculos = "data" in vehiculosRes ? vehiculosRes.data : []
@@ -31,6 +33,7 @@ export default async function CombustiblePage() {
       <CombustibleFormClient
         vehiculos={vehiculos}
         choferes={choferes}
+        ultimasLecturas={ultimasLecturas}
       />
     </div>
   )
