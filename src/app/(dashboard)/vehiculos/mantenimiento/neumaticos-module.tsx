@@ -1160,6 +1160,7 @@ function OrdenesNeumaticosPanel({
                   <th>Estado</th>
                   <th>Factura</th>
                   <th className="text-right">Costo</th>
+                  {puedeEditar && <th className="w-10" />}
                 </tr>
               </thead>
               <tbody>
@@ -1212,6 +1213,22 @@ function OrdenesNeumaticosPanel({
                       )}
                     </td>
                     <td className="text-right tabular-nums">{fmtMoney(costoTotalOt(o))}</td>
+                    {puedeEditar && (
+                      <td className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          title="Editar la OT / adjuntar la factura"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onEditarOrden(o)
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1221,6 +1238,7 @@ function OrdenesNeumaticosPanel({
                     Total
                   </td>
                   <td className="text-right tabular-nums">{fmtMoney(total)}</td>
+                  {puedeEditar && <td />}
                 </tr>
               </tfoot>
             </table>
