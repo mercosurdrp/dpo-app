@@ -533,8 +533,8 @@ export function NeumaticosModule({
                     <th className="text-right">Prof. act.</th>
                     <th className="text-right">mm gast.</th>
                     <th className="text-right">Km/mm</th>
-                    <th className="text-right">Presión</th>
-                    <th>Instalación</th>
+                    <th className="text-right pr-3">Presión</th>
+                    <th className="border-l pl-3">Instalación</th>
                     <th className="text-right">Km inst.</th>
                     <th className="text-right">Recorridos</th>
                     <th className="text-right">Restante (est.)</th>
@@ -588,10 +588,12 @@ export function NeumaticosModule({
                         <td className="text-right tabular-nums text-muted-foreground">
                           {kmPorMm != null ? fmtNum(kmPorMm) : "—"}
                         </td>
-                        <td className="text-right tabular-nums text-muted-foreground">
+                        <td className="text-right tabular-nums text-muted-foreground pr-3">
                           {pres != null ? `${pres} psi` : "—"}
                         </td>
-                        <td className="text-muted-foreground">{fmtFecha(n.fecha_instalacion)}</td>
+                        <td className="border-l pl-3 text-muted-foreground whitespace-nowrap">
+                          {fmtFecha(n.fecha_instalacion)}
+                        </td>
                         <td className="text-right tabular-nums text-muted-foreground">
                           {fmtNum(n.km_instalacion)}
                         </td>
@@ -601,9 +603,15 @@ export function NeumaticosModule({
                         <td
                           className={cn(
                             "text-right tabular-nums",
-                            v && v.kmRestante != null && v.kmRestante <= 0
+                            // El color sigue al estado de la cubierta, no al signo:
+                            // si pasó el km estimado pero la goma está sana el
+                            // badge dice "Próximo" y el número tiene que
+                            // acompañar, no gritar en rojo.
+                            v?.estado === "cambiar"
                               ? "font-medium text-destructive"
-                              : "text-foreground"
+                              : v?.estado === "proximo"
+                                ? "font-medium text-amber-600 dark:text-amber-500"
+                                : "text-foreground"
                           )}
                         >
                           {v?.kmRestante != null ? `${fmtNum(v.kmRestante)} km` : "—"}
