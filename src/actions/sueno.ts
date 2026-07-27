@@ -218,6 +218,10 @@ const EXPLICACION: Record<string, string> = {
   lti: "LTI = accidentes con días perdidos, tomados de los reportes de seguridad cargados como accidente. El detalle muestra además los accidentes totales de cada mes.",
   n_incidentes: "Cantidad de incidentes de seguridad reportados, por mes.",
   comportamientos: "Cantidad de actos / comportamientos inseguros reportados, por mes.",
+  comportamientos_almacen:
+    "Actos / comportamientos inseguros reportados con área ALMACÉN (depósito), por mes. Salen de los reportes de seguridad cargados como «acto inseguro»: el área se elige al cargar el reporte y es la misma que abre la pirámide de Almacén.",
+  comportamientos_flota:
+    "Actos / comportamientos inseguros reportados con área DISTRIBUCIÓN (flota), por mes. Salen de los reportes de seguridad cargados como «acto inseguro»: el área se elige al cargar el reporte y es la misma que abre la pirámide de Distribución.",
   sin_dinero:
     "% de los pedidos que terminó rechazado por «Sin dinero» = veces ÷ pedidos del período. Cada cliente × fecha cuenta 1 (los artículos de un mismo rechazo no suman aparte; el mismo cliente en otra fecha vuelve a contar). Los pedidos salen de las ventas por cliente, que ya incluyen los rechazados. Por mes, con la cantidad de veces al lado.",
   cerrado:
@@ -230,6 +234,8 @@ const DETALLE_LABEL: Record<string, string> = {
   vlc_hl: "HL vendidos",
   tri: "Accidentes del mes",
   lti: "Accidentes del mes",
+  comportamientos_almacen: "Total actos del mes",
+  comportamientos_flota: "Total actos del mes",
   sin_dinero: "Veces",
   cerrado: "Veces",
 }

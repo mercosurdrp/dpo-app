@@ -312,6 +312,9 @@ export async function createReporte(
     if (!input.descripcion?.trim()) {
       return { error: "Descripción es obligatoria" }
     }
+    // Área: abre las pirámides por sector y el PI de comportamientos inseguros
+    // del Árbol del Sueño (Almacén / Flota). Sin área el reporte queda fuera.
+    if (!input.area) return { error: "Área es obligatoria" }
 
     const fields = normalizeReporteFields(input)
 
@@ -370,6 +373,9 @@ export async function updateReporte(
     if (!input.descripcion?.trim()) {
       return { error: "Descripción es obligatoria" }
     }
+    // Área: abre las pirámides por sector y el PI de comportamientos inseguros
+    // del Árbol del Sueño (Almacén / Flota). Sin área el reporte queda fuera.
+    if (!input.area) return { error: "Área es obligatoria" }
 
     const fields = normalizeReporteFields(input)
 

@@ -88,7 +88,13 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
 
   // ---- Operacional ----
   { key: "n_incidentes", label: "N° Incidentes", nivel: "operacional", rama: "seguridad", parentKey: "lti", unidad: "cant.", mejorSi: "menor", metaDefault: 20 },
-  { key: "comportamientos", label: "Comportamientos Inseguros", nivel: "operacional", rama: "seguridad", parentKey: "n_incidentes", unidad: "cant.", mejorSi: "mayor", metaDefault: 100 },
+  // Comportamientos inseguros ABIERTO POR ÁREA (pedido de la auditoría, 2026-07-27):
+  // el nivel operativo gestiona por sector, así que el PI único de antes
+  // (`comportamientos`, meta 100) se partió en dos nodos hermanos. La key vieja
+  // sigue existiendo en `sueno_kpi_valores` y la RPC la sigue actualizando, para
+  // no perder la serie histórica del total; simplemente ya no cuelga del árbol.
+  { key: "comportamientos_almacen", label: "Comp. Inseguros Almacén", nivel: "operacional", rama: "seguridad", parentKey: "n_incidentes", unidad: "cant.", mejorSi: "mayor", metaDefault: 50 },
+  { key: "comportamientos_flota", label: "Comp. Inseguros Flota", nivel: "operacional", rama: "seguridad", parentKey: "n_incidentes", unidad: "cant.", mejorSi: "mayor", metaDefault: 50 },
   // Meta 6,5 = el mejor mes ya logrado (mar y jul). 🚨 Leerlo contra el TLP: si los
   // viajes se acortan repartiendo menos, este número baja y el TLP no mejora.
   { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs", mejorSi: "menor", metaDefault: 6.5 },

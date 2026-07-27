@@ -38,21 +38,33 @@ export type PiramideConteos = Record<ReporteSeguridadTipoAccidente, number>
 
 export function PiramideSeguridad({
   conteos,
+  titulo = "Pirámide de Seguridad",
+  subtitulo = "Conteos según los reportes cargados",
+  /**
+   * Versión reducida para las pirámides por área (Almacén / Distribución):
+   * sin braces SIF ni etiquetas de gravedad — esos ya se leen en la pirámide
+   * total, que va arriba con el mismo orden de niveles.
+   */
+  compacta = false,
 }: {
   conteos: PiramideConteos
+  titulo?: string
+  subtitulo?: string
+  compacta?: boolean
 }) {
   const NIV = NIVELES.length // 7
-  const VIEW_W = 900
-  const VIEW_H = 380
+  const VIEW_W = compacta ? 420 : 900
+  const VIEW_H = compacta ? 300 : 380
   const ALTO_NIV = VIEW_H / NIV
 
   // Layout horizontal
-  const BRACE_AREA_W = 180
-  const PYR_LEFT = BRACE_AREA_W + 20
-  const PYR_W = 460
+  const BRACE_AREA_W = compacta ? 0 : 180
+  const PYR_LEFT = compacta ? 30 : BRACE_AREA_W + 20
+  const PYR_W = compacta ? 360 : 460
   const PYR_RIGHT = PYR_LEFT + PYR_W
   const PYR_CX = PYR_LEFT + PYR_W / 2
   const TOP_W = 0.18
+  const total = NIVELES.reduce((acc, n) => acc + (conteos[n.sigla] ?? 0), 0)
 
   function widths(n: number): { top: number; bottom: number } {
     const top = TOP_W + (1 - TOP_W) * (n / NIV)
@@ -63,22 +75,28 @@ export function PiramideSeguridad({
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold text-slate-900">
-          Pirámide de Seguridad
+        <h3
+          className={
+            compacta
+              ? "text-sm font-semibold text-slate-900"
+              : "text-base font-semibold text-slate-900"
+          }
+        >
+          {titulo}
         </h3>
         <p className="text-xs text-muted-foreground">
-          Conteos según los reportes cargados
+          {compacta ? `${total} reporte${total === 1 ? "" : "s"}` : subtitulo}
         </p>
       </div>
 
-      <div className="mx-auto max-w-3xl">
+      <div className={compacta ? "mx-auto" : "mx-auto max-w-3xl"}>
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="w-full"
           preserveAspectRatio="xMidYMid meet"
         >
           {/* === Braces SIF a la izquierda === */}
-          {SIF_GROUPS.map((g) => {
+          {(compacta ? [] : SIF_GROUPS).map((g) => {
             const yTop = g.fromIdx * ALTO_NIV
             const yBot = (g.toIdx + 1) * ALTO_NIV
             const yMid = (yTop + yBot) / 2
@@ -171,22 +189,24 @@ export function PiramideSeguridad({
                   {count}
                 </text>
                 {/* Etiqueta gravedad a la derecha del trapecio */}
-                <text
-                  x={xBotR + 8}
-                  y={cy + 4}
-                  textAnchor="start"
-                  fontSize={11}
-                  fontWeight={500}
-                  fill="#374151"
-                >
-                  {n.label}
-                </text>
+                {!compacta && (
+                  <text
+                    x={xBotR + 8}
+                    y={cy + 4}
+                    textAnchor="start"
+                    fontSize={11}
+                    fontWeight={500}
+                    fill="#374151"
+                  >
+                    {n.label}
+                  </text>
+                )}
               </g>
             )
           })}
 
           {/* === Brace "INCIDENTES" a la derecha sobre SIO === */}
-          {(() => {
+          {!compacta && (() => {
             const idx = 5 // SIO
             const yTop = idx * ALTO_NIV
             const yBot = (idx + 1) * ALTO_NIV
@@ -220,10 +240,12 @@ export function PiramideSeguridad({
         </svg>
       </div>
 
-      <p className="mt-3 text-[11px] italic text-muted-foreground">
-        La clasificación se basa en la gravedad de la lesión, no en los días de
-        baja que da la ART.
-      </p>
+      {!compacta && (
+        <p className="mt-3 text-[11px] italic text-muted-foreground">
+          La clasificación se basa en la gravedad de la lesión, no en los días de
+          baja que da la ART.
+        </p>
+      )}
     </div>
   )
 }

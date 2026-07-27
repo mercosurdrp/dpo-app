@@ -144,9 +144,17 @@ export function ReportesSeguridadClient({
     return Array.from(set).sort((a, b) => b - a)
   }, [reportes, anioActual])
 
-  // Conteos de la pirámide según año + mes elegidos
-  const piramideConteos = useMemo<PiramideConteos>(() => {
-    const base: PiramideConteos = {
+  // Conteos de la pirámide según año + mes elegidos.
+  // Tres pirámides (pedido de la auditoría): el TOTAL, y la apertura por área
+  // relevada — Almacén (área "depósito") y Distribución. Los reportes de otras
+  // áreas (Ventas / Administración) entran solo en el total; se avisa abajo.
+  const {
+    piramideConteos,
+    piramideConteosAlmacen,
+    piramideConteosDistribucion,
+    fueraDeAreaOperativa,
+  } = useMemo(() => {
+    const vacia = (): PiramideConteos => ({
       fat: 0,
       lti: 0,
       mdi: 0,
@@ -154,16 +162,28 @@ export function ReportesSeguridadClient({
       fai: 0,
       sio: 0,
       sho: 0,
-    }
+    })
+    const total = vacia()
+    const almacen = vacia()
+    const distribucion = vacia()
+    let fuera = 0
     for (const r of reportes) {
       if (!r.tipo_accidente) continue
       const y = Number(r.fecha.slice(0, 4))
       const m = Number(r.fecha.slice(5, 7))
       if (y !== piramideAnio) continue
       if (piramideMes !== "all" && m !== piramideMes) continue
-      base[r.tipo_accidente] += 1
+      total[r.tipo_accidente] += 1
+      if (r.area === "deposito") almacen[r.tipo_accidente] += 1
+      else if (r.area === "distribucion") distribucion[r.tipo_accidente] += 1
+      else fuera += 1
     }
-    return base
+    return {
+      piramideConteos: total,
+      piramideConteosAlmacen: almacen,
+      piramideConteosDistribucion: distribucion,
+      fueraDeAreaOperativa: fuera,
+    }
   }, [reportes, piramideAnio, piramideMes])
 
   // Indicadores LTI / TRI por día del mes seleccionado, con MTD y YTD.
@@ -347,7 +367,31 @@ export function ReportesSeguridadClient({
             </Select>
           </div>
         </div>
-        <PiramideSeguridad conteos={piramideConteos} />
+        <PiramideSeguridad
+          conteos={piramideConteos}
+          titulo="Pirámide de Seguridad — Total"
+          subtitulo={`Almacén + Distribución · ${periodoLabel}`}
+        />
+        <div className="grid gap-3 lg:grid-cols-2">
+          <PiramideSeguridad
+            compacta
+            conteos={piramideConteosAlmacen}
+            titulo="Almacén"
+          />
+          <PiramideSeguridad
+            compacta
+            conteos={piramideConteosDistribucion}
+            titulo="Distribución"
+          />
+        </div>
+        {fueraDeAreaOperativa > 0 && (
+          <p className="text-[11px] italic text-muted-foreground">
+            {fueraDeAreaOperativa}{" "}
+            {fueraDeAreaOperativa === 1 ? "reporte" : "reportes"} del período
+            {fueraDeAreaOperativa === 1 ? " está" : " están"} en el total pero no
+            en Almacén ni Distribución (otra área o sin área asignada).
+          </p>
+        )}
       </div>
 
       {/* KPIs del mes */}

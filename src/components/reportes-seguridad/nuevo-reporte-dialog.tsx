@@ -267,6 +267,13 @@ export function NuevoReporteDialog({
       toast.error("Completá la descripción")
       return
     }
+    // El área es la que abre las pirámides por sector (Almacén / Distribución)
+    // y el PI de comportamientos inseguros del Árbol del Sueño: sin ella el
+    // reporte solo suma al total.
+    if (!area) {
+      toast.error("Seleccioná el área")
+      return
+    }
     if (tipo === "accidente") {
       if (!tipoSif) {
         toast.error("Tipo de SIF es obligatorio para accidentes")
@@ -459,7 +466,7 @@ export function NuevoReporteDialog({
               </Select>
             </div>
             <div>
-              <Label>Área</Label>
+              <Label>Área *</Label>
               <Select
                 value={area}
                 onValueChange={(v) =>
