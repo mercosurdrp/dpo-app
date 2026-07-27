@@ -10,6 +10,25 @@ import type {
   UserWithStats,
 } from "@/types/database"
 
+/**
+ * Mensaje legible de un error del SDK de auth. Ante un 500 el SDK ni siquiera
+ * lee el cuerpo de la respuesta —lo toma como error de red reintentable— y
+ * devuelve `message: "{}"`, así que la UI mostraba un toast vacío y parecía que
+ * el botón no hacía nada. Acá le ponemos un texto que se entienda.
+ */
+function mensajeAuthError(
+  error: { message?: string; status?: number; name?: string },
+  fallback: string
+): string {
+  const msg = (error.message ?? "").trim()
+  if (!msg || msg === "{}" || error.name === "AuthRetryableFetchError") {
+    return error.status
+      ? `${fallback} (error ${error.status} del servidor de autenticación)`
+      : fallback
+  }
+  return msg
+}
+
 export async function getUsers(): Promise<
   { data: Profile[] } | { error: string }
 > {
@@ -48,7 +67,8 @@ export async function createUser(data: {
         user_metadata: { nombre: data.nombre },
       })
 
-    if (authError) return { error: authError.message }
+    if (authError)
+      return { error: mensajeAuthError(authError, "No se pudo crear el usuario") }
     if (!authUser.user) return { error: "Failed to create user" }
 
     // Update profile with role and nombre
@@ -280,7 +300,10 @@ export async function updateUser(
         await adminClient.auth.admin.updateUserById(userId, {
           email: data.email,
         })
-      if (authError) return { error: authError.message }
+      if (authError)
+        return {
+          error: mensajeAuthError(authError, "No se pudo actualizar el email"),
+        }
     }
 
     // Build partial update payload
@@ -336,7 +359,8 @@ export async function resetUserPassword(
       password: newPassword,
     })
 
-    if (error) return { error: error.message }
+    if (error)
+      return { error: mensajeAuthError(error, "No se pudo cambiar la contraseña") }
     return { ok: true }
   } catch (err) {
     return {
@@ -372,7 +396,8 @@ export async function getUsersWithStats(): Promise<
     const { data: authList, error: authError } =
       await adminClient.auth.admin.listUsers()
 
-    if (authError) return { error: authError.message }
+    if (authError)
+      return { error: mensajeAuthError(authError, "No se pudo leer la lista de usuarios") }
 
     const authById = new Map<
       string,

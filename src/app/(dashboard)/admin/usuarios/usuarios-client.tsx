@@ -282,19 +282,27 @@ export function UsuariosClient({
   async function handleDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    const result = await deleteUser(deleteTarget.id, transferTo || null)
-    if ("error" in result) {
-      toast.error(result.error)
-    } else {
-      toast.success(
-        result.movidos > 0
-          ? `Usuario eliminado — ${result.movidos} registros pasaron al otro usuario`
-          : "Usuario eliminado"
+    // try/finally: si la action falla, el botón tiene que volver, no quedar girando
+    try {
+      const result = await deleteUser(deleteTarget.id, transferTo || null)
+      if ("error" in result) {
+        toast.error(result.error || "No se pudo eliminar el usuario")
+      } else {
+        toast.success(
+          result.movidos > 0
+            ? `Usuario eliminado — ${result.movidos} registros pasaron al otro usuario`
+            : "Usuario eliminado"
+        )
+        setDeleteTarget(null)
+        router.refresh()
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "No se pudo eliminar el usuario"
       )
-      setDeleteTarget(null)
-      router.refresh()
+    } finally {
+      setDeleting(false)
     }
-    setDeleting(false)
   }
 
   function handleRoleChange(userId: string, role: UserRole) {
