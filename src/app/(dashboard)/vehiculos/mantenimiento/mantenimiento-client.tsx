@@ -92,6 +92,7 @@ import { NeumaticosModule } from "./neumaticos-module"
 import { SeguimientoFlota } from "./seguimiento-flota"
 import { PiramideDefectos } from "./piramide-defectos"
 import { GastosTab } from "./gastos-tab"
+import { ProveedorPicker } from "./_components/proveedor-picker"
 import { GestionMtto } from "./gestion-mtto"
 import { HerramientasTab } from "./herramientas-tab"
 import type { Herramienta } from "@/actions/mantenimiento-herramientas"
@@ -429,6 +430,11 @@ export function MantenimientoClient({
   const [, startTransition] = useTransition()
 
   const [tab, setTab] = useState("tablero")
+  // Catálogo de proveedores/talleres en memoria: si alguien agrega uno desde
+  // cualquier formulario (OT, cubiertas, gastos), aparece en todos sin recargar.
+  const [provList, setProvList] = useState<MantenimientoProveedor[]>(proveedores)
+  const agregarProveedor = (p: MantenimientoProveedor) =>
+    setProvList((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]))
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [nuevoPrefill, setNuevoPrefill] = useState<{ dominio?: string; tareaId?: string }>({})
   const [editMant, setEditMant] = useState<MantenimientoRealizado | null>(null)
@@ -703,6 +709,8 @@ export function MantenimientoClient({
             ordenes={otNeumaticos}
             tareasById={tareasById}
             reprogramadas={reprogramadas}
+            proveedores={provList}
+            onProveedorCreado={agregarProveedor}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
@@ -759,7 +767,13 @@ export function MantenimientoClient({
 
         {/* ============ TAB: Programación de OT (semana) ============ */}
         <TabsContent value="programacion" className="space-y-6">
-          <ProgramacionOt estados={estados} tareas={tareas} puedeEditar={puedeEditar} />
+          <ProgramacionOt
+            estados={estados}
+            tareas={tareas}
+            proveedores={provList}
+            onProveedorCreado={agregarProveedor}
+            puedeEditar={puedeEditar}
+          />
         </TabsContent>
 
         {/* ============ TAB: Órdenes de Trabajo ============ */}
@@ -1036,7 +1050,8 @@ export function MantenimientoClient({
         <TabsContent value="gastos" className="space-y-4">
           <GastosTab
             gastos={gastos}
-            proveedores={proveedores}
+            proveedores={provList}
+            onProveedorCreado={agregarProveedor}
             dominios={estados.map((e) => e.vehiculo.dominio)}
             puedeEditar={puedeEditar}
           />
@@ -1212,6 +1227,8 @@ export function MantenimientoClient({
           ultimasLecturas={ultimasLecturas}
           historialLecturas={historialLecturas}
           siguienteNumeroOt={siguienteNumeroOt}
+          proveedores={provList}
+          onProveedorCreado={agregarProveedor}
           prefill={nuevoPrefill}
           onClose={() => setNuevoOpen(false)}
           onSaved={() => {
@@ -1239,6 +1256,8 @@ export function MantenimientoClient({
       {editMant && (
         <EditarMantenimientoDialog
           mantenimiento={editMant}
+          proveedores={provList}
+          onProveedorCreado={agregarProveedor}
           onClose={() => setEditMant(null)}
           onSaved={() => {
             setEditMant(null)
@@ -1366,6 +1385,8 @@ function NuevoMantenimientoDialog({
   ultimasLecturas,
   historialLecturas,
   siguienteNumeroOt,
+  proveedores,
+  onProveedorCreado,
   prefill,
   onClose,
   onSaved,
@@ -1377,6 +1398,8 @@ function NuevoMantenimientoDialog({
   ultimasLecturas: Record<string, LecturaSugerida[]>
   historialLecturas: Record<string, LecturaSugerida[]>
   siguienteNumeroOt: string
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   prefill: { dominio?: string; tareaId?: string }
   onClose: () => void
   onSaved: () => void
@@ -1641,7 +1664,12 @@ function NuevoMantenimientoDialog({
             )}
             <div>
               <Label>Taller / proveedor</Label>
-              <Input value={taller} onChange={(e) => setTaller(e.target.value)} />
+              <ProveedorPicker
+                proveedores={proveedores}
+                value={taller}
+                onChange={setTaller}
+                onCreado={onProveedorCreado}
+              />
             </div>
             <div>
               <Label>N° de OT</Label>
@@ -2408,10 +2436,14 @@ function totalOt(repuestos: RepuestoForm[], costoManoObra: string): number | nul
 
 function EditarMantenimientoDialog({
   mantenimiento,
+  proveedores,
+  onProveedorCreado,
   onClose,
   onSaved,
 }: {
   mantenimiento: MantenimientoRealizado
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   onClose: () => void
   onSaved: () => void
 }) {
@@ -2530,7 +2562,12 @@ function EditarMantenimientoDialog({
           </div>
           <div>
             <Label>Taller / proveedor</Label>
-            <Input value={taller} onChange={(e) => setTaller(e.target.value)} />
+            <ProveedorPicker
+              proveedores={proveedores}
+              value={taller}
+              onChange={setTaller}
+              onCreado={onProveedorCreado}
+            />
           </div>
           <div>
             <Label>Mano de obra ($)</Label>

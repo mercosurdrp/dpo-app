@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { ProveedorPicker } from "./_components/proveedor-picker"
 import {
   Plus,
   Paperclip,
@@ -16,8 +17,6 @@ import {
   FileSpreadsheet,
   FileDown,
   Wallet,
-  Check,
-  X,
   Wrench,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,7 +51,6 @@ import {
 } from "@/components/ui/select"
 import {
   createGasto,
-  createProveedor,
   deleteGasto,
   reenviarMailGasto,
   updateGastoEstado,
@@ -117,18 +115,21 @@ function hoyISO() {
 export function GastosTab({
   gastos,
   proveedores,
+  onProveedorCreado,
   dominios,
   puedeEditar,
 }: {
   gastos: MantenimientoGasto[]
   proveedores: MantenimientoProveedor[]
+  onProveedorCreado?: (p: MantenimientoProveedor) => void
   dominios: string[]
   puedeEditar: boolean
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  // Catálogo local: se actualiza al alta de un proveedor desde el "+" sin recargar.
-  const [provList, setProvList] = useState<MantenimientoProveedor[]>(proveedores)
+  // El catálogo lo mantiene el padre (MantenimientoClient), así un proveedor
+  // agregado desde una OT o desde una compra de cubiertas también aparece acá.
+  const provList = proveedores
   const [nuevoOpen, setNuevoOpen] = useState(false)
   const [fMes, setFMes] = useState("todos")
   const [fTipo, setFTipo] = useState("todos")
@@ -479,13 +480,7 @@ export function GastosTab({
           <NuevoGastoDialog
             dominios={dominios}
             proveedores={provList}
-            onProveedorCreado={(p) =>
-              setProvList((prev) =>
-                prev.some((x) => x.id === p.id)
-                  ? prev
-                  : [...prev, p].sort((a, b) => a.nombre.localeCompare(b.nombre))
-              )
-            }
+            onProveedorCreado={(p) => onProveedorCreado?.(p)}
             onClose={() => setNuevoOpen(false)}
             onSaved={(mailOk) => {
               setNuevoOpen(false)
@@ -879,111 +874,5 @@ function NuevoGastoDialog({
   )
 }
 
-// ==================== Selector de proveedor con alta rápida ("+") ====================
-
-function ProveedorPicker({
-  proveedores,
-  value,
-  onChange,
-  onCreado,
-}: {
-  proveedores: MantenimientoProveedor[]
-  value: string
-  onChange: (nombre: string) => void
-  onCreado: (p: MantenimientoProveedor) => void
-}) {
-  const [agregando, setAgregando] = useState(false)
-  const [nuevo, setNuevo] = useState("")
-  const [guardando, setGuardando] = useState(false)
-
-  const confirmar = async () => {
-    const nombre = nuevo.trim()
-    if (!nombre) {
-      toast.error("Ingresá el nombre del proveedor")
-      return
-    }
-    setGuardando(true)
-    const res = await createProveedor(nombre)
-    setGuardando(false)
-    if ("error" in res) {
-      toast.error(res.error)
-      return
-    }
-    onCreado(res.data)
-    onChange(res.data.nombre)
-    setNuevo("")
-    setAgregando(false)
-    toast.success("Proveedor agregado")
-  }
-
-  if (agregando) {
-    return (
-      <div className="flex items-center gap-1">
-        <Input
-          autoFocus
-          value={nuevo}
-          onChange={(e) => setNuevo(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault()
-              confirmar()
-            }
-            if (e.key === "Escape") setAgregando(false)
-          }}
-          placeholder="Nombre del nuevo proveedor"
-          disabled={guardando}
-        />
-        <Button
-          type="button"
-          size="icon"
-          variant="default"
-          title="Guardar proveedor"
-          disabled={guardando}
-          onClick={confirmar}
-        >
-          <Check className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          title="Cancelar"
-          disabled={guardando}
-          onClick={() => {
-            setAgregando(false)
-            setNuevo("")
-          }}
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <Select value={value || "__none"} onValueChange={(v) => onChange(!v || v === "__none" ? "" : v)}>
-        <SelectTrigger className="flex-1">
-          <SelectValue placeholder="Elegí un proveedor" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none">—</SelectItem>
-          {proveedores.map((p) => (
-            <SelectItem key={p.id} value={p.nombre}>
-              {p.nombre}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button
-        type="button"
-        size="icon"
-        variant="outline"
-        title="Agregar nuevo proveedor"
-        onClick={() => setAgregando(true)}
-      >
-        <Plus className="size-4" />
-      </Button>
-    </div>
-  )
-}
+// El selector de proveedor vive en _components/proveedor-picker.tsx: lo comparten
+// el form de gastos, las OT, las OT de neumáticos y la compra de cubiertas.

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { ProveedorPicker } from "./_components/proveedor-picker"
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ import {
 import type {
   EstadoPlanVehiculo,
   MantenimientoPlanTarea,
+  MantenimientoProveedor,
 } from "@/types/database"
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -86,10 +88,14 @@ interface Sugerencia {
 export function ProgramacionOt({
   estados,
   tareas,
+  proveedores,
+  onProveedorCreado,
   puedeEditar,
 }: {
   estados: EstadoPlanVehiculo[]
   tareas: MantenimientoPlanTarea[]
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   puedeEditar: boolean
 }) {
   const hoy = iso(new Date())
@@ -264,6 +270,8 @@ export function ProgramacionOt({
           fechaInicial={dialog.fecha}
           dominios={dominios}
           sugerenciasPorDominio={sugerenciasPorDominio}
+          proveedores={proveedores}
+          onProveedorCreado={onProveedorCreado}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null)
@@ -280,6 +288,8 @@ function OtDialog({
   fechaInicial,
   dominios,
   sugerenciasPorDominio,
+  proveedores,
+  onProveedorCreado,
   onClose,
   onSaved,
 }: {
@@ -287,6 +297,8 @@ function OtDialog({
   fechaInicial: string
   dominios: string[]
   sugerenciasPorDominio: Map<string, Sugerencia[]>
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   onClose: () => void
   onSaved: () => void
 }) {
@@ -442,7 +454,13 @@ function OtDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Taller / mecánico</Label>
-              <Input value={taller} onChange={(e) => setTaller(e.target.value)} placeholder="Opcional" />
+              <ProveedorPicker
+                proveedores={proveedores}
+                value={taller}
+                onChange={setTaller}
+                onCreado={onProveedorCreado}
+                placeholder="Opcional"
+              />
             </div>
             <div className="space-y-1">
               <Label>Notas</Label>

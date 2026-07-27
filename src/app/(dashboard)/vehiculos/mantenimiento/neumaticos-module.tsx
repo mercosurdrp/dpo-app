@@ -91,6 +91,7 @@ import {
 import {
   VEHICULO_TIPO_LABELS,
   type MantenimientoPlanTarea,
+  type MantenimientoProveedor,
   type MantenimientoRealizado,
   type MantenimientoTareaReprogramada,
   type VehiculoTipo,
@@ -106,6 +107,7 @@ import { MANTENIMIENTO_ESTADO_LABELS } from "@/types/database"
 import type { LecturaSugerida } from "@/lib/vehiculos/lecturas"
 import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
+import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-picker"
 import { KpiCard } from "./_components/kpi-card"
 
 interface UnidadFlota {
@@ -131,6 +133,9 @@ interface Props {
   ordenes: MantenimientoRealizado[]
   tareasById: Map<string, MantenimientoPlanTarea>
   reprogramadas: MantenimientoTareaReprogramada[]
+  /** Catálogo de talleres/gomerías compartido con el resto del módulo. */
+  proveedores: MantenimientoProveedor[]
+  onProveedorCreado: (p: MantenimientoProveedor) => void
   puedeEditar: boolean
 }
 
@@ -214,6 +219,8 @@ export function NeumaticosModule({
   ordenes,
   tareasById,
   reprogramadas,
+  proveedores,
+  onProveedorCreado,
   puedeEditar,
 }: Props) {
   const router = useRouter()
@@ -328,6 +335,7 @@ export function NeumaticosModule({
   }, [neumaticos, stock.length, bajas.length])
 
   return (
+    <ProveedoresProvider proveedores={proveedores} onProveedorCreado={onProveedorCreado}>
     <div className="space-y-6">
       <DpoSeccionCinta seccionId="neumaticos" />
 
@@ -838,6 +846,7 @@ export function NeumaticosModule({
         />
       )}
     </div>
+    </ProveedoresProvider>
   )
 }
 
@@ -2205,7 +2214,7 @@ function EditarCubiertaDialog({
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Proveedor</Label>
-                <Input value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+                <ProveedorPicker value={proveedor} onChange={setProveedor} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Costo ($)</Label>
@@ -2557,9 +2566,9 @@ function CargarCubiertasDialog({
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Proveedor / gomería</Label>
-                <Input
+                <ProveedorPicker
                   value={proveedor}
-                  onChange={(e) => setProveedor(e.target.value)}
+                  onChange={setProveedor}
                   placeholder="Gomería del Centro"
                 />
               </div>
@@ -3067,9 +3076,9 @@ function GenerarOtNeumaticosDialog({
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Taller (opcional)</Label>
-              <Input
+              <ProveedorPicker
                 value={taller}
-                onChange={(e) => setTaller(e.target.value)}
+                onChange={setTaller}
                 placeholder="ej. Gomería Pozzi"
               />
             </div>
@@ -4399,9 +4408,9 @@ function AlineacionDialog({
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Proveedor / gomería</Label>
-            <Input
+            <ProveedorPicker
               value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
+              onChange={setProveedor}
               placeholder="ej. Gomería del Centro"
             />
           </div>
