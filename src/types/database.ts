@@ -2802,6 +2802,13 @@ export type UserWithStats = Profile & {
   email_confirmed_at: string | null
 }
 
+// Registros que apuntan a un usuario; se muestran antes de eliminarlo
+export type UserReference = {
+  tabla: string
+  columna: string
+  filas: number
+}
+
 // =============================================================================
 // Orden de Salida Diario — módulo /orden-salida (migración 041)
 // =============================================================================

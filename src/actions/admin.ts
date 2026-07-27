@@ -3,7 +3,12 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireRole } from "@/lib/session"
-import type { Profile, UserRole, UserWithStats } from "@/types/database"
+import type {
+  Profile,
+  UserRole,
+  UserReference,
+  UserWithStats,
+} from "@/types/database"
 
 export async function getUsers(): Promise<
   { data: Profile[] } | { error: string }
@@ -168,14 +173,45 @@ export async function toggleUserPuedeAsignarTareas(
 }
 
 /**
- * Hard delete: removes from auth.users. Migration 001 defines
- * profiles.id FK to auth.users(id) with ON DELETE CASCADE, so the
- * profiles row is removed automatically by the database.
+ * Registros que referencian al usuario, agrupados por tabla. Si hay alguno,
+ * borrarlo sin transferir explota contra las FK NO ACTION/RESTRICT que
+ * apuntan a profiles.
+ */
+export async function getUserReferences(
+  userId: string
+): Promise<{ data: UserReference[] } | { error: string }> {
+  try {
+    await requireRole(["admin"])
+    const adminClient = createAdminClient()
+
+    const { data, error } = await adminClient.rpc("admin_usuario_referencias", {
+      p_id: userId,
+    })
+    if (error) return { error: error.message }
+
+    return { data: (data ?? []) as UserReference[] }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error consultando referencias",
+    }
+  }
+}
+
+/**
+ * Hard delete: transfiere los registros del usuario a `transferToId` (para
+ * unificar duplicados) y lo borra de auth.users + profiles.
+ *
+ * Sin `transferToId` sólo funciona si el usuario no tiene registros: hay ~70
+ * FKs a profiles con NO ACTION/RESTRICT que bloquean el borrado en la base.
  * Refuses to delete the currently logged-in user.
  */
 export async function deleteUser(
-  userId: string
-): Promise<{ ok: true } | { error: string }> {
+  userId: string,
+  transferToId?: string | null
+): Promise<
+  { ok: true; movidos: number; descartados: number } | { error: string }
+> {
   try {
     await requireRole(["admin"])
 
@@ -188,13 +224,36 @@ export async function deleteUser(
     if (currentUser && currentUser.id === userId) {
       return { error: "No podés eliminarte a vos mismo" }
     }
+    if (transferToId && transferToId === userId) {
+      return { error: "No podés transferir los registros al mismo usuario" }
+    }
 
     const adminClient = createAdminClient()
-    const { error } = await adminClient.auth.admin.deleteUser(userId)
-    if (error) return { error: error.message }
+    const { data, error } = await adminClient.rpc("admin_usuario_eliminar", {
+      p_origen: userId,
+      p_destino: transferToId ?? null,
+    })
 
-    // profiles row is removed by ON DELETE CASCADE (migration 001)
-    return { ok: true }
+    if (error) {
+      // foreign_key_violation: tiene registros y no se eligió a quién pasarlos
+      if (error.code === "23503" || /foreign key/i.test(error.message)) {
+        return {
+          error:
+            "El usuario tiene registros cargados. Elegí a qué usuario transferirlos para poder eliminarlo.",
+        }
+      }
+      return { error: error.message }
+    }
+
+    const result = (data ?? {}) as {
+      registros_movidos?: number
+      registros_descartados?: number
+    }
+    return {
+      ok: true,
+      movidos: result.registros_movidos ?? 0,
+      descartados: result.registros_descartados ?? 0,
+    }
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error eliminando usuario",

@@ -61,9 +61,14 @@ import {
   toggleUserActive,
   toggleUserPuedeAsignarTareas,
   deleteUser,
+  getUserReferences,
   resetUserPassword,
 } from "@/actions/admin"
-import type { UserWithStats, UserRole } from "@/types/database"
+import type {
+  UserWithStats,
+  UserRole,
+  UserReference,
+} from "@/types/database"
 import { EmpleadoPicker } from "./empleado-picker"
 
 const ROLE_CONFIG: Record<UserRole, { label: string; color: string }> = {
@@ -145,6 +150,9 @@ export function UsuariosClient({
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<UserWithStats | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [refs, setRefs] = useState<UserReference[] | null>(null)
+  const [loadingRefs, setLoadingRefs] = useState(false)
+  const [transferTo, setTransferTo] = useState<string>("")
 
   // Per-row loading & list state
   const [toggling, setToggling] = useState<string | null>(null)
@@ -260,14 +268,29 @@ export function UsuariosClient({
     setResetting(false)
   }
 
+  // Al abrir el diálogo: qué registros tiene cargados el usuario a eliminar
+  async function openDelete(user: UserWithStats) {
+    setDeleteTarget(user)
+    setRefs(null)
+    setTransferTo("")
+    setLoadingRefs(true)
+    const result = await getUserReferences(user.id)
+    setRefs("error" in result ? [] : result.data)
+    setLoadingRefs(false)
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    const result = await deleteUser(deleteTarget.id)
+    const result = await deleteUser(deleteTarget.id, transferTo || null)
     if ("error" in result) {
       toast.error(result.error)
     } else {
-      toast.success("Usuario eliminado")
+      toast.success(
+        result.movidos > 0
+          ? `Usuario eliminado — ${result.movidos} registros pasaron al otro usuario`
+          : "Usuario eliminado"
+      )
       setDeleteTarget(null)
       router.refresh()
     }
@@ -534,7 +557,7 @@ export function UsuariosClient({
                           onTogglePuedeAsignar={() =>
                             handleTogglePuedeAsignar(user.id)
                           }
-                          onDelete={() => setDeleteTarget(user)}
+                          onDelete={() => openDelete(user)}
                         />
                       </TableCell>
                     </TableRow>
@@ -578,7 +601,7 @@ export function UsuariosClient({
                       onTogglePuedeAsignar={() =>
                         handleTogglePuedeAsignar(user.id)
                       }
-                      onDelete={() => setDeleteTarget(user)}
+                      onDelete={() => openDelete(user)}
                     />
                   </div>
 
@@ -769,6 +792,55 @@ export function UsuariosClient({
               deshacer.
             </DialogDescription>
           </DialogHeader>
+
+          {loadingRefs && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Buscando registros del usuario…
+            </p>
+          )}
+
+          {refs !== null && refs.length > 0 && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Tiene{" "}
+                <span className="font-medium">
+                  {refs.reduce((acc, r) => acc + Number(r.filas), 0)} registros
+                </span>{" "}
+                cargados ({refs.length}{" "}
+                {refs.length === 1 ? "tabla" : "tablas"}). Elegí a qué usuario
+                pasarlos: es la forma de unificar duplicados sin perder
+                capacitaciones, OWD ni planes.
+              </div>
+              <div className="space-y-2">
+                <Label>Transferir los registros a</Label>
+                <Select
+                  value={transferTo}
+                  onValueChange={(val) => setTransferTo(val ?? "")}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Elegí un usuario" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {initialUsers
+                      .filter((u) => u.id !== deleteTarget?.id)
+                      .map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.nombre} — {u.email}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {refs !== null && refs.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No tiene registros cargados: se elimina directo.
+            </p>
+          )}
+
           <DialogFooter>
             <Button
               type="button"
@@ -782,7 +854,12 @@ export function UsuariosClient({
               type="button"
               variant="destructive"
               onClick={handleDelete}
-              disabled={deleting}
+              disabled={
+                deleting ||
+                loadingRefs ||
+                refs === null ||
+                (refs.length > 0 && !transferTo)
+              }
             >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Eliminar
