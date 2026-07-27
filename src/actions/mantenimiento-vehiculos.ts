@@ -543,6 +543,33 @@ async function calcularSiguienteNumeroOt(
   return String(max + 1)
 }
 
+/**
+ * Verifica que el N° de OT no esté ya usado por otra orden. El correlativo se
+ * sugiere como "último + 1" al ABRIR el formulario, así que dos cargas
+ * simultáneas (o varias seguidas sin recargar) tomaban el mismo número: pasó
+ * con las OT 1719, 1726 y 1740. La base tiene un índice único, pero acá se
+ * valida antes para devolver un mensaje entendible en vez del error de Postgres.
+ */
+async function numeroOtEnUso(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  numeroOt: string,
+  excluirId?: string
+): Promise<string | null> {
+  const limpio = numeroOt.trim()
+  if (!limpio) return null
+  let q = supabase
+    .from("mantenimiento_realizados")
+    .select("dominio, fecha")
+    .eq("numero_ot", limpio)
+    .limit(1)
+  if (excluirId) q = q.neq("id", excluirId)
+  const { data } = await q
+  const otra = (data ?? [])[0] as { dominio: string; fecha: string } | undefined
+  if (!otra) return null
+  const fecha = otra.fecha.slice(0, 10).split("-").reverse().join("/")
+  return `El N° de OT ${limpio} ya está usado por la orden de ${otra.dominio} del ${fecha}. Poné otro número.`
+}
+
 export async function getSiguienteNumeroOt(): Promise<
   { data: string } | { error: string }
 > {
@@ -856,6 +883,8 @@ export async function createMantenimiento(
     // siguiente correlativo al momento de guardar (evita sugerencias viejas).
     const numeroOt =
       input.numero_ot?.trim() || (await calcularSiguienteNumeroOt(supabase))
+    const repetido = await numeroOtEnUso(supabase, numeroOt)
+    if (repetido) return { error: repetido }
 
     const { data, error } = await supabase
       .from("mantenimiento_realizados")
@@ -983,7 +1012,14 @@ export async function updateMantenimiento(
     if (input.costo !== undefined) patch.costo = input.costo
     if (input.numero_factura !== undefined)
       patch.numero_factura = input.numero_factura?.trim() || null
-    if (input.numero_ot !== undefined) patch.numero_ot = input.numero_ot?.trim() || null
+    if (input.numero_ot !== undefined) {
+      const nuevoNumero = input.numero_ot?.trim() || null
+      if (nuevoNumero) {
+        const repetido = await numeroOtEnUso(supabase, nuevoNumero, input.id)
+        if (repetido) return { error: repetido }
+      }
+      patch.numero_ot = nuevoNumero
+    }
     if (input.horas_mano_obra !== undefined) patch.horas_mano_obra = input.horas_mano_obra
     if (input.costo_mano_obra !== undefined) patch.costo_mano_obra = input.costo_mano_obra
     if (input.observaciones !== undefined)
