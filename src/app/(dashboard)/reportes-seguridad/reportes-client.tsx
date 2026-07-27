@@ -31,7 +31,7 @@ import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-report
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import { PlanesTablero } from "@/components/reportes-seguridad/planes-tablero"
 import {
-  PiramideSeguridad,
+  PiramideSeguridadPanel,
   type PiramideConteos,
 } from "@/components/reportes-seguridad/piramide-seguridad"
 import {
@@ -367,31 +367,21 @@ export function ReportesSeguridadClient({
             </Select>
           </div>
         </div>
-        <PiramideSeguridad
-          conteos={piramideConteos}
-          titulo="Pirámide de Seguridad — Total"
-          subtitulo={`Almacén + Distribución · ${periodoLabel}`}
+        <PiramideSeguridadPanel
+          total={piramideConteos}
+          almacen={piramideConteosAlmacen}
+          distribucion={piramideConteosDistribucion}
+          periodoLabel={periodoLabel}
+          nota={
+            fueraDeAreaOperativa > 0
+              ? `${fueraDeAreaOperativa} ${
+                  fueraDeAreaOperativa === 1 ? "reporte" : "reportes"
+                } del período ${
+                  fueraDeAreaOperativa === 1 ? "está" : "están"
+                } en el total pero no en Almacén ni Distribución (otra área o sin área asignada).`
+              : undefined
+          }
         />
-        <div className="grid gap-3 lg:grid-cols-2">
-          <PiramideSeguridad
-            compacta
-            conteos={piramideConteosAlmacen}
-            titulo="Almacén"
-          />
-          <PiramideSeguridad
-            compacta
-            conteos={piramideConteosDistribucion}
-            titulo="Distribución"
-          />
-        </div>
-        {fueraDeAreaOperativa > 0 && (
-          <p className="text-[11px] italic text-muted-foreground">
-            {fueraDeAreaOperativa}{" "}
-            {fueraDeAreaOperativa === 1 ? "reporte" : "reportes"} del período
-            {fueraDeAreaOperativa === 1 ? " está" : " están"} en el total pero no
-            en Almacén ni Distribución (otra área o sin área asignada).
-          </p>
-        )}
       </div>
 
       {/* KPIs del mes */}

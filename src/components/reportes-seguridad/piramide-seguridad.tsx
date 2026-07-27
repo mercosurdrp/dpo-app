@@ -36,20 +36,16 @@ const SIF_GROUPS: {
 
 export type PiramideConteos = Record<ReporteSeguridadTipoAccidente, number>
 
-export function PiramideSeguridad({
+/**
+ * El dibujo solo. `compacta` = versión reducida para las pirámides por área
+ * (Almacén / Distribución): sin braces SIF ni etiquetas de gravedad, que ya se
+ * leen en la pirámide total — va arriba, con el mismo orden de niveles.
+ */
+function PiramideSvg({
   conteos,
-  titulo = "Pirámide de Seguridad",
-  subtitulo = "Conteos según los reportes cargados",
-  /**
-   * Versión reducida para las pirámides por área (Almacén / Distribución):
-   * sin braces SIF ni etiquetas de gravedad — esos ya se leen en la pirámide
-   * total, que va arriba con el mismo orden de niveles.
-   */
   compacta = false,
 }: {
   conteos: PiramideConteos
-  titulo?: string
-  subtitulo?: string
   compacta?: boolean
 }) {
   const NIV = NIVELES.length // 7
@@ -64,7 +60,6 @@ export function PiramideSeguridad({
   const PYR_RIGHT = PYR_LEFT + PYR_W
   const PYR_CX = PYR_LEFT + PYR_W / 2
   const TOP_W = 0.18
-  const total = NIVELES.reduce((acc, n) => acc + (conteos[n.sigla] ?? 0), 0)
 
   function widths(n: number): { top: number; bottom: number } {
     const top = TOP_W + (1 - TOP_W) * (n / NIV)
@@ -73,24 +68,7 @@ export function PiramideSeguridad({
   }
 
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3
-          className={
-            compacta
-              ? "text-sm font-semibold text-slate-900"
-              : "text-base font-semibold text-slate-900"
-          }
-        >
-          {titulo}
-        </h3>
-        <p className="text-xs text-muted-foreground">
-          {compacta ? `${total} reporte${total === 1 ? "" : "s"}` : subtitulo}
-        </p>
-      </div>
-
-      <div className={compacta ? "mx-auto" : "mx-auto max-w-3xl"}>
-        <svg
+    <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="w-full"
           preserveAspectRatio="xMidYMid meet"
@@ -161,7 +139,7 @@ export function PiramideSeguridad({
                   x={xTopL + (xBotL - xTopL) / 2 + 22}
                   y={cy + 4}
                   textAnchor="middle"
-                  fontSize={i === 0 ? 11 : 13}
+                  fontSize={compacta ? (i === 0 ? 12 : 15) : i === 0 ? 11 : 13}
                   fontWeight={800}
                   fill="#1F2937"
                   style={{
@@ -177,7 +155,7 @@ export function PiramideSeguridad({
                   x={PYR_CX}
                   y={cy + 5}
                   textAnchor="middle"
-                  fontSize={i === 0 ? 12 : 17}
+                  fontSize={compacta ? (i === 0 ? 14 : 20) : i === 0 ? 12 : 17}
                   fontWeight={900}
                   fill="#FFFFFF"
                   style={{
@@ -237,15 +215,98 @@ export function PiramideSeguridad({
               </g>
             )
           })()}
-        </svg>
+    </svg>
+  )
+}
+
+const NOTA_ART =
+  "La clasificación se basa en la gravedad de la lesión, no en los días de baja que da la ART."
+
+function totalDe(conteos: PiramideConteos): number {
+  return NIVELES.reduce((acc, n) => acc + (conteos[n.sigla] ?? 0), 0)
+}
+
+/** Pirámide sola en su tarjeta (la usa la etapa de seguridad de las reuniones). */
+export function PiramideSeguridad({ conteos }: { conteos: PiramideConteos }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="text-base font-semibold text-slate-900">
+          Pirámide de Seguridad
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Conteos según los reportes cargados
+        </p>
+      </div>
+      <div className="mx-auto max-w-3xl">
+        <PiramideSvg conteos={conteos} />
+      </div>
+      <p className="mt-3 text-[11px] italic text-muted-foreground">{NOTA_ART}</p>
+    </div>
+  )
+}
+
+/**
+ * Las TRES pirámides en un solo marco: el total arriba y, debajo, la apertura
+ * por área relevada (Almacén / Distribución) en tamaño reducido, para poder
+ * mirarlas juntas de un vistazo en la reunión.
+ */
+export function PiramideSeguridadPanel({
+  total,
+  almacen,
+  distribucion,
+  periodoLabel,
+  nota,
+}: {
+  total: PiramideConteos
+  almacen: PiramideConteos
+  distribucion: PiramideConteos
+  periodoLabel: string
+  /** Aviso opcional al pie (p. ej. reportes que no caen en ninguna de las dos áreas). */
+  nota?: string
+}) {
+  const areas: { titulo: string; conteos: PiramideConteos }[] = [
+    { titulo: "Almacén", conteos: almacen },
+    { titulo: "Distribución", conteos: distribucion },
+  ]
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="text-base font-semibold text-slate-900">
+          Pirámide de Seguridad
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {totalDe(total)} reporte{totalDe(total) === 1 ? "" : "s"} ·{" "}
+          {periodoLabel}
+        </p>
       </div>
 
-      {!compacta && (
-        <p className="mt-3 text-[11px] italic text-muted-foreground">
-          La clasificación se basa en la gravedad de la lesión, no en los días de
-          baja que da la ART.
-        </p>
-      )}
+      <div className="mx-auto max-w-3xl">
+        <PiramideSvg conteos={total} />
+      </div>
+
+      <div className="mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2">
+        {areas.map((a) => (
+          <div key={a.titulo}>
+            <p className="text-center text-sm font-semibold text-slate-900">
+              {a.titulo}{" "}
+              <span className="font-normal text-muted-foreground">
+                · {totalDe(a.conteos)} reporte
+                {totalDe(a.conteos) === 1 ? "" : "s"}
+              </span>
+            </p>
+            <div className="mx-auto mt-1 max-w-[260px]">
+              <PiramideSvg compacta conteos={a.conteos} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] italic text-muted-foreground">
+        {NOTA_ART}
+        {nota ? ` ${nota}` : ""}
+      </p>
     </div>
   )
 }
