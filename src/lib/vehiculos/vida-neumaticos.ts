@@ -17,6 +17,12 @@ export const VIDA_UTIL_DEFAULT_KM: Record<NeumaticoTipo, number> = {
 // Km entre rotaciones de neumáticos.
 export const ROTACION_KM = 20_000
 
+// Profundidad por encima de la cual la goma se considera sana: si la cubierta
+// ya cumplió el km de vida ESTIMADO pero mide más que esto, no se marca "a
+// cambiar" (la medición real manda sobre la estimación por kilometraje). Por
+// debajo de PROFUNDIDAD_CRITICA_MM (3 mm) se marca a cambiar siempre.
+export const PROFUNDIDAD_SANA_MM = 5
+
 // Umbrales para marcar "próximo" (a cambiar / a rotar pronto).
 const PROXIMO_PCT = 0.9 // 90% de la vida consumida
 const PROXIMO_KM = 2_000 // o quedan ≤ 2.000 km
@@ -67,12 +73,25 @@ export function vidaNeumatico(
     kmDia && kmDia > 0 ? Math.round(kmRestante / kmDia) : null
 
   let estado: EstadoVida
-  if (profCritica || kmRestante <= 0) {
+  if (profCritica) {
     estado = "cambiar"
+  } else if (kmRestante <= 0) {
+    // Vida útil cumplida según el km ESTIMADO. Si además hay una profundidad
+    // medida y la goma está sana, manda la medición: queda en "próximo" (hay
+    // que vigilarla) en vez de "cambiar". Las delanteras del AE591EI son el
+    // caso: 109.401 km sobre 100.000 estimados, pero 8,9 y 6,2 mm de dibujo.
+    estado =
+      n.profundidad_actual_mm != null && n.profundidad_actual_mm > PROFUNDIDAD_SANA_MM
+        ? "proximo"
+        : "cambiar"
   } else if (
     (pct != null && pct >= PROXIMO_PCT) ||
     kmRestante <= PROXIMO_KM ||
-    (diasRestantes != null && diasRestantes <= PROXIMO_DIAS)
+    (diasRestantes != null && diasRestantes <= PROXIMO_DIAS) ||
+    // Aunque le sobre kilometraje: si el dibujo ya está bajo (sin llegar a los
+    // 3 mm críticos) hay que vigilarla, porque el desgaste real va más rápido
+    // que la estimación por km.
+    (n.profundidad_actual_mm != null && n.profundidad_actual_mm <= PROFUNDIDAD_SANA_MM)
   ) {
     estado = "proximo"
   } else {
