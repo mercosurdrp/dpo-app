@@ -13,6 +13,7 @@ import {
   CATEGORIA_CONTACTO_RIESGO_LABELS,
   TIPO_RIESGO_EXTERNO_LABELS,
   type CategoriaContactoRiesgo,
+  type RiesgoExternoConfig,
   type RiesgoExternoContacto,
   type TipoRiesgoExterno,
 } from "@/types/database"
@@ -41,23 +42,27 @@ export async function GET() {
   }
 
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("riesgos_externos_contactos")
-    .select("*")
-    .eq("activo", true)
-    .order("tipo_riesgo")
-    .order("orden")
-    .order("nombre")
+  const [{ data, error }, { data: confData }] = await Promise.all([
+    supabase
+      .from("riesgos_externos_contactos")
+      .select("*")
+      .eq("activo", true)
+      .order("tipo_riesgo")
+      .order("orden")
+      .order("nombre"),
+    supabase.from("riesgos_externos_config").select("*"),
+  ])
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const contactos = (data ?? []) as RiesgoExternoContacto[]
+  const config = (confData ?? []) as RiesgoExternoConfig[]
 
   let pdfBuf: Buffer
   try {
-    pdfBuf = await renderPDF(contactos)
+    pdfBuf = await renderPDF(contactos, config)
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Error generando PDF" },
@@ -73,7 +78,10 @@ export async function GET() {
   })
 }
 
-async function renderPDF(contactos: RiesgoExternoContacto[]): Promise<Buffer> {
+async function renderPDF(
+  contactos: RiesgoExternoContacto[],
+  config: RiesgoExternoConfig[],
+): Promise<Buffer> {
   return await new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({
       size: "A4",
@@ -90,7 +98,7 @@ async function renderPDF(contactos: RiesgoExternoContacto[]): Promise<Buffer> {
     doc.on("end", () => resolve(Buffer.concat(chunks)))
     doc.on("error", reject)
     try {
-      buildPDF(doc, contactos)
+      buildPDF(doc, contactos, config)
       drawFooters(doc)
       doc.end()
     } catch (err) {
@@ -99,7 +107,11 @@ async function renderPDF(contactos: RiesgoExternoContacto[]): Promise<Buffer> {
   })
 }
 
-function buildPDF(doc: Doc, contactos: RiesgoExternoContacto[]) {
+function buildPDF(
+  doc: Doc,
+  contactos: RiesgoExternoContacto[],
+  config: RiesgoExternoConfig[],
+) {
   const margin = doc.page.margins.left
   const usable = doc.page.width - margin * 2
 
@@ -123,27 +135,59 @@ function buildPDF(doc: Doc, contactos: RiesgoExternoContacto[]) {
     )
   doc.y += 8
 
-  const tipos = Object.keys(TIPO_RIESGO_EXTERNO_LABELS) as TipoRiesgoExterno[]
+  const prioritarios = new Set(
+    config.filter((c) => c.prioritario).map((c) => c.tipo_riesgo),
+  )
+  const criticidadPorTipo = new Map(
+    config.map((c) => [c.tipo_riesgo, c.criticidad]),
+  )
+
+  // Los riesgos prioritarios del CD van primero en la hoja.
+  const tipos = (
+    Object.keys(TIPO_RIESGO_EXTERNO_LABELS) as TipoRiesgoExterno[]
+  ).sort(
+    (a, b) => Number(prioritarios.has(b)) - Number(prioritarios.has(a)),
+  )
 
   for (const tipo of tipos) {
     const items = contactos.filter((c) => c.tipo_riesgo === tipo)
     if (items.length === 0) continue
+    const esPrioritario = prioritarios.has(tipo)
+    const criticidad = criticidadPorTipo.get(tipo)
 
     // Bloque del riesgo: título + una línea por contacto.
     ensureSpace(doc, 22 + items.length * 14 + 8)
 
     const yTitle = doc.y
     doc.save()
-    doc.rect(margin, yTitle, usable, 18).fill(COLOR_HEADER_BG)
-    doc.restore()
     doc
-      .fillColor(COLOR_PRIMARY)
+      .rect(margin, yTitle, usable, 18)
+      .fill(esPrioritario ? "#fee2e2" : COLOR_HEADER_BG)
+    doc.restore()
+
+    const titulo = esPrioritario
+      ? `★ ${TIPO_RIESGO_EXTERNO_LABELS[tipo].toUpperCase()}  ·  RIESGO PRIORITARIO`
+      : TIPO_RIESGO_EXTERNO_LABELS[tipo].toUpperCase()
+    doc
+      .fillColor(esPrioritario ? COLOR_ACCENT : COLOR_PRIMARY)
       .font("Helvetica-Bold")
       .fontSize(10)
-      .text(TIPO_RIESGO_EXTERNO_LABELS[tipo].toUpperCase(), margin + 6, yTitle + 5, {
-        width: usable - 12,
+      .text(titulo, margin + 6, yTitle + 5, {
+        width: usable - 90,
         lineBreak: false,
       })
+
+    if (criticidad) {
+      doc
+        .fillColor(COLOR_MUTED)
+        .font("Helvetica-Bold")
+        .fontSize(8)
+        .text(criticidad.toUpperCase(), margin + usable - 86, yTitle + 6, {
+          width: 80,
+          align: "right",
+          lineBreak: false,
+        })
+    }
     doc.y = yTitle + 18 + 3
 
     for (const c of items) {

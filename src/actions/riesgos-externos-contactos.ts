@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import type { RiesgoExternoContacto } from "@/types/database"
+import type {
+  RiesgoExternoConfig,
+  RiesgoExternoContacto,
+  TipoRiesgoExterno,
+} from "@/types/database"
 
 const REVALIDATE_PATH = "/riesgos-externos"
 
@@ -35,6 +39,63 @@ export async function listContactos(): Promise<Result<RiesgoExternoContacto[]>> 
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error cargando contactos",
+    }
+  }
+}
+
+export async function listConfigRiesgos(): Promise<
+  Result<RiesgoExternoConfig[]>
+> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("riesgos_externos_config")
+      .select("*")
+
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as RiesgoExternoConfig[] }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Error cargando la configuración de riesgos",
+    }
+  }
+}
+
+/** Marca o desmarca un riesgo como prioritario del CD. */
+export async function togglePrioritario(
+  tipoRiesgo: TipoRiesgoExterno,
+  prioritario: boolean,
+): Promise<Result<RiesgoExternoConfig>> {
+  try {
+    const profile = await requireEditor()
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from("riesgos_externos_config")
+      .upsert(
+        {
+          tipo_riesgo: tipoRiesgo,
+          prioritario,
+          updated_by: profile.id,
+        },
+        { onConflict: "tipo_riesgo" },
+      )
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as RiesgoExternoConfig }
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : "Error actualizando la prioridad",
     }
   }
 }

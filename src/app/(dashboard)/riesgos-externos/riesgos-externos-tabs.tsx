@@ -7,6 +7,7 @@ import { ContactosClient } from "./contactos-client"
 import type {
   Profile,
   RiesgoExternoAccionConResponsable,
+  RiesgoExternoConfig,
   RiesgoExternoContacto,
 } from "@/types/database"
 
@@ -14,6 +15,7 @@ interface Props {
   acciones: RiesgoExternoAccionConResponsable[]
   responsables: Pick<Profile, "id" | "nombre" | "email">[]
   contactos: RiesgoExternoContacto[]
+  config: RiesgoExternoConfig[]
   puedeEditar: boolean
 }
 
@@ -21,6 +23,7 @@ export function RiesgosExternosTabs({
   acciones,
   responsables,
   contactos,
+  config,
   puedeEditar,
 }: Props) {
   return (
@@ -57,7 +60,11 @@ export function RiesgosExternosTabs({
         </TabsContent>
 
         <TabsContent value="contactos">
-          <ContactosClient contactos={contactos} puedeEditar={puedeEditar} />
+          <ContactosClient
+            contactos={contactos}
+            config={config}
+            puedeEditar={puedeEditar}
+          />
         </TabsContent>
       </Tabs>
     </div>

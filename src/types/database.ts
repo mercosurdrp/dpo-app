@@ -3663,6 +3663,27 @@ export const CATEGORIA_CONTACTO_RIESGO_LABELS: Record<
   emergencia: "Emergencia pública",
 }
 
+export type CriticidadRiesgoExterno = "critico" | "alto" | "medio"
+
+export const CRITICIDAD_RIESGO_EXTERNO_LABELS: Record<
+  CriticidadRiesgoExterno,
+  string
+> = {
+  critico: "Crítico",
+  alto: "Alto",
+  medio: "Medio",
+}
+
+// Config por riesgo: cuáles son los prioritarios del CD y su criticidad.
+export interface RiesgoExternoConfig {
+  tipo_riesgo: TipoRiesgoExterno
+  prioritario: boolean
+  criticidad: CriticidadRiesgoExterno | null
+  nota: string | null
+  updated_at: string
+  updated_by: string | null
+}
+
 export interface RiesgoExternoContacto {
   id: string
   tipo_riesgo: TipoRiesgoExterno

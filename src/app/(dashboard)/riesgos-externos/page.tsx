@@ -3,14 +3,18 @@ import {
   listResponsablesPosibles,
   puedeEditarRiesgosExternos,
 } from "@/actions/riesgos-externos"
-import { listContactos } from "@/actions/riesgos-externos-contactos"
+import {
+  listConfigRiesgos,
+  listContactos,
+} from "@/actions/riesgos-externos-contactos"
 import { RiesgosExternosTabs } from "./riesgos-externos-tabs"
 
 export default async function RiesgosExternosPage() {
-  const [accRes, respRes, contRes, puedeEditar] = await Promise.all([
+  const [accRes, respRes, contRes, confRes, puedeEditar] = await Promise.all([
     listAcciones(),
     listResponsablesPosibles(),
     listContactos(),
+    listConfigRiesgos(),
     puedeEditarRiesgosExternos(),
   ])
 
@@ -30,6 +34,7 @@ export default async function RiesgosExternosPage() {
       acciones={accRes.data}
       responsables={"data" in respRes ? respRes.data : []}
       contactos={"data" in contRes ? contRes.data : []}
+      config={"data" in confRes ? confRes.data : []}
       puedeEditar={puedeEditar}
     />
   )

@@ -11,6 +11,7 @@ import {
   Plus,
   Printer,
   Siren,
+  Star,
   Trash2,
   User,
 } from "lucide-react"
@@ -24,19 +25,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { eliminarContacto } from "@/actions/riesgos-externos-contactos"
+import {
+  eliminarContacto,
+  togglePrioritario,
+} from "@/actions/riesgos-externos-contactos"
 import { ContactoFormDialog } from "@/components/riesgos-externos/contacto-form-dialog"
 import {
   CATEGORIA_CONTACTO_RIESGO_LABELS,
+  CRITICIDAD_RIESGO_EXTERNO_LABELS,
   TIPO_RIESGO_EXTERNO_LABELS,
   type CategoriaContactoRiesgo,
+  type CriticidadRiesgoExterno,
+  type RiesgoExternoConfig,
   type RiesgoExternoContacto,
   type TipoRiesgoExterno,
 } from "@/types/database"
 
 interface Props {
   contactos: RiesgoExternoContacto[]
+  config: RiesgoExternoConfig[]
   puedeEditar: boolean
+}
+
+function CriticidadBadge({
+  criticidad,
+}: {
+  criticidad: CriticidadRiesgoExterno
+}) {
+  const cls =
+    criticidad === "critico"
+      ? "border-red-200 bg-red-100 text-red-700 hover:bg-red-100"
+      : criticidad === "alto"
+        ? "border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100"
+        : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100"
+  return (
+    <Badge className={cls}>
+      {CRITICIDAD_RIESGO_EXTERNO_LABELS[criticidad]}
+    </Badge>
+  )
 }
 
 function CategoriaBadge({ categoria }: { categoria: CategoriaContactoRiesgo }) {
@@ -65,7 +91,7 @@ function CategoriaBadge({ categoria }: { categoria: CategoriaContactoRiesgo }) {
   )
 }
 
-export function ContactosClient({ contactos, puedeEditar }: Props) {
+export function ContactosClient({ contactos, config, puedeEditar }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
@@ -89,16 +115,38 @@ export function ContactosClient({ contactos, puedeEditar }: Props) {
     })
   }, [contactos, filtroTipo, filtroCategoria, busqueda])
 
-  // Agrupado por riesgo, respetando el orden del enum de tipos.
+  const configPorTipo = useMemo(() => {
+    const map = new Map<TipoRiesgoExterno, RiesgoExternoConfig>()
+    for (const c of config) map.set(c.tipo_riesgo, c)
+    return map
+  }, [config])
+
+  // Agrupado por riesgo: primero los prioritarios, después el orden del enum.
   const grupos = useMemo(() => {
     const orden = Object.keys(TIPO_RIESGO_EXTERNO_LABELS) as TipoRiesgoExterno[]
     return orden
       .map((tipo) => ({
         tipo,
         items: filtrados.filter((c) => c.tipo_riesgo === tipo),
+        prioritario: configPorTipo.get(tipo)?.prioritario ?? false,
+        criticidad: configPorTipo.get(tipo)?.criticidad ?? null,
       }))
       .filter((g) => g.items.length > 0)
-  }, [filtrados])
+      .sort((a, b) => Number(b.prioritario) - Number(a.prioritario))
+  }, [filtrados, configPorTipo])
+
+  // Riesgos prioritarios del CD, con sus contactos que sí tienen teléfono.
+  const prioritarios = useMemo(() => {
+    const tipos = config
+      .filter((c) => c.prioritario)
+      .map((c) => c.tipo_riesgo)
+    return tipos
+      .map((tipo) => ({
+        tipo,
+        items: contactos.filter((c) => c.tipo_riesgo === tipo && c.telefono),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [config, contactos])
 
   const stats = useMemo(() => {
     const sinTelefono = contactos.filter((c) => !c.telefono).length
@@ -132,6 +180,20 @@ export function ContactosClient({ contactos, puedeEditar }: Props) {
     })
   }
 
+  function handleTogglePrioritario(
+    tipo: TipoRiesgoExterno,
+    prioritario: boolean,
+  ) {
+    startTransition(async () => {
+      const result = await togglePrioritario(tipo, prioritario)
+      if ("error" in result) {
+        alert(`Error: ${result.error}`)
+        return
+      }
+      refrescar()
+    })
+  }
+
   function abrirNuevo(tipo: TipoRiesgoExterno | null) {
     setEditing(null)
     setTipoNuevo(tipo)
@@ -140,6 +202,46 @@ export function ContactosClient({ contactos, puedeEditar }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Riesgos prioritarios del CD */}
+      {prioritarios.length > 0 && (
+        <div className="rounded-lg border-2 border-red-200 bg-red-50/60">
+          <div className="flex items-center gap-2 border-b border-red-200 px-4 py-2.5">
+            <Star className="size-5 fill-red-600 text-red-600" />
+            <div>
+              <h3 className="font-semibold text-red-900">
+                Riesgos prioritarios del CD
+              </h3>
+              <p className="text-xs text-red-800/80">
+                Los que más afectan la operación: cortan preventa, ruteo,
+                facturación y picking. Llamar de inmediato.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-px bg-red-200 sm:grid-cols-3">
+            {prioritarios.map(({ tipo, items }) => (
+              <div key={tipo} className="bg-white px-4 py-3">
+                <p className="text-sm font-semibold text-slate-900">
+                  {TIPO_RIESGO_EXTERNO_LABELS[tipo]}
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {items.map((c) => (
+                    <li key={c.id} className="text-sm">
+                      <a
+                        href={`tel:${c.telefono!.replace(/[^\d+]/g, "")}`}
+                        className="font-mono font-semibold text-blue-700 hover:underline"
+                      >
+                        {c.telefono}
+                      </a>{" "}
+                      <span className="text-muted-foreground">{c.nombre}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
@@ -249,15 +351,51 @@ export function ContactosClient({ contactos, puedeEditar }: Props) {
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {grupos.map(({ tipo, items }) => {
+        {grupos.map(({ tipo, items, prioritario, criticidad }) => {
           const faltantes = items.filter((c) => !c.telefono).length
           return (
-            <div key={tipo} className="rounded-lg border bg-white">
-              <div className="flex items-center justify-between gap-2 border-b bg-slate-50 px-4 py-2.5">
-                <h3 className="font-semibold text-slate-900">
-                  {TIPO_RIESGO_EXTERNO_LABELS[tipo]}
-                </h3>
+            <div
+              key={tipo}
+              className={`rounded-lg border bg-white ${
+                prioritario ? "border-red-300 ring-1 ring-red-200" : ""
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between gap-2 border-b px-4 py-2.5 ${
+                  prioritario ? "bg-red-50" : "bg-slate-50"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  {prioritario && (
+                    <Star className="size-4 fill-red-600 text-red-600" />
+                  )}
+                  <h3 className="font-semibold text-slate-900">
+                    {TIPO_RIESGO_EXTERNO_LABELS[tipo]}
+                  </h3>
+                  {criticidad && <CriticidadBadge criticidad={criticidad} />}
+                </div>
                 <div className="flex items-center gap-2">
+                  {puedeEditar && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleTogglePrioritario(tipo, !prioritario)}
+                      title={
+                        prioritario
+                          ? "Quitar de riesgos prioritarios"
+                          : "Marcar como riesgo prioritario"
+                      }
+                    >
+                      <Star
+                        className={`size-4 ${
+                          prioritario
+                            ? "fill-red-600 text-red-600"
+                            : "text-slate-400"
+                        }`}
+                      />
+                    </Button>
+                  )}
                   {faltantes > 0 && (
                     <Badge className="gap-1 border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
                       <AlertTriangle className="size-3.5" />
