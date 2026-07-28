@@ -54,6 +54,11 @@ export const CARGA_LIMITE_HORA = "07:00:00"
 export const RECEPCION_VENTANA_INICIO_MIN = 8 * 60 // 08:00
 export const RECEPCION_VENTANA_FIN_MIN = 16 * 60 // 16:00
 export const RECEPCION_MAX_DESCARGA_MIN = 180 // ≤ 3 h
+// Pico: el camión no se cerró en la pantalla y quedó abierto horas. No es una
+// demora de descarga, así que no se computa (mismo criterio y mismo umbral que
+// el ATCT del 6.3 en acarreo-rdf, UMBRAL_PICO_MIN). Jun-jul 2026: 4 casos, de
+// 11 a 18,6 h, sin ningún viaje real entre las 6 y las 11 h.
+export const RECEPCION_PICO_MIN = 480 // > 8 h de ciclo
 
 /** Minutos desde medianoche en hora Argentina (UTC-3 fijo, sin DST). */
 function minutosArgentina(iso: string): number {
@@ -62,15 +67,37 @@ function minutosArgentina(iso: string): number {
 }
 
 /**
+ * Un ciclo de más de 8 h no es una demora: es un camión que quedó abierto en la
+ * pantalla y se cerró mucho después. Se mide hasta la salida cuando está
+ * registrada (desde el 27-07-2026); una salida sellada en el mismo instante que
+ * el fin de descarga es el cierre retroactivo de los viajes viejos, no un dato.
+ */
+export function esPicoRecepcion(
+  arriboIso: string,
+  finIso: string | null,
+  salidaIso: string | null = null,
+): boolean {
+  const cierre = salidaIso && salidaIso !== finIso ? salidaIso : finIso
+  if (!cierre) return false
+  const ciclo = (new Date(cierre).getTime() - new Date(arriboIso).getTime()) / 60000
+  return ciclo > RECEPCION_PICO_MIN
+}
+
+/**
  * Cumplimiento de una recepción para el SLA #7. Devuelve:
  *   true  → arribo en ventana 08:00–16:00 y descarga ≤ 3 h
  *   false → arribo en ventana pero descarga > 3 h
- *   null  → no evaluable (sin fin de descarga o arribo fuera de 08:00–16:00)
+ *   null  → no evaluable (sin fin de descarga, arribo fuera de 08:00–16:00 o pico)
  */
-export function cumpleRecepcion(arriboIso: string, finIso: string | null): boolean | null {
+export function cumpleRecepcion(
+  arriboIso: string,
+  finIso: string | null,
+  salidaIso: string | null = null,
+): boolean | null {
   const min = minutosArgentina(arriboIso)
   if (min < RECEPCION_VENTANA_INICIO_MIN || min >= RECEPCION_VENTANA_FIN_MIN) return null
   if (!finIso) return null
+  if (esPicoRecepcion(arriboIso, finIso, salidaIso)) return null
   const dur = (new Date(finIso).getTime() - new Date(arriboIso).getTime()) / 60000
   return dur <= RECEPCION_MAX_DESCARGA_MIN
 }

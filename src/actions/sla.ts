@@ -25,6 +25,7 @@ import {
   CARGA_LIMITE_HORA,
   CAPACIDAD_MIN_PCT,
   cumpleRecepcion,
+  esPicoRecepcion,
   type CumplimientoMes,
   type CumplimientoSlaFila,
   type EstadoCumplimiento,
@@ -806,7 +807,7 @@ async function filaRecepcion(
 
   const { data, error } = await acarreo
     .from("recepcion_acarreos")
-    .select("fecha, hora_arribo, hora_fin_descarga")
+    .select("fecha, hora_arribo, hora_fin_descarga, hora_salida")
     .gte("fecha", desde)
     .lt("fecha", hastaExcl)
 
@@ -818,7 +819,7 @@ async function filaRecepcion(
   let cumplidos = 0
   let totalAplica = 0
   for (const r of data as any[]) {
-    const res = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga)
+    const res = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
     if (res === null) continue // fuera de ventana 08–16 o sin fin de descarga
     const dia = Number((r.fecha as string).slice(8, 10))
     totalAplica++
@@ -1671,12 +1672,12 @@ export async function getDetalleDiaSla(
       } else {
         const { data } = await acarreo
           .from("recepcion_acarreos")
-          .select("patente, transportista, origen, hora_arribo, hora_fin_descarga")
+          .select("patente, transportista, origen, hora_arribo, hora_fin_descarga, hora_salida")
           .eq("fecha", fecha)
           .order("hora_arribo", { ascending: true })
         const rows = (data ?? []) as any[]
         const evaluables = rows
-          .map((r) => cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga))
+          .map((r) => cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida))
           .filter((v) => v !== null) as boolean[]
 
         if (evaluables.length === 0) {
@@ -1684,7 +1685,7 @@ export async function getDetalleDiaSla(
           nota =
             rows.length === 0
               ? "Sin recepciones registradas este día."
-              : "Sin recepciones evaluables (arribos fuera de 08:00–16:00 o descarga sin finalizar)."
+              : "Sin recepciones evaluables (arribos fuera de 08:00–16:00, descarga sin finalizar o camiones que quedaron abiertos más de 8 h)."
         } else {
           const cumplidas = evaluables.filter(Boolean).length
           estado = cumplidas === evaluables.length ? "si" : "no"
@@ -1692,10 +1693,11 @@ export async function getDetalleDiaSla(
         }
 
         for (const r of rows) {
-          const ok = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga)
+          const ok = cumpleRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
+          const pico = esPicoRecepcion(r.hora_arribo, r.hora_fin_descarga, r.hora_salida)
           const arr = fmtMin(minutosARG(r.hora_arribo))
           const fin = r.hora_fin_descarga ? fmtMin(minutosARG(r.hora_fin_descarga)) : "—"
-          const mark = ok === null ? "·" : ok ? "✓" : "✗"
+          const mark = pico ? "pico" : ok === null ? "·" : ok ? "✓" : "✗"
           filas.push({
             label: `${r.patente ?? "—"}${r.origen ? ` · ${r.origen}` : ""}`,
             valor: `${arr}→${fin} ${mark}`,
