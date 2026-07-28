@@ -1261,6 +1261,9 @@ export interface KmFlotaResumen {
   serieDiariaMes: { fecha: string; km: number }[]
 }
 
+/** Tabla de la que salió una lectura de odómetro (para poder corregirla). */
+export type FuenteLectura = "registros" | "checklist" | "combustible"
+
 export interface VehiculoTimelineEvento {
   tipo: "egreso" | "retorno" | "liberacion" | "retorno_chk" | "combustible" | "checklist_nook"
   fecha: string
@@ -1269,6 +1272,9 @@ export interface VehiculoTimelineEvento {
   chofer: string | null
   odometro: number | null
   link: string | null
+  /** Origen de la lectura + id de la fila: habilitan el lápiz de corrección. */
+  fuente: FuenteLectura
+  registroId: string
 }
 
 export interface VehiculoDetalle {

@@ -2,8 +2,13 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { actualizarOdometroLectura } from "@/actions/odometro-lecturas"
 import {
   Select,
   SelectContent,
@@ -35,6 +40,9 @@ import {
   MapPin,
   ShieldAlert,
   Info,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react"
 import type { VehiculoDetalle, VehiculoTimelineEvento } from "@/types/database"
 
@@ -449,7 +457,7 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
                         </Badge>
                         {ev.chofer && <span>{ev.chofer}</span>}
                         {ev.odometro != null && (
-                          <span className="font-mono">{ev.odometro.toLocaleString("es-AR")} {unidad}</span>
+                          <OdometroTimeline ev={ev} unidad={unidad} />
                         )}
                       </div>
                     </div>
@@ -468,5 +476,121 @@ export function VehiculoDetalleClient({ detalle, children }: Props) {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+/**
+ * Lectura de odómetro del timeline, corregible en el lugar.
+ *
+ * Un dedazo en el odómetro queda pegado (el km de la unidad es el valor MÁS
+ * ALTO cargado) y bloquea el checklist siguiente, porque no se puede cargar un
+ * número menor al último conocido. Acá se corrige donde se ve el salto, sin
+ * tener que buscar el registro en la grilla de /vehiculos.
+ */
+function OdometroTimeline({
+  ev,
+  unidad,
+}: {
+  ev: VehiculoTimelineEvento
+  unidad: string
+}) {
+  const router = useRouter()
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState("")
+  const [guardando, setGuardando] = useState(false)
+
+  // El evento "checklist con NO OK" es la MISMA fila que su liberación/retorno:
+  // un solo lápiz por lectura, para no dar a entender que son dos cargas.
+  const editable = ev.tipo !== "checklist_nook"
+
+  async function guardar() {
+    const num = Number.parseInt(valor, 10)
+    if (!Number.isFinite(num)) {
+      toast.error("Escribí el odómetro en números")
+      return
+    }
+    setGuardando(true)
+    const res = await actualizarOdometroLectura({
+      fuente: ev.fuente,
+      id: ev.registroId,
+      odometro: num,
+    })
+    setGuardando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    toast.success(`Odómetro corregido: ${num.toLocaleString("es-AR")} ${unidad}`)
+    setEditando(false)
+    router.refresh()
+  }
+
+  if (editando) {
+    return (
+      <span className="flex items-center gap-1">
+        <Input
+          type="number"
+          inputMode="numeric"
+          autoFocus
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              void guardar()
+            } else if (e.key === "Escape") {
+              setEditando(false)
+            }
+          }}
+          disabled={guardando}
+          className="h-7 w-28 font-mono text-xs"
+        />
+        <span className="text-[10px]">{unidad}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+          onClick={() => void guardar()}
+          disabled={guardando}
+          title="Guardar"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+          onClick={() => setEditando(false)}
+          disabled={guardando}
+          title="Cancelar"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <span className="font-mono">
+        {ev.odometro?.toLocaleString("es-AR")} {unidad}
+      </span>
+      {editable && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 w-5 p-0 text-slate-400 hover:text-slate-700"
+          title="Corregir odómetro"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setValor(ev.odometro?.toString() ?? "")
+            setEditando(true)
+          }}
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+      )}
+    </span>
   )
 }

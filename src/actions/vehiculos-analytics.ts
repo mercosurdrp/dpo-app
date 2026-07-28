@@ -237,6 +237,8 @@ export async function getVehiculoDetalle(
       km_recorridos: number | null
       litros: number
       costo_total: number | null
+      odometro: number | null
+      chofer: string | null
     }>
 
     const cargasConRend = combustibles.filter(
@@ -317,6 +319,8 @@ export async function getVehiculoDetalle(
           chofer: r.chofer,
           odometro: r.odometro,
           link: null,
+          fuente: "registros",
+          registroId: r.id,
         })
       } else if (r.tipo === "ingreso") {
         timeline.push({
@@ -327,6 +331,8 @@ export async function getVehiculoDetalle(
           chofer: r.chofer,
           odometro: r.odometro,
           link: null,
+          fuente: "registros",
+          registroId: r.id,
         })
       }
     }
@@ -342,6 +348,8 @@ export async function getVehiculoDetalle(
           chofer: c.chofer,
           odometro: c.odometro,
           link: null,
+          fuente: "checklist",
+          registroId: c.id,
         })
       } else if (c.tipo === "retorno") {
         timeline.push({
@@ -352,6 +360,8 @@ export async function getVehiculoDetalle(
           chofer: c.chofer,
           odometro: c.odometro,
           link: null,
+          fuente: "checklist",
+          registroId: c.id,
         })
       }
       if (c.resultado === "rechazado") {
@@ -363,6 +373,8 @@ export async function getVehiculoDetalle(
           chofer: c.chofer,
           odometro: c.odometro,
           link: null,
+          fuente: "checklist",
+          registroId: c.id,
         })
       }
     }
@@ -374,9 +386,14 @@ export async function getVehiculoDetalle(
         descripcion: `Carga de combustible${
           c.litros ? ` - ${Number(c.litros)} L` : ""
         }${c.rendimiento ? ` - ${Number(c.rendimiento)} km/l` : ""}`,
-        chofer: null,
-        odometro: null,
+        chofer: c.chofer,
+        // El odómetro de la carga NO se mostraba: era la única de las 3 fuentes
+        // que quedaba invisible en el timeline, y es donde más se cuela el
+        // dedazo (el chofer lo tipea en la playa).
+        odometro: c.odometro,
         link: null,
+        fuente: "combustible",
+        registroId: c.id,
       })
     }
 
