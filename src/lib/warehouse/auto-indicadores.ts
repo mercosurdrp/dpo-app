@@ -1035,10 +1035,16 @@ async function fetchSerieExtra(
   const roturasTarget = res?.targets?.roturas ?? null
   const ventasHl = VENTAS_HL_PRESUPUESTO[year]?.[month] ?? null
   const ventasHlWqi = objetivoVentaHl ?? ventasHl
+  // 🚨 Desde 2026-07-28 el WQI mide el VOLUMEN AFECTADO por rotura (lo que
+  // entra a reempaque + las roturas que no pasan por el sector), no la merma
+  // final. El presupuesto de roturas está armado sobre la merma final, así que
+  // derivar el target de ahí deja la reunión en rojo permanente: si el endpoint
+  // publica su propio target de WQI, manda ese.
   const wqiTarget =
-    roturasTarget !== null && ventasHlWqi
+    res?.targets?.wqi ??
+    (roturasTarget !== null && ventasHlWqi
       ? Math.round((roturasTarget / ventasHlWqi) * 1_000_000)
-      : null
+      : null)
 
   // Target de WNP (HL/HH): fijo en 6 por pedido de logística.
   const wnpTarget = 6
