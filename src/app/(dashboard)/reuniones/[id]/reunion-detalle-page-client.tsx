@@ -1326,6 +1326,15 @@ export function ReunionDetallePageClient({
           fechaReunion={detalle.fecha}
           currentProfileId={currentProfileId}
           currentRole={currentRole}
+          // Cada reunión de área mira su propia pirámide y el total al lado;
+          // Logística y Mantenimiento siguen con el total solo.
+          areaFoco={
+            detalle.tipo === "warehouse"
+              ? "deposito"
+              : detalle.tipo === "matinal-distribucion"
+                ? "distribucion"
+                : undefined
+          }
         />
       )}
 

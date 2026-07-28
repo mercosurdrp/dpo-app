@@ -30,10 +30,8 @@ import {
 import { NuevoReporteDialog } from "@/components/reportes-seguridad/nuevo-reporte-dialog"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import { PlanesTablero } from "@/components/reportes-seguridad/planes-tablero"
-import {
-  PiramideSeguridadPanel,
-  type PiramideConteos,
-} from "@/components/reportes-seguridad/piramide-seguridad"
+import { PiramideSeguridadPanel } from "@/components/reportes-seguridad/piramide-seguridad"
+import { calcularPiramides } from "@/lib/seguridad/piramide"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
   REPORTE_SEGURIDAD_TIPO_COLORS,
@@ -144,47 +142,13 @@ export function ReportesSeguridadClient({
     return Array.from(set).sort((a, b) => b - a)
   }, [reportes, anioActual])
 
-  // Conteos de la pirámide según año + mes elegidos.
   // Tres pirámides (pedido de la auditoría): el TOTAL, y la apertura por área
   // relevada — Almacén (área "depósito") y Distribución. Los reportes de otras
   // áreas (Ventas / Administración) entran solo en el total; se avisa abajo.
-  const {
-    piramideConteos,
-    piramideConteosAlmacen,
-    piramideConteosDistribucion,
-    fueraDeAreaOperativa,
-  } = useMemo(() => {
-    const vacia = (): PiramideConteos => ({
-      fat: 0,
-      lti: 0,
-      mdi: 0,
-      mti: 0,
-      fai: 0,
-      sio: 0,
-      sho: 0,
-    })
-    const total = vacia()
-    const almacen = vacia()
-    const distribucion = vacia()
-    let fuera = 0
-    for (const r of reportes) {
-      if (!r.tipo_accidente) continue
-      const y = Number(r.fecha.slice(0, 4))
-      const m = Number(r.fecha.slice(5, 7))
-      if (y !== piramideAnio) continue
-      if (piramideMes !== "all" && m !== piramideMes) continue
-      total[r.tipo_accidente] += 1
-      if (r.area === "deposito") almacen[r.tipo_accidente] += 1
-      else if (r.area === "distribucion") distribucion[r.tipo_accidente] += 1
-      else fuera += 1
-    }
-    return {
-      piramideConteos: total,
-      piramideConteosAlmacen: almacen,
-      piramideConteosDistribucion: distribucion,
-      fueraDeAreaOperativa: fuera,
-    }
-  }, [reportes, piramideAnio, piramideMes])
+  const piramides = useMemo(
+    () => calcularPiramides(reportes, piramideAnio, piramideMes),
+    [reportes, piramideAnio, piramideMes],
+  )
 
   // Indicadores LTI / TRI por día del mes seleccionado, con MTD y YTD.
   // LTI = tipo_accidente === 'lti'
@@ -368,16 +332,23 @@ export function ReportesSeguridadClient({
           </div>
         </div>
         <PiramideSeguridadPanel
-          total={piramideConteos}
-          almacen={piramideConteosAlmacen}
-          distribucion={piramideConteosDistribucion}
+          titulo="Pirámide de Seguridad"
           periodoLabel={periodoLabel}
+          principal={{
+            titulo: "Total",
+            conteos: piramides.total,
+            desglose: piramides.desglose,
+          }}
+          secundarias={[
+            { titulo: "Almacén", conteos: piramides.almacen },
+            { titulo: "Distribución", conteos: piramides.distribucion },
+          ]}
           nota={
-            fueraDeAreaOperativa > 0
-              ? `${fueraDeAreaOperativa} ${
-                  fueraDeAreaOperativa === 1 ? "reporte" : "reportes"
+            piramides.fueraDeArea > 0
+              ? `${piramides.fueraDeArea} ${
+                  piramides.fueraDeArea === 1 ? "reporte" : "reportes"
                 } del período ${
-                  fueraDeAreaOperativa === 1 ? "está" : "están"
+                  piramides.fueraDeArea === 1 ? "está" : "están"
                 } en el total pero no en Almacén ni Distribución (otra área o sin área asignada).`
               : undefined
           }

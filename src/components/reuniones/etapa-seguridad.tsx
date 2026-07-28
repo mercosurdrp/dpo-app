@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/card"
 import { getReportes } from "@/actions/reportes-seguridad"
 import {
-  PiramideSeguridad,
-  type PiramideConteos,
+  PiramideSeguridadPanel,
+  type PiramideItem,
 } from "@/components/reportes-seguridad/piramide-seguridad"
+import { calcularPiramides } from "@/lib/seguridad/piramide"
 import { ReporteDetalleDialog } from "@/components/reportes-seguridad/reporte-detalle-dialog"
 import {
   REPORTE_SEGURIDAD_TIPO_LABELS,
@@ -87,11 +88,18 @@ export function EtapaSeguridad({
   fechaReunion,
   currentProfileId,
   currentRole,
+  areaFoco,
 }: {
   fechaReunion: string
   /** Profile actual; si se pasa junto con `currentRole`, las cards abren el detalle del reporte. */
   currentProfileId?: string | null
   currentRole?: UserRole
+  /**
+   * Reuniones de un área: arriba va la pirámide de ESA área y debajo, en chico,
+   * el total de la casa. Sin `areaFoco` (Logística, Mantenimiento) se muestra
+   * el total solo, con el popup que abre cada escalón por área.
+   */
+  areaFoco?: "deposito" | "distribucion"
 }) {
   const [reportes, setReportes] = useState<ReporteSeguridadConAutor[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -127,26 +135,24 @@ export function EtapaSeguridad({
     return Array.from(set).sort((a, b) => b - a)
   }, [reportes, anioReunion])
 
-  const piramideConteos = useMemo<PiramideConteos>(() => {
-    const base: PiramideConteos = {
-      fat: 0,
-      lti: 0,
-      mdi: 0,
-      mti: 0,
-      fai: 0,
-      sio: 0,
-      sho: 0,
-    }
-    for (const r of reportes) {
-      if (!r.tipo_accidente) continue
-      const y = Number(r.fecha.slice(0, 4))
-      const m = Number(r.fecha.slice(5, 7))
-      if (y !== piramideAnio) continue
-      if (piramideMes !== "all" && m !== piramideMes) continue
-      base[r.tipo_accidente] += 1
-    }
-    return base
-  }, [reportes, piramideAnio, piramideMes])
+  const piramides = useMemo(
+    () => calcularPiramides(reportes, piramideAnio, piramideMes),
+    [reportes, piramideAnio, piramideMes],
+  )
+
+  // El total lleva el popup con la apertura por área; la del área propia no lo
+  // necesita (ya ES el área).
+  const totalItem: PiramideItem = {
+    titulo: "Total (Almacén + Distribución)",
+    conteos: piramides.total,
+    desglose: piramides.desglose,
+  }
+  const areaItem: PiramideItem | null =
+    areaFoco === "deposito"
+      ? { titulo: "Almacén", conteos: piramides.almacen }
+      : areaFoco === "distribucion"
+        ? { titulo: "Distribución", conteos: piramides.distribucion }
+        : null
 
   const periodoLabel =
     piramideMes === "all"
@@ -301,7 +307,10 @@ export function EtapaSeguridad({
               Cargando datos…
             </div>
           ) : (
-            <PiramideSeguridad conteos={piramideConteos} />
+            <PiramideSeguridadPanel
+              principal={areaItem ?? totalItem}
+              secundarias={areaItem ? [{ ...totalItem, titulo: "Total" }] : []}
+            />
           )}
         </section>
 
