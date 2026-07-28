@@ -18,8 +18,11 @@ export interface OperadorPlantel {
   nombre: string
   activo: boolean
   nota: string | null
+  /** Veces que expuso de verdad (historia, sin el crédito de reingreso). */
   veces: number
   ultima_vez: string | null
+  /** Volvió hoy de una ausencia: mira la reunión, no la da. */
+  vuelve_hoy: boolean
 }
 
 export interface TurnoExpositor {
@@ -67,7 +70,7 @@ export async function getEstadoExpositor(): Promise<Result<EstadoExpositor>> {
     const [plantelRes, turnosRes] = await Promise.all([
       supabase
         .from("warehouse_expositor_plantel")
-        .select("id, nombre, activo, nota")
+        .select("id, nombre, activo, nota, reingreso_fecha")
         .order("nombre"),
       supabase
         .from("warehouse_expositor_turnos")
@@ -97,6 +100,7 @@ export async function getEstadoExpositor(): Promise<Result<EstadoExpositor>> {
       nota: (o.nota as string | null) ?? null,
       veces: veces.get(o.nombre as string) ?? 0,
       ultima_vez: ultima.get(o.nombre as string) ?? null,
+      vuelve_hoy: (o.reingreso_fecha as string | null) === hoy,
     }))
 
     return {
@@ -121,18 +125,41 @@ export async function sortearExpositorHoy(): Promise<Result<TurnoExpositor>> {
 
     const { data: plantel, error: errPlantel } = await supabase
       .from("warehouse_expositor_plantel")
-      .select("nombre")
+      .select("nombre, veces_offset, reingreso_fecha")
       .eq("activo", true)
 
     if (errPlantel) return { error: errPlantel.message }
 
-    const disponibles = (plantel ?? []).map((o) => o.nombre as string)
-    if (disponibles.length === 0) {
+    const activos = plantel ?? []
+    if (activos.length === 0) {
       return {
         error:
           "No hay operadores disponibles: están todos marcados como ausentes.",
       }
     }
+
+    // El que volvió hoy de una ausencia mira la reunión, no la da: recién
+    // entra al sorteo a partir de mañana.
+    const vuelvenHoy = activos
+      .filter((o) => (o.reingreso_fecha as string | null) === hoy)
+      .map((o) => o.nombre as string)
+
+    const disponibles = activos
+      .filter((o) => !vuelvenHoy.includes(o.nombre as string))
+      .map((o) => o.nombre as string)
+
+    if (disponibles.length === 0) {
+      return {
+        error:
+          vuelvenHoy.length > 0
+            ? `Hoy vuelve ${vuelvenHoy.join(" y ")} de una ausencia y no hay nadie más disponible. El primer día no exponen.`
+            : "No hay operadores disponibles: están todos marcados como ausentes.",
+      }
+    }
+
+    const offsets = new Map<string, number>(
+      activos.map((o) => [o.nombre as string, (o.veces_offset as number) ?? 0]),
+    )
 
     const { data: turnos, error: errTurnos } = await supabase
       .from("warehouse_expositor_turnos")
@@ -148,9 +175,15 @@ export async function sortearExpositorHoy(): Promise<Result<TurnoExpositor>> {
       veces.set(t.nombre, (veces.get(t.nombre) ?? 0) + 1)
     }
 
-    // Rotación pareja: compiten sólo los que menos veces expusieron.
-    const minimo = Math.min(...disponibles.map((n) => veces.get(n) ?? 0))
-    let candidatos = disponibles.filter((n) => (veces.get(n) ?? 0) === minimo)
+    // Rotación pareja: compiten sólo los que menos veces expusieron. Al que
+    // volvió de una ausencia se le suma el crédito que se le acreditó al
+    // reactivarlo, así entra en el punto de la rueda donde está el grupo en
+    // vez de salir sorteado varias veces seguidas por tener 0 exposiciones.
+    const vecesEfectivas = (n: string) =>
+      (veces.get(n) ?? 0) + (offsets.get(n) ?? 0)
+
+    const minimo = Math.min(...disponibles.map(vecesEfectivas))
+    let candidatos = disponibles.filter((n) => vecesEfectivas(n) === minimo)
 
     // Si es un "volver a sortear", no repetimos al que ya salió hoy.
     const yaHoy = historial.find((t) => t.fecha === hoy)
@@ -183,6 +216,53 @@ export async function sortearExpositorHoy(): Promise<Result<TurnoExpositor>> {
   }
 }
 
+/**
+ * Exposiciones a acreditarle al que vuelve, para que entre parejo: el promedio
+ * de veces efectivas de los que ya venían dando la reunión, menos las que él
+ * ya tenía. Nunca negativo (si expuso más que el promedio, no se le descuenta).
+ */
+async function creditoDeReingreso(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+): Promise<number> {
+  const { data: fila } = await supabase
+    .from("warehouse_expositor_plantel")
+    .select("nombre")
+    .eq("id", id)
+    .single()
+
+  const nombre = (fila?.nombre as string | undefined) ?? null
+  if (!nombre) return 0
+
+  const { data: plantel } = await supabase
+    .from("warehouse_expositor_plantel")
+    .select("nombre, veces_offset")
+    .eq("activo", true)
+
+  const { data: turnos } = await supabase
+    .from("warehouse_expositor_turnos")
+    .select("nombre")
+    .limit(400)
+
+  const veces = new Map<string, number>()
+  for (const t of turnos ?? []) {
+    const n = t.nombre as string
+    veces.set(n, (veces.get(n) ?? 0) + 1)
+  }
+
+  // El grupo contra el que se compara: los que ya estaban activos (él todavía
+  // figura inactivo en este punto, así que no se cuenta a sí mismo).
+  const grupo = (plantel ?? []).filter((o) => (o.nombre as string) !== nombre)
+  if (grupo.length === 0) return 0
+
+  const efectivas = grupo.map(
+    (o) => (veces.get(o.nombre as string) ?? 0) + ((o.veces_offset as number) ?? 0),
+  )
+  const promedio = efectivas.reduce((a, b) => a + b, 0) / efectivas.length
+
+  return Math.max(0, Math.round(promedio) - (veces.get(nombre) ?? 0))
+}
+
 export async function setDisponibilidadOperador(
   id: string,
   activo: boolean,
@@ -191,14 +271,30 @@ export async function setDisponibilidadOperador(
   try {
     await requireEditor()
     const supabase = await createClient()
+    const hoy = hoyAR()
+
+    const cambios: Record<string, unknown> = {
+      activo,
+      nota: activo ? null : (nota?.trim() || "Ausente"),
+      updated_at: new Date().toISOString(),
+    }
+
+    if (activo) {
+      // Vuelve de una ausencia: se le acredita el promedio de exposiciones del
+      // grupo para que entre parejo (si no, con 0 en el contador saldría
+      // sorteado varias veces seguidas), y hoy queda fuera del sorteo.
+      cambios.veces_offset = await creditoDeReingreso(supabase, id)
+      cambios.reingreso_fecha = hoy
+    } else {
+      // Se va: el crédito viejo no debe sobrevivir a la próxima vuelta, se
+      // recalcula recién cuando reingrese.
+      cambios.veces_offset = 0
+      cambios.reingreso_fecha = null
+    }
 
     const { error } = await supabase
       .from("warehouse_expositor_plantel")
-      .update({
-        activo,
-        nota: activo ? null : (nota?.trim() || "Ausente"),
-        updated_at: new Date().toISOString(),
-      })
+      .update(cambios)
       .eq("id", id)
 
     if (error) return { error: error.message }

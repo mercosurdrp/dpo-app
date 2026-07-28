@@ -53,9 +53,10 @@ export function ExpositorDelDiaCard() {
 
   function handleSortear() {
     if (!estado) return
-    const disponibles = estado.plantel.filter((o) => o.activo)
+    // Los que vuelven hoy no entran: la ruleta no debe mostrarlos girando.
+    const disponibles = estado.plantel.filter((o) => o.activo && !o.vuelve_hoy)
     if (disponibles.length === 0) {
-      toast.error("No hay operadores disponibles: están todos ausentes.")
+      toast.error("No hay operadores disponibles para el sorteo de hoy.")
       return
     }
 
@@ -91,7 +92,9 @@ export function ExpositorDelDiaCard() {
         return
       }
       toast.success(
-        activo ? `${nombre} queda fuera del sorteo` : `${nombre} vuelve al sorteo`,
+        activo
+          ? `${nombre} queda fuera del sorteo`
+          : `${nombre} vuelve: hoy mira la reunión y entra al sorteo desde mañana`,
       )
       await cargar()
     })
@@ -111,7 +114,8 @@ export function ExpositorDelDiaCard() {
   if (!estado) return null
 
   const { turnoHoy, plantel, historial, puedeSortear } = estado
-  const disponibles = plantel.filter((o) => o.activo).length
+  const disponibles = plantel.filter((o) => o.activo && !o.vuelve_hoy).length
+  const vuelvenHoy = plantel.filter((o) => o.activo && o.vuelve_hoy)
   const nombreGrande = ruleta ?? turnoHoy?.nombre ?? null
 
   return (
@@ -144,6 +148,15 @@ export function ExpositorDelDiaCard() {
           >
             {nombreGrande ?? "—"}
           </span>
+
+          {vuelvenHoy.length > 0 && (
+            <p className="max-w-sm text-center text-xs text-amber-700">
+              {vuelvenHoy.map((o) => o.nombre).join(" y ")}{" "}
+              {vuelvenHoy.length > 1 ? "vuelven" : "vuelve"} hoy de una ausencia:
+              {vuelvenHoy.length > 1 ? " miran" : " mira"} la reunión y{" "}
+              {vuelvenHoy.length > 1 ? "entran" : "entra"} al sorteo desde mañana.
+            </p>
+          )}
 
           {puedeSortear ? (
             <Button
@@ -200,6 +213,11 @@ export function ExpositorDelDiaCard() {
                   >
                     {op.nombre}
                   </span>
+                  {op.vuelve_hoy && op.activo && (
+                    <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      vuelve hoy
+                    </span>
+                  )}
                   <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
                     {op.veces}×
                   </span>
@@ -209,6 +227,7 @@ export function ExpositorDelDiaCard() {
               const clases = cn(
                 "flex items-center gap-2 rounded-md border px-2.5 py-2 text-left",
                 op.activo ? "bg-white" : "bg-slate-50",
+                op.vuelve_hoy && op.activo && "border-amber-200 bg-amber-50/60",
                 esTurno && "border-blue-300 bg-blue-50",
                 puedeSortear && "hover:border-slate-300",
               )
@@ -220,9 +239,11 @@ export function ExpositorDelDiaCard() {
                   onClick={() => handleToggle(op.id, op.activo, op.nombre)}
                   disabled={pending}
                   title={
-                    op.activo
-                      ? `Marcar ausente a ${op.nombre}`
-                      : `${op.nota ?? "Ausente"} — traer de vuelta`
+                    !op.activo
+                      ? `${op.nota ?? "Ausente"} — traer de vuelta`
+                      : op.vuelve_hoy
+                        ? `${op.nombre} volvió hoy: mira la reunión y entra al sorteo desde mañana. Clic para marcarlo ausente.`
+                        : `Marcar ausente a ${op.nombre}`
                   }
                   className={cn(clases, "disabled:opacity-60")}
                 >
