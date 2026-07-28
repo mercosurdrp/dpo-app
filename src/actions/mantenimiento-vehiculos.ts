@@ -497,7 +497,7 @@ export async function getMantenimientos(
     let query = supabase
       .from("mantenimiento_realizados")
       .select(
-        "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*)"
+        "*, tareas:mantenimiento_realizado_tareas(*), repuestos:mantenimiento_realizado_repuestos(*), facturas:mantenimiento_realizado_facturas(*)"
       )
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
@@ -667,6 +667,40 @@ interface MantenimientoRepuestoInput {
   costoUnitario?: number | null
 }
 
+/**
+ * Comprobante de la OT. Una OT puede tener varios (los repuestos los factura un
+ * proveedor y la mano de obra otro), cada uno con su número, monto y adjunto.
+ */
+interface MantenimientoFacturaInput {
+  proveedor?: string | null
+  numero?: string | null
+  montoTotal?: number | null
+  adjuntoUrl?: string | null
+}
+
+/** Descarta las filas vacías del editor y las numera para conservar el orden. */
+function facturasParaGuardar(
+  facturas: MantenimientoFacturaInput[],
+  mantenimientoId: string
+) {
+  return facturas
+    .filter(
+      (f) =>
+        f.proveedor?.trim() ||
+        f.numero?.trim() ||
+        f.montoTotal != null ||
+        f.adjuntoUrl?.trim()
+    )
+    .map((f, i) => ({
+      mantenimiento_id: mantenimientoId,
+      proveedor: f.proveedor?.trim() || null,
+      numero: f.numero?.trim() || null,
+      monto_total: f.montoTotal ?? null,
+      adjunto_url: f.adjuntoUrl?.trim() || null,
+      orden: i,
+    }))
+}
+
 /** Tarea del plan que quedó sin hacer en esta OT y se reprograma. */
 interface MantenimientoReprogramadaInput {
   tareaId: string
@@ -699,6 +733,8 @@ interface CreateMantenimientoInput {
   salida_taller?: string | null
   tareas: MantenimientoTareaInput[]
   repuestos?: MantenimientoRepuestoInput[]
+  /** Comprobantes de la OT (proveedor + nº + monto + adjunto). */
+  facturas?: MantenimientoFacturaInput[]
   /** Tareas del plan que se dejaron sin hacer y quedan reprogramadas. */
   reprogramadas?: MantenimientoReprogramadaInput[]
 }
@@ -946,6 +982,17 @@ export async function createMantenimiento(
       }
     }
 
+    const facturas = facturasParaGuardar(input.facturas ?? [], mantenimiento.id)
+    if (facturas.length > 0) {
+      const { error: facError } = await supabase
+        .from("mantenimiento_realizado_facturas")
+        .insert(facturas)
+      if (facError) {
+        await supabase.from("mantenimiento_realizados").delete().eq("id", mantenimiento.id)
+        return { error: facError.message }
+      }
+    }
+
     try {
       await sincronizarNeumaticosDesdeOt(supabase, mantenimiento.id)
     } catch (e) {
@@ -991,6 +1038,8 @@ interface UpdateMantenimientoInput {
   tareas?: MantenimientoTareaInput[]
   /** Si se pasa, reemplaza el detalle completo de repuestos. */
   repuestos?: MantenimientoRepuestoInput[]
+  /** Si se pasa, reemplaza la lista completa de comprobantes de la OT. */
+  facturas?: MantenimientoFacturaInput[]
   /** Si se pasa, reemplaza las tareas del plan que quedaron reprogramadas. */
   reprogramadas?: MantenimientoReprogramadaInput[]
 }
@@ -1087,6 +1136,21 @@ export async function updateMantenimiento(
             }))
           )
         if (insRepError) return { error: insRepError.message }
+      }
+    }
+
+    if (input.facturas) {
+      const { error: delFacError } = await supabase
+        .from("mantenimiento_realizado_facturas")
+        .delete()
+        .eq("mantenimiento_id", input.id)
+      if (delFacError) return { error: delFacError.message }
+      const facturas = facturasParaGuardar(input.facturas, input.id)
+      if (facturas.length > 0) {
+        const { error: insFacError } = await supabase
+          .from("mantenimiento_realizado_facturas")
+          .insert(facturas)
+        if (insFacError) return { error: insFacError.message }
       }
     }
 

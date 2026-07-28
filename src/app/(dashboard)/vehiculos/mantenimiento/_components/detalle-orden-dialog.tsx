@@ -59,7 +59,13 @@ export function DetalleOrdenDialog({
 }) {
   const tareas = m.tareas || []
   const fueraServicio = !!m.fuera_servicio_desde
-  const facturas = m.evidencia_urls ?? []
+  // Comprobantes con proveedor/nº/monto (una OT puede tener varios: repuestos de
+  // un proveedor, mano de obra de otro).
+  const comprobantes = [...(m.facturas ?? [])].sort((a, b) => a.orden - b.orden)
+  // Adjuntos sueltos de las OT viejas: los que no cuelgan de ningún comprobante.
+  const adjuntosSueltos = (m.evidencia_urls ?? []).filter(
+    (url) => !comprobantes.some((f) => f.adjunto_url === url)
+  )
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -305,12 +311,54 @@ export function DetalleOrdenDialog({
             </div>
           )}
 
-          {/* Facturas / adjuntos */}
-          {facturas.length > 0 && (
+          {/* Facturas de la OT: proveedor + nº + monto + su adjunto */}
+          {comprobantes.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Facturas y comprobantes
+              </p>
+              <div className="space-y-1">
+                {comprobantes.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-white px-2 py-1.5 text-xs"
+                  >
+                    <span className="font-medium text-foreground">
+                      {f.proveedor || "Sin proveedor"}
+                    </span>
+                    {f.numero && (
+                      <span className="text-muted-foreground">Fc {f.numero}</span>
+                    )}
+                    {f.monto_total != null && (
+                      <span className="tabular-nums text-muted-foreground">
+                        {fmtMoneyOt(Number(f.monto_total))}
+                      </span>
+                    )}
+                    {f.adjunto_url ? (
+                      <a
+                        href={f.adjunto_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto inline-flex items-center gap-1 text-sky-600 hover:underline"
+                      >
+                        <Paperclip className="size-3" />
+                        {nombreArchivoDeUrl(f.adjunto_url)}
+                      </a>
+                    ) : (
+                      <span className="ml-auto text-muted-foreground/70">sin adjunto</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Adjuntos sin factura asociada (OT cargadas antes del desglose) */}
+          {adjuntosSueltos.length > 0 && (
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Adjuntos</p>
               <div className="flex flex-wrap gap-2">
-                {facturas.map((url) => (
+                {adjuntosSueltos.map((url) => (
                   <a
                     key={url}
                     href={url}

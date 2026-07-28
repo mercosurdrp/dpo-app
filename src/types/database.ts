@@ -1399,6 +1399,23 @@ export interface MantenimientoRealizadoRepuesto {
 }
 
 /**
+ * Comprobante de una OT. Una OT puede tener VARIOS: es normal que los repuestos
+ * los facture un proveedor y la mano de obra otro (ej. OT 1725: repuestos de Don
+ * Gregorio + mano de obra de Luval + la boleta de la cañonera). El campo
+ * `numero_factura` de la OT es el histórico, de cuando había uno solo.
+ */
+export interface MantenimientoRealizadoFactura {
+  id: string
+  mantenimiento_id: string
+  proveedor: string | null
+  numero: string | null
+  monto_total: number | null
+  adjunto_url: string | null
+  orden: number
+  created_at: string
+}
+
+/**
  * Tarea del plan que quedó SIN HACER en una OT y se reprogramó (ej.: el service
  * de 20.000 km se hizo pero faltaba el filtro de aire). Vive en tabla aparte de
  * mantenimiento_realizado_tareas justamente para que NO cuente como realizada:
@@ -1466,6 +1483,7 @@ export interface MantenimientoRealizado {
   updated_at: string
   tareas?: MantenimientoRealizadoTarea[]
   repuestos?: MantenimientoRealizadoRepuesto[]
+  facturas?: MantenimientoRealizadoFactura[]
 }
 
 export type EstadoTareaMantenimiento = "ok" | "proximo" | "vencido" | "sin_datos"
