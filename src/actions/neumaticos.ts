@@ -77,20 +77,26 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
     const supabase = await createClient()
     const { data } = await supabase
       .from("mantenimiento_neumaticos")
-      .select("estado, profundidad_actual_mm, fecha_baja")
+      .select("estado, tipo, profundidad_actual_mm, fecha_baja")
     const rows = (data || []) as Array<{
       estado: NeumaticoEstado
+      tipo: NeumaticoTipo
       profundidad_actual_mm: number | null
       fecha_baja: string | null
     }>
     const ahora = new Date()
     const mesActual = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}`
     let stock = 0
+    let stockRecapadas = 0
+    let paraRecapar = 0
     let instalados = 0
     let criticos = 0
     let bajasMes = 0
     for (const r of rows) {
-      if (r.estado === "stock") stock++
+      if (r.estado === "stock") {
+        stock++
+        if (r.tipo === "recapado") stockRecapadas++
+      } else if (r.estado === "para_recapar") paraRecapar++
       else if (r.estado === "instalado") {
         instalados++
         if (r.profundidad_actual_mm != null && r.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM)
@@ -99,9 +105,16 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
         if (r.fecha_baja?.slice(0, 7) === mesActual) bajasMes++
       }
     }
-    return { stock, instalados, criticos, bajasMes }
+    return { stock, stockRecapadas, paraRecapar, instalados, criticos, bajasMes }
   } catch {
-    return { stock: 0, instalados: 0, criticos: 0, bajasMes: 0 }
+    return {
+      stock: 0,
+      stockRecapadas: 0,
+      paraRecapar: 0,
+      instalados: 0,
+      criticos: 0,
+      bajasMes: 0,
+    }
   }
 }
 
@@ -478,12 +491,19 @@ export async function crearYColocarNeumatico(input: {
 }
 
 /** Quita la cubierta de la unidad y la devuelve al stock. */
+/**
+ * Desmonta una cubierta de la unidad.
+ * @param destino `stock` = queda lista para volver a montarse;
+ *   `para_recapar` = tiene goma para otra vuelta pero primero va al recapador.
+ */
 export async function quitarNeumatico(input: {
   id: string
+  destino?: "stock" | "para_recapar"
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+    const destino = input.destino ?? "stock"
     // Dónde estaba puesta: al pasar al stock se limpia, así que se lee antes
     // para poder dejarlo en el movimiento (y en su comprobante).
     const { data: previa } = await supabase
@@ -497,7 +517,7 @@ export async function quitarNeumatico(input: {
         dominio: null,
         posicion: null,
         eje: null,
-        estado: "stock",
+        estado: destino,
         fecha_instalacion: null,
         updated_at: new Date().toISOString(),
       })
@@ -513,9 +533,64 @@ export async function quitarNeumatico(input: {
       numero: previa?.numero ?? null,
       medida: previa?.medida ?? null,
       factura_urls: previa?.factura_urls ?? null,
-      observaciones: "Desmontada al stock",
+      observaciones:
+        destino === "para_recapar"
+          ? "Desmontada y enviada a recapar"
+          : "Desmontada al stock",
       created_by: profile.id,
     })
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Manda al recapador una cubierta que ya está en el depósito (la que se
+ * desmonta va directo con `quitarNeumatico({destino:'para_recapar'})`).
+ */
+export async function marcarParaRecapar(input: {
+  id: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_neumaticos")
+      .update({ estado: "para_recapar", updated_at: new Date().toISOString() })
+      .eq("id", input.id)
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * La cubierta volvió del recapador: pasa a stock como RECAPADA y arranca una
+ * vida nueva, así que se limpian los km de la vuelta anterior. Si se carga la
+ * profundidad con que volvió, queda como su nueva profundidad de origen.
+ */
+export async function volvioDelRecapado(input: {
+  id: string
+  profundidad_mm?: number | null
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("mantenimiento_neumaticos")
+      .update({
+        estado: "stock",
+        tipo: "recapado",
+        km_instalacion: null,
+        vida_util_km: null,
+        profundidad_inicial_mm: input.profundidad_mm ?? null,
+        profundidad_actual_mm: input.profundidad_mm ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.id)
+    if (error) return { error: error.message }
     return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }

@@ -9,7 +9,41 @@ import type { EjeNeumatico } from "@/lib/vehiculos/neumaticos-layout"
 export const PROFUNDIDAD_CRITICA_MM = 3
 
 export type NeumaticoTipo = "nuevo" | "recapado"
-export type NeumaticoEstado = "stock" | "instalado" | "baja"
+
+/**
+ * Estados de una cubierta.
+ * - `stock`: en depósito, lista para montar. Si es de segunda vuelta viene con
+ *   `tipo='recapado'`, así el stock se lee separado (nuevas vs recapadas).
+ * - `para_recapar`: salió del camión con goma para una vuelta más y espera el
+ *   recapado. NO está disponible para montar.
+ * - `instalado` / `baja`: puesta en una unidad / descartada.
+ */
+export type NeumaticoEstado = "stock" | "para_recapar" | "instalado" | "baja"
+
+export const NEUMATICO_ESTADO_LABEL: Record<NeumaticoEstado, string> = {
+  stock: "En stock",
+  para_recapar: "Para recapar",
+  instalado: "Instalada",
+  baja: "De baja",
+}
+
+/** Cómo se agrupa el depósito: nuevas, recapadas listas y las que esperan recapado. */
+export type GrupoStock = "nuevas" | "recapadas" | "para_recapar"
+
+export const GRUPO_STOCK_LABEL: Record<GrupoStock, string> = {
+  nuevas: "Stock — nuevas",
+  recapadas: "Stock — recapadas",
+  para_recapar: "Para recapar",
+}
+
+export function grupoStockDe(n: {
+  estado: NeumaticoEstado
+  tipo: NeumaticoTipo
+}): GrupoStock | null {
+  if (n.estado === "para_recapar") return "para_recapar"
+  if (n.estado !== "stock") return null
+  return n.tipo === "recapado" ? "recapadas" : "nuevas"
+}
 
 export interface NeumaticoMedicion {
   id: string
@@ -56,6 +90,10 @@ export interface Neumatico {
 
 export interface NeumaticosResumen {
   stock: number
+  /** Del total en stock, cuántas son recapadas listas para montar. */
+  stockRecapadas: number
+  /** Esperando recapado: no se pueden montar. */
+  paraRecapar: number
   instalados: number
   criticos: number
   bajasMes: number

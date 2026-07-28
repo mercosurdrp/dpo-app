@@ -55,6 +55,7 @@ import {
   eliminarAlineacion,
   eliminarNeumatico,
   quitarNeumatico,
+  volvioDelRecapado,
   registrarAlineacion,
   registrarMedicionNeumatico,
   registrarRotacion,
@@ -233,7 +234,7 @@ export function NeumaticosModule({
   const [cargaOpen, setCargaOpen] = useState(false)
   const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
   const [detalleResumen, setDetalleResumen] = useState<
-    "stock" | "instaladas" | "criticas" | "bajas" | null
+    "stock" | "para_recapar" | "instaladas" | "criticas" | "bajas" | null
   >(null)
   const [montajeOpen, setMontajeOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
@@ -328,14 +329,26 @@ export function NeumaticosModule({
   const resumen = useMemo(() => {
     let instalados = 0
     let criticos = 0
+    let paraRecapar = 0
     for (const n of neumaticos) {
+      if (n.estado === "para_recapar") {
+        paraRecapar++
+        continue
+      }
       if (n.estado !== "instalado") continue
       instalados++
       if (n.profundidad_actual_mm != null && n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM)
         criticos++
     }
-    return { stock: stock.length, instalados, criticos, bajas: bajas.length }
-  }, [neumaticos, stock.length, bajas.length])
+    return {
+      stock: stock.length,
+      stockRecapadas: stock.filter((n) => n.tipo === "recapado").length,
+      paraRecapar,
+      instalados,
+      criticos,
+      bajas: bajas.length,
+    }
+  }, [neumaticos, stock, bajas.length])
 
   return (
     <ProveedoresProvider proveedores={proveedores} onProveedorCreado={onProveedorCreado}>
@@ -343,12 +356,22 @@ export function NeumaticosModule({
       <DpoSeccionCinta seccionId="neumaticos" />
 
       {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
           label="En stock"
           valor={resumen.stock}
-          sub="Cubiertas disponibles para montar · click para ver"
+          sub={
+            resumen.stockRecapadas > 0
+              ? `${resumen.stock - resumen.stockRecapadas} nuevas · ${resumen.stockRecapadas} recapadas · click para ver`
+              : "Cubiertas disponibles para montar · click para ver"
+          }
           onClick={() => setDetalleResumen("stock")}
+        />
+        <KpiCard
+          label="Para recapar"
+          valor={resumen.paraRecapar}
+          sub="Esperando el recapado, no se pueden montar · click para ver"
+          onClick={() => setDetalleResumen("para_recapar")}
         />
         <KpiCard
           label="Instaladas"
@@ -824,6 +847,7 @@ export function NeumaticosModule({
             setDetalleResumen(null)
             setEditNeu(n)
           }}
+          onRefresh={refresh}
           onClose={() => setDetalleResumen(null)}
         />
       )}
@@ -1923,10 +1947,11 @@ function Diagrama({
 
 // ==================== Detalle de las tarjetas del resumen ====================
 
-type CategoriaResumen = "stock" | "instaladas" | "criticas" | "bajas"
+type CategoriaResumen = "stock" | "para_recapar" | "instaladas" | "criticas" | "bajas"
 
 const CATEGORIA_TITULO: Record<CategoriaResumen, string> = {
   stock: "Cubiertas en stock",
+  para_recapar: "Cubiertas para recapar",
   instaladas: "Cubiertas instaladas",
   criticas: "Cubiertas con desgaste crítico",
   bajas: "Cubiertas dadas de baja",
@@ -1937,18 +1962,44 @@ function ResumenDetalleDialog({
   neumaticos,
   puedeEditar,
   onEditar,
+  onRefresh,
   onClose,
 }: {
   categoria: CategoriaResumen
   neumaticos: Neumatico[]
   puedeEditar: boolean
   onEditar: (n: Neumatico) => void
+  onRefresh: () => void
   onClose: () => void
 }) {
+  const [volviendo, setVolviendo] = useState<string | null>(null)
+
+  // La cubierta volvió del recapador: pasa a stock como recapada.
+  const marcarVuelta = async (n: Neumatico) => {
+    setVolviendo(n.id)
+    const res = await volvioDelRecapado({ id: n.id })
+    setVolviendo(null)
+    if ("error" in res) toast.error(res.error)
+    else {
+      toast.success(`Cubierta ${n.numero || "s/n"} volvió del recapado y está en stock`)
+      onRefresh()
+    }
+  }
   const lista = useMemo(() => {
     switch (categoria) {
       case "stock":
-        return neumaticos.filter((n) => n.estado === "stock")
+        // Primero las nuevas y después las recapadas, cada grupo junto.
+        return [...neumaticos]
+          .filter((n) => n.estado === "stock")
+          .sort(
+            (a, b) =>
+              (a.tipo === "recapado" ? 1 : 0) - (b.tipo === "recapado" ? 1 : 0) ||
+              (a.numero ?? "").localeCompare(b.numero ?? ""),
+          )
+      case "para_recapar":
+        return [...neumaticos]
+          .filter((n) => n.estado === "para_recapar")
+          .sort((a, b) => (a.numero ?? "").localeCompare(b.numero ?? ""))
       case "instaladas":
         return [...neumaticos]
           .filter((n) => n.estado === "instalado")
@@ -1988,8 +2039,10 @@ function ResumenDetalleDialog({
             {conUnidad
               ? "Cada cubierta con la unidad y la posición en la que está rodando."
               : categoria === "stock"
-                ? "Disponibles para montar."
-                : "Historial de bajas con su motivo."}
+                ? "Disponibles para montar: primero las nuevas, después las recapadas."
+                : categoria === "para_recapar"
+                  ? "Salieron del camión con goma para otra vuelta y esperan el recapado. No se pueden montar hasta que vuelvan."
+                  : "Historial de bajas con su motivo."}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto">
@@ -2010,6 +2063,9 @@ function ResumenDetalleDialog({
                   {categoria === "bajas" && <th className="pl-3">Fecha baja</th>}
                   {categoria === "bajas" && <th>Motivo</th>}
                   {categoria === "stock" && <th className="pl-3">Ingreso</th>}
+                  {puedeEditar && categoria === "para_recapar" && (
+                    <th className="pl-3 text-right">Recapado</th>
+                  )}
                   {puedeEditar && categoria !== "bajas" && <th className="w-8" />}
                 </tr>
               </thead>
@@ -2047,6 +2103,19 @@ function ResumenDetalleDialog({
                     )}
                     {categoria === "stock" && (
                       <td className="pl-3 text-muted-foreground">{fmtFecha(n.fecha_ingreso)}</td>
+                    )}
+                    {puedeEditar && categoria === "para_recapar" && (
+                      <td className="pl-3 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={volviendo === n.id}
+                          onClick={() => void marcarVuelta(n)}
+                        >
+                          {volviendo === n.id ? "Guardando…" : "Volvió del recapado"}
+                        </Button>
+                      </td>
                     )}
                     {puedeEditar && categoria !== "bajas" && (
                       <td className="text-right">
@@ -2686,6 +2755,11 @@ function MontajeDialog({
     () => neumaticos.filter((n) => n.estado === "stock"),
     [neumaticos]
   )
+  // Las que esperan el recapado: no se pueden montar, van en su propia bandeja.
+  const paraRecapar = useMemo(
+    () => neumaticos.filter((n) => n.estado === "para_recapar"),
+    [neumaticos]
+  )
   const porPosicion = useMemo(() => {
     const m = new Map<string, Neumatico>()
     for (const n of neumaticos)
@@ -2733,15 +2807,19 @@ function MontajeDialog({
     }
   }
 
-  const desmontar = async (n: Neumatico) => {
+  const desmontar = async (n: Neumatico, destino: "stock" | "para_recapar" = "stock") => {
     if (saving) return
     setSaving(true)
-    const res = await quitarNeumatico({ id: n.id })
+    const res = await quitarNeumatico({ id: n.id, destino })
     setSaving(false)
     setSel(null)
     if ("error" in res) toast.error(res.error)
     else {
-      toast.success(`Cubierta ${n.numero || "s/n"} desmontada al stock`)
+      toast.success(
+        destino === "para_recapar"
+          ? `Cubierta ${n.numero || "s/n"} desmontada y enviada a recapar`
+          : `Cubierta ${n.numero || "s/n"} desmontada al stock`
+      )
       onRefresh()
     }
   }
@@ -2789,6 +2867,8 @@ function MontajeDialog({
           ?.getAttribute("data-drop") ?? null
       if (drop === "stock" && item.origen === "diagrama") {
         void desmontar(item.n)
+      } else if (drop === "para_recapar" && item.origen === "diagrama") {
+        void desmontar(item.n, "para_recapar")
       } else if (drop?.startsWith("pos:") && item.origen === "stock") {
         const pos = layout.find((p) => p.code === drop.slice(4))
         if (pos) void montar(item.n, pos)
@@ -2952,6 +3032,34 @@ function MontajeDialog({
                   ))}
                 </div>
               )}
+
+              {/* Segunda zona de descarte: la cubierta que va al recapador.
+                  No entra al stock porque todavía no se puede montar. */}
+              <div
+                data-drop="para_recapar"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("[data-draggable]")) return
+                  if (sel?.origen === "diagrama") void desmontar(sel.n, "para_recapar")
+                }}
+                className={cn(
+                  "mt-3 rounded-lg border border-dashed border-border bg-background/60 p-2 text-center transition-colors",
+                  resaltaStock && "border-amber-400 bg-amber-50 ring-2 ring-amber-400"
+                )}
+              >
+                <p className="text-xs font-medium text-foreground">
+                  Para recapar ({paraRecapar.length})
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {resaltaStock
+                    ? "soltá acá si la cubierta va al recapador"
+                    : "las que salen con goma para otra vuelta"}
+                </p>
+                {paraRecapar.length > 0 && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {paraRecapar.map((n) => n.numero || "s/n").join(" · ")}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
