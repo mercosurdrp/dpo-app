@@ -8,7 +8,6 @@ import {
   Clock,
   Pencil,
   Plus,
-  ShieldAlert,
   Trash2,
   XCircle,
 } from "lucide-react"
@@ -173,26 +172,7 @@ export function RiesgosExternosClient({
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-            <ShieldAlert className="size-6 text-slate-700" />
-            Riesgos Externos — Plan de Acción
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Bitácora de sucesos de riesgo externo y su tratamiento (DPO Planeamiento 2.2).
-          </p>
-        </div>
-        {puedeEditar && (
-          <Button onClick={() => { setEditing(null); setOpenForm(true) }}>
-            <Plus className="mr-2 size-4" />
-            Registrar suceso
-          </Button>
-        )}
-      </div>
-
+    <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Total" value={stats.total} cls="bg-slate-50 text-slate-700 border-slate-200" />
@@ -204,7 +184,7 @@ export function RiesgosExternosClient({
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Buscar en observaciones, resolución, responsable…"
           value={busqueda}
@@ -233,6 +213,16 @@ export function RiesgosExternosClient({
             ))}
           </SelectContent>
         </Select>
+
+        {puedeEditar && (
+          <Button
+            className="ml-auto"
+            onClick={() => { setEditing(null); setOpenForm(true) }}
+          >
+            <Plus className="mr-2 size-4" />
+            Registrar suceso
+          </Button>
+        )}
       </div>
 
       {/* Tabla */}

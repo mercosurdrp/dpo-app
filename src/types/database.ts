@@ -3650,6 +3650,38 @@ export interface RiesgoExternoAccionConResponsable extends RiesgoExternoAccion {
   responsable_email: string | null
 }
 
+// Directorio "A quién llamar": una fila por (riesgo, contacto). Un mismo
+// proveedor puede aparecer en varios riesgos.
+export type CategoriaContactoRiesgo = "externo" | "interno" | "emergencia"
+
+export const CATEGORIA_CONTACTO_RIESGO_LABELS: Record<
+  CategoriaContactoRiesgo,
+  string
+> = {
+  externo: "Proveedor externo",
+  interno: "Interno",
+  emergencia: "Emergencia pública",
+}
+
+export interface RiesgoExternoContacto {
+  id: string
+  tipo_riesgo: TipoRiesgoExterno
+  nombre: string
+  categoria: CategoriaContactoRiesgo
+  empresa: string | null
+  referente: string | null
+  telefono: string | null
+  telefono_alt: string | null
+  email: string | null
+  horario: string | null
+  notas: string | null
+  orden: number
+  activo: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 // ==================== HERRAMIENTAS DE GESTIÓN ====================
 // 5 Porqués, Causa-Efecto (Ishikawa) y PDCA aplicadas a un plan/tarea.
 
