@@ -83,6 +83,7 @@ import {
   SECCION_PEDIDOS_PROBLEMAS,
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
+import { SeccionArchivosReunion } from "@/components/reuniones/seccion-archivos-reunion"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import {
   SeccionPeriodosCriticos,
@@ -1152,6 +1153,16 @@ export function ReunionDetallePageClient({
     [detalle.asistentes],
   )
 
+  /** id de profile → nombre, para mostrar quién subió cada archivo. */
+  const nombrePorProfile = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const r of responsables) out[r.id] = r.nombre
+    for (const a of detalle.asistentes) {
+      if (a.profile_nombre) out[a.profile_id] = a.profile_nombre
+    }
+    return out
+  }, [responsables, detalle.asistentes])
+
   const miAsistente = useMemo(() => {
     if (!currentProfileId) return null
     return (
@@ -1343,6 +1354,18 @@ export function ReunionDetallePageClient({
           los compromisos. */}
       {detalle.tipo === "presupuesto" && (
         <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
+      )}
+
+      {/* Minuta y adjuntos — por ahora sólo en Presupuesto, que es la reunión
+          que se arma por un tema puntual y deja un documento de lo hablado. */}
+      {detalle.tipo === "presupuesto" && (
+        <SeccionArchivosReunion
+          reunionId={detalle.id}
+          archivos={detalle.archivos}
+          puedeEditar={puedeEditar}
+          nombrePorProfile={nombrePorProfile}
+          onCambio={refrescar}
+        />
       )}
 
       {/* ROTURAS EN LA CALLE — reunión Matinal Distribución (Pampeana). Lista las

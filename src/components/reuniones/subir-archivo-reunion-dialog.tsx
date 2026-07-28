@@ -15,11 +15,16 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { subirArchivoReunion } from "@/actions/reuniones"
 
+/** Tope propio, por debajo del límite de 4,5 MB del request en Vercel. */
+const MAX_BYTES = 4 * 1024 * 1024
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   reunionId: string
   onSaved: () => void
+  /** Título del diálogo (por defecto, genérico). */
+  titulo?: string
 }
 
 export function SubirArchivoReunionDialog({
@@ -27,6 +32,7 @@ export function SubirArchivoReunionDialog({
   onOpenChange,
   reunionId,
   onSaved,
+  titulo = "Subir archivo a la reunión",
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -47,6 +53,15 @@ export function SubirArchivoReunionDialog({
       setError("Debés seleccionar un archivo.")
       return
     }
+    // El archivo viaja por la server action, y Vercel corta los request de más
+    // de 4,5 MB con un 413 sin mensaje. Avisamos antes con el peso real.
+    if (file.size > MAX_BYTES) {
+      setError(
+        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)} MB y el máximo es 4 MB. ` +
+          "Si es una foto, sacala con menos calidad o mandala como PDF.",
+      )
+      return
+    }
 
     startTransition(async () => {
       const result = await subirArchivoReunion(formData)
@@ -65,7 +80,7 @@ export function SubirArchivoReunionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="size-5 text-blue-600" />
-            Subir archivo a la reunión
+            {titulo}
           </DialogTitle>
         </DialogHeader>
 
@@ -79,6 +94,9 @@ export function SubirArchivoReunionDialog({
               accept=".pdf,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx"
               required
             />
+            <p className="text-xs text-muted-foreground">
+              PDF, Word, Excel, PowerPoint o imagen · hasta 4 MB
+            </p>
           </div>
 
           <div className="space-y-1.5">
