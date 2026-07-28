@@ -4,6 +4,7 @@ import {
   type Neumatico,
   type NeumaticoTipo,
 } from "@/lib/vehiculos/neumaticos-tipos"
+import { POSICION_AUXILIO } from "@/lib/vehiculos/neumaticos-layout"
 
 // ====== Parámetros estimativos (editables en código) ======
 
@@ -54,6 +55,19 @@ export function vidaNeumatico(
   const vidaKm = n.vida_util_km ?? VIDA_UTIL_DEFAULT_KM[n.tipo] ?? 100_000
   const profCritica =
     n.profundidad_actual_mm != null && n.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM
+
+  // La rueda de auxilio viaja en la unidad pero no apoya: no se le consumen km.
+  // Sin esto heredaría los kilómetros del camión y aparecería gastándose sola.
+  if (n.posicion === POSICION_AUXILIO) {
+    return {
+      vidaKm,
+      kmRodados: null,
+      kmRestante: null,
+      pct: null,
+      diasRestantes: null,
+      estado: profCritica ? "cambiar" : "sin_datos",
+    }
+  }
 
   if (kmActual == null || n.km_instalacion == null) {
     return {

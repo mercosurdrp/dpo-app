@@ -23,6 +23,21 @@ export interface PosicionNeumatico {
 //   lado: I = izquierda, D = derecha
 //   posición-en-eje: E = externa, I = interna (solo en ruedas duales)
 // Ej.: "1I" = eje 1, izquierda; "2IE" = eje 2, izquierda externa.
+//
+// "AUX" = rueda de auxilio: viaja EN la unidad pero no apoya, así que no rota
+// ni se le calcula desgaste por km. Antes no existía y las de auxilio había que
+// dejarlas en stock, donde figuraban disponibles para cualquier otra unidad.
+
+/** Código de la posición de auxilio (una por unidad). */
+export const POSICION_AUXILIO = "AUX"
+
+const AUXILIO: PosicionNeumatico = {
+  code: POSICION_AUXILIO,
+  label: "AUX",
+  x: 50,
+  y: 47,
+  eje: null,
+}
 
 const CAMION: PosicionNeumatico[] = [
   // Eje 1 — direccional (delantero)
@@ -33,6 +48,7 @@ const CAMION: PosicionNeumatico[] = [
   { code: "2II", label: "2II", x: 27, y: 80, eje: "traccion" },
   { code: "2DI", label: "2DI", x: 73, y: 80, eje: "traccion" },
   { code: "2DE", label: "2DE", x: 93, y: 80, eje: "traccion" },
+  AUXILIO,
 ]
 
 const CAMIONETA: PosicionNeumatico[] = [
@@ -40,6 +56,7 @@ const CAMIONETA: PosicionNeumatico[] = [
   { code: "1D", label: "1D", x: 78, y: 16, eje: "direccional" },
   { code: "2I", label: "2I", x: 22, y: 80, eje: "traccion" },
   { code: "2D", label: "2D", x: 78, y: 80, eje: "traccion" },
+  AUXILIO,
 ]
 
 // El autoelevador dirige con las ruedas traseras y tracciona con las delanteras.
@@ -65,6 +82,7 @@ const ACOPLADO: PosicionNeumatico[] = [
   { code: "3II", label: "3II", x: 27, y: 84, eje: null },
   { code: "3DI", label: "3DI", x: 73, y: 84, eje: null },
   { code: "3DE", label: "3DE", x: 93, y: 84, eje: null },
+  { ...AUXILIO, y: 18 },
 ]
 
 export const LAYOUT_NEUMATICOS: Record<VehiculoTipo, PosicionNeumatico[]> = {
