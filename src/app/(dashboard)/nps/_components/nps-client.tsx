@@ -15,11 +15,22 @@ import {
 import { CheckCircle2, HeartHandshake, Info, Trophy } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import type { NpsClienteDP, NpsDashboardData } from "@/actions/nps"
+import type {
+  NpsCoberturaCliente,
+  NpsCoberturaData,
+} from "@/actions/nps-cobertura"
 import type { NpsPlan } from "@/actions/nps-planes"
 import type { PlanMarcable } from "@/components/plan-badge"
 import { SyncAviso } from "@/components/sync-aviso"
 import { ClientesExplorador } from "./clientes-explorador"
+import { CoberturaBloque } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -68,11 +79,15 @@ function npsBadge(nps: number): string {
 interface Props {
   data: NpsDashboardData
   planesIniciales: NpsPlan[]
+  /** Enviadas vs respondidas (solapa Cobertura). Null si falló esa consulta. */
+  cobertura: NpsCoberturaData | null
 }
 
-export function NpsClient({ data, planesIniciales }: Props) {
+export function NpsClient({ data, planesIniciales, cobertura }: Props) {
   const { resumen, por_mes, drivers_dp, por_promotor, clientes_dp, recuperados } =
     data
+
+  const [tab, setTab] = useState("panel")
 
   // Lista viva de planes: el bloque de abajo la refresca al crear o editar uno,
   // y el explorador la usa para marcar qué clientes ya tienen plan.
@@ -114,6 +129,23 @@ export function NpsClient({ data, planesIniciales }: Props) {
       foco_promotor: c.promotor ?? undefined,
     })
     setAbrirPlanNonce((n) => n + 1)
+  }
+
+  // Los planes viven en la solapa del panel: al crear o abrir uno desde
+  // Cobertura hay que volver ahí, si no el formulario queda fuera de vista.
+  function planParaClienteCobertura(c: NpsCoberturaCliente) {
+    setTab("panel")
+    setFocoPlan({
+      foco_cliente_id: c.cod_cliente,
+      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
+      foco_promotor: c.promotor ?? undefined,
+    })
+    setAbrirPlanNonce((n) => n + 1)
+  }
+
+  function verPlanDesdeCobertura(plan: PlanMarcable) {
+    setTab("panel")
+    verPlan(plan)
   }
 
   const mesesConDatos = por_mes.filter((m) => m.encuestas > 0 || m.rmd != null)
@@ -159,6 +191,31 @@ export function NpsClient({ data, planesIniciales }: Props) {
         actualizadoEn={resumen.actualizado_en}
         diasSinSync={resumen.dias_sin_sync}
       />
+
+      <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="panel">📊 Panel NPS</TabsTrigger>
+          <TabsTrigger value="cobertura">📨 Cobertura de encuestas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="cobertura" className="mt-4">
+          {cobertura ? (
+            <CoberturaBloque
+              data={cobertura}
+              planes={planes}
+              onCrearPlan={planParaClienteCobertura}
+              onVerPlan={verPlanDesdeCobertura}
+            />
+          ) : (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Todavía no hay datos de encuestas enviadas. Se cargan en la
+              sincronización de los lunes desde la página «Detalle Distri» del
+              Power BI.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="panel" className="mt-4 space-y-6">
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -603,6 +660,8 @@ export function NpsClient({ data, planesIniciales }: Props) {
           </p>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
