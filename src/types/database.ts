@@ -3426,6 +3426,47 @@ export interface ReunionCompromisoConResponsable extends ReunionCompromiso {
   responsable_nombre: string | null
 }
 
+// --- Participación cruzada Ventas ↔ Operaciones (pilar Planeamiento) ---
+
+export type ParticipacionCruzadaSentido =
+  | "ventas_a_operaciones"
+  | "operaciones_a_ventas"
+
+export type ParticipacionCruzadaEstado =
+  | "programada"
+  | "realizada"
+  | "no_realizada"
+
+export const PARTICIPACION_CRUZADA_SENTIDO_LABELS: Record<
+  ParticipacionCruzadaSentido,
+  string
+> = {
+  ventas_a_operaciones: "Ventas → Operaciones",
+  operaciones_a_ventas: "Operaciones → Ventas",
+}
+
+export interface ParticipacionCruzada {
+  id: string
+  /** Fecha planificada (null si se cargó directo como realizada). */
+  fecha_plan: string | null
+  sentido: ParticipacionCruzadaSentido
+  /** A qué reunión fue (texto libre). */
+  destino: string | null
+  responsable_id: string | null
+  estado: ParticipacionCruzadaEstado
+  fecha_real: string | null
+  /** Reunión de la app donde pasó; null si fue en una reunión de Ventas. */
+  reunion_id: string | null
+  participantes: string | null
+  minuta: string | null
+  motivo: string | null
+  /** Paths en el bucket privado `reuniones`. */
+  fotos: string[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ReunionArchivo {
   id: string
   reunion_id: string

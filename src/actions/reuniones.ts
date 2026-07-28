@@ -397,6 +397,33 @@ export async function quitarParticipanteFijo(
 // Reuniones
 // =============================================
 
+/**
+ * Todas las reuniones de un rango de fechas, de cualquier tipo. La usa el
+ * calendario general (y el de participaciones cruzadas), que necesita ver el
+ * mes completo sin filtrar por tipo.
+ */
+export async function listReunionesRango(
+  desde: string,
+  hasta: string,
+): Promise<Result<Reunion[]>> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("reuniones")
+      .select("*")
+      .gte("fecha", desde)
+      .lte("fecha", hasta)
+      .order("fecha", { ascending: true })
+    if (error) return { error: error.message }
+    return { data: (data ?? []) as Reunion[] }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error listando reuniones",
+    }
+  }
+}
+
 export async function listReunionesByTipo(
   tipo: TipoReunion,
 ): Promise<Result<ReunionConResumen[]>> {

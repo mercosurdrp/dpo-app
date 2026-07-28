@@ -14,6 +14,7 @@ import { MatinalDistribucionTab } from "@/components/reuniones/matinal-distribuc
 import { WarehouseTab } from "@/components/reuniones/warehouse-tab"
 import { PresupuestoTab } from "@/components/reuniones/presupuesto-tab"
 import { MantenimientoTab } from "@/components/reuniones/mantenimiento-tab"
+import { ParticipacionCruzadaTab } from "@/components/reuniones/participacion-cruzada-tab"
 import { IS_MISIONES } from "@/lib/empresa"
 
 export function ReunionesClient() {
@@ -57,6 +58,9 @@ export function ReunionesClient() {
               Mantenimiento
             </TabsTrigger>
           )}
+          <TabsTrigger value="cruzada" className="flex-none">
+            Participación cruzada
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="logistica" className="mt-4">
@@ -81,6 +85,9 @@ export function ReunionesClient() {
             <MantenimientoTab />
           </TabsContent>
         )}
+        <TabsContent value="cruzada" className="mt-4">
+          <ParticipacionCruzadaTab />
+        </TabsContent>
       </Tabs>
     </div>
   )

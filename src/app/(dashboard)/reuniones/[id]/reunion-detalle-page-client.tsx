@@ -84,6 +84,7 @@ import {
 } from "@/components/reuniones/seccion-pedidos-problemas"
 import { SeccionDesviosPresupuesto } from "@/components/reuniones/seccion-desvios-presupuesto"
 import { SeccionArchivosReunion } from "@/components/reuniones/seccion-archivos-reunion"
+import { SeccionParticipacionCruzada } from "@/components/reuniones/seccion-participacion-cruzada"
 import { SeccionGaleriaFotos } from "@/components/reuniones/seccion-galeria-fotos"
 import {
   SeccionPeriodosCriticos,
@@ -1355,6 +1356,16 @@ export function ReunionDetallePageClient({
       {detalle.tipo === "presupuesto" && (
         <SeccionDesviosPresupuesto fechaReunion={detalle.fecha} />
       )}
+
+      {/* PARTICIPACIÓN CRUZADA (pilar Planeamiento: conectar Ventas y
+          Operaciones). Va en todas las reuniones: el cruce puede darse en
+          cualquiera de ellas. */}
+      <SeccionParticipacionCruzada
+        reunionId={detalle.id}
+        fechaReunion={detalle.fecha}
+        tipoLabel={tipoLabel}
+        puedeEditar={puedeEditar}
+      />
 
       {/* Minuta y adjuntos — por ahora sólo en Presupuesto, que es la reunión
           que se arma por un tema puntual y deja un documento de lo hablado. */}
