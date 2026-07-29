@@ -20,6 +20,7 @@ import {
   getIntervalosNeumaticos,
   getMantenimientoConfig,
 } from "@/actions/neumaticos"
+import { getRecapados } from "@/actions/recapados"
 import { getGastos, getProveedores } from "@/actions/mantenimiento-gastos"
 import { getHerramientas } from "@/actions/mantenimiento-herramientas"
 import {
@@ -51,6 +52,7 @@ export default async function MantenimientoPage() {
     tableroRes,
     checklistsRes,
     neumaticosRes,
+    recapadosRes,
     alineacionesRes,
     kmFlotaRes,
     rotacionesRes,
@@ -78,6 +80,7 @@ export default async function MantenimientoPage() {
     getTableroOperativo(),
     getChecklistsMtto(),
     getNeumaticos(),
+    getRecapados(),
     getAlineaciones(),
     getKmFlota(),
     getRotaciones(),
@@ -148,6 +151,7 @@ export default async function MantenimientoPage() {
   const checklists =
     "data" in checklistsRes ? checklistsRes.data : { itemsNoOk: [], comentarios: [] }
   const neumaticos = "data" in neumaticosRes ? neumaticosRes.data : []
+  const recapados = "data" in recapadosRes ? recapadosRes.data : []
   const alineaciones = "data" in alineacionesRes ? alineacionesRes.data : []
   const kmFlota = kmFlotaRes.data
   const rotaciones = "data" in rotacionesRes ? rotacionesRes.data : []
@@ -189,6 +193,7 @@ export default async function MantenimientoPage() {
       tablero={tablero}
       checklists={checklists}
       neumaticos={neumaticos}
+      recapados={recapados}
       alineaciones={alineaciones}
       kmFlota={kmFlota}
       rotaciones={rotaciones}

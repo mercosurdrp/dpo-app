@@ -63,17 +63,20 @@ import {
   setIntervaloNeumaticos,
   type KmFlotaUnidad,
 } from "@/actions/neumaticos"
+import { createMantenimiento } from "@/actions/mantenimiento-vehiculos"
 import {
-  createMantenimiento,
-  subirFacturasMantenimiento,
-} from "@/actions/mantenimiento-vehiculos"
-import { comprimirImagen } from "@/lib/comprimir-imagen"
+  FacturaField,
+  LinkFacturaPdf,
+  nombreDeFacturaUrl,
+  subirFacturasNeumaticos,
+} from "./_components/factura-neumaticos"
 import {
   type AccionNeumaticos,
   type Alineacion,
   type IntervaloNeumaticos,
   type Neumatico,
   type NeumaticoTipo,
+  type Recapado,
   type Rotacion,
   PROFUNDIDAD_CRITICA_MM,
 } from "@/lib/vehiculos/neumaticos-tipos"
@@ -110,6 +113,7 @@ import { HistorialLecturasMes } from "./_components/historial-lecturas-mes"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-picker"
 import { KpiCard } from "./_components/kpi-card"
+import { RecapadosPanel } from "./_components/recapados-panel"
 
 interface UnidadFlota {
   dominio: string
@@ -120,6 +124,8 @@ interface UnidadFlota {
 
 interface Props {
   neumaticos: Neumatico[]
+  /** Remitos de envío al recapador (con sus cubiertas). */
+  recapados: Recapado[]
   alineaciones: Alineacion[]
   kmFlota: Record<string, KmFlotaUnidad>
   rotaciones: Rotacion[]
@@ -212,6 +218,7 @@ function estadoAlineacionConKm(
 
 export function NeumaticosModule({
   neumaticos,
+  recapados,
   alineaciones,
   kmFlota,
   rotaciones,
@@ -234,7 +241,7 @@ export function NeumaticosModule({
   const [cargaOpen, setCargaOpen] = useState(false)
   const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
   const [detalleResumen, setDetalleResumen] = useState<
-    "stock" | "para_recapar" | "instaladas" | "criticas" | "bajas" | null
+    "stock" | "para_recapar" | "en_recapado" | "instaladas" | "criticas" | "bajas" | null
   >(null)
   const [montajeOpen, setMontajeOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
@@ -330,9 +337,14 @@ export function NeumaticosModule({
     let instalados = 0
     let criticos = 0
     let paraRecapar = 0
+    let enRecapado = 0
     for (const n of neumaticos) {
       if (n.estado === "para_recapar") {
         paraRecapar++
+        continue
+      }
+      if (n.estado === "en_recapado") {
+        enRecapado++
         continue
       }
       if (n.estado !== "instalado") continue
@@ -344,6 +356,7 @@ export function NeumaticosModule({
       stock: stock.length,
       stockRecapadas: stock.filter((n) => n.tipo === "recapado").length,
       paraRecapar,
+      enRecapado,
       instalados,
       criticos,
       bajas: bajas.length,
@@ -356,7 +369,7 @@ export function NeumaticosModule({
       <DpoSeccionCinta seccionId="neumaticos" />
 
       {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
         <KpiCard
           label="En stock"
           valor={resumen.stock}
@@ -370,8 +383,14 @@ export function NeumaticosModule({
         <KpiCard
           label="Para recapar"
           valor={resumen.paraRecapar}
-          sub="Esperando el recapado, no se pueden montar · click para ver"
+          sub="En el depósito esperando que las manden · click para ver"
           onClick={() => setDetalleResumen("para_recapar")}
+        />
+        <KpiCard
+          label="En el recapador"
+          valor={resumen.enRecapado}
+          sub="Ya enviadas, todavía sin volver · click para ver"
+          onClick={() => setDetalleResumen("en_recapado")}
         />
         <KpiCard
           label="Instaladas"
@@ -686,6 +705,7 @@ export function NeumaticosModule({
                   <th>Marca</th>
                   <th>Medida</th>
                   <th className="text-right">Prof. (mm)</th>
+                  <th className="text-right">Recapados</th>
                   <th>Proveedor</th>
                   <th className="text-right">Costo</th>
                   <th>Ingreso</th>
@@ -705,6 +725,10 @@ export function NeumaticosModule({
                     <td className="text-muted-foreground">{n.medida || "—"}</td>
                     <td className="text-right tabular-nums">
                       {n.profundidad_actual_mm ?? "—"}
+                    </td>
+                    {/* Cuántas vueltas de recapado lleva esta misma goma. */}
+                    <td className="text-right tabular-nums text-muted-foreground">
+                      {n.vueltas_recapado > 0 ? `${n.vueltas_recapado}ª` : "—"}
                     </td>
                     <td className="text-muted-foreground">{n.proveedor || "—"}</td>
                     <td className="text-right tabular-nums text-muted-foreground">
@@ -767,7 +791,7 @@ export function NeumaticosModule({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 font-medium">
-                  <td className="py-2" colSpan={6}>
+                  <td className="py-2" colSpan={7}>
                     Invertido en stock
                   </td>
                   <td className="text-right tabular-nums">
@@ -782,6 +806,14 @@ export function NeumaticosModule({
           )}
         </CardContent>
       </Card>
+
+      {/* Envíos a recapado: la vuelta de la goma al recapador, con su costo */}
+      <RecapadosPanel
+        recapados={recapados}
+        neumaticos={neumaticos}
+        puedeEditar={puedeEditar}
+        onRefresh={refresh}
+      />
 
       {/* Bajas */}
       {bajas.length > 0 && (
@@ -1947,11 +1979,18 @@ function Diagrama({
 
 // ==================== Detalle de las tarjetas del resumen ====================
 
-type CategoriaResumen = "stock" | "para_recapar" | "instaladas" | "criticas" | "bajas"
+type CategoriaResumen =
+  | "stock"
+  | "para_recapar"
+  | "en_recapado"
+  | "instaladas"
+  | "criticas"
+  | "bajas"
 
 const CATEGORIA_TITULO: Record<CategoriaResumen, string> = {
   stock: "Cubiertas en stock",
   para_recapar: "Cubiertas para recapar",
+  en_recapado: "Cubiertas en el recapador",
   instaladas: "Cubiertas instaladas",
   criticas: "Cubiertas con desgaste crítico",
   bajas: "Cubiertas dadas de baja",
@@ -2000,6 +2039,10 @@ function ResumenDetalleDialog({
         return [...neumaticos]
           .filter((n) => n.estado === "para_recapar")
           .sort((a, b) => (a.numero ?? "").localeCompare(b.numero ?? ""))
+      case "en_recapado":
+        return [...neumaticos]
+          .filter((n) => n.estado === "en_recapado")
+          .sort((a, b) => (a.numero ?? "").localeCompare(b.numero ?? ""))
       case "instaladas":
         return [...neumaticos]
           .filter((n) => n.estado === "instalado")
@@ -2041,8 +2084,10 @@ function ResumenDetalleDialog({
               : categoria === "stock"
                 ? "Disponibles para montar: primero las nuevas, después las recapadas."
                 : categoria === "para_recapar"
-                  ? "Salieron del camión con goma para otra vuelta y esperan el recapado. No se pueden montar hasta que vuelvan."
-                  : "Historial de bajas con su motivo."}
+                  ? "Salieron del camión con goma para otra vuelta y esperan en el depósito a que las manden al recapador."
+                  : categoria === "en_recapado"
+                    ? "Ya salieron en un remito y están en poder del recapador. La vuelta se registra en Envíos a recapado."
+                    : "Historial de bajas con su motivo."}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto">
@@ -2147,91 +2192,6 @@ function ResumenDetalleDialog({
 }
 
 // ==================== Factura de compra (foto/PDF) ====================
-
-const ACCEPT_FACTURA_NEU = "image/*,application/pdf,.pdf"
-
-/** Sube las facturas al bucket (imágenes comprimidas client-side por el 413
- *  de Vercel). Devuelve las URLs, o null si falló (ya tosteado). */
-async function subirFacturasNeumaticos(files: File[]): Promise<string[] | null> {
-  if (files.length === 0) return []
-  const fd = new FormData()
-  fd.append("dominio", "NEUMATICOS")
-  for (const f of files) {
-    let archivo = f
-    if (f.type.startsWith("image/")) {
-      try {
-        archivo = await comprimirImagen(f)
-      } catch {
-        archivo = f
-      }
-    }
-    fd.append("facturas", archivo)
-  }
-  const res = await subirFacturasMantenimiento(fd)
-  if ("error" in res) {
-    toast.error(res.error)
-    return null
-  }
-  return res.data
-}
-
-function FacturaField({
-  files,
-  onChange,
-}: {
-  files: File[]
-  onChange: (files: File[]) => void
-}) {
-  return (
-    <div>
-      <Label className="text-xs text-muted-foreground">
-        Factura de compra (foto o PDF, opcional)
-      </Label>
-      <Input
-        type="file"
-        accept={ACCEPT_FACTURA_NEU}
-        multiple
-        onChange={(e) => onChange([...files, ...Array.from(e.target.files ?? [])])}
-      />
-      {files.length > 0 && (
-        <ul className="mt-1 space-y-0.5">
-          {files.map((f, i) => (
-            <li
-              key={`${f.name}-${i}`}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <Paperclip className="size-3 shrink-0" />
-              <span className="truncate">{f.name}</span>
-              <button
-                type="button"
-                className="text-destructive hover:underline"
-                onClick={() => onChange(files.filter((_, j) => j !== i))}
-              >
-                quitar
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-// Link para bajar un adjunto como PDF (si es una foto, el endpoint la mete en
-// una página A4; si ya es PDF lo pasa tal cual).
-function LinkFacturaPdf({ url }: { url: string }) {
-  return (
-    <a
-      href={`/api/vehiculos/neumaticos/factura-pdf?url=${encodeURIComponent(url)}`}
-      target="_blank"
-      rel="noreferrer"
-      title="Descargar en PDF"
-      className="inline-flex items-center gap-0.5 text-red-600 hover:underline"
-    >
-      <FileDown className="size-3" /> PDF
-    </a>
-  )
-}
 
 function EditarCubiertaDialog({
   neumatico,
@@ -2379,15 +2339,6 @@ function EditarCubiertaDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-function nombreDeFacturaUrl(url: string): string {
-  try {
-    const last = url.split("/").pop() || "factura"
-    return decodeURIComponent(last.replace(/^\d+-\d+-/, ""))
-  } catch {
-    return "factura"
-  }
 }
 
 /**

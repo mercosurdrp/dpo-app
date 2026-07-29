@@ -89,6 +89,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
     let stock = 0
     let stockRecapadas = 0
     let paraRecapar = 0
+    let enRecapado = 0
     let instalados = 0
     let criticos = 0
     let bajasMes = 0
@@ -97,6 +98,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
         stock++
         if (r.tipo === "recapado") stockRecapadas++
       } else if (r.estado === "para_recapar") paraRecapar++
+      else if (r.estado === "en_recapado") enRecapado++
       else if (r.estado === "instalado") {
         instalados++
         if (r.profundidad_actual_mm != null && r.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM)
@@ -105,12 +107,21 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
         if (r.fecha_baja?.slice(0, 7) === mesActual) bajasMes++
       }
     }
-    return { stock, stockRecapadas, paraRecapar, instalados, criticos, bajasMes }
+    return {
+      stock,
+      stockRecapadas,
+      paraRecapar,
+      enRecapado,
+      instalados,
+      criticos,
+      bajasMes,
+    }
   } catch {
     return {
       stock: 0,
       stockRecapadas: 0,
       paraRecapar: 0,
+      enRecapado: 0,
       instalados: 0,
       criticos: 0,
       bajasMes: 0,
@@ -570,6 +581,9 @@ export async function marcarParaRecapar(input: {
  * La cubierta volvió del recapador: pasa a stock como RECAPADA y arranca una
  * vida nueva, así que se limpian los km de la vuelta anterior. Si se carga la
  * profundidad con que volvió, queda como su nueva profundidad de origen.
+ *
+ * Vuelta suelta, sin remito. Cuando la vuelta es de un envío, la recepción se
+ * registra con `registrarRecepcionRecapado` (que además guarda el costo).
  */
 export async function volvioDelRecapado(input: {
   id: string
@@ -578,6 +592,11 @@ export async function volvioDelRecapado(input: {
   try {
     await requireRole(["admin", "supervisor"])
     const supabase = await createClient()
+    const { data: previa } = await supabase
+      .from("mantenimiento_neumaticos")
+      .select("vueltas_recapado")
+      .eq("id", input.id)
+      .maybeSingle()
     const { error } = await supabase
       .from("mantenimiento_neumaticos")
       .update({
@@ -587,6 +606,7 @@ export async function volvioDelRecapado(input: {
         vida_util_km: null,
         profundidad_inicial_mm: input.profundidad_mm ?? null,
         profundidad_actual_mm: input.profundidad_mm ?? null,
+        vueltas_recapado: (previa?.vueltas_recapado ?? 0) + 1,
         updated_at: new Date().toISOString(),
       })
       .eq("id", input.id)

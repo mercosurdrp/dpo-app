@@ -15,14 +15,21 @@ export type NeumaticoTipo = "nuevo" | "recapado"
  * - `stock`: en depósito, lista para montar. Si es de segunda vuelta viene con
  *   `tipo='recapado'`, así el stock se lee separado (nuevas vs recapadas).
  * - `para_recapar`: salió del camión con goma para una vuelta más y espera el
- *   recapado. NO está disponible para montar.
+ *   recapado. Está en el depósito pero NO disponible para montar.
+ * - `en_recapado`: ya salió en un remito y está en poder del recapador.
  * - `instalado` / `baja`: puesta en una unidad / descartada.
  */
-export type NeumaticoEstado = "stock" | "para_recapar" | "instalado" | "baja"
+export type NeumaticoEstado =
+  | "stock"
+  | "para_recapar"
+  | "en_recapado"
+  | "instalado"
+  | "baja"
 
 export const NEUMATICO_ESTADO_LABEL: Record<NeumaticoEstado, string> = {
   stock: "En stock",
   para_recapar: "Para recapar",
+  en_recapado: "En el recapador",
   instalado: "Instalada",
   baja: "De baja",
 }
@@ -72,6 +79,9 @@ export interface Neumatico {
    *  default por tipo (nuevo/recapado). */
   vida_util_km: number | null
   estado: NeumaticoEstado
+  /** Cuántas veces se recapó esta misma cubierta (el recapador devuelve la goma
+   *  con el mismo código, así que la fila es siempre la misma). */
+  vueltas_recapado: number
   motivo_baja: string | null
   fecha_ingreso: string
   fecha_instalacion: string | null
@@ -94,9 +104,57 @@ export interface NeumaticosResumen {
   stockRecapadas: number
   /** Esperando recapado: no se pueden montar. */
   paraRecapar: number
+  /** Ya enviadas: están en poder del recapador. */
+  enRecapado: number
   instalados: number
   criticos: number
   bajasMes: number
+}
+
+// ==================== Recapados ====================
+
+/** Estado del remito: salió al recapador / ya volvió. */
+export type RecapadoEstado = "enviado" | "recibido"
+
+/** Qué pasó con cada cubierta del envío. */
+export type RecapadoResultado = "pendiente" | "recapada" | "descartada"
+
+/** Una cubierta dentro del remito: cómo salió y cómo volvió. */
+export interface RecapadoItem {
+  id: string
+  recapado_id: string
+  neumatico_id: string
+  numero_envio: string | null
+  marca: string | null
+  medida: string | null
+  /** De qué unidad venía cuando se desmontó (informativo). */
+  dominio_origen: string | null
+  profundidad_envio_mm: number | null
+  /** Código con el que la devolvió el recapador (normalmente el mismo). */
+  numero_retorno: string | null
+  profundidad_retorno_mm: number | null
+  /** Parte del costo total del envío que le tocó. */
+  costo: number | null
+  resultado: RecapadoResultado
+  observaciones: string | null
+  created_at: string
+}
+
+/** Remito de envío al recapador (una tanda, puede mezclar varias unidades). */
+export interface Recapado {
+  id: string
+  numero_remito: string | null
+  proveedor: string
+  fecha_envio: string
+  fecha_retorno: string | null
+  estado: RecapadoEstado
+  factura_numero: string | null
+  factura_urls: string[] | null
+  costo_total: number | null
+  observaciones: string | null
+  created_at: string
+  updated_at: string
+  items: RecapadoItem[]
 }
 
 /** Las tres acciones del módulo de neumáticos, cada una con su intervalo de km. */
