@@ -51,7 +51,6 @@ import {
   asignarNeumatico,
   crearNeumaticosMasivo,
   crearYColocarNeumatico,
-  darDeBajaNeumatico,
   eliminarAlineacion,
   eliminarNeumatico,
   quitarNeumatico,
@@ -116,6 +115,7 @@ import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-pi
 import { KpiCard } from "./_components/kpi-card"
 import { RecapadosPanel } from "./_components/recapados-panel"
 import { DesechoPanel } from "./_components/desecho-panel"
+import { marcarParaDesecho } from "@/actions/desecho-neumaticos"
 
 interface UnidadFlota {
   dominio: string
@@ -3732,8 +3732,15 @@ function PosicionDialog({
               </Button>
             </div>
 
+            {/* La baja ocurre en UN solo lugar: el retiro a la recicladora.
+                Acá la cubierta se saca de la unidad y queda en la bandeja de
+                desecho, así no hay dos formas de darla de baja. */}
             <div className="space-y-2 rounded-md border border-destructive/30 p-3">
-              <p className="text-xs font-medium text-foreground">Dar de baja</p>
+              <p className="text-xs font-medium text-foreground">Mandar a desecho</p>
+              <p className="text-[11px] text-muted-foreground">
+                Sale de la unidad y espera a la recicladora. La baja se hace al
+                registrar el retiro, con el certificado.
+              </p>
               <Input
                 placeholder="Motivo (desgaste, pinchadura, etc.)"
                 value={motivoBaja}
@@ -3745,12 +3752,12 @@ function PosicionDialog({
                 disabled={saving || !motivoBaja.trim()}
                 onClick={() =>
                   wrap(
-                    () => darDeBajaNeumatico({ id: actual.id, motivo: motivoBaja }),
-                    "Cubierta dada de baja"
+                    () => marcarParaDesecho({ ids: [actual.id], motivo: motivoBaja }),
+                    "Cubierta puesta para desecho"
                   )
                 }
               >
-                Dar de baja
+                <Trash2 className="mr-1 size-4" /> Mandar a desecho
               </Button>
             </div>
 

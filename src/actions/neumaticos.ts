@@ -624,53 +624,12 @@ export async function volvioDelRecapado(input: {
   }
 }
 
-/** Da de baja una cubierta (gastada / dañada). */
-export async function darDeBajaNeumatico(input: {
-  id: string
-  motivo: string
-  fecha_baja?: string
-}): Promise<{ success: true } | { error: string }> {
-  try {
-    const profile = await requireRole(["admin", "supervisor"])
-    if (!input.motivo?.trim()) return { error: "Indicá el motivo de baja" }
-    const supabase = await createClient()
-    const { data: previa } = await supabase
-      .from("mantenimiento_neumaticos")
-      .select("dominio, posicion, eje, numero, medida, factura_urls")
-      .eq("id", input.id)
-      .maybeSingle()
-    const { error } = await supabase
-      .from("mantenimiento_neumaticos")
-      .update({
-        estado: "baja",
-        dominio: null,
-        posicion: null,
-        eje: null,
-        motivo_baja: input.motivo.trim(),
-        fecha_baja: input.fecha_baja ?? new Date().toISOString().slice(0, 10),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", input.id)
-    if (error) return { error: error.message }
-
-    await registrarMovimientoNeumatico(supabase, {
-      neumatico_id: input.id,
-      tipo: "baja",
-      dominio: previa?.dominio ?? null,
-      posicion: previa?.posicion ?? null,
-      eje: previa?.eje ?? null,
-      numero: previa?.numero ?? null,
-      medida: previa?.medida ?? null,
-      factura_urls: previa?.factura_urls ?? null,
-      fecha: input.fecha_baja,
-      observaciones: input.motivo,
-      created_by: profile.id,
-    })
-    return { success: true }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Error desconocido" }
-  }
-}
+// La baja de una cubierta ocurre en UN solo lugar: el retiro a la recicladora
+// (`registrarRetiroRecicladora` en `desecho-neumaticos.ts`), que además guarda
+// el certificado de descarte y deja la disposición del residuo registrada. La
+// vieja `darDeBajaNeumatico` daba de baja al instante y sin comprobante, así
+// que había dos formas de hacer lo mismo y ninguna dejaba evidencia: se quitó.
+// Para sacar una cubierta de circulación se usa `marcarParaDesecho`.
 
 /** Registra una medición de desgaste y actualiza la profundidad actual. */
 export async function registrarMedicionNeumatico(input: {
