@@ -15,7 +15,12 @@ import {
 import { CheckCircle2, Info, Truck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { RmdCliente, RmdDashboardData } from "@/actions/rmd"
+import type {
+  RmdCoberturaCliente,
+  RmdCoberturaData,
+} from "@/actions/rmd-cobertura"
 import type { RmdPlan } from "@/actions/rmd-planes"
 import { SyncAviso } from "@/components/sync-aviso"
 import {
@@ -23,6 +28,7 @@ import {
   type PlanMarcable,
 } from "@/components/plan-badge"
 import { ClienteModal, ClientesExplorador } from "./clientes-explorador"
+import { CoberturaBloque } from "./cobertura-bloque"
 import { PlanesAccionBloque } from "./planes/planes-accion-bloque"
 
 const MESES = [
@@ -74,11 +80,15 @@ function rmdColor(rmd: number): string {
 interface Props {
   data: RmdDashboardData
   planesIniciales: RmdPlan[]
+  /** Encuestadas vs calificadas (solapa Cobertura). Null si falló la consulta. */
+  cobertura: RmdCoberturaData | null
 }
 
-export function RmdClient({ data, planesIniciales }: Props) {
+export function RmdClient({ data, planesIniciales, cobertura }: Props) {
   const { resumen, por_mes, distribucion, motivos, clientes, recuperados } =
     data
+
+  const [tab, setTab] = useState("panel")
 
   // Lista viva de planes: el bloque de abajo la refresca al crear o editar uno,
   // y el explorador la usa para marcar qué clientes ya tienen plan.
@@ -113,6 +123,22 @@ export function RmdClient({ data, planesIniciales }: Props) {
       foco_chofer: c.chofer ?? undefined,
     })
     setAbrirPlanNonce((n) => n + 1)
+  }
+
+  // Los planes viven en la solapa del panel: al crear o abrir uno desde
+  // Cobertura hay que volver ahí, si no el formulario queda fuera de vista.
+  function planParaClienteCobertura(c: RmdCoberturaCliente) {
+    setTab("panel")
+    setFocoPlan({
+      foco_cliente_id: c.cod_cliente,
+      foco_cliente_nombre: c.nombre_cliente ?? `Cliente ${c.cod_cliente}`,
+    })
+    setAbrirPlanNonce((n) => n + 1)
+  }
+
+  function verPlanDesdeCobertura(plan: PlanMarcable) {
+    setTab("panel")
+    verPlan(plan)
   }
 
   function abrirDetalleRecuperado(codCliente: number) {
@@ -163,6 +189,31 @@ export function RmdClient({ data, planesIniciales }: Props) {
         actualizadoEn={resumen.actualizado_en}
         diasSinSync={resumen.dias_sin_sync}
       />
+
+      <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="panel">🚚 Panel RMD</TabsTrigger>
+          <TabsTrigger value="cobertura">📨 Cobertura de encuestas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="cobertura" className="mt-4">
+          {cobertura ? (
+            <CoberturaBloque
+              data={cobertura}
+              planes={planes}
+              onCrearPlan={planParaClienteCobertura}
+              onVerPlan={verPlanDesdeCobertura}
+            />
+          ) : (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Todavía no hay datos de entregas encuestadas. Se cargan en la
+              sincronización de los lunes desde la base «BASE Distribuidores»
+              del Power BI.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="panel" className="mt-4 space-y-6">
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -584,6 +635,8 @@ export function RmdClient({ data, planesIniciales }: Props) {
           </p>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Detalle del cliente abierto desde la vitrina de recuperados */}
       {recupModal && (
