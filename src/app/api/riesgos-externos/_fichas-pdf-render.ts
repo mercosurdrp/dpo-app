@@ -36,7 +36,6 @@ export interface Args {
   config: RiesgoExternoConfig[]
   contactos: RiesgoExternoContacto[]
   prioritarios: Set<string>
-  qrPorTipo: Map<TipoRiesgoExterno, Buffer>
   qrIndice: Buffer
   conIndice: boolean
 }
@@ -50,7 +49,7 @@ export async function renderPDF(args: Args): Promise<Buffer> {
       info: {
         Title: "Riesgos Externos — Fichas para el pizarrón",
         Author: "Mercosur · dpo-app",
-        Subject: "Una ficha por riesgo con escalamiento y QR (DPO Planeamiento 2.2)",
+        Subject: "Una ficha por riesgo con escalamiento (DPO Planeamiento 2.2)",
       },
     })
     const chunks: Buffer[] = []
@@ -272,7 +271,6 @@ function build(doc: Doc, args: Args) {
         .sort((a, b) => a.nivel - b.nivel),
       contactos: contactos.filter((c) => c.tipo_riesgo === tipo),
       prioritario: prioritarios.has(tipo),
-      qr: args.qrPorTipo.get(tipo)!,
     })
   }
 }
@@ -371,7 +369,7 @@ function dibujarIndice(doc: Doc, args: Args) {
     .font("Helvetica")
     .fontSize(9)
     .text(
-      "Cada ficha de las hojas siguientes tiene su propio QR: abre ese riesgo directamente.",
+      "En las hojas siguientes está la ficha de cada riesgo: a quién llamar, qué hacer y en cuánto tiempo escalar.",
       MARGIN,
       doc.y,
       { width: ancho, align: "center" },
@@ -384,7 +382,6 @@ interface FichaArgs {
   niveles: RiesgoExternoEscalamiento[]
   contactos: RiesgoExternoContacto[]
   prioritario: boolean
-  qr: Buffer
 }
 
 function dibujarFicha(doc: Doc, f: FichaArgs) {
@@ -610,45 +607,37 @@ function dibujarFicha(doc: Doc, f: FichaArgs) {
     doc.y += 12
   }
 
-  // ===== Pie con QR =====
-  const qrSize = 74
-  const yPie = doc.page.height - MARGIN - qrSize
+  // ===== Pie =====
+  // Sin QR propio: el único QR del pizarrón es el general del cartel, que lleva
+  // al listado para elegir el riesgo.
+  const yPie = doc.page.height - MARGIN - 34
   doc
     .save()
     .strokeColor(LINEA)
     .lineWidth(0.8)
-    .moveTo(MARGIN, yPie - 12)
-    .lineTo(MARGIN + ancho, yPie - 12)
+    .moveTo(MARGIN, yPie - 10)
+    .lineTo(MARGIN + ancho, yPie - 10)
     .stroke()
     .restore()
 
-  doc.image(f.qr, MARGIN, yPie, { width: qrSize, height: qrSize })
-
-  doc
-    .fillColor(TEXTO)
-    .font("Helvetica-Bold")
-    .fontSize(10.5)
-    .text("Escaneá para ver esta ficha actualizada", MARGIN + qrSize + 14, yPie + 10, {
-      width: ancho - qrSize - 14,
-    })
   doc
     .fillColor(GRIS)
     .font("Helvetica")
     .fontSize(8.5)
     .text(
       "Los teléfonos y el plan se mantienen en dpo-app › Riesgos Externos › Plan de respuesta. Si algo cambió, vale lo que muestra la app.",
-      MARGIN + qrSize + 14,
-      doc.y + 2,
-      { width: ancho - qrSize - 14 },
+      MARGIN,
+      yPie,
+      { width: ancho - 170 },
     )
   doc
     .fillColor("#94a3b8")
     .font("Helvetica")
     .fontSize(8)
     .text(
-      `Impreso el ${formatTimestamp(new Date())}`,
-      MARGIN + qrSize + 14,
-      yPie + qrSize - 10,
-      { width: ancho - qrSize - 14 },
+      `DPO Planeamiento 2.2 · impreso el ${formatTimestamp(new Date())}`,
+      MARGIN + ancho - 160,
+      yPie + 1,
+      { width: 160, align: "right" },
     )
 }

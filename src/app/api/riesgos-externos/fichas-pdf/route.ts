@@ -73,17 +73,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Los QR se generan antes de abrir el PDF porque pdfkit dibuja en sincrónico.
-  const qrPorTipo = new Map<TipoRiesgoExterno, Buffer>()
-  for (const tipo of tipos) {
-    qrPorTipo.set(
-      tipo,
-      await QRCode.toBuffer(
-        `${origin}/riesgos-externos?tab=plan&riesgo=${tipo}`,
-        { width: 400, margin: 0, errorCorrectionLevel: "M" },
-      ),
-    )
-  }
+  // Único QR: el general del índice; las fichas no llevan uno propio.
   const qrIndice = await QRCode.toBuffer(`${origin}/riesgos-externos?tab=plan`, {
     width: 600,
     margin: 0,
@@ -98,7 +88,6 @@ export async function GET(request: NextRequest) {
       config,
       contactos,
       prioritarios,
-      qrPorTipo,
       qrIndice,
       conIndice: !soloRiesgo,
     })

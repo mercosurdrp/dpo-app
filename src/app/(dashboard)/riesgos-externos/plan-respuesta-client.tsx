@@ -440,7 +440,7 @@ export function PlanRespuestaClient({
                   <Button
                     variant="outline"
                     size="sm"
-                    title="Imprimir sólo esta ficha (con su QR)"
+                    title="Imprimir sólo esta ficha"
                     render={
                       <a
                         href={`/api/riesgos-externos/fichas-pdf?riesgo=${tipo}`}
@@ -449,7 +449,7 @@ export function PlanRespuestaClient({
                       />
                     }
                   >
-                    <QrCode className="size-3.5" />
+                    <Printer className="size-3.5" />
                   </Button>
                   {puedeEditar && (
                     <Button
