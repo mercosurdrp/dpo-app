@@ -7,16 +7,19 @@ import {
   listConfigRiesgos,
   listContactos,
 } from "@/actions/riesgos-externos-contactos"
+import { listEscalamiento } from "@/actions/riesgos-externos-plan"
 import { RiesgosExternosTabs } from "./riesgos-externos-tabs"
 
 export default async function RiesgosExternosPage() {
-  const [accRes, respRes, contRes, confRes, puedeEditar] = await Promise.all([
-    listAcciones(),
-    listResponsablesPosibles(),
-    listContactos(),
-    listConfigRiesgos(),
-    puedeEditarRiesgosExternos(),
-  ])
+  const [accRes, respRes, contRes, confRes, escRes, puedeEditar] =
+    await Promise.all([
+      listAcciones(),
+      listResponsablesPosibles(),
+      listContactos(),
+      listConfigRiesgos(),
+      listEscalamiento(),
+      puedeEditarRiesgosExternos(),
+    ])
 
   if ("error" in accRes) {
     return (
@@ -35,6 +38,7 @@ export default async function RiesgosExternosPage() {
       responsables={"data" in respRes ? respRes.data : []}
       contactos={"data" in contRes ? contRes.data : []}
       config={"data" in confRes ? confRes.data : []}
+      escalamiento={"data" in escRes ? escRes.data : []}
       puedeEditar={puedeEditar}
     />
   )

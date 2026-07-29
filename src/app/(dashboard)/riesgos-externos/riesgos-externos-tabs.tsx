@@ -1,14 +1,16 @@
 "use client"
 
-import { PhoneCall, ShieldAlert } from "lucide-react"
+import { ListChecks, PhoneCall, ShieldAlert } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { RiesgosExternosClient } from "./riesgos-externos-client"
 import { ContactosClient } from "./contactos-client"
+import { PlanRespuestaClient } from "./plan-respuesta-client"
 import type {
   Profile,
   RiesgoExternoAccionConResponsable,
   RiesgoExternoConfig,
   RiesgoExternoContacto,
+  RiesgoExternoEscalamiento,
 } from "@/types/database"
 
 interface Props {
@@ -16,6 +18,7 @@ interface Props {
   responsables: Pick<Profile, "id" | "nombre" | "email">[]
   contactos: RiesgoExternoContacto[]
   config: RiesgoExternoConfig[]
+  escalamiento: RiesgoExternoEscalamiento[]
   puedeEditar: boolean
 }
 
@@ -24,6 +27,7 @@ export function RiesgosExternosTabs({
   responsables,
   contactos,
   config,
+  escalamiento,
   puedeEditar,
 }: Props) {
   return (
@@ -49,6 +53,10 @@ export function RiesgosExternosTabs({
             <PhoneCall className="mr-2 size-4" />
             A quién llamar
           </TabsTrigger>
+          <TabsTrigger value="plan">
+            <ListChecks className="mr-2 size-4" />
+            Plan de respuesta
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="sucesos">
@@ -63,6 +71,15 @@ export function RiesgosExternosTabs({
           <ContactosClient
             contactos={contactos}
             config={config}
+            puedeEditar={puedeEditar}
+          />
+        </TabsContent>
+
+        <TabsContent value="plan">
+          <PlanRespuestaClient
+            escalamiento={escalamiento}
+            config={config}
+            contactos={contactos}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
