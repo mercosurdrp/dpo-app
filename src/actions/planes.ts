@@ -367,6 +367,47 @@ export async function getPlanesList(): Promise<
   }
 }
 
+// ---------- contarRespuestasPlan ----------
+
+/**
+ * Cuenta las "respuestas" de un plan: avances del Action Log (comentario o
+ * archivo), comentarios sueltos, evidencias vinculadas y archivos del
+ * repositorio DPO. Un comentario solo ya cuenta como respuesta.
+ *
+ * Es el criterio único de "plan respondido": lo usan tanto `cerrarPlan`
+ * (diálogo de cierre) como `updatePlanEstado` (cambio de estado directo).
+ */
+async function contarRespuestasPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string
+): Promise<number> {
+  const [
+    { count: evCount },
+    { count: archCount },
+    { count: avanceCount },
+    { count: comentCount },
+  ] = await Promise.all([
+    supabase
+      .from("evidencia_planes")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", planId),
+    supabase
+      .from("dpo_archivo_planes")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", planId),
+    supabase
+      .from("planes_accion_avances")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", planId),
+    supabase
+      .from("plan_comentarios")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_id", planId),
+  ])
+
+  return (evCount ?? 0) + (archCount ?? 0) + (avanceCount ?? 0) + (comentCount ?? 0)
+}
+
 // ---------- updatePlanEstado (with history) ----------
 
 export async function updatePlanEstado(
@@ -380,7 +421,7 @@ export async function updatePlanEstado(
     // Get current estado
     const { data: current, error: getErr } = await supabase
       .from("planes_accion")
-      .select("estado")
+      .select("estado, evidencia_obligatoria")
       .eq("id", planId)
       .single()
 
@@ -389,6 +430,7 @@ export async function updatePlanEstado(
     }
 
     const estadoAnterior = current.estado as EstadoPlan
+    const evidenciaObligatoria = current.evidencia_obligatoria as boolean
 
     if (estadoAnterior === nuevoEstado) {
       // No change needed
@@ -398,6 +440,19 @@ export async function updatePlanEstado(
         .eq("id", planId)
         .single()
       return { data: plan as PlanAccion }
+    }
+
+    // No se puede cerrar un plan que exige evidencia sin ninguna respuesta.
+    // El cierre "forzado" (sin evidencia, con motivo) sólo pasa por
+    // `cerrarPlan`, que además deja registrado el motivo.
+    if (nuevoEstado === "completado" && evidenciaObligatoria) {
+      const respuestas = await contarRespuestasPlan(supabase, planId)
+      if (respuestas === 0) {
+        return {
+          error:
+            "Este plan tiene que estar respondido antes de cerrarse. Entrá al plan y dejá un comentario o adjuntá un archivo en el Action Log.",
+        }
+      }
     }
 
     // Update estado
@@ -1416,32 +1471,7 @@ export async function cerrarPlan(
     // El plan se considera "respondido" si tiene al menos una respuesta:
     // un avance del Action Log (comentario o archivo), un comentario, o una
     // evidencia/archivo vinculado. Un comentario solo ya cuenta.
-    const [
-      { count: evCount },
-      { count: archCount },
-      { count: avanceCount },
-      { count: comentCount },
-    ] = await Promise.all([
-      supabase
-        .from("evidencia_planes")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-      supabase
-        .from("dpo_archivo_planes")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-      supabase
-        .from("planes_accion_avances")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-      supabase
-        .from("plan_comentarios")
-        .select("id", { count: "exact", head: true })
-        .eq("plan_id", planId),
-    ])
-
-    const totalEvidencias =
-      (evCount ?? 0) + (archCount ?? 0) + (avanceCount ?? 0) + (comentCount ?? 0)
+    const totalEvidencias = await contarRespuestasPlan(supabase, planId)
 
     // 2) validaciones de evidencia
     const updates: {

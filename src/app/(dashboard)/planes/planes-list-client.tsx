@@ -228,10 +228,21 @@ export function PlanesListClient({
 
   function handleEstadoChange(id: string, nuevo: EstadoPlan) {
     startTransition(async () => {
+      const anterior = planes.find((p) => p.id === id)?.estado
       setPlanes((prev) => prev.map((p) => (p.id === id ? { ...p, estado: nuevo } : p)))
       const res = await updatePlanEstado(id, nuevo)
-      if ("error" in res) toast.error(res.error)
-      else toast.success(`Estado: ${ESTADO_PLAN_LABELS[nuevo]}`)
+      if ("error" in res) {
+        // El servidor rechazó el cambio (p. ej. cerrar sin respuesta):
+        // revertir el pintado optimista para no mostrar un estado falso.
+        if (anterior) {
+          setPlanes((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, estado: anterior } : p))
+          )
+        }
+        toast.error(res.error)
+      } else {
+        toast.success(`Estado: ${ESTADO_PLAN_LABELS[nuevo]}`)
+      }
       refrescarConScroll()
     })
   }
