@@ -9,6 +9,7 @@ import {
   ClipboardList,
   ShieldAlert,
   Truck,
+  Fuel,
   LogOut,
   CalendarRange,
   CalendarCheck,
@@ -44,7 +45,7 @@ interface EmpItem {
   icon: React.ReactNode
 }
 
-function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
+function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpItem[] {
   const items: EmpItem[] = [
     // Orden de salida del día (solo Misiones).
     ...(IS_MISIONES
@@ -86,6 +87,12 @@ function empleadoItems(puedeRecepcion: boolean): EmpItem[] {
       : [{ label: "Clasificar envases", href: "/clasificacion-envases", icon: <Boxes className="size-5" /> }]),
     { label: "Mis vacaciones", href: "/rrhh/mis-solicitudes", icon: <CalendarRange className="size-5" /> },
     { label: "Vehículos", href: "/vehiculos/checklist", icon: <Truck className="size-5" /> },
+    // Combustible: los choferes de distribución entran por las tarjetas del
+    // Inicio (piden legajo vinculado); los maquinistas cargan los autoelevadores
+    // y no tienen ese vínculo, así que este ítem es su única puerta de entrada.
+    ...(puedeCombustible
+      ? [{ label: "Combustible", href: "/vehiculos/combustible", icon: <Fuel className="size-5" /> }]
+      : []),
     { label: "Mis tareas", href: "/mis-tareas", icon: <ClipboardList className="size-5" /> },
   ]
   if (puedeRecepcion) {
@@ -106,10 +113,10 @@ async function logout() {
 
 // ───────────────────────── Desktop ─────────────────────────
 
-export function EmpleadoSidebar({ puedeRecepcion = false }: { puedeRecepcion?: boolean }) {
+export function EmpleadoSidebar({ puedeRecepcion = false, puedeCombustible = false }: { puedeRecepcion?: boolean; puedeCombustible?: boolean }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const items = empleadoItems(puedeRecepcion)
+  const items = empleadoItems(puedeRecepcion, puedeCombustible)
 
   return (
     <aside
@@ -186,10 +193,10 @@ export function EmpleadoSidebar({ puedeRecepcion = false }: { puedeRecepcion?: b
 
 // ───────────────────────── Mobile ─────────────────────────
 
-export function EmpleadoMobileNav({ puedeRecepcion = false }: { puedeRecepcion?: boolean }) {
+export function EmpleadoMobileNav({ puedeRecepcion = false, puedeCombustible = false }: { puedeRecepcion?: boolean; puedeCombustible?: boolean }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
-  const items = empleadoItems(puedeRecepcion)
+  const items = empleadoItems(puedeRecepcion, puedeCombustible)
 
   return (
     <>

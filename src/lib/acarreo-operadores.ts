@@ -18,6 +18,26 @@ export function puedeOperarAcarreo(
   return !!email && ACARREO_OPERADORES.includes(email)
 }
 
+// Quiénes ven el acceso a "Combustible" en el menú del empleado. Los choferes
+// de distribución llegan a la pantalla desde las tarjetas del Inicio, que solo
+// aparecen si el usuario está vinculado a un legajo que figura como chofer o
+// ayudante en los registros de vehículos. Los maquinistas no lo están (cargan
+// los autoelevadores, no salen a ruta), así que sin esta lista no tienen por
+// dónde entrar. Para sumar a alguien, agregá su email acá.
+export const COMBUSTIBLE_OPERADORES = [
+  "107@dpo.local", // Pedro Martinez (maquinista)
+  "30@dpo.local", // Diego Cerbin (maquinista)
+  "173@dpo.local", // Pablo Selenzo (maquinista)
+]
+
+export function puedeRegistrarCombustible(
+  role?: string | null,
+  email?: string | null,
+): boolean {
+  if (role === "admin" || role === "supervisor") return true
+  return !!email && COMBUSTIBLE_OPERADORES.includes(email)
+}
+
 // Quiénes pueden dar el "Ingreso a depósito" (acción reservada): además de los
 // admin, esta lista acotada habilita a personas puntuales sin darles rol admin.
 export const INGRESO_OPERADORES = [
