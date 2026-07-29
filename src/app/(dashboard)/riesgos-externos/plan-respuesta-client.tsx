@@ -4,28 +4,40 @@ import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
+  Ambulance,
   ArrowDown,
+  ArrowLeft,
+  Ban,
+  Biohazard,
+  Bomb,
+  Bug,
   CalendarClock,
   ClipboardList,
+  CloudLightning,
+  Flame,
+  HeartPulse,
+  Lock,
+  Megaphone,
   Pencil,
   Phone,
   Plus,
+  PlugZap,
   Printer,
   QrCode,
+  ServerCrash,
   Star,
+  TrafficCone,
   Trash2,
   TrendingUp,
+  Truck,
   Users,
+  Warehouse,
+  WifiOff,
+  ZapOff,
+  type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { eliminarEscalamiento } from "@/actions/riesgos-externos-plan"
 import { EscalamientoFormDialog } from "@/components/riesgos-externos/escalamiento-form-dialog"
 import { PlanRespuestaFormDialog } from "@/components/riesgos-externos/plan-respuesta-form-dialog"
@@ -52,6 +64,28 @@ interface Props {
 const TODOS_LOS_RIESGOS = Object.keys(
   TIPO_RIESGO_EXTERNO_LABELS,
 ) as TipoRiesgoExterno[]
+
+/** Símbolo de cada riesgo: la tarjeta se reconoce sin leer el nombre. */
+const ICONO_RIESGO: Record<TipoRiesgoExterno, LucideIcon> = {
+  corte_de_luz: ZapOff,
+  falla_en_generador: PlugZap,
+  corte_de_sistema: ServerCrash,
+  corte_de_internet: WifiOff,
+  corte_de_ruta_o_acceso: TrafficCone,
+  incendio: Flame,
+  paro_sindical: Megaphone,
+  emergencia_medica_interna: HeartPulse,
+  emergencia_medica_externa: Ambulance,
+  temporal: CloudLightning,
+  robo_warehouse: Warehouse,
+  robo_distribucion: Truck,
+  saqueos: Users,
+  clausura_del_predio: Ban,
+  no_apertura_de_caja: Lock,
+  amenaza_de_bomba: Bomb,
+  pandemia: Biohazard,
+  invasion_de_plagas: Bug,
+}
 
 function CriticidadBadge({ criticidad }: { criticidad: CriticidadRiesgoExterno }) {
   const cls =
@@ -258,24 +292,60 @@ export function PlanRespuestaClient({
         </div>
       </div>
 
+      {/* Selector de riesgo: es lo primero que ve quien entra por el QR del
+          pizarrón, así que son tarjetas con símbolo y no un desplegable. */}
+      {filtroTipo === "todos" ? (
+        <div className="rounded-lg border bg-white p-3">
+          <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Elegí el riesgo
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {TODOS_LOS_RIESGOS.map((tipo) => {
+              const conf = configPorTipo.get(tipo)
+              const Icono = ICONO_RIESGO[tipo]
+              const esPrioritario = conf?.prioritario ?? false
+              return (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => setFiltroTipo(tipo)}
+                  className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition hover:border-slate-400 hover:bg-slate-50 ${
+                    esPrioritario
+                      ? "border-red-300 bg-red-50/50 ring-1 ring-red-100"
+                      : "border-slate-200"
+                  }`}
+                >
+                  <span className="relative">
+                    <Icono
+                      className={`size-7 ${
+                        conf?.criticidad === "critico"
+                          ? "text-red-600"
+                          : conf?.criticidad === "alto"
+                            ? "text-amber-600"
+                            : "text-slate-500"
+                      }`}
+                    />
+                    {esPrioritario && (
+                      <Star className="absolute -right-2 -top-1 size-3 fill-red-600 text-red-600" />
+                    )}
+                  </span>
+                  <span className="text-xs font-medium leading-tight text-slate-800">
+                    {TIPO_RIESGO_EXTERNO_LABELS[tipo]}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <Button variant="outline" onClick={() => setFiltroTipo("todos")}>
+          <ArrowLeft className="mr-2 size-4" />
+          Ver todos los riesgos
+        </Button>
+      )}
+
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={filtroTipo}
-          onValueChange={(v: string | null) => setFiltroTipo(v ?? "todos")}
-        >
-          <SelectTrigger className="w-60">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos los riesgos</SelectItem>
-            {Object.entries(TIPO_RIESGO_EXTERNO_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>
-                {v}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Button
           variant={soloIncompletos ? "default" : "outline"}
           onClick={() => setSoloIncompletos((v) => !v)}
@@ -285,6 +355,20 @@ export function PlanRespuestaClient({
         </Button>
 
         <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            title="Cartel de una hoja con el QR general, para pegar en el pizarrón"
+            render={
+              <a
+                href="/api/riesgos-externos/qr-pdf"
+                target="_blank"
+                rel="noreferrer"
+              />
+            }
+          >
+            <QrCode className="mr-2 size-4" />
+            Cartel QR
+          </Button>
           <Button
             variant="outline"
             title="Resumen compacto de todos los riesgos"
@@ -300,7 +384,7 @@ export function PlanRespuestaClient({
             Resumen
           </Button>
           <Button
-            title="Una hoja por riesgo, con QR — para colgar en el pizarrón"
+            title="Una hoja por riesgo, con su QR"
             render={
               <a
                 href="/api/riesgos-externos/fichas-pdf"
@@ -309,8 +393,8 @@ export function PlanRespuestaClient({
               />
             }
           >
-            <QrCode className="mr-2 size-4" />
-            Fichas para el pizarrón
+            <Printer className="mr-2 size-4" />
+            Fichas por riesgo
           </Button>
         </div>
       </div>

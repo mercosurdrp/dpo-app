@@ -66,6 +66,188 @@ export async function renderPDF(args: Args): Promise<Buffer> {
   })
 }
 
+/**
+ * Nombre para el listado en columnas del cartel: los dos de emergencia médica
+ * no entran en el ancho de columna y se pisan con la línea de abajo.
+ */
+const NOMBRE_CORTO: Partial<Record<TipoRiesgoExterno, string>> = {
+  emergencia_medica_interna: "Emergencia médica (interna)",
+  emergencia_medica_externa: "Emergencia médica (externa)",
+  corte_de_ruta_o_acceso: "Corte de ruta o acceso",
+}
+
+function nombreCorto(tipo: TipoRiesgoExterno): string {
+  return NOMBRE_CORTO[tipo] ?? TIPO_RIESGO_EXTERNO_LABELS[tipo]
+}
+
+/**
+ * Cartel de una sola hoja con el QR general, para pegar en el pizarrón: quien
+ * lo escanea entra al listado y elige el riesgo que necesita.
+ */
+export async function renderAfiche(args: {
+  tipos: TipoRiesgoExterno[]
+  prioritarios: Set<string>
+  qrIndice: Buffer
+}): Promise<Buffer> {
+  return await new Promise<Buffer>((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: MARGIN,
+      info: {
+        Title: "Riesgos Externos — QR del pizarrón",
+        Author: "Mercosur · dpo-app",
+        Subject: "Cartel con el QR al plan de respuesta (DPO Planeamiento 2.2)",
+      },
+    })
+    const chunks: Buffer[] = []
+    doc.on("data", (c: Buffer) => chunks.push(c))
+    doc.on("end", () => resolve(Buffer.concat(chunks)))
+    doc.on("error", reject)
+    try {
+      dibujarAfiche(doc, args)
+      doc.end()
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
+function dibujarAfiche(
+  doc: Doc,
+  {
+    tipos,
+    prioritarios,
+    qrIndice,
+  }: { tipos: TipoRiesgoExterno[]; prioritarios: Set<string>; qrIndice: Buffer },
+) {
+  const ancho = doc.page.width - MARGIN * 2
+
+  doc.save().rect(0, 0, doc.page.width, 118).fill("#0f172a").restore()
+  doc
+    .fillColor("#ffffff")
+    .font("Helvetica-Bold")
+    .fontSize(34)
+    .text("RIESGOS EXTERNOS", MARGIN, 30, { width: ancho, align: "center" })
+  doc
+    .fillColor("#cbd5e1")
+    .font("Helvetica")
+    .fontSize(13)
+    .text("¿Qué hago si pasa algo?", MARGIN, 76, {
+      width: ancho,
+      align: "center",
+    })
+
+  doc
+    .fillColor(TEXTO)
+    .font("Helvetica-Bold")
+    .fontSize(19)
+    .text("Escaneá y elegí el riesgo", MARGIN, 146, {
+      width: ancho,
+      align: "center",
+    })
+  doc
+    .fillColor(GRIS)
+    .font("Helvetica")
+    .fontSize(11.5)
+    .text(
+      "Vas a ver a quién llamar, qué hacer y en cuánto tiempo escalar.",
+      MARGIN,
+      doc.y + 6,
+      { width: ancho, align: "center" },
+    )
+
+  const qrSize = 320
+  doc.image(qrIndice, (doc.page.width - qrSize) / 2, doc.y + 16, {
+    width: qrSize,
+    height: qrSize,
+  })
+  let y = doc.y + 16 + qrSize + 26
+
+  // Los prioritarios, bien visibles: son los que el equipo debe saber de memoria.
+  const prio = tipos.filter((t) => prioritarios.has(t))
+  if (prio.length > 0) {
+    const alto = 30 + prio.length * 17
+    doc.save().rect(MARGIN, y, ancho, alto).fill("#fef2f2").restore()
+    doc
+      .save()
+      .lineWidth(1.5)
+      .strokeColor("#b91c1c")
+      .rect(MARGIN, y, ancho, alto)
+      .stroke()
+      .restore()
+    doc
+      .fillColor("#b91c1c")
+      .font("Helvetica-Bold")
+      .fontSize(11)
+      .text("RIESGOS PRIORITARIOS DEL CD", MARGIN, y + 9, {
+        width: ancho,
+        align: "center",
+      })
+    let yy = y + 28
+    for (const t of prio) {
+      doc
+        .fillColor(TEXTO)
+        .font("Helvetica-Bold")
+        .fontSize(11.5)
+        .text(TIPO_RIESGO_EXTERNO_LABELS[t], MARGIN, yy, {
+          width: ancho,
+          align: "center",
+        })
+      yy += 17
+    }
+    y += alto + 18
+  }
+
+  // Los riesgos que va a encontrar, en tres columnas: quien mira el cartel sabe
+  // si lo que le pasó está contemplado antes de sacar el celular.
+  doc
+    .fillColor(GRIS)
+    .font("Helvetica-Bold")
+    .fontSize(9.5)
+    .text(`LOS ${tipos.length} RIESGOS DEL PLAN`, MARGIN, y, {
+      width: ancho,
+      align: "center",
+    })
+  y += 16
+
+  const columnas = 3
+  const colW = ancho / columnas
+  const porColumna = Math.ceil(tipos.length / columnas)
+  tipos.forEach((t, i) => {
+    const col = Math.floor(i / porColumna)
+    const fila = i % porColumna
+    doc
+      .fillColor(TEXTO)
+      .font("Helvetica")
+      .fontSize(9.5)
+      .text(`·  ${nombreCorto(t)}`, MARGIN + col * colW + 10, y + fila * 14, {
+        width: colW - 14,
+        lineBreak: false,
+      })
+  })
+  y += porColumna * 14 + 14
+
+  doc
+    .fillColor(GRIS)
+    .font("Helvetica")
+    .fontSize(9)
+    .text(
+      "dpo-app › Riesgos Externos › Plan de respuesta",
+      MARGIN,
+      y,
+      { width: ancho, align: "center" },
+    )
+  doc
+    .fillColor("#94a3b8")
+    .fontSize(8.5)
+    .text(
+      `DPO Planeamiento 2.2 · impreso el ${formatTimestamp(new Date())}`,
+      MARGIN,
+      doc.page.height - MARGIN - 12,
+      { width: ancho, align: "center" },
+    )
+}
+
 /** Recorta un texto largo para que la ficha entre en una sola hoja. */
 function recortar(texto: string, max: number): string {
   const t = texto.trim()
