@@ -61,6 +61,8 @@ interface Props {
   dashboard: MiDashboardData | null
   entrega: MiEntregaData | null
   sobrecargas: MisSobrecargasResumen | null
+  /** Habilitado por lista a operar vehículos sin ser chofer de distribución. */
+  puedeVehiculos?: boolean
 }
 
 function fmtNum(n: number): string {
@@ -95,7 +97,7 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas, puedeVehiculos = false }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
   const [warehouseState, setWarehouseState] = useState(reunionWarehouse)
@@ -401,7 +403,7 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
       {/* ===== ENTREGAS ===== */}
 
       {/* Not linked warning */}
-      {entrega && !entrega.vinculado && (
+      {entrega && !entrega.vinculado && !puedeVehiculos && (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="flex items-center gap-3 py-4">
             <AlertTriangle className="size-6 text-amber-600 shrink-0" />
@@ -468,8 +470,9 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
         </Card>
       )}
 
-      {/* Acciones Vehículo */}
-      {entrega?.vinculado && (
+      {/* Acciones Vehículo — choferes vinculados y habilitados por lista
+          (maquinistas: cargan los autoelevadores, no salen a ruta). */}
+      {(entrega?.vinculado || puedeVehiculos) && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/vehiculos/checklist">
             <Card className="group cursor-pointer border-blue-200 bg-blue-50 transition-shadow hover:shadow-md">

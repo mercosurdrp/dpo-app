@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { EmpleadoGuard } from "@/components/layout/empleado-guard"
 import { EmpleadoSidebar, EmpleadoMobileNav } from "@/components/layout/empleado-sidebar"
-import { puedeOperarAcarreo, puedeRegistrarCombustible } from "@/lib/acarreo-operadores"
+import { puedeOperarAcarreo, puedeOperarVehiculos } from "@/lib/acarreo-operadores"
 import type { Pilar } from "@/types/database"
 
 export default async function DashboardLayout({
@@ -19,7 +19,7 @@ export default async function DashboardLayout({
   const role = profile?.role ?? "viewer"
   const email = profile?.email ?? null
   const puedeRecepcion = puedeOperarAcarreo(role, email)
-  const puedeCombustible = puedeRegistrarCombustible(role, email)
+  const puedeVehiculos = puedeOperarVehiculos(role, email)
 
   // Empleados: mismo menú lateral que el resto (columna izquierda), con sus
   // ítems curados. Reemplaza la vieja nav superior de tabs.
@@ -27,8 +27,8 @@ export default async function DashboardLayout({
     return (
       <EmpleadoGuard>
         <div className="flex min-h-screen">
-          <EmpleadoSidebar puedeRecepcion={puedeRecepcion} puedeCombustible={puedeCombustible} />
-          <EmpleadoMobileNav puedeRecepcion={puedeRecepcion} puedeCombustible={puedeCombustible} />
+          <EmpleadoSidebar puedeRecepcion={puedeRecepcion} puedeCombustible={puedeVehiculos} />
+          <EmpleadoMobileNav puedeRecepcion={puedeRecepcion} puedeCombustible={puedeVehiculos} />
           <main className="flex-1 overflow-auto bg-slate-50 p-4 pt-16 md:p-6 md:pt-6">
             {children}
           </main>
