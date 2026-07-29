@@ -17,12 +17,14 @@ export type NeumaticoTipo = "nuevo" | "recapado"
  * - `para_recapar`: salió del camión con goma para una vuelta más y espera el
  *   recapado. Está en el depósito pero NO disponible para montar.
  * - `en_recapado`: ya salió en un remito y está en poder del recapador.
+ * - `para_desecho`: no sirve más (ni para recapar) y espera a la recicladora.
  * - `instalado` / `baja`: puesta en una unidad / descartada.
  */
 export type NeumaticoEstado =
   | "stock"
   | "para_recapar"
   | "en_recapado"
+  | "para_desecho"
   | "instalado"
   | "baja"
 
@@ -30,6 +32,7 @@ export const NEUMATICO_ESTADO_LABEL: Record<NeumaticoEstado, string> = {
   stock: "En stock",
   para_recapar: "Para recapar",
   en_recapado: "En el recapador",
+  para_desecho: "Para desechar",
   instalado: "Instalada",
   baja: "De baja",
 }
@@ -82,6 +85,9 @@ export interface Neumatico {
   /** Cuántas veces se recapó esta misma cubierta (el recapador devuelve la goma
    *  con el mismo código, así que la fila es siempre la misma). */
   vueltas_recapado: number
+  /** Retiro a la recicladora con el que se fue (fila de `mantenimiento_residuos`).
+   *  NULL = baja administrativa, sin remito de retiro. */
+  residuo_id: string | null
   motivo_baja: string | null
   fecha_ingreso: string
   fecha_instalacion: string | null
@@ -106,6 +112,8 @@ export interface NeumaticosResumen {
   paraRecapar: number
   /** Ya enviadas: están en poder del recapador. */
   enRecapado: number
+  /** Esperando que la recicladora las retire. */
+  paraDesecho: number
   instalados: number
   criticos: number
   bajasMes: number
@@ -155,6 +163,31 @@ export interface Recapado {
   created_at: string
   updated_at: string
   items: RecapadoItem[]
+}
+
+// ==================== Desecho / reciclado ====================
+
+/**
+ * Un retiro de cubiertas a la recicladora. Es una fila de
+ * `mantenimiento_residuos` (la tabla de disposición de residuos del módulo), no
+ * una tabla nueva: así el retiro da de baja las cubiertas y al mismo tiempo
+ * queda como evidencia ambiental con su certificado de descarte.
+ */
+export interface RetiroCubiertas {
+  id: string
+  fecha: string
+  /** Siempre "Cubiertas" en los retiros que genera este módulo. */
+  material: string
+  descripcion: string | null
+  cantidad: number | null
+  unidad: string | null
+  /** La recicladora / quien se las lleva. */
+  proveedor: string
+  /** Los códigos de las cubiertas retiradas, como los pide el registro. */
+  numeros_fuego: string | null
+  certificado_url: string | null
+  observaciones: string | null
+  created_at: string
 }
 
 /** Las tres acciones del módulo de neumáticos, cada una con su intervalo de km. */

@@ -611,7 +611,7 @@ function RecepcionDialog({
     }
     toast.success(
       `${res.recapadas} al stock como recapadas${
-        res.descartadas > 0 ? ` · ${res.descartadas} de baja` : ""
+        res.descartadas > 0 ? ` · ${res.descartadas} a la bandeja de desecho` : ""
       }`
     )
     onDone()
@@ -664,7 +664,8 @@ function RecepcionDialog({
             <div className="border-b bg-muted/50 px-3 py-2">
               <p className="text-sm font-medium">Qué volvió</p>
               <p className="text-[11px] text-muted-foreground">
-                Marcá las que el recapador descartó: esas van a baja y no llevan costo. La
+                Marcá las que el recapador descartó: esas no llevan costo y caen en la
+                bandeja &quot;Para desechar&quot;, hasta que las retire la recicladora. La
                 profundidad con la que vuelve pasa a ser su profundidad de origen.
               </p>
             </div>

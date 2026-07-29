@@ -127,6 +127,7 @@ import type {
   Alineacion,
   IntervaloNeumaticos,
   Recapado,
+  RetiroCubiertas,
   Rotacion,
 } from "@/lib/vehiculos/neumaticos-tipos"
 import type { KmFlotaUnidad } from "@/actions/neumaticos"
@@ -367,6 +368,7 @@ interface MantenimientoClientProps {
   checklists: { itemsNoOk: ChecklistItemNoOk[]; comentarios: ChecklistComentario[] }
   neumaticos: Neumatico[]
   recapados: Recapado[]
+  retirosCubiertas: RetiroCubiertas[]
   alineaciones: Alineacion[]
   kmFlota: Record<string, KmFlotaUnidad>
   rotaciones: Rotacion[]
@@ -409,6 +411,7 @@ export function MantenimientoClient({
   checklists,
   neumaticos,
   recapados,
+  retirosCubiertas,
   alineaciones,
   kmFlota,
   rotaciones,
@@ -703,6 +706,7 @@ export function MantenimientoClient({
           <NeumaticosModule
             neumaticos={neumaticos}
             recapados={recapados}
+            retirosCubiertas={retirosCubiertas}
             alineaciones={alineaciones}
             kmFlota={kmFlota}
             rotaciones={rotaciones}

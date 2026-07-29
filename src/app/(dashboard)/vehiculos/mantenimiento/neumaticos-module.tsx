@@ -77,6 +77,7 @@ import {
   type Neumatico,
   type NeumaticoTipo,
   type Recapado,
+  type RetiroCubiertas,
   type Rotacion,
   PROFUNDIDAD_CRITICA_MM,
 } from "@/lib/vehiculos/neumaticos-tipos"
@@ -114,6 +115,7 @@ import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { ProveedorPicker, ProveedoresProvider } from "./_components/proveedor-picker"
 import { KpiCard } from "./_components/kpi-card"
 import { RecapadosPanel } from "./_components/recapados-panel"
+import { DesechoPanel } from "./_components/desecho-panel"
 
 interface UnidadFlota {
   dominio: string
@@ -126,6 +128,8 @@ interface Props {
   neumaticos: Neumatico[]
   /** Remitos de envío al recapador (con sus cubiertas). */
   recapados: Recapado[]
+  /** Retiros de cubiertas a la recicladora (disposición de residuos). */
+  retirosCubiertas: RetiroCubiertas[]
   alineaciones: Alineacion[]
   kmFlota: Record<string, KmFlotaUnidad>
   rotaciones: Rotacion[]
@@ -219,6 +223,7 @@ function estadoAlineacionConKm(
 export function NeumaticosModule({
   neumaticos,
   recapados,
+  retirosCubiertas,
   alineaciones,
   kmFlota,
   rotaciones,
@@ -241,7 +246,14 @@ export function NeumaticosModule({
   const [cargaOpen, setCargaOpen] = useState(false)
   const [editNeu, setEditNeu] = useState<Neumatico | null>(null)
   const [detalleResumen, setDetalleResumen] = useState<
-    "stock" | "para_recapar" | "en_recapado" | "instaladas" | "criticas" | "bajas" | null
+    | "stock"
+    | "para_recapar"
+    | "en_recapado"
+    | "para_desecho"
+    | "instaladas"
+    | "criticas"
+    | "bajas"
+    | null
   >(null)
   const [montajeOpen, setMontajeOpen] = useState(false)
   const [unidadSel, setUnidadSel] = useState<string>(unidades[0]?.dominio ?? "")
@@ -338,6 +350,7 @@ export function NeumaticosModule({
     let criticos = 0
     let paraRecapar = 0
     let enRecapado = 0
+    let paraDesecho = 0
     for (const n of neumaticos) {
       if (n.estado === "para_recapar") {
         paraRecapar++
@@ -345,6 +358,10 @@ export function NeumaticosModule({
       }
       if (n.estado === "en_recapado") {
         enRecapado++
+        continue
+      }
+      if (n.estado === "para_desecho") {
+        paraDesecho++
         continue
       }
       if (n.estado !== "instalado") continue
@@ -357,6 +374,7 @@ export function NeumaticosModule({
       stockRecapadas: stock.filter((n) => n.tipo === "recapado").length,
       paraRecapar,
       enRecapado,
+      paraDesecho,
       instalados,
       criticos,
       bajas: bajas.length,
@@ -369,7 +387,7 @@ export function NeumaticosModule({
       <DpoSeccionCinta seccionId="neumaticos" />
 
       {/* Resumen — cada tarjeta abre el detalle de sus cubiertas */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <KpiCard
           label="En stock"
           valor={resumen.stock}
@@ -391,6 +409,13 @@ export function NeumaticosModule({
           valor={resumen.enRecapado}
           sub="Ya enviadas, todavía sin volver · click para ver"
           onClick={() => setDetalleResumen("en_recapado")}
+        />
+        <KpiCard
+          label="Para desechar"
+          valor={resumen.paraDesecho}
+          sub="Esperando a la recicladora · click para ver"
+          estado={resumen.paraDesecho > 0 ? "alerta" : "ok"}
+          onClick={() => setDetalleResumen("para_desecho")}
         />
         <KpiCard
           label="Instaladas"
@@ -811,6 +836,14 @@ export function NeumaticosModule({
       <RecapadosPanel
         recapados={recapados}
         neumaticos={neumaticos}
+        puedeEditar={puedeEditar}
+        onRefresh={refresh}
+      />
+
+      {/* Desecho: la bandeja del patio y el retiro de la recicladora */}
+      <DesechoPanel
+        neumaticos={neumaticos}
+        retiros={retirosCubiertas}
         puedeEditar={puedeEditar}
         onRefresh={refresh}
       />
@@ -1983,6 +2016,7 @@ type CategoriaResumen =
   | "stock"
   | "para_recapar"
   | "en_recapado"
+  | "para_desecho"
   | "instaladas"
   | "criticas"
   | "bajas"
@@ -1991,6 +2025,7 @@ const CATEGORIA_TITULO: Record<CategoriaResumen, string> = {
   stock: "Cubiertas en stock",
   para_recapar: "Cubiertas para recapar",
   en_recapado: "Cubiertas en el recapador",
+  para_desecho: "Cubiertas para desechar",
   instaladas: "Cubiertas instaladas",
   criticas: "Cubiertas con desgaste crítico",
   bajas: "Cubiertas dadas de baja",
@@ -2043,6 +2078,10 @@ function ResumenDetalleDialog({
         return [...neumaticos]
           .filter((n) => n.estado === "en_recapado")
           .sort((a, b) => (a.numero ?? "").localeCompare(b.numero ?? ""))
+      case "para_desecho":
+        return [...neumaticos]
+          .filter((n) => n.estado === "para_desecho")
+          .sort((a, b) => (a.numero ?? "").localeCompare(b.numero ?? ""))
       case "instaladas":
         return [...neumaticos]
           .filter((n) => n.estado === "instalado")
@@ -2087,7 +2126,9 @@ function ResumenDetalleDialog({
                   ? "Salieron del camión con goma para otra vuelta y esperan en el depósito a que las manden al recapador."
                   : categoria === "en_recapado"
                     ? "Ya salieron en un remito y están en poder del recapador. La vuelta se registra en Envíos a recapado."
-                    : "Historial de bajas con su motivo."}
+                    : categoria === "para_desecho"
+                      ? "Ya no sirven: esperan en el patio a que la recicladora las retire. La baja se hace al registrar el retiro."
+                      : "Historial de bajas con su motivo."}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto">
@@ -2711,6 +2752,11 @@ function MontajeDialog({
     () => neumaticos.filter((n) => n.estado === "para_recapar"),
     [neumaticos]
   )
+  // Las que ya no sirven y esperan a la recicladora.
+  const paraDesecho = useMemo(
+    () => neumaticos.filter((n) => n.estado === "para_desecho"),
+    [neumaticos]
+  )
   const porPosicion = useMemo(() => {
     const m = new Map<string, Neumatico>()
     for (const n of neumaticos)
@@ -2758,7 +2804,10 @@ function MontajeDialog({
     }
   }
 
-  const desmontar = async (n: Neumatico, destino: "stock" | "para_recapar" = "stock") => {
+  const desmontar = async (
+    n: Neumatico,
+    destino: "stock" | "para_recapar" | "para_desecho" = "stock"
+  ) => {
     if (saving) return
     setSaving(true)
     const res = await quitarNeumatico({ id: n.id, destino })
@@ -2769,7 +2818,9 @@ function MontajeDialog({
       toast.success(
         destino === "para_recapar"
           ? `Cubierta ${n.numero || "s/n"} desmontada y enviada a recapar`
-          : `Cubierta ${n.numero || "s/n"} desmontada al stock`
+          : destino === "para_desecho"
+            ? `Cubierta ${n.numero || "s/n"} desmontada y puesta para desecho`
+            : `Cubierta ${n.numero || "s/n"} desmontada al stock`
       )
       onRefresh()
     }
@@ -2820,6 +2871,8 @@ function MontajeDialog({
         void desmontar(item.n)
       } else if (drop === "para_recapar" && item.origen === "diagrama") {
         void desmontar(item.n, "para_recapar")
+      } else if (drop === "para_desecho" && item.origen === "diagrama") {
+        void desmontar(item.n, "para_desecho")
       } else if (drop?.startsWith("pos:") && item.origen === "stock") {
         const pos = layout.find((p) => p.code === drop.slice(4))
         if (pos) void montar(item.n, pos)
@@ -3008,6 +3061,34 @@ function MontajeDialog({
                 {paraRecapar.length > 0 && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     {paraRecapar.map((n) => n.numero || "s/n").join(" · ")}
+                  </p>
+                )}
+              </div>
+
+              {/* Tercera zona: la goma que no sirve más. Queda esperando a la
+                  recicladora; la baja la hace el retiro, con su certificado. */}
+              <div
+                data-drop="para_desecho"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("[data-draggable]")) return
+                  if (sel?.origen === "diagrama") void desmontar(sel.n, "para_desecho")
+                }}
+                className={cn(
+                  "mt-2 rounded-lg border border-dashed border-border bg-background/60 p-2 text-center transition-colors",
+                  resaltaStock && "border-destructive/50 bg-destructive/5 ring-2 ring-destructive/40"
+                )}
+              >
+                <p className="text-xs font-medium text-foreground">
+                  Para desechar ({paraDesecho.length})
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {resaltaStock
+                    ? "soltá acá si la cubierta ya no sirve"
+                    : "van a la recicladora, se dan de baja al retirarlas"}
+                </p>
+                {paraDesecho.length > 0 && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {paraDesecho.map((n) => n.numero || "s/n").join(" · ")}
                   </p>
                 )}
               </div>

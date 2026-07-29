@@ -350,26 +350,28 @@ export async function registrarRecepcionRecapado(input: {
           })
         }
       } else {
-        const { error: bajaErr } = await supabase
+        // La que el recapador descarta vuelve igual al depósito: no es baja
+        // todavía, entra en la bandeja de desecho y la baja la hace el retiro
+        // de la recicladora (con su certificado).
+        const { error: descErr } = await supabase
           .from("mantenimiento_neumaticos")
           .update({
-            estado: "baja",
+            estado: "para_desecho",
             dominio: null,
             posicion: null,
             eje: null,
             motivo_baja:
               it.observaciones?.trim() ||
               `Descartada por el recapador (${remito.proveedor})`,
-            fecha_baja: fecha,
             updated_at: new Date().toISOString(),
           })
           .eq("id", it.neumatico_id)
-        if (bajaErr) return { error: bajaErr.message }
+        if (descErr) return { error: descErr.message }
       }
 
       await supabase.from("mantenimiento_neumatico_movimientos").insert({
         neumatico_id: it.neumatico_id,
-        tipo: esRecapada ? "retorno_recapado" : "baja",
+        tipo: esRecapada ? "retorno_recapado" : "desmontaje",
         fecha,
         numero: it.numero_retorno?.trim() || previa?.numero || null,
         medida: previa?.medida ?? null,
@@ -380,7 +382,7 @@ export async function registrarRecepcionRecapado(input: {
                 ? ` con ${it.profundidad_retorno_mm} mm`
                 : ""
             }`
-          : `Descartada por ${remito.proveedor}: no era recapable`,
+          : `Descartada por ${remito.proveedor}: no era recapable. Queda para desechar`,
         created_by: profile.id,
       })
     }

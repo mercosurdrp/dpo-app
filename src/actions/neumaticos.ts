@@ -90,6 +90,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
     let stockRecapadas = 0
     let paraRecapar = 0
     let enRecapado = 0
+    let paraDesecho = 0
     let instalados = 0
     let criticos = 0
     let bajasMes = 0
@@ -99,6 +100,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
         if (r.tipo === "recapado") stockRecapadas++
       } else if (r.estado === "para_recapar") paraRecapar++
       else if (r.estado === "en_recapado") enRecapado++
+      else if (r.estado === "para_desecho") paraDesecho++
       else if (r.estado === "instalado") {
         instalados++
         if (r.profundidad_actual_mm != null && r.profundidad_actual_mm <= PROFUNDIDAD_CRITICA_MM)
@@ -112,6 +114,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
       stockRecapadas,
       paraRecapar,
       enRecapado,
+      paraDesecho,
       instalados,
       criticos,
       bajasMes,
@@ -122,6 +125,7 @@ export async function getNeumaticosResumen(): Promise<NeumaticosResumen> {
       stockRecapadas: 0,
       paraRecapar: 0,
       enRecapado: 0,
+      paraDesecho: 0,
       instalados: 0,
       criticos: 0,
       bajasMes: 0,
@@ -505,11 +509,12 @@ export async function crearYColocarNeumatico(input: {
 /**
  * Desmonta una cubierta de la unidad.
  * @param destino `stock` = queda lista para volver a montarse;
- *   `para_recapar` = tiene goma para otra vuelta pero primero va al recapador.
+ *   `para_recapar` = tiene goma para otra vuelta pero primero va al recapador;
+ *   `para_desecho` = no sirve más, espera a la recicladora.
  */
 export async function quitarNeumatico(input: {
   id: string
-  destino?: "stock" | "para_recapar"
+  destino?: "stock" | "para_recapar" | "para_desecho"
 }): Promise<{ success: true } | { error: string }> {
   try {
     const profile = await requireRole(["admin", "supervisor"])
@@ -547,7 +552,9 @@ export async function quitarNeumatico(input: {
       observaciones:
         destino === "para_recapar"
           ? "Desmontada y enviada a recapar"
-          : "Desmontada al stock",
+          : destino === "para_desecho"
+            ? "Desmontada para desecho"
+            : "Desmontada al stock",
       created_by: profile.id,
     })
     return { success: true }
