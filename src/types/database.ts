@@ -3722,7 +3722,7 @@ export const CATEGORIA_CONTACTO_RIESGO_LABELS: Record<
   emergencia: "Emergencia pública",
 }
 
-export type CriticidadRiesgoExterno = "critico" | "alto" | "medio"
+export type CriticidadRiesgoExterno = "critico" | "alto" | "medio" | "bajo"
 
 export const CRITICIDAD_RIESGO_EXTERNO_LABELS: Record<
   CriticidadRiesgoExterno,
@@ -3731,16 +3731,51 @@ export const CRITICIDAD_RIESGO_EXTERNO_LABELS: Record<
   critico: "Crítico",
   alto: "Alto",
   medio: "Medio",
+  bajo: "Bajo",
 }
 
-// Config por riesgo: cuáles son los prioritarios del CD y su criticidad.
+// Config por riesgo: cuáles son los prioritarios del CD, su criticidad y los
+// tres bloques del plan de respuesta que exige DPO Planeamiento 2.2 (R2.2.2).
 export interface RiesgoExternoConfig {
   tipo_riesgo: TipoRiesgoExterno
   prioritario: boolean
   criticidad: CriticidadRiesgoExterno | null
   nota: string | null
+  plan_nivel_servicio: string | null
+  plan_mano_obra: string | null
+  plan_ajuste_pronostico: string | null
   updated_at: string
   updated_by: string | null
+}
+
+// Matriz de escalamiento: a quién se sube y en cuánto tiempo (R2.2.2).
+export interface RiesgoExternoEscalamiento {
+  id: string
+  tipo_riesgo: TipoRiesgoExterno
+  nivel: number
+  rol: string
+  contacto_id: string | null
+  suplente: string | null
+  disparador: string
+  minutos_disparo: number | null
+  acciones: string | null
+  activo: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** "Al instante" / "30 min" / "4 h" / "24 h" — para mostrar el disparo. */
+export function formatMinutosDisparo(minutos: number | null): string {
+  if (minutos === null) return "Sin plazo"
+  if (minutos === 0) return "Al instante"
+  if (minutos < 60) return `${minutos} min`
+  if (minutos % 1440 === 0) {
+    const dias = minutos / 1440
+    return dias === 1 ? "24 h" : `${dias} días`
+  }
+  const horas = minutos / 60
+  return `${Number.isInteger(horas) ? horas : horas.toFixed(1)} h`
 }
 
 export interface RiesgoExternoContacto {
