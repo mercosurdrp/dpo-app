@@ -19,8 +19,14 @@ interface Props {
   contactos: RiesgoExternoContacto[]
   config: RiesgoExternoConfig[]
   escalamiento: RiesgoExternoEscalamiento[]
+  /** Solapa a abrir: la fija el QR del pizarrón (`?tab=plan`). */
+  tabInicial?: string
+  /** Riesgo al que viene apuntado el QR (`?riesgo=corte_de_luz`). */
+  riesgoInicial?: string
   puedeEditar: boolean
 }
+
+const TABS_VALIDAS = new Set(["sucesos", "contactos", "plan"])
 
 export function RiesgosExternosTabs({
   acciones,
@@ -28,8 +34,12 @@ export function RiesgosExternosTabs({
   contactos,
   config,
   escalamiento,
+  tabInicial,
+  riesgoInicial,
   puedeEditar,
 }: Props) {
+  const tabPorDefecto =
+    tabInicial && TABS_VALIDAS.has(tabInicial) ? tabInicial : "sucesos"
   return (
     <div className="space-y-5">
       <div>
@@ -43,7 +53,7 @@ export function RiesgosExternosTabs({
         </p>
       </div>
 
-      <Tabs defaultValue="sucesos">
+      <Tabs defaultValue={tabPorDefecto}>
         <TabsList>
           <TabsTrigger value="sucesos">
             <ShieldAlert className="mr-2 size-4" />
@@ -80,6 +90,7 @@ export function RiesgosExternosTabs({
             escalamiento={escalamiento}
             config={config}
             contactos={contactos}
+            riesgoInicial={riesgoInicial}
             puedeEditar={puedeEditar}
           />
         </TabsContent>

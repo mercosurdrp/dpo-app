@@ -11,6 +11,7 @@ import {
   Phone,
   Plus,
   Printer,
+  QrCode,
   Star,
   Trash2,
   TrendingUp,
@@ -43,6 +44,8 @@ interface Props {
   escalamiento: RiesgoExternoEscalamiento[]
   config: RiesgoExternoConfig[]
   contactos: RiesgoExternoContacto[]
+  /** Riesgo al que apunta el QR del pizarrón: entra filtrado en esa ficha. */
+  riesgoInicial?: string
   puedeEditar: boolean
 }
 
@@ -98,12 +101,17 @@ export function PlanRespuestaClient({
   escalamiento,
   config,
   contactos,
+  riesgoInicial,
   puedeEditar,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
-  const [filtroTipo, setFiltroTipo] = useState<string>("todos")
+  const [filtroTipo, setFiltroTipo] = useState<string>(
+    riesgoInicial && riesgoInicial in TIPO_RIESGO_EXTERNO_LABELS
+      ? riesgoInicial
+      : "todos",
+  )
   const [soloIncompletos, setSoloIncompletos] = useState(false)
 
   const [openNivel, setOpenNivel] = useState(false)
@@ -276,21 +284,35 @@ export function PlanRespuestaClient({
           Sólo incompletos
         </Button>
 
-        <Button
-          variant="outline"
-          className="ml-auto"
-          title="Plan de respuesta imprimible, una ficha por riesgo"
-          render={
-            <a
-              href="/api/riesgos-externos/plan-respuesta-pdf"
-              target="_blank"
-              rel="noreferrer"
-            />
-          }
-        >
-          <Printer className="mr-2 size-4" />
-          Imprimir plan
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            title="Resumen compacto de todos los riesgos"
+            render={
+              <a
+                href="/api/riesgos-externos/plan-respuesta-pdf"
+                target="_blank"
+                rel="noreferrer"
+              />
+            }
+          >
+            <Printer className="mr-2 size-4" />
+            Resumen
+          </Button>
+          <Button
+            title="Una hoja por riesgo, con QR — para colgar en el pizarrón"
+            render={
+              <a
+                href="/api/riesgos-externos/fichas-pdf"
+                target="_blank"
+                rel="noreferrer"
+              />
+            }
+          >
+            <QrCode className="mr-2 size-4" />
+            Fichas para el pizarrón
+          </Button>
+        </div>
       </div>
 
       {fichas.length === 0 && (
@@ -330,8 +352,22 @@ export function PlanRespuestaClient({
                     </Badge>
                   )}
                 </div>
-                {puedeEditar && (
-                  <div className="flex gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Imprimir sólo esta ficha (con su QR)"
+                    render={
+                      <a
+                        href={`/api/riesgos-externos/fichas-pdf?riesgo=${tipo}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      />
+                    }
+                  >
+                    <QrCode className="size-3.5" />
+                  </Button>
+                  {puedeEditar && (
                     <Button
                       type="button"
                       variant="outline"
@@ -344,6 +380,8 @@ export function PlanRespuestaClient({
                       <ClipboardList className="mr-2 size-3.5" />
                       Editar plan
                     </Button>
+                  )}
+                  {puedeEditar && (
                     <Button
                       type="button"
                       variant="outline"
@@ -362,8 +400,8 @@ export function PlanRespuestaClient({
                       <Plus className="mr-2 size-3.5" />
                       Nivel
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               <div className="space-y-3 px-4 py-3">

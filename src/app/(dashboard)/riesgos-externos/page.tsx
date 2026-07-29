@@ -10,7 +10,17 @@ import {
 import { listEscalamiento } from "@/actions/riesgos-externos-plan"
 import { RiesgosExternosTabs } from "./riesgos-externos-tabs"
 
-export default async function RiesgosExternosPage() {
+/**
+ * `?tab=plan&riesgo=corte_de_luz` abre la solapa del plan de respuesta filtrada
+ * en un riesgo: es el destino de los QR que se pegan en el pizarrón del CD.
+ */
+export default async function RiesgosExternosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; riesgo?: string }>
+}) {
+  const { tab, riesgo } = await searchParams
+
   const [accRes, respRes, contRes, confRes, escRes, puedeEditar] =
     await Promise.all([
       listAcciones(),
@@ -39,6 +49,8 @@ export default async function RiesgosExternosPage() {
       contactos={"data" in contRes ? contRes.data : []}
       config={"data" in confRes ? confRes.data : []}
       escalamiento={"data" in escRes ? escRes.data : []}
+      tabInicial={riesgo ? "plan" : tab}
+      riesgoInicial={riesgo}
       puedeEditar={puedeEditar}
     />
   )
