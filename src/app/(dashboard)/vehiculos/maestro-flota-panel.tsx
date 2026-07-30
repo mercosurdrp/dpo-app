@@ -255,13 +255,15 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
                   <TableHead>Tipo</TableHead>
                   {vista === "identificacion" && (
                     <>
+                      <TableHead>N.º asignado</TableHead>
                       <TableHead>Marca</TableHead>
                       <TableHead>Modelo</TableHead>
                       <TableHead>Año</TableHead>
                       <TableHead>Chasis</TableHead>
                       <TableHead>VIN</TableHead>
                       <TableHead>Motor</TableHead>
-                      <TableHead>Capacidad</TableHead>
+                      <TableHead>Carga</TableHead>
+                      <TableHead>Tara</TableHead>
                       <TableHead>Carrocería</TableHead>
                     </>
                   )}
@@ -269,8 +271,9 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
                     <>
                       <TableHead>Chofer asignado</TableHead>
                       <TableHead>Centro de costo</TableHead>
-                      <TableHead>Ciudad</TableHead>
+                      <TableHead>Ubicación</TableHead>
                       <TableHead>Sector</TableHead>
+                      <TableHead>Telemetría</TableHead>
                       <TableHead>Combustible</TableHead>
                     </>
                   )}
@@ -285,7 +288,7 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
                   )}
                   {vista === "estado" && (
                     <>
-                      <TableHead className="text-right">Km actual</TableHead>
+                      <TableHead className="text-right">Km / horas</TableHead>
                       <TableHead>Última lectura</TableHead>
                       <TableHead>Último checklist</TableHead>
                       <TableHead>Disponibilidad</TableHead>
@@ -376,6 +379,9 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
 
       {vista === "identificacion" && (
         <>
+          <TableCell className="tabular-nums">
+            <Dato valor={f?.numero_asignado} falta={!f?.numero_asignado} />
+          </TableCell>
           <TableCell><Dato valor={f?.marca} falta={falta("marca")} /></TableCell>
           <TableCell><Dato valor={f?.modelo} falta={falta("modelo")} /></TableCell>
           <TableCell><Dato valor={f?.anio} falta={falta("anio")} /></TableCell>
@@ -387,6 +393,12 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
             <Dato valor={f?.motor} falta={falta("motor")} />
           </TableCell>
           <TableCell><Dato valor={f?.capacidad_carga} /></TableCell>
+          <TableCell className="tabular-nums">
+            <Dato
+              valor={f?.tara_kg != null ? `${fmtNum(Number(f.tara_kg))} kg` : null}
+              falta={f?.tara_kg == null}
+            />
+          </TableCell>
           <TableCell><Dato valor={f?.carroceria} /></TableCell>
         </>
       )}
@@ -397,6 +409,9 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
           <TableCell><Dato valor={f?.centro_costo} /></TableCell>
           <TableCell><Dato valor={f?.ciudad} /></TableCell>
           <TableCell className="text-muted-foreground">{u.sector ?? "—"}</TableCell>
+          <TableCell>
+            <Dato valor={f?.telemetria} falta={!f?.telemetria} />
+          </TableCell>
           <TableCell>
             <Dato valor={f?.combustible} />
             {f?.combustible_aux && (
@@ -439,7 +454,14 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
 
       {vista === "estado" && (
         <>
-          <TableCell className="text-right tabular-nums">{fmtNum(u.kmActual)}</TableCell>
+          <TableCell className="text-right tabular-nums">
+            {fmtNum(u.kmActual)}
+            {u.kmActual != null && (
+              <span className="ml-1 text-xs text-muted-foreground">
+                {u.esHorometro ? "h" : "km"}
+              </span>
+            )}
+          </TableCell>
           <TableCell className="text-muted-foreground">{fmtFecha(u.kmFecha)}</TableCell>
           <TableCell className="text-muted-foreground">
             {u.ultimoChecklist ? (

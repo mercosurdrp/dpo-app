@@ -62,6 +62,9 @@ interface Props {
 
 // Campos de la ficha en el orden en que se muestran/editan
 const CAMPOS: { key: CampoFicha; label: string }[] = [
+  // El manual del pilar Flota (R1.1.2) pide el número asignado además de la
+  // patente: es como la operación llama a la unidad.
+  { key: "numero_asignado", label: "N.º asignado" },
   { key: "marca", label: "Marca" },
   { key: "modelo", label: "Modelo" },
   { key: "anio", label: "Año" },
@@ -73,6 +76,10 @@ const CAMPOS: { key: CampoFicha; label: string }[] = [
   { key: "vin", label: "VIN" },
   { key: "motor", label: "N° de motor" },
   { key: "capacidad_carga", label: "Capacidad de carga" },
+  // R1.1.2 pide la capacidad como "tara y carga".
+  { key: "tara_kg", label: "Tara (kg)" },
+  // R1.1.2 y R1.2.5: qué unidad de telemetría/GPS tiene montada.
+  { key: "telemetria", label: "Telemetría / GPS" },
   { key: "carroceria", label: "Carrocería" },
   { key: "ciudad", label: "Ciudad" },
   { key: "centro_costo", label: "Centro de costo" },

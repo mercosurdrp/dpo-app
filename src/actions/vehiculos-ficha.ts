@@ -19,6 +19,7 @@ type Result<T> = { data: T } | { error: string }
 // completa SOLO cuando están vacíos (nunca pisa lo cargado en la app).
 // (La lista es local: "use server" no puede exportar const/type.)
 const CAMPOS_FICHA: CampoFicha[] = [
+  "numero_asignado",
   "marca",
   "modelo",
   "anio",
@@ -30,6 +31,8 @@ const CAMPOS_FICHA: CampoFicha[] = [
   "vin",
   "motor",
   "capacidad_carga",
+  "tara_kg",
+  "telemetria",
   "carroceria",
   "ciudad",
   "centro_costo",
@@ -112,6 +115,11 @@ export async function syncFichaCloudfleet(
 
     // Valores que ofrece Cloudfleet, mapeados a los campos de la ficha
     const desdeCf: Record<CampoFicha, string | null> = {
+      // Campos que pide el manual de flota (R1.1.2) y que Cloudfleet no expone:
+      // se cargan a mano desde la ficha.
+      numero_asignado: null,
+      tara_kg: null,
+      telemetria: null,
       marca: limpio(cf.brandName),
       modelo: limpio(cf.lineName),
       anio: limpio(cf.year),

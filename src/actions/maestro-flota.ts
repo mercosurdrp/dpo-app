@@ -155,6 +155,19 @@ export async function getMaestroFlota(): Promise<
 
     const kmPorDominio = kmActualPorDominio(lecturas)
 
+    // R1.1.2 pide "kms U HORAS": en los autoelevadores la unidad de uso es el
+    // horómetro, no el odómetro. Se toma la última lectura por fecha con la
+    // misma regla que el resto del tablero (`horometro ?? odometro`, porque el
+    // odómetro de esas máquinas viene con cualquier cosa).
+    const horasPorDominio = new Map<string, { horas: number; fecha: string }>()
+    for (const l of lecturas) {
+      const valor = l.horometro ?? l.odometro
+      if (valor == null) continue
+      const previa = horasPorDominio.get(l.dominio)
+      if (previa && previa.fecha > l.fecha) continue
+      horasPorDominio.set(l.dominio, { horas: valor, fecha: l.fecha })
+    }
+
     const unidades: MaestroFlotaUnidad[] = catalogo.map((c) => {
       const ficha = fichaPorDominio.get(c.dominio) ?? null
       const docs = docsPorDominio.get(c.dominio) ?? []
@@ -201,8 +214,16 @@ export async function getMaestroFlota(): Promise<
         docsPorVencer,
         docsSinArchivo,
         camposFaltantes: faltantes,
-        kmActual: km?.odometro ?? null,
-        kmFecha: km?.fecha ?? null,
+        // El autoelevador se mide en horas; el resto, en km.
+        esHorometro: (c.tipo ?? "") === "autoelevador",
+        kmActual:
+          (c.tipo ?? "") === "autoelevador"
+            ? (horasPorDominio.get(c.dominio)?.horas ?? null)
+            : (km?.odometro ?? null),
+        kmFecha:
+          (c.tipo ?? "") === "autoelevador"
+            ? (horasPorDominio.get(c.dominio)?.fecha ?? null)
+            : (km?.fecha ?? null),
         fueraServicio: fueraPorDominio.get(c.dominio) ?? null,
         ultimoChecklist: ultimoCheck.get(c.dominio) ?? null,
       }

@@ -749,6 +749,8 @@ export interface ChecklistItem {
 export interface VehiculoFicha {
   dominio: string
   cloudfleet_id: number | null
+  /** Número interno con el que la operación llama a la unidad (R1.1.2). */
+  numero_asignado: string | null
   marca: string | null
   modelo: string | null
   anio: string | null
@@ -760,6 +762,10 @@ export interface VehiculoFicha {
   vin: string | null
   motor: string | null
   capacidad_carga: string | null
+  /** Tara en kg: R1.1.2 pide la capacidad como "tara y carga". */
+  tara_kg: number | null
+  /** Unidad de telemetría / GPS montada (R1.1.2 y R1.2.5). */
+  telemetria: string | null
   carroceria: string | null
   ciudad: string | null
   centro_costo: string | null
@@ -776,6 +782,7 @@ export interface VehiculoFicha {
 
 // Campos de la ficha editables a mano / completables desde Cloudfleet
 export type CampoFicha =
+  | "numero_asignado"
   | "marca"
   | "modelo"
   | "anio"
@@ -787,6 +794,8 @@ export type CampoFicha =
   | "vin"
   | "motor"
   | "capacidad_carga"
+  | "tara_kg"
+  | "telemetria"
   | "carroceria"
   | "ciudad"
   | "centro_costo"
@@ -826,6 +835,8 @@ export interface MaestroFlotaUnidad {
   docsSinArchivo: number
   /** Campos clave de la ficha que están vacíos (marca, modelo, año, chasis, motor). */
   camposFaltantes: string[]
+  /** `true` en autoelevadores: `kmActual` son HORAS de horómetro, no km. */
+  esHorometro: boolean
   kmActual: number | null
   kmFecha: string | null
   /** OT abierta que la tiene parada hoy, si hay alguna. */
