@@ -11,7 +11,10 @@
  * mensual — solo reparte en qué día cae. Decisión del usuario 2026-07-14.
  *
  * DENOMINADOR — horas del personal de Depósito, por persona y por día:
- *   1. ausencia cargada (`ausentismo_eventos`) → 0 hs, no se completa;
+ *   1. ausencia cargada → 0 hs, no se completa. Vale de las DOS fuentes donde
+ *      se carga una ausencia en la app: la novedad diaria de /asistencia
+ *      (`asistencia_novedades`: vacaciones, licencia médica, ausente,
+ *      Pergamino) y el evento de /ausentismo (`ausentismo_eventos`);
  *   2. fichaje biométrico válido (par E+S) → sus horas REALES;
  *   3. sin fichaje y sin ausencia → jornada teórica (el reloj falló ese día);
  *   4. el supervisor NO ficha nunca → siempre jornada teórica.
@@ -49,6 +52,8 @@ export type WnpPersonaDia = {
   nombre: string
   estado: WnpEstadoPersona
   horas: number
+  /** Solo en `ausente`: por qué (Vacaciones, Licencia médica, …), para el popover. */
+  motivo?: string
 }
 
 export type WnpDia = {
@@ -106,12 +111,13 @@ export function prorratearHlVendidos(
 /**
  * Horas del día por persona, aplicando la cascada ausencia → fichaje → teórica.
  * `fichajePorFecha[fecha][legajo]` = horas reales (solo pares E+S con horas > 0).
- * `ausentePorFecha` = set de claves "fecha|legajo".
+ * `ausentePorFecha` = mapa de clave "fecha|legajo" → motivo de la ausencia
+ * ("Vacaciones", "Licencia médica", …) para mostrarlo en el popover.
  */
 export function calcularHorasDia(
   fecha: string,
   fichajePorFecha: Record<string, Record<number, number>>,
-  ausentePorFecha: Set<string>,
+  ausentePorFecha: Map<string, string>,
   nombrePorLegajo: Record<number, string>,
 ): WnpDia {
   const personas: WnpPersonaDia[] = []
@@ -123,8 +129,15 @@ export function calcularHorasDia(
   const nombre = (legajo: number) => nombrePorLegajo[legajo] ?? `Legajo ${legajo}`
 
   for (const legajo of LEGAJOS_WNP_OPERARIOS) {
-    if (ausentePorFecha.has(`${fecha}|${legajo}`)) {
-      personas.push({ legajo, nombre: nombre(legajo), estado: "ausente", horas: 0 })
+    const motivo = ausentePorFecha.get(`${fecha}|${legajo}`)
+    if (motivo !== undefined) {
+      personas.push({
+        legajo,
+        nombre: nombre(legajo),
+        estado: "ausente",
+        horas: 0,
+        motivo,
+      })
       continue
     }
     const real = fichajeDia[legajo] ?? 0
@@ -142,7 +155,8 @@ export function calcularHorasDia(
   }
 
   // Supervisor: no ficha nunca, se le imputa la jornada teórica salvo ausencia.
-  const supAusente = ausentePorFecha.has(`${fecha}|${LEGAJO_WNP_SUPERVISOR}`)
+  const motivoSup = ausentePorFecha.get(`${fecha}|${LEGAJO_WNP_SUPERVISOR}`)
+  const supAusente = motivoSup !== undefined
   if (!supAusente && teorica > 0) {
     horas += teorica
     personas.push({
@@ -157,6 +171,7 @@ export function calcularHorasDia(
       nombre: nombre(LEGAJO_WNP_SUPERVISOR),
       estado: "ausente",
       horas: 0,
+      motivo: motivoSup,
     })
   }
 

@@ -42,7 +42,13 @@ function num(n: number, dec = 2): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: dec }).format(n)
 }
 
-function EstadoBadge({ estado }: { estado: WnpEstadoPersona }) {
+function EstadoBadge({
+  estado,
+  motivo,
+}: {
+  estado: WnpEstadoPersona
+  motivo?: string
+}) {
   if (estado === "fichado") {
     return (
       <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
@@ -60,7 +66,7 @@ function EstadoBadge({ estado }: { estado: WnpEstadoPersona }) {
   if (estado === "ausente") {
     return (
       <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">
-        Ausente
+        {motivo ? `Ausente · ${motivo}` : "Ausente"}
       </Badge>
     )
   }
@@ -171,7 +177,7 @@ export function WnpDetalleDiaDialog({ open, onOpenChange, fecha }: Props) {
                   <TableRow key={p.legajo}>
                     <TableCell className="font-medium">{p.nombre}</TableCell>
                     <TableCell>
-                      <EstadoBadge estado={p.estado} />
+                      <EstadoBadge estado={p.estado} motivo={p.motivo} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {p.horas > 0 ? num(p.horas, 2) : "—"}

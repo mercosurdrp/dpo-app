@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { AUSENTISMO_MOTIVO_LABELS } from "@/types/database"
 import {
   LEGAJOS_WNP_OPERARIOS,
   LEGAJO_WNP_SUPERVISOR,
@@ -26,6 +27,17 @@ async function traerTodo<T>(
   }
   return filas
 }
+
+/** Novedades de /asistencia: las cuatro justifican que la persona no estuvo. */
+const NOVEDAD_LABELS: Record<string, string> = {
+  vacaciones: "Vacaciones",
+  licencia_medica: "Licencia médica",
+  ausente: "Ausente",
+  pergamino: "Pergamino",
+}
+
+/** Motivos de /ausentismo, con el mismo texto que muestra ese módulo. */
+const AUSENTISMO_LABELS: Record<string, string> = AUSENTISMO_MOTIVO_LABELS
 
 export type SerieWnp = {
   /** Por fecha: WnpDia con hl (prorrateado), horas y el desglose por persona. */
@@ -88,18 +100,44 @@ export async function cargarSerieWnp(
     legajoPorId[e.id] = Number(e.legajo)
   }
 
-  // Ausencias: eventos que solapan el rango, expandidos a un set "fecha|legajo".
+  // Ausencias: mapa "fecha|legajo" → motivo. Se juntan las DOS fuentes donde la
+  // app registra que alguien no estuvo, porque cada módulo escribe en la suya y
+  // el WNP tiene que respetar las dos: si no ve la ausencia, le imputa la
+  // jornada teórica y el denominador queda inflado (Cerbin de vacaciones desde
+  // el 27-jul/26 cargado en /asistencia sumaba 8 hs/día que nadie trabajó).
+
+  // (a) Novedad diaria de /asistencia — es la que se usa en el día a día.
+  const novedades = await traerTodo<{ fecha: string; legajo: number; tipo: string }>(
+    (desde, hasta) =>
+      supabase
+        .from("asistencia_novedades")
+        .select("fecha, legajo, tipo")
+        .in("legajo", legajos)
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .order("fecha", { ascending: true })
+        .range(desde, hasta),
+  )
+  const ausentePorFecha = new Map<string, string>()
+  for (const n of novedades) {
+    ausentePorFecha.set(
+      `${n.fecha}|${Number(n.legajo)}`,
+      NOVEDAD_LABELS[n.tipo] ?? "Ausente",
+    )
+  }
+
+  // (b) Evento de /ausentismo (rango de fechas) — carga de RRHH.
   const { data: eventos } = await supabase
     .from("ausentismo_eventos")
-    .select("empleado_id, fecha_inicio, fecha_fin")
+    .select("empleado_id, fecha_inicio, fecha_fin, motivo")
     .in("empleado_id", Object.keys(legajoPorId))
     .lte("fecha_inicio", fechaHasta)
     .gte("fecha_fin", fechaDesde)
-  const ausentePorFecha = new Set<string>()
   for (const ev of (eventos ?? []) as Array<{
     empleado_id: string
     fecha_inicio: string
     fecha_fin: string
+    motivo: string
   }>) {
     const legajo = legajoPorId[ev.empleado_id]
     if (!legajo) continue
@@ -109,7 +147,11 @@ export async function cargarSerieWnp(
       d <= hasta;
       d.setUTCDate(d.getUTCDate() + 1)
     ) {
-      ausentePorFecha.add(`${d.toISOString().slice(0, 10)}|${legajo}`)
+      const clave = `${d.toISOString().slice(0, 10)}|${legajo}`
+      // La novedad de /asistencia es más específica (día por día): no la pisa.
+      if (!ausentePorFecha.has(clave)) {
+        ausentePorFecha.set(clave, AUSENTISMO_LABELS[ev.motivo] ?? "Ausente")
+      }
     }
   }
 
