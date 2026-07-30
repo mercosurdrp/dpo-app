@@ -3817,11 +3817,34 @@ export interface CausaEfectoContenido {
   contramedida?: string
 }
 
+/** Revisión periódica del avance del PDCA (el manual pide al menos una por mes). */
+export interface PdcaRevision {
+  fecha: string
+  avance: string
+}
+
 export interface PdcaContenido {
-  plan: { problema: string; brechas: string; objetivos: string; causas: string }
+  // Encuadre exigido por el punto 4.3 del manual DPO (R4.3.1 y R4.3.2).
+  // Opcional: los PDCA cargados antes de 2026-07-30 no lo tienen.
+  encuadre?: {
+    objetivo_estrategico: string
+    kpi_meta: string
+    equipo: string
+    sdca_verificado: boolean
+    sdca_notas: string
+  }
+  plan: {
+    problema: string
+    brechas: string
+    objetivos: string
+    causas: string
+    // R4.3.3 — fase de observación: el problema partido en problemas menores.
+    observacion?: string
+  }
   hacer: { acciones: string }
   verificar: { resultados: string }
   actuar: { estandarizacion: string }
+  revisiones?: PdcaRevision[]
 }
 
 export type HerramientaGestionContenido =

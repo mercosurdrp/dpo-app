@@ -167,7 +167,29 @@ function CausaEfectoView({ c }: { c: CausaEfectoContenido }) {
 }
 
 function PdcaView({ c }: { c: PdcaContenido }) {
+  const sdca = c.encuadre?.sdca_verificado
+    ? ["Verificado", c.encuadre?.sdca_notas].filter(Boolean).join(" — ")
+    : (c.encuadre?.sdca_notas ?? "")
+  const revisiones = c.revisiones ?? []
+
   const secciones = [
+    {
+      badge: "0",
+      label: "Encuadre — antes de arrancar",
+      badgeColor: "bg-slate-600",
+      borderColor: "border-slate-200",
+      bgColor: "bg-slate-50/60",
+      textColor: "text-slate-700",
+      items: [
+        {
+          label: "Objetivo estratégico (R4.3.1)",
+          value: c.encuadre?.objetivo_estrategico ?? "",
+        },
+        { label: "KPI y meta", value: c.encuadre?.kpi_meta ?? "" },
+        { label: "Equipo", value: c.encuadre?.equipo ?? "" },
+        { label: "Checklist SDCA previo (R4.3.2)", value: sdca },
+      ],
+    },
     {
       badge: "P",
       label: "PLAN — Planificar",
@@ -179,7 +201,8 @@ function PdcaView({ c }: { c: PdcaContenido }) {
         { label: "Problema", value: c.plan.problema },
         { label: "Brechas", value: c.plan.brechas },
         { label: "Objetivos", value: c.plan.objetivos },
-        { label: "Causas analizadas", value: c.plan.causas },
+        { label: "Observación (R4.3.3)", value: c.plan.observacion ?? "" },
+        { label: "Causas analizadas (R4.3.4)", value: c.plan.causas },
       ],
     },
     {
@@ -258,6 +281,26 @@ function PdcaView({ c }: { c: PdcaContenido }) {
           </div>
         )
       })}
+
+      {revisiones.length > 0 && (
+        <div className="rounded-md border-2 border-slate-200 bg-slate-50/60 overflow-hidden">
+          <div className="px-3 py-2 border-b border-slate-200">
+            <span className="text-sm font-semibold text-slate-700">
+              Revisiones del avance
+            </span>
+          </div>
+          <div className="p-3 space-y-2">
+            {revisiones.map((r, i) => (
+              <div key={i} className="flex gap-2 text-sm">
+                <span className="shrink-0 font-medium text-slate-500">
+                  {r.fecha || "—"}
+                </span>
+                <span className="text-slate-800 whitespace-pre-wrap">{r.avance}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

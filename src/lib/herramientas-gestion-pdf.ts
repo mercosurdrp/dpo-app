@@ -430,7 +430,21 @@ async function generarPdfIshikawa(
 }
 
 function pdca(b: Builder, c: PdcaContenido) {
+  const sdca = c.encuadre?.sdca_verificado
+    ? ["Verificado", c.encuadre?.sdca_notas].filter(Boolean).join(" - ")
+    : (c.encuadre?.sdca_notas ?? "")
+
   const secciones: { titulo: string; color: ReturnType<typeof rgb>; campos: [string, string][] }[] = [
+    {
+      titulo: "Encuadre",
+      color: C.label,
+      campos: [
+        ["Objetivo estratégico (R4.3.1)", c.encuadre?.objetivo_estrategico ?? ""],
+        ["KPI y meta", c.encuadre?.kpi_meta ?? ""],
+        ["Equipo", c.encuadre?.equipo ?? ""],
+        ["Checklist SDCA previo (R4.3.2)", sdca],
+      ],
+    },
     {
       titulo: "PLAN — Planificar",
       color: C.azul,
@@ -438,7 +452,8 @@ function pdca(b: Builder, c: PdcaContenido) {
         ["Problema", c.plan?.problema ?? ""],
         ["Brechas", c.plan?.brechas ?? ""],
         ["Objetivos", c.plan?.objetivos ?? ""],
-        ["Causas analizadas", c.plan?.causas ?? ""],
+        ["Observación (R4.3.3)", c.plan?.observacion ?? ""],
+        ["Causas analizadas (R4.3.4)", c.plan?.causas ?? ""],
       ],
     },
     {
@@ -469,6 +484,17 @@ function pdca(b: Builder, c: PdcaContenido) {
       b.text(v, { gap: 4 })
     }
     if (!algo) b.text("Sin datos registrados.", { size: 9, color: C.tenue })
+    b.gap(6)
+  }
+
+  const revisiones = (c.revisiones ?? []).filter((r) => r.fecha || r.avance?.trim())
+  if (revisiones.length) {
+    b.label("Revisiones del avance", C.label)
+    b.gap(2)
+    for (const r of revisiones) {
+      b.text(r.fecha || "-", { bold: true, size: 9, color: C.label })
+      b.text(r.avance ?? "", { gap: 4 })
+    }
     b.gap(6)
   }
 }
