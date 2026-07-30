@@ -3,8 +3,16 @@
  * deposito-esteban / WMS). En vez de la RPC `sueno_kpi_detalle`, su valor
  * anual y su detalle mensual se traen por API del depósito.
  *
- * Hoy: `prod_picking` (Bul/HH) ← /api/productividad/picking-resumen
- *      `wnp` (HL/HH)          ← /api/productividad/wnp-resumen
+ * Hoy: `prod_picking`      (Bul/HH) ← /api/productividad/picking-resumen
+ *      `wnp`               (HL/HH)  ← /api/productividad/wnp-resumen
+ *      `precision_picking` (%)      ← /api/productividad/precision-resumen
+ *      `wqi`               (PPM)    ← /api/productividad/wqi-resumen
+ *
+ * 🚨 Cada entrada de acá es UN fetch más en el render del home (el árbol NO
+ * está bajo Suspense y corta a los 5s), así que el endpoint tiene que estar
+ * cacheado del lado del depósito. `hs_extras` salió del registro el 2026-07-30
+ * junto con su nodo: el endpoint `hs-extras-resumen` sigue vivo, pero traerlo
+ * en cada visita al home cuando ya nadie lo dibuja era tiempo regalado.
  *
  * Patrón calcado de `warehouse/auto-indicadores.ts`: fetch con timeout corto,
  * cache in-memory por proceso (1h) y tolerancia total a fallos (si el depósito
@@ -21,11 +29,14 @@ export interface ResumenExternoMes {
   mes: number
   valor: number | null
   /**
-   * Tamaño del mes: nº de registros (picking), horas-hombre (WNP) u horas
-   * extras (hs_extras).
+   * Tamaño del mes: nº de registros (picking), horas-hombre (WNP), bultos
+   * pickeados (precisión) o HL afectados por rotura (WQI).
    */
   registros: number
-  /** Solo `hs_extras`: bultos entregados del mes (denominador del ratio). */
+  /**
+   * 2º dato del mes, según el KPI: bultos con error (precisión) o HL
+   * entregados (WQI) — en los dos casos, la otra pata del cociente.
+   */
   bultos?: number
 }
 export interface ResumenExterno {
@@ -67,19 +78,31 @@ export const KPI_EXTERNOS: Record<
       "lo componen. Fuente: depósito (deposito-esteban /indicadores).",
     detalleLabel: "Horas",
   },
-  hs_extras: {
-    resumen: fetchHsExtrasResumen,
+  precision_picking: {
+    resumen: fetchPrecisionResumen,
     explicacion:
-      "HS Extras = horas extras del almacén cada 1.000 bultos vendidos. El número " +
-      "anual es el ratio ACUMULADO real (Σ horas extras ÷ Σ bultos del año), no el " +
-      "promedio de los meses; el detalle muestra el ratio de cada mes con las horas " +
-      "y los bultos que lo componen. Las horas son el indicador DPO #39 (carga " +
-      "manual del depósito) y los bultos son los entregados de Chess, netos de notas " +
-      "de crédito. OJO: el ratio no sigue al volumen — los picos de horas extras se " +
-      "explican más por ausentismo que por cuántos bultos se movieron, así que no " +
-      "hay que leerlo como una medida de eficiencia.",
-    detalleLabel: "HS Extras",
-    detalle2Label: "Bultos",
+      "Precisión de picking = (bultos pickeados − bultos con error) ÷ bultos " +
+      "pickeados × 100. El número anual es la precisión PONDERADA por volumen " +
+      "(Σ bultos y Σ errores del año), no el promedio de los meses. Excluye los " +
+      "errores de tipo SISTEMA (no son del operario) y no muestra nada antes de " +
+      "abril 2026: los errores recién se registran desde entonces, así que un " +
+      "100% anterior sería falso. Fuente: planilla de errores de picking del " +
+      "depósito (la misma que la reunión de logística).",
+    detalleLabel: "Bultos",
+    detalle2Label: "Bultos c/error",
+  },
+  wqi: {
+    resumen: fetchWqiResumen,
+    explicacion:
+      "WQI = HL afectados por rotura ÷ HL entregados × 1.000.000 (PPM). El " +
+      "numerador es el volumen que ENTRA a reempaque (sin los traslados en " +
+      "bloque, que no son rotura) más las roturas de almacén que no pasan por el " +
+      "sector; el denominador son los HL entregados de Chess, netos de notas de " +
+      "crédito. El número anual es el PPM PONDERADO (Σ HL afectados ÷ Σ HL " +
+      "entregados), no el promedio ni la suma de los PPM mensuales. Fuente: " +
+      "depósito (deposito-esteban /indicadores).",
+    detalleLabel: "HL afectado",
+    detalle2Label: "HL entregado",
   },
 }
 
@@ -118,9 +141,15 @@ async function fetchWnpResumen(anio: number): Promise<ResumenExterno | null> {
   )
 }
 
-async function fetchHsExtrasResumen(anio: number): Promise<ResumenExterno | null> {
+async function fetchPrecisionResumen(anio: number): Promise<ResumenExterno | null> {
   return fetchJsonCached<ResumenExterno>(
-    `${DEPOSITO_API_BASE}/api/productividad/hs-extras-resumen?anio=${anio}`,
+    `${DEPOSITO_API_BASE}/api/productividad/precision-resumen?anio=${anio}`,
+  )
+}
+
+async function fetchWqiResumen(anio: number): Promise<ResumenExterno | null> {
+  return fetchJsonCached<ResumenExterno>(
+    `${DEPOSITO_API_BASE}/api/productividad/wqi-resumen?anio=${anio}`,
   )
 }
 

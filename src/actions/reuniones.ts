@@ -4630,7 +4630,10 @@ async function getIndicadoresMesCore(
             "bul/HH",
             serie.productividad,
             "promedio",
-            300,
+            // Meta 290 desde el 2026-07-30 (bajó de 300). Mismo número en el
+            // árbol del Sueño (`arbol-config.ts` + fila 2026 de
+            // `sueno_kpi_valores`) y en `META_PICKING` de deposito-esteban.
+            290,
             "mayor",
           ),
           buildSerieRow(
@@ -4698,7 +4701,10 @@ async function getIndicadoresMesCore(
             "bul/HH",
             productividadHastaAyer,
             "promedio",
-            300,
+            // Meta 290 desde el 2026-07-30 (bajó de 300). Mismo número en el
+            // árbol del Sueño (`arbol-config.ts` + fila 2026 de
+            // `sueno_kpi_valores`) y en `META_PICKING` de deposito-esteban.
+            290,
             "mayor",
           ),
           buildSerieRow(

@@ -98,12 +98,23 @@ export const ARBOL_SUENO: SuenoNodoConfig[] = [
   // Meta 6,5 = el mejor mes ya logrado (mar y jul). 🚨 Leerlo contra el TLP: si los
   // viajes se acortan repartiendo menos, este número baja y el TLP no mejora.
   { key: "tiempo_ruta", label: "Tiempo en Ruta", nivel: "operacional", rama: "productividad", parentKey: "tlp", unidad: "hs", mejorSi: "menor", metaDefault: 6.5 },
-  { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 300 },
+  // Meta 290 desde el 2026-07-30 (bajó de 300, pedido del usuario). El mismo
+  // número vive en la fila "Productividad de picking" de la reunión de
+  // logística/warehouse (`reuniones.ts`) y en `META_PICKING` del árbol de KPI
+  // del almacén (deposito-esteban): si se toca uno solo, cada pantalla muestra
+  // una meta distinta. La que MANDA es la fila 2026 de `sueno_kpi_valores`.
+  { key: "prod_picking", label: "Prod Picking", nivel: "operacional", rama: "productividad", parentKey: "wnp", unidad: "Bul/HH", mejorSi: "mayor", metaDefault: 290 },
   { key: "rechazo", label: "Rechazo", nivel: "operacional", rama: "cliente", parentKey: "in_full", unidad: "%", mejorSi: "menor", metaDefault: 1.7 },
 
   // ---- Estación de trabajo / Tarea ----
   { key: "tiempo_pdv", label: "Tiempo en PDV", nivel: "estacion", rama: "productividad", parentKey: "tiempo_ruta", unidad: "min", mejorSi: "menor", metaDefault: 8 },
-  { key: "hs_extras", label: "HS Extras", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "HHEE/1.000 bul", mejorSi: "menor", metaDefault: 1.5 },
+  // 🚨 `hs_extras` salió del árbol el 2026-07-30 (pedido del usuario): colgaba
+  // acá y lo reemplazan los dos indicadores de CALIDAD del picking. La key
+  // sigue existiendo en `sueno_kpi_valores` y el endpoint `hs-extras-resumen`
+  // del depósito sigue vivo, así que no se pierde la serie; simplemente ya no
+  // se dibuja (mismo criterio que `comportamientos`).
+  { key: "precision_picking", label: "Precisión Picking", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "%", mejorSi: "mayor", metaDefault: 99.8 },
+  { key: "wqi", label: "WQI", nivel: "estacion", rama: "productividad", parentKey: "prod_picking", unidad: "PPM", mejorSi: "menor", metaDefault: 2200 },
   // % de pedidos del período que terminaron en ese rechazo (veces cliente×fecha
   // ÷ pedidos). Medían la CANTIDAD acumulada del año, que no se puede
   // semaforizar: contra una meta fija siempre termina en rojo, y no es
