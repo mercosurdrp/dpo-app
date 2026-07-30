@@ -795,6 +795,52 @@ export type CampoFicha =
 
 export type VehiculoDocumentoTipo = "cedula" | "titulo" | "seguro" | "vtv" | "otro"
 
+/**
+ * Una unidad en el maestro de flota: la ficha, sus papeles y cómo está hoy.
+ * Lo arma `getMaestroFlota` (una sola lectura para todo el parque).
+ */
+export interface MaestroFlotaUnidad {
+  dominio: string
+  descripcion: string | null
+  tipo: string | null
+  sector: VehiculoSector | null
+  /** `false` = dada de baja; sigue en el maestro para el histórico. */
+  activo: boolean
+  ficha: VehiculoFicha | null
+  documentos: VehiculoDocumento[]
+  docsVencidos: number
+  docsPorVencer: number
+  /** Campos clave de la ficha que están vacíos (marca, modelo, año, chasis, motor). */
+  camposFaltantes: string[]
+  kmActual: number | null
+  kmFecha: string | null
+  /** OT abierta que la tiene parada hoy, si hay alguna. */
+  fueraServicio: {
+    desde: string
+    hasta: string | null
+    numero_ot: string | null
+    motivo: string | null
+  } | null
+  ultimoChecklist: string | null
+}
+
+export interface MaestroFlotaResumen {
+  total: number
+  activas: number
+  bajas: number
+  porTipo: Record<string, number>
+  sinFicha: number
+  fichasIncompletas: number
+  docsVencidos: number
+  docsPorVencer: number
+  fueraServicio: number
+}
+
+export interface MaestroFlota {
+  unidades: MaestroFlotaUnidad[]
+  resumen: MaestroFlotaResumen
+}
+
 export interface VehiculoDocumento {
   id: string
   dominio: string

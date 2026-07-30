@@ -2,6 +2,7 @@ import { getEstadoVehiculosHoy, getChecklists } from "@/actions/checklist-vehicu
 import { getRegistrosCombustible } from "@/actions/combustible"
 import { getVehiculos, getChoferes } from "@/actions/registros-vehiculos"
 import { getKmFlotaResumen, getAlertasVehiculos } from "@/actions/vehiculos-analytics"
+import { getMaestroFlota } from "@/actions/maestro-flota"
 import { VehiculosClient } from "./vehiculos-client"
 
 export default async function VehiculosPage() {
@@ -13,6 +14,7 @@ export default async function VehiculosPage() {
     choferesRes,
     kmResumenRes,
     alertasRes,
+    maestroRes,
   ] = await Promise.all([
     getEstadoVehiculosHoy(),
     getChecklists({ limit: 50 }),
@@ -21,6 +23,7 @@ export default async function VehiculosPage() {
     getChoferes(),
     getKmFlotaResumen(),
     getAlertasVehiculos(),
+    getMaestroFlota(),
   ])
 
   if ("error" in estadoRes) {
@@ -38,6 +41,7 @@ export default async function VehiculosPage() {
   const choferes = "data" in choferesRes ? choferesRes.data : []
   const kmFlotaResumen = "data" in kmResumenRes ? kmResumenRes.data : null
   const alertas = "data" in alertasRes ? alertasRes.data : []
+  const maestro = "data" in maestroRes ? maestroRes.data : null
 
   return (
     <VehiculosClient
@@ -48,6 +52,7 @@ export default async function VehiculosPage() {
       choferes={choferes}
       kmFlotaResumen={kmFlotaResumen}
       alertas={alertas}
+      maestro={maestro}
     />
   )
 }

@@ -31,8 +31,10 @@ import type {
   CatalogoVehiculo,
   KmFlotaResumen,
   AlertaVehiculo,
+  MaestroFlota,
   TipoChecklist,
 } from "@/types/database"
+import { MaestroFlotaPanel } from "./maestro-flota-panel"
 import {
   Truck,
   MapPin,
@@ -91,6 +93,8 @@ interface Props {
   choferes: CatalogoChofer[]
   kmFlotaResumen: KmFlotaResumen | null
   alertas: AlertaVehiculo[]
+  /** Padrón completo del parque (punto 1 de la auditoría de flota). */
+  maestro: MaestroFlota | null
 }
 
 function formatFechaCorta(fechaIso: string) {
@@ -158,7 +162,7 @@ function ResultadoBadge({ resultado }: { resultado: string }) {
   return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Rechazado</Badge>
 }
 
-export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas }: Props) {
+export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehiculos, choferes, kmFlotaResumen, alertas, maestro }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -510,13 +514,22 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
         </Card>
       </div>
 
-      <Tabs defaultValue="flota">
+      {/* El maestro abre por defecto: es lo primero que tiene que ver quien
+          entra a Vehículos (punto 1 de la auditoría del gestor de flota). */}
+      <Tabs defaultValue={maestro ? "maestro" : "flota"}>
         <TabsList>
+          {maestro && <TabsTrigger value="maestro">Maestro de flota</TabsTrigger>}
           <TabsTrigger value="flota">Estado Flota Hoy</TabsTrigger>
           <TabsTrigger value="km">Km Recorridos</TabsTrigger>
           <TabsTrigger value="historial">Historial Checklists</TabsTrigger>
           <TabsTrigger value="combustible">Combustible</TabsTrigger>
         </TabsList>
+
+        {maestro && (
+          <TabsContent value="maestro">
+            <MaestroFlotaPanel maestro={maestro} />
+          </TabsContent>
+        )}
 
         {/* Tab: Estado Flota */}
         <TabsContent value="flota">
