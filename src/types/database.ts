@@ -3526,10 +3526,15 @@ export interface ParticipacionCruzada {
   /** A qué reunión fue (texto libre). */
   destino: string | null
   responsable_id: string | null
+  /** Tema que se va a tratar (se define al programar). */
+  tema: string | null
+  /** Quiénes deberían participar (se define al programar). */
+  participantes_previstos: string | null
   estado: ParticipacionCruzadaEstado
   fecha_real: string | null
   /** Reunión de la app donde pasó; null si fue en una reunión de Ventas. */
   reunion_id: string | null
+  /** Quiénes participaron de verdad. */
   participantes: string | null
   minuta: string | null
   motivo: string | null

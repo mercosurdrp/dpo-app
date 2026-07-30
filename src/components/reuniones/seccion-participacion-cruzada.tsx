@@ -28,14 +28,13 @@ import {
   getParticipacionCruzadaDeReunion,
   marcarReunionComoCruzada,
 } from "@/actions/participaciones-cruzadas"
+import { labelDeFoto } from "@/lib/participacion-cruzada-fotos"
+import { prepararFotos } from "@/lib/preparar-fotos-cruce"
 import {
   PARTICIPACION_CRUZADA_SENTIDO_LABELS,
   type ParticipacionCruzada,
   type ParticipacionCruzadaSentido,
 } from "@/types/database"
-
-/** Tope propio: arriba de 4,5 MB Vercel corta el request con un 413 mudo. */
-const MAX_BYTES = 4 * 1024 * 1024
 
 /**
  * Punto del pilar Planeamiento (conectar Ventas y Operaciones): cuando alguien
@@ -84,21 +83,13 @@ export function SeccionParticipacionCruzada({
     formData.set("destino", tipoLabel)
     formData.set("sentido", sentido)
 
-    const foto = formData.get("foto") as File | null
-    if (!foto || foto.size === 0) {
-      setError("Sacá o elegí una foto de la reunión: es la evidencia.")
-      return
-    }
-    if (foto.size > MAX_BYTES) {
-      setError(
-        `La foto pesa ${(foto.size / 1024 / 1024).toFixed(1)} MB y el máximo es 4 MB. ` +
-          "Sacala con menos calidad.",
-      )
-      return
-    }
-
     startTransition(async () => {
-      const result = await marcarReunionComoCruzada(formData)
+      const preparado = await prepararFotos(formData)
+      if ("error" in preparado) {
+        setError(preparado.error)
+        return
+      }
+      const result = await marcarReunionComoCruzada(preparado.formData)
       if ("error" in result) {
         setError(result.error)
         return
@@ -176,6 +167,12 @@ export function SeccionParticipacionCruzada({
             <p className="font-medium text-emerald-800">
               {PARTICIPACION_CRUZADA_SENTIDO_LABELS[cruce.sentido]}
             </p>
+            {cruce.tema && (
+              <p className="whitespace-pre-wrap">
+                <span className="text-muted-foreground">Tema tratado: </span>
+                {cruce.tema}
+              </p>
+            )}
             <p>
               <span className="text-muted-foreground">Participaron: </span>
               {cruce.participantes}
@@ -196,7 +193,7 @@ export function SeccionParticipacionCruzada({
                     onClick={() => verFoto(f)}
                   >
                     <Camera className="mr-2 size-4" />
-                    Ver foto
+                    {labelDeFoto(f)}
                   </Button>
                 ))}
                 {puedeEditar && (
@@ -257,6 +254,16 @@ export function SeccionParticipacionCruzada({
             </div>
 
             <div className="space-y-1.5">
+              <Label htmlFor="cruce_tema">Tema tratado</Label>
+              <Textarea
+                id="cruce_tema"
+                name="tema"
+                rows={2}
+                placeholder="Qué tema se trajo a esta reunión…"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <Label htmlFor="cruce_participantes">Quiénes participaron *</Label>
               <Input
                 id="cruce_participantes"
@@ -277,17 +284,29 @@ export function SeccionParticipacionCruzada({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="cruce_foto">Foto de la reunión *</Label>
+              <Label htmlFor="cruce_foto_tema">Captura del tema tratado</Label>
               <Input
-                id="cruce_foto"
-                name="foto"
+                id="cruce_foto_tema"
+                name="foto_tema"
+                type="file"
+                accept="image/*"
+                multiple
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cruce_foto_part">Foto de los participantes</Label>
+              <Input
+                id="cruce_foto_part"
+                name="foto_participantes"
                 type="file"
                 accept="image/*"
                 capture="environment"
-                required
+                multiple
               />
               <p className="text-xs text-muted-foreground">
-                Es la evidencia de la auditoría · hasta 4 MB
+                Es la evidencia de la auditoría · podés subir varias de cada
+                tipo, pero al menos una es obligatoria.
               </p>
             </div>
 

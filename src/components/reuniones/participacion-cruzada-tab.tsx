@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Handshake,
   Loader2,
+  Pencil,
   Plus,
   Trash2,
   Wand2,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/calendar-month"
 import { getSignedUrl, listReunionesRango, puedeEditarReuniones } from "@/actions/reuniones"
 import {
+  actualizarPlanParticipacionCruzada,
   eliminarParticipacionCruzada,
   generarPlanCruces,
   listParticipacionesCruzadas,
@@ -45,6 +47,8 @@ import {
   programarParticipacionCruzada,
   registrarCruceExterno,
 } from "@/actions/participaciones-cruzadas"
+import { labelDeFoto } from "@/lib/participacion-cruzada-fotos"
+import { prepararFotos } from "@/lib/preparar-fotos-cruce"
 import {
   PARTICIPACION_CRUZADA_SENTIDO_LABELS,
   type ParticipacionCruzada,
@@ -52,8 +56,6 @@ import {
   type Reunion,
   type TipoReunion,
 } from "@/types/database"
-
-const MAX_BYTES = 4 * 1024 * 1024
 
 const TIPO_LABEL: Record<TipoReunion, string> = {
   logistica: "Logística",
@@ -95,6 +97,7 @@ export function ParticipacionCruzadaTab() {
 
   const [abrirGenerar, setAbrirGenerar] = useState(false)
   const [abrirProgramar, setAbrirProgramar] = useState(false)
+  const [editando, setEditando] = useState<ParticipacionCruzada | null>(null)
   const [registrando, setRegistrando] = useState<ParticipacionCruzada | null>(null)
   const [registrandoNuevo, setRegistrandoNuevo] = useState(false)
 
@@ -348,9 +351,20 @@ export function ParticipacionCruzadaTab() {
                       {PARTICIPACION_CRUZADA_SENTIDO_LABELS[c.sentido]}
                       {c.destino ? ` · ${c.destino}` : ""}
                     </p>
+                    {c.tema && (
+                      <p className="text-xs text-slate-700">
+                        <span className="text-muted-foreground">Tema: </span>
+                        {c.tema}
+                      </p>
+                    )}
+                    {c.estado === "programada" && c.participantes_previstos && (
+                      <p className="text-xs text-muted-foreground">
+                        Deberían participar: {c.participantes_previstos}
+                      </p>
+                    )}
                     {c.participantes && (
                       <p className="text-xs text-muted-foreground">
-                        {c.participantes}
+                        Participaron: {c.participantes}
                       </p>
                     )}
                     {c.minuta && (
@@ -384,7 +398,8 @@ export function ParticipacionCruzadaTab() {
                         variant="outline"
                         onClick={() => verFoto(f)}
                       >
-                        <Camera className="size-4" />
+                        <Camera className="mr-1.5 size-4" />
+                        {labelDeFoto(f)}
                       </Button>
                     ))}
                     {c.reunion_id && (
@@ -398,6 +413,15 @@ export function ParticipacionCruzadaTab() {
                     )}
                     {puedeEditar && c.estado === "programada" && (
                       <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditando(c)}
+                          aria-label="Editar lo programado"
+                        >
+                          <Pencil className="mr-2 size-4" />
+                          Editar
+                        </Button>
                         <Button size="sm" onClick={() => setRegistrando(c)}>
                           <Camera className="mr-2 size-4" />
                           Marcar hecha
@@ -438,8 +462,15 @@ export function ParticipacionCruzadaTab() {
         onSaved={cargar}
       />
       <ProgramarDialog
-        open={abrirProgramar}
-        onOpenChange={setAbrirProgramar}
+        /* remonta el form al cambiar de fila: refresca sentido y defaultValue */
+        key={editando?.id ?? "nuevo"}
+        open={abrirProgramar || editando !== null}
+        editando={editando}
+        onOpenChange={(v) => {
+          if (v) return
+          setAbrirProgramar(false)
+          setEditando(null)
+        }}
         onSaved={cargar}
       />
       <RegistrarDialog
@@ -560,31 +591,46 @@ function GenerarPlanDialog({
   )
 }
 
+/**
+ * Alta y edición de una fecha del plan. Además de la fecha y el sentido se
+ * define de antemano QUÉ TEMA se va a tratar y QUIÉNES deberían ir: es lo que
+ * después se compara contra lo que realmente pasó.
+ */
 function ProgramarDialog({
   open,
+  editando,
   onOpenChange,
   onSaved,
 }: {
   open: boolean
+  /** Si viene, se edita esa fecha del plan en vez de crear una nueva. */
+  editando?: ParticipacionCruzada | null
   onOpenChange: (v: boolean) => void
   onSaved: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  // El padre remonta este diálogo con `key` al cambiar de fila, así que el
+  // estado inicial alcanza: no hace falta sincronizarlo con un efecto.
   const [sentido, setSentido] = useState<ParticipacionCruzadaSentido>(
-    "ventas_a_operaciones",
+    editando?.sentido ?? "ventas_a_operaciones",
   )
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     const fd = new FormData(e.currentTarget)
+    const campos = {
+      fecha_plan: String(fd.get("fecha") ?? ""),
+      sentido,
+      destino: String(fd.get("destino") ?? ""),
+      tema: String(fd.get("tema") ?? ""),
+      participantes_previstos: String(fd.get("participantes_previstos") ?? ""),
+    }
     startTransition(async () => {
-      const result = await programarParticipacionCruzada({
-        fecha_plan: String(fd.get("fecha") ?? ""),
-        sentido,
-        destino: String(fd.get("destino") ?? ""),
-      })
+      const result = editando
+        ? await actualizarPlanParticipacionCruzada({ id: editando.id, ...campos })
+        : await programarParticipacionCruzada(campos)
       if ("error" in result) {
         setError(result.error)
         return
@@ -598,12 +644,22 @@ function ProgramarDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Programar una participación cruzada</DialogTitle>
+          <DialogTitle>
+            {editando
+              ? "Editar la participación programada"
+              : "Programar una participación cruzada"}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="prog_fecha">Fecha *</Label>
-            <Input id="prog_fecha" name="fecha" type="date" required />
+            <Input
+              id="prog_fecha"
+              name="fecha"
+              type="date"
+              defaultValue={editando?.fecha_plan ?? ""}
+              required
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Sentido *</Label>
@@ -631,7 +687,31 @@ function ProgramarDialog({
             <Input
               id="prog_destino"
               name="destino"
+              defaultValue={editando?.destino ?? ""}
               placeholder="Matinal Distribución, Matinal de Ventas…"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="prog_tema">Tema a tratar</Label>
+            <Textarea
+              id="prog_tema"
+              name="tema"
+              rows={3}
+              defaultValue={editando?.tema ?? ""}
+              placeholder="Qué se va a llevar a esa reunión: quiebres de stock, rechazos del mes, ventana horaria de entrega…"
+            />
+            <p className="text-xs text-muted-foreground">
+              Queda escrito de antemano: es la evidencia de que la participación
+              se planificó con un objetivo.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="prog_previstos">Quiénes deberían participar</Label>
+            <Input
+              id="prog_previstos"
+              name="participantes_previstos"
+              defaultValue={editando?.participantes_previstos ?? ""}
+              placeholder="Nombre y apellido, separados por coma"
             />
           </div>
           {error && (
@@ -645,7 +725,7 @@ function ProgramarDialog({
             </Button>
             <Button type="submit" disabled={pending}>
               {pending && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Programar
+              {editando ? "Guardar" : "Programar"}
             </Button>
           </DialogFooter>
         </form>
@@ -684,20 +764,13 @@ function RegistrarDialog({
     if (cruce) fd.set("id", cruce.id)
     fd.set("sentido", sentido)
 
-    const foto = fd.get("foto") as File | null
-    if (!foto || foto.size === 0) {
-      setError("La foto es obligatoria: es la evidencia.")
-      return
-    }
-    if (foto.size > MAX_BYTES) {
-      setError(
-        `La foto pesa ${(foto.size / 1024 / 1024).toFixed(1)} MB y el máximo es 4 MB.`,
-      )
-      return
-    }
-
     startTransition(async () => {
-      const result = await registrarCruceExterno(fd)
+      const preparado = await prepararFotos(fd)
+      if ("error" in preparado) {
+        setError(preparado.error)
+        return
+      }
+      const result = await registrarCruceExterno(preparado.formData)
       if ("error" in result) {
         setError(result.error)
         return
@@ -757,13 +830,35 @@ function RegistrarDialog({
             </div>
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="reg_tema">Tema tratado</Label>
+            <Textarea
+              id="reg_tema"
+              name="tema"
+              rows={2}
+              defaultValue={cruce?.tema ?? ""}
+              placeholder="Qué tema se llevó a la reunión…"
+            />
+            {cruce?.tema && (
+              <p className="text-xs text-muted-foreground">
+                Viene del plan. Si terminó tratándose otra cosa, corregilo.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="reg_part">Quiénes participaron *</Label>
             <Input
               id="reg_part"
               name="participantes"
+              defaultValue={cruce?.participantes_previstos ?? ""}
               placeholder="Nombre y apellido, separados por coma"
               required
             />
+            {cruce?.participantes_previstos && (
+              <p className="text-xs text-muted-foreground">
+                Previstos: {cruce.participantes_previstos}. Dejá sólo los que
+                fueron de verdad.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="reg_minuta">Breve minuta</Label>
@@ -775,16 +870,29 @@ function RegistrarDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="reg_foto">Foto de la reunión *</Label>
+            <Label htmlFor="reg_foto_tema">Captura del tema tratado</Label>
             <Input
-              id="reg_foto"
-              name="foto"
+              id="reg_foto_tema"
+              name="foto_tema"
+              type="file"
+              accept="image/*"
+              multiple
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reg_foto_part">Foto de los participantes</Label>
+            <Input
+              id="reg_foto_part"
+              name="foto_participantes"
               type="file"
               accept="image/*"
               capture="environment"
-              required
+              multiple
             />
-            <p className="text-xs text-muted-foreground">Hasta 4 MB</p>
+            <p className="text-xs text-muted-foreground">
+              Podés subir varias de cada tipo. Al menos una foto es obligatoria:
+              es la evidencia.
+            </p>
           </div>
           {error && (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { CAMPOS_FOTO_CRUCE } from "@/lib/participacion-cruzada-fotos"
 import type {
   ParticipacionCruzada,
   ParticipacionCruzadaSentido,
@@ -30,27 +31,58 @@ function cleanFileName(name: string): string {
     .replace(/[^a-zA-Z0-9._-]/g, "_")
 }
 
-/** Sube las fotos al bucket privado y devuelve sus paths. */
+/**
+ * Fotos que vienen en el form, agrupadas por categoría. Cada input es
+ * `multiple`, así que se pueden subir varias de cada tipo. `foto` (sin
+ * categoría) se sigue aceptando por los formularios viejos.
+ */
+type FotosDelForm = { subcarpeta: string; archivos: File[] }[]
+
+function fotosDelForm(formData: FormData): FotosDelForm {
+  const grupos: FotosDelForm = CAMPOS_FOTO_CRUCE.map(({ campo, categoria }) => ({
+    subcarpeta: `${categoria}/`,
+    archivos: formData
+      .getAll(campo)
+      .filter((f): f is File => f instanceof File && f.size > 0),
+  }))
+  grupos.push({
+    subcarpeta: "",
+    archivos: formData
+      .getAll("foto")
+      .filter((f): f is File => f instanceof File && f.size > 0),
+  })
+  return grupos.filter((g) => g.archivos.length > 0)
+}
+
+function contarFotos(grupos: FotosDelForm): number {
+  return grupos.reduce((n, g) => n + g.archivos.length, 0)
+}
+
+/**
+ * Sube las fotos al bucket privado y devuelve sus paths. La categoría queda en
+ * la ruta (`cruces/<id>/tema/...`) para poder etiquetarlas al mostrarlas.
+ */
 async function subirFotos(
   supabase: Awaited<ReturnType<typeof createClient>>,
   id: string,
-  archivos: File[],
+  grupos: FotosDelForm,
 ): Promise<{ paths: string[] } | { error: string }> {
   const paths: string[] = []
-  for (const file of archivos) {
-    if (!(file instanceof File) || file.size === 0) continue
-    const path = `cruces/${id}/${Date.now()}-${cleanFileName(file.name)}`
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, await file.arrayBuffer(), {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      })
-    if (error) {
-      if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
-      return { error: `Subiendo la foto: ${error.message}` }
+  for (const { subcarpeta, archivos } of grupos) {
+    for (const file of archivos) {
+      const path = `cruces/${id}/${subcarpeta}${Date.now()}-${cleanFileName(file.name)}`
+      const { error } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, await file.arrayBuffer(), {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        })
+      if (error) {
+        if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
+        return { error: `Subiendo la foto: ${error.message}` }
+      }
+      paths.push(path)
     }
-    paths.push(path)
   }
   return { paths }
 }
@@ -123,6 +155,7 @@ export async function marcarReunionComoCruzada(
     const participantes = String(formData.get("participantes") ?? "").trim()
     const minuta = String(formData.get("minuta") ?? "").trim() || null
     const destino = String(formData.get("destino") ?? "").trim() || null
+    const tema = String(formData.get("tema") ?? "").trim() || null
     const fecha_real = String(formData.get("fecha_real") ?? "").trim()
     const plan_id = String(formData.get("plan_id") ?? "").trim() || null
 
@@ -135,9 +168,9 @@ export async function marcarReunionComoCruzada(
     }
     if (!fecha_real) return { error: "Falta la fecha de la reunión" }
 
-    const fotos = formData.getAll("foto").filter((f): f is File => f instanceof File)
-    if (fotos.length === 0 || fotos.every((f) => f.size === 0)) {
-      return { error: "La foto de la reunión es obligatoria: es la evidencia" }
+    const fotos = fotosDelForm(formData)
+    if (contarFotos(fotos) === 0) {
+      return { error: "Subí al menos una foto: es la evidencia" }
     }
 
     // 1) Fila primero (necesitamos el id para la carpeta), 2) fotos, 3) update.
@@ -149,6 +182,7 @@ export async function marcarReunionComoCruzada(
           reunion_id,
           sentido: sentido as ParticipacionCruzadaSentido,
           destino,
+          tema,
           estado: "realizada",
           fecha_real,
           participantes,
@@ -212,7 +246,8 @@ export async function desmarcarParticipacionCruzada(
       | { fotos: string[]; fecha_plan: string | null; estado: string }
       | null
 
-    // Si venía de un plan, no se borra: vuelve a quedar pendiente.
+    // Si venía de un plan, no se borra: vuelve a quedar pendiente. El tema y los
+    // participantes previstos son parte del plan, así que NO se limpian.
     if (fila?.fecha_plan) {
       const { error } = await supabase
         .from("participaciones_cruzadas")
@@ -252,6 +287,10 @@ export async function programarParticipacionCruzada(input: {
   fecha_plan: string
   sentido: ParticipacionCruzadaSentido
   destino?: string | null
+  /** Qué se va a tratar en esa reunión. */
+  tema?: string | null
+  /** Quiénes deberían participar. */
+  participantes_previstos?: string | null
   responsable_id?: string | null
 }): Promise<Result<ParticipacionCruzada>> {
   try {
@@ -266,6 +305,8 @@ export async function programarParticipacionCruzada(input: {
         fecha_plan: input.fecha_plan,
         sentido: input.sentido,
         destino: input.destino?.trim() || null,
+        tema: input.tema?.trim() || null,
+        participantes_previstos: input.participantes_previstos?.trim() || null,
         responsable_id: input.responsable_id || null,
         estado: "programada",
         created_by: profile.id,
@@ -279,6 +320,48 @@ export async function programarParticipacionCruzada(input: {
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Error programando el cruce",
+    }
+  }
+}
+
+/**
+ * Edita lo planificado de una fecha que todavía no se cumplió. «Generar plan»
+ * crea las fechas en blanco, así que el tema y quiénes deberían ir se cargan
+ * después, desde el listado.
+ */
+export async function actualizarPlanParticipacionCruzada(input: {
+  id: string
+  fecha_plan: string
+  sentido: ParticipacionCruzadaSentido
+  destino?: string | null
+  tema?: string | null
+  participantes_previstos?: string | null
+}): Promise<Result<ParticipacionCruzada>> {
+  try {
+    await requireEditor()
+    const supabase = await createClient()
+
+    if (!input.fecha_plan) return { error: "La fecha es obligatoria" }
+
+    const { data, error } = await supabase
+      .from("participaciones_cruzadas")
+      .update({
+        fecha_plan: input.fecha_plan,
+        sentido: input.sentido,
+        destino: input.destino?.trim() || null,
+        tema: input.tema?.trim() || null,
+        participantes_previstos: input.participantes_previstos?.trim() || null,
+      })
+      .eq("id", input.id)
+      .select("*")
+      .single()
+
+    if (error) return { error: error.message }
+    revalidatePath(REVALIDATE_PATH)
+    return { data: data as ParticipacionCruzada }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error editando el plan",
     }
   }
 }
@@ -369,6 +452,7 @@ export async function registrarCruceExterno(
     const id = String(formData.get("id") ?? "").trim() || null
     const sentido = String(formData.get("sentido") ?? "").trim()
     const destino = String(formData.get("destino") ?? "").trim() || null
+    const tema = String(formData.get("tema") ?? "").trim() || null
     const fecha_real = String(formData.get("fecha_real") ?? "").trim()
     const participantes = String(formData.get("participantes") ?? "").trim()
     const minuta = String(formData.get("minuta") ?? "").trim() || null
@@ -379,9 +463,9 @@ export async function registrarCruceExterno(
     if (!fecha_real) return { error: "Falta la fecha en que se hizo" }
     if (!participantes) return { error: "Anotá quién participó" }
 
-    const fotos = formData.getAll("foto").filter((f): f is File => f instanceof File)
-    if (fotos.length === 0 || fotos.every((f) => f.size === 0)) {
-      return { error: "La foto de la reunión es obligatoria: es la evidencia" }
+    const fotos = fotosDelForm(formData)
+    if (contarFotos(fotos) === 0) {
+      return { error: "Subí al menos una foto: es la evidencia" }
     }
 
     const { data: fila, error: errUp } = await supabase
@@ -391,6 +475,7 @@ export async function registrarCruceExterno(
           ...(id ? { id } : {}),
           sentido: sentido as ParticipacionCruzadaSentido,
           destino,
+          tema,
           estado: "realizada",
           fecha_real,
           participantes,
