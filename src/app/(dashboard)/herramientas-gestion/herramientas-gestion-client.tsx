@@ -186,7 +186,13 @@ export function HerramientasGestionClient({ items }: Props) {
         open={verHerramienta !== null}
         onOpenChange={(o) => !o && setVerHerramienta(null)}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className={
+            verHerramienta?.tipo === "pdca"
+              ? "max-h-[90vh] max-w-5xl overflow-y-auto"
+              : "max-w-2xl"
+          }
+        >
           <DialogHeader>
             <DialogTitle>
               {verHerramienta

@@ -101,7 +101,11 @@ export function PlanHerramientasInline({
       />
 
       <Dialog open={ver !== null} onOpenChange={(o) => !o && setVer(null)}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent
+          className={`max-h-[85vh] overflow-y-auto ${
+            ver?.tipo === "pdca" ? "max-w-5xl" : "max-w-2xl"
+          }`}
+        >
           <DialogHeader>
             <DialogTitle>
               {ver

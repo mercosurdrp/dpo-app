@@ -2,7 +2,7 @@
 
 import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useState } from "react"
-import { Download, Loader2 } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -166,74 +166,195 @@ function CausaEfectoView({ c }: { c: CausaEfectoContenido }) {
   )
 }
 
-function PdcaView({ c }: { c: PdcaContenido }) {
-  const sdca = c.encuadre?.sdca_verificado
-    ? ["Verificado", c.encuadre?.sdca_notas].filter(Boolean).join(" — ")
-    : (c.encuadre?.sdca_notas ?? "")
-  const revisiones = c.revisiones ?? []
+/** Banda a dos columnas para los pasos de análisis (observación y causas).
+ *  Parte el texto por párrafos: cada bloque queda en su propia tarjeta. */
+function BandaAnalisis({
+  letra,
+  titulo,
+  subtitulo,
+  texto,
+  color,
+}: {
+  letra: string
+  titulo: string
+  subtitulo: string
+  texto: string
+  color: {
+    badge: string
+    borde: string
+    fondo: string
+    item: string
+    texto: string
+  }
+}) {
+  const bloques = texto
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter(Boolean)
+  if (bloques.length === 0) return null
 
-  const secciones = [
+  return (
+    <div className={`rounded-lg border-2 ${color.borde} ${color.fondo} overflow-hidden`}>
+      <div className={`flex items-center gap-2 border-b ${color.borde} bg-white/60 px-3 py-2`}>
+        <span
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${color.badge}`}
+        >
+          {letra}
+        </span>
+        <div>
+          <p className={`text-sm font-bold leading-tight ${color.texto}`}>{titulo}</p>
+          <p className="text-[11px] leading-tight text-slate-500">{subtitulo}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2 p-3 md:grid-cols-2">
+        {bloques.map((bloque, i) => (
+          <p
+            key={i}
+            className={`rounded-md border ${color.item} bg-white/70 p-2 whitespace-pre-wrap text-sm leading-snug text-slate-800`}
+          >
+            {bloque}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Un cuadrante del ciclo. */
+function Cuadrante({
+  n,
+  letra,
+  titulo,
+  subtitulo,
+  color,
+  items,
+}: {
+  n: number
+  letra: string
+  titulo: string
+  subtitulo: string
+  color: { badge: string; borde: string; fondo: string; texto: string }
+  items: { label: string; value: string }[]
+}) {
+  const conDatos = items.filter((i) => !!i.value?.trim())
+  return (
+    <div
+      className={`flex flex-col rounded-lg border-2 ${color.borde} ${color.fondo} overflow-hidden`}
+    >
+      <div
+        className={`flex items-center gap-2 border-b ${color.borde} bg-white/60 px-3 py-2`}
+      >
+        <span
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${color.badge}`}
+        >
+          {letra}
+        </span>
+        <div className="min-w-0">
+          <p className={`text-sm font-bold leading-tight ${color.texto}`}>
+            {n}. {titulo}
+          </p>
+          <p className="text-[11px] leading-tight text-slate-500">{subtitulo}</p>
+        </div>
+      </div>
+      <div className="flex-1 space-y-3 p-3">
+        {conDatos.length === 0 ? (
+          <p className="text-xs italic text-slate-400">Sin datos registrados.</p>
+        ) : (
+          conDatos.map((item) => (
+            <div key={item.label}>
+              <p
+                className={`text-[11px] font-semibold uppercase tracking-wide ${color.texto} opacity-70`}
+              >
+                {item.label}
+              </p>
+              <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-800">
+                {item.value}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PdcaView({ c }: { c: PdcaContenido }) {
+  const e = c.encuadre
+  const revisiones = (c.revisiones ?? []).filter((r) => r.fecha || r.avance?.trim())
+  const tieneEncuadre = !!(
+    e?.objetivo_estrategico?.trim() ||
+    e?.kpi_meta?.trim() ||
+    e?.equipo?.trim() ||
+    e?.sdca_notas?.trim() ||
+    e?.sdca_verificado
+  )
+
+  const cuadrantes = [
     {
-      badge: "0",
-      label: "Encuadre — antes de arrancar",
-      badgeColor: "bg-slate-600",
-      borderColor: "border-slate-200",
-      bgColor: "bg-slate-50/60",
-      textColor: "text-slate-700",
+      n: 1,
+      letra: "P",
+      titulo: "PLAN",
+      subtitulo: "Planificar",
+      color: {
+        badge: "bg-blue-600",
+        borde: "border-blue-200",
+        fondo: "bg-blue-50/40",
+        texto: "text-blue-800",
+      },
+      items: [
+        { label: "Problema", value: c.plan?.problema ?? "" },
+        { label: "Brechas", value: c.plan?.brechas ?? "" },
+        { label: "Objetivos", value: c.plan?.objetivos ?? "" },
+      ],
+    },
+    {
+      n: 2,
+      letra: "D",
+      titulo: "HACER",
+      subtitulo: "Ejecutar",
+      color: {
+        badge: "bg-emerald-600",
+        borde: "border-emerald-200",
+        fondo: "bg-emerald-50/40",
+        texto: "text-emerald-800",
+      },
       items: [
         {
-          label: "Objetivo estratégico (R4.3.1)",
-          value: c.encuadre?.objetivo_estrategico ?? "",
+          label: "Acciones implementadas · R4.3.5",
+          value: c.hacer?.acciones ?? "",
         },
-        { label: "KPI y meta", value: c.encuadre?.kpi_meta ?? "" },
-        { label: "Equipo", value: c.encuadre?.equipo ?? "" },
-        { label: "Checklist SDCA previo (R4.3.2)", value: sdca },
       ],
     },
     {
-      badge: "P",
-      label: "PLAN — Planificar",
-      badgeColor: "bg-blue-600",
-      borderColor: "border-blue-200",
-      bgColor: "bg-blue-50/40",
-      textColor: "text-blue-800",
+      n: 3,
+      letra: "C",
+      titulo: "VERIFICAR",
+      subtitulo: "Controlar",
+      color: {
+        badge: "bg-amber-500",
+        borde: "border-amber-200",
+        fondo: "bg-amber-50/40",
+        texto: "text-amber-800",
+      },
       items: [
-        { label: "Problema", value: c.plan.problema },
-        { label: "Brechas", value: c.plan.brechas },
-        { label: "Objetivos", value: c.plan.objetivos },
-        { label: "Observación (R4.3.3)", value: c.plan.observacion ?? "" },
-        { label: "Causas analizadas (R4.3.4)", value: c.plan.causas },
+        { label: "Resultados observados", value: c.verificar?.resultados ?? "" },
       ],
     },
     {
-      badge: "H",
-      label: "HACER — Ejecutar",
-      badgeColor: "bg-emerald-600",
-      borderColor: "border-emerald-200",
-      bgColor: "bg-emerald-50/40",
-      textColor: "text-emerald-800",
-      items: [{ label: "Acciones implementadas", value: c.hacer.acciones }],
-    },
-    {
-      badge: "V",
-      label: "VERIFICAR — Controlar",
-      badgeColor: "bg-amber-500",
-      borderColor: "border-amber-200",
-      bgColor: "bg-amber-50/40",
-      textColor: "text-amber-800",
-      items: [{ label: "Resultados observados", value: c.verificar.resultados }],
-    },
-    {
-      badge: "A",
-      label: "ACTUAR — Estandarizar",
-      badgeColor: "bg-rose-600",
-      borderColor: "border-rose-200",
-      bgColor: "bg-rose-50/40",
-      textColor: "text-rose-800",
+      n: 4,
+      letra: "A",
+      titulo: "ACTUAR",
+      subtitulo: "Estandarizar",
+      color: {
+        badge: "bg-rose-600",
+        borde: "border-rose-200",
+        fondo: "bg-rose-50/40",
+        texto: "text-rose-800",
+      },
       items: [
         {
-          label: "Estandarización y próximos pasos",
-          value: c.actuar.estandarizacion,
+          label: "Estandarización y próximos pasos · R4.3.6",
+          value: c.actuar?.estandarizacion ?? "",
         },
       ],
     },
@@ -241,66 +362,138 @@ function PdcaView({ c }: { c: PdcaContenido }) {
 
   return (
     <div className="space-y-3">
-      {secciones.map((s) => {
-        const tieneContenido = s.items.some((item) => !!item.value)
-        return (
-          <div
-            key={s.badge}
-            className={`rounded-md border-2 ${s.borderColor} ${s.bgColor} overflow-hidden`}
-          >
-            <div
-              className={`flex items-center gap-2 px-3 py-2 border-b ${s.borderColor}`}
-            >
-              <span
-                className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold text-white ${s.badgeColor}`}
-              >
-                {s.badge}
-              </span>
-              <span className="text-sm font-semibold text-slate-700">
-                {s.label}
-              </span>
-            </div>
-            <div className="p-3 space-y-2">
-              {!tieneContenido ? (
-                <p className="text-xs text-slate-400 italic">Sin datos registrados.</p>
-              ) : (
-                s.items.map((item) =>
-                  item.value ? (
-                    <div key={item.label}>
-                      <p className={`text-xs font-semibold uppercase tracking-wide ${s.textColor} opacity-70`}>
-                        {item.label}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
-                        {item.value}
-                      </p>
-                    </div>
-                  ) : null,
-                )
+      {/* Encuadre: la ficha de arriba, no un bloque más del ciclo */}
+      {tieneEncuadre && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            {e?.kpi_meta?.trim() && (
+              <div className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 sm:max-w-[16rem]">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  KPI y meta
+                </p>
+                <p className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
+                  {e.kpi_meta}
+                </p>
+              </div>
+            )}
+            <div className="min-w-0 flex-1 space-y-2">
+              {e?.objetivo_estrategico?.trim() && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Objetivo estratégico · R4.3.1
+                  </p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-800">
+                    {e.objetivo_estrategico}
+                  </p>
+                </div>
+              )}
+              {e?.equipo?.trim() && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Equipo
+                  </p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-800">
+                    {e.equipo}
+                  </p>
+                </div>
               )}
             </div>
           </div>
-        )
-      })}
-
-      {revisiones.length > 0 && (
-        <div className="rounded-md border-2 border-slate-200 bg-slate-50/60 overflow-hidden">
-          <div className="px-3 py-2 border-b border-slate-200">
-            <span className="text-sm font-semibold text-slate-700">
-              Revisiones del avance
-            </span>
-          </div>
-          <div className="p-3 space-y-2">
-            {revisiones.map((r, i) => (
-              <div key={i} className="flex gap-2 text-sm">
-                <span className="shrink-0 font-medium text-slate-500">
-                  {r.fecha || "—"}
-                </span>
-                <span className="text-slate-800 whitespace-pre-wrap">{r.avance}</span>
+          {(e?.sdca_notas?.trim() || e?.sdca_verificado) && (
+            <div
+              className={`mt-3 flex gap-2 rounded-md border px-3 py-2 ${
+                e?.sdca_verificado
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-amber-200 bg-amber-50"
+              }`}
+            >
+              {e?.sdca_verificado ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              )}
+              <div className="min-w-0">
+                <p
+                  className={`text-xs font-semibold ${
+                    e?.sdca_verificado ? "text-emerald-800" : "text-amber-800"
+                  }`}
+                >
+                  Checklist SDCA previo · R4.3.2 —{" "}
+                  {e?.sdca_verificado ? "verificado" : "pendiente de verificar"}
+                </p>
+                {e?.sdca_notas?.trim() && (
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-700">
+                    {e.sdca_notas}
+                  </p>
+                )}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Observación y causas: bandas propias a dos columnas. Son los dos pasos
+          con más texto y, dentro del cuadrante PLAN, lo dejaban cuatro veces
+          más alto que los otros tres. */}
+      <BandaAnalisis
+        letra="O"
+        titulo="Observación · R4.3.3"
+        subtitulo="El problema partido en problemas menores"
+        texto={c.plan?.observacion ?? ""}
+        color={{
+          badge: "bg-indigo-600",
+          borde: "border-indigo-200",
+          fondo: "bg-indigo-50/40",
+          item: "border-indigo-100",
+          texto: "text-indigo-800",
+        }}
+      />
+      <BandaAnalisis
+        letra="?"
+        titulo="Análisis de causas · R4.3.4"
+        subtitulo="Causas raíz conectadas al problema"
+        texto={c.plan?.causas ?? ""}
+        color={{
+          badge: "bg-violet-600",
+          borde: "border-violet-200",
+          fondo: "bg-violet-50/40",
+          item: "border-violet-100",
+          texto: "text-violet-800",
+        }}
+      />
+
+      {/* El ciclo, en cuadrantes */}
+      <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
+        {cuadrantes.map((q) => (
+          <Cuadrante key={q.letra} {...q} />
+        ))}
+      </div>
+
+      {/* Revisiones */}
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+          <span className="text-sm font-semibold text-slate-700">
+            Revisiones del avance
+          </span>
+          <span className="ml-1.5 text-xs text-slate-500">(mínimo una por mes)</span>
+        </div>
+        <div className="space-y-2 p-3">
+          {revisiones.length === 0 ? (
+            <p className="text-xs italic text-slate-400">
+              Sin revisiones registradas.
+            </p>
+          ) : (
+            revisiones.map((r, i) => (
+              <div key={i} className="flex gap-2 text-sm">
+                <span className="w-24 shrink-0 font-medium text-slate-500">
+                  {r.fecha || "—"}
+                </span>
+                <span className="whitespace-pre-wrap text-slate-800">{r.avance}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }
