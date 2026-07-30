@@ -807,9 +807,23 @@ export interface MaestroFlotaUnidad {
   /** `false` = dada de baja; sigue en el maestro para el histórico. */
   activo: boolean
   ficha: VehiculoFicha | null
+  /** Adjuntos sueltos cargados en la ficha de la unidad. */
   documentos: VehiculoDocumento[]
+  /**
+   * Estado documentario de la unidad (R1.1.2): VTV, seguro, SENASA y extintor,
+   * tomados del control documentario de /requisitos-legales, que es donde están
+   * las fechas de vencimiento.
+   */
+  papeles: Array<{
+    categoria: string
+    vencimiento: string | null
+    tieneArchivo: boolean
+    estado: "vigente" | "por_vencer" | "vencido" | "sin_fecha"
+  }>
   docsVencidos: number
   docsPorVencer: number
+  /** Papeles sin el archivo adjunto (R1.1.1 pide el documento disponible). */
+  docsSinArchivo: number
   /** Campos clave de la ficha que están vacíos (marca, modelo, año, chasis, motor). */
   camposFaltantes: string[]
   kmActual: number | null
@@ -833,6 +847,8 @@ export interface MaestroFlotaResumen {
   fichasIncompletas: number
   docsVencidos: number
   docsPorVencer: number
+  /** Unidades activas sin ningún papel cargado en el control documentario. */
+  sinPapeles: number
   fueraServicio: number
 }
 

@@ -140,6 +140,7 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
           resumen.docsPorVencer > 0 ||
           resumen.fueraServicio > 0 ||
           resumen.sinFicha > 0 ||
+          resumen.sinPapeles > 0 ||
           resumen.fichasIncompletas > 0) && (
           <div className="flex flex-wrap gap-2 text-xs">
             {resumen.docsVencidos > 0 && (
@@ -159,6 +160,12 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
               <span className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-2 py-1 font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-400">
                 <Wrench className="size-3" />
                 {resumen.fueraServicio} fuera de servicio
+              </span>
+            )}
+            {resumen.sinPapeles > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                <FileWarning className="size-3" />
+                {resumen.sinPapeles} sin papeles cargados
               </span>
             )}
             {(resumen.sinFicha > 0 || resumen.fichasIncompletas > 0) && (
@@ -269,8 +276,10 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
                   )}
                   {vista === "documentacion" && (
                     <>
-                      <TableHead>Documentos</TableHead>
-                      <TableHead>Próximo vencimiento</TableHead>
+                      <TableHead>VTV</TableHead>
+                      <TableHead>Seguro</TableHead>
+                      <TableHead>SENASA</TableHead>
+                      <TableHead>Extintor</TableHead>
                       <TableHead>Estado</TableHead>
                     </>
                   )}
@@ -297,14 +306,57 @@ export function MaestroFlotaPanel({ maestro }: { maestro: MaestroFlota }) {
   )
 }
 
+/**
+ * Un papel de la unidad con su vencimiento y el semáforo. Los autoelevadores
+ * llevan su propia categoría de extintor, de ahí la categoría alternativa.
+ */
+function Papel({
+  u,
+  categoria,
+  alterna,
+}: {
+  u: MaestroFlotaUnidad
+  categoria: string
+  alterna?: string
+}) {
+  const p =
+    u.papeles.find((x) => x.categoria === categoria) ??
+    (alterna ? u.papeles.find((x) => x.categoria === alterna) : undefined)
+
+  if (!p) {
+    return (
+      <TableCell>
+        <span className="text-xs text-muted-foreground/60">—</span>
+      </TableCell>
+    )
+  }
+
+  const clase =
+    p.estado === "vencido"
+      ? "text-destructive font-medium"
+      : p.estado === "por_vencer"
+        ? "text-amber-600 font-medium"
+        : p.estado === "sin_fecha"
+          ? "text-muted-foreground"
+          : "text-foreground"
+
+  return (
+    <TableCell>
+      <span className={cn("tabular-nums text-sm", clase)}>
+        {p.vencimiento ? fmtFecha(p.vencimiento) : "sin fecha"}
+      </span>
+      {!p.tieneArchivo && (
+        <span className="ml-1 text-[10px] text-amber-600" title="Sin archivo adjunto">
+          ⚠
+        </span>
+      )}
+    </TableCell>
+  )
+}
+
 function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
   const f = u.ficha
   const falta = (campo: string) => u.camposFaltantes.includes(campo)
-
-  // Papel que vence primero (los que no vencen nunca no cuentan).
-  const proximo = u.documentos
-    .filter((d) => d.vencimiento)
-    .sort((a, b) => (a.vencimiento! < b.vencimiento! ? -1 : 1))[0]
 
   return (
     <TableRow className={cn(!u.activo && "opacity-60")}>
@@ -356,16 +408,10 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
 
       {vista === "documentacion" && (
         <>
-          <TableCell>
-            {u.documentos.length === 0 ? (
-              <span className="text-xs text-amber-600">sin documentos</span>
-            ) : (
-              <span>{u.documentos.length}</span>
-            )}
-          </TableCell>
-          <TableCell className="text-muted-foreground">
-            {proximo ? `${proximo.nombre} · ${fmtFecha(proximo.vencimiento)}` : "—"}
-          </TableCell>
+          <Papel u={u} categoria="VTV" />
+          <Papel u={u} categoria="Seguro vehicular" />
+          <Papel u={u} categoria="SENASA" />
+          <Papel u={u} categoria="Extintores camiones" alterna="Extintores de autoelevadores" />
           <TableCell>
             {u.docsVencidos > 0 ? (
               <Badge variant="outline" className="border-destructive/40 bg-destructive/5 text-[10px] text-destructive">
@@ -375,12 +421,17 @@ function FilaUnidad({ u, vista }: { u: MaestroFlotaUnidad; vista: Vista }) {
               <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                 {u.docsPorVencer} por vencer
               </Badge>
-            ) : u.documentos.length > 0 ? (
+            ) : u.papeles.length > 0 ? (
               <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                 Al día
               </Badge>
             ) : (
-              <span className="text-xs text-muted-foreground/60">—</span>
+              <span className="text-xs text-amber-600">sin papeles</span>
+            )}
+            {u.docsSinArchivo > 0 && (
+              <span className="ml-1 text-[10px] text-amber-600" title="Papel sin el archivo adjunto">
+                ({u.docsSinArchivo} sin archivo)
+              </span>
             )}
           </TableCell>
         </>
