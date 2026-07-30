@@ -74,11 +74,15 @@ import {
   type Alineacion,
   type IntervaloNeumaticos,
   type Neumatico,
+  type NeumaticoDibujo,
   type NeumaticoTipo,
   type Recapado,
   type RetiroCubiertas,
   type Rotacion,
+  NEUMATICO_DIBUJO_LABEL,
+  NEUMATICO_DIBUJOS,
   PROFUNDIDAD_CRITICA_MM,
+  SIN_DIBUJO,
 } from "@/lib/vehiculos/neumaticos-tipos"
 import {
   layoutDeTipo,
@@ -601,6 +605,7 @@ export function NeumaticosModule({
                     <th>Tipo</th>
                     <th>Marca</th>
                     <th>Medida</th>
+                    <th>Dibujo</th>
                     <th className="text-right">Prof. inic.</th>
                     <th className="text-right">Prof. act.</th>
                     <th className="text-right">mm gast.</th>
@@ -640,6 +645,9 @@ export function NeumaticosModule({
                         <td>{TIPO_LABEL[n.tipo]}</td>
                         <td className="text-muted-foreground">{n.marca || "—"}</td>
                         <td className="text-muted-foreground">{n.medida || "—"}</td>
+                        <td className="text-muted-foreground">
+                          {n.dibujo ? NEUMATICO_DIBUJO_LABEL[n.dibujo] : "—"}
+                        </td>
                         <td className="text-right tabular-nums text-muted-foreground">
                           {n.profundidad_inicial_mm ?? "—"}
                         </td>
@@ -729,6 +737,7 @@ export function NeumaticosModule({
                   <th>Tipo</th>
                   <th>Marca</th>
                   <th>Medida</th>
+                  <th>Dibujo</th>
                   <th className="text-right">Prof. (mm)</th>
                   <th className="text-right">Recapados</th>
                   <th>Proveedor</th>
@@ -748,6 +757,9 @@ export function NeumaticosModule({
                     <td>{TIPO_LABEL[n.tipo]}</td>
                     <td className="text-muted-foreground">{n.marca || "—"}</td>
                     <td className="text-muted-foreground">{n.medida || "—"}</td>
+                    <td className="text-muted-foreground">
+                      {n.dibujo ? NEUMATICO_DIBUJO_LABEL[n.dibujo] : "—"}
+                    </td>
                     <td className="text-right tabular-nums">
                       {n.profundidad_actual_mm ?? "—"}
                     </td>
@@ -816,7 +828,7 @@ export function NeumaticosModule({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 font-medium">
-                  <td className="py-2" colSpan={7}>
+                  <td className="py-2" colSpan={8}>
                     Invertido en stock
                   </td>
                   <td className="text-right tabular-nums">
@@ -2234,6 +2246,40 @@ function ResumenDetalleDialog({
 
 // ==================== Factura de compra (foto/PDF) ====================
 
+/**
+ * Selector del dibujo de la banda (liso / taco / semi taco).
+ *
+ * Queda OPCIONAL a propósito: la mayoría de las cubiertas del padrón entró sin
+ * este dato y obligar a elegirlo llevaría a inventarlo. De él depende con cuánta
+ * goma arranca la cubierta, sobre todo al volver del recapador.
+ */
+function DibujoSelect({
+  value,
+  onChange,
+}: {
+  value: NeumaticoDibujo | ""
+  onChange: (v: NeumaticoDibujo | "") => void
+}) {
+  return (
+    <Select
+      value={value || SIN_DIBUJO}
+      onValueChange={(v) => onChange(v === SIN_DIBUJO ? "" : (v as NeumaticoDibujo))}
+    >
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SIN_DIBUJO}>Sin dato</SelectItem>
+        {NEUMATICO_DIBUJOS.map((d) => (
+          <SelectItem key={d} value={d}>
+            {NEUMATICO_DIBUJO_LABEL[d]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 function EditarCubiertaDialog({
   neumatico,
   onClose,
@@ -2246,6 +2292,7 @@ function EditarCubiertaDialog({
   const [numero, setNumero] = useState(neumatico.numero ?? "")
   const [marca, setMarca] = useState(neumatico.marca ?? "")
   const [medida, setMedida] = useState(neumatico.medida ?? "")
+  const [dibujo, setDibujo] = useState<NeumaticoDibujo | "">(neumatico.dibujo ?? "")
   const [fechaCompra, setFechaCompra] = useState(neumatico.fecha_compra ?? "")
   const [proveedor, setProveedor] = useState(neumatico.proveedor ?? "")
   const [costo, setCosto] = useState(
@@ -2269,6 +2316,7 @@ function EditarCubiertaDialog({
       numero,
       marca,
       medida,
+      dibujo: dibujo || null,
       fecha_compra: fechaCompra || null,
       proveedor,
       costo_unitario: costo ? Number(costo) : null,
@@ -2295,7 +2343,7 @@ function EditarCubiertaDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
               <Label className="text-xs text-muted-foreground">Código</Label>
               <Input value={numero} onChange={(e) => setNumero(e.target.value)} />
@@ -2307,6 +2355,10 @@ function EditarCubiertaDialog({
             <div>
               <Label className="text-xs text-muted-foreground">Medida</Label>
               <Input value={medida} onChange={(e) => setMedida(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Dibujo</Label>
+              <DibujoSelect value={dibujo} onChange={setDibujo} />
             </div>
           </div>
 
@@ -2403,6 +2455,7 @@ function CargarCubiertasDialog({
   const [tipo, setTipo] = useState<NeumaticoTipo>("nuevo")
   const [marca, setMarca] = useState("")
   const [medida, setMedida] = useState("")
+  const [dibujo, setDibujo] = useState<NeumaticoDibujo | "">("")
   const [prof, setProf] = useState("")
   const [presion, setPresion] = useState("")
   // Códigos: uno en modo "una", varios (o solo cantidad) en modo "varias"
@@ -2455,6 +2508,7 @@ function CargarCubiertasDialog({
       tipo,
       marca,
       medida,
+      dibujo: dibujo || null,
       profundidad_inicial_mm: prof ? Number(prof) : null,
       presion_psi: presion ? Number(presion) : null,
       // Con códigos se crea una por código; sin códigos, por cantidad.
@@ -2628,6 +2682,10 @@ function CargarCubiertasDialog({
                 />
               </div>
               <div>
+                <Label className="text-xs text-muted-foreground">Dibujo</Label>
+                <DibujoSelect value={dibujo} onChange={setDibujo} />
+              </div>
+              <div>
                 <Label className="text-xs text-muted-foreground">Prof. inicial (mm)</Label>
                 <Input
                   type="number"
@@ -2636,6 +2694,11 @@ function CargarCubiertasDialog({
                   onChange={(e) => setProf(e.target.value)}
                   placeholder="14"
                 />
+                {tipo === "recapado" && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    La que trajo del recapador: depende del dibujo (mayormente 15 mm).
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Presión (psi)</Label>
@@ -2697,6 +2760,7 @@ function CargarCubiertasDialog({
               {tipo === "recapado" ? "Recapado" : "Nuevo"}
               {marca ? ` · ${marca}` : ""}
               {medida ? ` · ${medida}` : ""}
+              {dibujo ? ` · ${NEUMATICO_DIBUJO_LABEL[dibujo]}` : ""}
               {prof ? ` · ${prof} mm` : ""}
               {totalCompra != null ? ` · ${fmtMoney(totalCompra)} en total` : ""}
             </span>
@@ -3335,6 +3399,7 @@ function PosicionDialog({
   const [numeroNueva, setNumeroNueva] = useState("")
   const [marcaNueva, setMarcaNueva] = useState("")
   const [medidaNueva, setMedidaNueva] = useState("")
+  const [dibujoNueva, setDibujoNueva] = useState<NeumaticoDibujo | "">("")
   const [profNueva, setProfNueva] = useState("")
   // Presión con la que se monta (queda como medición de ese día).
   const [presionMontaje, setPresionMontaje] = useState("")
@@ -3433,7 +3498,7 @@ function PosicionDialog({
 
             {modo === "nueva" ? (
               <>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div>
                     <Label className="text-xs text-muted-foreground">Estado</Label>
                     <Select value={tipoNueva} onValueChange={(v) => setTipoNueva((v as NeumaticoTipo) ?? "nuevo")}>
@@ -3449,6 +3514,10 @@ function PosicionDialog({
                   <div>
                     <Label className="text-xs text-muted-foreground">Marca</Label>
                     <Input value={marcaNueva} onChange={(e) => setMarcaNueva(e.target.value)} placeholder="Fate" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Dibujo</Label>
+                    <DibujoSelect value={dibujoNueva} onChange={setDibujoNueva} />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Prof. (mm)</Label>
@@ -3597,6 +3666,7 @@ function PosicionDialog({
                           numero: numeroNueva,
                           marca: marcaNueva,
                           medida: medidaNueva,
+                          dibujo: dibujoNueva || null,
                           profundidad_inicial_mm: profNueva ? Number(profNueva) : null,
                           km_instalacion: kmInst ? Number(kmInst) : null,
                           vida_util_km: vidaUtil ? Number(vidaUtil) : vidaDefault,

@@ -16,6 +16,7 @@ import {
   type Alineacion,
   type IntervaloNeumaticos,
   type Neumatico,
+  type NeumaticoDibujo,
   type NeumaticoMedicion,
   type NeumaticosResumen,
   type NeumaticoTipo,
@@ -141,6 +142,8 @@ export async function crearNeumaticosMasivo(input: {
   tipo: NeumaticoTipo
   marca?: string
   medida?: string
+  /** Dibujo de la banda: de él depende la profundidad de arranque. */
+  dibujo?: NeumaticoDibujo | null
   profundidad_inicial_mm?: number | null
   cantidad?: number
   numeros?: string[]
@@ -168,6 +171,7 @@ export async function crearNeumaticosMasivo(input: {
       tipo: input.tipo,
       marca: input.marca?.trim() || null,
       medida: input.medida?.trim() || null,
+      dibujo: input.dibujo ?? null,
       profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
       profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
       estado: "stock" as const,
@@ -212,6 +216,7 @@ export async function actualizarNeumatico(input: {
   numero?: string | null
   marca?: string | null
   medida?: string | null
+  dibujo?: NeumaticoDibujo | null
   factura_urls?: string[] | null
   fecha_compra?: string | null
   proveedor?: string | null
@@ -224,6 +229,7 @@ export async function actualizarNeumatico(input: {
     if (input.numero !== undefined) update.numero = input.numero?.trim() || null
     if (input.marca !== undefined) update.marca = input.marca?.trim() || null
     if (input.medida !== undefined) update.medida = input.medida?.trim() || null
+    if (input.dibujo !== undefined) update.dibujo = input.dibujo ?? null
     if (input.factura_urls !== undefined) {
       update.factura_urls = input.factura_urls?.length ? input.factura_urls : null
     }
@@ -337,6 +343,7 @@ export async function asignarNeumatico(input: {
   /** Código / N° de la cubierta (opcional). */
   numero?: string | null
   medida?: string | null
+  dibujo?: NeumaticoDibujo | null
   /** Facturas a agregar a las que ya tenga la cubierta. */
   factura_urls?: string[] | null
   /** Presión con la que se montó (queda como medición de ese día). */
@@ -373,6 +380,7 @@ export async function asignarNeumatico(input: {
     // Datos de la cubierta que se completan al montarla (solo si vienen).
     if (input.numero !== undefined && input.numero?.trim()) patch.numero = input.numero.trim()
     if (input.medida !== undefined && input.medida?.trim()) patch.medida = input.medida.trim()
+    if (input.dibujo) patch.dibujo = input.dibujo
     if (input.factura_urls?.length) {
       const { data: previa } = await supabase
         .from("mantenimiento_neumaticos")
@@ -427,6 +435,7 @@ export async function crearYColocarNeumatico(input: {
   numero?: string
   marca?: string
   medida?: string
+  dibujo?: NeumaticoDibujo | null
   profundidad_inicial_mm?: number | null
   km_instalacion?: number | null
   vida_util_km?: number | null
@@ -458,6 +467,7 @@ export async function crearYColocarNeumatico(input: {
         numero: input.numero?.trim() || null,
         marca: input.marca?.trim() || null,
         medida: input.medida?.trim() || null,
+        dibujo: input.dibujo ?? null,
         profundidad_inicial_mm: input.profundidad_inicial_mm ?? null,
         profundidad_actual_mm: input.profundidad_inicial_mm ?? null,
         estado: "instalado",
@@ -595,6 +605,8 @@ export async function marcarParaRecapar(input: {
 export async function volvioDelRecapado(input: {
   id: string
   profundidad_mm?: number | null
+  /** Dibujo con el que la devolvió el recapador: explica la profundidad nueva. */
+  dibujo?: NeumaticoDibujo | null
 }): Promise<{ success: true } | { error: string }> {
   try {
     await requireRole(["admin", "supervisor"])
@@ -613,6 +625,9 @@ export async function volvioDelRecapado(input: {
         vida_util_km: null,
         profundidad_inicial_mm: input.profundidad_mm ?? null,
         profundidad_actual_mm: input.profundidad_mm ?? null,
+        // El recapador puede devolverla con otro dibujo; si no se indicó, se
+        // deja el que tenía (no se pisa con null).
+        ...(input.dibujo ? { dibujo: input.dibujo } : {}),
         vueltas_recapado: (previa?.vueltas_recapado ?? 0) + 1,
         updated_at: new Date().toISOString(),
       })

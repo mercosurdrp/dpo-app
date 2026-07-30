@@ -46,10 +46,21 @@ import {
   registrarRecepcionRecapado,
   type RecepcionItemInput,
 } from "@/actions/recapados"
-import type {
-  Neumatico,
-  Recapado,
-  RecapadoItem,
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  type Neumatico,
+  type NeumaticoDibujo,
+  type Recapado,
+  type RecapadoItem,
+  NEUMATICO_DIBUJO_LABEL,
+  NEUMATICO_DIBUJOS,
+  SIN_DIBUJO,
 } from "@/lib/vehiculos/neumaticos-tipos"
 import { ProveedorPicker } from "./proveedor-picker"
 import {
@@ -538,6 +549,8 @@ interface FilaRecepcion {
   profundidadEnvio: number | null
   descartada: boolean
   profundidad: string
+  /** Con qué dibujo la devolvió el recapador: de eso depende la profundidad. */
+  dibujo: NeumaticoDibujo | ""
   numeroRetorno: string
   obs: string
 }
@@ -567,6 +580,7 @@ function RecepcionDialog({
       profundidadEnvio: it.profundidad_envio_mm != null ? Number(it.profundidad_envio_mm) : null,
       descartada: false,
       profundidad: "",
+      dibujo: "",
       // El recapador devuelve la goma con el mismo código; si le pusiera uno
       // nuevo se corrige acá y la cubierta se renumera sin perder su historial.
       numeroRetorno: it.numero_envio ?? "",
@@ -593,6 +607,7 @@ function RecepcionDialog({
       neumatico_id: f.neumatico_id,
       resultado: f.descartada ? "descartada" : "recapada",
       profundidad_retorno_mm: f.profundidad ? Number(f.profundidad) : null,
+      dibujo_retorno: f.dibujo || null,
       numero_retorno: f.numeroRetorno.trim() || null,
       observaciones: f.obs.trim() || null,
     }))
@@ -676,6 +691,7 @@ function RecepcionDialog({
                     <th className="py-1.5 pl-3">Cubierta</th>
                     <th className="text-right">Salió con</th>
                     <th className="w-28">Volvió (mm)</th>
+                    <th className="w-32">Dibujo</th>
                     <th className="w-28">Código</th>
                     <th className="w-24 text-center">Descartada</th>
                   </tr>
@@ -707,6 +723,29 @@ function RecepcionDialog({
                             set(f.neumatico_id, { profundidad: e.target.value })
                           }
                         />
+                      </td>
+                      <td className="pr-2">
+                        <Select
+                          value={f.dibujo || SIN_DIBUJO}
+                          disabled={f.descartada}
+                          onValueChange={(v) =>
+                            set(f.neumatico_id, {
+                              dibujo: v === SIN_DIBUJO ? "" : (v as NeumaticoDibujo),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SIN_DIBUJO}>Sin dato</SelectItem>
+                            {NEUMATICO_DIBUJOS.map((d) => (
+                              <SelectItem key={d} value={d}>
+                                {NEUMATICO_DIBUJO_LABEL[d]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="pr-2">
                         <Input
@@ -894,6 +933,12 @@ function FilaItem({ item: it }: { item: RecapadoItem }) {
       </td>
       <td className="text-right tabular-nums">
         {it.profundidad_retorno_mm != null ? `${it.profundidad_retorno_mm} mm` : "—"}
+        {/* El dibujo es lo que explica con cuántos mm volvió. */}
+        {it.dibujo_retorno && (
+          <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+            {NEUMATICO_DIBUJO_LABEL[it.dibujo_retorno]}
+          </span>
+        )}
       </td>
       <td className="text-muted-foreground">
         {it.numero_retorno && it.numero_retorno !== it.numero_envio ? (

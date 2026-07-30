@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth, requireRole } from "@/lib/session"
 import type {
+  NeumaticoDibujo,
   Recapado,
   RecapadoItem,
   RecapadoResultado,
@@ -247,6 +248,11 @@ export interface RecepcionItemInput {
   resultado: Exclude<RecapadoResultado, "pendiente">
   /** Con cuánta goma volvió (pasa a ser su profundidad de origen). */
   profundidad_retorno_mm?: number | null
+  /**
+   * Dibujo con el que la devolvió el recapador. Es lo que explica la profundidad
+   * de retorno: no vuelve igual una lisa que una de taco o semi taco.
+   */
+  dibujo_retorno?: NeumaticoDibujo | null
   /** Código con el que volvió, si el recapador se lo cambió. */
   numero_retorno?: string | null
   observaciones?: string | null
@@ -311,6 +317,7 @@ export async function registrarRecepcionRecapado(input: {
         .update({
           resultado: it.resultado,
           profundidad_retorno_mm: esRecapada ? (it.profundidad_retorno_mm ?? null) : null,
+          dibujo_retorno: esRecapada ? (it.dibujo_retorno ?? null) : null,
           numero_retorno: it.numero_retorno?.trim() || null,
           costo: costoPorId.get(it.neumatico_id) ?? null,
           observaciones: it.observaciones?.trim() || null,
@@ -334,6 +341,9 @@ export async function registrarRecepcionRecapado(input: {
             profundidad_inicial_mm: prof,
             profundidad_actual_mm: prof,
             vueltas_recapado: (previa?.vueltas_recapado ?? 0) + 1,
+            // Si volvió con otro dibujo, la cubierta pasa a tener ese; si no se
+            // indicó, se deja el que tenía en vez de pisarlo con null.
+            ...(it.dibujo_retorno ? { dibujo: it.dibujo_retorno } : {}),
             ...(numeroNuevo ? { numero: numeroNuevo } : {}),
             updated_at: new Date().toISOString(),
           })

@@ -11,6 +11,30 @@ export const PROFUNDIDAD_CRITICA_MM = 3
 export type NeumaticoTipo = "nuevo" | "recapado"
 
 /**
+ * Dibujo de la banda de rodamiento.
+ *
+ * No es un detalle estético: define con cuánta goma arranca la cubierta. Una
+ * misma marca vuelve del recapador con distinta profundidad según el dibujo que
+ * se le pidió (mayormente 15 mm, pero varía), así que sin el dibujo no se puede
+ * explicar el desgaste ni comparar dos gomas entre sí.
+ */
+export type NeumaticoDibujo = "liso" | "taco" | "semi_taco"
+
+export const NEUMATICO_DIBUJO_LABEL: Record<NeumaticoDibujo, string> = {
+  liso: "Liso",
+  taco: "Taco",
+  semi_taco: "Semi taco",
+}
+
+export const NEUMATICO_DIBUJOS: NeumaticoDibujo[] = ["liso", "taco", "semi_taco"]
+
+/**
+ * Opción "sin dato" de los selectores de dibujo. Va como centinela porque el
+ * Select de shadcn no admite un item con value="" (lo interpreta como limpiar).
+ */
+export const SIN_DIBUJO = "__sin_dibujo__"
+
+/**
  * Estados de una cubierta.
  * - `stock`: en depósito, lista para montar. Si es de segunda vuelta viene con
  *   `tipo='recapado'`, así el stock se lee separado (nuevas vs recapadas).
@@ -72,6 +96,8 @@ export interface Neumatico {
   tipo: NeumaticoTipo
   marca: string | null
   medida: string | null
+  /** Dibujo de la banda. De él depende con cuánta goma arranca. NULL = sin relevar. */
+  dibujo: NeumaticoDibujo | null
   dominio: string | null
   posicion: string | null
   eje: EjeNeumatico | null
@@ -141,6 +167,8 @@ export interface RecapadoItem {
   /** Código con el que la devolvió el recapador (normalmente el mismo). */
   numero_retorno: string | null
   profundidad_retorno_mm: number | null
+  /** Dibujo con el que volvió: es lo que explica la profundidad de retorno. */
+  dibujo_retorno: NeumaticoDibujo | null
   /** Parte del costo total del envío que le tocó. */
   costo: number | null
   resultado: RecapadoResultado
