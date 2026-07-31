@@ -146,8 +146,9 @@ export function RadarClient({
               Radar de Rechazos · Pasado Mañana
             </h1>
             <p className="text-sm text-muted-foreground">
-              Clientes que se entregan <strong>pasado mañana</strong> (en 2 días)
-              con historial de rechazo por <strong>cerrado</strong> o{" "}
+              Clientes que se entregan <strong>pasado mañana</strong> (a 2 días de
+              reparto: el domingo no cuenta) con historial de rechazo por{" "}
+              <strong>cerrado</strong> o{" "}
               <strong>sin dinero</strong>. Avisales hoy para evitar el rechazo.
             </p>
           </div>

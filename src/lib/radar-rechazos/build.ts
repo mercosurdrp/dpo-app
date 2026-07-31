@@ -1,7 +1,7 @@
 /**
  * Radar de Rechazos del Día Siguiente — armado de la foto.
  *
- * Cruza los pedidos ruteados de MAÑANA (Chess) contra el historial de rechazos
+ * Cruza los pedidos ruteados del día OBJETIVO (Chess) contra el historial de rechazos
  * por CERRADO (id_rechazo 1) y SIN DINERO (id_rechazo 6) de cada cliente, en dos
  * ventanas: últimos 365 días y últimos 30 días. Los rechazos se cuentan en VECES
  * (cliente × fecha), no en filas de la tabla. Devuelve solo los clientes EN
@@ -78,27 +78,47 @@ export function hoyART(): string {
   return `${y}-${m}-${d}`
 }
 
-/**
- * YYYY-MM-DD de la fecha OBJETIVO del radar en horario Argentina: PASADO MAÑANA
- * (día +2). Se mira la entrega de dentro de 2 días para que Ventas tenga un día
- * extra de margen para avisar al cliente y coordinar el pago.
- */
-export function fechaObjetivoART(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Argentina/Buenos_Aires",
-    year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000))
-  const y = parts.find((p) => p.type === "year")!.value
-  const m = parts.find((p) => p.type === "month")!.value
-  const d = parts.find((p) => p.type === "day")!.value
-  return `${y}-${m}-${d}`
+/** Suma `dias` a una fecha YYYY-MM-DD y devuelve YYYY-MM-DD. */
+function sumarDias(fecha: string, dias: number): string {
+  const d = new Date(`${fecha}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
 }
 
 /** Resta `dias` a una fecha YYYY-MM-DD y devuelve YYYY-MM-DD. */
 function restarDias(fecha: string, dias: number): string {
-  const d = new Date(`${fecha}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() - dias)
-  return d.toISOString().slice(0, 10)
+  return sumarDias(fecha, -dias)
+}
+
+/** 0 = domingo. Se lee en UTC porque la fecha es un YYYY-MM-DD sin hora. */
+function diaSemana(fecha: string): number {
+  return new Date(`${fecha}T00:00:00Z`).getUTCDay()
+}
+
+const DOMINGO = 0
+
+/** Días DE ENTREGA de anticipación del radar (no días de calendario). */
+const DIAS_ANTICIPACION = 2
+
+/**
+ * YYYY-MM-DD de la fecha OBJETIVO del radar en horario Argentina: la entrega que
+ * cae a 2 DÍAS DE REPARTO vista, para que Ventas tenga un día extra de margen
+ * para avisar al cliente y coordinar el pago.
+ *
+ * 🚨 El domingo NO se entrega, así que no cuenta ni puede ser objetivo: se saltea
+ * y el radar avanza al siguiente día hábil. Con +2 de calendario, el viernes
+ * apuntaba a un domingo sin reparto (radar vacío / inútil). Queda:
+ *   lunes→miércoles · martes→jueves · miércoles→viernes · jueves→sábado
+ *   viernes→lunes   · sábado→martes  · domingo→martes
+ */
+export function fechaObjetivoART(desde: string = hoyART()): string {
+  let fecha = desde
+  let dias = 0
+  while (dias < DIAS_ANTICIPACION) {
+    fecha = sumarDias(fecha, 1)
+    if (diaSemana(fecha) !== DOMINGO) dias++
+  }
+  return fecha
 }
 
 /** Agrega los pedidos (no eliminados, items no anulados) por cliente. */
@@ -239,7 +259,8 @@ async function loadClientesCache(
 }
 
 /**
- * Arma el radar de rechazos para `fecha` (default: pasado mañana / día +2 ART).
+ * Arma el radar de rechazos para `fecha` (default: 2 días de reparto vista ART,
+ * salteando el domingo).
  * Devuelve solo los clientes en riesgo, ordenados por riesgo_total desc.
  */
 export async function buildRadarRechazos(
