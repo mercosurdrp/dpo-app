@@ -68,15 +68,17 @@ export default async function EvidenciaPuntoPage({
                 <div>
                   <p className="font-semibold text-slate-900">Línea Ética</p>
                   <p className="text-sm text-muted-foreground">
-                    Canal de denuncias de compliance (R1.1.2 / R1.1.3). QR en
-                    comedor → formulario anónimo.
+                    Canal de denuncias de compliance (R1.1.2 / R1.1.3). Es
+                    EXTERNA: la gestiona BDO — 0800-34-LINEA (54632),
+                    www2.bdolineaetica.com/MERCOSUR, mercosur@bdolineaetica.com.
                   </p>
                   {denunciasStats && (
                     <p className="mt-1 text-xs text-slate-700">
                       <span className="font-semibold">
                         {denunciasStats.total}
                       </span>{" "}
-                      denuncia{denunciasStats.total === 1 ? "" : "s"} total
+                      denuncia{denunciasStats.total === 1 ? "" : "s"} en el
+                      histórico del canal propio
                       {denunciasStats.nuevas > 0 && (
                         <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
                           {denunciasStats.nuevas} nueva
@@ -95,7 +97,7 @@ export default async function EvidenciaPuntoPage({
               </div>
               <Link href="/compliance/linea-etica">
                 <Button>
-                  Ver denuncias
+                  Ver histórico
                   <ArrowRight className="ml-1 size-4" />
                 </Button>
               </Link>

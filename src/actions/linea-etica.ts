@@ -1,7 +1,10 @@
 "use server"
 
+// El canal de denuncias es la Línea Ética EXTERNA de BDO (ver /linea-etica), así
+// que acá ya no se crean denuncias: lo que queda es el histórico del canal
+// propio que estuvo vigente hasta julio de 2026 y su tratamiento.
+
 import { revalidatePath } from "next/cache"
-import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import type {
@@ -9,9 +12,6 @@ import type {
   DenunciaLineaEticaDetalle,
   LineaEticaAdjunto,
   LineaEticaEstado,
-  LineaEticaTipo,
-  ReporteSeguridadArea,
-  ReporteSeguridadLocalidad,
 } from "@/types/database"
 
 const BUCKET = "linea-etica"
@@ -19,137 +19,12 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 type Result<T> = { data: T } | { error: string }
 
-function getServiceClient() {
-  return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
-
 function sanitizeFileName(name: string): string {
   return name
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "_")
     .slice(0, 120)
-}
-
-// ===================================================
-// PÚBLICO: crear denuncia (sin auth, via service role)
-// ===================================================
-
-interface CreateDenunciaPublicInput {
-  tipo: LineaEticaTipo
-  descripcion: string
-  lugar?: string | null
-  area?: ReporteSeguridadArea | null
-  localidad?: ReporteSeguridadLocalidad | null
-  fecha_hecho?: string | null
-  identificarse: boolean
-  denunciante_nombre?: string | null
-  denunciante_contacto?: string | null
-}
-
-export async function crearDenunciaPublica(
-  formData: FormData
-): Promise<Result<{ id: string }>> {
-  try {
-    const supabase = getServiceClient()
-
-    const inputRaw = formData.get("input")
-    if (typeof inputRaw !== "string") {
-      return { error: "Datos faltantes" }
-    }
-    let input: CreateDenunciaPublicInput
-    try {
-      input = JSON.parse(inputRaw) as CreateDenunciaPublicInput
-    } catch {
-      return { error: "Datos inválidos" }
-    }
-
-    if (!input.tipo) return { error: "Seleccioná un tipo de denuncia" }
-    if (!input.descripcion?.trim()) {
-      return { error: "Contá qué pasó" }
-    }
-
-    const files = formData.getAll("files").filter(
-      (f): f is File => f instanceof File && f.size > 0
-    )
-    for (const f of files) {
-      if (f.size > MAX_FILE_BYTES) {
-        return { error: `El archivo "${f.name}" supera los 10MB` }
-      }
-    }
-
-    const { data: inserted, error: errIns } = await supabase
-      .from("denuncias_linea_etica")
-      .insert({
-        tipo: input.tipo,
-        descripcion: input.descripcion.trim(),
-        lugar: input.lugar?.trim() || null,
-        area: input.area || null,
-        localidad: input.localidad || null,
-        fecha_hecho: input.fecha_hecho || null,
-        identificarse: input.identificarse,
-        denunciante_nombre: input.identificarse
-          ? input.denunciante_nombre?.trim() || null
-          : null,
-        denunciante_contacto: input.identificarse
-          ? input.denunciante_contacto?.trim() || null
-          : null,
-      })
-      .select("id")
-      .single()
-
-    if (errIns || !inserted) {
-      return { error: errIns?.message ?? "No se pudo registrar la denuncia" }
-    }
-
-    const denunciaId = inserted.id as string
-    const uploadedPaths: string[] = []
-
-    for (const file of files) {
-      const safeName = sanitizeFileName(file.name || "archivo")
-      const path = `${denunciaId}/denuncia/${crypto.randomUUID()}-${safeName}`
-      const arrayBuffer = await file.arrayBuffer()
-      const mime = file.type || "application/octet-stream"
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, arrayBuffer, { contentType: mime, upsert: false })
-
-      if (upErr) {
-        if (uploadedPaths.length > 0) {
-          await supabase.storage.from(BUCKET).remove(uploadedPaths)
-        }
-        await supabase.from("denuncias_linea_etica").delete().eq("id", denunciaId)
-        return { error: `Error subiendo "${file.name}": ${upErr.message}` }
-      }
-      uploadedPaths.push(path)
-
-      const { error: errAdj } = await supabase
-        .from("linea_etica_adjuntos")
-        .insert({
-          denuncia_id: denunciaId,
-          origen: "denuncia",
-          storage_path: path,
-          mime_type: mime,
-          tamaño_bytes: file.size,
-        })
-
-      if (errAdj) {
-        await supabase.storage.from(BUCKET).remove(uploadedPaths)
-        await supabase.from("denuncias_linea_etica").delete().eq("id", denunciaId)
-        return { error: `Error registrando adjunto: ${errAdj.message}` }
-      }
-    }
-
-    return { data: { id: denunciaId } }
-  } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Error creando denuncia",
-    }
-  }
 }
 
 // ===================================================

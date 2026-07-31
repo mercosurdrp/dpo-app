@@ -9,7 +9,7 @@ import {
   Eye,
   Calendar,
   MapPin,
-  QrCode,
+  ExternalLink,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +31,11 @@ import {
   type LineaEticaEstado,
   type LineaEticaTipo,
 } from "@/types/database"
+
+const BDO_TELEFONO_LABEL = "0800-34-LINEA (54632)"
+const BDO_WEB = "https://www2.bdolineaetica.com/MERCOSUR"
+const BDO_WEB_LABEL = "www2.bdolineaetica.com/MERCOSUR"
+const BDO_EMAIL = "mercosur@bdolineaetica.com"
 
 const ESTADOS: LineaEticaEstado[] = [
   "nueva",
@@ -107,20 +112,35 @@ export function LineaEticaListClient({
             <h1 className="text-2xl font-bold text-slate-900">Línea Ética</h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Denuncias anónimas del canal de compliance. Revisá y dales tratamiento.
+            Denuncias del canal propio, vigente hasta julio de 2026. Revisá y
+            dales tratamiento.
           </p>
         </div>
         <a
-          href="/api/linea-etica/qr"
-          download="qr-linea-etica.pdf"
+          href={BDO_WEB}
+          target="_blank"
+          rel="noopener noreferrer"
           className="shrink-0"
         >
           <Button variant="outline">
-            <QrCode className="mr-2 size-4" />
-            Descargar QR (PDF)
+            <ExternalLink className="mr-2 size-4" />
+            Ir a la Línea Ética de BDO
           </Button>
         </a>
       </div>
+
+      <Card className="border-amber-300 bg-amber-50">
+        <CardContent className="py-3">
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">
+              El canal vigente es la Línea Ética externa de BDO.
+            </span>{" "}
+            Las denuncias nuevas entran por BDO ({BDO_TELEFONO_LABEL} ·{" "}
+            {BDO_WEB_LABEL} · {BDO_EMAIL}) y las trata esa consultora: acá no se
+            cargan. Lo que sigue es el histórico del canal propio.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
