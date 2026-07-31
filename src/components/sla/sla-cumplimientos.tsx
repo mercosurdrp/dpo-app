@@ -109,7 +109,7 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
         <Leyenda estado="no" texto="No cumple" />
         <Leyenda estado="sd" texto="Sin dato" />
         <Leyenda estado="na" texto="No aplica" />
-        <span>· Objetivo: el de cada SLA (≥ 95% salvo escalonamiento pactado)</span>
+        <span>· Objetivo ≥ 95%</span>
       </div>
 
       {/* Matriz SLA × días */}

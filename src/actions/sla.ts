@@ -26,7 +26,7 @@ import {
   CAPACIDAD_MIN_PCT,
   SLA_EDF_NOMBRE,
   SLA_EDF_MIDE_DESDE,
-  slaEdfTarget,
+  SLA_EDF_TARGET,
   EDF_DIAS_PERMITIDOS_LABEL,
   edfDiaHabilitado,
   edfMotivoNoHabilitado,
@@ -1044,7 +1044,7 @@ async function filaEquiposFrio(
   const base = {
     codigo: "plan_equipos_frio",
     nombre: SLA_EDF_NOMBRE,
-    target: slaEdfTarget(year, month),
+    target: SLA_EDF_TARGET,
   }
   const diasVacio: EstadoCumplimiento[] = Array.from(
     { length: diasDelMes },

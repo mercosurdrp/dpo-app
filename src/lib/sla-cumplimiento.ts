@@ -44,10 +44,10 @@ export const SLA_RECEPCION_TARGET = 95
 // --- SLA equipos de frío: ventana lunes-miércoles --------------------------
 export const SLA_EDF_NOMBRE = "Entrega y retiro de equipos de frío"
 /**
- * Meta ESCALONADA. El baseline medido contra Chess (180 días a jul-2026) es
- * 45,8 % de los movimientos en camión dentro de la ventana: firmar 95 % de
- * arranque sería firmar un incumplimiento. `slaEdfTarget(year, month)` devuelve
- * la meta vigente según los meses transcurridos desde la firma.
+ * Objetivo mensual, igual que el resto de los SLA de la app y desde el primer
+ * mes: sin escalonamiento (decisión del 31-07-2026). El baseline previo al
+ * acuerdo era 46,4 %, así que los primeros meses van a dar en rojo hasta que la
+ * programación de las solicitudes se acomode — es el punto del indicador.
  */
 export const SLA_EDF_TARGET = 95
 /**
@@ -57,27 +57,6 @@ export const SLA_EDF_TARGET = 95
  * Decidido el 31-07-2026: se empieza a medir el 01-08.
  */
 export const SLA_EDF_MIDE_DESDE = "2026-08-01"
-/**
- * Primer mes del escalonamiento de la meta. Agosto es el primer mes completo
- * de vigencia (julio arranca el día 31, no da para un mes representativo).
- */
-export const SLA_EDF_VIGENCIA_DESDE = "2026-08"
-const SLA_EDF_ESCALONES = [
-  { hastaMes: 3, target: 70 }, // meses 1-3
-  { hastaMes: 6, target: 85 }, // meses 4-6
-] as const
-
-/** Meta vigente (%) para un mes dado, según el escalonamiento pactado. */
-export function slaEdfTarget(year: number, month: number): number {
-  const [y0, m0] = SLA_EDF_VIGENCIA_DESDE.split("-").map(Number)
-  const transcurridos = (year - y0) * 12 + (month - m0) + 1
-  if (transcurridos < 1) return SLA_EDF_ESCALONES[0].target
-  for (const e of SLA_EDF_ESCALONES) {
-    if (transcurridos <= e.hastaMes) return e.target
-  }
-  return SLA_EDF_TARGET
-}
-
 /** Días de la semana habilitados para mover equipos de frío en camión. */
 export const EDF_DIAS_PERMITIDOS = [1, 2, 3] as const // lunes, martes, miércoles
 export const EDF_DIAS_PERMITIDOS_LABEL = "lunes, martes y miércoles"

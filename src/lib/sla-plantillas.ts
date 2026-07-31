@@ -273,7 +273,7 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "No se mueven equipos de frío los días feriados ni el día hábil inmediatamente posterior a un feriado, aunque caiga dentro de la ventana: ese día el camión sale con la carga acumulada de dos días y no admite el espacio ni el tiempo de maniobra que exige un equipo. Por ejemplo, siendo feriado el lunes 17 de agosto de 2026, esa semana el único día habilitado es el miércoles 19.",
       "Toda solicitud de movimiento fuera de esa ventana requiere autorización CONJUNTA del Jefe de Logística y el Jefe de Ventas. La autorización se registra en la plataforma DPO con su motivo.",
       "Quedan excluidos del acuerdo, y son posibles cualquier día de la semana: el retiro del equipo por parte del cliente en el depósito y todo documento emitido fuera de una carga de camión.",
-      "Objetivo de cumplimiento mensual escalonado: ≥ 70 % los primeros tres meses, ≥ 85 % del cuarto al sexto mes y ≥ 95 % a partir del séptimo mes de vigencia.",
+      "Objetivo de cumplimiento mensual: ≥ 95 % de los días medibles, exigible desde el primer mes de vigencia.",
     ],
     medicion: [
       "La medición es automática a partir de los pedidos de Chess: se toman los documentos COPOP (entrega de equipo) y CTRCO (retiro / contracomodato) por su fecha de entrega.",
