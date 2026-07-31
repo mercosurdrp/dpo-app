@@ -1,27 +1,26 @@
--- =============================================
--- SLA Ventas ↔ Logística · entrega y retiro de EQUIPOS DE FRÍO.
+-- =============================================================
+-- SLA Ventas <-> Logistica · entrega y retiro de EQUIPOS DE FRIO
+--
+-- APLICAR EN: Supabase PAMPEANA — proyecto `dpo` (ref tpafgmbhnucdiavvxbcg)
+-- NO aplicar en Misiones (`dpo-distribucions`): este SLA es sólo de Pampeana.
 --
 -- Regla: los equipos de frío (heladeras, choperas, equipos eléctricos) se
--- entregan (COPOP) o se levantan (CTRCO) ÚNICAMENTE lunes, martes y miércoles
--- cuando el movimiento sale DENTRO DE LA CARGA DE UN CAMIÓN. Excepción:
--- autorización conjunta del Jefe de Logística y el Jefe de Ventas.
+-- entregan (COPOP) o se levantan (CTRCO) SOLO lunes, martes y miércoles cuando
+-- el movimiento sale DENTRO DE LA CARGA DE UN CAMION. Excepción: autorización
+-- conjunta del Jefe de Logística y el Jefe de Ventas, registrada a posteriori.
 --
--- 🚨 Fuera de alcance (cualquier día de la semana, no entra al denominador):
--- el cliente que retira en depósito o el documento emitido fuera de una carga.
--- Se distingue por el campo `Reparto` de Chess: si es una PATENTE, salió en
--- camión; si es un texto (MOSTRADOR RAMALLO, SEGUNDA VUELTA), no.
+-- Fuera de alcance (cualquier día, no entra al denominador): el cliente que
+-- retira en depósito y el documento emitido fuera de una carga. Se distingue
+-- por el campo `Reparto` de Chess: es una PATENTE sólo si salió en camión.
 --
--- La excepción se registra A POSTERIORI (no hay aprobación previa): el
--- movimiento nace en rojo y se justifica en la reunión Ventas-Logística.
--- Un movimiento justificado CUENTA COMO CUMPLIDO, pero se pinta amarillo
--- para poder seguir la tendencia de excepciones.
--- =============================================
+-- 🚨 SIN BEGIN/COMMIT a propósito: el SQL Editor de Supabase ya envuelve todo
+-- en una transacción, y un BEGIN explícito puede terminar en rollback
+-- silencioso. Todo el DDL es idempotente: se puede correr más de una vez.
+-- =============================================================
 
-BEGIN;
-
--- =============================================
+-- -------------------------------------------------------------
 -- 1 · Alta del SLA en el repositorio de acuerdos
--- =============================================
+-- -------------------------------------------------------------
 INSERT INTO slas (codigo, nombre, pilar, parte_cliente, parte_proveedor, requisito_manual, descripcion, es_predefinido, orden)
 VALUES (
   'plan_equipos_frio',
@@ -36,10 +35,10 @@ VALUES (
 )
 ON CONFLICT (codigo) DO NOTHING;
 
--- =============================================
+-- -------------------------------------------------------------
 -- 2 · Movimientos de equipos de frío sincronizados desde Chess
---     Una fila por LÍNEA de pedido COPOP/CTRCO con un equipo de frío.
--- =============================================
+--     Una fila por LINEA de pedido COPOP/CTRCO con un equipo de frío.
+-- -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS edf_movimientos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   id_pedido TEXT NOT NULL,
@@ -49,7 +48,7 @@ CREATE TABLE IF NOT EXISTS edf_movimientos (
   tipo_doc TEXT NOT NULL CHECK (tipo_doc IN ('COPOP', 'CTRCO')),
   -- Campo `Reparto` de Chess tal cual viene (patente o canal)
   reparto TEXT,
-  -- true = `Reparto` es una patente ⇒ salió en la carga de un camión ⇒ aplica el SLA
+  -- true = `Reparto` es una patente => salió en la carga de un camión => aplica el SLA
   en_camion BOOLEAN NOT NULL DEFAULT false,
   id_cliente INTEGER,
   id_articulo INTEGER NOT NULL,
@@ -69,10 +68,10 @@ CREATE TABLE IF NOT EXISTS edf_movimientos (
 CREATE INDEX IF NOT EXISTS idx_edf_mov_fecha ON edf_movimientos(fecha_entrega);
 CREATE INDEX IF NOT EXISTS idx_edf_mov_camion_fecha ON edf_movimientos(en_camion, fecha_entrega);
 
--- =============================================
+-- -------------------------------------------------------------
 -- 3 · Excepciones autorizadas (registro a posteriori)
 --     Una excepción por movimiento. Exige AMBAS autorizaciones.
--- =============================================
+-- -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS edf_excepciones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   movimiento_id UUID NOT NULL UNIQUE REFERENCES edf_movimientos(id) ON DELETE CASCADE,
@@ -94,18 +93,18 @@ CREATE TABLE IF NOT EXISTS edf_excepciones (
 
 CREATE INDEX IF NOT EXISTS idx_edf_exc_movimiento ON edf_excepciones(movimiento_id);
 
--- =============================================
+-- -------------------------------------------------------------
 -- 4 · Trigger updated_at
--- =============================================
+-- -------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_edf_movimientos_updated_at ON edf_movimientos;
 CREATE TRIGGER trg_edf_movimientos_updated_at
   BEFORE UPDATE ON edf_movimientos
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- =============================================
+-- -------------------------------------------------------------
 -- 5 · RLS — lectura para autenticados; escritura sólo admin/supervisor.
 --     Los movimientos los escribe el sync con service role (bypassea RLS).
--- =============================================
+-- -------------------------------------------------------------
 ALTER TABLE edf_movimientos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE edf_excepciones ENABLE ROW LEVEL SECURITY;
 
@@ -138,6 +137,10 @@ CREATE POLICY "edf_excepciones_delete"
     SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'supervisor')
   ));
 
-COMMIT;
-
-NOTIFY pgrst, 'reload schema';
+-- -------------------------------------------------------------
+-- 6 · Verificación — tiene que devolver: 1 | 0 | 0
+-- -------------------------------------------------------------
+SELECT
+  (SELECT count(*) FROM slas WHERE codigo = 'plan_equipos_frio') AS sla_dado_de_alta,
+  (SELECT count(*) FROM edf_movimientos) AS movimientos,
+  (SELECT count(*) FROM edf_excepciones) AS excepciones;
