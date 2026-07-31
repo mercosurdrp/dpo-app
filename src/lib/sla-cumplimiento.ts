@@ -48,7 +48,17 @@ export const SLA_EDF_NOMBRE = "Entrega y retiro de equipos de frío"
  * la meta vigente según los meses transcurridos desde la firma.
  */
 export const SLA_EDF_TARGET = 95
-/** Primer mes de vigencia (YYYY-MM). Ajustar a la fecha real de firma. */
+/**
+ * 🚨 Primer día MEDIDO. Los movimientos anteriores SÍ se sincronizan (sirven de
+ * baseline para la reunión de firma) pero NO se evalúan: el acuerdo no se
+ * aplica retroactivamente. Los días previos quedan en "no aplica".
+ * Decidido el 31-07-2026: se empieza a medir el 01-08.
+ */
+export const SLA_EDF_MIDE_DESDE = "2026-08-01"
+/**
+ * Primer mes del escalonamiento de la meta. Agosto es el primer mes completo
+ * de vigencia (julio arranca el día 31, no da para un mes representativo).
+ */
 export const SLA_EDF_VIGENCIA_DESDE = "2026-08"
 const SLA_EDF_ESCALONES = [
   { hastaMes: 3, target: 70 }, // meses 1-3

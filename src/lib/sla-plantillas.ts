@@ -304,7 +304,7 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
     gestionIncumplimiento:
       "Los movimientos fuera de ventana sin excepción registrada se revisan en la reunión semanal de Ventas-Logística. Si el volumen de excepciones autorizadas crece mes a mes, se abre una tarea en el Action Log para atacar la causa de fondo en la programación de las solicitudes, no el caso puntual.",
     vigencia:
-      "Vigencia de 1 año desde la fecha de firma. Revisión anual, o de forma inmediata si cambia la política de comodatos, el esquema de ruteo o los días de reparto.",
+      "La medición del acuerdo comienza el 1 de agosto de 2026. Los movimientos anteriores quedan registrados como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la política de comodatos, el esquema de ruteo o los días de reparto.",
     firmantes: ["Jefe de Logística", "Jefe de Ventas"],
     secciones: [
       {

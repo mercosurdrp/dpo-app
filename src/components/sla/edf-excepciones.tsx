@@ -41,6 +41,7 @@ import {
 import {
   EDF_MOTIVOS_EXCEPCION,
   EDF_DIAS_PERMITIDOS_LABEL,
+  SLA_EDF_MIDE_DESDE,
   type MovimientoEdfPendiente,
 } from "@/lib/sla-cumplimiento"
 
@@ -95,8 +96,13 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const pendientes = movs.filter((m) => !m.excepcion)
+  // Los movimientos previos a la vigencia están cargados como baseline: se
+  // listan, pero no se piden justificar ni cuentan como pendientes.
+  const esReferencia = (m: MovimientoEdfPendiente) =>
+    m.fecha_entrega < SLA_EDF_MIDE_DESDE
+  const pendientes = movs.filter((m) => !m.excepcion && !esReferencia(m))
   const justificados = movs.filter((m) => m.excepcion)
+  const referencia = movs.filter(esReferencia)
 
   function abrirDialogo(m: MovimientoEdfPendiente) {
     setAbierto(m)
@@ -184,6 +190,14 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
           <span className="rounded bg-amber-100 px-2 py-1 font-semibold text-amber-700">
             {justificados.length} con excepción
           </span>
+          {referencia.length > 0 && (
+            <span
+              className="rounded bg-slate-100 px-2 py-1 font-semibold text-slate-500"
+              title="Movimientos previos a la vigencia del acuerdo: sirven de referencia, no se miden."
+            >
+              {referencia.length} de referencia
+            </span>
+          )}
         </div>
       </div>
 
@@ -250,12 +264,16 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
                           Autorizan: {m.excepcion.autoriza_jdl} + {m.excepcion.autoriza_jdv}
                         </div>
                       </div>
+                    ) : esReferencia(m) ? (
+                      <span className="text-sm text-slate-400">
+                        Referencia (previo al acuerdo)
+                      </span>
                     ) : (
                       <span className="text-sm text-red-600">Sin excepción</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {puedeGestionar && (
+                    {puedeGestionar && !(esReferencia(m) && !m.excepcion) && (
                       <div className="flex justify-end gap-1">
                         <Button
                           size="sm"

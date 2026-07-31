@@ -25,6 +25,7 @@ import {
   CARGA_LIMITE_HORA,
   CAPACIDAD_MIN_PCT,
   SLA_EDF_NOMBRE,
+  SLA_EDF_MIDE_DESDE,
   slaEdfTarget,
   EDF_DIAS_PERMITIDOS_LABEL,
   edfMotivoLabel,
@@ -1041,11 +1042,18 @@ async function filaEquiposFrio(
     () => "na" as EstadoCumplimiento,
   )
 
-  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const primeroDelMes = `${year}-${String(month).padStart(2, "0")}-01`
   const hastaExcl =
     month === 12
       ? `${year + 1}-01-01`
       : `${year}-${String(month + 1).padStart(2, "0")}-01`
+  // 🚨 El acuerdo no se mide hacia atrás: antes de SLA_EDF_MIDE_DESDE los
+  // movimientos están cargados (baseline) pero los días quedan en "no aplica".
+  const desde =
+    primeroDelMes > SLA_EDF_MIDE_DESDE ? primeroDelMes : SLA_EDF_MIDE_DESDE
+  if (desde >= hastaExcl) {
+    return { ...base, porcentaje: null, cumplidos: 0, totalAplica: 0, dias: diasVacio }
+  }
 
   const { data, error } = await supabase
     .from("edf_movimientos")
@@ -2139,6 +2147,21 @@ export async function getDetalleDiaSla(
     }
 
     if (codigo === "plan_equipos_frio") {
+      if (fecha < SLA_EDF_MIDE_DESDE) {
+        return {
+          data: {
+            codigo,
+            nombre: SLA_EDF_NOMBRE,
+            fecha,
+            diaSemana,
+            estado: "na",
+            metaLabel: `Equipos de frío en camión: sólo ${EDF_DIAS_PERMITIDOS_LABEL}`,
+            valorLabel: "Fuera de vigencia",
+            filas: [],
+            nota: `El acuerdo se mide desde el ${SLA_EDF_MIDE_DESDE.split("-").reverse().join("/")}. Los movimientos anteriores están cargados como referencia, pero no se evalúan.`,
+          },
+        }
+      }
       const { data, error } = await supabase
         .from("edf_movimientos")
         .select(
