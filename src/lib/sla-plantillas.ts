@@ -264,4 +264,70 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Vigencia de 1 año desde la fecha de firma. Revisión anual, o de forma inmediata si se modifica el proceso u horario de carga.",
     firmantes: ["Supervisor de Almacén", "Supervisor de Distribución"],
   },
+
+  plan_equipos_frio: {
+    objeto:
+      "Acuerdo de nivel de servicio entre Ventas y Logística para ordenar la entrega y el retiro de equipos de frío (heladeras, choperas y equipos eléctricos) en los puntos de venta. Un equipo de frío ocupa un lugar significativo en el camión y exige tiempo de maniobra en el punto de venta: concentrar estos movimientos en los primeros días de la semana permite planificar la carga sin resentir la entrega de producto ni la puntualidad del reparto.",
+    nivelServicio: [
+      "Los equipos de frío que salen DENTRO DE LA CARGA DE UN CAMIÓN se entregan (comodato) o se retiran (contracomodato) únicamente los días lunes, martes y miércoles.",
+      "Toda solicitud de movimiento fuera de esa ventana requiere autorización CONJUNTA del Jefe de Logística y el Jefe de Ventas. La autorización se registra en la plataforma DPO con su motivo.",
+      "Quedan excluidos del acuerdo, y son posibles cualquier día de la semana: el retiro del equipo por parte del cliente en el depósito y todo documento emitido fuera de una carga de camión.",
+      "Objetivo de cumplimiento mensual escalonado: ≥ 70 % los primeros tres meses, ≥ 85 % del cuarto al sexto mes y ≥ 95 % a partir del séptimo mes de vigencia.",
+    ],
+    medicion: [
+      "La medición es automática a partir de los pedidos de Chess: se toman los documentos COPOP (entrega de equipo) y CTRCO (retiro / contracomodato) por su fecha de entrega.",
+      "Se considera que el movimiento salió dentro de la carga de un camión cuando el campo Reparto del pedido es una patente. Si el Reparto es un canal de mostrador o el documento se emitió fuera de una carga, el movimiento no entra en la medición.",
+      "El equipo de frío se identifica por el maestro de artículos de Chess (artículos marcados como activo fijo y agrupación de material POP heladera o chopera), no por el texto de la descripción.",
+      "Un día cumple si todos los movimientos en camión de ese día salieron lunes, martes o miércoles, o cuentan con excepción autorizada registrada.",
+      "El indicador mensual se calcula como: días cumplidos ÷ días con movimientos de equipos de frío en camión.",
+      "Los movimientos con excepción autorizada se computan como cumplidos y se identifican en color amarillo, para poder seguir por separado la evolución de las excepciones.",
+    ],
+    roles: [
+      {
+        label: "Solicitud del movimiento",
+        valor: "Ventas (emite el comodato o contracomodato en Chess).",
+      },
+      {
+        label: "Programación en la carga",
+        valor: "Logística / Ruteo (asigna el movimiento a la carga de un camión).",
+      },
+      {
+        label: "Autorización de excepciones",
+        valor: "Jefe de Logística y Jefe de Ventas, en conjunto.",
+      },
+      {
+        label: "Registro y seguimiento",
+        valor:
+          "Jefe de Logística y Jefe de Ventas (registran la excepción en la plataforma DPO durante la reunión Ventas-Logística).",
+      },
+    ],
+    gestionIncumplimiento:
+      "Los movimientos fuera de ventana sin excepción registrada se revisan en la reunión semanal de Ventas-Logística. Si el volumen de excepciones autorizadas crece mes a mes, se abre una tarea en el Action Log para atacar la causa de fondo en la programación de las solicitudes, no el caso puntual.",
+    vigencia:
+      "Vigencia de 1 año desde la fecha de firma. Revisión anual, o de forma inmediata si cambia la política de comodatos, el esquema de ruteo o los días de reparto.",
+    firmantes: ["Jefe de Logística", "Jefe de Ventas"],
+    secciones: [
+      {
+        titulo: "Premisas y condiciones operativas",
+        parrafos: [
+          "El acuerdo ordena la PROGRAMACIÓN del movimiento, no la venta ni la colocación del equipo: la decisión comercial de colocar o retirar un equipo sigue siendo de Ventas.",
+        ],
+        bullets: [
+          "La solicitud debe estar emitida en Chess con antelación suficiente para que Logística la incluya en la carga del lunes, martes o miércoles siguiente.",
+          "Un punto de venta que queda sin frío por rotura de equipo constituye motivo válido de excepción y se resuelve por la vía de autorización conjunta.",
+          "Cuando el movimiento implique recambio (retirar un equipo y dejar otro en el mismo punto de venta), ambos documentos deben programarse en la misma visita.",
+          "La excepción se registra después del hecho: no requiere aprobación previa a la salida del camión, para no demorar la operación.",
+          "El registro de la excepción exige identificar el motivo y a los dos jefes que la autorizaron.",
+        ],
+      },
+      {
+        titulo: "Fuera de alcance",
+        bullets: [
+          "Retiro del equipo por el propio cliente en el depósito.",
+          "Documentos de comodato o contracomodato emitidos fuera de una carga de camión.",
+          "Movimientos de material POP que no sea equipo de frío (mesas, sillas, sombrillas, góndolas) y movimientos de envases.",
+        ],
+      },
+    ],
+  },
 }

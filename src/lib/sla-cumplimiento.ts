@@ -39,6 +39,89 @@ export const SLA_PUSHED_TARGET = 95
 export const SLA_RECEPCION_NOMBRE = "Recepción de abastecimiento (acarreos)"
 export const SLA_RECEPCION_TARGET = 95
 
+// --- SLA equipos de frío: ventana lunes-miércoles --------------------------
+export const SLA_EDF_NOMBRE = "Entrega y retiro de equipos de frío"
+/**
+ * Meta ESCALONADA. El baseline medido contra Chess (180 días a jul-2026) es
+ * 45,8 % de los movimientos en camión dentro de la ventana: firmar 95 % de
+ * arranque sería firmar un incumplimiento. `slaEdfTarget(year, month)` devuelve
+ * la meta vigente según los meses transcurridos desde la firma.
+ */
+export const SLA_EDF_TARGET = 95
+/** Primer mes de vigencia (YYYY-MM). Ajustar a la fecha real de firma. */
+export const SLA_EDF_VIGENCIA_DESDE = "2026-08"
+const SLA_EDF_ESCALONES = [
+  { hastaMes: 3, target: 70 }, // meses 1-3
+  { hastaMes: 6, target: 85 }, // meses 4-6
+] as const
+
+/** Meta vigente (%) para un mes dado, según el escalonamiento pactado. */
+export function slaEdfTarget(year: number, month: number): number {
+  const [y0, m0] = SLA_EDF_VIGENCIA_DESDE.split("-").map(Number)
+  const transcurridos = (year - y0) * 12 + (month - m0) + 1
+  if (transcurridos < 1) return SLA_EDF_ESCALONES[0].target
+  for (const e of SLA_EDF_ESCALONES) {
+    if (transcurridos <= e.hastaMes) return e.target
+  }
+  return SLA_EDF_TARGET
+}
+
+/** Días de la semana habilitados para mover equipos de frío en camión. */
+export const EDF_DIAS_PERMITIDOS = [1, 2, 3] as const // lunes, martes, miércoles
+export const EDF_DIAS_PERMITIDOS_LABEL = "lunes, martes y miércoles"
+
+/**
+ * Patente argentina: formato viejo (AAA000) o Mercosur (AA000AA). Es lo que
+ * distingue un movimiento que salió DENTRO DE LA CARGA DE UN CAMIÓN de uno
+ * emitido fuera de una carga (`MOSTRADOR RAMALLO`, `SEGUNDA VUELTA`), que no
+ * entra al SLA y puede hacerse cualquier día.
+ */
+const PATENTE_RE = /^(?:[A-Z]{3}\d{3}|[A-Z]{2}\d{3}[A-Z]{2})$/
+
+export function esPatenteCamion(reparto: string | null | undefined): boolean {
+  const r = (reparto ?? "").toUpperCase().replace(/[\s-]/g, "")
+  return PATENTE_RE.test(r)
+}
+
+/** Motivos tipificados de excepción (los carga el JDL/JDV a posteriori). */
+export const EDF_MOTIVOS_EXCEPCION = [
+  { valor: "cliente_nuevo_urgente", label: "Cliente nuevo urgente" },
+  { valor: "equipo_roto_sin_frio", label: "Equipo roto / PDV sin frío" },
+  { valor: "recambio_garantia", label: "Recambio en garantía" },
+  { valor: "requerimiento_marca", label: "Requerimiento de la marca" },
+  { valor: "reprogramacion_cliente", label: "Reprogramación del cliente" },
+  { valor: "otro", label: "Otro (detallar)" },
+] as const
+
+export type EdfMotivoExcepcion = (typeof EDF_MOTIVOS_EXCEPCION)[number]["valor"]
+
+export function edfMotivoLabel(motivo: string | null | undefined): string {
+  return EDF_MOTIVOS_EXCEPCION.find((m) => m.valor === motivo)?.label ?? "—"
+}
+
+/**
+ * Movimiento de equipo de frío fuera de la ventana lunes-miércoles, con su
+ * excepción si ya fue registrada. `excepcion: null` = falta justificar.
+ * 🚨 Vive acá y no en actions/sla.ts porque ese archivo es "use server" y no
+ * puede exportar tipos.
+ */
+export interface MovimientoEdfPendiente {
+  id: string
+  fecha_entrega: string
+  tipo_doc: string
+  reparto: string | null
+  id_cliente: number | null
+  des_articulo: string | null
+  cantidad: number
+  excepcion: {
+    motivo: string
+    motivoLabel: string
+    detalle: string | null
+    autoriza_jdl: string
+    autoriza_jdv: string
+  } | null
+}
+
 export const SLA_CARGA_NOMBRE = "SLA de carga (reducir retrasos)"
 export const SLA_CARGA_TARGET = 95
 // Hora límite ARG de carga: todos los camiones ruteados el día D deben quedar
@@ -112,8 +195,16 @@ export const CAPACIDAD_MIN_PCT = 100
 
 // Estado de un día para un SLA:
 //   "si" = cumple · "no" = no cumple · "na" = no aplica (ej. domingo) ·
-//   "sd" = sin dato (día futuro o ruteo no cerrado)
-export type EstadoCumplimiento = "si" | "no" | "na" | "sd"
+//   "sd" = sin dato (día futuro o ruteo no cerrado) ·
+//   "just" = fuera de lo pactado pero con EXCEPCIÓN AUTORIZADA registrada.
+// 🚨 "just" CUENTA COMO CUMPLIDO en el %: se pinta distinto (amarillo) sólo
+// para poder seguir la tendencia de excepciones, no para penalizar.
+export type EstadoCumplimiento = "si" | "no" | "na" | "sd" | "just"
+
+/** Estados que suman al numerador del % de cumplimiento. */
+export function cuentaComoCumplido(e: EstadoCumplimiento): boolean {
+  return e === "si" || e === "just"
+}
 
 export interface CumplimientoSlaFila {
   codigo: string

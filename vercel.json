@@ -22,6 +22,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/edf-movimientos/sync",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/gescom/rechazos-sync",
       "schedule": "0 7 * * *"
     },

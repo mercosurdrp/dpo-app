@@ -24,6 +24,11 @@ import {
   SLA_CARGA_TARGET,
   CARGA_LIMITE_HORA,
   CAPACIDAD_MIN_PCT,
+  SLA_EDF_NOMBRE,
+  slaEdfTarget,
+  EDF_DIAS_PERMITIDOS_LABEL,
+  edfMotivoLabel,
+  cuentaComoCumplido,
   cumpleRecepcion,
   esPicoRecepcion,
   type CumplimientoMes,
@@ -32,6 +37,7 @@ import {
   type DetalleDiaSla,
   type CumplimientoRango,
   type CumplimientoRangoFila,
+  type MovimientoEdfPendiente,
 } from "@/lib/sla-cumplimiento"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
@@ -850,6 +856,245 @@ async function filaRecepcion(
 }
 
 // ===========================================================================
+// Excepciones del SLA de equipos de frío — registro A POSTERIORI.
+// No hay aprobación previa: el movimiento fuera de ventana nace incumplido y
+// el JDL/JDV registran la autorización conjunta cuando lo revisan.
+// ===========================================================================
+
+/**
+ * Movimientos en camión FUERA de la ventana lunes-miércoles en un rango, con
+ * su excepción si ya fue registrada. Es la lista que se repasa en la reunión
+ * Ventas-Logística: los que vienen con `excepcion: null` son los que faltan
+ * justificar.
+ */
+export async function getMovimientosEdfFueraDeVentana(
+  desde: string,
+  hasta: string,
+): Promise<Result<MovimientoEdfPendiente[]>> {
+  try {
+    await requireAuth()
+    if (IS_MISIONES) {
+      return { error: "El SLA de equipos de frío solo está disponible en Pampeana." }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+      return { error: "Fechas inválidas (esperado YYYY-MM-DD)" }
+    }
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("edf_movimientos")
+      .select(
+        "id, fecha_entrega, tipo_doc, reparto, id_cliente, des_articulo, cantidad, edf_excepciones(motivo, detalle, autoriza_jdl, autoriza_jdv)",
+      )
+      .eq("en_camion", true)
+      .eq("en_ventana", false)
+      .gte("fecha_entrega", desde)
+      .lte("fecha_entrega", hasta)
+      .order("fecha_entrega", { ascending: false })
+
+    if (error) return { error: error.message }
+
+    const filas: MovimientoEdfPendiente[] = (data ?? []).map((m: any) => {
+      const exc = (m.edf_excepciones ?? [])[0]
+      return {
+        id: m.id,
+        fecha_entrega: m.fecha_entrega,
+        tipo_doc: m.tipo_doc,
+        reparto: m.reparto,
+        id_cliente: m.id_cliente,
+        des_articulo: m.des_articulo,
+        cantidad: Number(m.cantidad ?? 0),
+        excepcion: exc
+          ? {
+              motivo: exc.motivo,
+              motivoLabel: edfMotivoLabel(exc.motivo),
+              detalle: exc.detalle,
+              autoriza_jdl: exc.autoriza_jdl,
+              autoriza_jdv: exc.autoriza_jdv,
+            }
+          : null,
+      }
+    })
+    return { data: filas }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error cargando los movimientos",
+    }
+  }
+}
+
+/**
+ * Registra la excepción autorizada de un movimiento fuera de ventana.
+ * 🚨 Exige los DOS nombres (Jefe de Logística y Jefe de Ventas): el acuerdo
+ * dice "en conjunto", así que una sola firma no habilita la excepción.
+ */
+export async function registrarExcepcionEdf(input: {
+  movimientoId: string
+  motivo: string
+  detalle?: string | null
+  autorizaJdl: string
+  autorizaJdv: string
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (!ROLES_GESTION.includes(profile.role as any)) {
+      return {
+        error:
+          "Solo el Jefe de Logística o el Jefe de Ventas (rol admin o supervisor) pueden registrar una excepción.",
+      }
+    }
+    const jdl = input.autorizaJdl?.trim()
+    const jdv = input.autorizaJdv?.trim()
+    if (!jdl || !jdv) {
+      return {
+        error:
+          "La excepción requiere la autorización conjunta: cargar el nombre del Jefe de Logística y el del Jefe de Ventas.",
+      }
+    }
+    if (input.motivo === "otro" && !input.detalle?.trim()) {
+      return { error: "El motivo «Otro» requiere detallar el caso." }
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase.from("edf_excepciones").upsert(
+      {
+        movimiento_id: input.movimientoId,
+        motivo: input.motivo,
+        detalle: input.detalle?.trim() || null,
+        autoriza_jdl: jdl,
+        autoriza_jdv: jdv,
+        registrado_por: profile.id,
+      },
+      { onConflict: "movimiento_id" },
+    )
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error registrando la excepción",
+    }
+  }
+}
+
+/** Quita una excepción mal cargada: el movimiento vuelve a contar como incumplido. */
+export async function eliminarExcepcionEdf(
+  movimientoId: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    if (!ROLES_GESTION.includes(profile.role as any)) {
+      return { error: "Solo admin o supervisor pueden eliminar una excepción." }
+    }
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from("edf_excepciones")
+      .delete()
+      .eq("movimiento_id", movimientoId)
+    if (error) return { error: error.message }
+
+    revalidatePath(DASHBOARD_PATH)
+    return { success: true }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Error eliminando la excepción",
+    }
+  }
+}
+
+// ===========================================================================
+// SLA de equipos de frío (plan_equipos_frio) — los COPOP/CTRCO que salen en la
+// carga de un camión sólo pueden programarse lunes, martes o miércoles.
+//
+// Estado del día:
+//   "na"   → domingo, o día sin movimientos de equipos de frío en camión
+//   "si"   → todos los movimientos del día cayeron en la ventana
+//   "just" → hubo movimientos fuera de ventana, TODOS con excepción registrada
+//   "no"   → hubo al menos un movimiento fuera de ventana sin excepción
+//
+// 🚨 "just" cuenta como cumplido: la excepción autorizada existe para dejar
+// constancia del motivo, no para penalizar. Se distingue en amarillo para
+// poder mirar la tendencia de excepciones mes a mes.
+// ===========================================================================
+
+interface MovimientoEdfRow {
+  id: string
+  fecha_entrega: string
+  en_camion: boolean
+  en_ventana: boolean
+  edf_excepciones: { id: string }[] | null
+}
+
+async function filaEquiposFrio(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  diasDelMes: number,
+): Promise<CumplimientoSlaFila> {
+  const base = {
+    codigo: "plan_equipos_frio",
+    nombre: SLA_EDF_NOMBRE,
+    target: slaEdfTarget(year, month),
+  }
+  const diasVacio: EstadoCumplimiento[] = Array.from(
+    { length: diasDelMes },
+    () => "na" as EstadoCumplimiento,
+  )
+
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`
+  const hastaExcl =
+    month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data, error } = await supabase
+    .from("edf_movimientos")
+    .select("id, fecha_entrega, en_camion, en_ventana, edf_excepciones(id)")
+    .eq("en_camion", true)
+    .gte("fecha_entrega", desde)
+    .lt("fecha_entrega", hastaExcl)
+
+  if (error || !data) {
+    return { ...base, porcentaje: null, cumplidos: 0, totalAplica: 0, dias: diasVacio }
+  }
+
+  // Por día: cuántos movimientos hay, cuántos fuera de ventana y cuántos de
+  // esos están justificados.
+  const porDia = new Map<number, { fuera: number; justificados: number }>()
+  for (const m of data as unknown as MovimientoEdfRow[]) {
+    const dia = Number(m.fecha_entrega.slice(8, 10))
+    const a = porDia.get(dia) ?? { fuera: 0, justificados: 0 }
+    if (!m.en_ventana) {
+      a.fuera++
+      if ((m.edf_excepciones ?? []).length > 0) a.justificados++
+    }
+    porDia.set(dia, a)
+  }
+
+  const dias: EstadoCumplimiento[] = []
+  let cumplidos = 0
+  let totalAplica = 0
+  for (let d = 1; d <= diasDelMes; d++) {
+    const a = porDia.get(d)
+    if (!a) {
+      // Sin movimientos de equipos de frío en camión: el día no se mide.
+      dias.push("na")
+      continue
+    }
+    let estado: EstadoCumplimiento
+    if (a.fuera === 0) estado = "si"
+    else if (a.justificados === a.fuera) estado = "just"
+    else estado = "no"
+    dias.push(estado)
+    totalAplica++
+    if (cuentaComoCumplido(estado)) cumplidos++
+  }
+
+  const porcentaje = totalAplica > 0 ? Math.round((cumplidos / totalAplica) * 100) : null
+  return { ...base, porcentaje, cumplidos, totalAplica, dias }
+}
+
+// ===========================================================================
 // SLA de carga (alm_carga) — cada viaje ruteado queda cargado antes de las
 // 07:00 ARG del día de REPARTO (día de salida del camión). Se cruza por
 // NÚMERO DE VIAJE (no por patente): el WMS expone, por viaje, la hora de carga
@@ -1368,6 +1613,7 @@ export async function getCumplimientoMes(
       await filaPushed(supabase, year, month, diasDelMes),
       filaCargaResuelta,
       await filaRecepcion(year, month, diasDelMes),
+      await filaEquiposFrio(supabase, year, month, diasDelMes),
     ]
 
     return { data: { year, month, diasDelMes, filas } }
@@ -1892,6 +2138,128 @@ export async function getDetalleDiaSla(
       }
     }
 
+    if (codigo === "plan_equipos_frio") {
+      const { data, error } = await supabase
+        .from("edf_movimientos")
+        .select(
+          "id, tipo_doc, reparto, id_cliente, des_articulo, cantidad, en_ventana, edf_excepciones(motivo, detalle, autoriza_jdl, autoriza_jdv)",
+        )
+        .eq("en_camion", true)
+        .eq("fecha_entrega", fecha)
+        .order("reparto", { ascending: true })
+
+      const metaLabel = `Equipos de frío en camión: sólo ${EDF_DIAS_PERMITIDOS_LABEL}`
+      if (error) {
+        return {
+          data: {
+            codigo,
+            nombre: SLA_EDF_NOMBRE,
+            fecha,
+            diaSemana,
+            estado: "sd",
+            metaLabel,
+            valorLabel: "—",
+            filas: [],
+            nota: "No se pudieron leer los movimientos de equipos de frío.",
+          },
+        }
+      }
+
+      type MovDetalle = {
+        id: string
+        tipo_doc: string
+        reparto: string | null
+        id_cliente: number | null
+        des_articulo: string | null
+        cantidad: number
+        en_ventana: boolean
+        edf_excepciones:
+          | {
+              motivo: string
+              detalle: string | null
+              autoriza_jdl: string
+              autoriza_jdv: string
+            }[]
+          | null
+      }
+      const movs = (data ?? []) as unknown as MovDetalle[]
+
+      if (movs.length === 0) {
+        return {
+          data: {
+            codigo,
+            nombre: SLA_EDF_NOMBRE,
+            fecha,
+            diaSemana,
+            estado: "na",
+            metaLabel,
+            valorLabel: "Sin movimientos",
+            filas: [],
+            nota: "Este día no salió ningún equipo de frío en la carga de un camión.",
+          },
+        }
+      }
+
+      const filas: { label: string; valor: string }[] = []
+      let fuera = 0
+      let justificados = 0
+      for (const m of movs) {
+        const exc = (m.edf_excepciones ?? [])[0]
+        const accion = m.tipo_doc === "COPOP" ? "Entrega" : "Retiro"
+        const label = `${accion} · ${m.reparto ?? "s/reparto"} · cliente ${m.id_cliente ?? "—"}`
+        const equipo = `${m.des_articulo ?? "equipo"}${m.cantidad > 1 ? ` ×${m.cantidad}` : ""}`
+        if (m.en_ventana) {
+          filas.push({ label, valor: `${equipo} ✓` })
+          continue
+        }
+        fuera++
+        if (exc) {
+          justificados++
+          const quienes = `${exc.autoriza_jdl} + ${exc.autoriza_jdv}`
+          const detalle = exc.detalle ? ` — ${exc.detalle}` : ""
+          filas.push({
+            label,
+            valor: `${equipo} · excepción: ${edfMotivoLabel(exc.motivo)}${detalle} (${quienes})`,
+          })
+        } else {
+          filas.push({ label, valor: `${equipo} · fuera de ventana, sin excepción ✗` })
+        }
+      }
+
+      let estado: EstadoCumplimiento
+      if (fuera === 0) estado = "si"
+      else if (justificados === fuera) estado = "just"
+      else estado = "no"
+
+      let valorLabel: string
+      if (fuera === 0) valorLabel = `${movs.length} movimiento(s) en ventana`
+      else if (estado === "just")
+        valorLabel = `${fuera} fuera de ventana, ${justificados} con excepción`
+      else
+        valorLabel = `${fuera - justificados} fuera de ventana sin excepción`
+
+      const nota =
+        estado === "no"
+          ? "Registrar la excepción autorizada por el Jefe de Logística y el Jefe de Ventas, o dejar el día como incumplido."
+          : estado === "just"
+            ? "Movimiento fuera de ventana con excepción registrada: cuenta como cumplido."
+            : undefined
+
+      return {
+        data: {
+          codigo,
+          nombre: SLA_EDF_NOMBRE,
+          fecha,
+          diaSemana,
+          estado,
+          metaLabel,
+          valorLabel,
+          filas,
+          nota,
+        },
+      }
+    }
+
     return { error: "SLA no reconocido." }
   } catch (err) {
     return {
@@ -1959,8 +2327,11 @@ export async function getCumplimientoRango(
     }
 
     const filas: CumplimientoRangoFila[] = [...acc.values()].map((f) => {
-      const cumplidos = f.dias.filter((x) => x.estado === "si").length
-      const totalAplica = f.dias.filter((x) => x.estado === "si" || x.estado === "no").length
+      // "just" (excepción autorizada) cuenta como cumplido, igual que en la matriz mensual.
+      const cumplidos = f.dias.filter((x) => cuentaComoCumplido(x.estado)).length
+      const totalAplica = f.dias.filter(
+        (x) => cuentaComoCumplido(x.estado) || x.estado === "no",
+      ).length
       return {
         codigo: f.codigo,
         nombre: f.nombre,

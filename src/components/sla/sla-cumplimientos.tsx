@@ -105,10 +105,11 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
       {/* Leyenda */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
         <Leyenda estado="si" texto="Cumple" />
+        <Leyenda estado="just" texto="Cumple con excepción autorizada" />
         <Leyenda estado="no" texto="No cumple" />
         <Leyenda estado="sd" texto="Sin dato" />
         <Leyenda estado="na" texto="No aplica" />
-        <span>· Objetivo ≥ 95%</span>
+        <span>· Objetivo: el de cada SLA (≥ 95% salvo escalonamiento pactado)</span>
       </div>
 
       {/* Matriz SLA × días */}
@@ -160,6 +161,7 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
                       </span>
                     ) : (
                       <span
+                        title={`Objetivo del mes: ≥ ${fila.target}%`}
                         className={`inline-block rounded px-2 py-0.5 text-sm font-bold tabular-nums ${
                           fila.porcentaje === null
                             ? "text-slate-400"
@@ -177,7 +179,7 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
                       <CeldaDia
                         estado={estado}
                         onClick={
-                          estado === "si" || estado === "no"
+                          estado === "si" || estado === "no" || estado === "just"
                             ? () => abrirDetalle(fila.codigo, i + 1)
                             : undefined
                         }
@@ -220,6 +222,9 @@ export function SlaCumplimientos({ inicial }: { inicial: CumplimientoMes }) {
 export function SlaDetalleDiaBody({ d }: { d: DetalleDiaSla }) {
   const cumple = d.estado === "si"
   const noCumple = d.estado === "no"
+  // Excepción autorizada: cumple, pero se muestra en ámbar para que el motivo
+  // quede a la vista y no se confunda con un día limpio.
+  const conExcepcion = d.estado === "just"
   return (
     <div className="space-y-4">
       {/* Estado + valor vs meta */}
@@ -227,13 +232,17 @@ export function SlaDetalleDiaBody({ d }: { d: DetalleDiaSla }) {
         className={`flex items-center gap-3 rounded-lg border p-3 ${
           cumple
             ? "border-emerald-200 bg-emerald-50"
-            : noCumple
-              ? "border-red-200 bg-red-50"
-              : "border-slate-200 bg-slate-50"
+            : conExcepcion
+              ? "border-amber-200 bg-amber-50"
+              : noCumple
+                ? "border-red-200 bg-red-50"
+                : "border-slate-200 bg-slate-50"
         }`}
       >
         {cumple ? (
           <CheckCircle2 className="size-7 shrink-0 text-emerald-600" />
+        ) : conExcepcion ? (
+          <CheckCircle2 className="size-7 shrink-0 text-amber-600" />
         ) : noCumple ? (
           <XCircle className="size-7 shrink-0 text-red-600" />
         ) : null}
@@ -242,12 +251,20 @@ export function SlaDetalleDiaBody({ d }: { d: DetalleDiaSla }) {
             className={`text-lg font-bold leading-tight ${
               cumple
                 ? "text-emerald-700"
-                : noCumple
-                  ? "text-red-700"
-                  : "text-slate-600"
+                : conExcepcion
+                  ? "text-amber-700"
+                  : noCumple
+                    ? "text-red-700"
+                    : "text-slate-600"
             }`}
           >
-            {cumple ? "Cumple" : noCumple ? "No cumple" : "Sin dato"}
+            {cumple
+              ? "Cumple"
+              : conExcepcion
+                ? "Cumple con excepción autorizada"
+                : noCumple
+                  ? "No cumple"
+                  : "Sin dato"}
           </div>
           <div className="text-sm text-slate-600">
             Medido: <b className="tabular-nums">{d.valorLabel}</b> · {d.metaLabel}
@@ -296,6 +313,12 @@ const ESTILO: Record<
   { texto: string; className: string; titulo: string }
 > = {
   si: { texto: "Sí", className: "bg-emerald-100 text-emerald-700", titulo: "Cumple" },
+  // Excepción autorizada: cuenta como cumplido, se distingue para seguir la tendencia.
+  just: {
+    texto: "E",
+    className: "bg-amber-100 text-amber-700",
+    titulo: "Cumple con excepción autorizada",
+  },
   no: { texto: "No", className: "bg-red-100 text-red-700", titulo: "No cumple" },
   sd: { texto: "–", className: "text-slate-300", titulo: "Sin dato" },
   na: { texto: "·", className: "text-slate-300", titulo: "No aplica" },

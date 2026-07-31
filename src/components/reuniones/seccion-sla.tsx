@@ -75,12 +75,15 @@ function dowDe(iso: string): number {
 
 const ESTADO_CELL: Record<EstadoCumplimiento, string> = {
   si: "bg-emerald-500",
+  // Cumple con excepción autorizada: cuenta como cumplido, se distingue en ámbar.
+  just: "bg-amber-400",
   no: "bg-red-500",
   na: "bg-slate-200",
   sd: "bg-slate-100 border border-dashed border-slate-300",
 }
 const ESTADO_LABEL: Record<EstadoCumplimiento, string> = {
   si: "Cumple",
+  just: "Cumple con excepción autorizada",
   no: "No cumple",
   na: "No aplica",
   sd: "Sin dato",

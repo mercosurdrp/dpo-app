@@ -33,6 +33,7 @@ import {
 import type { CumplimientoMes } from "@/lib/sla-cumplimiento"
 import { SlaDetalleDialog } from "@/components/sla/sla-detalle-dialog"
 import { SlaCumplimientos } from "@/components/sla/sla-cumplimientos"
+import { EdfExcepciones } from "@/components/sla/edf-excepciones"
 
 function fechaCorta(iso: string | null): string {
   if (!iso) return "—"
@@ -253,12 +254,16 @@ export function SlaClient({
           <TabsList variant="line">
             <TabsTrigger value="acuerdos">Acuerdos</TabsTrigger>
             <TabsTrigger value="cumplimientos">Cumplimientos</TabsTrigger>
+            <TabsTrigger value="equipos-frio">Equipos de frío</TabsTrigger>
           </TabsList>
           <TabsContent value="acuerdos" className="pt-2">
             {acuerdos}
           </TabsContent>
           <TabsContent value="cumplimientos" className="pt-2">
             <SlaCumplimientos inicial={cumplimiento} />
+          </TabsContent>
+          <TabsContent value="equipos-frio" className="pt-2">
+            <EdfExcepciones puedeGestionar={canGestionar} />
           </TabsContent>
         </Tabs>
       ) : (
