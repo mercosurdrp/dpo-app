@@ -4520,41 +4520,17 @@ async function getIndicadoresMesCore(
           ausentismoPorFecha[f] = f < fecha ? v : null
         }
 
-        // WQI recalculado sobre el HL VENDIDOS del tablero
-        // (`ventas_diarias.total_hl`, Chess/rechazos-sync), NO sobre el HL
-        // despachado de deposito-esteban. Numerador: HL de roturas de la
-        // serie-diaria. Misma fuente HL que la fila "HL vendidos" y el WNP.
-        const { data: ventHlRaw } = await leerVentasDiarias(fechaDesde, fechaHasta)
-        const hlVendidoDia: Record<string, number> = {}
-        for (const v of ventHlRaw ?? []) {
-          const h = Number(v.total_hl ?? 0)
-          if (Number.isFinite(h)) {
-            hlVendidoDia[v.fecha] = (hlVendidoDia[v.fecha] ?? 0) + h
-          }
-        }
-        // Celda diaria WQI = HL roturas día / HL vendido día × 1M.
-        // MTD = Σ HL roturas / Σ HL vendido (solo días cerrados, f < fecha).
-        const wqiDiaTablero: Record<string, number | null> = {}
-        const wqiMtdTablero: Record<string, number | null> = {}
-        let accHlVend = 0
-        for (const f of fechas) {
-          const rotDia = serie.roturas_dia[f]
-          const hlDia = hlVendidoDia[f] ?? 0
-          wqiDiaTablero[f] =
-            rotDia != null && Number.isFinite(rotDia) && hlDia > 0
-              ? Math.round((rotDia / hlDia) * 1_000_000 * 10) / 10
-              : null
-          if (f < fecha) {
-            accHlVend += hlDia
-            const rotAcum = serie.roturas[f]
-            wqiMtdTablero[f] =
-              rotAcum != null && Number.isFinite(rotAcum) && accHlVend > 0
-                ? Math.round((rotAcum / accHlVend) * 1_000_000 * 10) / 10
-                : null
-          } else {
-            wqiMtdTablero[f] = null
-          }
-        }
+        // WQI: el MISMO número que la reunión de warehouse — se toma tal cual de
+        // la serie de deposito-esteban (`wqi_dia` / `wqi`), que mide el VOLUMEN
+        // AFECTADO por rotura (HL que entra a reempaque + roturas que no pasan
+        // por el sector) sobre el HL ENTREGADO.
+        //
+        // 🚨 Antes acá se recalculaba: merma final (`roturas_dia`) ÷ HL vendido
+        // de `ventas_diarias`. Daba ~420 PPM contra los ~1.585 de warehouse —
+        // dos filas llamadas "WQI", con la misma meta de 2.200, midiendo cosas
+        // distintas; la de logística daba verde por goleada y no exigía nada.
+        // Unificado por pedido del usuario (2026-07-31). La lectura vieja no se
+        // pierde: las roturas reales en PPM y HL están en el popover del día.
         // WNP (productividad del depósito, HL/HH). Numerador = "HL vendidos",
         // igual que la pestaña Ventas del cuadro mensual: distribuido
         // (`ventas_diarias`) + mostrador (`ventas_mostrador_diarias`), con el
@@ -4609,8 +4585,8 @@ async function getIndicadoresMesCore(
             "auto_wqi",
             "WQI",
             "PPM",
-            wqiDiaTablero,
-            wqiMtdTablero,
+            serie.wqi_dia,
+            serie.wqi,
             serie.targets.wqi,
             "menor",
           ),
@@ -4667,7 +4643,7 @@ async function getIndicadoresMesCore(
         // Roturas y Faltantes ya no se muestran como filas propias en la
         // reunión de logística (pedido del usuario): la calidad se sigue por
         // WQI, y el detalle de roturas/faltantes/$ del día se ve haciendo
-        // click en la celda de WQI (popover "Ventas y pérdidas del día").
+        // click en la celda de WQI (popover "WQI del día").
       }
 
       // Solo warehouse (rol de depósito): por pedido, sólo Productividad,

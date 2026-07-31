@@ -336,7 +336,10 @@ export async function buildWarehouseSerieDiaria(
   // en el camino legacy es la misma URL ya cacheada por fetchJsonSafe).
   const extra = await fetchSerieExtra(fechas, fechaReunion)
 
-  return { ...base, ...extra }
+  // El MTD del WQI se prefiere de serie-diaria (la fuente del popover del día);
+  // si ese fetch no respondió, queda el del snapshot, que es el respaldo.
+  const { wqi: wqiSerie, ...extraSinWqi } = extra
+  return { ...base, ...extraSinWqi, wqi: wqiSerie ?? base.wqi }
 }
 
 /** HOY en zona horaria de Argentina (YYYY-MM-DD). Usar SIEMPRE esto en vez de
@@ -947,6 +950,9 @@ async function fetchSerieExtra(
   faltantes: Record<string, number | null>
   fgli: Record<string, number | null>
   wnp: Record<string, number | null>
+  /** MTD del WQI. `null` cuando serie-diaria no respondió: ahí manda el
+   *  snapshot, que es justamente el que cubre esa caída. */
+  wqi: Record<string, number | null> | null
   wqi_dia: Record<string, number | null>
   fgli_dia: Record<string, number | null>
   scl_dia: Record<string, number | null>
@@ -980,6 +986,11 @@ async function fetchSerieExtra(
   const faltantes: Record<string, number | null> = {}
   const fgli: Record<string, number | null> = {}
   const wnp: Record<string, number | null> = {}
+  // El MTD del WQI también sale de serie-diaria y no del snapshot: el snapshot
+  // lo recalcula el pusher local a su hora (al 31-07 daba 1.500 contra 1.585 de
+  // la serie), y el popover del día lee serie-diaria ⇒ la celda y su drill
+  // mostraban números distintos. Una sola fuente para los dos.
+  const wqi: Record<string, number | null> = {}
   const wqi_dia: Record<string, number | null> = {}
   const fgli_dia: Record<string, number | null> = {}
   const scl_dia: Record<string, number | null> = {}
@@ -1003,6 +1014,7 @@ async function fetchSerieExtra(
     // FGLI (MTD) conserva el día en curso, igual que fgli_dia/scl.
     fgli[f] = visible ? (res?.fgli?.[f] ?? null) : null
     wnp[f] = cerrado ? (res?.wnp?.[f] ?? null) : null
+    wqi[f] = cerrado ? (res?.wqi?.[f] ?? null) : null
     wqi_dia[f] = cerrado ? (res?.wqi_dia?.[f] ?? null) : null
     fgli_dia[f] = visible ? (res?.fgli_dia?.[f] ?? null) : null
     scl_dia[f] = visible ? (res?.scl_dia?.[f] ?? null) : null
@@ -1054,6 +1066,7 @@ async function fetchSerieExtra(
     faltantes,
     fgli,
     wnp,
+    wqi: res?.wqi ? wqi : null,
     wqi_dia,
     fgli_dia,
     scl_dia,

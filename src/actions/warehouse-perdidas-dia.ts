@@ -1,72 +1,76 @@
 "use server"
 /**
- * Detalle diario del tablero warehouse para el popover de /reuniones
- * (celda WQI de la reunión de logística).
+ * Detalle diario del WQI para el popover de /reuniones (celda WQI, tanto en
+ * warehouse como en logística).
  *
- * IMPORTANTE — consistencia con la fila WQI:
- * Las roturas/faltantes (HL) y el $ de pérdidas se leen de la MISMA fuente que
- * usa el valor de WQI del tablero: la serie diaria de deposito-esteban
- * (`/api/indicadores/serie-diaria`, campos roturas_dia/faltantes_dia/scl_dia y
- * el acumulado roturas para el MTD). Antes esto salía de un blob precocido
- * (module=warehouse-dia-detalle) que podía estar desincronizado con la serie
- * diaria — p. ej. el 22/06 el blob decía 0 roturas mientras la serie diaria
- * tenía 0,1883 HL, así que el popover mostraba "no hubo roturas" junto a un WQI
- * de 1097,7 PPM. Al unificar la fuente, el popover siempre coincide con la
- * celda de WQI sobre la que se hizo click.
+ * Muestra las dos lecturas del mismo día, con el MISMO denominador (HL
+ * entregado) para que sean comparables entre sí:
  *
- * Bultos y HL VENDIDOS se leen de `ventas_diarias` (el tablero, misma fuente que
- * las filas "Bultos vendidos"/"HL vendidos" y que el denominador del WQI). El
- * WQI día/MTD se recalcula acá con ese HL del tablero, idéntico a como lo arma
- * la fila WQI de la reunión.
+ *   1. WQI total (volumen afectado) = HL que entra a reempaque + roturas que no
+ *      pasan por el sector. Es el valor de la celda sobre la que se hizo click.
+ *   2. Roturas reales (merma final del almacén) = lo que se termina
+ *      descartando. Es el WQI a la vieja usanza, el que ya miden FGLI y SCL.
+ *
+ * Todo sale de la serie diaria de deposito-esteban
+ * (`/api/indicadores/serie-diaria`), la misma fuente que alimenta la fila de la
+ * grilla ⇒ el popover nunca puede contradecir a la celda.
+ *
+ * 🚨 Los pares PPM/HL van apareados por origen, no mezclados:
+ *   - `wqi_dia` (PPM) ↔ HL afectado, que se despeja de la propia definición
+ *     (PPM × HL entregado ÷ 1M) porque la serie no publica el numerador suelto.
+ *   - `wqi_merma_final_dia` (PPM) ↔ `roturas_almacen_dia` (HL). Ojo: NO es
+ *     `roturas_dia`, que incluye las roturas de la calle (esas van al DQI).
  */
 import { requireAuth } from "@/lib/session"
-import { createClient } from "@/lib/supabase/server"
 import type { RoturaDetalleSku } from "@/lib/warehouse/auto-indicadores"
 
 const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 
 export interface WarehousePerdidasDia {
   fecha: string
-  bultos: number | null
-  /** HL vendidos del día (ventas_diarias) = denominador del WQI. */
-  hl_vendido: number | null
-  devoluciones: number | null
-  roturas_hl: number | null
-  faltantes_hl: number | null
-  perdidas_val: number | null
-  /** $ solo de las roturas del día (suma del valor del detalle por SKU). */
-  roturas_val: number | null
+  /** WQI total del día en PPM (volumen afectado). */
   wqi_dia: number | null
+  /** WQI total acumulado del mes hasta ese día, en PPM. */
   wqi_mtd: number | null
-  /** HL de roturas del día ocurridas EN EL ALMACÉN. */
-  roturas_almacen_hl: number | null
-  /** HL de roturas del día ocurridas EN LA CALLE (distribución). Van INCLUIDAS
-   *  en `roturas_hl` y en el WQI, igual que en el reporte a auditoría. */
-  roturas_distribucion_hl: number | null
-  /** WQI del día dejando afuera la distribución (informativo). */
-  wqi_almacen_dia: number | null
+  /** HL afectados del día (numerador del WQI total). */
+  wqi_hl_dia: number | null
+  /** De esos HL, los que entraron a reempaque (el resto son roturas directas). */
+  reempaque_hl_dia: number | null
+  /** Roturas reales del día (merma final del almacén) en PPM. */
+  roturas_ppm_dia: number | null
+  /** Roturas reales acumuladas del mes hasta ese día, en PPM. */
+  roturas_ppm_mtd: number | null
+  /** HL de roturas reales del día (almacén, sin la calle). */
+  roturas_hl_dia: number | null
   /** Qué se rompió ese día, agregado por SKU y origen (ordenado por HL desc). */
   roturas_detalle: RoturaDetalleSku[]
 }
 
 interface SerieDiariaResp {
-  /** Roturas HL por día (numerador del WQI del día). */
-  roturas_dia?: Record<string, number | null>
-  /** Roturas HL acumuladas MTD por día (numerador del WQI acumulado). */
-  roturas?: Record<string, number | null>
+  /** WQI (volumen afectado) del día y acumulado MTD, en PPM. */
+  wqi_dia?: Record<string, number | null>
+  wqi?: Record<string, number | null>
+  /** WQI a la vieja usanza (merma final del almacén), día y MTD, en PPM. */
+  wqi_merma_final_dia?: Record<string, number | null>
+  wqi_merma_final?: Record<string, number | null>
+  /** HL de roturas de almacén: el numerador de la merma final. */
+  roturas_almacen_dia?: Record<string, number | null>
+  /** HL que entró a reempaque ese día (ya neto de traslados en bloque). */
+  reempaque_hl_dia?: Record<string, number | null>
+  /** Denominador del WQI: HL entregado del día. */
+  hl_entregado_dia?: Record<string, number | null>
   /** Detalle de roturas por SKU de cada día. */
   roturas_detalle_dia?: Record<string, RoturaDetalleSku[]>
-  /** Apertura de `roturas_dia` por dónde ocurrió la rotura. */
-  roturas_almacen_dia?: Record<string, number | null>
-  roturas_distribucion_dia?: Record<string, number | null>
-  wqi_almacen_dia?: Record<string, number | null>
-  faltantes_dia?: Record<string, number | null>
-  /** $ de pérdidas del día (SCL diario). */
-  scl_dia?: Record<string, number | null>
 }
 
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null
+}
+
+function redondear(v: number | null, dec: number): number | null {
+  if (v == null) return null
+  const f = 10 ** dec
+  return Math.round(v * f) / f
 }
 
 export async function getWarehousePerdidasDia(
@@ -80,113 +84,34 @@ export async function getWarehousePerdidasDia(
     const year = Number(y)
     const month = Number(m)
 
-    // 1) Roturas / faltantes / $ del día desde la serie diaria (misma fuente
-    //    que el valor de WQI del tablero).
     const res = await fetch(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
       { cache: "no-store" },
     )
     if (!res.ok) return { error: `No se pudo cargar el detalle (HTTP ${res.status})` }
     const serie = (await res.json()) as SerieDiariaResp
-    const roturasDiaSerie = serie.roturas_dia ?? {}
-    const roturasMtdSerie = serie.roturas ?? {}
-    const faltantesDiaSerie = serie.faltantes_dia ?? {}
-    const sclDiaSerie = serie.scl_dia ?? {}
 
-    const roturasDia = num(roturasDiaSerie[fecha])
-    const faltantesDia = num(faltantesDiaSerie[fecha])
-    const perdidasVal = num(sclDiaSerie[fecha])
-    const roturasDetalle = serie.roturas_detalle_dia?.[fecha] ?? []
-    const roturasVal = roturasDetalle.reduce(
-      (s, r) => s + (typeof r.valor === "number" && Number.isFinite(r.valor) ? r.valor : 0),
-      0,
-    )
-
-    // Apertura almacén / calle. Si el backend todavía no la emite (cache viejo),
-    // se reconstruye sumando el detalle por origen: mismo total, sin romper.
-    const hlPorOrigen = (o: "almacen" | "distribucion") =>
-      roturasDetalle
-        .filter((r) => (r.origen ?? "almacen") === o)
-        .reduce((s, r) => s + (Number.isFinite(r.hl) ? r.hl : 0), 0)
-    const roturasAlmacenHl =
-      num(serie.roturas_almacen_dia?.[fecha]) ??
-      (roturasDetalle.length > 0 ? hlPorOrigen("almacen") : null)
-    const roturasDistribucionHl =
-      num(serie.roturas_distribucion_dia?.[fecha]) ??
-      (roturasDetalle.length > 0 ? hlPorOrigen("distribucion") : null)
-
-    // 2) Bultos + HL vendidos del TABLERO (ventas_diarias), por día del mes.
-    const supabase = await createClient()
-    const desde = `${y}-${m}-01`
-    const hasta = `${y}-${m}-31`
-    const { data: vd } = await supabase
-      .from("ventas_diarias")
-      .select("fecha, total_bultos, total_hl")
-      .gte("fecha", desde)
-      .lte("fecha", hasta)
-    const bultosDia: Record<string, number> = {}
-    const hlDia: Record<string, number> = {}
-    for (const v of (vd ?? []) as Array<{
-      fecha: string
-      total_bultos: number | null
-      total_hl: number | null
-    }>) {
-      const b = Number(v.total_bultos ?? 0)
-      const h = Number(v.total_hl ?? 0)
-      if (Number.isFinite(b)) bultosDia[v.fecha] = (bultosDia[v.fecha] ?? 0) + b
-      if (Number.isFinite(h)) hlDia[v.fecha] = (hlDia[v.fecha] ?? 0) + h
-    }
-
-    const bultos = fecha in bultosDia ? bultosDia[fecha] : null
-    const hlVendidoDia = hlDia[fecha] ?? 0
-
-    // WQI del día = HL roturas día ÷ HL vendidos día (tablero) × 1M. Idéntico a
-    // la fila WQI: sólo hay valor cuando hay HL vendido cargado ese día.
-    const wqiDia =
-      roturasDia != null && hlVendidoDia > 0
-        ? Math.round((roturasDia / hlVendidoDia) * 1_000_000 * 10) / 10
-        : null
-
-    // WQI MTD = Σ HL roturas (acumulado de la serie) ÷ Σ HL vendidos (tablero)
-    // hasta la fecha inclusive. Mismo criterio que la fila WQI de la reunión.
-    let accHl = 0
-    for (const f of Object.keys(hlDia)) {
-      if (f <= fecha) accHl += hlDia[f]
-    }
-    const rotMtd = num(roturasMtdSerie[fecha])
-    const wqiMtd =
-      rotMtd != null && accHl > 0
-        ? Math.round((rotMtd / accHl) * 1_000_000 * 10) / 10
+    const wqiDia = num(serie.wqi_dia?.[fecha])
+    const hlEntregadoDia = num(serie.hl_entregado_dia?.[fecha])
+    // El numerador del WQI no viaja suelto en la serie: se despeja de su propia
+    // definición (PPM = HL afectado ÷ HL entregado × 1M). El PPM viene con un
+    // decimal, así que el error del despeje es del orden de 1e-4 HL.
+    const wqiHlDia =
+      wqiDia != null && hlEntregadoDia != null && hlEntregadoDia > 0
+        ? (wqiDia * hlEntregadoDia) / 1_000_000
         : null
 
     return {
       data: {
         fecha,
-        bultos,
-        hl_vendido: fecha in hlDia ? Math.round(hlVendidoDia * 100) / 100 : null,
-        // La serie diaria no expone devoluciones (NC); el dato sólo vivía en el
-        // blob. Se omite para no mezclar fuentes; el WQI no lo usa.
-        devoluciones: null,
-        roturas_hl: roturasDia,
-        faltantes_hl: faltantesDia,
-        perdidas_val: perdidasVal,
-        roturas_val: Math.round(roturasVal * 100) / 100,
         wqi_dia: wqiDia,
-        wqi_mtd: wqiMtd,
-        roturas_almacen_hl:
-          roturasAlmacenHl != null
-            ? Math.round(roturasAlmacenHl * 10000) / 10000
-            : null,
-        roturas_distribucion_hl:
-          roturasDistribucionHl != null
-            ? Math.round(roturasDistribucionHl * 10000) / 10000
-            : null,
-        wqi_almacen_dia:
-          num(serie.wqi_almacen_dia?.[fecha]) ??
-          (roturasAlmacenHl != null && hlVendidoDia > 0
-            ? Math.round((roturasAlmacenHl / hlVendidoDia) * 1_000_000 * 10) / 10
-            : null),
-        roturas_detalle: roturasDetalle,
+        wqi_mtd: num(serie.wqi?.[fecha]),
+        wqi_hl_dia: redondear(wqiHlDia, 4),
+        reempaque_hl_dia: num(serie.reempaque_hl_dia?.[fecha]),
+        roturas_ppm_dia: num(serie.wqi_merma_final_dia?.[fecha]),
+        roturas_ppm_mtd: num(serie.wqi_merma_final?.[fecha]),
+        roturas_hl_dia: num(serie.roturas_almacen_dia?.[fecha]),
+        roturas_detalle: serie.roturas_detalle_dia?.[fecha] ?? [],
       },
     }
   } catch (e) {
