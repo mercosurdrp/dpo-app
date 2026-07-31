@@ -295,7 +295,8 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       },
       {
         label: "Autorización de excepciones",
-        valor: "Jefe de Logística y Jefe de Ventas, en conjunto.",
+        valor:
+          "Jefe de Logística (Sebastián Roselli) y Jefe de Ventas (Nicolás Lescoulie), en conjunto.",
       },
       {
         label: "Registro y seguimiento",
@@ -307,7 +308,10 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Los movimientos fuera de ventana sin excepción registrada se revisan en la reunión semanal de Ventas-Logística. Si el volumen de excepciones autorizadas crece mes a mes, se abre una tarea en el Action Log para atacar la causa de fondo en la programación de las solicitudes, no el caso puntual.",
     vigencia:
       "La medición del acuerdo comienza el 1 de agosto de 2026. Los movimientos anteriores quedan registrados como referencia pero no se evalúan: el acuerdo no se aplica de forma retroactiva. Vigencia de 1 año desde la fecha de firma, con revisión anual o inmediata si cambia la política de comodatos, el esquema de ruteo o los días de reparto.",
-    firmantes: ["Jefe de Logística", "Jefe de Ventas"],
+    firmantes: [
+      "Sebastián Roselli — Jefe de Logística",
+      "Nicolás Lescoulie — Jefe de Ventas",
+    ],
     secciones: [
       {
         titulo: "Premisas y condiciones operativas",

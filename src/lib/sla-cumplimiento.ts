@@ -125,6 +125,13 @@ export function esPatenteCamion(reparto: string | null | undefined): boolean {
   return PATENTE_RE.test(r)
 }
 
+/**
+ * Titulares de las dos jefaturas que autorizan en conjunto. Prellenan el
+ * formulario de excepción (editables: puede autorizar un reemplazo).
+ */
+export const EDF_JDL_TITULAR = "Sebastián Roselli"
+export const EDF_JDV_TITULAR = "Nicolás Lescoulie"
+
 /** Motivos tipificados de excepción (los carga el JDL/JDV a posteriori). */
 export const EDF_MOTIVOS_EXCEPCION = [
   { valor: "cliente_nuevo_urgente", label: "Cliente nuevo urgente" },

@@ -41,6 +41,8 @@ import {
 import {
   EDF_MOTIVOS_EXCEPCION,
   EDF_DIAS_PERMITIDOS_LABEL,
+  EDF_JDL_TITULAR,
+  EDF_JDV_TITULAR,
   SLA_EDF_MIDE_DESDE,
   type MovimientoEdfPendiente,
 } from "@/lib/sla-cumplimiento"
@@ -51,6 +53,12 @@ function fechaLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number)
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
   return `${DIA_LARGO[dow]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`
+}
+
+/** "2026-08-01" → "01/08/2026" */
+function fechaCorta(iso: string): string {
+  const [y, m, d] = iso.split("-")
+  return `${d}/${m}/${y}`
 }
 
 /** Primer día del mes actual y hoy, en hora Argentina. */
@@ -108,8 +116,9 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
     setAbierto(m)
     setMotivo(m.excepcion?.motivo ?? EDF_MOTIVOS_EXCEPCION[0].valor)
     setDetalle(m.excepcion?.detalle ?? "")
-    setJdl(m.excepcion?.autoriza_jdl ?? "")
-    setJdv(m.excepcion?.autoriza_jdv ?? "")
+    // Prellenados con los titulares; se editan si autorizó un reemplazo.
+    setJdl(m.excepcion?.autoriza_jdl ?? EDF_JDL_TITULAR)
+    setJdv(m.excepcion?.autoriza_jdv ?? EDF_JDV_TITULAR)
   }
 
   function guardar() {
@@ -202,6 +211,18 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
         </div>
       </div>
 
+      {/* Por qué puede no haber nada para registrar. Sin esto, una lista llena
+          de filas sin botón se lee como una pantalla rota. */}
+      {movs.length > 0 && pendientes.length === 0 && justificados.length === 0 && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          No hay nada para registrar todavía. Los {referencia.length} movimientos de
+          la lista son <b>anteriores al {fechaCorta(SLA_EDF_MIDE_DESDE)}</b>, fecha
+          desde la que se mide el acuerdo: quedan como referencia del punto de
+          partida y no se justifican. Los primeros casos a registrar van a aparecer
+          con los movimientos hechos a partir de esa fecha.
+        </p>
+      )}
+
       {movs.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
           {pending
@@ -274,7 +295,21 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {puedeGestionar && !(esReferencia(m) && !m.excepcion) && (
+                    {!puedeGestionar ? (
+                      <span
+                        className="text-xs text-slate-400"
+                        title="Sólo los roles admin y supervisor pueden registrar excepciones."
+                      >
+                        sin permiso
+                      </span>
+                    ) : esReferencia(m) && !m.excepcion ? (
+                      <span
+                        className="text-xs text-slate-400"
+                        title={`Movimiento previo al ${fechaCorta(SLA_EDF_MIDE_DESDE)}: el acuerdo no se aplica hacia atrás, no hay que justificarlo.`}
+                      >
+                        no se mide
+                      </span>
+                    ) : (
                       <div className="flex justify-end gap-1">
                         <Button
                           size="sm"
