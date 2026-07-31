@@ -4,7 +4,16 @@ import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { toast } from "sonner"
-import { Shield, Paperclip, X, Lock, Check } from "lucide-react"
+import {
+  Shield,
+  Paperclip,
+  X,
+  Lock,
+  Check,
+  Phone,
+  Globe,
+  Mail,
+} from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -59,6 +68,76 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const BDO_TELEFONO_LABEL = "0800 - 34 - LINEA (54632)"
+const BDO_TELEFONO_TEL = "08003454632"
+const BDO_WEB = "https://www2.bdolineaetica.com/MERCOSUR"
+const BDO_WEB_LABEL = "www2.bdolineaetica.com/MERCOSUR"
+const BDO_EMAIL = "mercosur@bdolineaetica.com"
+
+/**
+ * Canal externo: Línea Ética gestionada por BDO (tercero independiente).
+ * No pasa por esta app — es una alternativa para quien prefiere no reportar
+ * por un canal de la empresa.
+ */
+function LineaEticaExterna() {
+  return (
+    <Card className="border-slate-300">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">
+          También tenemos una Línea Ética externa
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Si preferís reportarlo fuera de la empresa, podés hacerlo por la Línea
+          Ética que gestiona <span className="font-semibold">BDO</span>, una
+          consultora independiente. También es anónima y confidencial.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2 text-sm">
+          <a
+            href={`tel:${BDO_TELEFONO_TEL}`}
+            className="flex items-center gap-2 text-slate-800 hover:text-slate-950 hover:underline"
+          >
+            <Phone className="size-4 shrink-0 text-red-600" />
+            <span className="font-medium">{BDO_TELEFONO_LABEL}</span>
+          </a>
+          <a
+            href={BDO_WEB}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-slate-800 hover:text-slate-950 hover:underline"
+          >
+            <Globe className="size-4 shrink-0 text-red-600" />
+            <span className="break-all font-medium">{BDO_WEB_LABEL}</span>
+          </a>
+          <a
+            href={`mailto:${BDO_EMAIL}`}
+            className="flex items-center gap-2 text-slate-800 hover:text-slate-950 hover:underline"
+          >
+            <Mail className="size-4 shrink-0 text-red-600" />
+            <span className="break-all font-medium">{BDO_EMAIL}</span>
+          </a>
+        </div>
+
+        <a
+          href={BDO_WEB}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block overflow-hidden rounded-lg border"
+        >
+          <Image
+            src="/linea-etica-bdo.jpeg"
+            alt="Afiche de la Línea Ética externa de BDO: 0800-34-LINEA, www2.bdolineaetica.com/MERCOSUR, mercosur@bdolineaetica.com"
+            width={555}
+            height={701}
+            className="h-auto w-full"
+          />
+        </a>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function LineaEticaFormClient() {
@@ -399,6 +478,16 @@ export function LineaEticaFormClient() {
       >
         {isPending ? "Enviando..." : "Enviar denuncia"}
       </Button>
+
+      <div className="flex items-center gap-3 pt-2">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Otro canal
+        </span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+
+      <LineaEticaExterna />
     </div>
   )
 }
