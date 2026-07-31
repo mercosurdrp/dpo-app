@@ -26,6 +26,7 @@ import {
   drawKPIs,
   drawSectionTitle,
   drawTable,
+  ensureSpace,
   formatFechaLarga,
   formatInt,
   formatMoneyFull,
@@ -49,11 +50,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
-  const umbralRaw = Number(req.nextUrl.searchParams.get("umbral"))
+  // 🚨 Sin `?umbral`, `get()` da null y `Number(null)` es 0 — que pasa la
+  // validación y dejaba el umbral en 0 (todos los clientes) en vez del default.
+  const umbralParam = req.nextUrl.searchParams.get("umbral")
+  const umbralRaw = Number(umbralParam)
   const umbral =
-    Number.isInteger(umbralRaw) && umbralRaw >= 0 ? umbralRaw : UMBRAL_DEFAULT
+    umbralParam !== null && umbralParam.trim() !== "" &&
+    Number.isInteger(umbralRaw) && umbralRaw >= 0
+      ? umbralRaw
+      : UMBRAL_DEFAULT
 
-  const res = await getRadarCriticos(umbral)
+  // `fecha` (opcional): foto histórica de ese día de entrega en vez de la vigente.
+  const fechaRaw = req.nextUrl.searchParams.get("fecha")
+  const fecha = fechaRaw && /^\d{4}-\d{2}-\d{2}$/.test(fechaRaw) ? fechaRaw : undefined
+
+  const res = await getRadarCriticos(umbral, fecha)
   if ("error" in res) {
     return NextResponse.json({ error: res.error }, { status: 500 })
   }
@@ -122,12 +133,12 @@ async function renderPDF(data: RadarCriticosData): Promise<Buffer> {
 }
 
 function buildPDF(doc: Doc, data: RadarCriticosData) {
-  const { criticos, anio, umbral } = data
+  const { criticos, anio, umbral, es_vigente } = data
   drawHeader(
     doc,
     "Radar de Rechazos · Críticos",
     formatFechaLarga(data.fecha_entrega),
-    "Para Ventas · avisar HOY",
+    es_vigente ? "Para Ventas · avisar HOY" : "Foto histórica · solo consulta",
   )
 
   const totBultos = criticos.reduce((a, c) => a + c.bultos_pedido, 0)
@@ -142,21 +153,57 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
   ]
   drawKPIs(doc, cards)
 
+  // ─── Por qué es crítico: el criterio, destacado y en criollo ───────────────
+  const margin = doc.page.margins.left
+  const anchoUtil = doc.page.width - margin * 2
+  const veces = (n: number) => `${n} ${n === 1 ? "vez" : "veces"}`
+  const criterio =
+    `Un cliente entra en esta lista cuando le rechazaron el pedido por SIN DINERO ` +
+    `más de ${veces(umbral)} en ${anio} (o sea, ${veces(umbral + 1)} o más) Y tenía una ` +
+    `entrega programada para el ${formatFechaLarga(data.fecha_entrega)}. Es la columna ` +
+    `"S/Din>${umbral}" de cada tabla: ese número es el motivo por el que el cliente está acá.`
+  const detalle =
+    `Cómo se cuenta: "S/Din" (sin dinero) y "Cerr." (cerrado) son VECES (cliente × fecha) en ${anio}, ` +
+    `no artículos — un rechazo de 13 productos cuenta 1. "Blt.rech" son los bultos que el cliente rechazó ` +
+    `por esos dos motivos en ${anio}. "Cerr." se muestra como contexto, pero NO define el criterio.`
+
+  const hCriterio = doc.font("Helvetica").fontSize(9).heightOfString(criterio, {
+    width: anchoUtil - 20,
+  })
+  const hDetalle = doc.font("Helvetica").fontSize(8).heightOfString(detalle, {
+    width: anchoUtil - 20,
+  })
+  const hCaja = hCriterio + hDetalle + 30
+
+  ensureSpace(doc, hCaja + 6)
+  const yCaja = doc.y
+  doc.save()
+  doc.roundedRect(margin, yCaja, anchoUtil, hCaja, 4).fill("#fffbeb")
+  doc.roundedRect(margin, yCaja, anchoUtil, hCaja, 4)
+    .lineWidth(0.8)
+    .stroke(COLOR_ACCENT)
+  doc.restore()
+
   doc
-    .fillColor("#475569")
+    .fillColor(COLOR_ACCENT)
+    .font("Helvetica-Bold")
+    .fontSize(9)
+    .text("POR QUÉ ESTOS CLIENTES SON CRÍTICOS", margin + 10, yCaja + 8, {
+      width: anchoUtil - 20,
+    })
+  doc
+    .fillColor("#334155")
     .font("Helvetica")
-    .fontSize(8.5)
-    .text(
-      `Criterio: clientes a entregar pasado mañana rechazados más de ${umbral} VECES por SIN DINERO en ${anio}. ` +
-        `Avisarles hoy para coordinar el pago y evitar el rechazo. ` +
-        `"S/Dinero" y "Cerr." cuentan VECES (cliente × fecha) del año ${anio}, no artículos: un rechazo de 13 productos cuenta 1. ` +
-        `"Blt rech." son los bultos que ese cliente rechazó por esos dos motivos en ${anio}.`,
-      doc.page.margins.left,
-      doc.y,
-      { width: doc.page.width - doc.page.margins.left * 2 },
-    )
-  doc.y += 6
-  doc.x = doc.page.margins.left
+    .fontSize(9)
+    .text(criterio, margin + 10, doc.y + 2, { width: anchoUtil - 20 })
+  doc
+    .fillColor("#64748b")
+    .font("Helvetica")
+    .fontSize(8)
+    .text(detalle, margin + 10, doc.y + 3, { width: anchoUtil - 20 })
+
+  doc.y = yCaja + hCaja + 8
+  doc.x = margin
 
   if (criticos.length === 0) {
     drawSectionTitle(doc, "Sin clientes críticos")
@@ -181,11 +228,14 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
   const cols = [
     { header: "Cliente", width: 175, get: (r: RadarCriticoRow) => clip(r.nombre_cliente ?? `Cliente ${r.id_cliente ?? "?"}`, 30) },
     { header: "Localidad", width: 105, get: (r: RadarCriticoRow) => clip(r.localidad ? titulo(r.localidad) : "—", 18) },
-    { header: "Blt ped.", width: 48, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
-    { header: "Pedido $", width: 82, align: "right" as const, get: (r: RadarCriticoRow) => (r.monto_pedido ? formatMoneyFull(r.monto_pedido) : "—") },
-    { header: "S/Dinero", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.sin_dinero_calendario) },
+    // 🚨 Los encabezados van SIN espacios: el helper parte el texto en dos
+    // líneas y la segunda se pisa con la primera fila de datos.
+    { header: "Blt.ped", width: 48, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
+    { header: "Pedido$", width: 82, align: "right" as const, get: (r: RadarCriticoRow) => (r.monto_pedido ? formatMoneyFull(r.monto_pedido) : "—") },
+    // La columna del criterio: es la que define que el cliente esté en la lista.
+    { header: `S/Din>${umbral}`, width: 58, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.sin_dinero_calendario) },
     { header: "Cerr.", width: 45, align: "right" as const, get: (r: RadarCriticoRow) => (r.cerrado_calendario ? formatInt(r.cerrado_calendario) : "—") },
-    { header: "Blt rech.", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => (r.bultos_rechazados_calendario ? formatInt(r.bultos_rechazados_calendario) : "—") },
+    { header: "Blt.rech", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => (r.bultos_rechazados_calendario ? formatInt(r.bultos_rechazados_calendario) : "—") },
   ]
 
   for (const g of agruparPorPromotor(criticos)) {

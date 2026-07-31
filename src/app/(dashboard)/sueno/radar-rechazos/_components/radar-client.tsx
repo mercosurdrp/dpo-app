@@ -3,8 +3,10 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
+  CalendarClock,
   Download,
   FileText,
+  History,
   Loader2,
   Phone,
   RadarIcon,
@@ -16,7 +18,11 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import type { RadarClienteView, RadarView } from "@/actions/radar-rechazos"
+import type {
+  RadarClienteView,
+  RadarFechaOption,
+  RadarView,
+} from "@/actions/radar-rechazos"
 
 type MotivoFiltro = "todos" | "cerrado" | "sin_dinero"
 
@@ -40,18 +46,50 @@ function fechaLarga(iso: string): string {
   })
 }
 
+/** "lun 28/07" — para el selector de fotos, que tiene poco lugar. */
+function fechaCorta(iso: string): string {
+  const d = new Date(`${iso}T12:00:00`)
+  return d.toLocaleDateString("es-AR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+  })
+}
+
 export function RadarClient({
   data,
   puedeRegenerar,
+  fechas,
+  fechaPedida,
 }: {
   data: RadarView | null
   puedeRegenerar: boolean
+  fechas: RadarFechaOption[]
+  /** `?fecha=` de la URL: si viene, se está consultando una foto histórica. */
+  fechaPedida?: string
 }) {
   const router = useRouter()
   const [regenerando, startRegen] = useTransition()
+  const [navegando, startNav] = useTransition()
   const [busqueda, setBusqueda] = useState("")
   const [promotor, setPromotor] = useState("todos")
   const [motivo, setMotivo] = useState<MotivoFiltro>("todos")
+
+  // La foto vigente es la más nueva que haya guardada; cualquier otra es historia.
+  const fechaVigente = fechas[0]?.fecha_entrega
+  const esHistorica = Boolean(
+    fechaPedida && fechaVigente && fechaPedida !== fechaVigente,
+  )
+
+  function verFecha(f: string) {
+    startNav(() => {
+      router.push(
+        f && f !== fechaVigente
+          ? `/sueno/radar-rechazos?fecha=${f}`
+          : "/sueno/radar-rechazos",
+      )
+    })
+  }
 
   function regenerar() {
     startRegen(async () => {
@@ -143,17 +181,52 @@ export function RadarClient({
           <RadarIcon className="mt-1 size-6 shrink-0 text-amber-500" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">
-              Radar de Rechazos · Pasado Mañana
+              Radar de Rechazos ·{" "}
+              {esHistorica ? "Foto anterior" : "Pasado Mañana"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Clientes que se entregan <strong>pasado mañana</strong> (a 2 días de
-              reparto: domingos y feriados no cuentan) con historial de rechazo por{" "}
-              <strong>cerrado</strong> o{" "}
-              <strong>sin dinero</strong>. Avisales hoy para evitar el rechazo.
+              {esHistorica ? (
+                <>
+                  Foto del radar tal como se generó para la entrega del{" "}
+                  <strong>{fechaLarga(fechaPedida!)}</strong>: los clientes que
+                  estaban en riesgo ese día. Solo consulta.
+                </>
+              ) : (
+                <>
+                  Clientes que se entregan <strong>pasado mañana</strong> (a 2 días
+                  de reparto: domingos y feriados no cuentan) con historial de
+                  rechazo por <strong>cerrado</strong> o <strong>sin dinero</strong>.
+                  Avisales hoy para evitar el rechazo.
+                </>
+              )}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Selector de foto: la vigente o cualquier día anterior guardado */}
+          {fechas.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
+              <select
+                value={fechaPedida ?? fechaVigente ?? ""}
+                onChange={(e) => verFecha(e.target.value)}
+                disabled={navegando}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+                title="Ver la foto del radar de otro día de entrega"
+              >
+                {fechas.map((f, i) => (
+                  <option key={f.fecha_entrega} value={f.fecha_entrega}>
+                    {fechaCorta(f.fecha_entrega)}
+                    {i === 0 ? " (vigente)" : ""} · {f.total_clientes_riesgo} en
+                    riesgo
+                  </option>
+                ))}
+              </select>
+              {navegando && (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
+          )}
           <Button variant="outline" size="sm" onClick={exportarCsv} disabled={!data}>
             <Download className="size-4" /> CSV
           </Button>
@@ -161,14 +234,18 @@ export function RadarClient({
             variant="outline"
             size="sm"
             onClick={() =>
-              window.open(`/api/radar-rechazos/pdf?umbral=${UMBRAL_CRITICO}`, "_blank")
+              window.open(
+                `/api/radar-rechazos/pdf?umbral=${UMBRAL_CRITICO}` +
+                  (data ? `&fecha=${data.fecha_entrega}` : ""),
+                "_blank",
+              )
             }
             disabled={!data}
             title={`PDF para Ventas: clientes rechazados más de ${UMBRAL_CRITICO} veces por sin dinero en el año`}
           >
             <FileText className="size-4" /> PDF críticos
           </Button>
-          {puedeRegenerar && (
+          {puedeRegenerar && !esHistorica && (
             <Button size="sm" onClick={regenerar} disabled={regenerando}>
               {regenerando ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -181,11 +258,62 @@ export function RadarClient({
         </div>
       </div>
 
+      {/*
+        Estás mirando historia, no el radar del día.
+        🚨 `flex-row` explícito: Card trae `flex-col` y `flex-wrap` no lo pisa.
+      */}
+      {esHistorica && data && (
+        <Card className="flex flex-row flex-wrap items-center gap-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <History className="size-4 shrink-0" />
+          <span>
+            Foto histórica de la entrega del{" "}
+            <strong>{fechaLarga(data.fecha_entrega)}</strong>, generada el{" "}
+            {new Date(data.generado_at).toLocaleString("es-AR", {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })}
+            {" hs. "}
+            Es solo para consultar: no refleja los rechazos que terminaron
+            pasando.
+          </span>
+          {fechaVigente && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={() => verFecha(fechaVigente)}
+            >
+              Volver al radar vigente
+            </Button>
+          )}
+        </Card>
+      )}
+
       {!data ? (
         <Card className="p-8 text-center text-muted-foreground">
-          Todavía no se generó ninguna foto del radar. El cron corre a las 09:30 (AR)
-          después del ruteo.
-          {puedeRegenerar && " También podés generarla ahora con “Regenerar”."}
+          {fechaPedida ? (
+            <>
+              No hay foto del radar para la entrega del {fechaLarga(fechaPedida)}.
+              {fechaVigente && (
+                <Button
+                  variant="link"
+                  className="px-1.5"
+                  onClick={() => verFecha(fechaVigente)}
+                >
+                  Ver el radar vigente
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              Todavía no se generó ninguna foto del radar. El cron corre a las 09:30
+              (AR) después del ruteo.
+              {puedeRegenerar && " También podés generarla ahora con “Regenerar”."}
+            </>
+          )}
         </Card>
       ) : (
         <>
@@ -213,7 +341,7 @@ export function RadarClient({
           </div>
 
           {/* Filtros */}
-          <Card className="flex flex-wrap items-center gap-3 p-3">
+          <Card className="flex flex-row flex-wrap items-center gap-3 p-3">
             <Input
               placeholder="Buscar cliente o localidad…"
               value={busqueda}

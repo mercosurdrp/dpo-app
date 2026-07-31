@@ -32,26 +32,66 @@ export interface RadarView {
   clientes: RadarClienteView[]
 }
 
+export interface RadarFechaOption {
+  fecha_entrega: string
+  total_clientes_dia: number
+  total_clientes_riesgo: number
+}
+
 /**
- * Última foto del Radar de Rechazos (la del día de entrega más reciente).
- * Devuelve la cabecera + los clientes en riesgo ordenados por riesgo desc.
- * `null` si todavía no se generó ninguna foto.
+ * Fechas de entrega con foto guardada, de la más nueva a la más vieja, para el
+ * selector de "ver una foto anterior".
+ *
+ * 🚨 Se saltean las fotos vacías (`total_clientes_dia = 0`): son los domingos
+ * que el cron llegó a generar ANTES del fix que hace saltear el domingo, y no
+ * hay nada para consultar en ellas.
  */
-export async function getRadarRechazos(): Promise<
-  { data: RadarView | null } | { error: string }
+export async function getRadarFechas(): Promise<
+  { data: RadarFechaOption[] } | { error: string }
 > {
   try {
     await requireAuth()
     const supa = await createClient()
 
-    const { data: header, error: hErr } = await supa
+    const { data, error } = await supa
+      .from("radar_rechazos_snapshot")
+      .select("fecha_entrega, total_clientes_dia, total_clientes_riesgo")
+      .gt("total_clientes_dia", 0)
+      .order("fecha_entrega", { ascending: false })
+      .limit(180)
+    if (error) return { error: error.message }
+
+    return { data: (data ?? []) as RadarFechaOption[] }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando fechas" }
+  }
+}
+
+/**
+ * Foto del Radar de Rechazos. Sin `fecha` devuelve la más reciente (la vigente);
+ * con `fecha` devuelve la foto histórica de ese día de entrega, tal como se
+ * generó en su momento — sirve para consultar días para atrás.
+ *
+ * Devuelve la cabecera + los clientes en riesgo ordenados por riesgo desc.
+ * `null` si no hay foto (ninguna generada, o ninguna para esa fecha).
+ */
+export async function getRadarRechazos(
+  fecha?: string,
+): Promise<{ data: RadarView | null } | { error: string }> {
+  try {
+    await requireAuth()
+    const supa = await createClient()
+
+    let q = supa
       .from("radar_rechazos_snapshot")
       .select(
         "id, fecha_entrega, generado_at, total_clientes_dia, total_clientes_riesgo, total_bultos_riesgo, total_monto_riesgo",
       )
-      .order("fecha_entrega", { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    q = fecha
+      ? q.eq("fecha_entrega", fecha)
+      : q.order("fecha_entrega", { ascending: false })
+
+    const { data: header, error: hErr } = await q.limit(1).maybeSingle()
     if (hErr) return { error: hErr.message }
     if (!header) return { data: null }
 
@@ -109,35 +149,57 @@ export interface RadarCriticosData {
   umbral: number
   total_en_riesgo: number
   criticos: RadarCriticoRow[]
+  /** false = foto histórica: es una consulta, no hay a quién avisar hoy. */
+  es_vigente: boolean
 }
 
 const ID_CERRADO = 1
 const ID_SIN_DINERO = 6
 
 /**
- * Clientes CRÍTICOS de la última foto del radar: los que tienen MÁS de `umbral`
- * VECES de rechazo por SIN DINERO en el AÑO CALENDARIO de la entrega (recontado
- * desde el 1-ene, no la ventana de 365 días que guarda el snapshot). Ordenados
- * por promotor y, dentro, por cantidad de sin dinero desc. Para el PDF de Ventas.
+ * Clientes CRÍTICOS de una foto del radar (sin `fecha`, la más reciente): los
+ * que tienen MÁS de `umbral` VECES de rechazo por SIN DINERO en el AÑO
+ * CALENDARIO de la entrega (recontado desde el 1-ene, no la ventana de 365 días
+ * que guarda el snapshot). Ordenados por promotor y, dentro, por cantidad de sin
+ * dinero desc. Para el PDF de Ventas.
  *
  * 🚨 VECES = cliente × fecha_venta distinta; `rechazos` tiene una fila por
  * artículo, así que contar filas infla el número (ver build.ts).
+ *
+ * 🚨 Sobre una foto vieja, la lista de clientes es la que quedó congelada, pero
+ * el conteo de rechazos se recalcula CONTRA HOY: un cliente puede aparecer con
+ * más rechazos de los que tenía aquel día.
  */
 export async function getRadarCriticos(
   umbral: number = UMBRAL_CRITICO_DEFAULT,
+  fecha?: string,
 ): Promise<{ data: RadarCriticosData | null } | { error: string }> {
   try {
     await requireAuth()
     const supa = await createClient()
 
-    const { data: header, error: hErr } = await supa
+    let hq = supa
       .from("radar_rechazos_snapshot")
       .select("id, fecha_entrega, generado_at")
-      .order("fecha_entrega", { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    hq = fecha
+      ? hq.eq("fecha_entrega", fecha)
+      : hq.order("fecha_entrega", { ascending: false })
+
+    const { data: header, error: hErr } = await hq.limit(1).maybeSingle()
     if (hErr) return { error: hErr.message }
     if (!header) return { data: null }
+
+    // ¿Es la foto vigente o una consulta histórica? Cambia el tono del PDF.
+    let es_vigente = true
+    if (fecha) {
+      const { data: ultima } = await supa
+        .from("radar_rechazos_snapshot")
+        .select("fecha_entrega")
+        .order("fecha_entrega", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      es_vigente = !ultima || ultima.fecha_entrega === header.fecha_entrega
+    }
 
     const { data: enRiesgo, error: cErr } = await supa
       .from("radar_rechazos_cliente")
@@ -224,6 +286,7 @@ export async function getRadarCriticos(
         umbral,
         total_en_riesgo: (enRiesgo ?? []).length,
         criticos,
+        es_vigente,
       },
     }
   } catch (err) {
