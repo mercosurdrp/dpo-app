@@ -3,7 +3,11 @@
 import { requireAuth } from "@/lib/session"
 import { IS_MISIONES } from "@/lib/empresa"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
-import { puedeOperarAcarreo, puedeDarIngreso } from "@/lib/acarreo-operadores"
+import {
+  puedeOperarAcarreo,
+  puedeDarIngreso,
+  esMaquinistaDescarga,
+} from "@/lib/acarreo-operadores"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -26,6 +30,8 @@ export interface RecepcionPendiente {
   hora_ingreso_deposito: string | null
   hora_inicio_descarga: string | null
   hora_fin_descarga: string | null
+  /** Quién inició la descarga: se pre-tilda al preguntar quiénes descargaron. */
+  registrado_por: string | null
 }
 
 export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[]>> {
@@ -40,7 +46,7 @@ export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[
 
     const { data, error } = await acarreo
       .from("recepcion_acarreos")
-      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_ingreso_deposito, hora_inicio_descarga, hora_fin_descarga")
+      .select("id, patente, transportista, origen, remito, pallets, estado, hora_arribo, hora_ingreso_deposito, hora_inicio_descarga, hora_fin_descarga, registrado_por")
       // "finalizado" sigue en la lista: el camión está en planta hasta que le dan la salida.
       .in("estado", ["anunciado", "ingresado", "descargando", "finalizado"])
       .order("hora_arribo", { ascending: true })
@@ -55,6 +61,7 @@ export async function getPendientesAcarreo(): Promise<Result<RecepcionPendiente[
 async function operarRecepcion(
   id: string,
   estado: "descargando" | "finalizado",
+  maquinistas?: string[],
 ): Promise<{ error?: string }> {
   const profile = await requireAuth()
   if (IS_MISIONES) return { error: "Solo disponible en Pampeana." }
@@ -65,12 +72,20 @@ async function operarRecepcion(
   if (!acarreo) return { error: "Integración con acarreo-rdf no configurada." }
   // Los triggers de la tabla sellan hora_inicio_descarga / hora_fin_descarga.
   // Al FINALIZAR no se pisa registrado_por: queda sellado con quien INICIÓ la
-  // descarga, que es el dato que usa deposito-esteban para atribuir la
-  // productividad (pal/h) del camión al maquinista.
-  const cambios =
-    estado === "finalizado"
-      ? { estado }
-      : { estado, registrado_por: profile.email }
+  // descarga. La productividad se atribuye por `maquinistas` (el equipo real,
+  // que puede ser de a dos); registrado_por es el fallback del histórico.
+  let cambios: Record<string, unknown>
+  if (estado === "finalizado") {
+    // Sólo emails de la lista: un valor suelto se convertiría en un
+    // "maquinista" fantasma en el tablero de productividad.
+    const validos = (maquinistas ?? []).filter(esMaquinistaDescarga)
+    if (validos.length === 0) {
+      return { error: "Elegí al menos un maquinista para cerrar la descarga." }
+    }
+    cambios = { estado, maquinistas: validos }
+  } else {
+    cambios = { estado, registrado_por: profile.email }
+  }
   const { error } = await acarreo
     .from("recepcion_acarreos")
     .update(cambios)
@@ -83,8 +98,8 @@ export async function iniciarDescargaAcarreo(id: string) {
   return operarRecepcion(id, "descargando")
 }
 
-export async function finalizarDescargaAcarreo(id: string) {
-  return operarRecepcion(id, "finalizado")
+export async function finalizarDescargaAcarreo(id: string, maquinistas: string[]) {
+  return operarRecepcion(id, "finalizado", maquinistas)
 }
 
 // El ingreso a depósito y el borrado de un arribo: SOLO admin de dpo-app.
