@@ -47,6 +47,7 @@ import {
   programarParticipacionCruzada,
   registrarCruceExterno,
 } from "@/actions/participaciones-cruzadas"
+import { DetalleCruceDialog } from "@/components/reuniones/detalle-cruce-dialog"
 import { labelDeFoto } from "@/lib/participacion-cruzada-fotos"
 import { prepararFotos } from "@/lib/preparar-fotos-cruce"
 import {
@@ -98,6 +99,7 @@ export function ParticipacionCruzadaTab() {
   const [abrirGenerar, setAbrirGenerar] = useState(false)
   const [abrirProgramar, setAbrirProgramar] = useState(false)
   const [editando, setEditando] = useState<ParticipacionCruzada | null>(null)
+  const [viendo, setViendo] = useState<ParticipacionCruzada | null>(null)
   const [registrando, setRegistrando] = useState<ParticipacionCruzada | null>(null)
   const [registrandoNuevo, setRegistrandoNuevo] = useState(false)
 
@@ -159,7 +161,13 @@ export function ParticipacionCruzadaTab() {
   }, [reuniones, cruces])
 
   function onSelectEvento(id: string) {
-    if (id.startsWith("r:")) router.push(`/reuniones/${id.slice(2)}`)
+    if (id.startsWith("r:")) {
+      router.push(`/reuniones/${id.slice(2)}`)
+      return
+    }
+    // Cruce: se abre la ficha con lo que se planificó y lo que pasó.
+    const cruce = cruces.find((c) => c.id === id.slice(2))
+    if (cruce) setViendo(cruce)
   }
 
   function cambiarMes(delta: number) {
@@ -317,8 +325,9 @@ export function ParticipacionCruzadaTab() {
                 maxPorDia={4}
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Gris: reuniones del mes (clic para abrirlas) · Verde: cruce
-                realizado · Ámbar: cruce planificado · Rojo: no se hizo.
+                Clic en un ⇄ para ver qué se planificó y qué pasó; en una
+                reunión gris, para abrirla. Verde: cruce realizado · Ámbar:
+                cruce planificado · Rojo: no se hizo.
               </p>
             </>
           )}
@@ -345,7 +354,11 @@ export function ParticipacionCruzadaTab() {
                   key={c.id}
                   className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
                 >
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    className="min-w-0 rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    onClick={() => setViendo(c)}
+                  >
                     <p className="text-sm font-medium text-slate-900">
                       {formatFechaCorta(c.fecha_real ?? c.fecha_plan)} ·{" "}
                       {PARTICIPACION_CRUZADA_SENTIDO_LABELS[c.sentido]}
@@ -373,7 +386,7 @@ export function ParticipacionCruzadaTab() {
                     {c.motivo && (
                       <p className="text-xs text-red-700">No se hizo: {c.motivo}</p>
                     )}
-                  </div>
+                  </button>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
                       variant="outline"
@@ -472,6 +485,21 @@ export function ParticipacionCruzadaTab() {
           setEditando(null)
         }}
         onSaved={cargar}
+      />
+      <DetalleCruceDialog
+        key={viendo?.id ?? "ninguno"}
+        cruce={viendo}
+        puedeEditar={puedeEditar}
+        onClose={() => setViendo(null)}
+        onEditar={(c) => {
+          setViendo(null)
+          setEditando(c)
+        }}
+        onRegistrar={(c) => {
+          setViendo(null)
+          setRegistrando(c)
+        }}
+        onVerReunion={(id) => router.push(`/reuniones/${id}`)}
       />
       <RegistrarDialog
         cruce={registrando}
