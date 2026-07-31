@@ -18,12 +18,8 @@
  *
  * Ventanas (las del snapshot): `_anio` = últimos 365 días, `_mes` = últimos 30.
  *
- * CRITERIO (único, sin distinción de "críticos" vs "en riesgo") — entra el
- * cliente que cumple CUALQUIERA de las dos condiciones, sumando SIN DINERO +
- * CERRADO:
- *   a) más de 1 rechazo por mes en promedio en los últimos 12 meses
- *      →  rechazos_anio > 12
- *   b) más de 2 rechazos en los últimos 30 días  →  rechazos_30d > 2
+ * CRITERIO: vive en `@/lib/radar-rechazos/criterio` y lo comparten este feed, la
+ * pantalla y el PDF. Ver ahí las dos condiciones y por qué se lee del snapshot.
  *
  * OJO: este path debe estar en la allowlist de `src/middleware.ts`, si no el
  * middleware lo redirige a /login y nunca responde JSON.
@@ -31,16 +27,16 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"
 import { createAdminClient } from "@/lib/supabase/admin"
+import {
+  evaluarCriticidad,
+  textoCriterio,
+  MESES_ANIO,
+  UMBRAL_30D,
+  UMBRAL_ANIO,
+} from "@/lib/radar-rechazos/criterio"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-/** Meses de la ventana anual del snapshot (365 días). */
-const MESES_ANIO = 12
-/** Promedio mensual mínimo en el año (excluyente: > 1 por mes). */
-const PROMEDIO_MENSUAL_ANIO = 1
-/** Rechazos mínimos en los últimos 30 días (excluyente: > 2). */
-const UMBRAL_30D = 2
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -84,19 +80,15 @@ export async function GET(req: NextRequest) {
       .eq("fecha_entrega", header.fecha_entrega)
     if (cErr) throw new Error(cErr.message)
 
-    const umbralAnio = MESES_ANIO * PROMEDIO_MENSUAL_ANIO
-
     let clientes = (enRiesgo ?? []).map((c) => {
       const sinDineroAnio = Number(c.sin_dinero_anio ?? 0)
       const cerradoAnio = Number(c.cerrado_anio ?? 0)
       const sinDineroMes = Number(c.sin_dinero_mes ?? 0)
       const cerradoMes = Number(c.cerrado_mes ?? 0)
-      // Los dos motivos se cuentan por separado en el snapshot: un mismo día con
-      // rechazo por ambos suma 2 acá. Es marginal y juega a favor de detectarlo.
-      const rechazosAnio = sinDineroAnio + cerradoAnio
-      const rechazos30d = sinDineroMes + cerradoMes
-      const porPromedio = rechazosAnio > umbralAnio
-      const por30d = rechazos30d > UMBRAL_30D
+      const crit = evaluarCriticidad(c)
+      const { rechazos_anio: rechazosAnio, rechazos_30d: rechazos30d } = crit
+      const porPromedio = crit.por_promedio_anio
+      const por30d = crit.por_ultimos_30d
       return {
         id_cliente: c.id_cliente,
         nombre: c.nombre_cliente,
@@ -117,7 +109,7 @@ export async function GET(req: NextRequest) {
         // Qué condición lo hizo entrar (puede ser una, la otra, o las dos).
         por_promedio_anio: porPromedio,
         por_ultimos_30d: por30d,
-        cumple_criterio: porPromedio || por30d,
+        cumple_criterio: crit.es_critico,
       }
     })
 
@@ -138,8 +130,12 @@ export async function GET(req: NextRequest) {
         ok: true,
         modo,
         criterio_meses: MESES_ANIO,
-        criterio_umbral_anio: umbralAnio,
+        criterio_umbral_anio: UMBRAL_ANIO,
+        // 🚨 INCLUSIVE desde 2026-07-31: antes era `> 2` (3 o más) y dejaba el
+        // feed en cero 7 de cada 10 días. Ahora `>= 2`, como se había pedido.
         criterio_umbral_30d: UMBRAL_30D,
+        criterio_umbral_30d_inclusivo: true,
+        criterio_descripcion: textoCriterio(),
         fecha_entrega: header.fecha_entrega,
         generado_at: header.generado_at,
         total_clientes_dia: header.total_clientes_dia,

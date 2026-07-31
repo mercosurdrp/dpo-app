@@ -23,12 +23,9 @@ import type {
   RadarFechaOption,
   RadarView,
 } from "@/actions/radar-rechazos"
+import { evaluarCriticidad, textoCriterio } from "@/lib/radar-rechazos/criterio"
 
-type MotivoFiltro = "todos" | "cerrado" | "sin_dinero"
-
-// Umbral de "cliente crítico" para el PDF de Ventas: más de N VECES rechazado
-// por sin dinero en el año calendario. (El cálculo real vive en getRadarCriticos.)
-const UMBRAL_CRITICO = 3
+type MotivoFiltro = "todos" | "cerrado" | "sin_dinero" | "criticos"
 
 const nf = new Intl.NumberFormat("es-AR")
 const nfMoney = new Intl.NumberFormat("es-AR", {
@@ -107,6 +104,13 @@ export function RadarClient({
     })
   }
 
+  // Críticos de TODA la foto (no de lo filtrado): es el número que se mira para
+  // saber a cuántos hay que llamar.
+  const criticos = useMemo(
+    () => (data?.clientes ?? []).filter((c) => evaluarCriticidad(c).es_critico),
+    [data],
+  )
+
   const promotores = useMemo(() => {
     if (!data) return []
     const set = new Map<string, string>()
@@ -125,6 +129,7 @@ export function RadarClient({
       if (promotor !== "todos" && (c.id_promotor ?? "sin") !== promotor) return false
       if (motivo === "cerrado" && c.cerrado_anio === 0) return false
       if (motivo === "sin_dinero" && c.sin_dinero_anio === 0) return false
+      if (motivo === "criticos" && !evaluarCriticidad(c).es_critico) return false
       if (q) {
         const hay = `${c.nombre_cliente ?? ""} ${c.localidad ?? ""}`.toLowerCase()
         if (!hay.includes(q)) return false
@@ -235,13 +240,17 @@ export function RadarClient({
             size="sm"
             onClick={() =>
               window.open(
-                `/api/radar-rechazos/pdf?umbral=${UMBRAL_CRITICO}` +
-                  (data ? `&fecha=${data.fecha_entrega}` : ""),
+                "/api/radar-rechazos/pdf" +
+                  (data ? `?fecha=${data.fecha_entrega}` : ""),
                 "_blank",
               )
             }
-            disabled={!data}
-            title={`PDF para Ventas: clientes rechazados más de ${UMBRAL_CRITICO} veces por sin dinero en el año`}
+            disabled={!data || criticos.length === 0}
+            title={
+              criticos.length === 0
+                ? "No hay clientes críticos en esta foto"
+                : `PDF para Ventas con los ${criticos.length} críticos. Criterio: ${textoCriterio()}`
+            }
           >
             <FileText className="size-4" /> PDF críticos
           </Button>
@@ -318,7 +327,7 @@ export function RadarClient({
       ) : (
         <>
           {/* KPIs */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Kpi
               label="Entrega"
               valor={fechaLarga(data.fecha_entrega)}
@@ -331,6 +340,13 @@ export function RadarClient({
               destacado
             />
             <Kpi
+              label="Críticos"
+              valor={nf.format(criticos.length)}
+              sub="prioridad para llamar"
+              titulo={`Criterio: ${textoCriterio()}`}
+              alerta={criticos.length > 0}
+            />
+            <Kpi
               label="Bultos en juego"
               valor={nf.format(data.total_bultos_riesgo)}
             />
@@ -339,6 +355,11 @@ export function RadarClient({
               valor={nfMoney.format(data.total_monto_riesgo)}
             />
           </div>
+
+          {/* El criterio a la vista, para que nadie tenga que adivinarlo */}
+          <p className="-mt-1 px-1 text-xs text-muted-foreground">
+            <strong className="text-red-700">Crítico</strong> = {textoCriterio()}
+          </p>
 
           {/* Filtros */}
           <Card className="flex flex-row flex-wrap items-center gap-3 p-3">
@@ -366,6 +387,7 @@ export function RadarClient({
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="todos">Todos los motivos</option>
+              <option value="criticos">Solo críticos</option>
               <option value="cerrado">Con cerrado</option>
               <option value="sin_dinero">Con sin dinero</option>
             </select>
@@ -407,10 +429,34 @@ export function RadarClient({
                         </tr>
                       </thead>
                       <tbody>
-                        {g.rows.map((c, i) => (
-                          <tr key={`${c.id_cliente}-${i}`} className="border-b last:border-0 hover:bg-slate-50/60">
+                        {g.rows.map((c, i) => {
+                          const crit = evaluarCriticidad(c)
+                          return (
+                          <tr
+                            key={`${c.id_cliente}-${i}`}
+                            className={
+                              crit.es_critico
+                                ? "border-b bg-red-50/60 last:border-0 hover:bg-red-50"
+                                : "border-b last:border-0 hover:bg-slate-50/60"
+                            }
+                          >
                             <td className="px-4 py-2 font-medium text-slate-900">
-                              {c.nombre_cliente ?? `Cliente ${c.id_cliente ?? "?"}`}
+                              <span className="flex items-center gap-1.5">
+                                {c.nombre_cliente ?? `Cliente ${c.id_cliente ?? "?"}`}
+                                {crit.es_critico && (
+                                  <Badge
+                                    variant="destructive"
+                                    className="shrink-0 text-[10px]"
+                                    title={
+                                      crit.por_ultimos_30d
+                                        ? `${crit.rechazos_30d} rechazos en los últimos 30 días`
+                                        : `${crit.rechazos_anio} rechazos en 12 meses (más de 1 por mes)`
+                                    }
+                                  >
+                                    CRÍTICO
+                                  </Badge>
+                                )}
+                              </span>
                             </td>
                             <td className="px-3 py-2 text-muted-foreground">
                               {c.localidad ?? "—"}
@@ -451,7 +497,8 @@ export function RadarClient({
                               )}
                             </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -479,15 +526,21 @@ function Kpi({
   sub,
   destacado,
   chico,
+  alerta,
+  titulo,
 }: {
   label: string
   valor: string
   sub?: string
   destacado?: boolean
   chico?: boolean
+  /** Rojo: el número exige acción (clientes críticos). */
+  alerta?: boolean
+  /** Tooltip nativo, para explicar el criterio sin ocupar lugar. */
+  titulo?: string
 }) {
   return (
-    <Card className="gap-1 p-4">
+    <Card className="gap-1 p-4" title={titulo}>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
@@ -495,9 +548,11 @@ function Kpi({
         className={
           chico
             ? "text-sm font-semibold capitalize text-slate-900"
-            : destacado
-              ? "text-2xl font-bold text-amber-600"
-              : "text-2xl font-bold text-slate-900"
+            : alerta
+              ? "text-2xl font-bold text-red-600"
+              : destacado
+                ? "text-2xl font-bold text-amber-600"
+                : "text-2xl font-bold text-slate-900"
         }
       >
         {valor}

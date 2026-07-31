@@ -3,10 +3,11 @@
  * Clona el patrón de `src/app/api/sueno/rechazo-pdf/route.ts` reusando los
  * helpers de `../../rechazos/_pdf-helpers`.
  *
- * Lista los clientes a entregar pasado mañana con MÁS de `umbral` rechazos por SIN
- * DINERO en el año calendario, agrupados por promotor.
+ * Lista los clientes a entregar pasado mañana que cumplen el criterio compartido
+ * de `@/lib/radar-rechazos/criterio` (2+ rechazos en 30 días o más de 1 por mes
+ * en el año), agrupados por promotor.
  *
- * GET /api/radar-rechazos/pdf?umbral=7
+ * GET /api/radar-rechazos/pdf?fecha=YYYY-MM-DD   (sin `fecha`, la foto vigente)
  */
 import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
@@ -17,7 +18,6 @@ import {
   type RadarCriticoRow,
   type RadarCriticosData,
 } from "@/actions/radar-rechazos"
-import { UMBRAL_CRITICO_DEFAULT } from "@/lib/radar-rechazos/build"
 import {
   COLOR_ACCENT,
   COLOR_PRIMARY,
@@ -37,9 +37,6 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-// Umbral por defecto de "cliente crítico": más de N VECES sin dinero en el año.
-const UMBRAL_DEFAULT = UMBRAL_CRITICO_DEFAULT
-
 export async function GET(req: NextRequest) {
   if (IS_MISIONES) {
     return NextResponse.json({ error: "not-pampeana" }, { status: 404 })
@@ -50,21 +47,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
-  // 🚨 Sin `?umbral`, `get()` da null y `Number(null)` es 0 — que pasa la
-  // validación y dejaba el umbral en 0 (todos los clientes) en vez del default.
-  const umbralParam = req.nextUrl.searchParams.get("umbral")
-  const umbralRaw = Number(umbralParam)
-  const umbral =
-    umbralParam !== null && umbralParam.trim() !== "" &&
-    Number.isInteger(umbralRaw) && umbralRaw >= 0
-      ? umbralRaw
-      : UMBRAL_DEFAULT
-
   // `fecha` (opcional): foto histórica de ese día de entrega en vez de la vigente.
   const fechaRaw = req.nextUrl.searchParams.get("fecha")
   const fecha = fechaRaw && /^\d{4}-\d{2}-\d{2}$/.test(fechaRaw) ? fechaRaw : undefined
 
-  const res = await getRadarCriticos(umbral, fecha)
+  const res = await getRadarCriticos(fecha)
   if ("error" in res) {
     return NextResponse.json({ error: res.error }, { status: 500 })
   }
@@ -133,7 +120,7 @@ async function renderPDF(data: RadarCriticosData): Promise<Buffer> {
 }
 
 function buildPDF(doc: Doc, data: RadarCriticosData) {
-  const { criticos, anio, umbral, es_vigente } = data
+  const { criticos, umbral_30d, umbral_anio, es_vigente } = data
   drawHeader(
     doc,
     "Radar de Rechazos · Críticos",
@@ -147,7 +134,7 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
 
   const cards: KPICard[] = [
     { label: "Clientes críticos", value: formatInt(criticos.length), sub: `de ${formatInt(data.total_en_riesgo)} en riesgo`, color: COLOR_ACCENT },
-    { label: "Promotores", value: formatInt(promotores), sub: "a coordinar" },
+    { label: "Con rechazo reciente", value: formatInt(criticos.filter((c) => c.por_ultimos_30d).length), sub: "en los últimos 30 días" },
     { label: "Bultos en juego", value: formatInt(totBultos), sub: "del pedido (en 2 días)" },
     { label: "Monto en juego", value: formatMoneyFull(totMonto), sub: "del pedido (en 2 días)" },
   ]
@@ -156,16 +143,18 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
   // ─── Por qué es crítico: el criterio, destacado y en criollo ───────────────
   const margin = doc.page.margins.left
   const anchoUtil = doc.page.width - margin * 2
-  const veces = (n: number) => `${n} ${n === 1 ? "vez" : "veces"}`
   const criterio =
-    `Un cliente entra en esta lista cuando le rechazaron el pedido por SIN DINERO ` +
-    `más de ${veces(umbral)} en ${anio} (o sea, ${veces(umbral + 1)} o más) Y tenía una ` +
-    `entrega programada para el ${formatFechaLarga(data.fecha_entrega)}. Es la columna ` +
-    `"S/Din>${umbral}" de cada tabla: ese número es el motivo por el que el cliente está acá.`
+    `Un cliente entra en esta lista si tenía entrega programada para el ` +
+    `${formatFechaLarga(data.fecha_entrega)} Y cumple CUALQUIERA de estas dos condiciones, ` +
+    `sumando los rechazos por SIN DINERO y por CERRADO: ` +
+    `(a) ${umbral_30d} o más rechazos en los últimos 30 días — columna "30d"; o ` +
+    `(b) más de 1 rechazo por mes en promedio en los últimos 12 meses, es decir más de ` +
+    `${umbral_anio} en el año — columna "12m". El * marca la condición que lo hizo entrar.`
   const detalle =
-    `Cómo se cuenta: "S/Din" (sin dinero) y "Cerr." (cerrado) son VECES (cliente × fecha) en ${anio}, ` +
-    `no artículos — un rechazo de 13 productos cuenta 1. "Blt.rech" son los bultos que el cliente rechazó ` +
-    `por esos dos motivos en ${anio}. "Cerr." se muestra como contexto, pero NO define el criterio.`
+    `Cómo se cuenta: son VECES (cliente × fecha), no artículos — un rechazo de 13 productos cuenta 1. ` +
+    `Las ventanas son móviles y se miden desde el día en que se generó la foto. Columnas: "Blt" = bultos ` +
+    `del pedido en juego; "S/Din" y "Cerr" desagregan los 12 meses por motivo (sin dinero / cerrado); ` +
+    `"Rech" = bultos que el cliente rechazó por esos dos motivos en el año.`
 
   const hCriterio = doc.font("Helvetica").fontSize(9).heightOfString(criterio, {
     width: anchoUtil - 20,
@@ -212,7 +201,8 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
       .font("Helvetica-Oblique")
       .fontSize(10)
       .text(
-        `Ningún cliente de la entrega supera los ${umbral} rechazos por sin dinero en ${anio}.`,
+        `Ningún cliente de la entrega llega a ${umbral_30d} rechazos en los últimos 30 días ` +
+          `ni supera los ${umbral_anio} en el año.`,
         doc.page.margins.left,
         doc.y,
       )
@@ -226,23 +216,28 @@ function buildPDF(doc: Doc, data: RadarCriticosData) {
     s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 
   const cols = [
-    { header: "Cliente", width: 175, get: (r: RadarCriticoRow) => clip(r.nombre_cliente ?? `Cliente ${r.id_cliente ?? "?"}`, 30) },
-    { header: "Localidad", width: 105, get: (r: RadarCriticoRow) => clip(r.localidad ? titulo(r.localidad) : "—", 18) },
+    { header: "Cliente", width: 165, get: (r: RadarCriticoRow) => clip(r.nombre_cliente ?? `Cliente ${r.id_cliente ?? "?"}`, 28) },
+    { header: "Localidad", width: 95, get: (r: RadarCriticoRow) => clip(r.localidad ? titulo(r.localidad) : "—", 15) },
     // 🚨 Los encabezados van SIN espacios: el helper parte el texto en dos
     // líneas y la segunda se pisa con la primera fila de datos.
-    { header: "Blt.ped", width: 48, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
-    { header: "Pedido$", width: 82, align: "right" as const, get: (r: RadarCriticoRow) => (r.monto_pedido ? formatMoneyFull(r.monto_pedido) : "—") },
-    // La columna del criterio: es la que define que el cliente esté en la lista.
-    { header: `S/Din>${umbral}`, width: 58, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.sin_dinero_calendario) },
-    { header: "Cerr.", width: 45, align: "right" as const, get: (r: RadarCriticoRow) => (r.cerrado_calendario ? formatInt(r.cerrado_calendario) : "—") },
-    { header: "Blt.rech", width: 55, align: "right" as const, get: (r: RadarCriticoRow) => (r.bultos_rechazados_calendario ? formatInt(r.bultos_rechazados_calendario) : "—") },
+    { header: "Blt", width: 44, align: "right" as const, get: (r: RadarCriticoRow) => formatInt(r.bultos_pedido) },
+    { header: "Pedido$", width: 76, align: "right" as const, get: (r: RadarCriticoRow) => (r.monto_pedido ? formatMoneyFull(r.monto_pedido) : "—") },
+    // Las dos columnas del criterio: el * marca la condición que lo hizo entrar.
+    // 🚨 Sólo caracteres WinAnsi: la Helvetica de pdfkit no tiene ▲ ni ✓ y los
+    // dibuja como basura ("2▲" salía "2%²").
+    { header: "30d", width: 42, align: "right" as const, get: (r: RadarCriticoRow) => `${formatInt(r.rechazos_30d)}${r.por_ultimos_30d ? "*" : ""}` },
+    { header: "12m", width: 42, align: "right" as const, get: (r: RadarCriticoRow) => `${formatInt(r.rechazos_anio)}${r.por_promedio_anio ? "*" : ""}` },
+    { header: "S/Din", width: 46, align: "right" as const, get: (r: RadarCriticoRow) => (r.sin_dinero_anio ? formatInt(r.sin_dinero_anio) : "—") },
+    { header: "Cerr", width: 46, align: "right" as const, get: (r: RadarCriticoRow) => (r.cerrado_anio ? formatInt(r.cerrado_anio) : "—") },
+    { header: "Rech", width: 52, align: "right" as const, get: (r: RadarCriticoRow) => (r.bultos_rechazados_anio ? formatInt(r.bultos_rechazados_anio) : "—") },
   ]
 
   for (const g of agruparPorPromotor(criticos)) {
-    const sdGrupo = g.rows.reduce((a, c) => a + c.sin_dinero_calendario, 0)
+    const en30d = g.rows.filter((c) => c.por_ultimos_30d).length
     drawSectionTitle(
       doc,
-      `${g.promotor}  ·  ${g.rows.length} cliente${g.rows.length === 1 ? "" : "s"}  ·  ${sdGrupo} veces sin dinero acum.`,
+      `${g.promotor}  ·  ${g.rows.length} cliente${g.rows.length === 1 ? "" : "s"}` +
+        (en30d ? `  ·  ${en30d} con rechazo en los últimos 30 días` : ""),
     )
     drawTable(doc, g.rows, cols)
   }

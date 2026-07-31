@@ -2,7 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
-import { UMBRAL_CRITICO_DEFAULT } from "@/lib/radar-rechazos/build"
+import {
+  evaluarCriticidad,
+  UMBRAL_30D,
+  UMBRAL_ANIO,
+} from "@/lib/radar-rechazos/criterio"
 
 export interface RadarClienteView {
   id_cliente: number | null
@@ -137,41 +141,41 @@ export interface RadarCriticoRow {
   nombre_promotor: string | null
   bultos_pedido: number
   monto_pedido: number
-  sin_dinero_calendario: number
-  cerrado_calendario: number
-  bultos_rechazados_calendario: number
+  /** Veces en los últimos 30 días (cerrado + sin dinero). */
+  rechazos_30d: number
+  /** Veces en los últimos 365 días (cerrado + sin dinero). */
+  rechazos_anio: number
+  sin_dinero_anio: number
+  cerrado_anio: number
+  bultos_rechazados_anio: number
+  /** Qué condición lo hizo entrar (puede ser una, la otra, o las dos). */
+  por_ultimos_30d: boolean
+  por_promedio_anio: boolean
 }
 
 export interface RadarCriticosData {
   fecha_entrega: string
   generado_at: string
-  anio: number
-  umbral: number
+  umbral_30d: number
+  umbral_anio: number
   total_en_riesgo: number
   criticos: RadarCriticoRow[]
   /** false = foto histórica: es una consulta, no hay a quién avisar hoy. */
   es_vigente: boolean
 }
 
-const ID_CERRADO = 1
-const ID_SIN_DINERO = 6
-
 /**
- * Clientes CRÍTICOS de una foto del radar (sin `fecha`, la más reciente): los
- * que tienen MÁS de `umbral` VECES de rechazo por SIN DINERO en el AÑO
- * CALENDARIO de la entrega (recontado desde el 1-ene, no la ventana de 365 días
- * que guarda el snapshot). Ordenados por promotor y, dentro, por cantidad de sin
- * dinero desc. Para el PDF de Ventas.
+ * Clientes CRÍTICOS de una foto del radar (sin `fecha`, la más reciente), según
+ * el criterio compartido de `@/lib/radar-rechazos/criterio`: 2 o más rechazos en
+ * los últimos 30 días, o más de 1 por mes en promedio en 12 meses, sumando
+ * cerrado + sin dinero. Ordenados por promotor y, dentro, por los más recientes.
+ * Para el PDF de Ventas.
  *
- * 🚨 VECES = cliente × fecha_venta distinta; `rechazos` tiene una fila por
- * artículo, así que contar filas infla el número (ver build.ts).
- *
- * 🚨 Sobre una foto vieja, la lista de clientes es la que quedó congelada, pero
- * el conteo de rechazos se recalcula CONTRA HOY: un cliente puede aparecer con
- * más rechazos de los que tenía aquel día.
+ * 🚨 Los conteos salen del SNAPSHOT, no se recalculan sobre `rechazos`: así el
+ * criterio queda coherente con la foto (una foto vieja muestra los que eran
+ * críticos ESE día) y se evita paginar una tabla con una fila por artículo.
  */
 export async function getRadarCriticos(
-  umbral: number = UMBRAL_CRITICO_DEFAULT,
   fecha?: string,
 ): Promise<{ data: RadarCriticosData | null } | { error: string }> {
   try {
@@ -204,59 +208,14 @@ export async function getRadarCriticos(
     const { data: enRiesgo, error: cErr } = await supa
       .from("radar_rechazos_cliente")
       .select(
-        "id_cliente, nombre_cliente, localidad, id_promotor, nombre_promotor, bultos_pedido, monto_pedido",
+        "id_cliente, nombre_cliente, localidad, id_promotor, nombre_promotor, bultos_pedido, monto_pedido, cerrado_mes, sin_dinero_mes, cerrado_anio, sin_dinero_anio, bultos_rechazados_anio",
       )
       .eq("snapshot_id", header.id)
     if (cErr) return { error: cErr.message }
 
-    const anio = Number(String(header.fecha_entrega).slice(0, 4))
-    const desde = `${anio}-01-01`
-    const ids = (enRiesgo ?? [])
-      .map((c) => c.id_cliente)
-      .filter((id): id is number => id != null)
-
-    // Conteo calendario (sin dinero / cerrado) de los clientes en riesgo, en
-    // VECES: las fechas van a un Set para que los N artículos de un mismo
-    // rechazo cuenten 1. Los bultos rechazados sí se suman fila por fila.
-    const calen = new Map<
-      number, { sd: Set<string>; ce: Set<string>; bultos: number }
-    >()
-    if (ids.length > 0) {
-      const PAGE = 1000
-      let from = 0
-      while (true) {
-        const { data, error } = await supa
-          .from("rechazos")
-          .select("id_cliente, id_rechazo, fecha_venta, bultos_rechazados")
-          .in("id_cliente", ids)
-          .in("id_rechazo", [ID_CERRADO, ID_SIN_DINERO])
-          .gte("fecha_venta", desde)
-          .range(from, from + PAGE - 1)
-        if (error) return { error: error.message }
-        if (!data || data.length === 0) break
-        for (const r of data as {
-          id_cliente: number | null
-          id_rechazo: number
-          fecha_venta: string | null
-          bultos_rechazados: number | null
-        }[]) {
-          if (r.id_cliente == null || !r.fecha_venta) continue
-          const c = calen.get(r.id_cliente) ?? {
-            sd: new Set<string>(), ce: new Set<string>(), bultos: 0,
-          }
-          if (r.id_rechazo === ID_SIN_DINERO) c.sd.add(r.fecha_venta)
-          else if (r.id_rechazo === ID_CERRADO) c.ce.add(r.fecha_venta)
-          c.bultos += Number(r.bultos_rechazados ?? 0)
-          calen.set(r.id_cliente, c)
-        }
-        if (data.length < PAGE) break
-        from += PAGE
-      }
-    }
-
     const criticos: RadarCriticoRow[] = (enRiesgo ?? [])
       .map((c) => {
-        const cc = c.id_cliente != null ? calen.get(c.id_cliente) : undefined
+        const crit = evaluarCriticidad(c)
         return {
           id_cliente: c.id_cliente,
           nombre_cliente: c.nombre_cliente,
@@ -265,16 +224,23 @@ export async function getRadarCriticos(
           nombre_promotor: c.nombre_promotor,
           bultos_pedido: Number(c.bultos_pedido ?? 0),
           monto_pedido: Number(c.monto_pedido ?? 0),
-          sin_dinero_calendario: cc?.sd.size ?? 0,
-          cerrado_calendario: cc?.ce.size ?? 0,
-          bultos_rechazados_calendario: Math.round(cc?.bultos ?? 0),
+          rechazos_30d: crit.rechazos_30d,
+          rechazos_anio: crit.rechazos_anio,
+          sin_dinero_anio: Number(c.sin_dinero_anio ?? 0),
+          cerrado_anio: Number(c.cerrado_anio ?? 0),
+          bultos_rechazados_anio: Math.round(Number(c.bultos_rechazados_anio ?? 0)),
+          por_ultimos_30d: crit.por_ultimos_30d,
+          por_promedio_anio: crit.por_promedio_anio,
+          es_critico: crit.es_critico,
         }
       })
-      .filter((c) => c.sin_dinero_calendario > umbral)
+      .filter((c) => c.es_critico)
+      .map(({ es_critico: _es, ...c }) => c)
       .sort(
         (a, b) =>
           (a.nombre_promotor ?? "~").localeCompare(b.nombre_promotor ?? "~") ||
-          b.sin_dinero_calendario - a.sin_dinero_calendario ||
+          b.rechazos_30d - a.rechazos_30d ||
+          b.rechazos_anio - a.rechazos_anio ||
           (a.nombre_cliente ?? "").localeCompare(b.nombre_cliente ?? ""),
       )
 
@@ -282,8 +248,8 @@ export async function getRadarCriticos(
       data: {
         fecha_entrega: header.fecha_entrega,
         generado_at: header.generado_at,
-        anio,
-        umbral,
+        umbral_30d: UMBRAL_30D,
+        umbral_anio: UMBRAL_ANIO,
         total_en_riesgo: (enRiesgo ?? []).length,
         criticos,
         es_vigente,
