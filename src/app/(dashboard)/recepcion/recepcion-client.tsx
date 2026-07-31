@@ -14,6 +14,7 @@ import {
 } from "@/actions/acarreo"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ACARREO_ANUNCIO_URL } from "@/lib/acarreo-anuncio"
+import { FinalizarDescargaDialog } from "@/components/acarreo/finalizar-descarga-dialog"
 
 type Color = "verde" | "amarillo" | "rojo"
 function semaforo(min: number): Color {
@@ -57,6 +58,9 @@ export function RecepcionClient({
   const [now, setNow] = useState(() => Date.now())
   const [pending, start] = useTransition()
   const [qrAbierto, setQrAbierto] = useState(false)
+  // Camión cuya descarga se está cerrando: abre el diálogo que pregunta quiénes
+  // descargaron (puede haber sido de a dos).
+  const [finalizando, setFinalizando] = useState<RecepcionPendiente | null>(null)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -106,6 +110,27 @@ export function RecepcionClient({
           </a>
         </div>
       </div>
+
+      <FinalizarDescargaDialog
+        abierto={finalizando !== null}
+        patente={finalizando?.patente ?? ""}
+        iniciadoPor={finalizando?.registrado_por ?? null}
+        pendiente={pending}
+        onCerrar={() => setFinalizando(null)}
+        onConfirmar={(maquinistas) =>
+          start(async () => {
+            const id = finalizando?.id
+            if (!id) return
+            const res = await finalizarDescargaAcarreo(id, maquinistas)
+            if (res.error) {
+              toast.error(res.error)
+              return
+            }
+            setFinalizando(null)
+            await refrescar()
+          })
+        }
+      />
 
       <Dialog open={qrAbierto} onOpenChange={setQrAbierto}>
         <DialogContent className="sm:max-w-md">
@@ -240,13 +265,7 @@ export function RecepcionClient({
                   {r.estado === "descargando" && (
                     <button
                       disabled={pending}
-                      onClick={() =>
-                        start(async () => {
-                          const res = await finalizarDescargaAcarreo(r.id)
-                          if (res.error) toast.error(res.error)
-                          await refrescar()
-                        })
-                      }
+                      onClick={() => setFinalizando(r)}
                       className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
                     >
                       <CheckCircle2 className="size-4" /> Finalizar
