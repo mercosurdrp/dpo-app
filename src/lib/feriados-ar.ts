@@ -44,3 +44,21 @@ export function esFeriado(fecha: string): boolean {
   const anio = Number(fecha.slice(0, 4))
   return FERIADOS_AR[anio]?.has(fecha) ?? false
 }
+
+/** Día anterior a una fecha YYYY-MM-DD, en el mismo formato. */
+export function diaAnterior(fecha: string): string {
+  const [y, m, d] = fecha.split("-").map(Number)
+  const prev = new Date(Date.UTC(y, m - 1, d - 1))
+  return prev.toISOString().slice(0, 10)
+}
+
+/**
+ * true si el día ANTERIOR fue feriado. El día después de un feriado el camión
+ * sale con la carga acumulada de dos días y no entra nada más — por eso el SLA
+ * de equipos de frío lo excluye aunque caiga lunes, martes o miércoles.
+ * Con feriados consecutivos (p. ej. carnaval lunes y martes) el excluido es el
+ * día siguiente al último: alcanza con mirar el día previo.
+ */
+export function esPosteriorAFeriado(fecha: string): boolean {
+  return esFeriado(diaAnterior(fecha))
+}

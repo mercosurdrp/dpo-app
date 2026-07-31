@@ -270,6 +270,7 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "Acuerdo de nivel de servicio entre Ventas y Logística para ordenar la entrega y el retiro de equipos de frío (heladeras, choperas y equipos eléctricos) en los puntos de venta. Un equipo de frío ocupa un lugar significativo en el camión y exige tiempo de maniobra en el punto de venta: concentrar estos movimientos en los primeros días de la semana permite planificar la carga sin resentir la entrega de producto ni la puntualidad del reparto.",
     nivelServicio: [
       "Los equipos de frío que salen DENTRO DE LA CARGA DE UN CAMIÓN se entregan (comodato) o se retiran (contracomodato) únicamente los días lunes, martes y miércoles.",
+      "No se mueven equipos de frío los días feriados ni el día hábil inmediatamente posterior a un feriado, aunque caiga dentro de la ventana: ese día el camión sale con la carga acumulada de dos días y no admite el espacio ni el tiempo de maniobra que exige un equipo. Por ejemplo, siendo feriado el lunes 17 de agosto de 2026, esa semana el único día habilitado es el miércoles 19.",
       "Toda solicitud de movimiento fuera de esa ventana requiere autorización CONJUNTA del Jefe de Logística y el Jefe de Ventas. La autorización se registra en la plataforma DPO con su motivo.",
       "Quedan excluidos del acuerdo, y son posibles cualquier día de la semana: el retiro del equipo por parte del cliente en el depósito y todo documento emitido fuera de una carga de camión.",
       "Objetivo de cumplimiento mensual escalonado: ≥ 70 % los primeros tres meses, ≥ 85 % del cuarto al sexto mes y ≥ 95 % a partir del séptimo mes de vigencia.",
@@ -278,7 +279,8 @@ export const SLA_PLANTILLAS: Record<string, SlaPlantilla> = {
       "La medición es automática a partir de los pedidos de Chess: se toman los documentos COPOP (entrega de equipo) y CTRCO (retiro / contracomodato) por su fecha de entrega.",
       "Se considera que el movimiento salió dentro de la carga de un camión cuando el campo Reparto del pedido es una patente. Si el Reparto es un canal de mostrador o el documento se emitió fuera de una carga, el movimiento no entra en la medición.",
       "El equipo de frío se identifica por el maestro de artículos de Chess (artículos marcados como activo fijo y agrupación de material POP heladera o chopera), no por el texto de la descripción.",
-      "Un día cumple si todos los movimientos en camión de ese día salieron lunes, martes o miércoles, o cuentan con excepción autorizada registrada.",
+      "Un día cumple si todos los movimientos en camión de ese día salieron en un día habilitado —lunes, martes o miércoles, que no sea feriado ni día posterior a feriado—, o cuentan con excepción autorizada registrada.",
+      "El calendario de feriados nacionales es el que ya usa la plataforma para el resto de los indicadores, de modo que la exclusión del día posterior se aplica sola, sin carga manual.",
       "El indicador mensual se calcula como: días cumplidos ÷ días con movimientos de equipos de frío en camión.",
       "Los movimientos con excepción autorizada se computan como cumplidos y se identifican en color amarillo, para poder seguir por separado la evolución de las excepciones.",
     ],

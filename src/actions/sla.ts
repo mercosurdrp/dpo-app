@@ -28,6 +28,8 @@ import {
   SLA_EDF_MIDE_DESDE,
   slaEdfTarget,
   EDF_DIAS_PERMITIDOS_LABEL,
+  edfDiaHabilitado,
+  edfMotivoNoHabilitado,
   edfMotivoLabel,
   cuentaComoCumplido,
   cumpleRecepcion,
@@ -40,6 +42,7 @@ import {
   type CumplimientoRangoFila,
   type MovimientoEdfPendiente,
 } from "@/lib/sla-cumplimiento"
+import { diaAnterior } from "@/lib/feriados-ar"
 import { createAcarreoClient } from "@/lib/supabase/acarreo"
 import type { SlaAdjunto, SlaConAutor, SlaEstado } from "@/types/database"
 
@@ -887,14 +890,20 @@ export async function getMovimientosEdfFueraDeVentana(
         "id, fecha_entrega, tipo_doc, reparto, id_cliente, des_articulo, cantidad, edf_excepciones(motivo, detalle, autoriza_jdl, autoriza_jdv)",
       )
       .eq("en_camion", true)
-      .eq("en_ventana", false)
       .gte("fecha_entrega", desde)
       .lte("fecha_entrega", hasta)
       .order("fecha_entrega", { ascending: false })
 
     if (error) return { error: error.message }
 
-    const filas: MovimientoEdfPendiente[] = (data ?? []).map((m: any) => {
+    // 🚨 El filtro NO puede ser `en_ventana = false` en la base: esa columna
+    // generada sólo mira el día de la semana y dejaría afuera los movimientos
+    // de un feriado o del día posterior, que también incumplen. Se filtra acá.
+    const fueraDeVentana = (data ?? []).filter(
+      (m: any) => !edfDiaHabilitado(m.fecha_entrega),
+    )
+
+    const filas: MovimientoEdfPendiente[] = fueraDeVentana.map((m: any) => {
       const exc = (m.edf_excepciones ?? [])[0]
       return {
         id: m.id,
@@ -1072,7 +1081,9 @@ async function filaEquiposFrio(
   for (const m of data as unknown as MovimientoEdfRow[]) {
     const dia = Number(m.fecha_entrega.slice(8, 10))
     const a = porDia.get(dia) ?? { fuera: 0, justificados: 0 }
-    if (!m.en_ventana) {
+    // 🚨 `en_ventana` (columna generada) sólo sabe de días de semana; el
+    // feriado y el día posterior se resuelven acá.
+    if (!edfDiaHabilitado(m.fecha_entrega)) {
       a.fuera++
       if ((m.edf_excepciones ?? []).length > 0) a.justificados++
     }
@@ -2224,6 +2235,8 @@ export async function getDetalleDiaSla(
       }
 
       const filas: { label: string; valor: string }[] = []
+      const habilitado = edfDiaHabilitado(fecha)
+      const motivoNoHabil = edfMotivoNoHabilitado(fecha)
       let fuera = 0
       let justificados = 0
       for (const m of movs) {
@@ -2231,7 +2244,7 @@ export async function getDetalleDiaSla(
         const accion = m.tipo_doc === "COPOP" ? "Entrega" : "Retiro"
         const label = `${accion} · ${m.reparto ?? "s/reparto"} · cliente ${m.id_cliente ?? "—"}`
         const equipo = `${m.des_articulo ?? "equipo"}${m.cantidad > 1 ? ` ×${m.cantidad}` : ""}`
-        if (m.en_ventana) {
+        if (habilitado) {
           filas.push({ label, valor: `${equipo} ✓` })
           continue
         }
@@ -2245,7 +2258,10 @@ export async function getDetalleDiaSla(
             valor: `${equipo} · excepción: ${edfMotivoLabel(exc.motivo)}${detalle} (${quienes})`,
           })
         } else {
-          filas.push({ label, valor: `${equipo} · fuera de ventana, sin excepción ✗` })
+          filas.push({
+            label,
+            valor: `${equipo} · ${motivoNoHabil}, sin excepción ✗`,
+          })
         }
       }
 
@@ -2257,16 +2273,20 @@ export async function getDetalleDiaSla(
       let valorLabel: string
       if (fuera === 0) valorLabel = `${movs.length} movimiento(s) en ventana`
       else if (estado === "just")
-        valorLabel = `${fuera} fuera de ventana, ${justificados} con excepción`
-      else
-        valorLabel = `${fuera - justificados} fuera de ventana sin excepción`
+        valorLabel = `${fuera} ${motivoNoHabil}, ${justificados} con excepción`
+      else valorLabel = `${fuera - justificados} ${motivoNoHabil}, sin excepción`
 
-      const nota =
-        estado === "no"
-          ? "Registrar la excepción autorizada por el Jefe de Logística y el Jefe de Ventas, o dejar el día como incumplido."
-          : estado === "just"
-            ? "Movimiento fuera de ventana con excepción registrada: cuenta como cumplido."
-            : undefined
+      let nota: string | undefined
+      if (estado === "no") {
+        nota =
+          "Registrar la excepción autorizada por el Jefe de Logística y el Jefe de Ventas, o dejar el día como incumplido."
+      } else if (estado === "just") {
+        nota = `Movimiento en un ${motivoNoHabil} con excepción registrada: cuenta como cumplido.`
+      }
+      if (motivoNoHabil === "día posterior a feriado") {
+        const fer = diaAnterior(fecha).split("-").reverse().join("/")
+        nota = `El ${fer} fue feriado: el día siguiente el camión sale con la carga acumulada de dos días y no se mueven equipos de frío. ${nota ?? ""}`.trim()
+      }
 
       return {
         data: {

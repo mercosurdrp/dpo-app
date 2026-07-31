@@ -3,6 +3,8 @@
 // módulo de Server Actions SOLO puede exportar funciones async (Turbopack
 // rechaza exportar constantes/tipos desde ahí, aunque tsc no lo marque).
 
+import { esFeriado, esPosteriorAFeriado } from "@/lib/feriados-ar"
+
 export const SLA_RUTEO_NOMBRE = "Tiempo de finalización del ruteo"
 export const SLA_RUTEO_TARGET = 95
 
@@ -79,6 +81,36 @@ export function slaEdfTarget(year: number, month: number): number {
 /** Días de la semana habilitados para mover equipos de frío en camión. */
 export const EDF_DIAS_PERMITIDOS = [1, 2, 3] as const // lunes, martes, miércoles
 export const EDF_DIAS_PERMITIDOS_LABEL = "lunes, martes y miércoles"
+
+/**
+ * ¿La fecha habilita mover un equipo de frío en camión?
+ *
+ * Tres condiciones: cae lunes, martes o miércoles; no es feriado; y **el día
+ * anterior no fue feriado** — el día después de un feriado el camión sale con
+ * la carga acumulada de dos días y no entra un equipo.
+ *
+ * 🚨 No alcanza con la columna generada `en_ventana` de `edf_movimientos`, que
+ * sólo mira el día de la semana: el feriado se resuelve acá, en TypeScript,
+ * contra el calendario de [[feriados-ar]].
+ *
+ * Ejemplo: el lunes 17-08-2026 (San Martín) es feriado ⇒ ese lunes y el martes
+ * 18 quedan excluidos, y esa semana el único día habilitado es el miércoles 19.
+ */
+export function edfDiaHabilitado(fecha: string): boolean {
+  const [y, m, d] = fecha.split("-").map(Number)
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+  if (!(EDF_DIAS_PERMITIDOS as readonly number[]).includes(dow)) return false
+  if (esFeriado(fecha)) return false
+  return !esPosteriorAFeriado(fecha)
+}
+
+/** Por qué un día no habilita mover equipos — para mostrar en el detalle. */
+export function edfMotivoNoHabilitado(fecha: string): string | null {
+  if (edfDiaHabilitado(fecha)) return null
+  if (esFeriado(fecha)) return "feriado"
+  if (esPosteriorAFeriado(fecha)) return "día posterior a feriado"
+  return "fuera de la ventana lunes a miércoles"
+}
 
 /**
  * Patente argentina: formato viejo (AAA000) o Mercosur (AA000AA). Es lo que

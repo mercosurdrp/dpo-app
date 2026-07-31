@@ -151,7 +151,8 @@ export function EdfExcepciones({ puedeGestionar }: { puedeGestionar: boolean }) 
           <Snowflake className="mt-0.5 size-4 shrink-0 text-sky-600" />
           <span>
             Los equipos de frío que salen en la carga de un camión se entregan o se
-            levantan sólo <b>{EDF_DIAS_PERMITIDOS_LABEL}</b>. Acá se registran las
+            levantan sólo <b>{EDF_DIAS_PERMITIDOS_LABEL}</b>, y nunca en un feriado
+            ni el día siguiente a uno. Acá se registran las
             excepciones autorizadas <b>en conjunto</b> por el Jefe de Logística y el
             Jefe de Ventas. Un movimiento con excepción cuenta como cumplido y se
             marca en amarillo. Los retiros en depósito y los documentos emitidos
