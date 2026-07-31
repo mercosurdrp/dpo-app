@@ -12,6 +12,7 @@
  * `radar_rechazos_snapshot` + `radar_rechazos_cliente`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { esFeriado } from "@/lib/feriados-ar"
 import {
   chessLogin,
   fetchPedidosByFechaEntrega,
@@ -100,23 +101,30 @@ const DOMINGO = 0
 /** Días DE ENTREGA de anticipación del radar (no días de calendario). */
 const DIAS_ANTICIPACION = 2
 
+/** Los domingos y los feriados no hay reparto: ni cuentan ni pueden ser objetivo. */
+export function hayReparto(fecha: string): boolean {
+  return diaSemana(fecha) !== DOMINGO && !esFeriado(fecha)
+}
+
 /**
  * YYYY-MM-DD de la fecha OBJETIVO del radar en horario Argentina: la entrega que
  * cae a 2 DÍAS DE REPARTO vista, para que Ventas tenga un día extra de margen
  * para avisar al cliente y coordinar el pago.
  *
- * 🚨 El domingo NO se entrega, así que no cuenta ni puede ser objetivo: se saltea
- * y el radar avanza al siguiente día hábil. Con +2 de calendario, el viernes
- * apuntaba a un domingo sin reparto (radar vacío / inútil). Queda:
+ * 🚨 Los DÍAS SIN REPARTO —domingos y feriados— se saltean: no suman y el radar
+ * avanza al siguiente día con entrega. Con +2 de calendario, el viernes apuntaba
+ * al domingo y el radar salía vacío (nada ruteado). La semana normal queda:
  *   lunes→miércoles · martes→jueves · miércoles→viernes · jueves→sábado
  *   viernes→lunes   · sábado→martes  · domingo→martes
+ * Con feriado de por medio corre igual: el viernes 14-08-2026 —con San Martín el
+ * lunes 17— apunta al martes 18, y el sábado 15 al miércoles 19.
  */
 export function fechaObjetivoART(desde: string = hoyART()): string {
   let fecha = desde
   let dias = 0
   while (dias < DIAS_ANTICIPACION) {
     fecha = sumarDias(fecha, 1)
-    if (diaSemana(fecha) !== DOMINGO) dias++
+    if (hayReparto(fecha)) dias++
   }
   return fecha
 }
@@ -260,7 +268,7 @@ async function loadClientesCache(
 
 /**
  * Arma el radar de rechazos para `fecha` (default: 2 días de reparto vista ART,
- * salteando el domingo).
+ * sin domingos ni feriados).
  * Devuelve solo los clientes en riesgo, ordenados por riesgo_total desc.
  */
 export async function buildRadarRechazos(

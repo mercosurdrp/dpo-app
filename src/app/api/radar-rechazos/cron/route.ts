@@ -2,7 +2,7 @@
  * Cron del Radar de Rechazos del Día Siguiente.
  *
  * Corre ~09:30 AR (post-ruteo): arma la foto de los clientes que se entregan a 2
- * DÍAS DE REPARTO vista (salteando el domingo, que no se entrega) y tienen
+ * DÍAS DE REPARTO vista (salteando domingos y feriados, sin reparto) y tienen
  * historial de rechazo por CERRADO / SIN DINERO, y la congela en
  * `radar_rechazos_snapshot` + `radar_rechazos_cliente`. Ventas la trabaja en su
  * matinal para avisar al cliente y evitar el rechazo (con un día extra de margen).
@@ -13,7 +13,7 @@
  *   manual-session= botón "Regenerar" en la UI (sesión admin/supervisor)
  *
  * Health-check rápido con ?ping=1. Permite ?fecha=YYYY-MM-DD para re-armar una
- * fecha puntual (default: 2 días de reparto vista ART, salteando el domingo).
+ * fecha puntual (default: 2 días de reparto vista ART, sin domingos ni feriados).
  */
 import { NextRequest, NextResponse } from "next/server"
 import { IS_MISIONES } from "@/lib/empresa"
