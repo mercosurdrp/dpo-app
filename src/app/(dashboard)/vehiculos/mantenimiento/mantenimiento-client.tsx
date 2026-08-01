@@ -98,6 +98,8 @@ import { HerramientasTab } from "./herramientas-tab"
 import type { Herramienta } from "@/actions/mantenimiento-herramientas"
 import { IndicadoresFlota } from "./indicadores-flota"
 import { EstandaresFlota } from "./estandares-flota"
+import { AnalisisItemsChecklist } from "./analisis-items-checklist"
+import type { AnalisisChecklist } from "@/actions/checklist-analisis"
 import type { EstandaresFlota as EstandaresFlotaData } from "@/actions/flota-estandares"
 import type {
   FlotaKpi,
@@ -389,6 +391,7 @@ interface MantenimientoClientProps {
   kpiExtraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   tareasCil: TareaCil[]
   estandares: EstandaresFlotaData
+  analisisChecklist: AnalisisChecklist
   herramientas: Herramienta[]
   rotacionKm: number
   /** Intervalos de rotación/alineación/balanceo por tipo de unidad. */
@@ -426,6 +429,7 @@ export function MantenimientoClient({
   kpiExtraSeries,
   tareasCil,
   estandares,
+  analisisChecklist,
   herramientas,
   rotacionKm,
   intervalosNeumaticos,
@@ -683,6 +687,10 @@ export function MantenimientoClient({
         </TabsContent>
 
         {/* ============ TAB: Pirámide de defectos ============ */}
+        <TabsContent value="analisis-items" className="space-y-6">
+          <AnalisisItemsChecklist analisis={analisisChecklist} />
+        </TabsContent>
+
         <TabsContent value="piramide" className="space-y-6">
           <PiramideDefectos
             itemsNoOk={checklists.itemsNoOk}

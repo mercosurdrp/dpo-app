@@ -104,6 +104,14 @@ export const SECCIONES_FLOTA: SeccionFlota[] = [
       "Checklist digital con estratificación por vehículo, incidencia y conductor, y seguimiento de defectos críticos.",
   },
   {
+    id: "analisis-items",
+    label: "Análisis por ítem",
+    grupo: "analisis",
+    puntos: ["1.3"],
+    aporta:
+      "Estratificación de los defectos del checklist por ítem y por unidad: qué falla, con qué frecuencia sobre las veces evaluado, y qué defectos se repiten en la misma unidad.",
+  },
+  {
     id: "indicadores",
     label: "Indicadores",
     grupo: "analisis",

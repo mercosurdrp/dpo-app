@@ -31,6 +31,7 @@ import {
   getFlotaPlanes,
 } from "@/actions/flota-indicadores"
 import { getEstandaresFlota } from "@/actions/flota-estandares"
+import { getAnalisisChecklist } from "@/actions/checklist-analisis"
 import { IS_MISIONES } from "@/lib/empresa"
 import { getProfile } from "@/lib/session"
 import { MantenimientoClient } from "./mantenimiento-client"
@@ -72,6 +73,7 @@ export default async function MantenimientoPage() {
     kpiExtraRes,
     tareasCilRes,
     estandaresRes,
+    analisisChecklistRes,
     herramientasRes,
     reprogramadasRes,
     profile,
@@ -101,6 +103,7 @@ export default async function MantenimientoPage() {
     getFlotaKpiSeriesExtra(),
     getTareasCil(),
     getEstandaresFlota(),
+    getAnalisisChecklist(),
     getHerramientas(),
     getTareasReprogramadas(),
     getProfile(),
@@ -175,6 +178,25 @@ export default async function MantenimientoPage() {
   const kpiSnapshots = "data" in kpiSnapshotsRes ? kpiSnapshotsRes.data : []
   const kpiExtraSeries = "data" in kpiExtraRes ? kpiExtraRes.data : {}
   const tareasCil = "data" in tareasCilRes ? tareasCilRes.data : []
+  const analisisChecklist =
+    "data" in analisisChecklistRes
+      ? analisisChecklistRes.data
+      : {
+          items: [],
+          cronicos: [],
+          porMes: [],
+          totales: {
+            evaluado: 0,
+            noOk: 0,
+            tasa: null,
+            itemsActivos: 0,
+            itemsConDeteccion: 0,
+            checklists: 0,
+            desde: null,
+            hasta: null,
+          },
+        }
+
   const estandares =
     "data" in estandaresRes
       ? estandaresRes.data
@@ -221,6 +243,7 @@ export default async function MantenimientoPage() {
       kpiExtraSeries={kpiExtraSeries}
       tareasCil={tareasCil}
       estandares={estandares}
+      analisisChecklist={analisisChecklist}
       herramientas={herramientas}
       rotacionKm={configRes.rotacion_km}
       intervalosNeumaticos={intervalosRes.data}
