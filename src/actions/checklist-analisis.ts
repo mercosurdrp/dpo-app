@@ -20,8 +20,12 @@ import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
 import { UMBRAL_CRONICO } from "@/lib/flota/checklist-cronicos"
 
-/** Respuestas que NO son un cumplimiento; el resto de los valores son defecto. */
+// El checklist tiene TRES niveles, no dos: además de OK y NO OK existe REGULAR
+// ("leve presencia de fluidos", en el criterio del propio ítem). Aplanarlos a
+// "defecto" es un error de lectura: NO OK saca la unidad de servicio, REGULAR
+// es una observación que hay que seguir. Se cuentan por separado.
 const VALORES_OK = ["ok", "bueno"]
+const VALORES_REGULAR = ["regular"]
 
 /** Hoy en horario argentino: el server corre en UTC. */
 function hoyArgentina(): string {
@@ -47,9 +51,13 @@ export interface AnalisisItem {
   tipoVehiculo: string
   /** Veces que el ítem se evaluó (todas las respuestas registradas). */
   evaluado: number
-  /** Veces que dio distinto de OK. */
+  /** Veces que dio NO OK: defecto que impide o compromete la operación. */
   noOk: number
-  /** noOk ÷ evaluado, en %. */
+  /** Veces que dio REGULAR: observación a seguir, no impide operar. */
+  regular: number
+  /** noOk + regular. */
+  hallazgos: number
+  /** hallazgos ÷ evaluado, en %. */
   tasa: number | null
   /** Dominios donde apareció el defecto, del más repetido al menos. */
   unidades: Array<{ dominio: string; veces: number }>
@@ -64,6 +72,9 @@ export interface DefectoCronico {
   tipoVehiculo: string
   dominio: string
   veces: number
+  /** Desglose de `veces`: cuántos fueron NO OK y cuántos sólo observación. */
+  noOk: number
+  regular: number
   primera: string
   ultima: string
   /** Días desde la última detección: un crónico resuelto deja de sumar. */
@@ -80,7 +91,9 @@ export interface AnalisisChecklist {
   totales: {
     evaluado: number
     noOk: number
-    /** noOk ÷ evaluado, en %. */
+    regular: number
+    hallazgos: number
+    /** hallazgos ÷ evaluado, en %. */
     tasa: number | null
     itemsActivos: number
     /** Ítems que alguna vez detectaron algo. */
@@ -175,6 +188,7 @@ export async function getAnalisisChecklist(): Promise<
         porUnidad.set(dom, (porUnidad.get(dom) ?? 0) + 1)
       }
       const fechas = defectos.map((d) => d.cv!.fecha).sort()
+      const regular = defectos.filter((d) => VALORES_REGULAR.includes(d.valor)).length
       return {
         id: i.id,
         categoria: i.categoria,
@@ -182,7 +196,9 @@ export async function getAnalisisChecklist(): Promise<
         critico: i.critico,
         tipoVehiculo: i.tipo_vehiculo ?? "camión",
         evaluado,
-        noOk: defectos.length,
+        noOk: defectos.length - regular,
+        regular,
+        hallazgos: defectos.length,
         tasa: evaluado > 0 ? (defectos.length / evaluado) * 100 : null,
         unidades: [...porUnidad.entries()]
           .map(([dominio, veces]) => ({ dominio, veces }))
@@ -190,7 +206,11 @@ export async function getAnalisisChecklist(): Promise<
         ultimaFecha: fechas.length > 0 ? fechas[fechas.length - 1] : null,
       }
     })
-    analisis.sort((a, b) => b.noOk - a.noOk || a.nombre.localeCompare(b.nombre))
+    // Ordena por defecto real primero y recién después por observaciones: un
+    // NO OK pesa más que un REGULAR aunque se repita menos.
+    analisis.sort(
+      (a, b) => b.noOk - a.noOk || b.regular - a.regular || a.nombre.localeCompare(b.nombre)
+    )
 
     const tipoPorItem = new Map(items.map((i) => [i.id, i.tipo_vehiculo ?? "camión"]))
     const hoy = hoyArgentina()
@@ -221,6 +241,8 @@ export async function getAnalisisChecklist(): Promise<
         tipoVehiculo: tipoPorItem.get(itemId) ?? "camión",
         dominio,
         veces: lista.length,
+        noOk: lista.filter((r) => !VALORES_REGULAR.includes(r.valor)).length,
+        regular: lista.filter((r) => VALORES_REGULAR.includes(r.valor)).length,
         primera: fechas[0],
         ultima: fechas[fechas.length - 1],
         diasSinRepetirse: diasDesde(fechas[fechas.length - 1], hoy),
@@ -249,10 +271,12 @@ export async function getAnalisisChecklist(): Promise<
           .sort((a, b) => a.ym.localeCompare(b.ym)),
         totales: {
           evaluado: evaluadoTotal,
-          noOk: noOk.length,
+          noOk: noOk.filter((r) => !VALORES_REGULAR.includes(r.valor)).length,
+          regular: noOk.filter((r) => VALORES_REGULAR.includes(r.valor)).length,
+          hallazgos: noOk.length,
           tasa: evaluadoTotal > 0 ? (noOk.length / evaluadoTotal) * 100 : null,
           itemsActivos: items.length,
-          itemsConDeteccion: analisis.filter((i) => i.noOk > 0).length,
+          itemsConDeteccion: analisis.filter((i) => i.hallazgos > 0).length,
           checklists: checksRes.count ?? 0,
           desde: fechasNoOk[0] ?? null,
           hasta: fechasNoOk[fechasNoOk.length - 1] ?? null,

@@ -188,6 +188,8 @@ export default async function MantenimientoPage() {
           totales: {
             evaluado: 0,
             noOk: 0,
+            regular: 0,
+            hallazgos: 0,
             tasa: null,
             itemsActivos: 0,
             itemsConDeteccion: 0,

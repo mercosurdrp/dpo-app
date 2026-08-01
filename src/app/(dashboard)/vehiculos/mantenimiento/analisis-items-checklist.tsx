@@ -11,6 +11,10 @@
 //    dentro de la fila, como magnitud relativa al ítem que más falla.
 //  · Las barras son de un solo color: la severidad la lleva el badge "Crítico",
 //    con texto, no el color de la barra.
+//  · NO OK y REGULAR se cuentan por separado. El checklist tiene tres niveles y
+//    aplanarlos miente: NO OK saca la unidad de servicio, REGULAR es una
+//    observación a seguir ("leve presencia de fluidos"). Los 18 registros de
+//    HELI1 eran REGULAR, no defectos.
 //  · Los ítems que nunca detectaron nada se muestran igual, en su propio bloque.
 //    Es el hallazgo incómodo del punto: un ítem con miles de evaluaciones y cero
 //    defectos no suele estar sano, suele no estar mirándose.
@@ -56,22 +60,22 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
   const { items, cronicos, porMes, totales } = analisis
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
 
-  const conDefectos = useMemo(() => items.filter((i) => i.noOk > 0), [items])
+  const conDefectos = useMemo(() => items.filter((i) => i.hallazgos > 0), [items])
   const sinDefectos = useMemo(
-    () => items.filter((i) => i.noOk === 0).sort((a, b) => b.evaluado - a.evaluado),
+    () => items.filter((i) => i.hallazgos === 0).sort((a, b) => b.evaluado - a.evaluado),
     [items]
   )
-  const maxNoOk = conDefectos[0]?.noOk ?? 0
+  const maxHallazgos = Math.max(1, ...conDefectos.map((i) => i.hallazgos))
   const maxMes = Math.max(1, ...porMes.map((p) => p.veces))
 
   // % acumulado en columna, no en un segundo eje: la lectura de Pareto sin
   // inventar la correlación que provoca un gráfico de dos escalas.
   const acumulado = useMemo(() => {
-    const total = conDefectos.reduce((a, i) => a + i.noOk, 0)
+    const total = conDefectos.reduce((a, i) => a + i.hallazgos, 0)
     let suma = 0
     return new Map(
       conDefectos.map((i) => {
-        suma += i.noOk
+        suma += i.hallazgos
         return [i.id, total > 0 ? (suma / total) * 100 : 0]
       })
     )
@@ -98,9 +102,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
     [cronicos]
   )
 
-  const criticosNoOk = conDefectos
-    .filter((i) => i.critico)
-    .reduce((a, i) => a + i.noOk, 0)
+  const criticosNoOk = conDefectos.filter((i) => i.critico).reduce((a, i) => a + i.noOk, 0)
 
   const filaItem = (i: AnalisisItem, conBarra: boolean) => (
     <TableRow key={i.id}>
@@ -120,14 +122,28 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
       <TableCell className="py-2">
         {conBarra && (
           <span className="flex items-center gap-2">
-            <span
-              className="h-2 rounded-sm bg-foreground/60"
-              style={{ width: `${maxNoOk > 0 ? (i.noOk / maxNoOk) * 100 : 0}%`, minWidth: 4 }}
-              aria-hidden
-            />
-            <span className="text-xs tabular-nums text-muted-foreground">{i.noOk}</span>
+            <span className="flex h-2 flex-1 items-center gap-0.5" aria-hidden>
+              {i.noOk > 0 && (
+                <span
+                  className="h-2 rounded-sm bg-destructive"
+                  style={{ width: `${(i.noOk / maxHallazgos) * 100}%`, minWidth: 4 }}
+                />
+              )}
+              {i.regular > 0 && (
+                <span
+                  className="h-2 rounded-sm bg-amber-500/70"
+                  style={{ width: `${(i.regular / maxHallazgos) * 100}%`, minWidth: 4 }}
+                />
+              )}
+            </span>
           </span>
         )}
+      </TableCell>
+      <TableCell className="py-2 text-right font-semibold tabular-nums">
+        {i.noOk > 0 ? i.noOk : <span className="text-muted-foreground/50">—</span>}
+      </TableCell>
+      <TableCell className="py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
+        {i.regular > 0 ? i.regular : <span className="text-muted-foreground/50">—</span>}
       </TableCell>
       <TableCell className="py-2 text-right tabular-nums">{i.evaluado}</TableCell>
       <TableCell className="py-2 text-right font-semibold tabular-nums">
@@ -157,21 +173,26 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
       <DpoSeccionCinta seccionId="analisis-items" />
 
       <p className="text-sm text-muted-foreground">
-        Cada tarjeta baja al bloque que explica ese número.
+        El checklist tiene tres respuestas y acá van separadas:{" "}
+        <strong className="text-destructive">NO OK</strong> es un defecto que compromete
+        la operación,{" "}
+        <strong className="text-amber-600 dark:text-amber-400">Regular</strong> es una
+        observación a seguir que no impide operar, y OK es cumplimiento. Cada tarjeta baja
+        al bloque que explica ese número.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label="Defectos detectados"
-          valor={totales.noOk}
-          sub={`en ${totales.checklists.toLocaleString("es-AR")} checklists · ${fmtFecha(totales.desde)} a ${fmtFecha(totales.hasta)}`}
+          label="Hallazgos"
+          valor={totales.hallazgos}
+          sub={`${totales.noOk} NO OK · ${totales.regular} observación(es) · en ${totales.checklists.toLocaleString("es-AR")} checklists`}
           dpo="1.3"
           onClick={() => irA("items-con-defectos")}
         />
         <KpiCard
           label="Tasa de detección"
           valor={fmtPct(totales.tasa)}
-          sub={`${totales.noOk} de ${totales.evaluado.toLocaleString("es-AR")} respuestas registradas`}
+          sub={`${totales.hallazgos} de ${totales.evaluado.toLocaleString("es-AR")} respuestas registradas`}
           estado={totales.tasa != null && totales.tasa < 1 ? "alerta" : "neutro"}
           dpo="1.3"
           onClick={() => irA("defectos-por-mes")}
@@ -194,6 +215,13 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
               ? `${cronicos.length - cronicosActivos.length} ya cortado(s), con su historial`
               : "mismo ítem repetido en la misma unidad"
           }
+          footer={
+            cronicosActivos.some((c) => c.noOk === 0) ? (
+              <span className="text-xs text-muted-foreground">
+                Ojo: hay crónicos que son sólo observación, no NO OK.
+              </span>
+            ) : undefined
+          }
           estado={cronicosActivos.length > 0 ? "critico" : "ok"}
           dpo="1.3"
           onClick={cronicos.length > 0 ? () => irA("cronicos") : undefined}
@@ -210,7 +238,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              El mismo ítem marcado NO OK tres veces o más en la misma unidad. Es lo que
+              El mismo ítem con hallazgo tres veces o más en la misma unidad. Es lo que
               anticipa la rotura: justifica adelantar el correctivo en vez de esperar el
               service. Un defecto que se reparó conserva su historial pero deja de figurar
               como activo a los {DIAS_CRONICO_ACTIVO} días sin repetirse.
@@ -221,6 +249,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                   <TableRow>
                     <TableHead>Unidad e ítem</TableHead>
                     <TableHead className="text-right">Veces</TableHead>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Evolución</TableHead>
                     <TableHead className="text-right">Desde</TableHead>
                     <TableHead className="text-right">Última</TableHead>
@@ -244,8 +273,23 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                           {c.categoria} · {c.tipoVehiculo}
                         </span>
                       </TableCell>
-                      <TableCell className="py-2 text-right text-lg font-bold tabular-nums text-destructive">
+                      <TableCell
+                        className={cn(
+                          "py-2 text-right text-lg font-bold tabular-nums",
+                          c.noOk > 0 ? "text-destructive" : "text-amber-600 dark:text-amber-400"
+                        )}
+                      >
                         {c.veces}
+                      </TableCell>
+                      <TableCell className="py-2 text-xs">
+                        {c.noOk > 0 && (
+                          <span className="block text-destructive">{c.noOk} NO OK</span>
+                        )}
+                        {c.regular > 0 && (
+                          <span className="block text-amber-600 dark:text-amber-400">
+                            {c.regular} observación{c.regular === 1 ? "" : "es"}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="py-2">
                         <span className="flex items-end gap-1">
@@ -308,7 +352,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
             uno que se mira en pocos. {criticosNoOk > 0 && (
               <>
                 <strong className="text-foreground">{criticosNoOk}</strong> de los{" "}
-                {totales.noOk} defectos son de ítems críticos.
+                {totales.noOk} NO OK son de ítems críticos.
               </>
             )}
           </p>
@@ -317,7 +361,9 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Ítem</TableHead>
-                  <TableHead>Defectos</TableHead>
+                  <TableHead>Hallazgos</TableHead>
+                  <TableHead className="text-right">NO OK</TableHead>
+                  <TableHead className="text-right">Regular</TableHead>
                   <TableHead className="text-right">Evaluado</TableHead>
                   <TableHead className="text-right">Tasa</TableHead>
                   <TableHead className="text-right">% acum.</TableHead>
@@ -385,6 +431,8 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                   <TableRow>
                     <TableHead>Ítem</TableHead>
                     <TableHead />
+                    <TableHead className="text-right">NO OK</TableHead>
+                    <TableHead className="text-right">Regular</TableHead>
                     <TableHead className="text-right">Evaluado</TableHead>
                     <TableHead className="text-right">Tasa</TableHead>
                     <TableHead>Unidades</TableHead>
