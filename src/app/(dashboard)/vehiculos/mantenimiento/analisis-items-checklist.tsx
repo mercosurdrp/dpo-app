@@ -77,6 +77,22 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
     )
   }, [conDefectos])
 
+  /**
+   * Las tarjetas de arriba son el resumen y cada bloque de abajo es su detalle:
+   * al tocarlas se baja al bloque que explica ese número, en vez de obligar a
+   * buscarlo. `abrir` despliega el bloque plegado antes de bajar.
+   */
+  const irA = (id: string, abrir?: () => void) => {
+    abrir?.()
+    const destino = document.getElementById(id)
+    if (!destino) return
+    const suave = !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    // El bloque plegado tarda un frame en montarse.
+    requestAnimationFrame(() => {
+      destino.scrollIntoView({ behavior: suave ? "smooth" : "auto", block: "start" })
+    })
+  }
+
   const cronicosActivos = useMemo(
     () => cronicos.filter((c) => c.diasSinRepetirse <= DIAS_CRONICO_ACTIVO),
     [cronicos]
@@ -140,12 +156,17 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
     <div className="space-y-4">
       <DpoSeccionCinta seccionId="analisis-items" />
 
+      <p className="text-sm text-muted-foreground">
+        Cada tarjeta baja al bloque que explica ese número.
+      </p>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Defectos detectados"
           valor={totales.noOk}
           sub={`en ${totales.checklists.toLocaleString("es-AR")} checklists · ${fmtFecha(totales.desde)} a ${fmtFecha(totales.hasta)}`}
           dpo="1.3"
+          onClick={() => irA("items-con-defectos")}
         />
         <KpiCard
           label="Tasa de detección"
@@ -153,6 +174,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
           sub={`${totales.noOk} de ${totales.evaluado.toLocaleString("es-AR")} respuestas registradas`}
           estado={totales.tasa != null && totales.tasa < 1 ? "alerta" : "neutro"}
           dpo="1.3"
+          onClick={() => irA("defectos-por-mes")}
         />
         <KpiCard
           label="Ítems que detectaron"
@@ -162,6 +184,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
             totales.itemsConDeteccion < totales.itemsActivos / 2 ? "alerta" : "neutro"
           }
           dpo="1.3"
+          onClick={() => irA("items-sin-deteccion", () => setVerSinDeteccion(true))}
         />
         <KpiCard
           label="Defectos crónicos activos"
@@ -173,11 +196,12 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
           }
           estado={cronicosActivos.length > 0 ? "critico" : "ok"}
           dpo="1.3"
+          onClick={cronicos.length > 0 ? () => irA("cronicos") : undefined}
         />
       </div>
 
       {cronicos.length > 0 && (
-        <Card>
+        <Card id="cronicos" className="scroll-mt-4">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Repeat className="size-4 text-muted-foreground" aria-hidden /> Defectos
@@ -273,7 +297,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
         </Card>
       )}
 
-      <Card>
+      <Card id="items-con-defectos" className="scroll-mt-4">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Ítems que detectaron defectos</CardTitle>
         </CardHeader>
@@ -308,7 +332,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
       </Card>
 
       {porMes.length > 0 && (
-        <Card>
+        <Card id="defectos-por-mes" className="scroll-mt-4">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Defectos por mes</CardTitle>
           </CardHeader>
@@ -332,7 +356,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
         </Card>
       )}
 
-      <Card>
+      <Card id="items-sin-deteccion" className="scroll-mt-4">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <SearchX className="size-4 text-muted-foreground" aria-hidden /> Ítems sin
