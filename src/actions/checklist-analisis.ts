@@ -18,12 +18,25 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireAuth } from "@/lib/session"
+import { UMBRAL_CRONICO } from "@/lib/flota/checklist-cronicos"
 
 /** Respuestas que NO son un cumplimiento; el resto de los valores son defecto. */
 const VALORES_OK = ["ok", "bueno"]
 
-/** Repeticiones del mismo ítem en la misma unidad para llamarlo crónico. */
-const UMBRAL_CRONICO = 3
+/** Hoy en horario argentino: el server corre en UTC. */
+function hoyArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+function diasDesde(fecha: string, hoy: string): number {
+  const ms = Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${fecha}T00:00:00Z`)
+  return Math.max(0, Math.round(ms / 86_400_000))
+}
 
 export interface AnalisisItem {
   id: string
@@ -53,6 +66,8 @@ export interface DefectoCronico {
   veces: number
   primera: string
   ultima: string
+  /** Días desde la última detección: un crónico resuelto deja de sumar. */
+  diasSinRepetirse: number
   /** Desvíos por mes "YYYY-MM", cronológico: muestra si escala o se apagó. */
   porMes: Array<{ ym: string; veces: number }>
 }
@@ -178,6 +193,7 @@ export async function getAnalisisChecklist(): Promise<
     analisis.sort((a, b) => b.noOk - a.noOk || a.nombre.localeCompare(b.nombre))
 
     const tipoPorItem = new Map(items.map((i) => [i.id, i.tipo_vehiculo ?? "camión"]))
+    const hoy = hoyArgentina()
 
     // Crónicos: mismo ítem + misma unidad repitiéndose.
     const porItemUnidad = new Map<string, RespuestaNoOk[]>()
@@ -207,6 +223,7 @@ export async function getAnalisisChecklist(): Promise<
         veces: lista.length,
         primera: fechas[0],
         ultima: fechas[fechas.length - 1],
+        diasSinRepetirse: diasDesde(fechas[fechas.length - 1], hoy),
         porMes: [...meses.entries()]
           .map(([ym, veces]) => ({ ym, veces }))
           .sort((a, b) => a.ym.localeCompare(b.ym)),

@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
 import type { AnalisisChecklist, AnalisisItem } from "@/actions/checklist-analisis"
+import { DIAS_CRONICO_ACTIVO } from "@/lib/flota/checklist-cronicos"
 
 interface Props {
   analisis: AnalisisChecklist
@@ -75,6 +76,11 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
       })
     )
   }, [conDefectos])
+
+  const cronicosActivos = useMemo(
+    () => cronicos.filter((c) => c.diasSinRepetirse <= DIAS_CRONICO_ACTIVO),
+    [cronicos]
+  )
 
   const criticosNoOk = conDefectos
     .filter((i) => i.critico)
@@ -158,10 +164,14 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
           dpo="1.3"
         />
         <KpiCard
-          label="Defectos crónicos"
-          valor={cronicos.length}
-          sub="mismo ítem repetido en la misma unidad"
-          estado={cronicos.length > 0 ? "critico" : "ok"}
+          label="Defectos crónicos activos"
+          valor={cronicosActivos.length}
+          sub={
+            cronicos.length > cronicosActivos.length
+              ? `${cronicos.length - cronicosActivos.length} ya cortado(s), con su historial`
+              : "mismo ítem repetido en la misma unidad"
+          }
+          estado={cronicosActivos.length > 0 ? "critico" : "ok"}
           dpo="1.3"
         />
       </div>
@@ -178,7 +188,8 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
             <p className="text-sm text-muted-foreground">
               El mismo ítem marcado NO OK tres veces o más en la misma unidad. Es lo que
               anticipa la rotura: justifica adelantar el correctivo en vez de esperar el
-              service.
+              service. Un defecto que se reparó conserva su historial pero deja de figurar
+              como activo a los {DIAS_CRONICO_ACTIVO} días sin repetirse.
             </p>
             <div className="overflow-x-auto">
               <Table>
@@ -189,6 +200,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                     <TableHead>Evolución</TableHead>
                     <TableHead className="text-right">Desde</TableHead>
                     <TableHead className="text-right">Última</TableHead>
+                    <TableHead>Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -240,6 +252,17 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                       </TableCell>
                       <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
                         {fmtFecha(c.ultima)}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        {c.diasSinRepetirse <= DIAS_CRONICO_ACTIVO ? (
+                          <Badge className="border-destructive/30 bg-destructive/10 text-destructive">
+                            Activo
+                          </Badge>
+                        ) : (
+                          <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            Sin repetirse hace {c.diasSinRepetirse} días
+                          </Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
