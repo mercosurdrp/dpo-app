@@ -95,17 +95,23 @@ async function docsConformidadFlota(client: SupabaseClient): Promise<number | nu
   return conformidadDocumental(dominios, docs).pct
 }
 
-/** % de ítems OK sobre evaluables en la matriz de estándares (DPO 1.2). */
-async function estandaresConformidadFlota(
-  client: SupabaseClient
-): Promise<number | null> {
+/**
+ * % de ítems OK sobre evaluables en la matriz de estándares (DPO 1.2), global y
+ * abierto por criticidad: el punto pide distinguir lo mandatorio de lo de
+ * excelencia, y un desvío legal no puede promediarse contra uno de confort.
+ */
+async function estandaresConformidadFlota(client: SupabaseClient): Promise<{
+  total: number | null
+  mandatorio: number | null
+  excelencia: number | null
+}> {
   const [vehRes, itemsRes, cumplRes] = await Promise.all([
     client
       .from("catalogo_vehiculos")
       .select("dominio")
       .eq("active", true)
       .in("tipo", ["camion", "autoelevador"]),
-    client.from("flota_estandar_items").select("id").eq("activo", true),
+    client.from("flota_estandar_items").select("id, criticidad").eq("activo", true),
     client
       .from("flota_estandar_cumplimiento")
       .select("dominio, item_id, estado")
@@ -118,19 +124,41 @@ async function estandaresConformidadFlota(
   const dominios = new Set(
     ((vehRes.data || []) as Array<{ dominio: string }>).map((v) => v.dominio)
   )
-  const itemIds = new Set(((itemsRes.data || []) as Array<{ id: string }>).map((i) => i.id))
-  let ok = 0
-  let noOk = 0
+  const criticidadDe = new Map(
+    ((itemsRes.data || []) as Array<{ id: string; criticidad: string }>).map((i) => [
+      i.id,
+      i.criticidad,
+    ])
+  )
+  const conteo: Record<string, [number, number]> = {
+    total: [0, 0],
+    mandatorio: [0, 0],
+    excelencia: [0, 0],
+  }
+  // Los N/A no suman a ningún lado: un ítem que no aplica al modal no es desvío.
+  const sumar = (bucket: [number, number] | undefined, estado: string) => {
+    if (!bucket) return
+    if (estado === "ok") bucket[0]++
+    else if (estado === "no_ok") bucket[1]++
+  }
   for (const c of (cumplRes.data || []) as Array<{
     dominio: string
     item_id: string
     estado: string
   }>) {
-    if (!dominios.has(c.dominio) || !itemIds.has(c.item_id)) continue
-    if (c.estado === "ok") ok++
-    else if (c.estado === "no_ok") noOk++
+    if (!dominios.has(c.dominio)) continue
+    const crit = criticidadDe.get(c.item_id)
+    if (!crit) continue
+    sumar(conteo.total, c.estado)
+    sumar(conteo[crit], c.estado)
   }
-  return ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+  const pct = ([ok, noOk]: [number, number]) =>
+    ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+  return {
+    total: pct(conteo.total),
+    mandatorio: pct(conteo.mandatorio),
+    excelencia: pct(conteo.excelencia),
+  }
 }
 
 /**
@@ -156,7 +184,9 @@ export async function capturarFlotaKpiSnapshots(client: SupabaseClient): Promise
     cumplimiento_plan: cumplimientoPlanDesdeEstados(estados),
     services_vencidos: servicesVencidosDesdeProgramacion(programacion),
     docs_conformidad: docsConformidad,
-    estandares_conformidad: estandaresConformidad,
+    estandares_conformidad: estandaresConformidad.total,
+    estandares_mandatorios: estandaresConformidad.mandatorio,
+    estandares_excelencia: estandaresConformidad.excelencia,
   }
 
   const rows = Object.entries(valores).map(([kpi, valor]) => ({
