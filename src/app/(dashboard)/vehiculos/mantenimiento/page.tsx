@@ -178,7 +178,14 @@ export default async function MantenimientoPage() {
   const estandares =
     "data" in estandaresRes
       ? estandaresRes.data
-      : { items: [], cumplimiento: [], unidades: [], pct: null }
+      : {
+          items: [],
+          cumplimiento: [],
+          unidades: [],
+          pct: null,
+          pctMandatorio: null,
+          pctExcelencia: null,
+        }
   const herramientas = "data" in herramientasRes ? herramientasRes.data : []
   // Query aparte y tolerante: si falla, el resto del módulo se sigue viendo.
   const reprogramadas = "data" in reprogramadasRes ? reprogramadasRes.data : []

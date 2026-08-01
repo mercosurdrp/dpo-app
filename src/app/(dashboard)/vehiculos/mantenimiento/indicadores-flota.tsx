@@ -168,6 +168,24 @@ const KPI_DEFS: KpiDef[] = [
     dpo: "1.2",
   },
   {
+    kpi: "estandares_mandatorios",
+    label: "Conformidad de estándares — mandatorios",
+    descripcion:
+      "Ítems OK ÷ evaluables entre los mandatorios (exigidos por ley o cuya ausencia habilita un riesgo grave). Un desvío acá es hallazgo de auditoría",
+    fmt: (v) => `${v.toFixed(1)}%`,
+    conSerie: true,
+    dpo: "1.2",
+  },
+  {
+    kpi: "estandares_excelencia",
+    label: "Conformidad de estándares — excelencia",
+    descripcion:
+      "Ítems OK ÷ evaluables entre los de excelencia (mejoras de desempeño, ergonomía o eficiencia)",
+    fmt: (v) => `${v.toFixed(1)}%`,
+    conSerie: true,
+    dpo: "1.2",
+  },
+  {
     kpi: "checklist_deteccion",
     label: "Defectos anticipados por checklist",
     descripcion:
@@ -248,6 +266,8 @@ const KPIS_FOTO: FlotaKpi[] = [
   "services_vencidos",
   "docs_conformidad",
   "estandares_conformidad",
+  "estandares_mandatorios",
+  "estandares_excelencia",
 ]
 
 interface PuntoSerie {
@@ -270,6 +290,8 @@ interface Props {
   kpiSnapshots: FlotaKpiSnapshot[]
   extraSeries: Partial<Record<FlotaKpi, PuntoSerieKpi[]>>
   estandaresPct: number | null
+  estandaresPctMandatorio: number | null
+  estandaresPctExcelencia: number | null
   puedeEditar: boolean
   esAdmin: boolean
 }
@@ -288,6 +310,8 @@ export function IndicadoresFlota({
   kpiSnapshots,
   extraSeries,
   estandaresPct,
+  estandaresPctMandatorio,
+  estandaresPctExcelencia,
   puedeEditar,
   esAdmin,
 }: Props) {
@@ -344,8 +368,18 @@ export function IndicadoresFlota({
       ["services_vencidos", vencidos],
       ["docs_conformidad", docsConf],
       ["estandares_conformidad", estandaresPct],
+      ["estandares_mandatorios", estandaresPctMandatorio],
+      ["estandares_excelencia", estandaresPctExcelencia],
     ])
-  }, [estados, programacion, documentos, unidades, estandaresPct])
+  }, [
+    estados,
+    programacion,
+    documentos,
+    unidades,
+    estandaresPct,
+    estandaresPctMandatorio,
+    estandaresPctExcelencia,
+  ])
 
   // Series por KPI para los 3 meses.
   const series = useMemo(() => {

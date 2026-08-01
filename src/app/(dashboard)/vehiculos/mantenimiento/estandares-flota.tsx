@@ -12,6 +12,11 @@
 // R1.2.4 pide plan de acción para lo que no cumple: al marcar NO OK (o N/A, que
 // hay que justificar por qué no aplica al modal) se pide la observación en el
 // acto. Se puede editar después con click derecho sobre la celda.
+//
+// El punto pide además separar lo MANDATORIO de lo de EXCELENCIA: con todos los
+// ítems pesando igual, "le falta el arco antienganche" promediaba contra "no
+// tiene control crucero". La matriz va agrupada por criticidad y el % sale
+// abierto en dos, porque el número que le importa al auditor es el mandatorio.
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
@@ -33,7 +38,9 @@ import { ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import {
+  setEstandarCriticidad,
   setEstandarEstado,
+  type EstandarCriticidad,
   type EstandarCumplimiento,
   type EstandarEstado,
   type EstandarItem,
@@ -84,11 +91,35 @@ const ETIQUETA: Record<EstandarEstado, string> = {
   na: "no aplica",
 }
 
+const CRITICIDADES: EstandarCriticidad[] = ["mandatorio", "excelencia"]
+
+const CRITICIDAD: Record<
+  EstandarCriticidad,
+  { titulo: string; chip: string; ayuda: string; cls: string }
+> = {
+  mandatorio: {
+    titulo: "Mandatorios",
+    chip: "M",
+    ayuda:
+      "Mandatorio: lo exige la ley o su ausencia habilita un riesgo de lesión grave. Un desvío acá es un hallazgo de auditoría.",
+    cls: "border-destructive/30 bg-destructive/10 text-destructive",
+  },
+  excelencia: {
+    titulo: "Excelencia",
+    chip: "E",
+    ayuda:
+      "Excelencia: mejora desempeño, ergonomía o eficiencia. Su ausencia no habilita un riesgo grave inmediato.",
+    cls: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  },
+}
+
 interface Props {
   items: EstandarItem[]
   cumplimiento: EstandarCumplimiento[]
   unidades: EstandarUnidad[]
   pct: number | null
+  pctMandatorio: number | null
+  pctExcelencia: number | null
   puedeEditar: boolean
 }
 
@@ -100,12 +131,23 @@ interface DialogoObs {
   texto: string
 }
 
-export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEditar }: Props) {
+export function EstandaresFlota({
+  items,
+  cumplimiento,
+  unidades,
+  pct,
+  pctMandatorio,
+  pctExcelencia,
+  puedeEditar,
+}: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   // Overrides optimistas para que el click no espere el refresh del server.
   const [overrides, setOverrides] = useState<Map<string, EstandarEstado>>(new Map())
   const [obsOverrides, setObsOverrides] = useState<Map<string, string | null>>(new Map())
+  const [critOverrides, setCritOverrides] = useState<Map<string, EstandarCriticidad>>(
+    new Map()
+  )
   const [dialogo, setDialogo] = useState<DialogoObs | null>(null)
   const [guardando, setGuardando] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -124,6 +166,30 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
     overrides.get(`${dominio}|${itemId}`) ??
     estadoBy.get(`${dominio}|${itemId}`)?.estado ??
     null
+
+  const criticidadDe = (it: EstandarItem): EstandarCriticidad =>
+    critOverrides.get(it.id) ?? it.criticidad
+
+  /** Alterna mandatorio ⇄ excelencia (R1.2.1: se mantiene en la pantalla). */
+  const alternarCriticidad = async (it: EstandarItem) => {
+    if (!puedeEditar) return
+    const previa = criticidadDe(it)
+    const nueva: EstandarCriticidad =
+      previa === "mandatorio" ? "excelencia" : "mandatorio"
+    setCritOverrides((prev) => new Map(prev).set(it.id, nueva))
+    const res = await setEstandarCriticidad({ itemId: it.id, criticidad: nueva })
+    if ("error" in res) {
+      toast.error(res.error)
+      setCritOverrides((prev) => {
+        const m = new Map(prev)
+        m.set(it.id, previa)
+        return m
+      })
+      return
+    }
+    toast.success(`${it.nombre}: ahora es ${CRITICIDAD[nueva].titulo.toLowerCase()}`)
+    startTransition(() => router.refresh())
+  }
 
   const obsDe = (dominio: string, itemId: string): string | null => {
     const k = `${dominio}|${itemId}`
@@ -221,6 +287,34 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
     }
   }
 
+  /**
+   * Conformidad de toda la flota abierta por criticidad, recalculada en el
+   * cliente para que los clicks se vean al toque (el server la reenvía igual en
+   * el refresh).
+   */
+  const resumen = useMemo(() => {
+    const conteo: Record<EstandarCriticidad, [number, number]> = {
+      mandatorio: [0, 0],
+      excelencia: [0, 0],
+    }
+    for (const u of unidades) {
+      for (const it of items) {
+        if (it.ambito !== u.tipo) continue
+        const e = estadoDe(u.dominio, it.id)
+        if (e === "ok") conteo[criticidadDe(it)][0]++
+        else if (e === "no_ok") conteo[criticidadDe(it)][1]++
+      }
+    }
+    const pctDe = ([ok, noOk]: [number, number]) =>
+      ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+    return {
+      mandatorio: pctDe(conteo.mandatorio),
+      excelencia: pctDe(conteo.excelencia),
+      desviosMandatorios: conteo.mandatorio[1],
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unidades, items, estadoBy, overrides, critOverrides])
+
   const matriz = (ambito: "camion" | "autoelevador") => {
     const itemsAmbito = items.filter((i) => i.ambito === ambito)
     const cols = unidades.filter((u) => u.tipo === ambito)
@@ -228,11 +322,13 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
       return <p className="py-6 text-center text-sm text-muted-foreground">Sin datos.</p>
     }
 
-    // % por unidad (ok ÷ evaluables), con overrides aplicados.
-    const pctUnidad = (dominio: string) => {
+    // % por unidad (ok ÷ evaluables), con overrides aplicados. `crit` acota el
+    // cálculo a una criticidad; sin ella es el global de la unidad.
+    const pctUnidad = (dominio: string, crit?: EstandarCriticidad) => {
       let ok = 0
       let noOk = 0
       for (const it of itemsAmbito) {
+        if (crit && criticidadDe(it) !== crit) continue
         const e = estadoDe(dominio, it.id)
         if (e === "ok") ok++
         else if (e === "no_ok") noOk++
@@ -252,7 +348,8 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
                 Ítem del estándar
               </th>
               {cols.map((u) => {
-                const p = pctUnidad(u.dominio)
+                const pMand = pctUnidad(u.dominio, "mandatorio")
+                const pExc = pctUnidad(u.dominio, "excelencia")
                 const pend = sinEvaluarUnidad(u.dominio)
                 return (
                   <th
@@ -265,16 +362,23 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
                     <span
                       className={cn(
                         "block text-[11px] font-medium tabular-nums",
-                        p == null
+                        pMand == null
                           ? "text-muted-foreground/50"
-                          : p >= 100
+                          : pMand >= 100
                             ? "text-emerald-600 dark:text-emerald-400"
-                            : p >= 90
+                            : pMand >= 90
                               ? "text-amber-600 dark:text-amber-400"
                               : "text-destructive"
                       )}
+                      title="Conformidad en los ítems mandatorios de esta unidad"
                     >
-                      {p == null ? "—" : `${p.toFixed(0)}%`}
+                      M {pMand == null ? "—" : `${pMand.toFixed(0)}%`}
+                    </span>
+                    <span
+                      className="block text-[10px] tabular-nums text-muted-foreground"
+                      title="Conformidad en los ítems de excelencia de esta unidad"
+                    >
+                      E {pExc == null ? "—" : `${pExc.toFixed(0)}%`}
                     </span>
                     {pend > 0 && (
                       <span
@@ -289,60 +393,121 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
               })}
             </tr>
           </thead>
-          <tbody>
-            {itemsAmbito.map((it) => {
-              const justificacion = [
-                it.productividad && `Productividad: ${it.productividad}`,
-                it.seguridad && `Seguridad: ${it.seguridad}`,
-                it.calidad && `Calidad: ${it.calidad}`,
-              ]
-                .filter(Boolean)
-                .join("\n")
-              return (
-                <tr key={it.id} className="border-b border-border last:border-0">
+          {CRITICIDADES.map((crit) => {
+            const filas = itemsAmbito.filter((it) => criticidadDe(it) === crit)
+            if (filas.length === 0) return null
+            const meta = CRITICIDAD[crit]
+            const pGrupo = (() => {
+              let ok = 0
+              let noOk = 0
+              for (const it of filas) {
+                for (const u of cols) {
+                  const e = estadoDe(u.dominio, it.id)
+                  if (e === "ok") ok++
+                  else if (e === "no_ok") noOk++
+                }
+              }
+              return ok + noOk > 0 ? (ok / (ok + noOk)) * 100 : null
+            })()
+            return (
+              <tbody key={crit}>
+                <tr>
                   <td
-                    className="sticky left-0 z-10 bg-card p-2 text-foreground"
-                    title={justificacion || undefined}
+                    colSpan={cols.length + 1}
+                    className="sticky left-0 z-10 border-y border-border bg-muted/50 px-2 py-1.5"
                   >
-                    {it.nombre}
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                        {meta.titulo}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {filas.length} ítem{filas.length === 1 ? "" : "s"}
+                        {pGrupo != null && ` · ${pGrupo.toFixed(1)}% de conformidad`}
+                      </span>
+                    </span>
                   </td>
-                  {cols.map((u) => {
-                    const e = estadoDe(u.dominio, it.id)
-                    const obs = obsDe(u.dominio, it.id)
-                    const estilo = celdaEstilo(e)
-                    const tip =
-                      e == null
-                        ? "Sin evaluar"
-                        : [ETIQUETA[e], obs].filter(Boolean).join(" — ")
-                    return (
-                      <td key={u.dominio} className="p-0.5 text-center">
-                        <button
-                          className={cn(
-                            "h-7 w-full min-w-14 rounded transition-colors",
-                            estilo.cls,
-                            !puedeEditar && "cursor-default"
-                          )}
-                          title={tip}
-                          onClick={() => clickCelda(u.dominio, it.id, it.nombre)}
-                          onContextMenu={(ev) => {
-                            ev.preventDefault()
-                            abrirObservacion(u.dominio, it.id, it.nombre)
-                          }}
-                        >
-                          {estilo.label}
-                          {obs && <span className="ml-0.5 align-super text-[9px]">•</span>}
-                        </button>
-                      </td>
-                    )
-                  })}
                 </tr>
-              )
-            })}
-          </tbody>
+                {filas.map((it) => {
+                  const justificacion = [
+                    it.productividad && `Productividad: ${it.productividad}`,
+                    it.seguridad && `Seguridad: ${it.seguridad}`,
+                    it.calidad && `Calidad: ${it.calidad}`,
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                  return (
+                    <tr key={it.id} className="border-b border-border last:border-0">
+                      <td
+                        className="sticky left-0 z-10 bg-card p-2 text-foreground"
+                        title={justificacion || undefined}
+                      >
+                        <span className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className={cn(
+                              "rounded border px-1 text-[10px] font-bold leading-4",
+                              meta.cls,
+                              !puedeEditar && "cursor-default"
+                            )}
+                            title={
+                              puedeEditar
+                                ? `${meta.ayuda}\n\nClick para pasarlo a ${
+                                    crit === "mandatorio" ? "excelencia" : "mandatorio"
+                                  }.`
+                                : meta.ayuda
+                            }
+                            onClick={() => alternarCriticidad(it)}
+                          >
+                            {meta.chip}
+                          </button>
+                          {it.nombre}
+                        </span>
+                      </td>
+                      {cols.map((u) => {
+                        const e = estadoDe(u.dominio, it.id)
+                        const obs = obsDe(u.dominio, it.id)
+                        const estilo = celdaEstilo(e)
+                        const tip =
+                          e == null
+                            ? "Sin evaluar"
+                            : [ETIQUETA[e], obs].filter(Boolean).join(" — ")
+                        return (
+                          <td key={u.dominio} className="p-0.5 text-center">
+                            <button
+                              className={cn(
+                                "h-7 w-full min-w-14 rounded transition-colors",
+                                estilo.cls,
+                                !puedeEditar && "cursor-default"
+                              )}
+                              title={tip}
+                              onClick={() => clickCelda(u.dominio, it.id, it.nombre)}
+                              onContextMenu={(ev) => {
+                                ev.preventDefault()
+                                abrirObservacion(u.dominio, it.id, it.nombre)
+                              }}
+                            >
+                              {estilo.label}
+                              {obs && (
+                                <span className="ml-0.5 align-super text-[9px]">•</span>
+                              )}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            )
+          })}
         </table>
       </div>
     )
   }
+
+  // El server ya manda los dos %; el cálculo local sólo adelanta los clicks.
+  const mandatorio = resumen.mandatorio ?? pctMandatorio
+  const excelencia = resumen.excelencia ?? pctExcelencia
 
   return (
     <div className="space-y-4">
@@ -363,12 +528,31 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
             <Badge
               className={cn(
                 "text-sm",
-                pct != null && pct >= 100
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                mandatorio == null
+                  ? "border-border bg-muted text-muted-foreground"
+                  : mandatorio >= 100
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "border-destructive/30 bg-destructive/10 text-destructive"
               )}
+              title={
+                resumen.desviosMandatorios > 0
+                  ? `${resumen.desviosMandatorios} desvío(s) en ítems mandatorios: son los hallazgos que mira el auditor`
+                  : "Sin desvíos en ítems mandatorios"
+              }
             >
-              Conformidad: {pct != null ? `${pct.toFixed(1)}%` : "—"}
+              Mandatorios: {mandatorio != null ? `${mandatorio.toFixed(1)}%` : "—"}
+            </Badge>
+            <Badge
+              className="border-sky-500/30 bg-sky-500/10 text-sm text-sky-600 dark:text-sky-400"
+              title="Ítems de excelencia: mejoras que no habilitan un riesgo grave"
+            >
+              Excelencia: {excelencia != null ? `${excelencia.toFixed(1)}%` : "—"}
+            </Badge>
+            <Badge
+              className="border-border bg-muted text-sm text-muted-foreground"
+              title="Conformidad global (mandatorios + excelencia): es el KPI histórico estandares_conformidad"
+            >
+              Global: {pct != null ? `${pct.toFixed(1)}%` : "—"}
             </Badge>
           </div>
         </CardHeader>
@@ -383,9 +567,18 @@ export function EstandaresFlota({ items, cumplimiento, unidades, pct, puedeEdita
                 observación (se ve al pasar el mouse).{" "}
                 <span className="text-amber-600 dark:text-amber-400">
                   El ? es un ítem sin evaluar: no cuenta en el %.
-                </span>
+                </span>{" "}
+                Con el chip <strong>M</strong>/<strong>E</strong> de cada fila se
+                cambia la criticidad del ítem.
               </>
             )}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            <strong className="text-foreground">Mandatorio</strong>: lo exige la ley o
+            su ausencia habilita un riesgo de lesión grave — un desvío acá es un
+            hallazgo de auditoría.{" "}
+            <strong className="text-foreground">Excelencia</strong>: mejora desempeño,
+            ergonomía o eficiencia.
           </p>
         </CardContent>
       </Card>

@@ -740,6 +740,8 @@ export function MantenimientoClient({
             kpiSnapshots={kpiSnapshots}
             extraSeries={kpiExtraSeries}
             estandaresPct={estandares.pct}
+            estandaresPctMandatorio={estandares.pctMandatorio}
+            estandaresPctExcelencia={estandares.pctExcelencia}
             puedeEditar={puedeEditar}
             esAdmin={esAdmin}
           />
@@ -752,6 +754,8 @@ export function MantenimientoClient({
             cumplimiento={estandares.cumplimiento}
             unidades={estandares.unidades}
             pct={estandares.pct}
+            pctMandatorio={estandares.pctMandatorio}
+            pctExcelencia={estandares.pctExcelencia}
             puedeEditar={puedeEditar}
           />
         </TabsContent>
