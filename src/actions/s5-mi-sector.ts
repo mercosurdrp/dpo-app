@@ -2,58 +2,82 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireAuth } from "@/lib/session"
-import type { S5Categoria, S5ItemCatalogo } from "@/types/database"
+import { archivosDeFila, columnasArchivos, type ArchivoAvance } from "@/lib/adjuntos-avance"
+import { calcularBonus, type ResumenDocumentacion } from "@/lib/s5-bonus"
+import type { S5ItemCatalogo } from "@/types/database"
 
 const MI_PATH = "/mi-5s"
 const DASHBOARD_PATH = "/5s"
 
-export interface S5TareaSector {
-  id: string
-  periodo: string
-  sector_numero: number
-  categoria: S5Categoria | null
-  titulo: string
-  descripcion: string | null
-  orden: number
-  activo: boolean
+/**
+ * Este módulo NO tiene tablas propias a propósito: se apoya en `s5_acciones` y
+ * `s5_acciones_evidencias`, que ya existen y ya tienen las políticas que
+ * necesitábamos (el responsable puede cargar evidencia y subir al bucket bajo
+ * `acciones/{id}/`). Así el módulo se publica sin DDL.
+ *
+ * - Tarea del mes  = fila de `s5_acciones` (tipo 'almacen', sector_numero).
+ * - Evidencia      = fila de `s5_acciones_evidencias` con hasta dos fotos en la
+ *                    columna jsonb `archivos`, marcadas con `momento`.
+ */
+
+/** Foto de evidencia: el `momento` es una clave extra del jsonb `archivos`. */
+export type MomentoFoto = "antes" | "despues"
+
+export interface FotoEvidencia extends ArchivoAvance {
+  momento: MomentoFoto | null
 }
 
-export interface S5EvidenciaSector {
+export interface TareaSector {
   id: string
-  periodo: string
-  sector_numero: number
-  item_id: string | null
-  tarea_id: string | null
-  categoria: S5Categoria | null
-  comentario: string
-  storage_path: string | null
-  created_at: string
+  descripcion: string
+  estado: "no_comenzada" | "en_curso" | "cerrada"
+  fecha_compromiso: string | null
+  /** Es el contenedor de las fotos sueltas del mes, no una tarea real. */
+  es_libre: boolean
+  /** Cuántas evidencias tiene cargadas este mes. */
+  evidencias: number
+  /** Cuántas de esas tienen antes Y después. */
+  completas: number
+}
+
+export interface EvidenciaSector {
+  id: string
+  accion_id: string
+  comentario: string | null
+  fotos: FotoEvidencia[]
+  autor_id: string
   autor_nombre: string
+  created_at: string
   es_mia: boolean
 }
 
 export interface MiSector5S {
-  /** Período vigente (YYYY-MM-01). */
   periodo: string
-  /** null = este mes no me tocó ningún sector. */
   sector_numero: number | null
   sector_nombre: string | null
-  /** Ítems del checklist con el que después lo auditan. */
   checklist: S5ItemCatalogo[]
-  /** Tareas puntuales cargadas para ese sector y mes. */
-  tareas: S5TareaSector[]
-  evidencias: S5EvidenciaSector[]
-  /** Nota de la última auditoría del sector (referencia de dónde está parado). */
+  tareas: TareaSector[]
+  evidencias: EvidenciaSector[]
+  documentacion: ResumenDocumentacion
   ultima_nota: number | null
-  ultima_fecha: string | null
-  /** Días que quedan del mes, para el contador del tablero. */
   dias_restantes: number
 }
+
+// ===================================================
+// Helpers
+// ===================================================
 
 function periodoActual(): string {
   const hoy = new Date()
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`
+}
+
+function finDeMes(periodo: string): string {
+  const [y, m] = periodo.split("-").map(Number)
+  const ultimo = new Date(y, m, 0).getDate()
+  return `${y}-${String(m).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
 }
 
 function diasRestantesDelMes(): number {
@@ -62,11 +86,146 @@ function diasRestantesDelMes(): number {
   return ultimo - hoy.getDate()
 }
 
+/** Descripción de la acción que junta las fotos sueltas de un sector y mes. */
+function descripcionLibre(periodo: string, sector: number): string {
+  return `Tareas 5S del mes — sector ${sector} — ${periodo.slice(0, 7)}`
+}
+
+function fotosDeFila(row: {
+  archivos?: unknown
+  archivo_path?: string | null
+  archivo_nombre?: string | null
+  archivo_mime?: string | null
+  archivo_bytes?: number | null
+}): FotoEvidencia[] {
+  const base = archivosDeFila(row)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const crudos = Array.isArray(row.archivos) ? (row.archivos as any[]) : []
+  return base.map((a) => ({
+    ...a,
+    momento: (crudos.find((c) => c?.path === a.path)?.momento ?? null) as MomentoFoto | null,
+  }))
+}
+
+function esCompleta(fotos: FotoEvidencia[]): boolean {
+  return fotos.some((f) => f.momento === "antes") && fotos.some((f) => f.momento === "despues")
+}
+
 /**
- * Sector que le tocó al usuario logueado este mes, con su checklist,
- * sus tareas y lo que ya cargó. Es lo que alimenta /mi-5s y el recuadro
- * verde del tablero del operario.
+ * Evidencias de un sector en un mes, con sus fotos ya normalizadas.
+ * Es la base de la pantalla del operario, del panel del auditor y del bonus.
  */
+async function evidenciasDelMes(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodo: string,
+  sector: number,
+  miProfileId: string | null,
+): Promise<{ acciones: string[]; evidencias: EvidenciaSector[] }> {
+  const { data: acciones } = await supabase
+    .from("s5_acciones")
+    .select("id")
+    .eq("tipo", "almacen")
+    .eq("sector_numero", sector)
+
+  const ids = (acciones ?? []).map((a: { id: string }) => a.id)
+  if (ids.length === 0) return { acciones: [], evidencias: [] }
+
+  const { data } = await supabase
+    .from("s5_acciones_evidencias")
+    .select("*, autor:profiles!s5_acciones_evidencias_autor_id_fkey(nombre)")
+    .in("accion_id", ids)
+    .gte("created_at", `${periodo}T00:00:00`)
+    .lte("created_at", `${finDeMes(periodo)}T23:59:59`)
+    .order("created_at", { ascending: false })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const evidencias: EvidenciaSector[] = ((data ?? []) as any[]).map((row) => ({
+    id: row.id,
+    accion_id: row.accion_id,
+    comentario: row.comentario,
+    fotos: fotosDeFila(row),
+    autor_id: row.autor_id,
+    autor_nombre: row.autor?.nombre ?? "—",
+    created_at: row.created_at,
+    es_mia: row.autor_id === miProfileId,
+  }))
+
+  return { acciones: ids, evidencias }
+}
+
+/**
+ * El bonus premia al RESPONSABLE del sector: solo cuentan las evidencias que
+ * cargó él. Las que sube el auditor al responder una acción no suman.
+ */
+function resumirDocumentacion(
+  evidencias: EvidenciaSector[],
+  responsableProfileId: string | null,
+): ResumenDocumentacion {
+  const suyas = responsableProfileId
+    ? evidencias.filter((e) => e.autor_id === responsableProfileId)
+    : []
+  const total = suyas.length
+  const conAntesDespues = suyas.filter((e) => esCompleta(e.fotos)).length
+  return {
+    total,
+    con_antes_despues: conAntesDespues,
+    bonus: calcularBonus(total, conAntesDespues),
+  }
+}
+
+/**
+ * Legajo del usuario logueado. Va por el cliente admin a propósito: la RLS de
+ * `empleados` restringe al rol 'empleado' a "verse a sí mismo" vía
+ * `profiles.empleado_id`, que en esta base está vacío — con el cliente normal
+ * la consulta volvería sin filas y el operario nunca vería su sector. La
+ * lectura está acotada al propio usuario autenticado.
+ */
+async function empleadoDelUsuario(profileId: string): Promise<{ id: string } | null> {
+  const { data } = await createAdminClient()
+    .from("empleados")
+    .select("id")
+    .eq("profile_id", profileId)
+    .maybeSingle()
+  return data ?? null
+}
+
+/** Sector que le tocó por sorteo al empleado en ese mes, o null. */
+async function sectorDelEmpleado(
+  empleadoId: string,
+  periodo: string
+): Promise<number | null> {
+  const { data } = await createAdminClient()
+    .from("s5_sector_responsables")
+    .select("sector_numero")
+    .eq("periodo", periodo)
+    .eq("empleado_id", empleadoId)
+    .maybeSingle()
+  return data?.sector_numero ?? null
+}
+
+/** profile_id del responsable sorteado de un sector en un mes. */
+async function responsableDelSector(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodo: string,
+  sector: number,
+): Promise<{ profileId: string | null; nombre: string | null }> {
+  const { data } = await supabase
+    .from("s5_sector_responsables")
+    .select("empleado:empleados!s5_sector_responsables_empleado_id_fkey(profile_id, nombre)")
+    .eq("periodo", periodo)
+    .eq("sector_numero", sector)
+    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const emp = (data as any)?.empleado
+  return { profileId: emp?.profile_id ?? null, nombre: emp?.nombre ?? null }
+}
+
+// ===================================================
+// Pantalla del operario
+// ===================================================
+
 export async function getMiSector5S(): Promise<
   { data: MiSector5S } | { error: string }
 > {
@@ -75,12 +234,6 @@ export async function getMiSector5S(): Promise<
     const supabase = await createClient()
     const periodo = periodoActual()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .maybeSingle()
-
     const vacio: MiSector5S = {
       periodo,
       sector_numero: null,
@@ -88,25 +241,18 @@ export async function getMiSector5S(): Promise<
       checklist: [],
       tareas: [],
       evidencias: [],
+      documentacion: { total: 0, con_antes_despues: 0, bonus: 0 },
       ultima_nota: null,
-      ultima_fecha: null,
       dias_restantes: diasRestantesDelMes(),
     }
 
+    const empleado = await empleadoDelUsuario(profile.id)
     if (!empleado) return { data: vacio }
 
-    const { data: resp } = await supabase
-      .from("s5_sector_responsables")
-      .select("sector_numero")
-      .eq("periodo", periodo)
-      .eq("empleado_id", empleado.id)
-      .maybeSingle()
+    const sector = await sectorDelEmpleado(empleado.id, periodo)
+    if (sector === null) return { data: vacio }
 
-    if (!resp) return { data: vacio }
-
-    const sector = resp.sector_numero as number
-
-    const [sectorRes, itemsRes, tareasRes, evidRes, auditRes] = await Promise.all([
+    const [sectorRes, itemsRes, accionesRes, auditRes, evid] = await Promise.all([
       supabase.from("s5_sectores_almacen").select("nombre").eq("numero", sector).maybeSingle(),
       supabase
         .from("s5_items_catalogo")
@@ -115,28 +261,53 @@ export async function getMiSector5S(): Promise<
         .eq("activo", true)
         .order("orden", { ascending: true }),
       supabase
-        .from("s5_tareas_sector")
-        .select("*")
-        .eq("periodo", periodo)
+        .from("s5_acciones")
+        .select("id, descripcion, estado, fecha_compromiso, cerrada_at")
+        .eq("tipo", "almacen")
         .eq("sector_numero", sector)
-        .eq("activo", true)
-        .order("orden", { ascending: true }),
-      supabase
-        .from("s5_evidencias_sector")
-        .select("*, autor:profiles!s5_evidencias_sector_profile_id_fkey(nombre)")
-        .eq("periodo", periodo)
-        .eq("sector_numero", sector)
-        .order("created_at", { ascending: false }),
+        .order("fecha_compromiso", { ascending: true, nullsFirst: false }),
       supabase
         .from("s5_auditorias")
-        .select("nota_total, fecha")
+        .select("nota_total")
         .eq("tipo", "almacen")
         .eq("sector_numero", sector)
         .eq("estado", "completada")
         .order("fecha", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      evidenciasDelMes(supabase, periodo, sector, profile.id),
     ])
+
+    const porAccion = new Map<string, EvidenciaSector[]>()
+    for (const e of evid.evidencias) {
+      const arr = porAccion.get(e.accion_id) ?? []
+      arr.push(e)
+      porAccion.set(e.accion_id, arr)
+    }
+
+    const libre = descripcionLibre(periodo, sector)
+    const finMes = finDeMes(periodo)
+
+    // Tareas visibles: las abiertas del sector y las que se cerraron este mes.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tareas: TareaSector[] = ((accionesRes.data ?? []) as any[])
+      .filter(
+        (a) =>
+          a.estado !== "cerrada" ||
+          (a.cerrada_at && a.cerrada_at >= `${periodo}T00:00:00` && a.cerrada_at <= `${finMes}T23:59:59`),
+      )
+      .map((a) => {
+        const evs = porAccion.get(a.id) ?? []
+        return {
+          id: a.id,
+          descripcion: a.descripcion,
+          estado: a.estado,
+          fecha_compromiso: a.fecha_compromiso,
+          es_libre: a.descripcion === libre,
+          evidencias: evs.length,
+          completas: evs.filter((e) => esCompleta(e.fotos)).length,
+        }
+      })
 
     return {
       data: {
@@ -144,23 +315,13 @@ export async function getMiSector5S(): Promise<
         sector_numero: sector,
         sector_nombre: sectorRes.data?.nombre ?? `Sector ${sector}`,
         checklist: (itemsRes.data ?? []) as S5ItemCatalogo[],
-        tareas: (tareasRes.data ?? []) as S5TareaSector[],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        evidencias: ((evidRes.data ?? []) as any[]).map((row) => ({
-          id: row.id,
-          periodo: row.periodo,
-          sector_numero: row.sector_numero,
-          item_id: row.item_id,
-          tarea_id: row.tarea_id,
-          categoria: row.categoria,
-          comentario: row.comentario,
-          storage_path: row.storage_path,
-          created_at: row.created_at,
-          autor_nombre: row.autor?.nombre ?? "—",
-          es_mia: row.profile_id === profile.id,
-        })),
-        ultima_nota: auditRes.data?.nota_total ?? null,
-        ultima_fecha: auditRes.data?.fecha ?? null,
+        tareas,
+        evidencias: evid.evidencias,
+        // El responsable del sector soy yo: por eso llegué hasta acá.
+        documentacion: resumirDocumentacion(evid.evidencias, profile.id),
+        ultima_nota: auditRes.data?.nota_total !== undefined && auditRes.data?.nota_total !== null
+          ? Number(auditRes.data.nota_total)
+          : null,
         dias_restantes: diasRestantesDelMes(),
       },
     }
@@ -170,70 +331,143 @@ export async function getMiSector5S(): Promise<
 }
 
 /**
- * Carpeta donde el responsable puede subir según la política de storage:
- * sector/{periodo}/{sector_numero}/...
+ * Acción a la que colgar una foto suelta. Si no existe la del mes, se crea con
+ * el cliente admin: `s5_acciones_insert` solo deja crear a admin/auditor, y acá
+ * el que la necesita es el operario. La autorización la hace esta función:
+ * solo la crea para el sector que le tocó a quien la pide.
  */
-export async function getCarpetaEvidencia5S(): Promise<
-  { data: { carpeta: string; periodo: string; sector: number } } | { error: string }
-> {
-  const res = await getMiSector5S()
-  if ("error" in res) return { error: res.error }
-  if (res.data.sector_numero === null) return { error: "Este mes no sos responsable de ningún sector" }
-  const { periodo, sector_numero } = res.data
-  return {
-    data: {
-      carpeta: `sector/${periodo}/${sector_numero}`,
-      periodo,
-      sector: sector_numero,
-    },
+async function accionLibre(periodo: string, sector: number, profileId: string): Promise<string | null> {
+  const admin = createAdminClient()
+  const descripcion = descripcionLibre(periodo, sector)
+
+  const { data: existente } = await admin
+    .from("s5_acciones")
+    .select("id")
+    .eq("tipo", "almacen")
+    .eq("sector_numero", sector)
+    .eq("descripcion", descripcion)
+    .maybeSingle()
+
+  if (existente) return existente.id
+
+  const { data, error } = await admin
+    .from("s5_acciones")
+    .insert({
+      tipo: "almacen",
+      sector_numero: sector,
+      descripcion,
+      responsable_id: profileId,
+      fecha_compromiso: finDeMes(periodo),
+      estado: "en_curso",
+      creado_por: profileId,
+    })
+    .select("id")
+    .single()
+
+  if (error) return null
+  return data.id
+}
+
+/**
+ * Deja lista la acción a la que se van a colgar las fotos y devuelve su id.
+ * Hay que llamarla ANTES de subir: la política de storage solo deja escribir
+ * bajo `acciones/{id}/` de una acción donde el usuario es responsable o
+ * creador, así que la carpeta tiene que existir como acción real.
+ */
+export async function prepararCarga5S(
+  accionId?: string | null
+): Promise<{ data: { accionId: string } } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    const periodo = periodoActual()
+
+    const empleado = await empleadoDelUsuario(profile.id)
+    if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
+
+    const sector = await sectorDelEmpleado(empleado.id, periodo)
+    if (sector === null) return { error: "Este mes no sos responsable de ningún sector" }
+
+    if (!accionId) {
+      const id = await accionLibre(periodo, sector, profile.id)
+      if (!id) return { error: "No se pudo preparar la carga" }
+      return { data: { accionId: id } }
+    }
+
+    const { data: acc } = await supabase
+      .from("s5_acciones")
+      .select("id, sector_numero, responsable_id")
+      .eq("id", accionId)
+      .maybeSingle()
+    if (!acc || acc.sector_numero !== sector) {
+      return { error: "Esa tarea no es de tu sector" }
+    }
+
+    // Tarea creada antes del sorteo: sin responsable, el bucket le rechazaría
+    // la foto. Se la asignamos al responsable del mes, que es quien la ejecuta.
+    if (!acc.responsable_id) {
+      await createAdminClient()
+        .from("s5_acciones")
+        .update({ responsable_id: profile.id })
+        .eq("id", accionId)
+    }
+
+    return { data: { accionId } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error preparando la carga" }
   }
 }
 
 export async function cargarEvidencia5S(input: {
+  /** Tarea a la que corresponde; sin ella va a la carpeta del mes. */
+  accionId?: string | null
   comentario: string
-  itemId?: string | null
-  tareaId?: string | null
-  categoria?: S5Categoria | null
-  storagePath?: string | null
-  mimeType?: string | null
-  tamanoBytes?: number | null
+  antes?: ArchivoAvance | null
+  despues?: ArchivoAvance | null
 }): Promise<{ ok: true } | { error: string }> {
   try {
     const profile = await requireAuth()
     const supabase = await createClient()
 
     const comentario = input.comentario.trim()
-    if (!comentario) return { error: "Escribí un comentario de lo que hiciste" }
+    if (!comentario) return { error: "Contá en una línea qué hiciste" }
+    if (!input.antes && !input.despues) {
+      return { error: "Subí al menos una foto" }
+    }
 
     const periodo = periodoActual()
 
-    const { data: empleado } = await supabase
-      .from("empleados")
-      .select("id")
-      .eq("profile_id", profile.id)
-      .maybeSingle()
+    const empleado = await empleadoDelUsuario(profile.id)
     if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
 
-    const { data: resp } = await supabase
-      .from("s5_sector_responsables")
-      .select("sector_numero")
-      .eq("periodo", periodo)
-      .eq("empleado_id", empleado.id)
-      .maybeSingle()
-    if (!resp) return { error: "Este mes no sos responsable de ningún sector" }
+    const sector = await sectorDelEmpleado(empleado.id, periodo)
+    if (sector === null) return { error: "Este mes no sos responsable de ningún sector" }
 
-    const { error } = await supabase.from("s5_evidencias_sector").insert({
-      periodo,
-      sector_numero: resp.sector_numero,
-      item_id: input.itemId || null,
-      tarea_id: input.tareaId || null,
-      categoria: input.categoria || null,
+    let accionId = input.accionId || null
+    if (accionId) {
+      // No dejar colgar evidencia de otro sector.
+      const { data: acc } = await supabase
+        .from("s5_acciones")
+        .select("sector_numero")
+        .eq("id", accionId)
+        .maybeSingle()
+      if (!acc || acc.sector_numero !== sector) {
+        return { error: "Esa tarea no es de tu sector" }
+      }
+    } else {
+      accionId = await accionLibre(periodo, sector, profile.id)
+      if (!accionId) return { error: "No se pudo registrar la carga" }
+    }
+
+    const fotos: (ArchivoAvance & { momento: MomentoFoto })[] = []
+    if (input.antes) fotos.push({ ...input.antes, momento: "antes" })
+    if (input.despues) fotos.push({ ...input.despues, momento: "despues" })
+
+    const { error } = await supabase.from("s5_acciones_evidencias").insert({
+      accion_id: accionId,
       comentario,
-      storage_path: input.storagePath || null,
-      mime_type: input.mimeType || null,
-      tamano_bytes: input.tamanoBytes ?? null,
-      profile_id: profile.id,
-      empleado_id: empleado.id,
+      autor_id: profile.id,
+      ...columnasArchivos(fotos),
     })
     if (error) return { error: error.message }
 
@@ -249,8 +483,7 @@ export async function borrarEvidencia5S(id: string): Promise<{ ok: true } | { er
   try {
     await requireAuth()
     const supabase = await createClient()
-
-    const { error } = await supabase.from("s5_evidencias_sector").delete().eq("id", id)
+    const { error } = await supabase.from("s5_acciones_evidencias").delete().eq("id", id)
     if (error) return { error: error.message }
 
     revalidatePath(MI_PATH)
@@ -278,21 +511,18 @@ export async function getEvidenciaSectorUrl(
 }
 
 // ===================================================
-// Panel del auditor: tareas del mes por sector
+// Panel del auditor
 // ===================================================
 
 export interface SectorConEvidencias {
   sector_numero: number
   sector_nombre: string
   responsable_nombre: string | null
-  tareas: S5TareaSector[]
-  evidencias: S5EvidenciaSector[]
+  tareas: TareaSector[]
+  evidencias: EvidenciaSector[]
+  documentacion: ResumenDocumentacion
 }
 
-/**
- * Vista del mes completo (los 4 sectores) para el panel 5S: quién es
- * responsable, qué tareas tiene y qué evidencia subió.
- */
 export async function getPanelSectores5S(
   periodo: string
 ): Promise<{ data: SectorConEvidencias[] } | { error: string }> {
@@ -300,55 +530,74 @@ export async function getPanelSectores5S(
     const profile = await requireAuth()
     const supabase = await createClient()
 
-    const [sectoresRes, respRes, tareasRes, evidRes] = await Promise.all([
+    const [sectoresRes, respRes, accionesRes] = await Promise.all([
       supabase.from("s5_sectores_almacen").select("*").order("numero"),
       supabase
         .from("s5_sector_responsables")
-        .select("sector_numero, empleado:empleados!s5_sector_responsables_empleado_id_fkey(nombre)")
+        .select(
+          "sector_numero, empleado:empleados!s5_sector_responsables_empleado_id_fkey(nombre, profile_id)"
+        )
         .eq("periodo", periodo),
       supabase
-        .from("s5_tareas_sector")
-        .select("*")
-        .eq("periodo", periodo)
-        .order("orden", { ascending: true }),
-      supabase
-        .from("s5_evidencias_sector")
-        .select("*, autor:profiles!s5_evidencias_sector_profile_id_fkey(nombre)")
-        .eq("periodo", periodo)
-        .order("created_at", { ascending: false }),
+        .from("s5_acciones")
+        .select("id, sector_numero, descripcion, estado, fecha_compromiso, cerrada_at")
+        .eq("tipo", "almacen")
+        .order("fecha_compromiso", { ascending: true, nullsFirst: false }),
     ])
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const respPorSector = new Map<number, string>()
+    const respPorSector = new Map<number, { nombre: string | null; profileId: string | null }>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const r of (respRes.data ?? []) as any[]) {
-      respPorSector.set(r.sector_numero, r.empleado?.nombre ?? null)
+      respPorSector.set(r.sector_numero, {
+        nombre: r.empleado?.nombre ?? null,
+        profileId: r.empleado?.profile_id ?? null,
+      })
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const evidencias: S5EvidenciaSector[] = ((evidRes.data ?? []) as any[]).map((row) => ({
-      id: row.id,
-      periodo: row.periodo,
-      sector_numero: row.sector_numero,
-      item_id: row.item_id,
-      tarea_id: row.tarea_id,
-      categoria: row.categoria,
-      comentario: row.comentario,
-      storage_path: row.storage_path,
-      created_at: row.created_at,
-      autor_nombre: row.autor?.nombre ?? "—",
-      es_mia: row.profile_id === profile.id,
-    }))
+    const finMes = finDeMes(periodo)
+    const data: SectorConEvidencias[] = []
 
-    const tareas = (tareasRes.data ?? []) as S5TareaSector[]
+    for (const s of sectoresRes.data ?? []) {
+      const { evidencias } = await evidenciasDelMes(supabase, periodo, s.numero, profile.id)
+      const porAccion = new Map<string, EvidenciaSector[]>()
+      for (const e of evidencias) {
+        const arr = porAccion.get(e.accion_id) ?? []
+        arr.push(e)
+        porAccion.set(e.accion_id, arr)
+      }
+      const libre = descripcionLibre(periodo, s.numero)
 
-    const data: SectorConEvidencias[] = (sectoresRes.data ?? []).map((s) => ({
-      sector_numero: s.numero,
-      sector_nombre: s.nombre,
-      responsable_nombre: respPorSector.get(s.numero) ?? null,
-      tareas: tareas.filter((t) => t.sector_numero === s.numero && t.activo),
-      evidencias: evidencias.filter((e) => e.sector_numero === s.numero),
-    }))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tareas: TareaSector[] = ((accionesRes.data ?? []) as any[])
+        .filter((a) => a.sector_numero === s.numero)
+        .filter(
+          (a) =>
+            a.estado !== "cerrada" ||
+            (a.cerrada_at && a.cerrada_at >= `${periodo}T00:00:00` && a.cerrada_at <= `${finMes}T23:59:59`),
+        )
+        .map((a) => {
+          const evs = porAccion.get(a.id) ?? []
+          return {
+            id: a.id,
+            descripcion: a.descripcion,
+            estado: a.estado,
+            fecha_compromiso: a.fecha_compromiso,
+            es_libre: a.descripcion === libre,
+            evidencias: evs.length,
+            completas: evs.filter((e) => esCompleta(e.fotos)).length,
+          }
+        })
+
+      const resp = respPorSector.get(s.numero)
+      data.push({
+        sector_numero: s.numero,
+        sector_nombre: s.nombre,
+        responsable_nombre: resp?.nombre ?? null,
+        tareas,
+        evidencias,
+        documentacion: resumirDocumentacion(evidencias, resp?.profileId ?? null),
+      })
+    }
 
     return { data }
   } catch (err) {
@@ -356,12 +605,33 @@ export async function getPanelSectores5S(
   }
 }
 
+/**
+ * Documentación de un sector en un mes. La usa la pantalla de auditoría para
+ * mostrar (y aplicar) el bonus antes de finalizar.
+ */
+export async function getDocumentacionSector(
+  periodo: string,
+  sector: number
+): Promise<{ data: { resumen: ResumenDocumentacion; evidencias: EvidenciaSector[] } } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    const [{ evidencias }, resp] = await Promise.all([
+      evidenciasDelMes(supabase, periodo, sector, profile.id),
+      responsableDelSector(supabase, periodo, sector),
+    ])
+    return {
+      data: { resumen: resumirDocumentacion(evidencias, resp.profileId), evidencias },
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error cargando la documentación" }
+  }
+}
+
 export async function crearTareaSector(input: {
   periodo: string
   sectorNumero: number
   titulo: string
-  descripcion?: string | null
-  categoria?: S5Categoria | null
 }): Promise<{ ok: true } | { error: string }> {
   try {
     const profile = await requireAuth()
@@ -369,15 +639,28 @@ export async function crearTareaSector(input: {
       return { error: "No tenés permiso" }
     }
     const titulo = input.titulo.trim()
-    if (!titulo) return { error: "Falta el título de la tarea" }
+    if (!titulo) return { error: "Escribí la tarea" }
 
     const supabase = await createClient()
-    const { error } = await supabase.from("s5_tareas_sector").insert({
-      periodo: input.periodo,
+
+    // El responsable del mes queda como dueño de la tarea.
+    const { data: resp } = await supabase
+      .from("s5_sector_responsables")
+      .select("empleado:empleados!s5_sector_responsables_empleado_id_fkey(profile_id)")
+      .eq("periodo", input.periodo)
+      .eq("sector_numero", input.sectorNumero)
+      .maybeSingle()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const responsableId = (resp as any)?.empleado?.profile_id ?? null
+
+    const { error } = await supabase.from("s5_acciones").insert({
+      tipo: "almacen",
       sector_numero: input.sectorNumero,
-      titulo,
-      descripcion: input.descripcion?.trim() || null,
-      categoria: input.categoria || null,
+      descripcion: titulo,
+      responsable_id: responsableId,
+      fecha_compromiso: finDeMes(input.periodo),
+      estado: "no_comenzada",
       creado_por: profile.id,
     })
     if (error) return { error: error.message }
@@ -397,7 +680,7 @@ export async function borrarTareaSector(id: string): Promise<{ ok: true } | { er
       return { error: "No tenés permiso" }
     }
     const supabase = await createClient()
-    const { error } = await supabase.from("s5_tareas_sector").update({ activo: false }).eq("id", id)
+    const { error } = await supabase.from("s5_acciones").delete().eq("id", id)
     if (error) return { error: error.message }
 
     revalidatePath(MI_PATH)

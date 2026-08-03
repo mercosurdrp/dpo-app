@@ -199,10 +199,15 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
                     Responsable de 5S en {mi5s.sector_nombre}
                   </p>
                   <p className="text-sm text-emerald-800">
-                    {mesActual} · {mi5s.evidencias.length} tarea
-                    {mi5s.evidencias.length === 1 ? "" : "s"} cargada
-                    {mi5s.evidencias.length === 1 ? "" : "s"} · faltan {mi5s.dias_restantes} días
+                    {mesActual} · {mi5s.documentacion.total} tarea
+                    {mi5s.documentacion.total === 1 ? "" : "s"} cargada
+                    {mi5s.documentacion.total === 1 ? "" : "s"} · faltan {mi5s.dias_restantes} días
                     para la auditoría
+                  </p>
+                  <p className="text-xs font-semibold text-amber-700">
+                    {mi5s.documentacion.bonus > 0
+                      ? `Llevás +${mi5s.documentacion.bonus} punto${mi5s.documentacion.bonus === 1 ? "" : "s"} para la nota del sector`
+                      : "Cargá una tarea con foto de antes y después y sumás puntos a la nota"}
                   </p>
                 </div>
               </div>

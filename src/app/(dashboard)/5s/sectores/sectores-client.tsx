@@ -10,6 +10,7 @@ import {
   ImageIcon,
   Loader2,
   Plus,
+  TrendingUp,
   Trash2,
   UserCheck,
 } from "lucide-react"
@@ -23,12 +24,6 @@ import {
   getEvidenciaSectorUrl,
   type SectorConEvidencias,
 } from "@/actions/s5-mi-sector"
-import {
-  S5_CATEGORIA_COLORS,
-  S5_CATEGORIA_ORDEN,
-  S5_CATEGORIA_LABELS,
-  type S5Categoria,
-} from "@/types/database"
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -54,7 +49,6 @@ interface Props {
 export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
   const router = useRouter()
   const [nuevaTarea, setNuevaTarea] = useState<Record<number, string>>({})
-  const [categoria, setCategoria] = useState<Record<number, S5Categoria | "">>({})
   const [guardando, startGuardar] = useTransition()
   const [verFoto, setVerFoto] = useState<string | null>(null)
 
@@ -74,12 +68,7 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
       return
     }
     startGuardar(async () => {
-      const res = await crearTareaSector({
-        periodo,
-        sectorNumero: sector,
-        titulo,
-        categoria: categoria[sector] || null,
-      })
+      const res = await crearTareaSector({ periodo, sectorNumero: sector, titulo })
       if ("error" in res) {
         toast.error(res.error)
         return
@@ -104,17 +93,19 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
 
   return (
     <div className="space-y-5 pb-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Link href="/5s" className="mb-1 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-            <ArrowLeft className="size-4" />
-            Volver a 5S
-          </Link>
-          <h1 className="text-2xl font-bold text-slate-900">Tareas y evidencia por sector</h1>
-          <p className="text-sm text-muted-foreground">
-            {formatMes(periodo)} — lo que carga cada responsable desde su celular.
-          </p>
-        </div>
+      <div>
+        <Link
+          href="/5s"
+          className="mb-1 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+        >
+          <ArrowLeft className="size-4" />
+          Volver a 5S
+        </Link>
+        <h1 className="text-2xl font-bold text-slate-900">Tareas y evidencia por sector</h1>
+        <p className="text-sm text-muted-foreground">
+          {formatMes(periodo)} — lo que carga cada responsable desde su celular. El bonus por
+          documentar se suma solo a la nota al finalizar la auditoría del sector.
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -125,44 +116,55 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                 <CardTitle className="text-base">
                   {s.sector_numero}. {s.sector_nombre}
                 </CardTitle>
-                <Badge
-                  variant="outline"
-                  className={s.responsable_nombre ? "border-emerald-300 text-emerald-700" : "text-slate-400"}
-                >
-                  <UserCheck className="mr-1 size-3.5" />
-                  {s.responsable_nombre ?? "Sin sortear"}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={
+                      s.responsable_nombre
+                        ? "border-emerald-300 text-emerald-700"
+                        : "text-slate-400"
+                    }
+                  >
+                    <UserCheck className="mr-1 size-3.5" />
+                    {s.responsable_nombre ?? "Sin sortear"}
+                  </Badge>
+                  <Badge className={s.documentacion.bonus > 0 ? "bg-amber-600" : "bg-slate-300"}>
+                    <TrendingUp className="mr-1 size-3.5" />
+                    +{s.documentacion.bonus}
+                  </Badge>
+                </div>
               </div>
+              <p className="text-xs text-slate-500">
+                {s.documentacion.total} carga{s.documentacion.total === 1 ? "" : "s"} ·{" "}
+                {s.documentacion.con_antes_despues} con antes y después
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Tareas del mes */}
+              {/* Tareas */}
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Tareas del mes ({s.tareas.length})
+                  Tareas del sector ({s.tareas.filter((t) => !t.es_libre).length})
                 </p>
-                {s.tareas.length === 0 ? (
+                {s.tareas.filter((t) => !t.es_libre).length === 0 ? (
                   <p className="text-sm text-slate-400">
                     Sin tareas puntuales. El responsable igual ve el checklist de auditoría.
                   </p>
                 ) : (
                   <div className="space-y-1.5">
-                    {s.tareas.map((t) => {
-                      const hecho = s.evidencias.filter((e) => e.tarea_id === t.id).length
-                      return (
+                    {s.tareas
+                      .filter((t) => !t.es_libre)
+                      .map((t) => (
                         <div
                           key={t.id}
                           className="flex items-center gap-2 rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
                         >
-                          <span className="flex-1 text-sm text-slate-800">{t.titulo}</span>
-                          {t.categoria && (
-                            <span
-                              className="text-[10px] font-semibold uppercase"
-                              style={{ color: S5_CATEGORIA_COLORS[t.categoria] }}
-                            >
-                              {S5_CATEGORIA_LABELS[t.categoria]}
-                            </span>
+                          <span className="flex-1 text-sm text-slate-800">{t.descripcion}</span>
+                          {t.completas > 0 && (
+                            <Badge className="bg-amber-600">{t.completas} A/D</Badge>
                           )}
-                          {hecho > 0 && <Badge className="bg-emerald-600">{hecho} 📸</Badge>}
+                          {t.evidencias > 0 && (
+                            <Badge className="bg-emerald-600">{t.evidencias} 📸</Badge>
+                          )}
                           {puedeEditar && (
                             <button
                               type="button"
@@ -174,38 +176,20 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                             </button>
                           )}
                         </div>
-                      )
-                    })}
+                      ))}
                   </div>
                 )}
 
                 {puedeEditar && (
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 flex gap-2">
                     <Input
                       value={nuevaTarea[s.sector_numero] ?? ""}
                       onChange={(e) =>
                         setNuevaTarea((p) => ({ ...p, [s.sector_numero]: e.target.value }))
                       }
                       placeholder="Nueva tarea para este sector"
-                      className="h-9 flex-1 min-w-[180px]"
+                      className="h-9 flex-1"
                     />
-                    <select
-                      value={categoria[s.sector_numero] ?? ""}
-                      onChange={(e) =>
-                        setCategoria((p) => ({
-                          ...p,
-                          [s.sector_numero]: e.target.value as S5Categoria | "",
-                        }))
-                      }
-                      className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
-                    >
-                      <option value="">S —</option>
-                      {S5_CATEGORIA_ORDEN.map((c) => (
-                        <option key={c} value={c}>
-                          {S5_CATEGORIA_LABELS[c]}
-                        </option>
-                      ))}
-                    </select>
                     <Button
                       size="sm"
                       onClick={() => handleAgregar(s.sector_numero)}
@@ -221,40 +205,45 @@ export function SectoresClient({ sectores, periodo, puedeEditar }: Props) {
                 )}
               </div>
 
-              {/* Evidencia cargada */}
+              {/* Evidencia */}
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Evidencia cargada ({s.evidencias.length})
+                  Evidencia del mes ({s.evidencias.length})
                 </p>
                 {s.evidencias.length === 0 ? (
                   <p className="text-sm text-slate-400">Todavía no cargaron nada.</p>
                 ) : (
-                  <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                    {s.evidencias.map((e) => (
-                      <div
-                        key={e.id}
-                        className="flex gap-2 rounded-md border border-slate-100 p-2"
-                      >
-                        {e.storage_path ? (
-                          <button
-                            type="button"
-                            onClick={() => abrirFoto(e.storage_path!)}
-                            className="flex size-12 shrink-0 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-slate-200"
-                            aria-label="Ver foto"
-                          >
-                            <ImageIcon className="size-5" />
-                          </button>
-                        ) : (
-                          <div className="size-12 shrink-0 rounded bg-slate-50" />
-                        )}
-                        <div className="min-w-0 flex-1">
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    {s.evidencias.map((e) => {
+                      const antes = e.fotos.find((f) => f.momento === "antes")
+                      const despues = e.fotos.find((f) => f.momento === "despues")
+                      const sueltas = e.fotos.filter((f) => !f.momento)
+                      return (
+                        <div key={e.id} className="rounded-md border border-slate-100 p-2">
                           <p className="text-sm text-slate-800">{e.comentario}</p>
                           <p className="text-xs text-slate-500">
                             {e.autor_nombre} · {formatFechaHora(e.created_at)}
                           </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {[
+                              ...(antes ? [{ f: antes, label: "ANTES" }] : []),
+                              ...(despues ? [{ f: despues, label: "DESPUÉS" }] : []),
+                              ...sueltas.map((f) => ({ f, label: "FOTO" })),
+                            ].map(({ f, label }) => (
+                              <button
+                                key={f.path}
+                                type="button"
+                                onClick={() => abrirFoto(f.path)}
+                                className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"
+                              >
+                                <ImageIcon className="size-3.5" />
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

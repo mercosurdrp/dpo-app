@@ -24,6 +24,8 @@ import type {
   S5ItemCriticoRow,
 } from "@/types/database"
 import { S5_CATEGORIA_ORDEN, S5_MAX_PUNTAJE } from "@/types/database"
+import { getDocumentacionSector } from "@/actions/s5-mi-sector"
+import { textoBonus } from "@/lib/s5-bonus"
 
 const DASHBOARD_PATH = "/5s"
 
@@ -1189,7 +1191,7 @@ export async function finalizarAuditoria(
 
     const { data: aud, error: errAud } = await supabase
       .from("s5_auditorias")
-      .select("id, tipo, estado")
+      .select("id, tipo, estado, periodo, sector_numero, observaciones_generales")
       .eq("id", id)
       .single()
 
@@ -1243,7 +1245,21 @@ export async function finalizarAuditoria(
       const a = acumPorCat[cat]
       notasPorS[cat] = a ? Number((a.sum / a.n).toFixed(2)) : 0
     }
-    const notaTotal = totalN > 0 ? Number((totalSum / totalN).toFixed(2)) : 0
+    const notaItems = totalN > 0 ? Number((totalSum / totalN).toFixed(2)) : 0
+
+    // Bonus por documentar: el responsable del sector que cargó su trabajo del
+    // mes con fotos (sobre todo antes/después) suma puntos sobre la nota de los
+    // ítems. Queda escrito en las observaciones para que la nota sea explicable.
+    let notaTotal = notaItems
+    let observaciones = aud.observaciones_generales as string | null
+    if (tipo === "almacen" && aud.sector_numero) {
+      const doc = await getDocumentacionSector(aud.periodo as string, aud.sector_numero as number)
+      if ("data" in doc && doc.data.resumen.bonus > 0) {
+        notaTotal = Number(Math.min(100, notaItems + doc.data.resumen.bonus).toFixed(2))
+        const linea = textoBonus(doc.data.resumen)
+        observaciones = observaciones ? `${observaciones}\n\n${linea}` : linea
+      }
+    }
 
     const { data, error } = await supabase
       .from("s5_auditorias")
@@ -1251,6 +1267,7 @@ export async function finalizarAuditoria(
         estado: "completada",
         nota_total: notaTotal,
         notas_por_s: notasPorS,
+        observaciones_generales: observaciones,
       })
       .eq("id", id)
       .select()
