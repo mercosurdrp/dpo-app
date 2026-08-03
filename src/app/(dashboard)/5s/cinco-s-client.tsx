@@ -15,6 +15,7 @@ import {
   Users,
   ClipboardList,
   Shuffle,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -317,6 +318,12 @@ export function CincoSClient({
             <Button variant="outline" size="sm">
               <ClipboardList className="mr-1.5 size-4" />
               Acciones
+            </Button>
+          </Link>
+          <Link href="/5s/sectores">
+            <Button variant="outline" size="sm">
+              <Sparkles className="mr-1.5 size-4" />
+              Tareas por sector
             </Button>
           </Link>
           <Link href="/5s/ayudantes">

@@ -25,6 +25,8 @@ import {
   ClipboardCheck,
   Fuel,
   ExternalLink,
+  Sparkles,
+  Camera,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -48,6 +50,7 @@ import type { Capacitacion, Asistencia } from "@/types/database"
 import type { MiDashboardData } from "@/actions/mi-asistencia"
 import type { MiEntregaData } from "@/actions/mi-entrega"
 import type { MisSobrecargasResumen } from "@/actions/sobrecargas"
+import type { MiSector5S } from "@/actions/s5-mi-sector"
 
 const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -63,6 +66,8 @@ interface Props {
   sobrecargas: MisSobrecargasResumen | null
   /** Habilitado por lista a operar vehículos sin ser chofer de distribución. */
   puedeVehiculos?: boolean
+  /** Sector 5S que le tocó este mes (null si no salió sorteado). */
+  mi5s: MiSector5S | null
 }
 
 function fmtNum(n: number): string {
@@ -97,7 +102,7 @@ function MaterialLink({ url }: { url: string | null }) {
   )
 }
 
-export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas, puedeVehiculos = false }: Props) {
+export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reunionWarehouse, reunionLogistica, dashboard, entrega, sobrecargas, puedeVehiculos = false, mi5s = null }: Props) {
   const router = useRouter()
   const [reunionState, setReunionState] = useState(reunion)
   const [warehouseState, setWarehouseState] = useState(reunionWarehouse)
@@ -179,6 +184,36 @@ export function MisCapacitacionesClient({ capacitaciones, nombre, reunion, reuni
           Salir
         </Button>
       </div>
+
+      {/* Responsable de 5S del mes: el que salió sorteado ve su sector acá. */}
+      {mi5s && mi5s.sector_numero !== null && (
+        <Link href="/mi-5s" className="block">
+          <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4 transition-colors hover:bg-emerald-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                  <Sparkles className="size-6" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-emerald-900">
+                    Responsable de 5S en {mi5s.sector_nombre}
+                  </p>
+                  <p className="text-sm text-emerald-800">
+                    {mesActual} · {mi5s.evidencias.length} tarea
+                    {mi5s.evidencias.length === 1 ? "" : "s"} cargada
+                    {mi5s.evidencias.length === 1 ? "" : "s"} · faltan {mi5s.dias_restantes} días
+                    para la auditoría
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
+                <Camera className="size-4" />
+                Cargar tarea con foto
+              </span>
+            </div>
+          </div>
+        </Link>
+      )}
 
       {/* Top Row: Reunión + Fichaje Hoy */}
       <div className="grid gap-4 sm:grid-cols-2">

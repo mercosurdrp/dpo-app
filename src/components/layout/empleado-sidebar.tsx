@@ -58,6 +58,11 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
       : [{ label: "Mis Resultados", href: "/visibilidad-resultados", icon: <TrendingUp className="size-5" /> }]),
     // Trivia MERCOSUR: desafío de conocimiento diario (ambos tenants).
     { label: "Trivia", href: "/trivia", icon: <Brain className="size-5" /> },
+    // Mi sector 5S: el responsable sorteado del mes carga sus tareas con foto.
+    // Solo Pampeana, que es donde corre el sorteo mensual de sectores.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mi sector 5S", href: "/mi-5s", icon: <Sparkles className="size-5" /> }]),
     // Rechazos: solo Pampeana (fuente de datos).
     ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
     // Roturas en la calle: solo Pampeana (fuente de datos / DQI).

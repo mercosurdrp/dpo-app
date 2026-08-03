@@ -6,13 +6,14 @@ import { getMiAsistenciaReunionHoy } from "@/actions/reuniones"
 import { getMiDashboard } from "@/actions/mi-asistencia"
 import { getMiEntrega } from "@/actions/mi-entrega"
 import { getMisSobrecargas } from "@/actions/sobrecargas"
+import { getMiSector5S } from "@/actions/s5-mi-sector"
 import { IS_MISIONES } from "@/lib/empresa"
 import { puedeOperarVehiculos } from "@/lib/acarreo-operadores"
 import { SuenoSection, SuenoSkeleton } from "@/components/sueno/sueno-section"
 import { MisCapacitacionesClient } from "./mis-capacitaciones-client"
 
 export default async function MisCapacitacionesPage() {
-  const [result, profile, reunionRes, warehouseRes, logisticaRes, dashRes, entregaRes, sobreRes] = await Promise.all([
+  const [result, profile, reunionRes, warehouseRes, logisticaRes, dashRes, entregaRes, sobreRes, mi5sRes] = await Promise.all([
     getMisCapacitaciones(),
     getProfile(),
     getEstadoReunionHoy(),
@@ -21,6 +22,8 @@ export default async function MisCapacitacionesPage() {
     getMiDashboard(),
     getMiEntrega(),
     IS_MISIONES ? getMisSobrecargas() : Promise.resolve(null),
+    // El sorteo mensual de 5S corre solo en Pampeana.
+    IS_MISIONES ? Promise.resolve(null) : getMiSector5S(),
   ])
 
   if ("error" in result) {
@@ -38,6 +41,7 @@ export default async function MisCapacitacionesPage() {
   const dashboard = "data" in dashRes ? dashRes.data : null
   const entrega = "data" in entregaRes ? entregaRes.data : null
   const sobrecargas = sobreRes && "data" in sobreRes ? sobreRes.data : null
+  const mi5s = mi5sRes && "data" in mi5sRes ? mi5sRes.data : null
   // Maquinistas y demás habilitados por lista: ven las tarjetas de vehículo
   // aunque no estén vinculados a un legajo de chofer/ayudante de entrega.
   const puedeVehiculos = puedeOperarVehiculos(profile?.role, profile?.email)
@@ -57,6 +61,7 @@ export default async function MisCapacitacionesPage() {
         entrega={entrega}
         sobrecargas={sobrecargas}
         puedeVehiculos={puedeVehiculos}
+        mi5s={mi5s}
       />
     </>
   )
