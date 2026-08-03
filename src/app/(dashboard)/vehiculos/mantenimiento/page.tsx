@@ -193,6 +193,8 @@ export default async function MantenimientoPage() {
             tasa: null,
             itemsActivos: 0,
             itemsConDeteccion: 0,
+            itemsConObservacion: 0,
+            itemsConCriterio: 0,
             checklists: 0,
             desde: null,
             hasta: null,

@@ -688,7 +688,10 @@ export function MantenimientoClient({
 
         {/* ============ TAB: Pirámide de defectos ============ */}
         <TabsContent value="analisis-items" className="space-y-6">
-          <AnalisisItemsChecklist analisis={analisisChecklist} />
+          <AnalisisItemsChecklist
+            analisis={analisisChecklist}
+            puedeEditar={puedeEditar}
+          />
         </TabsContent>
 
         <TabsContent value="piramide" className="space-y-6">

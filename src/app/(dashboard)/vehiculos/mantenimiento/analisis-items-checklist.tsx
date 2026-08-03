@@ -18,10 +18,27 @@
 //  · Los ítems que nunca detectaron nada se muestran igual, en su propio bloque.
 //    Es el hallazgo incómodo del punto: un ítem con miles de evaluaciones y cero
 //    defectos no suele estar sano, suele no estar mirándose.
+//  · Cada fila lleva su CONCLUSIÓN escrita. El número solo no defiende el punto:
+//    "documentación nunca detectó nada" es un hallazgo hasta que alguien escribe
+//    que el vencimiento lo controla el sistema con alertas y no el chofer. La
+//    columna se lee al lado de la tasa, no en una pantalla aparte, porque es la
+//    respuesta a ese número.
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -30,15 +47,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Repeat, SearchX } from "lucide-react"
+import { MessageSquarePlus, Repeat, SearchX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DpoSeccionCinta } from "./_components/dpo-badge"
 import { KpiCard } from "./_components/kpi-card"
+import { setObservacionItem } from "@/actions/checklist-analisis"
 import type { AnalisisChecklist, AnalisisItem } from "@/actions/checklist-analisis"
 import { DIAS_CRONICO_ACTIVO } from "@/lib/flota/checklist-cronicos"
 
 interface Props {
   analisis: AnalisisChecklist
+  puedeEditar: boolean
+}
+
+interface DialogoObs {
+  itemId: string
+  itemNombre: string
+  criterio: string | null
+  texto: string
 }
 
 const fmtPct = (v: number | null, dec = 2) =>
@@ -56,9 +82,44 @@ const mesCorto = (ym: string) => {
   return `${MESES[Number(m) - 1]} ${y.slice(2)}`
 }
 
-export function AnalisisItemsChecklist({ analisis }: Props) {
+export function AnalisisItemsChecklist({ analisis, puedeEditar }: Props) {
   const { items, cronicos, porMes, totales } = analisis
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const [verSinDeteccion, setVerSinDeteccion] = useState(false)
+  const [dialogo, setDialogo] = useState<DialogoObs | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  // Override optimista: la nota se ve al toque y no espera el refresh del server.
+  const [obsOverrides, setObsOverrides] = useState<Map<string, string | null>>(new Map())
+
+  const obsDe = (i: AnalisisItem): string | null =>
+    obsOverrides.has(i.id) ? (obsOverrides.get(i.id) ?? null) : i.observacion
+
+  const abrirObservacion = (i: AnalisisItem) => {
+    if (!puedeEditar) return
+    setDialogo({
+      itemId: i.id,
+      itemNombre: i.nombre,
+      criterio: i.criterio,
+      texto: obsDe(i) ?? "",
+    })
+  }
+
+  const guardarObservacion = async () => {
+    if (!dialogo) return
+    setGuardando(true)
+    const texto = dialogo.texto.trim() || null
+    const res = await setObservacionItem({ itemId: dialogo.itemId, observacion: texto })
+    setGuardando(false)
+    if ("error" in res) {
+      toast.error(res.error)
+      return
+    }
+    setObsOverrides((prev) => new Map(prev).set(dialogo.itemId, texto))
+    toast.success(texto ? "Conclusión guardada" : "Conclusión borrada")
+    setDialogo(null)
+    startTransition(() => router.refresh())
+  }
 
   const conDefectos = useMemo(() => items.filter((i) => i.hallazgos > 0), [items])
   const sinDefectos = useMemo(
@@ -103,6 +164,51 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
   )
 
   const criticosNoOk = conDefectos.filter((i) => i.critico).reduce((a, i) => a + i.noOk, 0)
+
+  // Se recuenta en el cliente para que la nota recién escrita mueva el número
+  // sin esperar el refresh.
+  const conObservacion = useMemo(
+    () =>
+      items.filter((i) =>
+        obsOverrides.has(i.id) ? obsOverrides.get(i.id) != null : i.observacion != null
+      ).length,
+    [items, obsOverrides]
+  )
+
+  const celdaObservacion = (i: AnalisisItem) => {
+    const obs = obsDe(i)
+    if (!obs) {
+      return (
+        <TableCell className="py-2">
+          {puedeEditar ? (
+            <button
+              className="flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              onClick={() => abrirObservacion(i)}
+            >
+              <MessageSquarePlus className="size-3.5" aria-hidden /> Anotar
+            </button>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </TableCell>
+      )
+    }
+    return (
+      <TableCell className="py-2">
+        <button
+          className={cn(
+            "max-w-[22rem] text-left text-xs text-foreground",
+            puedeEditar && "hover:underline hover:underline-offset-2"
+          )}
+          onClick={() => abrirObservacion(i)}
+          disabled={!puedeEditar}
+          title={obs}
+        >
+          {obs}
+        </button>
+      </TableCell>
+    )
+  }
 
   const filaItem = (i: AnalisisItem, conBarra: boolean) => (
     <TableRow key={i.id}>
@@ -165,6 +271,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
       <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
         {fmtFecha(i.ultimaFecha)}
       </TableCell>
+      {celdaObservacion(i)}
     </TableRow>
   )
 
@@ -369,6 +476,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                   <TableHead className="text-right">% acum.</TableHead>
                   <TableHead>Unidades</TableHead>
                   <TableHead className="text-right">Último</TableHead>
+                  <TableHead>Conclusión</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>{conDefectos.map((i) => filaItem(i, true))}</TableBody>
@@ -416,7 +524,9 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
           <p className="text-sm text-muted-foreground">
             Nunca marcaron un defecto. Puede ser que la flota esté bien en ese punto, o que
             el ítem se tilde sin mirarlo — el auditor va a preguntar por los que tienen
-            muchas evaluaciones y cero hallazgos.{" "}
+            muchas evaluaciones y cero hallazgos. Los que tienen explicación válida
+            conviene dejarla escrita en la conclusión: el de documentación, por ejemplo,
+            no lo puede verificar el chofer, lo controla el sistema con alertas.{" "}
             <button
               className="font-medium text-foreground underline underline-offset-2"
               onClick={() => setVerSinDeteccion((v) => !v)}
@@ -437,6 +547,7 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
                     <TableHead className="text-right">Tasa</TableHead>
                     <TableHead>Unidades</TableHead>
                     <TableHead className="text-right">Último</TableHead>
+                    <TableHead>Conclusión</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>{sinDefectos.map((i) => filaItem(i, false))}</TableBody>
@@ -448,8 +559,46 @@ export function AnalisisItemsChecklist({ analisis }: Props) {
 
       <p className={cn("text-xs text-muted-foreground")}>
         Fuente: respuestas del checklist digital de flota. Un defecto es cualquier
-        respuesta distinta de OK.
+        respuesta distinta de OK. Conclusiones escritas:{" "}
+        <strong className="text-foreground">
+          {conObservacion} de {totales.itemsActivos}
+        </strong>{" "}
+        ítems · criterio operativo cargado en {totales.itemsConCriterio} de{" "}
+        {totales.itemsActivos} (los que faltan se completan con el SOP de Checklist).
       </p>
+
+      <Dialog open={dialogo != null} onOpenChange={(o) => !o && setDialogo(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Conclusión del ítem</DialogTitle>
+            <DialogDescription>
+              {dialogo?.itemNombre} — por qué la tasa es la que es y qué se decidió
+              hacer. Es lo que lee el auditor al lado del número.
+            </DialogDescription>
+          </DialogHeader>
+          {dialogo?.criterio && (
+            <p className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Criterio del checklist:</span>{" "}
+              {dialogo.criterio}
+            </p>
+          )}
+          <Textarea
+            value={dialogo?.texto ?? ""}
+            onChange={(e) => setDialogo((d) => (d ? { ...d, texto: e.target.value } : d))}
+            placeholder="Ej.: los REGULAR son la gotita por la tapa del depósito, ya reemplazada el 28/07; no son pérdida de fluido"
+            rows={4}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogo(null)} disabled={guardando}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarObservacion} disabled={guardando}>
+              {guardando ? "Guardando…" : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

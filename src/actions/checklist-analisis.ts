@@ -15,9 +15,16 @@
 //
 // El denominador (veces que cada ítem fue evaluado) se cuenta con `head` contra
 // PostgREST en vez de traer las 41.000 filas: son 45 conteos en paralelo.
+//
+// Cada ítem lleva además su OBSERVACIÓN: la conclusión escrita de por qué su
+// tasa es la que es. Sin eso el análisis es una tabla de números que hay que
+// volver a explicar en cada reunión — y el ítem que nunca detectó nada tiene
+// explicación válida en varios casos (documentación la controla el sistema con
+// alertas, no el chofer), pero si no está escrita el auditor la lee como un
+// control que no se está haciendo.
 
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, requireRole } from "@/lib/session"
 import { UMBRAL_CRONICO } from "@/lib/flota/checklist-cronicos"
 
 // El checklist tiene TRES niveles, no dos: además de OK y NO OK existe REGULAR
@@ -62,6 +69,12 @@ export interface AnalisisItem {
   /** Dominios donde apareció el defecto, del más repetido al menos. */
   unidades: Array<{ dominio: string; veces: number }>
   ultimaFecha: string | null
+  /** Criterio operativo que lee el chofer al completar el check. */
+  criterio: string | null
+  /** Conclusión del análisis, escrita por el Gestor de Flota. */
+  observacion: string | null
+  /** Cuándo se escribió esa conclusión. */
+  observacionFecha: string | null
 }
 
 export interface DefectoCronico {
@@ -98,6 +111,10 @@ export interface AnalisisChecklist {
     itemsActivos: number
     /** Ítems que alguna vez detectaron algo. */
     itemsConDeteccion: number
+    /** Ítems con la conclusión del análisis ya escrita. */
+    itemsConObservacion: number
+    /** Ítems con el criterio operativo cargado (lo que lee el chofer). */
+    itemsConCriterio: number
     checklists: number
     desde: string | null
     hasta: string | null
@@ -118,10 +135,10 @@ export async function getAnalisisChecklist(): Promise<
     await requireAuth()
     const supabase = await createClient()
 
-    const [itemsRes, noOkRes, checksRes] = await Promise.all([
+    const [itemsRes, noOkRes, checksRes, obsRes] = await Promise.all([
       supabase
         .from("checklist_items")
-        .select("id, nombre, categoria, critico, tipo_vehiculo")
+        .select("id, nombre, categoria, critico, tipo_vehiculo, descripcion")
         .eq("active", true)
         .order("categoria")
         .order("orden"),
@@ -137,10 +154,12 @@ export async function getAnalisisChecklist(): Promise<
         .select("fecha", { count: "exact" })
         .order("fecha", { ascending: true })
         .limit(1),
+      supabase.from("checklist_item_analisis").select("item_id, observacion, updated_at"),
     ])
     if (itemsRes.error) return { error: itemsRes.error.message }
     if (noOkRes.error) return { error: noOkRes.error.message }
     if (checksRes.error) return { error: checksRes.error.message }
+    if (obsRes.error) return { error: obsRes.error.message }
 
     // Ojo: el mismo nombre existe varias veces, una por modal ("Pérdida de
     // fluidos" está en camión y en autoelevador). Se agrupa por id y el modal se
@@ -153,7 +172,16 @@ export async function getAnalisisChecklist(): Promise<
       categoria: string
       critico: boolean
       tipo_vehiculo: string | null
+      descripcion: string | null
     }>
+
+    const obsPorItem = new Map(
+      ((obsRes.data || []) as Array<{
+        item_id: string
+        observacion: string | null
+        updated_at: string
+      }>).map((o) => [o.item_id, o])
+    )
 
     // Denominador por ítem: 45 conteos `head` en paralelo, sin traer las filas.
     const evaluadoPorItem = new Map<string, number>()
@@ -189,6 +217,7 @@ export async function getAnalisisChecklist(): Promise<
       }
       const fechas = defectos.map((d) => d.cv!.fecha).sort()
       const regular = defectos.filter((d) => VALORES_REGULAR.includes(d.valor)).length
+      const obs = obsPorItem.get(i.id)
       return {
         id: i.id,
         categoria: i.categoria,
@@ -204,6 +233,9 @@ export async function getAnalisisChecklist(): Promise<
           .map(([dominio, veces]) => ({ dominio, veces }))
           .sort((a, b) => b.veces - a.veces),
         ultimaFecha: fechas.length > 0 ? fechas[fechas.length - 1] : null,
+        criterio: i.descripcion,
+        observacion: obs?.observacion ?? null,
+        observacionFecha: obs?.observacion ? obs.updated_at : null,
       }
     })
     // Ordena por defecto real primero y recién después por observaciones: un
@@ -277,12 +309,53 @@ export async function getAnalisisChecklist(): Promise<
           tasa: evaluadoTotal > 0 ? (noOk.length / evaluadoTotal) * 100 : null,
           itemsActivos: items.length,
           itemsConDeteccion: analisis.filter((i) => i.hallazgos > 0).length,
+          itemsConObservacion: analisis.filter((i) => i.observacion != null).length,
+          itemsConCriterio: analisis.filter((i) => i.criterio != null).length,
           checklists: checksRes.count ?? 0,
           desde: fechasNoOk[0] ?? null,
           hasta: fechasNoOk[fechasNoOk.length - 1] ?? null,
         },
       },
     }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error desconocido" }
+  }
+}
+
+/**
+ * Guarda la conclusión del análisis de un ítem (DPO 1.3). Sólo el Gestor de
+ * Flota — admin o supervisor. Texto vacío borra la nota en vez de dejar una
+ * fila con la observación en blanco.
+ */
+export async function setObservacionItem(input: {
+  itemId: string
+  observacion: string | null
+}): Promise<{ success: true } | { error: string }> {
+  try {
+    const profile = await requireRole(["admin", "supervisor"])
+    const supabase = await createClient()
+    const texto = input.observacion?.trim() || null
+
+    if (texto == null) {
+      const { error } = await supabase
+        .from("checklist_item_analisis")
+        .delete()
+        .eq("item_id", input.itemId)
+      if (error) return { error: error.message }
+      return { success: true }
+    }
+
+    const { error } = await supabase.from("checklist_item_analisis").upsert(
+      {
+        item_id: input.itemId,
+        observacion: texto,
+        updated_at: new Date().toISOString(),
+        updated_by: profile.id,
+      },
+      { onConflict: "item_id" }
+    )
+    if (error) return { error: error.message }
+    return { success: true }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error desconocido" }
   }
