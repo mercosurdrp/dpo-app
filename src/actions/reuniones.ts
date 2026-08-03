@@ -20,13 +20,14 @@ import {
 } from "@/actions/mantenimiento-edilicio"
 import {
   buildAperturaPickingDelDia,
-  buildAperturaMaquinistasDelDia,
-  buildMaquinistasDespachoSerie,
+  buildAperturaMinutosCamionDelDia,
+  buildMinutosCamionSerie,
   buildWarehouseSerieDiaria,
   refreshSerieDiariaDeposito,
   OPERADORES_APERTURA,
   type AperturaPickingDelDia,
-  type AperturaMaquinistasDelDia,
+  type AperturaMinutosCamionDelDia,
+  type MaquinistasTramo,
   type OperadorApertura,
 } from "@/lib/warehouse/auto-indicadores"
 import {
@@ -4659,15 +4660,25 @@ async function getIndicadoresMesCore(
             f < fecha ? (serie.productividad[f] ?? null) : null
         }
 
-        // Productividad de maquinistas (carga de camiones / despacho) en
-        // Pal/HH. Sólo warehouse. Detalle por operario al clickear el día
-        // (ver getAperturaMaquinistasDia + AperturaMaquinistasDetalleDiaDialog).
-        // Se enmascara el día en curso (igual que picking): el despacho de hoy
-        // todavía no está cerrado. Va inmediatamente debajo del picking.
-        const maqDespacho = await buildMaquinistasDespachoSerie(fechas)
-        const maqHastaAyer: Record<string, number | null> = {}
-        for (const f of fechas) {
-          maqHastaAyer[f] = f < fecha ? (maqDespacho[f] ?? null) : null
+        // Maquinistas, las dos mitades del muelle en MINUTOS POR CAMIÓN (la
+        // pestaña Maquinistas de deposito-esteban dejó el Pal/HH el
+        // 2026-07-31 y ahora las mide así para poder leerlas juntas):
+        //   · Despacho de camiones → el camión de reparto que sale
+        //   · Descarga de acarreos → el camión de abastecimiento que entra
+        // Detalle por maquinista al clickear el día (getMaquinistasMinutosDia
+        // + MaquinistasMinutosDetalleDiaDialog). Menos es mejor. Se enmascara
+        // el día en curso, igual que picking: el muelle de hoy no cerró.
+        // Van inmediatamente debajo del picking.
+        const [minCarga, minDescarga] = await Promise.all([
+          buildMinutosCamionSerie(fechas, "carga"),
+          buildMinutosCamionSerie(fechas, "descarga"),
+        ])
+        const hastaAyer = (
+          porFecha: Record<string, number | null>,
+        ): Record<string, number | null> => {
+          const out: Record<string, number | null> = {}
+          for (const f of fechas) out[f] = f < fecha ? (porFecha[f] ?? null) : null
+          return out
         }
 
         indicadoresAuto.push(
@@ -4683,14 +4694,30 @@ async function getIndicadoresMesCore(
             290,
             "mayor",
           ),
-          buildSerieRow(
-            "auto_productividad_maquinistas",
-            "Productividad maquinistas",
-            "Pal/HH",
-            maqHastaAyer,
-            "promedio",
-            25,
-            "mayor",
+          // MTD ponderado por CAMIÓN (no promedio de días): un día de un solo
+          // camión no puede pesar lo mismo que uno de cinco. Por eso van con
+          // buildDiarioConMtdRow y no con buildSerieRow.
+          buildDiarioConMtdRow(
+            "auto_maquinistas_carga",
+            "Despacho de camiones",
+            "min/camión",
+            hastaAyer(minCarga.dia),
+            hastaAyer(minCarga.mtd),
+            // Umbral verde de la pestaña de deposito-esteban. PROVISORIO: se
+            // fijó antes de tener duración real medida (el pusher que la trae
+            // arrancó el 31-07-2026). Recalibrar con un par de semanas.
+            15,
+            "menor",
+          ),
+          buildDiarioConMtdRow(
+            "auto_maquinistas_descarga",
+            "Descarga de acarreos",
+            "min/camión",
+            hastaAyer(minDescarga.dia),
+            hastaAyer(minDescarga.mtd),
+            // Mediana real de los 90 camiones de jun-jul 2026 (p75 = 32).
+            22,
+            "menor",
           ),
           buildSerieRow(
             "auto_errores_picking",
@@ -4887,14 +4914,15 @@ export async function getAperturaPickingDia(
 }
 
 /**
- * Devuelve la apertura por maquinista (despacho / carga de camiones) para una
- * fecha específica: Pal/HH y Bul/HH por operario. Datos en vivo desde
- * deposito-esteban (productividad-maquinistas). Read-only (sin overrides).
+ * Apertura por maquinista de un día, en MINUTOS POR CAMIÓN: `carga` (despacho
+ * del camión de reparto) o `descarga` (camión de acarreo). Datos en vivo desde
+ * deposito-esteban. Read-only (sin overrides manuales).
  */
-export async function getAperturaMaquinistasDia(
+export async function getMaquinistasMinutosDia(
   reunionId: string,
   fecha: string,
-): Promise<Result<AperturaMaquinistasDelDia>> {
+  tramo: MaquinistasTramo,
+): Promise<Result<AperturaMinutosCamionDelDia>> {
   try {
     await requireAuth()
 
@@ -4902,8 +4930,11 @@ export async function getAperturaMaquinistasDia(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return { error: "Fecha inválida (formato esperado YYYY-MM-DD)" }
     }
+    if (tramo !== "carga" && tramo !== "descarga") {
+      return { error: "Tramo inválido" }
+    }
 
-    const data = await buildAperturaMaquinistasDelDia(fecha)
+    const data = await buildAperturaMinutosCamionDelDia(fecha, tramo)
     return { data }
   } catch (err) {
     return {

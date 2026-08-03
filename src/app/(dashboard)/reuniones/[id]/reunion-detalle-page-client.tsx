@@ -100,7 +100,8 @@ import { VentasDetalleDiaDialog } from "@/components/reuniones/ventas-detalle-di
 import { TmlDetalleDiaDialog } from "@/components/reuniones/tml-detalle-dia-dialog"
 import { OcupacionBodegaDetalleDiaDialog } from "@/components/reuniones/ocupacion-bodega-detalle-dia-dialog"
 import { AperturaPickingDetalleDiaDialog } from "@/components/reuniones/apertura-picking-detalle-dia-dialog"
-import { AperturaMaquinistasDetalleDiaDialog } from "@/components/reuniones/apertura-maquinistas-detalle-dia-dialog"
+import { MaquinistasMinutosDetalleDiaDialog } from "@/components/reuniones/maquinistas-minutos-detalle-dia-dialog"
+import type { MaquinistasTramo } from "@/lib/warehouse/auto-indicadores"
 import { AusentismoDetalleDiaDialog } from "@/components/reuniones/ausentismo-detalle-dia-dialog"
 import { ChecklistDetalleDiaDialog } from "@/components/reuniones/checklist-detalle-dia-dialog"
 import { KmRecorridosDetalleDiaDialog } from "@/components/reuniones/km-recorridos-detalle-dia-dialog"
@@ -960,11 +961,13 @@ export function ReunionDetallePageClient({
     null,
   )
 
-  // Detalle del día al hacer click en la celda Productividad maquinistas
-  // (solo warehouse): abre el sub-cuadro con el despacho por maquinista.
-  const [aperturaMaquinistasFecha, setAperturaMaquinistasFecha] = useState<
-    string | null
-  >(null)
+  // Detalle del día al hacer click en las celdas de minutos por camión (solo
+  // warehouse): abre el sub-cuadro por maquinista del tramo clickeado —
+  // despacho del camión de reparto o descarga del de acarreo.
+  const [maqMinutosDetalle, setMaqMinutosDetalle] = useState<{
+    fecha: string
+    tramo: MaquinistasTramo
+  } | null>(null)
 
   // Detalle del día al hacer click en la celda Ausentismo: lista de personas
   // ausentes / con licencia médica de los sectores Depósito + Distribución.
@@ -2086,8 +2089,12 @@ export function ReunionDetallePageClient({
                           const esAperturaPicking =
                             ind.id === "auto_productividad_picking" ||
                             ind.id === "auto_errores_picking"
-                          const esAperturaMaquinistas =
-                            ind.id === "auto_productividad_maquinistas"
+                          const tramoMaquinistas: MaquinistasTramo | null =
+                            ind.id === "auto_maquinistas_carga"
+                              ? "carga"
+                              : ind.id === "auto_maquinistas_descarga"
+                                ? "descarga"
+                                : null
                           const esAusentismo = ind.id === "auto_ausentismo"
                           const esOB = ind.id === "auto_ocupacion_bodega"
                           const esTlp = ind.id === "auto_tlp"
@@ -2114,7 +2121,7 @@ export function ReunionDetallePageClient({
                               esKm ||
                               esHorasCalle ||
                               esAperturaPicking ||
-                              esAperturaMaquinistas ||
+                              tramoMaquinistas !== null ||
                               esAusentismo ||
                               esOB ||
                               esTlp ||
@@ -2138,8 +2145,11 @@ export function ReunionDetallePageClient({
                             else if (esKm) setKmDetalleFecha(f)
                             else if (esHorasCalle) setHorasCalleFecha(f)
                             else if (esAperturaPicking) setAperturaPickingFecha(f)
-                            else if (esAperturaMaquinistas)
-                              setAperturaMaquinistasFecha(f)
+                            else if (tramoMaquinistas)
+                              setMaqMinutosDetalle({
+                                fecha: f,
+                                tramo: tramoMaquinistas,
+                              })
                             else if (esAusentismo) setAusentismoFecha(f)
                             else if (esOB) setObDetalleFecha(f)
                             else if (esTlp) setTlpDetalleFecha(f)
@@ -2435,13 +2445,14 @@ export function ReunionDetallePageClient({
         onChange={refrescar}
       />
 
-      <AperturaMaquinistasDetalleDiaDialog
-        open={aperturaMaquinistasFecha !== null}
+      <MaquinistasMinutosDetalleDiaDialog
+        open={maqMinutosDetalle !== null}
         onOpenChange={(o) => {
-          if (!o) setAperturaMaquinistasFecha(null)
+          if (!o) setMaqMinutosDetalle(null)
         }}
         reunionId={detalle.id}
-        fecha={aperturaMaquinistasFecha}
+        fecha={maqMinutosDetalle?.fecha ?? null}
+        tramo={maqMinutosDetalle?.tramo ?? "carga"}
       />
 
       <AusentismoDetalleDiaDialog

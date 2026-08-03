@@ -1206,134 +1206,232 @@ function computeAperturaLegacy(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Maquinistas — productividad de DESPACHO (carga de camiones)
-// Fuente: deposito-esteban /api/shared/load?module=productividad-maquinistas
-// (cada fila: fecha, operario, actividad DESPACHO|MAQUINISTA, pal_hh, bul_hh…).
-// Sólo se considera DESPACHO: la actividad MAQUINISTA (reubicación/traslados/
-// ingreso) se dejó de registrar en deposito el 2026-06-19 por meter ruido.
-// Métrica principal: Pal/HH (pallets por hora). Sólo se usa en reunión warehouse.
+// Maquinistas — productividad en MINUTOS POR CAMIÓN (las dos mitades)
+//
+// Espejo de la pestaña "Maquinistas" de deposito-esteban, que el 2026-07-31
+// dejó de medir en Pal/HH y pasó a MINUTOS POR CAMIÓN para poder leer juntas
+// las dos mitades del muelle:
+//   · carga    → despachar el camión de reparto  (/api/carga/tiempos)
+//   · descarga → descargar el camión de acarreo  (/api/acarreo/descargas)
+// Los pallets casi no varían entre camiones (mediana 25 en acarreo, 9 en
+// reparto), así que los minutos SON la productividad: normalizar por pallet
+// no agrega nada (la regresión tiempo~pallets da R²=0,18).
+//
+// 🚨 MENOS ES MEJOR. Y las dos escalas NO son comparables entre sí: el camión
+// de reparto lleva 9 pallets y el de acarreo 25.
+//
+// 🚨 Descarga hecha "de a dos": a CADA maquinista se le imputan los minutos
+// que estuvo en el camión, pero el total del día lo cuenta en minutos-PERSONA
+// (el doble). Por eso el total no es el promedio de las filas por operario —
+// es lo que le costó al almacén, no lo que le costó a cada uno. En la carga no
+// pasa: el WMS registra un único usuario por viaje.
+//
+// El promedio (celda MTD) pondera por CAMIÓN, no por día: un día de un solo
+// camión no puede pesar lo mismo que uno de cinco. Mismo criterio que la
+// pestaña de deposito-esteban.
 // ────────────────────────────────────────────────────────────────────
 
-interface MaquinistaFila {
-  fecha: string
+export type MaquinistasTramo = "carga" | "descarga"
+
+/**
+ * Timeout propio para los dos endpoints de minutos: `/api/carga/tiempos` lee
+ * un blob (~2s medidos) y `/api/acarreo/descargas` sale a acarreo-rdf, que
+ * puede pagar cold start. Con los 5s genéricos quedaban al filo.
+ */
+const MINUTOS_CAMION_TIMEOUT_MS = 10_000
+
+interface MinutosFilaApi {
   operario: string
-  actividad?: string
-  pal_hh?: number
-  bul_hh?: number
-}
-
-interface DepositoMaquinistas {
-  data?: {
-    filas?: MaquinistaFila[]
-  } | null
-}
-
-export interface MaquinistaDespachoRow {
-  operario: string
-  pal_hh: number | null
-  bul_hh: number | null
-}
-
-export interface AperturaMaquinistasDelDia {
   fecha: string
-  filas: MaquinistaDespachoRow[]
-  /** Promedio de Pal/HH del día (operarios con dato). null si no hay datos. */
-  pal_hh_promedio: number | null
+  pallets: number
+  minutos: number
+  camiones: number
+  min_camion: number
+  pal_h: number
+  /** Sólo descarga: cuántos de esos camiones se hicieron de a dos. */
+  en_equipo?: number
 }
 
-/** Filas de DESPACHO (pal_hh>0) agrupadas por fecha → operario → listas de
- *  pal_hh y bul_hh (promediadas si hubiera más de una fila del operario/día). */
-async function fetchMaquinistasDespachoPorFecha(): Promise<
-  Map<string, Map<string, { pal: number[]; bul: number[] }>>
-> {
-  const out = new Map<string, Map<string, { pal: number[]; bul: number[] }>>()
-  const res = await fetchJsonSafe<DepositoMaquinistas>(
-    `${DEPOSITO_API_BASE}/api/shared/load?module=productividad-maquinistas`,
+interface MinutosTotalApi {
+  fecha: string
+  pallets: number
+  camiones: number
+  /** Carga: reloj puro. */
+  minutos?: number
+  /** Descarga: reloj × cantidad de maquinistas del camión. */
+  minutos_persona?: number
+  minutos_reloj?: number
+  min_camion: number
+  min_camion_reloj?: number
+  pal_h: number
+}
+
+interface MinutosCamionResp {
+  filas?: MinutosFilaApi[]
+  totales?: MinutosTotalApi[]
+  descartados?: Record<string, number>
+}
+
+export interface MinutosCamionOperarioRow {
+  operario: string
+  camiones: number
+  minutos: number
+  min_camion: number
+  pallets: number
+  pal_h: number
+  /** Sólo descarga: camiones hechos acompañado. 0 en carga. */
+  en_equipo: number
+}
+
+export interface MinutosCamionTotalDia {
+  camiones: number
+  /** Descarga: minutos-persona. Carga: reloj. */
+  minutos: number
+  min_camion: number
+  /** Sólo descarga: el mismo total contado en reloj (sin duplicar el de a dos). */
+  min_camion_reloj: number | null
+  pallets: number
+  pal_h: number
+}
+
+export interface AperturaMinutosCamionDelDia {
+  fecha: string
+  tramo: MaquinistasTramo
+  filas: MinutosCamionOperarioRow[]
+  total: MinutosCamionTotalDia | null
+  /** Lo que el backend dejó afuera, ya en criollo ("2 con duración fuera de rango"). */
+  descartados: string
+}
+
+/** Serie diaria + MTD acumulado, las dos en minutos por camión. */
+export interface MinutosCamionSerie {
+  dia: Record<string, number | null>
+  mtd: Record<string, number | null>
+}
+
+const MINUTOS_ENDPOINT: Record<MaquinistasTramo, string> = {
+  carga: "/api/carga/tiempos",
+  descarga: "/api/acarreo/descargas",
+}
+
+/** Etiquetas de los descartes que devuelve cada endpoint de deposito-esteban. */
+const MINUTOS_DESCARTES: Record<string, string> = {
+  sin_maquinista: "sin maquinista identificado",
+  fuera_de_rango: "con duración fuera de rango",
+  sin_horas: "sin horas registradas",
+  sin_pallets: "sin pallets",
+  sin_duracion: "sin duración medida",
+  un_solo_escaneo: "con un solo escaneo",
+}
+
+function textoDescartados(d: Record<string, number> | undefined): string {
+  if (!d) return ""
+  return Object.entries(d)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([k, v]) => `${v} ${MINUTOS_DESCARTES[k] ?? k}`)
+    .join(", ")
+}
+
+async function fetchMinutosCamion(
+  tramo: MaquinistasTramo,
+  desde: string,
+  hasta: string,
+): Promise<MinutosCamionResp | null> {
+  return fetchJsonSafe<MinutosCamionResp>(
+    `${DEPOSITO_API_BASE}${MINUTOS_ENDPOINT[tramo]}?desde=${desde}&hasta=${hasta}`,
+    EXTERNAL_FETCH_TTL_MS,
+    MINUTOS_CAMION_TIMEOUT_MS,
   )
-  for (const fila of res?.data?.filas ?? []) {
-    if ((fila.actividad ?? "").trim().toUpperCase() !== "DESPACHO") continue
-    const pal = Number(fila.pal_hh)
-    if (!Number.isFinite(pal) || pal <= 0) continue
-    const operario = (fila.operario ?? "").trim()
-    if (!operario) continue
-    let porOp = out.get(fila.fecha)
-    if (!porOp) {
-      porOp = new Map()
-      out.set(fila.fecha, porOp)
-    }
-    let acc = porOp.get(operario)
-    if (!acc) {
-      acc = { pal: [], bul: [] }
-      porOp.set(operario, acc)
-    }
-    acc.pal.push(pal)
-    const bul = Number(fila.bul_hh)
-    if (Number.isFinite(bul) && bul > 0) acc.bul.push(bul)
-  }
-  return out
 }
 
-function promedio(xs: number[]): number | null {
-  return xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : null
+/** Minutos-persona del día (descarga) o reloj (carga): lo que le costó al almacén. */
+function minutosDelTotal(t: MinutosTotalApi): number {
+  const v = t.minutos_persona ?? t.minutos
+  return Number.isFinite(Number(v)) ? Number(v) : 0
 }
 
-/** Serie diaria del promedio de Pal/HH de despacho (indicador AUTO de la
- *  reunión warehouse). El enmascarado del día en curso se hace en el caller. */
-export async function buildMaquinistasDespachoSerie(
+/**
+ * Serie del indicador AUTO: min/camión del día (total del almacén) y el MTD
+ * acumulado ponderado por camión. El enmascarado del día en curso lo hace el
+ * caller, igual que picking.
+ */
+export async function buildMinutosCamionSerie(
   fechas: string[],
-): Promise<Record<string, number | null>> {
-  const porFecha = await fetchMaquinistasDespachoPorFecha()
-  const out: Record<string, number | null> = {}
+  tramo: MaquinistasTramo,
+): Promise<MinutosCamionSerie> {
+  const dia: Record<string, number | null> = {}
+  const mtd: Record<string, number | null> = {}
+  if (fechas.length === 0) return { dia, mtd }
+
+  const res = await fetchMinutosCamion(
+    tramo,
+    fechas[0],
+    fechas[fechas.length - 1],
+  )
+  const porFecha = new Map<string, MinutosTotalApi>()
+  for (const t of res?.totales ?? []) {
+    if (t?.fecha) porFecha.set(t.fecha, t)
+  }
+
+  let accMinutos = 0
+  let accCamiones = 0
   for (const f of fechas) {
-    const porOp = porFecha.get(f)
-    if (!porOp || porOp.size === 0) {
-      out[f] = null
+    const t = porFecha.get(f)
+    if (!t || !t.camiones) {
+      dia[f] = null
+      // El MTD arrastra el último valor: un día sin camiones no lo borra.
+      mtd[f] = accCamiones > 0 ? Math.round((accMinutos / accCamiones) * 10) / 10 : null
       continue
     }
-    const promediosOp: number[] = []
-    for (const acc of porOp.values()) {
-      const p = promedio(acc.pal)
-      if (p != null) promediosOp.push(p)
-    }
-    out[f] =
-      promediosOp.length > 0
-        ? Math.round(
-            (promediosOp.reduce((a, b) => a + b, 0) / promediosOp.length) * 10,
-          ) / 10
-        : null
+    dia[f] = Math.round(Number(t.min_camion) * 10) / 10
+    accMinutos += minutosDelTotal(t)
+    accCamiones += Number(t.camiones) || 0
+    mtd[f] = accCamiones > 0 ? Math.round((accMinutos / accCamiones) * 10) / 10 : null
   }
-  return out
+  return { dia, mtd }
 }
 
-/** Apertura por maquinista (despacho) de un día puntual: Pal/HH y Bul/HH por
- *  operario. Read-only (sin overrides manuales). */
-export async function buildAperturaMaquinistasDelDia(
+/** Apertura por maquinista de un día puntual. Read-only (sin overrides). */
+export async function buildAperturaMinutosCamionDelDia(
   fecha: string,
-): Promise<AperturaMaquinistasDelDia> {
-  const porFecha = await fetchMaquinistasDespachoPorFecha()
-  const porOp = porFecha.get(fecha)
-  const filas: MaquinistaDespachoRow[] = []
-  if (porOp) {
-    for (const [operario, acc] of porOp.entries()) {
-      const pal = promedio(acc.pal)
-      const bul = promedio(acc.bul)
-      filas.push({
-        operario,
-        pal_hh: pal != null ? Math.round(pal) : null,
-        bul_hh: bul != null ? Math.round(bul) : null,
-      })
-    }
-  }
-  filas.sort((a, b) => (b.pal_hh ?? -1) - (a.pal_hh ?? -1))
-  const pals = filas
-    .map((f) => f.pal_hh)
-    .filter((v): v is number => v != null && Number.isFinite(v))
+  tramo: MaquinistasTramo,
+): Promise<AperturaMinutosCamionDelDia> {
+  const res = await fetchMinutosCamion(tramo, fecha, fecha)
+  const filas: MinutosCamionOperarioRow[] = (res?.filas ?? [])
+    .filter((r) => r?.fecha === fecha && Number(r?.camiones) > 0)
+    .map((r) => ({
+      operario: r.operario,
+      camiones: Number(r.camiones) || 0,
+      minutos: Number(r.minutos) || 0,
+      min_camion: Number(r.min_camion) || 0,
+      pallets: Number(r.pallets) || 0,
+      pal_h: Number(r.pal_h) || 0,
+      en_equipo: Number(r.en_equipo) || 0,
+    }))
+    // El más rápido arriba: acá menos minutos es mejor.
+    .sort((a, b) => a.min_camion - b.min_camion)
+
+  const t = (res?.totales ?? []).find((x) => x?.fecha === fecha)
+  const total: MinutosCamionTotalDia | null =
+    t && Number(t.camiones) > 0
+      ? {
+          camiones: Number(t.camiones) || 0,
+          minutos: Math.round(minutosDelTotal(t) * 10) / 10,
+          min_camion: Math.round(Number(t.min_camion) * 10) / 10,
+          min_camion_reloj:
+            t.min_camion_reloj != null
+              ? Math.round(Number(t.min_camion_reloj) * 10) / 10
+              : null,
+          pallets: Number(t.pallets) || 0,
+          pal_h: Number(t.pal_h) || 0,
+        }
+      : null
+
   return {
     fecha,
+    tramo,
     filas,
-    pal_hh_promedio:
-      pals.length > 0
-        ? Math.round((pals.reduce((a, b) => a + b, 0) / pals.length) * 10) / 10
-        : null,
+    total,
+    descartados: textoDescartados(res?.descartados),
   }
 }
