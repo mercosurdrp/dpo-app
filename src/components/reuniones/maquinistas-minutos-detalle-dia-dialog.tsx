@@ -129,8 +129,14 @@ export function MaquinistasMinutosDetalleDiaDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{textos.titulo} — minutos por camión</DialogTitle>
-          <DialogDescription className="capitalize">
-            {textos.descripcion} · {fecha ? formatFechaLarga(fecha) : "Sin fecha"}
+          <DialogDescription>
+            {textos.descripcion} ·{" "}
+            {/* El capitalize va sólo en la fecha: toLocaleDateString devuelve
+                "lunes 03 de agosto". Aplicado a toda la línea capitalizaría
+                cada palabra ("Minutos Por Camión De Reparto"). */}
+            <span className="capitalize">
+              {fecha ? formatFechaLarga(fecha) : "Sin fecha"}
+            </span>
           </DialogDescription>
         </DialogHeader>
 
