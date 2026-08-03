@@ -72,11 +72,15 @@ export function evaluarCriticidad(c: ConteosRechazo): Criticidad {
   }
 }
 
-/** El criterio en una frase, para mostrarlo en la UI y en el PDF. */
+/**
+ * El criterio en una frase, para mostrarlo en la UI y en el feed.
+ *
+ * 🚨 UN SOLO template literal, sin partirlo en varios unidos con `+`. Con todos
+ * los placeholders constantes, el minificador de Next 16 pliega la concatenación
+ * y SE COME LA COLA de cada literal menos el último: esta misma frase salía en
+ * producción como "2o más de 1(más de 12 en el año). Suma cerrado + sin dinero."
+ * No lo ven ni `tsc` ni el dev server — sólo el bundle de producción.
+ */
 export function textoCriterio(): string {
-  return (
-    `${UMBRAL_30D} o más rechazos en los últimos 30 días, ` +
-    `o más de ${PROMEDIO_MENSUAL_ANIO} por mes en promedio en los últimos 12 meses ` +
-    `(más de ${UMBRAL_ANIO} en el año). Suma cerrado + sin dinero.`
-  )
+  return `${UMBRAL_30D} o más rechazos en los últimos 30 días, o más de ${PROMEDIO_MENSUAL_ANIO} por mes en promedio en los últimos 12 meses (más de ${UMBRAL_ANIO} en el año). Suma cerrado + sin dinero.`
 }
