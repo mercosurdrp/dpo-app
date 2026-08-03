@@ -262,8 +262,13 @@ export async function getTableroOperativo(): Promise<
     }
     const proximoChecklist = triVacio()
     for (const v of (vehRes.data || []) as Array<{ dominio: string; tipo: string | null }>) {
-      // Solo unidades que hacen checklist de ruta (no autoelevadores).
-      if (v.tipo === "autoelevador") continue
+      // Solo unidades que hacen checklist de ruta. El autoelevador tiene el suyo
+      // aparte, y el ACOPLADO no lleva ninguno: se revisa junto con el tractor que
+      // lo arrastra. Contándolo, el `AF516JB` figuraba con el checklist vencido
+      // desde siempre (nunca tuvo uno, ni puede tenerlo) e inflaba el tablero con
+      // una falta que nadie puede resolver. El resto del módulo ya lo excluye
+      // —ver `lib/vehiculos/disponibilidad-flota`—; acá faltaba.
+      if (v.tipo === "autoelevador" || v.tipo === "acoplado") continue
       const ult = ultimoChkPorDom.get(v.dominio)
       const dias = ult ? daysBetween(ult, hoy) : 999
       if (dias >= 2) proximoChecklist.vencidas++
