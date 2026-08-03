@@ -2,20 +2,24 @@
 
 import { abrirArchivo } from "@/lib/abrir-archivo"
 import { useState } from "react"
-import { AlertTriangle, CheckCircle2, Download, Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { AlertTriangle, CheckCircle2, Download, Loader2, PencilLine } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { getHerramientaPdfUrl } from "@/actions/herramientas-gestion"
+import { Textarea } from "@/components/ui/textarea"
+import { getHerramientaPdfUrl, guardarCampoPdca } from "@/actions/herramientas-gestion"
 import type {
   HerramientaGestion,
   HerramientaGestionConContexto,
   CincoPorquesContenido,
   CausaEfectoContenido,
+  PdcaCampoEditable,
   PdcaContenido,
 } from "@/types/database"
 import { HERRAMIENTA_GESTION_LABELS } from "@/lib/herramientas-gestion"
+import { PdcaRevisionesMensuales } from "@/components/herramientas-gestion/pdca-revisiones-mensuales"
 
 interface Props {
   herramienta: HerramientaGestion | HerramientaGestionConContexto
@@ -220,7 +224,7 @@ function BandaAnalisis({
   )
 }
 
-/** Un cuadrante del ciclo. */
+/** Un cuadrante del ciclo. Con `edicion` suma el lápiz para completarlo. */
 function Cuadrante({
   n,
   letra,
@@ -228,6 +232,7 @@ function Cuadrante({
   subtitulo,
   color,
   items,
+  edicion,
 }: {
   n: number
   letra: string
@@ -235,8 +240,33 @@ function Cuadrante({
   subtitulo: string
   color: { badge: string; borde: string; fondo: string; texto: string }
   items: { label: string; value: string }[]
+  edicion?: {
+    valor: string
+    placeholder: string
+    onGuardar: (texto: string) => Promise<boolean>
+  }
 }) {
   const conDatos = items.filter((i) => !!i.value?.trim())
+  const [editando, setEditando] = useState(false)
+  const [borrador, setBorrador] = useState("")
+  const [guardando, setGuardando] = useState(false)
+
+  function abrir() {
+    if (!edicion) return
+    setBorrador(edicion.valor)
+    setEditando(true)
+  }
+
+  async function guardar() {
+    if (!edicion) return
+    setGuardando(true)
+    try {
+      if (await edicion.onGuardar(borrador)) setEditando(false)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
   return (
     <div
       className={`flex flex-col rounded-lg border-2 ${color.borde} ${color.fondo} overflow-hidden`}
@@ -255,32 +285,109 @@ function Cuadrante({
           </p>
           <p className="text-[11px] leading-tight text-slate-500">{subtitulo}</p>
         </div>
-      </div>
-      <div className="flex-1 space-y-3 p-3">
-        {conDatos.length === 0 ? (
-          <p className="text-xs italic text-slate-400">Sin datos registrados.</p>
-        ) : (
-          conDatos.map((item) => (
-            <div key={item.label}>
-              <p
-                className={`text-[11px] font-semibold uppercase tracking-wide ${color.texto} opacity-70`}
-              >
-                {item.label}
-              </p>
-              <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-800">
-                {item.value}
-              </p>
-            </div>
-          ))
+        {edicion && !editando && (
+          <button
+            type="button"
+            onClick={abrir}
+            title={`Editar ${titulo}`}
+            className="ml-auto shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
+          >
+            <PencilLine className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
+
+      {editando && edicion && (
+        <div className="space-y-2 p-3">
+          <Textarea
+            autoFocus
+            value={borrador}
+            onChange={(e) => setBorrador(e.target.value)}
+            placeholder={edicion.placeholder}
+            rows={5}
+            className="bg-white text-sm"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={guardando}
+              onClick={guardar}
+            >
+              {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Guardar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              disabled={guardando}
+              onClick={() => setEditando(false)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+      {!editando && (
+        <div className="flex-1 space-y-3 p-3">
+          {conDatos.length === 0 ? (
+            edicion ? (
+              <button
+                type="button"
+                onClick={abrir}
+                className="text-xs italic text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+              >
+                Sin datos registrados — cargar
+              </button>
+            ) : (
+              <p className="text-xs italic text-slate-400">Sin datos registrados.</p>
+            )
+          ) : (
+            conDatos.map((item) => (
+              <div key={item.label}>
+                <p
+                  className={`text-[11px] font-semibold uppercase tracking-wide ${color.texto} opacity-70`}
+                >
+                  {item.label}
+                </p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-slate-800">
+                  {item.value}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function PdcaView({ c }: { c: PdcaContenido }) {
+function PdcaView({
+  c: contenidoInicial,
+  herramienta,
+}: {
+  c: PdcaContenido
+  herramienta: HerramientaGestion
+}) {
+  const router = useRouter()
+  // El contenido se edita cuadrante a cuadrante, así que la vista se queda con
+  // lo último que devolvió el server en vez de esperar al refresh.
+  const [c, setC] = useState<PdcaContenido>(contenidoInicial)
+
+  async function guardarCampo(campo: PdcaCampoEditable, texto: string): Promise<boolean> {
+    const r = await guardarCampoPdca(herramienta.id, campo, texto)
+    if ("error" in r) {
+      toast.error(r.error)
+      return false
+    }
+    setC(r.data)
+    toast.success("Cuadrante actualizado")
+    router.refresh()
+    return true
+  }
+
   const e = c.encuadre
-  const revisiones = (c.revisiones ?? []).filter((r) => r.fecha || r.avance?.trim())
   const tieneEncuadre = !!(
     e?.objetivo_estrategico?.trim() ||
     e?.kpi_meta?.trim() ||
@@ -324,6 +431,11 @@ function PdcaView({ c }: { c: PdcaContenido }) {
           value: c.hacer?.acciones ?? "",
         },
       ],
+      edicion: {
+        valor: c.hacer?.acciones ?? "",
+        placeholder: "¿Qué acciones concretas se ejecutaron o se ejecutarán?",
+        onGuardar: (texto: string) => guardarCampo("hacer", texto),
+      },
     },
     {
       n: 3,
@@ -339,6 +451,11 @@ function PdcaView({ c }: { c: PdcaContenido }) {
       items: [
         { label: "Resultados observados", value: c.verificar?.resultados ?? "" },
       ],
+      edicion: {
+        valor: c.verificar?.resultados ?? "",
+        placeholder: "¿Qué resultados se obtuvieron? ¿Se alcanzaron los objetivos?",
+        onGuardar: (texto: string) => guardarCampo("verificar", texto),
+      },
     },
     {
       n: 4,
@@ -357,6 +474,11 @@ function PdcaView({ c }: { c: PdcaContenido }) {
           value: c.actuar?.estandarizacion ?? "",
         },
       ],
+      edicion: {
+        valor: c.actuar?.estandarizacion ?? "",
+        placeholder: "¿Cómo se estandariza lo aprendido? ¿Qué queda pendiente o se repite?",
+        onGuardar: (texto: string) => guardarCampo("actuar", texto),
+      },
     },
   ]
 
@@ -469,31 +591,12 @@ function PdcaView({ c }: { c: PdcaContenido }) {
         ))}
       </div>
 
-      {/* Revisiones */}
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-        <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-          <span className="text-sm font-semibold text-slate-700">
-            Revisiones del avance
-          </span>
-          <span className="ml-1.5 text-xs text-slate-500">(mínimo una por mes)</span>
-        </div>
-        <div className="space-y-2 p-3">
-          {revisiones.length === 0 ? (
-            <p className="text-xs italic text-slate-400">
-              Sin revisiones registradas.
-            </p>
-          ) : (
-            revisiones.map((r, i) => (
-              <div key={i} className="flex gap-2 text-sm">
-                <span className="w-24 shrink-0 font-medium text-slate-500">
-                  {r.fecha || "—"}
-                </span>
-                <span className="whitespace-pre-wrap text-slate-800">{r.avance}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+      {/* Revisiones: un renglón por mes, cargable desde acá mismo */}
+      <PdcaRevisionesMensuales
+        herramientaId={herramienta.id}
+        contenido={c}
+        desde={herramienta.created_at}
+      />
     </div>
   )
 }
@@ -583,7 +686,10 @@ export function HerramientaGestionView({ herramienta }: Props) {
         />
       )}
       {herramienta.tipo === "pdca" && (
-        <PdcaView c={herramienta.contenido as PdcaContenido} />
+        <PdcaView
+          c={herramienta.contenido as PdcaContenido}
+          herramienta={herramienta}
+        />
       )}
 
       {/* Pie */}

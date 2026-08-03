@@ -11,9 +11,18 @@ import type {
   HerramientaGestionTipo,
   CincoPorquesContenido,
   CausaEfectoContenido,
+  PdcaCampoEditable,
   PdcaContenido,
 } from "@/types/database"
 import { generarPdfHerramienta } from "@/lib/herramientas-gestion-pdf"
+import {
+  MES_RE,
+  PDCA_CAMPOS_EDITABLES,
+  hoyAR,
+  mesActual,
+  mesDe,
+  ultimoDiaDelMes,
+} from "@/lib/herramientas-gestion"
 
 type Result<T> = { data: T } | { error: string }
 
@@ -111,6 +120,40 @@ async function puedeIntervenirEnReporte(
     ok: false,
     error: "Solo el autor del reporte o editores pueden aplicar herramientas",
   }
+}
+
+// Despacha al chequeo que corresponda según cuál de los tres targets tenga
+// la herramienta.
+async function puedeIntervenirEnTarget(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string,
+  profileRole: string,
+  tgt: {
+    plan_id: string | null
+    reunion_actividad_id: string | null
+    reporte_seguridad_id: string | null
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (tgt.plan_id) {
+    return puedeIntervenirEnPlan(supabase, profileId, profileRole, tgt.plan_id)
+  }
+  if (tgt.reunion_actividad_id) {
+    return puedeIntervenirEnActividad(
+      supabase,
+      profileId,
+      profileRole,
+      tgt.reunion_actividad_id,
+    )
+  }
+  if (tgt.reporte_seguridad_id) {
+    return puedeIntervenirEnReporte(
+      supabase,
+      profileId,
+      profileRole,
+      tgt.reporte_seguridad_id,
+    )
+  }
+  return { ok: false, error: "La herramienta no tiene target asociado" }
 }
 
 // ---------------------------------------------------------------------------
@@ -575,21 +618,7 @@ export async function actualizarHerramientaGestion(
       reporte_seguridad_id: string | null
     }
 
-    const permiso = tgt.plan_id
-      ? await puedeIntervenirEnPlan(supabase, profile.id, profile.role, tgt.plan_id)
-      : tgt.reunion_actividad_id
-        ? await puedeIntervenirEnActividad(
-            supabase,
-            profile.id,
-            profile.role,
-            tgt.reunion_actividad_id,
-          )
-        : await puedeIntervenirEnReporte(
-            supabase,
-            profile.id,
-            profile.role,
-            tgt.reporte_seguridad_id!,
-          )
+    const permiso = await puedeIntervenirEnTarget(supabase, profile.id, profile.role, tgt)
     if (!permiso.ok) return { error: permiso.error }
 
     const updatePayload: Record<string, unknown> = {
@@ -654,6 +683,184 @@ export async function actualizarHerramientaGestion(
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error actualizando la herramienta" }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// guardarCampoPdca — edita UN cuadrante del ciclo (HACER / VERIFICAR / ACTUAR)
+//
+// Estos tres se completan con el tiempo (VERIFICAR no puede estar cargado el
+// día 1), así que se editan desde la vista sin abrir el formulario entero.
+// PLAN no entra: es el diagnóstico con el que se aprobó el ciclo.
+// ---------------------------------------------------------------------------
+
+function aplicarCampoPdca(
+  contenido: PdcaContenido,
+  campo: PdcaCampoEditable,
+  texto: string,
+): PdcaContenido {
+  switch (campo) {
+    case "hacer":
+      return { ...contenido, hacer: { ...contenido.hacer, acciones: texto } }
+    case "verificar":
+      return { ...contenido, verificar: { ...contenido.verificar, resultados: texto } }
+    case "actuar":
+      return { ...contenido, actuar: { ...contenido.actuar, estandarizacion: texto } }
+  }
+}
+
+export async function guardarCampoPdca(
+  id: string,
+  campo: PdcaCampoEditable,
+  texto: string,
+): Promise<Result<PdcaContenido>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!id) return { error: "ID de herramienta inválido" }
+    if (!PDCA_CAMPOS_EDITABLES.includes(campo)) {
+      return { error: "Ese cuadrante no se edita desde acá" }
+    }
+
+    const { data: actual, error: errH } = await supabase
+      .from("plan_herramientas_gestion")
+      .select(
+        "plan_id, reunion_actividad_id, reporte_seguridad_id, tipo, contenido, contramedida_completada",
+      )
+      .eq("id", id)
+      .single()
+    if (errH || !actual) {
+      return { error: errH?.message ?? "Herramienta no encontrada" }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = actual as any
+    if (row.tipo !== "pdca") return { error: "Solo se editan cuadrantes de un PDCA" }
+
+    const permiso = await puedeIntervenirEnTarget(supabase, profile.id, profile.role, row)
+    if (!permiso.ok) return { error: permiso.error }
+
+    const nuevoContenido = aplicarCampoPdca(
+      (row.contenido ?? {}) as PdcaContenido,
+      campo,
+      texto.trim(),
+    )
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .update({ contenido: nuevoContenido, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single()
+    if (error || !data) {
+      return { error: error?.message ?? "No se pudo guardar el cuadrante" }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actualizada = data as any
+    const ctx = await getContexto(supabase, actualizada)
+    await generarYGuardarPdf(supabase, mapRow(actualizada, ctx, getNombre(profile)))
+
+    // En un reporte de seguridad, HACER es la contramedida que vuelca al plan.
+    if (row.reporte_seguridad_id && campo === "hacer" && row.contramedida_completada) {
+      await sincronizarPlanReporte(
+        row.reporte_seguridad_id,
+        extraerContramedida("pdca", nuevoContenido),
+        profile.id,
+      )
+      revalidatePath("/reportes-seguridad")
+    }
+
+    revalidatePath("/herramientas-gestion")
+    const path = targetPath(ctx, actualizada)
+    if (path) revalidatePath(path)
+
+    return { data: nuevoContenido }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error guardando el cuadrante" }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// guardarRevisionPdca — carga/edita la revisión de UN mes
+//
+// Sin pasar por el formulario completo: relee el contenido y toca únicamente
+// `revisiones`, así dos personas pueden registrar el avance mensual sin
+// pisarse el resto del PDCA. Un mes = una revisión: si el mes ya tenía filas
+// se reemplazan por una sola (conservando la fecha más vieja) y, si el texto
+// viene vacío, se borra la del mes.
+// ---------------------------------------------------------------------------
+
+export async function guardarRevisionPdca(
+  id: string,
+  mes: string, // 'YYYY-MM'
+  avance: string,
+): Promise<Result<PdcaContenido>> {
+  try {
+    const profile = await requireAuth()
+    const supabase = await createClient()
+    if (!id) return { error: "ID de herramienta inválido" }
+    if (!MES_RE.test(mes)) return { error: "Mes inválido" }
+    if (mes > mesActual()) return { error: "No se puede revisar un mes que todavía no pasó" }
+
+    const { data: actual, error: errH } = await supabase
+      .from("plan_herramientas_gestion")
+      .select("plan_id, reunion_actividad_id, reporte_seguridad_id, tipo, contenido")
+      .eq("id", id)
+      .single()
+    if (errH || !actual) {
+      return { error: errH?.message ?? "Herramienta no encontrada" }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = actual as any
+    if (row.tipo !== "pdca") {
+      return { error: "Las revisiones mensuales son solo del PDCA" }
+    }
+
+    const permiso = await puedeIntervenirEnTarget(supabase, profile.id, profile.role, row)
+    if (!permiso.ok) return { error: permiso.error }
+
+    const contenido = (row.contenido ?? {}) as PdcaContenido
+    const previas = contenido.revisiones ?? []
+    const delMes = previas.filter((r) => mesDe(r.fecha) === mes)
+    const resto = previas.filter((r) => mesDe(r.fecha) !== mes)
+
+    const texto = avance.trim()
+    const revisiones = [...resto]
+    if (texto) {
+      // Fecha: la que ya tenía (la más vieja del mes); si es un mes nuevo, hoy
+      // cuando es el mes en curso, o el último día si es un mes ya cerrado.
+      const fecha =
+        delMes.map((r) => r.fecha).filter(Boolean).sort()[0] ??
+        (mes === mesActual() ? hoyAR() : ultimoDiaDelMes(mes))
+      revisiones.push({ fecha, avance: texto })
+    }
+    revisiones.sort((a, b) => (a.fecha ?? "").localeCompare(b.fecha ?? ""))
+
+    const nuevoContenido: PdcaContenido = { ...contenido, revisiones }
+
+    const { data, error } = await supabase
+      .from("plan_herramientas_gestion")
+      .update({ contenido: nuevoContenido, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single()
+    if (error || !data) {
+      return { error: error?.message ?? "No se pudo guardar la revisión" }
+    }
+
+    // El PDF lista las revisiones, así que se regenera con el mes nuevo.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actualizada = data as any
+    const ctx = await getContexto(supabase, actualizada)
+    await generarYGuardarPdf(supabase, mapRow(actualizada, ctx, getNombre(profile)))
+
+    revalidatePath("/herramientas-gestion")
+    const path = targetPath(ctx, actualizada)
+    if (path) revalidatePath(path)
+
+    return { data: nuevoContenido }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error guardando la revisión" }
   }
 }
 

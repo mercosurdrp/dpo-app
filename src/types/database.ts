@@ -3925,6 +3925,13 @@ export interface PdcaContenido {
   revisiones?: PdcaRevision[]
 }
 
+/**
+ * Cuadrantes que se completan a medida que avanza el ciclo y por eso se
+ * editan desde la vista. PLAN queda afuera a propósito: es el diagnóstico
+ * con el que se aprobó el PDCA y solo se toca desde el formulario completo.
+ */
+export type PdcaCampoEditable = "hacer" | "verificar" | "actuar"
+
 export type HerramientaGestionContenido =
   | CincoPorquesContenido
   | CausaEfectoContenido
