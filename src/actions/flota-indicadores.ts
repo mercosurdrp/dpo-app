@@ -24,6 +24,7 @@ export type FlotaKpi =
   | "combustible_kml"
   | "co2_flota"
   | "cil_tareas"
+  | "cil_defectos_anticipables"
   | "correctivo_dias_parado"
   | "neumaticos_conformidad"
 
@@ -120,6 +121,43 @@ export interface PuntoSerieKpi {
 /** Ventana de matcheo defecto de checklist → OT correctiva (días). */
 const DETECCION_VENTANA_DIAS = 15
 
+/**
+ * DPO Flota 4.1 (ATO/CIL) — las tres familias de defecto que el CIL anticipa.
+ *
+ * `cil_tareas` cuenta ACTIVIDAD (cuántas limpiezas/lubricaciones se hicieron);
+ * este KPI cuenta el RESULTADO, que es lo que el requisito pide: si el CIL
+ * funciona, estos defectos tienen que bajar mes a mes.
+ *
+ * Se eligieron por lo que muestra el histórico de checklists (48 defectos):
+ *  - fluidos: 23, casi la mitad de todo — es el ejemplo textual del requisito;
+ *  - luces: 7, focos y destelladores que una inspección de rutina detecta;
+ *  - soldaduras: 0 hasta hoy. Va igual porque es la que el CIL previene antes
+ *    de que aparezca; si empieza a marcar, el KPI lo muestra.
+ *
+ * 🚨 Se identifican por el ítem del checklist, no por texto libre: los nombres
+ * están en `checklist_items` y cambiarlos acá es todo lo que hace falta si
+ * mañana se suma un ítem a alguna familia.
+ */
+const FAMILIAS_DEFECTO_CIL = {
+  /** MOTOR :: "Pérdida de fluidos y/o alarmas" (camión y autoelevador). */
+  fluidos: (it: ItemChecklist) => /p[ée]rdida de fluidos/i.test(it.nombre),
+  /** Toda la categoría LUCES: focos, destelladores, balizas y giros. */
+  luces: (it: ItemChecklist) => it.categoria === "LUCES",
+  /** CARROCERÍA :: "Estado de manijas, barandas, estribos y soldaduras". */
+  soldaduras: (it: ItemChecklist) => /soldadura/i.test(it.nombre),
+} as const
+
+interface ItemChecklist {
+  id: string
+  nombre: string
+  categoria: string | null
+}
+
+/** true si el ítem pertenece a alguna de las tres familias del CIL. */
+function esDefectoAnticipableCil(it: ItemChecklist): boolean {
+  return Object.values(FAMILIAS_DEFECTO_CIL).some((test) => test(it))
+}
+
 /** Factor de emisión gasoil (kg CO2 por litro), estándar ABI/GOP. */
 const CO2_KG_POR_LITRO = 2.68
 
@@ -148,6 +186,12 @@ function meses3Argentina(): string[] {
  *    en el checklist del mismo dominio dentro de los 15 días previos.
  *  - checklist_resolucion: días promedio entre el defecto y su plan resuelto
  *    (por mes de resolución; usa updated_at del plan al pasar a resuelto).
+ *  - cil_defectos_anticipables (4.1): defectos de las familias que el CIL
+ *    previene (fluidos, luces, soldaduras), por mes.
+ *
+ * Todas se recalculan desde el dato crudo en cada request, así que los tres
+ * meses vienen siempre completos — a diferencia de los KPI "foto" de
+ * `flota_kpi_snapshots`, que sólo tienen historia desde que el cron empezó.
  */
 export async function getFlotaKpiSeriesExtra(): Promise<
   { data: Partial<Record<FlotaKpi, PuntoSerieKpi[]>> } | { error: string }
@@ -165,25 +209,38 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     const inicioDefectos = `${d0.getFullYear()}-${pad2(d0.getMonth() + 1)}-${pad2(d0.getDate())}`
 
     // Defectos de checklist (paginado: PostgREST topea en 1000 filas).
+    // Trae también el ítem, que es lo que clasifica el defecto por familia CIL.
     const PAGE = 1000
-    const defectos: Array<{ fecha: string; dominio: string }> = []
+    const defectos: Array<{ fecha: string; dominio: string; itemId: string | null }> = []
     for (let desde = 0; ; desde += PAGE) {
       const { data, error } = await supabase
         .from("checklist_respuestas")
-        .select("id, cv:checklist_vehiculos!inner(fecha, dominio)")
+        .select("id, item_id, cv:checklist_vehiculos!inner(fecha, dominio)")
         .not("valor", "in", '("ok","bueno")')
         .gte("cv.fecha", inicioDefectos)
         .order("id", { ascending: true })
         .range(desde, desde + PAGE - 1)
       if (error) return { error: error.message }
       const rows = (data || []) as unknown as Array<{
+        item_id: string | null
         cv: { fecha: string; dominio: string } | null
       }>
       for (const r of rows) {
-        if (r.cv) defectos.push({ fecha: r.cv.fecha, dominio: r.cv.dominio })
+        if (r.cv) defectos.push({ fecha: r.cv.fecha, dominio: r.cv.dominio, itemId: r.item_id })
       }
       if (rows.length < PAGE) break
     }
+
+    // Catálogo de ítems, para saber a qué familia del CIL pertenece cada defecto.
+    const itemsRes = await supabase
+      .from("checklist_items")
+      .select("id, nombre, categoria")
+    if (itemsRes.error) return { error: itemsRes.error.message }
+    const itemsCil = new Set(
+      ((itemsRes.data || []) as ItemChecklist[])
+        .filter(esDefectoAnticipableCil)
+        .map((it) => it.id),
+    )
 
     const [otRes, otParadaRes, medicionesRes, instaladasRes, planesRes, conteosRes, cargasRes, cilRes] = await Promise.all([
       supabase
@@ -326,6 +383,20 @@ export async function getFlotaKpiSeriesExtra(): Promise<
       if (meses.includes(ym)) cilPorMes.set(ym, (cilPorMes.get(ym) ?? 0) + 1)
     }
 
+    // Defectos anticipables por el CIL, por mes (DPO 4.1). Se cuenta sobre los
+    // mismos defectos de checklist ya traídos, quedándose con los ítems de las
+    // tres familias. El mes sin defectos vale 0 y no null: un cero es el mejor
+    // resultado posible de este KPI, no un mes sin dato.
+    const defectosCilPorMes = new Map<string, number>()
+    for (const ym of meses) defectosCilPorMes.set(ym, 0)
+    for (const d of defectos) {
+      const ym = d.fecha.slice(0, 7)
+      if (!defectosCilPorMes.has(ym)) continue
+      if (d.itemId && itemsCil.has(d.itemId)) {
+        defectosCilPorMes.set(ym, (defectosCilPorMes.get(ym) ?? 0) + 1)
+      }
+    }
+
     // Días parado por correctivo: por cada mes, suma del solapamiento de los
     // rangos fuera de servicio con el mes (una OT que cruza meses reparte sus
     // días). Rango abierto (sin fecha de alta) = sigue parado hasta hoy.
@@ -403,6 +474,10 @@ export async function getFlotaKpiSeriesExtra(): Promise<
     return {
       data: {
         cil_tareas: meses.map((ym) => ({ ym, valor: cilPorMes.get(ym) ?? null })),
+        cil_defectos_anticipables: meses.map((ym) => ({
+          ym,
+          valor: defectosCilPorMes.get(ym) ?? null,
+        })),
         combustible_kml: meses.map((ym) => {
           const c = combustible.get(ym)
           return { ym, valor: c && c.litrosConKm > 0 ? c.km / c.litrosConKm : null }

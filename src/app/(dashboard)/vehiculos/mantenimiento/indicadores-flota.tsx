@@ -240,6 +240,15 @@ const KPI_DEFS: KpiDef[] = [
     dpo: "4.1",
   },
   {
+    kpi: "cil_defectos_anticipables",
+    label: "Defectos que el CIL anticipa",
+    descripcion:
+      "Defectos de checklist de las familias que la limpieza e inspección autónoma previene: pérdida de fluidos, luces (focos y destelladores) y soldaduras de carrocería. Menos es mejor: es el resultado del CIL, no la actividad",
+    fmt: (v) => String(Math.round(v)),
+    conSerie: true,
+    dpo: "4.1",
+  },
+  {
     kpi: "correctivo_dias_parado",
     label: "Días parado por correctivo",
     descripcion:
