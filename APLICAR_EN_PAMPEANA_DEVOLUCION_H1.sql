@@ -75,1521 +75,1521 @@ END $$;
 -- =============================================
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('f1b615f4-50ad-4674-9f48-a804081e968f', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.1', 'Reporte de incidentes/accidentes', true, '1', 'SOP disponible. Confección de la pirámide ok. Proceso de reporte de CS/CI en marcha desde el 2026 (23 reportes efectuados en el presente período - en su mayoría condiciones inseguras). Cuentan con App Vercel para acceder a los reportes y registros. Oportunidad: - Ajustar caso Cordone: solicitar nuevamente la recategorización a MTI del caso. Corregir clasificación de SIF (de SIF potencial pasaría a NA SIF). - Ajustar caso Rodriguez: corregir clasificación de SIF (de SIF actual pasaría a NA SIF). - Seguir reforzando reporte de comportamientos seguros/inseguros y condiciones inseguras. Afianzar participación de mandos medios y operación en dicho reporte. - Desarrollar análisis de gráfico de torta o similar a fin de analizar cuáles son los comportamientos inseguros más frecuentes o críticos en función a las tendencias y enfocar los PDA a dichos casos. - Alinear reporte de GKPIs en función a lo relevado internamente.', 1)
+  ('a3c14f2e-c586-4313-96b3-c810c40e4820', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.1', 'Reporte de incidentes/accidentes', true, '1', 'SOP disponible. Confección de la pirámide ok. Proceso de reporte de CS/CI en marcha desde el 2026 (23 reportes efectuados en el presente período - en su mayoría condiciones inseguras). Cuentan con App Vercel para acceder a los reportes y registros. Oportunidad: - Ajustar caso Cordone: solicitar nuevamente la recategorización a MTI del caso. Corregir clasificación de SIF (de SIF potencial pasaría a NA SIF). - Ajustar caso Rodriguez: corregir clasificación de SIF (de SIF actual pasaría a NA SIF). - Seguir reforzando reporte de comportamientos seguros/inseguros y condiciones inseguras. Afianzar participación de mandos medios y operación en dicho reporte. - Desarrollar análisis de gráfico de torta o similar a fin de analizar cuáles son los comportamientos inseguros más frecuentes o críticos en función a las tendencias y enfocar los PDA a dichos casos. - Alinear reporte de GKPIs en función a lo relevado internamente.', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '220bd7ae-3d1b-4a94-94e6-d78f3d38ce61', id, 'Ajustar caso Cordone: solicitar nuevamente la recategorización a MTI del caso. Corregir clasificación de SIF (de SIF potencial pasaría a NA SIF)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
+  SELECT '974b29de-e97a-4b16-a45d-951050d02432', id, 'Ajustar caso Cordone: solicitar nuevamente la recategorización a MTI del caso. Corregir clasificación de SIF (de SIF potencial pasaría a NA SIF)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd904916b-91a2-4549-98b8-111ab1b68ca6', id, 'Ajustar caso Rodriguez: corregir clasificación de SIF (de SIF actual pasaría a NA SIF)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
+  SELECT 'f518f9c7-cf49-48fd-a198-5c7950391392', id, 'Ajustar caso Rodriguez: corregir clasificación de SIF (de SIF actual pasaría a NA SIF)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3bf79f24-6d55-4051-8817-dd679cde896e', id, 'Seguir reforzando reporte de comportamientos seguros/inseguros y condiciones inseguras. Afianzar participación de mandos medios y operación en dicho reporte', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
+  SELECT '71f0e0bb-4e16-4d8e-80c4-57c4c536d736', id, 'Seguir reforzando reporte de comportamientos seguros/inseguros y condiciones inseguras. Afianzar participación de mandos medios y operación en dicho reporte', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8aaeb920-710b-4ffa-aec6-363dcb3a671e', id, 'Desarrollar análisis de gráfico de torta o similar a fin de analizar cuáles son los comportamientos inseguros más frecuentes o críticos en función a las tendencias y enfocar los PDA a dichos casos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
+  SELECT '342bf757-8890-492e-87d6-0ba6dc9e3e2d', id, 'Desarrollar análisis de gráfico de torta o similar a fin de analizar cuáles son los comportamientos inseguros más frecuentes o críticos en función a las tendencias y enfocar los PDA a dichos casos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'cf851d0d-8f57-405f-9887-059fb0445671', id, 'Alinear reporte de GKPIs en función a lo relevado internamente', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
+  SELECT '27d0f90b-f6d3-497f-9519-65c60ea80678', id, 'Alinear reporte de GKPIs en función a lo relevado internamente', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('ae5da0cb-5b51-4fd8-9324-d69136123b09', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.2', 'Notificacion de incidentes/accidentes', false, '3', 'Notificaciones al EDV 100% documentadas. Alertas de seguridad compartidas al personal. Oportunidad: - Reforzar investigaciones, profundizando en el 5PQ. - Documentar notificación de alerta del caso de Rodríguez.', 2)
+  ('ab33a61f-18a6-4132-a924-9e80481c764e', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.2', 'Notificacion de incidentes/accidentes', false, '3', 'Notificaciones al EDV 100% documentadas. Alertas de seguridad compartidas al personal. Oportunidad: - Reforzar investigaciones, profundizando en el 5PQ. - Documentar notificación de alerta del caso de Rodríguez.', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '656af352-3a46-4b39-a47b-a6798be87fb2', id, 'Reforzar investigaciones, profundizando en el 5PQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.2'
+  SELECT 'b174939e-084c-48b2-a6ac-5ac7688e712a', id, 'Reforzar investigaciones, profundizando en el 5PQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b35aa079-cdac-49f0-aa7c-392085454de5', id, 'Documentar notificación de alerta del caso de Rodríguez', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.2'
+  SELECT '52e81773-9d57-4537-8df6-b404b1ba6174', id, 'Documentar notificación de alerta del caso de Rodríguez', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('708d48fd-81df-4142-86f6-24411a596d40', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.3', 'Investigación de incidentes/accidentes y análisis de causa raíz', false, '3', 'Se implementa herramienta de análisis de causas con conclusión de causa raíz para el 100% de las investigaciones. Incorporaron al análisis la simulación del evento a fin de recrear la mecánica del accidente; revisan historial de comportamientos inseguros registrados con respecto al colaborador accidentado; actualizan ER en función a los accidentes ocurridos. Oportunidad: - Profundizar 5 por qué, considerando método, persona y proceso. - Reforzar gestión de implementación de acciones correctivas. Aplicar OWD al personal accidentado luego del reingreso y para casos de incidentes. - Documentar PDA mediante action log digital, asignando responsable, fecha de cumplimiento y status.', 3)
+  ('c9f37afa-a437-4d69-9880-068373396982', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.3', 'Investigación de incidentes/accidentes y análisis de causa raíz', false, '3', 'Se implementa herramienta de análisis de causas con conclusión de causa raíz para el 100% de las investigaciones. Incorporaron al análisis la simulación del evento a fin de recrear la mecánica del accidente; revisan historial de comportamientos inseguros registrados con respecto al colaborador accidentado; actualizan ER en función a los accidentes ocurridos. Oportunidad: - Profundizar 5 por qué, considerando método, persona y proceso. - Reforzar gestión de implementación de acciones correctivas. Aplicar OWD al personal accidentado luego del reingreso y para casos de incidentes. - Documentar PDA mediante action log digital, asignando responsable, fecha de cumplimiento y status.', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '585f1133-664e-45fb-898e-1f76c4217df2', id, 'Profundizar 5 por qué, considerando método, persona y proceso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
+  SELECT '995ae288-a328-479c-b15e-b5318251bd96', id, 'Profundizar 5 por qué, considerando método, persona y proceso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f58ccc12-4abf-412e-be9b-874fb171bd53', id, 'Reforzar gestión de implementación de acciones correctivas. Aplicar OWD al personal accidentado luego del reingreso y para casos de incidentes', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
+  SELECT 'ebef4dde-095c-4c7b-9beb-de72ce810450', id, 'Reforzar gestión de implementación de acciones correctivas. Aplicar OWD al personal accidentado luego del reingreso y para casos de incidentes', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'fead92d8-240f-4f3c-8254-f2b5ed719464', id, 'Documentar PDA mediante action log digital, asignando responsable, fecha de cumplimiento y status', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
+  SELECT '7f6a6c21-34ad-4b92-8c00-f098c2df107c', id, 'Documentar PDA mediante action log digital, asignando responsable, fecha de cumplimiento y status', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0c568831-2354-4833-9e02-91fdb0c3ef8c', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.4', 'Proceso de revisión de rutina de gestión de incidentes/accidentes', false, '3', 'Se trata en el minuto de seguridad el tratamiento de pirámide de accidentología y alertas de seguridad por incidentes y accidentes (internos y/o externos). Oportunidad: seguir reforzando el conocimiento de la operación sobre pirámide de accidentología, clasificación y gestión de SIF.', 4)
+  ('d1cce84e-d885-4471-8f3a-ffaa9720cd3f', 'H1 2026', 'Seguridad', 'SIF Y GESTIÓN DE INCIDENTES', '1.4', 'Proceso de revisión de rutina de gestión de incidentes/accidentes', false, '3', 'Se trata en el minuto de seguridad el tratamiento de pirámide de accidentología y alertas de seguridad por incidentes y accidentes (internos y/o externos). Oportunidad: seguir reforzando el conocimiento de la operación sobre pirámide de accidentología, clasificación y gestión de SIF.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b52e7b28-4901-4bc6-89a1-c26a55b43750', id, 'seguir reforzando el conocimiento de la operación sobre pirámide de accidentología, clasificación y gestión de SIF', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.4'
+  SELECT '4c22a559-06a1-4ea5-9cf5-749c8b5ec802', id, 'seguir reforzando el conocimiento de la operación sobre pirámide de accidentología, clasificación y gestión de SIF', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='1.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2002f50a-e3cb-458b-adcb-9858fa9014d9', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.1', 'Control y gestión de entornos con déficit de oxígeno', false, 'N/A', NULL, 5)
+  ('97ac0115-fe13-43ae-a8dd-6d8ad97cd606', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.1', 'Control y gestión de entornos con déficit de oxígeno', false, 'N/A', NULL, 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4dff53e5-762d-405c-9c95-73b88563812b', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.2', 'Monitoreo y gestión de sistemas de amoníaco', false, 'N/A', NULL, 6)
+  ('c021a7f2-9f53-42ee-af33-2b306b10fe53', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.2', 'Monitoreo y gestión de sistemas de amoníaco', false, 'N/A', NULL, 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('54d20728-01f6-4e9c-991f-1ca21c99e797', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.3', 'Monitoreo y gestión de prevención de explosiones', false, '3', 'Carga de fuego realizada. No cuentan con áreas con riesgo de explosividad. Oportunidad: - Incluir baterías de litio en estudio de carga de fuego, detallando el poder calorífico del mismo. - Evaluar posibilidad de migrar el sector de carga de diesel a zona externa.', 7)
+  ('5794a6d3-ea06-4ed8-8026-ef22d3e73a48', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.3', 'Monitoreo y gestión de prevención de explosiones', false, '3', 'Carga de fuego realizada. No cuentan con áreas con riesgo de explosividad. Oportunidad: - Incluir baterías de litio en estudio de carga de fuego, detallando el poder calorífico del mismo. - Evaluar posibilidad de migrar el sector de carga de diesel a zona externa.', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '99dc372d-3a3c-4818-83a3-b6e1cc7bb6ff', id, 'Incluir baterías de litio en estudio de carga de fuego, detallando el poder calorífico del mismo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.3'
+  SELECT '3cff8ac7-6335-4e16-b532-c1779907feb7', id, 'Incluir baterías de litio en estudio de carga de fuego, detallando el poder calorífico del mismo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1da9cd55-f834-41cb-85ee-ca1c187c4158', id, 'Evaluar posibilidad de migrar el sector de carga de diesel a zona externa', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.3'
+  SELECT '52ad1b3f-520f-48b2-afe2-100b0e79a9d5', id, 'Evaluar posibilidad de migrar el sector de carga de diesel a zona externa', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('5e4cf86e-2674-4bc0-a66a-c720df38db9a', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.4', 'Gestión de sistemas eléctricos', true, '3', 'Medición de PAT realizada. Buen estado general de tableros. Se evidencia check trimestral de tableros. Personal autorizado y OPL de bloqueo y etiquetado gestionado a la vista. Oportunidad: - Actualizar medición de PAT verificando la continuidad de las masas en la totalidad de los tomacorrientes (prueba de disyuntor diferencial). Verificar OHMs obtenidos en cada uno de ellos. - Documentar permiso de trabajo para tareas excepcionales que involucren el manejo de tableros eléctricos.', 8)
+  ('bcbf7c83-2ab2-4b81-98a1-f32e9db52201', 'H1 2026', 'Seguridad', 'GESTIÓN DE PROCESOS DE ALTO RIESGO', '2.4', 'Gestión de sistemas eléctricos', true, '3', 'Medición de PAT realizada. Buen estado general de tableros. Se evidencia check trimestral de tableros. Personal autorizado y OPL de bloqueo y etiquetado gestionado a la vista. Oportunidad: - Actualizar medición de PAT verificando la continuidad de las masas en la totalidad de los tomacorrientes (prueba de disyuntor diferencial). Verificar OHMs obtenidos en cada uno de ellos. - Documentar permiso de trabajo para tareas excepcionales que involucren el manejo de tableros eléctricos.', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '69abc6be-3039-46a4-a04a-6e25053f9211', id, 'Actualizar medición de PAT verificando la continuidad de las masas en la totalidad de los tomacorrientes (prueba de disyuntor diferencial). Verificar OHMs obtenidos en cada uno de ellos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.4'
+  SELECT 'fb02ca41-68d9-4274-b644-a667e08d8598', id, 'Actualizar medición de PAT verificando la continuidad de las masas en la totalidad de los tomacorrientes (prueba de disyuntor diferencial). Verificar OHMs obtenidos en cada uno de ellos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'edb2b881-96bf-4ce7-84b3-41c91e10b28f', id, 'Documentar permiso de trabajo para tareas excepcionales que involucren el manejo de tableros eléctricos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.4'
+  SELECT '3a70bde3-07b7-4d56-9ebe-5ced406bc126', id, 'Documentar permiso de trabajo para tareas excepcionales que involucren el manejo de tableros eléctricos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('a6d03bf2-43e6-423a-a689-94cdedc7905d', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.1', 'Gestión del plan de tráfico', false, '3', 'Implementaron zona cero. Plan de tráfico implementado y gestionado a la vista. Oportunidad: - Incluir en layout: velocidad máxima, ubicación del trabaruedas proyectado a incorporarse. - Clausurar senda peatonal trasera en zona de vacíos. Ajustar apilabilidad de vacíos en dicho sector. - Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking. - Implementar reductores de velocidad en ingreso y salida de camiones. - Reforzar pintura de sendas y cruces peligrosos. - Vallar sendas de circulación en ingreso peatonal.', 9)
+  ('80ccd002-f30a-402d-94f8-68a8039168d9', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.1', 'Gestión del plan de tráfico', false, '3', 'Implementaron zona cero. Plan de tráfico implementado y gestionado a la vista. Oportunidad: - Incluir en layout: velocidad máxima, ubicación del trabaruedas proyectado a incorporarse. - Clausurar senda peatonal trasera en zona de vacíos. Ajustar apilabilidad de vacíos en dicho sector. - Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking. - Implementar reductores de velocidad en ingreso y salida de camiones. - Reforzar pintura de sendas y cruces peligrosos. - Vallar sendas de circulación en ingreso peatonal.', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0ba9b080-e26b-4bf4-b09a-8455c4876350', id, 'Incluir en layout: velocidad máxima, ubicación del trabaruedas proyectado a incorporarse', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT 'dc487b2a-b0e0-41bf-8b69-5a5a11d006df', id, 'Incluir en layout: velocidad máxima, ubicación del trabaruedas proyectado a incorporarse', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b26386a8-96ab-44e9-b4c4-f705de085b6c', id, 'Clausurar senda peatonal trasera en zona de vacíos. Ajustar apilabilidad de vacíos en dicho sector', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT 'c29164ce-4254-46fd-a0bf-93489b88c06f', id, 'Clausurar senda peatonal trasera en zona de vacíos. Ajustar apilabilidad de vacíos en dicho sector', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '873da4a1-e23e-43ef-9807-f7522f1dcc35', id, 'Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT '6c04fd6c-9f7e-40ef-b566-381c9c0d006a', id, 'Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '17e58587-29f4-4d7d-8943-ea2ac5f55e14', id, 'Implementar reductores de velocidad en ingreso y salida de camiones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT '3ca56884-e4ce-440d-974b-7459ee9bc3f4', id, 'Implementar reductores de velocidad en ingreso y salida de camiones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1e4357c1-578d-4afd-b4c6-df4ec3b963dc', id, 'Reforzar pintura de sendas y cruces peligrosos', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT 'e385ac49-2ee6-468a-a211-db663c769447', id, 'Reforzar pintura de sendas y cruces peligrosos', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd06f49b7-17f1-46be-a144-bec05d186d06', id, 'Vallar sendas de circulación en ingreso peatonal', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
+  SELECT '62cbc7c5-5d3e-4ffb-a130-ede91b42a399', id, 'Vallar sendas de circulación en ingreso peatonal', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('1b323f97-74e9-4dbc-aa95-6b481eebaa8b', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.2', 'Carga y descarga de forma segura', false, '1', 'SOP disponible. Zona segura correctamente implementada. Oportunidad: - Implementar trabaruedas habilitado por CMQ. - Colocar cartelería en zona segura. - Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones. - Unificar aspectos de Seguridad y operativos dentro del mismo SOP.', 10)
+  ('fe954ab7-6649-4335-b541-a10fe02017fc', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.2', 'Carga y descarga de forma segura', false, '1', 'SOP disponible. Zona segura correctamente implementada. Oportunidad: - Implementar trabaruedas habilitado por CMQ. - Colocar cartelería en zona segura. - Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones. - Unificar aspectos de Seguridad y operativos dentro del mismo SOP.', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd7c618c8-e558-495f-a00f-1a55091bd3a5', id, 'Implementar trabaruedas habilitado por CMQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
+  SELECT 'a166a313-f36f-40b4-bbca-a7538a646413', id, 'Implementar trabaruedas habilitado por CMQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '9c99902d-75b7-49a2-a463-171170d4f721', id, 'Colocar cartelería en zona segura', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
+  SELECT '1e1f571b-47ac-432d-8260-f034dfa2a41c', id, 'Colocar cartelería en zona segura', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '638e3002-37db-492e-bcea-7aedd10a0181', id, 'Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
+  SELECT 'de30182f-e332-4d16-afca-eba4bef3855f', id, 'Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e9abd67b-9cf5-455f-acd6-348ac3cc96af', id, 'Unificar aspectos de Seguridad y operativos dentro del mismo SOP', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
+  SELECT '43bef950-88db-482d-9b36-b605fed891ca', id, 'Unificar aspectos de Seguridad y operativos dentro del mismo SOP', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('7d88ff46-5b61-4818-8130-6eaeea9d1157', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.3', 'Utilización segura de equipos industriales motorizados', false, '1', 'La distribuidora dispone de autoelevadores a base de combustión interna (diesel). Oportunidad: - Se recomienda migrar al sistema a base de GLP según estándar global. Evidenciar plan de recambio. - Gestionar habilitación de autoelevadoristas según Res. 960/15.', 11)
+  ('c0b6f73e-40b4-4365-b30c-ab3218e57d12', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.3', 'Utilización segura de equipos industriales motorizados', false, '1', 'La distribuidora dispone de autoelevadores a base de combustión interna (diesel). Oportunidad: - Se recomienda migrar al sistema a base de GLP según estándar global. Evidenciar plan de recambio. - Gestionar habilitación de autoelevadoristas según Res. 960/15.', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '76689636-4b69-4762-9621-b8038841cc5a', id, 'Se recomienda migrar al sistema a base de GLP según estándar global. Evidenciar plan de recambio', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.3'
+  SELECT '2b37a63f-6836-4436-8611-3ac207a4026e', id, 'Se recomienda migrar al sistema a base de GLP según estándar global. Evidenciar plan de recambio', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1562fc08-01fb-458a-97ee-f247b616b601', id, 'Gestionar habilitación de autoelevadoristas según Res. 960/15', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.3'
+  SELECT '4255cabd-a2d1-45b3-b969-34d774dea589', id, 'Gestionar habilitación de autoelevadoristas según Res. 960/15', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('14c3e9dd-0f2a-46c5-8609-f73c1f6c3078', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.4', 'Gestión de seguridad de los peatones', true, '3', 'Zona de picking segregada mediante barreras y mallas metálicas. Espejos parabólicos instalados en puntos ciegos. Oportunidad: - Implementar barreras fijas en zona de clasificación de envases. - Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking. - Implementar barreras fijas en sendas de circulación peatonal del ingreso a la distribuidora. - Se sugiere implementar alarmas de notificación de paso peatonal en cruces peligrosos. - Instalar puertas vaivén en cruces peligrosos. - Instalar barrera fija en cruce peligroso hacia canchas de picking (nave 2).', 12)
+  ('8226b7d0-f5af-4830-af31-2313d1ed753e', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.4', 'Gestión de seguridad de los peatones', true, '3', 'Zona de picking segregada mediante barreras y mallas metálicas. Espejos parabólicos instalados en puntos ciegos. Oportunidad: - Implementar barreras fijas en zona de clasificación de envases. - Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking. - Implementar barreras fijas en sendas de circulación peatonal del ingreso a la distribuidora. - Se sugiere implementar alarmas de notificación de paso peatonal en cruces peligrosos. - Instalar puertas vaivén en cruces peligrosos. - Instalar barrera fija en cruce peligroso hacia canchas de picking (nave 2).', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f3f73208-2cb4-4360-b813-62b672f3f4e8', id, 'Implementar barreras fijas en zona de clasificación de envases', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT '230c6417-9aaf-4b92-a8fa-2c7fdd284269', id, 'Implementar barreras fijas en zona de clasificación de envases', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'cf9db453-c3e6-42fe-9017-4cba9a958828', id, 'Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT '147db0e6-5231-4cb2-8b18-953fedfe60f5', id, 'Ajustar camino hacia zona de clasificación, verificando la posibilidad de generar acceso desde el área de picking', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '34272b51-9215-47b2-8346-42c5d08b377e', id, 'Implementar barreras fijas en sendas de circulación peatonal del ingreso a la distribuidora', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT 'c87d712a-e9a5-4352-bcb5-50f5ee19d35e', id, 'Implementar barreras fijas en sendas de circulación peatonal del ingreso a la distribuidora', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a853c9ff-aa1e-433a-a7cc-b915d201927d', id, 'Se sugiere implementar alarmas de notificación de paso peatonal en cruces peligrosos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT '454bab05-7a53-4761-9de7-9a54b429d57a', id, 'Se sugiere implementar alarmas de notificación de paso peatonal en cruces peligrosos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3015d9da-ae0a-4e4b-961c-d370f0df9f88', id, 'Instalar puertas vaivén en cruces peligrosos', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT 'b0dae0ac-f0d9-4d86-a0a4-ca1442f63e29', id, 'Instalar puertas vaivén en cruces peligrosos', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a144fe8f-025f-47a6-8638-a71740a23eea', id, 'Instalar barrera fija en cruce peligroso hacia canchas de picking (nave 2)', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
+  SELECT '932ccd0d-e121-4b6f-8175-dbd2ecca9d41', id, 'Instalar barrera fija en cruce peligroso hacia canchas de picking (nave 2)', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2758b612-0268-4595-b6d2-c995edbed18a', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.5', 'Inspección previa al uso de equipos industriales motorizados y ejecucion segura', false, '3', 'Se evidencia adherencia al check de autoelevadores. Oportunidad: - Reforzar implementación de OWD del proceso. - Reforzar frecuencia de implementación de zorras eléctricas (check diario).', 13)
+  ('49d57451-036a-4851-8f24-060b52962607', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.5', 'Inspección previa al uso de equipos industriales motorizados y ejecucion segura', false, '3', 'Se evidencia adherencia al check de autoelevadores. Oportunidad: - Reforzar implementación de OWD del proceso. - Reforzar frecuencia de implementación de zorras eléctricas (check diario).', 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '65a0f8fb-a8bf-4d79-8059-0ae292b3f6a7', id, 'Reforzar implementación de OWD del proceso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.5'
+  SELECT '7a78bfbb-a96d-4ef0-a03d-4cfa7f882706', id, 'Reforzar implementación de OWD del proceso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.5'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c908b623-b693-4211-a50f-4ad6c5944e56', id, 'Reforzar frecuencia de implementación de zorras eléctricas (check diario)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.5'
+  SELECT '63ef00d1-2042-471d-b20e-4a78d66401ea', id, 'Reforzar frecuencia de implementación de zorras eléctricas (check diario)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0f930b2f-2185-442a-8ba1-b0d085dcebcd', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.6', 'Ejecución Segura de control de llaves', true, '3', 'Cuentan con tablero para el guardado de llaves al finalizar la jornada. Comenzaron a implementar OWDs. Oportunidad: - Reforzar proceso de control de llaves durante la operación de recarga mediante la implementación de depósito de llave con sistema de bloqueo en trabaruedas. - Gestionar a la vista personal responsable del control final. - Unificar en SOP de control de llaves los aspectos de seguridad y operativos. - Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones.', 14)
+  ('79a178dd-e796-479e-8950-e35f8f8ac32a', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.6', 'Ejecución Segura de control de llaves', true, '3', 'Cuentan con tablero para el guardado de llaves al finalizar la jornada. Comenzaron a implementar OWDs. Oportunidad: - Reforzar proceso de control de llaves durante la operación de recarga mediante la implementación de depósito de llave con sistema de bloqueo en trabaruedas. - Gestionar a la vista personal responsable del control final. - Unificar en SOP de control de llaves los aspectos de seguridad y operativos. - Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones.', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '9df85a37-812f-46a1-8fb6-b768a6b957c2', id, 'Reforzar proceso de control de llaves durante la operación de recarga mediante la implementación de depósito de llave con sistema de bloqueo en trabaruedas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
+  SELECT 'd93dbfba-66a4-494b-8b50-3af7db32c645', id, 'Reforzar proceso de control de llaves durante la operación de recarga mediante la implementación de depósito de llave con sistema de bloqueo en trabaruedas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd6c1baf8-cc42-4c87-b70c-1179d1270ecb', id, 'Gestionar a la vista personal responsable del control final', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
+  SELECT 'ef34a77a-ea4f-4f54-847e-76b27535898e', id, 'Gestionar a la vista personal responsable del control final', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0bdcc683-ee10-4943-b588-2450f8a68c30', id, 'Unificar en SOP de control de llaves los aspectos de seguridad y operativos', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
+  SELECT '59cb5b05-164c-4940-b916-cb3a21fbbc40', id, 'Unificar en SOP de control de llaves los aspectos de seguridad y operativos', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b12b2252-f09e-4099-bedc-506ce742e582', id, 'Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
+  SELECT 'd20df22b-3377-4706-9a39-3b35a46366fa', id, 'Comenzar con la implementación de OWDs en función al procedimiento. Desarrollar análisis en función a las tendencias y desvíos recurrentes detectados durante la realización de OWDs, a fin de focalizar las acciones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='3.6'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('7c0a7d4b-ec3a-495b-9881-505db93ae787', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.7', 'Gestión de puertas muelles', false, 'N/A', NULL, 15)
+  ('2154bfac-5038-4ac1-a35d-6460701df804', 'H1 2026', 'Seguridad', 'SEGURIDAD EN EL TRANSPORTE EN EL LUGAR DE TRABAJO', '3.7', 'Gestión de puertas muelles', false, 'N/A', NULL, 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('82c4f6fb-fcd8-4659-bf7a-382306929878', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.1', 'Ejecución segura de manipulación manual de materiales', false, '3', 'Estudio ergonómico de puestos de trabajo realizado (totalidad de puestos contemplados). Tuvieron dos casos de TME en el presente período. Oportunidad: - En función a los eventos ocurridos, reforzar el aspecto conductual del personal sobre la manipulación manual de cargas. - Reforzar conclusiones del estudio y PDA derivados del mismo. - Integrar preguntas referidas a posturas ergonómicas dentro de los puntos a evaluar en las OWD.', 16)
+  ('3b3ff2a8-a54c-4101-bfdd-3885b60094ae', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.1', 'Ejecución segura de manipulación manual de materiales', false, '3', 'Estudio ergonómico de puestos de trabajo realizado (totalidad de puestos contemplados). Tuvieron dos casos de TME en el presente período. Oportunidad: - En función a los eventos ocurridos, reforzar el aspecto conductual del personal sobre la manipulación manual de cargas. - Reforzar conclusiones del estudio y PDA derivados del mismo. - Integrar preguntas referidas a posturas ergonómicas dentro de los puntos a evaluar en las OWD.', 16)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '68023a0b-0cf3-464a-bcf2-b48af0c1b672', id, 'En función a los eventos ocurridos, reforzar el aspecto conductual del personal sobre la manipulación manual de cargas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
+  SELECT 'e236c893-f9fe-4509-a6a2-293590c812ed', id, 'En función a los eventos ocurridos, reforzar el aspecto conductual del personal sobre la manipulación manual de cargas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5160e5d1-2a66-47e4-aaad-fd5bff930161', id, 'Reforzar conclusiones del estudio y PDA derivados del mismo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
+  SELECT '8b71eea7-c454-44ee-8bc9-e2632e19332f', id, 'Reforzar conclusiones del estudio y PDA derivados del mismo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '94940c0a-ab79-412f-83d3-1f1474ab39e3', id, 'Integrar preguntas referidas a posturas ergonómicas dentro de los puntos a evaluar en las OWD', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
+  SELECT '0f6d8dc6-b38e-4229-986a-676427333cc8', id, 'Integrar preguntas referidas a posturas ergonómicas dentro de los puntos a evaluar en las OWD', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2c2cd3c5-8ba0-45ac-9e89-54aace28be2f', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.2', 'Gestión de equipos de elevación mecánica, racks y estantes', false, '3', 'Racks en buenas condiciones. Protecciones visibles en base de bastidores y extremos. Check trimestral ok. Gestionaron cartelería de capacidad máxima para la totalidad de los racks. Oportunidad: - Implementar habilitación anual por parte de profesional habilitado. Contemplar en dicho estudio la medición de nivelación del suelo donde se afirma la estructura de los racks. - Completar soporte transversal faltante.', 17)
+  ('11d5d333-3264-4309-8f43-29d81f893d09', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.2', 'Gestión de equipos de elevación mecánica, racks y estantes', false, '3', 'Racks en buenas condiciones. Protecciones visibles en base de bastidores y extremos. Check trimestral ok. Gestionaron cartelería de capacidad máxima para la totalidad de los racks. Oportunidad: - Implementar habilitación anual por parte de profesional habilitado. Contemplar en dicho estudio la medición de nivelación del suelo donde se afirma la estructura de los racks. - Completar soporte transversal faltante.', 17)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1d359bf8-15ee-4c4f-bce5-4995a4d584b6', id, 'Implementar habilitación anual por parte de profesional habilitado. Contemplar en dicho estudio la medición de nivelación del suelo donde se afirma la estructura de los racks', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.2'
+  SELECT '48d3dd04-e1a6-4c06-85fc-39b443a6c4aa', id, 'Implementar habilitación anual por parte de profesional habilitado. Contemplar en dicho estudio la medición de nivelación del suelo donde se afirma la estructura de los racks', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1bd9d629-1b1f-49a7-80cb-996883da3df9', id, 'Completar soporte transversal faltante', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.2'
+  SELECT '48b7f6ae-9f04-403a-833e-759b2f64a3ad', id, 'Completar soporte transversal faltante', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('569bbed9-6a2b-46ab-9b59-7219220cd3e6', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.3', 'Ejecución segura de equipos de elevación mecánica', true, 'N/A', 'No cuentan con gato hidráulico o cricket botella.', 18)
+  ('6283d5ce-d31a-48d1-aedb-b7b9f7a2f7c7', 'H1 2026', 'Seguridad', 'MANIPULACIÓN DE MATERIALES Y ERGONOMÍA', '4.3', 'Ejecución segura de equipos de elevación mecánica', true, 'N/A', 'No cuentan con gato hidráulico o cricket botella.', 18)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('50fa3e7b-f932-4cc5-94e4-54b481ef1947', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.1', 'Ejecucion segura de Carga de GLP', true, 'N/A', NULL, 19)
+  ('05b080d9-a6cf-441a-830a-ecc056c89812', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.1', 'Ejecucion segura de Carga de GLP', true, 'N/A', NULL, 19)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4203a226-a865-4654-9a6b-8b39df811617', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.2', 'Ejecucion segura de Carga de baterías', true, '1', 'Sector de carga de baterías en cumplimiento de 5S, cartelería (OPL y riesgo eléctrico) y lavaojos disponible en sector. Oportunidad: - Desarrollar SOP. - Gestionar a la vista cartelería de personal autorizado. - Verificar que la carga de baterías cuente con sistema de corte automático en cargadores para prevenir sobrecalentamiento. - Contar con extintor específico para baterías de litio en el sector (F500 o clase L).', 20)
+  ('2ae35fb5-93b8-474b-baed-a9cfc02aadef', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.2', 'Ejecucion segura de Carga de baterías', true, '1', 'Sector de carga de baterías en cumplimiento de 5S, cartelería (OPL y riesgo eléctrico) y lavaojos disponible en sector. Oportunidad: - Desarrollar SOP. - Gestionar a la vista cartelería de personal autorizado. - Verificar que la carga de baterías cuente con sistema de corte automático en cargadores para prevenir sobrecalentamiento. - Contar con extintor específico para baterías de litio en el sector (F500 o clase L).', 20)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '695b121d-b4c1-42dd-8ec2-e46aec5838d5', id, 'Desarrollar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
+  SELECT '835a0600-9ebc-48c2-89bb-6340e5eb05a7', id, 'Desarrollar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c5d50381-66f0-4143-ae85-a392a85eb4d9', id, 'Gestionar a la vista cartelería de personal autorizado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
+  SELECT '85ef6a18-1598-458f-ad12-152cda8a05f7', id, 'Gestionar a la vista cartelería de personal autorizado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '079f3f68-8e0b-499f-a0ed-07d899f557d7', id, 'Verificar que la carga de baterías cuente con sistema de corte automático en cargadores para prevenir sobrecalentamiento', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
+  SELECT '4debf7a0-1fb9-48ed-8db0-8f188d934247', id, 'Verificar que la carga de baterías cuente con sistema de corte automático en cargadores para prevenir sobrecalentamiento', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8b21edc5-28e2-4d3a-ac13-4f05b6a5a6ac', id, 'Contar con extintor específico para baterías de litio en el sector (F500 o clase L)', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
+  SELECT '69d4f9fe-9069-473e-91ae-908fc1e93997', id, 'Contar con extintor específico para baterías de litio en el sector (F500 o clase L)', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('3bbaa9db-ff61-4083-a407-9d6b712eb5cf', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.3', 'Ejecucion segura de carga de Diesel/Gasoil', true, '1', 'Sector de carga de diesel en cumplimiento de 5S, kit antiderrame disponible , lavaojos y OPL. Cartelería de prohibición de fumar y riesgo de incendio presente. Oportunidad: - Desarrollar SOP. - Remover material combustible (pallet) donde se posiciona el tambor de diesel. Reemplazar por estructura metálica. - Implementar OWDs del proceso.', 21)
+  ('6fe866d7-db5e-490c-8637-7dbe017aa1c0', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.3', 'Ejecucion segura de carga de Diesel/Gasoil', true, '1', 'Sector de carga de diesel en cumplimiento de 5S, kit antiderrame disponible , lavaojos y OPL. Cartelería de prohibición de fumar y riesgo de incendio presente. Oportunidad: - Desarrollar SOP. - Remover material combustible (pallet) donde se posiciona el tambor de diesel. Reemplazar por estructura metálica. - Implementar OWDs del proceso.', 21)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '009369fb-e36c-452e-bab2-fe38134fcea4', id, 'Desarrollar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
+  SELECT 'b4e44c44-6f9f-4b43-81f2-8eca776377db', id, 'Desarrollar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '74644a77-e02a-47fa-bb65-84bd52aab7fe', id, 'Remover material combustible (pallet) donde se posiciona el tambor de diesel. Reemplazar por estructura metálica', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
+  SELECT 'f22ece5e-380c-4eb0-b7fa-e83e119811b7', id, 'Remover material combustible (pallet) donde se posiciona el tambor de diesel. Reemplazar por estructura metálica', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '55975e4f-2f28-4e52-8632-f9f44f120ad9', id, 'Implementar OWDs del proceso', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
+  SELECT 'f1350bfe-c562-4273-b75a-8a62739e582b', id, 'Implementar OWDs del proceso', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9bd75208-d2af-4b20-9b4d-3c9972711a67', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.4', 'Almacenamiento y transporte seguro de tubos de gas comprimido', false, '1', 'Cuentan con SOP de manipulación de tubos de CO2. Disponen de OPL para manipulación y transporte de barriles de cerveza. Oportunidad: - Profundizar SOP incluyendo la manipulación de barriles. - Implementar OWDs al proceso.', 22)
+  ('833170c2-099d-4663-9703-29fe80786a60', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.4', 'Almacenamiento y transporte seguro de tubos de gas comprimido', false, '1', 'Cuentan con SOP de manipulación de tubos de CO2. Disponen de OPL para manipulación y transporte de barriles de cerveza. Oportunidad: - Profundizar SOP incluyendo la manipulación de barriles. - Implementar OWDs al proceso.', 22)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6bb27487-b706-4236-8e10-01109c83c654', id, 'Profundizar SOP incluyendo la manipulación de barriles', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.4'
+  SELECT '1a8c2a01-36ef-49b8-acde-0174b05a9f4f', id, 'Profundizar SOP incluyendo la manipulación de barriles', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3af83a39-498c-4ceb-ace3-b5b2d28e05e4', id, 'Implementar OWDs al proceso', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.4'
+  SELECT 'e1d3a36f-aa4f-44c4-8b19-06c61e108192', id, 'Implementar OWDs al proceso', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('19a6ef92-e526-4ebe-a9fd-8f56aa4b8670', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.5', 'Almacenamiento de sustancias peligrosas', false, '3', 'Materiales incompatibles almacenados por separado (matriz de compatibilidad visible). Bateas de contención antiderrames disponibles para la lavandina en dicho sector. Orden y limpieza ok. Oportunidad: - Completar bandeja antiderrame para la totalidad de los productos.', 23)
+  ('b775f431-d40c-437f-9da9-41d0ed9e531b', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.5', 'Almacenamiento de sustancias peligrosas', false, '3', 'Materiales incompatibles almacenados por separado (matriz de compatibilidad visible). Bateas de contención antiderrames disponibles para la lavandina en dicho sector. Orden y limpieza ok. Oportunidad: - Completar bandeja antiderrame para la totalidad de los productos.', 23)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '975dfc48-43f4-46f5-a90b-efec4f7b39b0', id, 'Completar bandeja antiderrame para la totalidad de los productos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.5'
+  SELECT 'dd0d2159-9451-4ced-ab54-bf3a7b1f5d64', id, 'Completar bandeja antiderrame para la totalidad de los productos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('44b096e5-0a51-43d8-814b-db44fd2ce99f', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.6', 'SDS Management', false, '3', 'Hojas de seguridad y matriz de compatibilidad disponibles. Se evidencia control de inventario químico. Oportunidad: gestionar a la vista (en formato físico) las hojas de seguridad de la totalidad de los productos almacenados.', 24)
+  ('df51f6ba-964e-4821-91da-c5b361afb9ab', 'H1 2026', 'Seguridad', 'SUSTANCIAS PELIGROSAS', '5.6', 'SDS Management', false, '3', 'Hojas de seguridad y matriz de compatibilidad disponibles. Se evidencia control de inventario químico. Oportunidad: gestionar a la vista (en formato físico) las hojas de seguridad de la totalidad de los productos almacenados.', 24)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8d368955-439a-4936-bb9e-6ce0d58c0d3f', id, 'gestionar a la vista (en formato físico) las hojas de seguridad de la totalidad de los productos almacenados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.6'
+  SELECT 'bcbf2af8-c0ea-47b2-a23f-1137551aa358', id, 'gestionar a la vista (en formato físico) las hojas de seguridad de la totalidad de los productos almacenados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='5.6'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('f8f0f347-393f-4a7f-b716-f05d48bc0375', 'H1 2026', 'Seguridad', 'ESPACIO CONFINADO', '6.1', 'Identificación, señalizacion e inventario de espacios confinados', false, 'N/A', NULL, 25)
+  ('1f9f66a1-72f7-4fbb-be71-299b074cfc8c', 'H1 2026', 'Seguridad', 'ESPACIO CONFINADO', '6.1', 'Identificación, señalizacion e inventario de espacios confinados', false, 'N/A', NULL, 25)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e08c80ec-3bbd-419d-8e84-7508cbf42cec', 'H1 2026', 'Seguridad', 'ESPACIO CONFINADO', '6.2', 'Ejecucion segura de entrada en espacios confinados', false, '5', 'Capacitación de espacios confinados realizada. Entrevistas ok.', 26)
+  ('36543a72-2eba-4b78-bd33-c3185f9ac5ea', 'H1 2026', 'Seguridad', 'ESPACIO CONFINADO', '6.2', 'Ejecucion segura de entrada en espacios confinados', false, '5', 'Capacitación de espacios confinados realizada. Entrevistas ok.', 26)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('aecba78a-a519-4d85-a791-06ba534b8815', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.1', 'Gestión de dinero efectivo en ruta', false, '3', 'SOP documentado. Alrededor de un 50% de los PDVs manejan medios de pago en efectivo. Oportunidad: - Reforzar implementación de OWDs al proceso, entrenamientos y completar relevamiento de medios de pago en PDV a fin de impulsar PDA. - Ajustar SOP agregando el detalle del límite de billetes que pueden cargarse en la caja fuerte y plan de contingencias ante llenado de caja fuerte. - Reforzar, en los casos en los que sea posible, la gestión de migración de medios de pago en efectivo hacia medios de pago digitales, a fin de disminuir la manipulación de efectivo en ruta.', 27)
+  ('4eee7cd1-520c-4190-8ee1-933da3b460b1', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.1', 'Gestión de dinero efectivo en ruta', false, '3', 'SOP documentado. Alrededor de un 50% de los PDVs manejan medios de pago en efectivo. Oportunidad: - Reforzar implementación de OWDs al proceso, entrenamientos y completar relevamiento de medios de pago en PDV a fin de impulsar PDA. - Ajustar SOP agregando el detalle del límite de billetes que pueden cargarse en la caja fuerte y plan de contingencias ante llenado de caja fuerte. - Reforzar, en los casos en los que sea posible, la gestión de migración de medios de pago en efectivo hacia medios de pago digitales, a fin de disminuir la manipulación de efectivo en ruta.', 27)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '89362c0a-6724-4b03-a651-d336a01cb0cb', id, 'Reforzar implementación de OWDs al proceso, entrenamientos y completar relevamiento de medios de pago en PDV a fin de impulsar PDA', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
+  SELECT 'c2d03db4-2668-448b-9efd-7b37512e5d00', id, 'Reforzar implementación de OWDs al proceso, entrenamientos y completar relevamiento de medios de pago en PDV a fin de impulsar PDA', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '68ff9a37-3bdc-49d0-8853-5db3e378405e', id, 'Ajustar SOP agregando el detalle del límite de billetes que pueden cargarse en la caja fuerte y plan de contingencias ante llenado de caja fuerte', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
+  SELECT '53be7a31-705a-4b78-90bf-f6c0317c3128', id, 'Ajustar SOP agregando el detalle del límite de billetes que pueden cargarse en la caja fuerte y plan de contingencias ante llenado de caja fuerte', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'aeab66e7-890f-4a6f-82cc-b3e46621765e', id, 'Reforzar, en los casos en los que sea posible, la gestión de migración de medios de pago en efectivo hacia medios de pago digitales, a fin de disminuir la manipulación de efectivo en ruta', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
+  SELECT '5e504f8d-ef76-43b4-8793-65a668ec3b92', id, 'Reforzar, en los casos en los que sea posible, la gestión de migración de medios de pago en efectivo hacia medios de pago digitales, a fin de disminuir la manipulación de efectivo en ruta', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('1df1720b-f0a0-4866-9b20-722653d7a891', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.2', 'Ejecución segura de la prevención de la violencia', false, '3', 'SOP completo. Cuentan con cerco perimetral, sistema CCTV y alarma con sensor de movimiento. Cuentan con custodio de seguridad desde las 18 hasta las 7:30. Oportunidad: - Proyectar implementar botones antipánico en tesorería. - Implementar OWDs y completar entrenamientos. Incorporar más preguntas sobre prevención de violencia en OWDs de ruta.', 28)
+  ('592db010-413d-4a53-9647-37a4a81647ab', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.2', 'Ejecución segura de la prevención de la violencia', false, '3', 'SOP completo. Cuentan con cerco perimetral, sistema CCTV y alarma con sensor de movimiento. Cuentan con custodio de seguridad desde las 18 hasta las 7:30. Oportunidad: - Proyectar implementar botones antipánico en tesorería. - Implementar OWDs y completar entrenamientos. Incorporar más preguntas sobre prevención de violencia en OWDs de ruta.', 28)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e75aac7f-1a6c-44f4-a3cf-df0bff9b6cc6', id, 'Proyectar implementar botones antipánico en tesorería', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.2'
+  SELECT 'f86c5ad1-9e2f-4670-b413-2424e66c1b1c', id, 'Proyectar implementar botones antipánico en tesorería', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'cba15c9d-d315-434a-bf89-8cfcbcf4d14f', id, 'Implementar OWDs y completar entrenamientos. Incorporar más preguntas sobre prevención de violencia en OWDs de ruta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.2'
+  SELECT '44813e4d-7b99-452d-b169-48a09a718c0d', id, 'Implementar OWDs y completar entrenamientos. Incorporar más preguntas sobre prevención de violencia en OWDs de ruta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('db9fa325-577b-4d48-a8f5-776cbaf7d801', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.3', 'Toolkit Violence Prevention', false, 'N/A', 'Toolkit completo al 60% nivel 1 y 60% nivel 2. Seguir traccionando PDA.', 29)
+  ('ecf1b098-ba1c-4f0f-b9b9-b3dd4dfd70c2', 'H1 2026', 'Seguridad', 'PREVENCIÓN DE VIOLENCIA', '7.3', 'Toolkit Violence Prevention', false, 'N/A', 'Toolkit completo al 60% nivel 1 y 60% nivel 2. Seguir traccionando PDA.', 29)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd1cd8319-bcce-4124-918d-ce19ae877f03', id, 'Seguir traccionando PDA', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.3'
+  SELECT 'd82eeaa7-d83e-489a-bdfb-7bd411469a11', id, 'Seguir traccionando PDA', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='7.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('abb8ad5a-4420-471f-b362-2cd148eaeb40', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.1', 'Gestión de la calificacion de los conductores', false, '5', 'Buen seguimiento de licencias. Oportunidad: - Reforzar seguimiento de licencias de personal de T1 tercerizado fijo.', 30)
+  ('f22f218d-7c71-43bb-8207-73506b992621', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.1', 'Gestión de la calificacion de los conductores', false, '5', 'Buen seguimiento de licencias. Oportunidad: - Reforzar seguimiento de licencias de personal de T1 tercerizado fijo.', 30)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b1178ac6-b1f3-46f7-be2d-b06081be906e', id, 'Reforzar seguimiento de licencias de personal de T1 tercerizado fijo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.1'
+  SELECT 'f6c76528-d697-4c56-b424-90460721aa19', id, 'Reforzar seguimiento de licencias de personal de T1 tercerizado fijo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('398a848d-b7d8-4161-85bc-d3eae6ef1791', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.2', 'Gestión de rutas peligrosas', false, 'N/A', 'Se evidencia relevamiento en marcha de rutas de riesgo. Oportunidad: - Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en rutas de riesgo. - Implementar herramienta "MyMaps" o similar a fin de mejorar la visualización de riesgos en ruta y el acceso del personal a dicha información. - Registrar la totalidad de los PDA ante riesgos detectados en determinadas zonas (por ej: ventanas horarias, cambio de ruta, etc.).', 31)
+  ('c987b874-ae98-4f23-8cb1-acbe8f7822b2', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.2', 'Gestión de rutas peligrosas', false, 'N/A', 'Se evidencia relevamiento en marcha de rutas de riesgo. Oportunidad: - Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en rutas de riesgo. - Implementar herramienta "MyMaps" o similar a fin de mejorar la visualización de riesgos en ruta y el acceso del personal a dicha información. - Registrar la totalidad de los PDA ante riesgos detectados en determinadas zonas (por ej: ventanas horarias, cambio de ruta, etc.).', 31)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0781a45c-72fc-424e-866c-b80cb8274da4', id, 'Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en rutas de riesgo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
+  SELECT '22908b4a-462a-40d2-9f1d-8a9f42a74d3d', id, 'Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en rutas de riesgo', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1476da8d-c508-4fcc-875b-00232db5f1a0', id, 'Implementar herramienta "MyMaps" o similar a fin de mejorar la visualización de riesgos en ruta y el acceso del personal a dicha información', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
+  SELECT 'b7a28ae8-eb32-48f0-9e49-86fdf1510dce', id, 'Implementar herramienta "MyMaps" o similar a fin de mejorar la visualización de riesgos en ruta y el acceso del personal a dicha información', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bacc82da-7ea1-4009-bba3-eca0e05879b5', id, 'Registrar la totalidad de los PDA ante riesgos detectados en determinadas zonas (por ej: ventanas horarias, cambio de ruta, etc.)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
+  SELECT '719db04e-83e8-4c44-84a3-e0d90bf14dfa', id, 'Registrar la totalidad de los PDA ante riesgos detectados en determinadas zonas (por ej: ventanas horarias, cambio de ruta, etc.)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4324c47d-4eee-4070-bae8-66aefd83dbc6', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.3', 'Ejecución segura de la conducción', false, 'N/A', 'Entrevistas ok. Tuvieron dos eventos de accidentabilidad en distribución. Oportunidad: reforzar implementación de OWDs en ruta, reporte de comportamientos y relevamiento telemétrico.', 32)
+  ('eb0af3f6-e9bc-44b4-99ce-82305ec5b253', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.3', 'Ejecución segura de la conducción', false, 'N/A', 'Entrevistas ok. Tuvieron dos eventos de accidentabilidad en distribución. Oportunidad: reforzar implementación de OWDs en ruta, reporte de comportamientos y relevamiento telemétrico.', 32)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0379b742-1d72-45e0-a9b7-f9f090aea117', id, 'reforzar implementación de OWDs en ruta, reporte de comportamientos y relevamiento telemétrico', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.3'
+  SELECT '67cb7da1-6f00-4d2c-acb6-e3eba431b388', id, 'reforzar implementación de OWDs en ruta, reporte de comportamientos y relevamiento telemétrico', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('5a680add-47ef-4376-9ab3-d32e057164e7', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.4', 'Gestión de telemetría', true, 'N/A', 'Cuentan con sistema de telemetría "Localiza", el cual mide solamente el control de velocidad y la ubicación satelital. Oportunidades: - Reforzar relevamiento de frenadas y giros bruscos, aceleraciones, uso de cinturón de seguridad, etc. - Reforzar registro de acciones realizadas a partir del análisis obtenido del seguimiento de telemetría (charlas 1a1, capacitaciones, análisis de tendencias, etc.). - Monitorear uso de cinturón de seguridad mediante OWDs. - Mapear desvíos en ruta detectados durante la aplicación de OWDs y ejecutar PDA en función a dichos desvíos. - Afianzar sinergia entre Seguridad y pilares Entrega y flota en este respecto.', 33)
+  ('84d65c82-9e79-469d-806e-69fc85cd3f2d', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.4', 'Gestión de telemetría', true, 'N/A', 'Cuentan con sistema de telemetría "Localiza", el cual mide solamente el control de velocidad y la ubicación satelital. Oportunidades: - Reforzar relevamiento de frenadas y giros bruscos, aceleraciones, uso de cinturón de seguridad, etc. - Reforzar registro de acciones realizadas a partir del análisis obtenido del seguimiento de telemetría (charlas 1a1, capacitaciones, análisis de tendencias, etc.). - Monitorear uso de cinturón de seguridad mediante OWDs. - Mapear desvíos en ruta detectados durante la aplicación de OWDs y ejecutar PDA en función a dichos desvíos. - Afianzar sinergia entre Seguridad y pilares Entrega y flota en este respecto.', 33)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4f18e5d8-0915-46a5-b51d-1964e8d9755f', id, 'Reforzar relevamiento de frenadas y giros bruscos, aceleraciones, uso de cinturón de seguridad, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
+  SELECT 'c075fea1-3872-4b28-bdc7-0521f33597f2', id, 'Reforzar relevamiento de frenadas y giros bruscos, aceleraciones, uso de cinturón de seguridad, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a86b1904-395e-4efe-96fc-707cd0497b97', id, 'Reforzar registro de acciones realizadas a partir del análisis obtenido del seguimiento de telemetría (charlas 1a1, capacitaciones, análisis de tendencias, etc.)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
+  SELECT '813ea78f-a182-4435-9264-3192c86a4647', id, 'Reforzar registro de acciones realizadas a partir del análisis obtenido del seguimiento de telemetría (charlas 1a1, capacitaciones, análisis de tendencias, etc.)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a46b4cec-3e61-4f52-bf39-11f6c64add1d', id, 'Monitorear uso de cinturón de seguridad mediante OWDs', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
+  SELECT 'a1b7f745-c352-4399-bdd4-ead5c3205792', id, 'Monitorear uso de cinturón de seguridad mediante OWDs', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6e208c09-ce6b-4c55-bd8a-9c901097ae61', id, 'Mapear desvíos en ruta detectados durante la aplicación de OWDs y ejecutar PDA en función a dichos desvíos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
+  SELECT 'ad6afd1d-5cb3-4140-b424-5c52d912f51a', id, 'Mapear desvíos en ruta detectados durante la aplicación de OWDs y ejecutar PDA en función a dichos desvíos', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0d945947-a700-442e-97c2-787181402556', id, 'Afianzar sinergia entre Seguridad y pilares Entrega y flota en este respecto', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
+  SELECT '9e407eca-e24f-4ee9-8ca8-c140daf1f523', id, 'Afianzar sinergia entre Seguridad y pilares Entrega y flota en este respecto', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2b9ff8cb-ba41-489d-a3cf-476ac7b53ac3', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.5', 'Gestión de la jornada Laboral', true, 'N/A', 'No se observan desvíos de jornada en T2. Oportunidad: reforzar relevamiento de jornada de T1.', 34)
+  ('90d3fc0c-08dc-4049-b8bc-ee2cff03b995', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.5', 'Gestión de la jornada Laboral', true, 'N/A', 'No se observan desvíos de jornada en T2. Oportunidad: reforzar relevamiento de jornada de T1.', 34)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '98decaff-53a1-45e5-9ad4-b7e9fd73fb22', id, 'reforzar relevamiento de jornada de T1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.5'
+  SELECT 'e423ef3a-574d-4e23-b8d4-b0535d051de6', id, 'reforzar relevamiento de jornada de T1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0c8fe71a-dd55-426c-8546-a2a09cc1d9d4', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.6', 'Gestión del control de pesos', true, 'N/A', 'Se realiza el control de cargas mediante los límites establecidos por WMS según la capacidad máxima de cada camión. Se evidencia seguimiento diario de cargas con comparativa de kg transportados y capacidad máxima. Oportunidad: - Adherirse al ruteo centralizado traccionado por CMQ a fin de garantizar la gestión completa del control de cargas y la optimización de entregas en ruta.', 35)
+  ('c279270e-a5e8-428f-ab5f-4c78266a769c', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.6', 'Gestión del control de pesos', true, 'N/A', 'Se realiza el control de cargas mediante los límites establecidos por WMS según la capacidad máxima de cada camión. Se evidencia seguimiento diario de cargas con comparativa de kg transportados y capacidad máxima. Oportunidad: - Adherirse al ruteo centralizado traccionado por CMQ a fin de garantizar la gestión completa del control de cargas y la optimización de entregas en ruta.', 35)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7a468b79-cf9a-4b46-b7bd-a166022ff2e8', id, 'Adherirse al ruteo centralizado traccionado por CMQ a fin de garantizar la gestión completa del control de cargas y la optimización de entregas en ruta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.6'
+  SELECT '4158c50f-bcc3-4fd5-a183-f23232b9cfb8', id, 'Adherirse al ruteo centralizado traccionado por CMQ a fin de garantizar la gestión completa del control de cargas y la optimización de entregas en ruta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.6'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('dbabf7ef-c940-42ae-8e9a-c37dd1787bbf', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.7', 'Gestión de la seguridad en los desplazamientos/ IN ITINERES', false, '5', 'Capacitación sobre accidentes in itínere realizada. No han tenido accidentes in itínere en el presente período. Entrevistas ok. Oportunidad: implementar gestión visual y entrega de flyers.', 36)
+  ('a1a8c357-508b-4849-8aae-b07276b5c9b5', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.7', 'Gestión de la seguridad en los desplazamientos/ IN ITINERES', false, '5', 'Capacitación sobre accidentes in itínere realizada. No han tenido accidentes in itínere en el presente período. Entrevistas ok. Oportunidad: implementar gestión visual y entrega de flyers.', 36)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '85698bd5-31a7-4bdb-a393-fffa01723149', id, 'implementar gestión visual y entrega de flyers', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.7'
+  SELECT '5e3d0594-d54d-4208-80d8-169330b4fed7', id, 'implementar gestión visual y entrega de flyers', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.7'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('bb355f30-8d51-4a53-85b6-007c5c2a91c8', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.8', 'Toolkit seguridad vial', false, 'N/A', 'Se evidencia presentación mensual de Toolkit. Oportunidad: - Ajustar inconsistencias relacionadas a control de velocidad adaptativo (mide la distancia con respecto al vehículo que está en frente), airbags y sistema de electrónico de estabilidad, ya que no disponen de dichos elementos en la flota. - Documentar PDA.', 37)
+  ('41ccdc80-5b86-41ca-b904-503df375f06f', 'H1 2026', 'Seguridad', 'SEGURIDAD VIAL Y DE CONDUCCIÓN', '8.8', 'Toolkit seguridad vial', false, 'N/A', 'Se evidencia presentación mensual de Toolkit. Oportunidad: - Ajustar inconsistencias relacionadas a control de velocidad adaptativo (mide la distancia con respecto al vehículo que está en frente), airbags y sistema de electrónico de estabilidad, ya que no disponen de dichos elementos en la flota. - Documentar PDA.', 37)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7aad9ff9-6b01-4b7a-b579-455a3917e5b4', id, 'Ajustar inconsistencias relacionadas a control de velocidad adaptativo (mide la distancia con respecto al vehículo que está en frente), airbags y sistema de electrónico de estabilidad, ya que no disponen de dichos elementos en la flota', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.8'
+  SELECT '2e3be0b0-ad64-4c2a-9598-647db969243b', id, 'Ajustar inconsistencias relacionadas a control de velocidad adaptativo (mide la distancia con respecto al vehículo que está en frente), airbags y sistema de electrónico de estabilidad, ya que no disponen de dichos elementos en la flota', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.8'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c248ea4f-db6c-4dac-8cbf-fefef34c63d0', id, 'Documentar PDA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.8'
+  SELECT 'da9702cf-51f2-40c0-980b-f56da4e87af7', id, 'Documentar PDA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='8.8'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e09e29e1-436f-4a80-9d27-d6acb81ffacd', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.1', 'Protección de Trabajos en Altura', false, '3', 'SOP completo. No se registran trabajos en altura durante el presente período. Oportunidad: - Incorporar un arnés de seguridad al stock de EPP. - Efectuar control del arnés de seguridad y documentarlo. - Gestionar acceso seguro al techo e incorporar línea de vida.', 38)
+  ('38acba4c-3340-4e5d-9292-43494d7cf726', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.1', 'Protección de Trabajos en Altura', false, '3', 'SOP completo. No se registran trabajos en altura durante el presente período. Oportunidad: - Incorporar un arnés de seguridad al stock de EPP. - Efectuar control del arnés de seguridad y documentarlo. - Gestionar acceso seguro al techo e incorporar línea de vida.', 38)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f2e64e76-0ed1-4981-b2a2-fd7c88895966', id, 'Incorporar un arnés de seguridad al stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
+  SELECT 'f5fe4e1c-429a-4c82-b2dc-cc17c061ab8d', id, 'Incorporar un arnés de seguridad al stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '669313ba-85a5-493f-b6a8-9f8f36f972dd', id, 'Efectuar control del arnés de seguridad y documentarlo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
+  SELECT '1fb7ccbc-f873-4c53-9eb9-3900fc3e6582', id, 'Efectuar control del arnés de seguridad y documentarlo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '52c9be6c-f581-4e62-9e51-bb861c2b7c06', id, 'Gestionar acceso seguro al techo e incorporar línea de vida', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
+  SELECT '50c1adf2-917b-40d5-9c6c-a5fd45178d7c', id, 'Gestionar acceso seguro al techo e incorporar línea de vida', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c89a7615-a9ef-450c-af47-713f330695c1', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.2', 'Ejecución Segura de Trabajos en Altura', false, '3', 'SOP completo. Capacitación de trabajo en altura realizada. Oportunidad: - Incorporar arnés de seguridad al stock de EPP. - Efectuar control del arnés de seguridad y documentarlo. - Implementar OWD de trabajo en altura en caso de que dicho trabajo lo realice personal interno (o permiso de trabajo para personal tercerizado). - Reforzar evidencia documental (programa de seguridad en caso de corresponder, habilitación y documentación de plataformas elevadoras, etc).', 39)
+  ('e817f4ee-5bf5-41c8-a0dd-3345a26bd06c', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.2', 'Ejecución Segura de Trabajos en Altura', false, '3', 'SOP completo. Capacitación de trabajo en altura realizada. Oportunidad: - Incorporar arnés de seguridad al stock de EPP. - Efectuar control del arnés de seguridad y documentarlo. - Implementar OWD de trabajo en altura en caso de que dicho trabajo lo realice personal interno (o permiso de trabajo para personal tercerizado). - Reforzar evidencia documental (programa de seguridad en caso de corresponder, habilitación y documentación de plataformas elevadoras, etc).', 39)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'dfeacfee-4c99-4684-83d6-9b248c55f8ac', id, 'Incorporar arnés de seguridad al stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
+  SELECT 'ec01121a-aa8d-4b33-8031-db1fc08baaff', id, 'Incorporar arnés de seguridad al stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4760fc10-a665-4572-a70b-06d5d73658ed', id, 'Efectuar control del arnés de seguridad y documentarlo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
+  SELECT '8a06ca33-a252-4537-a3cc-973de0193484', id, 'Efectuar control del arnés de seguridad y documentarlo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '745f3d95-09e6-4b36-b493-a94ab4b84eeb', id, 'Implementar OWD de trabajo en altura en caso de que dicho trabajo lo realice personal interno (o permiso de trabajo para personal tercerizado)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
+  SELECT '9c3f867e-d538-401f-a1c8-925c431c8ff7', id, 'Implementar OWD de trabajo en altura en caso de que dicho trabajo lo realice personal interno (o permiso de trabajo para personal tercerizado)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f59ebb2a-0d00-4408-a5bf-1f4897e3b625', id, 'Reforzar evidencia documental (programa de seguridad en caso de corresponder, habilitación y documentación de plataformas elevadoras, etc)', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
+  SELECT '00783e86-1102-4b7a-bbaa-e594ebc91ca7', id, 'Reforzar evidencia documental (programa de seguridad en caso de corresponder, habilitación y documentación de plataformas elevadoras, etc)', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='9.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2ab08bb5-733a-4388-88f8-4a1de923eb56', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.3', 'Gestión de trabajos en techos', false, 'N/A', NULL, 40)
+  ('ff27223d-33da-48ab-8c77-497c2c61771c', 'H1 2026', 'Seguridad', 'TRABAJO EN ALTURA', '9.3', 'Gestión de trabajos en techos', false, 'N/A', NULL, 40)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('8abfe84e-e819-4ce1-964e-811cd7abb129', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.1', 'Ejecución segura de SAM', false, 'N/A', NULL, 41)
+  ('7f9b70f6-ddf4-4bf9-8c73-53ae25470d8c', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.1', 'Ejecución segura de SAM', false, 'N/A', NULL, 41)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('82645b19-0d5c-49e4-a511-520f62a7f4b6', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.2', 'Ejecución segura de LOTO', false, '3', 'SOP LOTO completo. Capacitación sobre SAM/LOTO realizada. Permiso registrado por parte del contratista. Oportunidad: - Completar kit de bloqueo LOTO incorporando dispositivos de bloqueo de llaves térmicas.', 42)
+  ('3d7d1ef3-6300-497e-ac61-113b37b15297', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.2', 'Ejecución segura de LOTO', false, '3', 'SOP LOTO completo. Capacitación sobre SAM/LOTO realizada. Permiso registrado por parte del contratista. Oportunidad: - Completar kit de bloqueo LOTO incorporando dispositivos de bloqueo de llaves térmicas.', 42)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '93dd557e-1132-4f49-a34a-5e2027d37e43', id, 'Completar kit de bloqueo LOTO incorporando dispositivos de bloqueo de llaves térmicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='10.2'
+  SELECT 'b23ce19c-eb17-4ae2-9304-288c24233a50', id, 'Completar kit de bloqueo LOTO incorporando dispositivos de bloqueo de llaves térmicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='10.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('f71f23ce-c2db-4c0a-b069-c8f7c80a63fe', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.3', 'Gestión de equipos LOTO', false, '3', 'Kit de bloqueo y etiquetado disponible e inventariado. Oportunidad: incorporar dispositivos de bloqueo de llaves térmicas.', 43)
+  ('a8b61166-7504-4b15-b710-b353e1bcf30f', 'H1 2026', 'Seguridad', 'LOTO/SAM', '10.3', 'Gestión de equipos LOTO', false, '3', 'Kit de bloqueo y etiquetado disponible e inventariado. Oportunidad: incorporar dispositivos de bloqueo de llaves térmicas.', 43)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a9b8a060-fa7e-4653-a233-fd2d5db514b7', id, 'incorporar dispositivos de bloqueo de llaves térmicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='10.3'
+  SELECT '5c5c5519-4409-4425-b1aa-33143651fb5a', id, 'incorporar dispositivos de bloqueo de llaves térmicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='10.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('b6c01736-f973-47cd-8168-2f6f962a7f61', 'H1 2026', 'Seguridad', 'SALUD OCUPACIONAL', '11.1', 'Notificación, investigación y gestión de las causas de las enfermedades profesionales', true, '3', 'Cruzan con pilar Gente en seguimiento de ausentismo y documentan enfermedades profesionales. Oportunidad: llevar adelante campañas de vacunación, deporte, prevención de adicciones, calentamiento previo a la jornada, pausas activas, etc.', 44)
+  ('99ce24c4-3fb9-4618-b424-571f2427694c', 'H1 2026', 'Seguridad', 'SALUD OCUPACIONAL', '11.1', 'Notificación, investigación y gestión de las causas de las enfermedades profesionales', true, '3', 'Cruzan con pilar Gente en seguimiento de ausentismo y documentan enfermedades profesionales. Oportunidad: llevar adelante campañas de vacunación, deporte, prevención de adicciones, calentamiento previo a la jornada, pausas activas, etc.', 44)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6a53c501-cc49-4770-999c-53a2f9bd047c', id, 'llevar adelante campañas de vacunación, deporte, prevención de adicciones, calentamiento previo a la jornada, pausas activas, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='11.1'
+  SELECT '10903718-6f59-4ff6-ad6b-c40ac6217175', id, 'llevar adelante campañas de vacunación, deporte, prevención de adicciones, calentamiento previo a la jornada, pausas activas, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='11.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('32f9ed11-b05f-48f1-989e-bc06d1dff234', 'H1 2026', 'Seguridad', 'SALUD OCUPACIONAL', '11.2', 'Gestión de Mediciones Iluminación y Ruido', false, '5', 'Medición de ruido e iluminación completas, sin observaciones ni desvíos. Oportunidad: documentar conclusiones del estudio de iluminación, a pesar de obtener resultados conforme a la normativa.', 45)
+  ('f7c95c91-f5ec-4ae2-bbf2-72631fe59aca', 'H1 2026', 'Seguridad', 'SALUD OCUPACIONAL', '11.2', 'Gestión de Mediciones Iluminación y Ruido', false, '5', 'Medición de ruido e iluminación completas, sin observaciones ni desvíos. Oportunidad: documentar conclusiones del estudio de iluminación, a pesar de obtener resultados conforme a la normativa.', 45)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '058b3ad4-0785-4793-9b7f-385bb29a19d4', id, 'documentar conclusiones del estudio de iluminación, a pesar de obtener resultados conforme a la normativa', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='11.2'
+  SELECT '21ca8c4d-0990-49eb-b6f4-c5e144a6bab8', id, 'documentar conclusiones del estudio de iluminación, a pesar de obtener resultados conforme a la normativa', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='11.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('19ff2005-39e0-4a99-bc1a-8021c6f054ba', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.1', 'Dispositivos médicos y botiquín de primeros auxilios', false, '3', 'Se cumple con al menos 1 botiquin en deposito y todos los camiones tienen 1 botiquin. Relevamiento de extintores y botiquines ok. Oportunidad: - Precintar la totalidad de los botiquines con precintos numerados fáciles de romper. - Incorporar DEA.', 46)
+  ('056aaec9-b58b-49ad-a2ef-d588f5e3d4fe', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.1', 'Dispositivos médicos y botiquín de primeros auxilios', false, '3', 'Se cumple con al menos 1 botiquin en deposito y todos los camiones tienen 1 botiquin. Relevamiento de extintores y botiquines ok. Oportunidad: - Precintar la totalidad de los botiquines con precintos numerados fáciles de romper. - Incorporar DEA.', 46)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b0054d77-ee84-4126-a0da-d36af8026d89', id, 'Precintar la totalidad de los botiquines con precintos numerados fáciles de romper', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.1'
+  SELECT 'f5a88df5-d5a9-4955-99ea-8c9a97f417d8', id, 'Precintar la totalidad de los botiquines con precintos numerados fáciles de romper', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4a144dca-25e4-44ad-81b6-869f8fc3fd09', id, 'Incorporar DEA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.1'
+  SELECT 'c247cc8f-d15a-4b65-8580-cf7d49a20520', id, 'Incorporar DEA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('fe197e06-574a-459d-ba98-3403109f3cbb', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.2', 'Gestión del sistema de prevención y protección contra incendios', true, '3', 'Carga de fuego realizada. Extintores en buen estado de mantenimiento (se relevan mensualmente), cartelería de emergencia ok, vías de evacuación libres de obstáculos, sistema de alarma centralizada implementado. Números de emergencia gestionados a la vista. Cuentan con luces LED de emergencia. Oportunidad: - Remover material combustible sobre el que se apoya el tambor de diesel. Verificar posibilidad de reposicionar el sector de carga de diesel en el exterior. - Incluir en carga de fuego el detalle del poder calorífico del litio. - Incorporar extintor para litio en sector de carga de baterías (F500 o clase L). - Gestionar a la vista números de emergencia en garita de Seguridad.', 47)
+  ('66a4df8f-0db2-43d4-b605-a749e682ec58', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.2', 'Gestión del sistema de prevención y protección contra incendios', true, '3', 'Carga de fuego realizada. Extintores en buen estado de mantenimiento (se relevan mensualmente), cartelería de emergencia ok, vías de evacuación libres de obstáculos, sistema de alarma centralizada implementado. Números de emergencia gestionados a la vista. Cuentan con luces LED de emergencia. Oportunidad: - Remover material combustible sobre el que se apoya el tambor de diesel. Verificar posibilidad de reposicionar el sector de carga de diesel en el exterior. - Incluir en carga de fuego el detalle del poder calorífico del litio. - Incorporar extintor para litio en sector de carga de baterías (F500 o clase L). - Gestionar a la vista números de emergencia en garita de Seguridad.', 47)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0be0ef7a-52c8-4b54-a46c-2d0cd069b7bc', id, 'Remover material combustible sobre el que se apoya el tambor de diesel. Verificar posibilidad de reposicionar el sector de carga de diesel en el exterior', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
+  SELECT '03b9cb9e-41ab-45d9-a601-ef4aaee8a6d4', id, 'Remover material combustible sobre el que se apoya el tambor de diesel. Verificar posibilidad de reposicionar el sector de carga de diesel en el exterior', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '53b6dea3-f233-46a7-ae22-824cf22151cc', id, 'Incluir en carga de fuego el detalle del poder calorífico del litio', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
+  SELECT '5d6ad2e1-5ed1-48df-bb14-fc5fd92b14ea', id, 'Incluir en carga de fuego el detalle del poder calorífico del litio', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '65f8dfcb-15b1-409a-acc2-6834e54c7728', id, 'Incorporar extintor para litio en sector de carga de baterías (F500 o clase L)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
+  SELECT '61f4ea90-2ef1-4c49-a904-0d9816900612', id, 'Incorporar extintor para litio en sector de carga de baterías (F500 o clase L)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '9a6d7209-1dda-4731-bc13-98f7876caa8c', id, 'Gestionar a la vista números de emergencia en garita de Seguridad', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
+  SELECT 'eeefd07d-736b-4105-98bb-27f05c043c26', id, 'Gestionar a la vista números de emergencia en garita de Seguridad', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('976f5f9e-d040-44e5-85c3-c4acfd06e860', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.3', 'Plan de Respuesta a Emergencias', false, '3', 'Plan de respuesta ante emergencia documentado. Oportunidad: - Incorporar hipótesis de emergencias y procedimiento de actuación ante situaciones de explosión y transmisión de enfermedades pandémicas.', 48)
+  ('64d02086-aa27-4d48-8394-0027e2718441', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.3', 'Plan de Respuesta a Emergencias', false, '3', 'Plan de respuesta ante emergencia documentado. Oportunidad: - Incorporar hipótesis de emergencias y procedimiento de actuación ante situaciones de explosión y transmisión de enfermedades pandémicas.', 48)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c8aece61-38cf-4132-b810-915b7d10ccfe', id, 'Incorporar hipótesis de emergencias y procedimiento de actuación ante situaciones de explosión y transmisión de enfermedades pandémicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.3'
+  SELECT 'b833a986-31d3-4950-b8a6-06b7b6b7dbc0', id, 'Incorporar hipótesis de emergencias y procedimiento de actuación ante situaciones de explosión y transmisión de enfermedades pandémicas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('58ba6a44-9ff6-4602-a578-51c51722ad76', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.4', 'Gestión especializada de Respuesta a Emergencias', false, '5', 'Cuentan con brigada de emergencias. Gestionaron a la vista la identificación de los mismos con nombre y apellido, foto identificatoria y rol a cumplir. Se evidencia conocimiento del personal sobre quienes conforman la brigada.', 49)
+  ('e64615a5-f30c-49bd-91e8-b9cb08216289', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.4', 'Gestión especializada de Respuesta a Emergencias', false, '5', 'Cuentan con brigada de emergencias. Gestionaron a la vista la identificación de los mismos con nombre y apellido, foto identificatoria y rol a cumplir. Se evidencia conocimiento del personal sobre quienes conforman la brigada.', 49)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('71b1f278-147d-4e36-b2e9-b78c6b9793fc', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.5', 'Gestión de Simulacros de Respuesta a Emergencias', false, '3', 'Se evidencia simulacro realizado durante 28-04. Participación del 83% en logística. Informe de simulacro documentado con oportunidades de mejora detectadas. Oportunidades: - Avanzar en el cumplimiento de las oportunidades de mejora detectadas durante la realización del ejercicio. - Aspirar a alcanzar el 90% de participación por sector.', 50)
+  ('5d1a723c-607f-4a38-aa8b-0853bd518e0f', 'H1 2026', 'Seguridad', 'RESPUESTA ANTE EMERGENCIAS', '12.5', 'Gestión de Simulacros de Respuesta a Emergencias', false, '3', 'Se evidencia simulacro realizado durante 28-04. Participación del 83% en logística. Informe de simulacro documentado con oportunidades de mejora detectadas. Oportunidades: - Avanzar en el cumplimiento de las oportunidades de mejora detectadas durante la realización del ejercicio. - Aspirar a alcanzar el 90% de participación por sector.', 50)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1df510a9-7e50-4be3-b1bb-73e2db5f9111', id, 'Avanzar en el cumplimiento de las oportunidades de mejora detectadas durante la realización del ejercicio', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.5'
+  SELECT 'ac529919-905e-49a7-9095-194c6b2efb72', id, 'Avanzar en el cumplimiento de las oportunidades de mejora detectadas durante la realización del ejercicio', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.5'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '967f2334-2fe4-4356-b338-b9b9a499437d', id, 'Aspirar a alcanzar el 90% de participación por sector', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.5'
+  SELECT 'b8e32b00-c914-4fd0-a21a-e0415edcd07b', id, 'Aspirar a alcanzar el 90% de participación por sector', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='12.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('95f35528-4292-47e4-aa6c-686ddd87c4d4', 'H1 2026', 'Seguridad', 'FORMACIÓN Y COMPETENCIA', '13.1', 'GESTION DE ENTRENAMIENTOS', false, '1', 'Se gestiona el PAC de manera centralizada desde el pilar de Gente. Oportunidad: - Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador. - Seguir reforzando el avance del calendarizado. - Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones.', 51)
+  ('a2dfeea2-ef2a-4092-a0c9-b8a0051539e1', 'H1 2026', 'Seguridad', 'FORMACIÓN Y COMPETENCIA', '13.1', 'GESTION DE ENTRENAMIENTOS', false, '1', 'Se gestiona el PAC de manera centralizada desde el pilar de Gente. Oportunidad: - Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador. - Seguir reforzando el avance del calendarizado. - Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones.', 51)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '412c4e75-df6a-408d-ad7d-b52c14c268de', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
+  SELECT '19fb930e-64c8-4c2b-9480-d60556a225f3', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd67762f0-d54b-4d1e-baba-e922af5af63f', id, 'Seguir reforzando el avance del calendarizado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
+  SELECT 'b5d01a78-3901-41cf-b54d-9936d1a54ff8', id, 'Seguir reforzando el avance del calendarizado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'fdc84999-3ffc-4572-88ad-c05f5ecf827a', id, 'Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
+  SELECT '74b9d721-911c-4d0a-a41b-12bfce624f8d', id, 'Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('b66f270c-5d1c-4d55-9aff-f65172e3b5a7', 'H1 2026', 'Seguridad', 'FORMACIÓN Y COMPETENCIA', '13.2', 'Gestión de Entrenamientos Calificados', true, '0', 'Oportunidad: - Reforzar registro de capacitaciones mandatorias para empleados calificados. - Medir porcentaje de asistencia de manera individualizada por capacitación especializada y aspirar a alcanzar el 100% en dicho indicador. - Seguir reforzando el avance del calendarizado. - Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones.', 52)
+  ('562cb341-9ee7-463d-af7f-1c7129b92be0', 'H1 2026', 'Seguridad', 'FORMACIÓN Y COMPETENCIA', '13.2', 'Gestión de Entrenamientos Calificados', true, '0', 'Oportunidad: - Reforzar registro de capacitaciones mandatorias para empleados calificados. - Medir porcentaje de asistencia de manera individualizada por capacitación especializada y aspirar a alcanzar el 100% en dicho indicador. - Seguir reforzando el avance del calendarizado. - Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones.', 52)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '36339db1-bd1f-4c68-9c95-4066676935b2', id, 'Reforzar registro de capacitaciones mandatorias para empleados calificados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
+  SELECT 'd1031827-1c2c-4b63-bc30-f2efa7465fdd', id, 'Reforzar registro de capacitaciones mandatorias para empleados calificados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a1fce796-59f9-43f3-8f74-17e650ea41a4', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación especializada y aspirar a alcanzar el 100% en dicho indicador', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
+  SELECT '9b8ad03c-97b2-4629-8812-309c39068a97', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación especializada y aspirar a alcanzar el 100% en dicho indicador', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c186e2df-66cd-47f1-a01f-0a0cd7c93bee', id, 'Seguir reforzando el avance del calendarizado', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
+  SELECT '4b73241e-a39d-4220-89e1-eb0abd734cd6', id, 'Seguir reforzando el avance del calendarizado', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '565d2389-e47c-4c7e-bc66-23970965e73c', id, 'Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
+  SELECT 'b9397e15-2d28-4362-8812-72f0575fc794', id, 'Fomentar participación de los líderes en cuanto a la selección de temáticas a reforzar en capacitaciones', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='13.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e6973ade-b520-4481-8846-a31ce9f78171', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.1', 'Gestión de inventarios', true, '3', 'Control de inventario documentado mediante herramienta digital. Oportunidad: - Incorporar control de stock de EPP.', 53)
+  ('8740918f-fb6d-4efe-a04a-3c565d132e57', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.1', 'Gestión de inventarios', true, '3', 'Control de inventario documentado mediante herramienta digital. Oportunidad: - Incorporar control de stock de EPP.', 53)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '12f8423a-f904-4583-ab24-15b410d45ae7', id, 'Incorporar control de stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.1'
+  SELECT '83b658af-8762-4f85-b53c-ffddb295ee11', id, 'Incorporar control de stock de EPP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('698600b5-04c6-404c-8259-a114143de727', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.2', 'Gestión de la evaluación de riesgos', true, '3', 'ER realizada. Entrevistas ok. Oportunidad: adaptar a formato estándar CMQ.', 54)
+  ('5397b766-803b-4571-9e7c-d1a703f4c4d5', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.2', 'Gestión de la evaluación de riesgos', true, '3', 'ER realizada. Entrevistas ok. Oportunidad: adaptar a formato estándar CMQ.', 54)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'da2d40da-3477-4452-988c-d7149239aa98', id, 'adaptar a formato estándar CMQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.2'
+  SELECT '7805a4f6-7f92-403d-8d1f-d97602355e10', id, 'adaptar a formato estándar CMQ', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('67a6a85a-9bc1-44ec-9089-e330e396533d', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.3', 'Gestión de la evaluación del PDV', false, 'N/A', 'Se evidencia un relevamiento de PDVs en marcha (aprox. el 30% de los PDVs relevados). Oportunidad: - Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en PDVs. - Registrar la totalidad de los PDA ante riesgos detectados en determinados PDVs.', 55)
+  ('480e5ee3-3ad0-4dcb-9c89-2c18ee639af8', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.3', 'Gestión de la evaluación del PDV', false, 'N/A', 'Se evidencia un relevamiento de PDVs en marcha (aprox. el 30% de los PDVs relevados). Oportunidad: - Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en PDVs. - Registrar la totalidad de los PDA ante riesgos detectados en determinados PDVs.', 55)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'df1f455d-b578-4433-a042-4099aa9f1eb1', id, 'Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en PDVs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.3'
+  SELECT '2047c855-3486-4675-bc05-e0fdafdc9ff5', id, 'Seguir incrementando la participación e imput de choferes y preventistas mediante forms de reporte de aspectos relevados en PDVs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'fd910d1f-3cf0-4f7f-8a1e-ef1f481fe157', id, 'Registrar la totalidad de los PDA ante riesgos detectados en determinados PDVs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.3'
+  SELECT 'f06913b1-d9ab-4a79-96b8-c3b7529fc919', id, 'Registrar la totalidad de los PDA ante riesgos detectados en determinados PDVs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9485b4fd-e07c-4690-a444-c9d683bf986f', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.4', 'Gestión de elementos de protección personal', false, '3', 'Se evidencia correcta gestión documental Res. 299. Matriz de EPP completa. Cuentan con guantes anticorte en depósito. Oportunidad: - Reforzar análisis de tendencias en cuanto a la falta de uso de EPP por sector (cruzar con gráfico de torta de comportamientos inseguros). - Seguir reforzando reporte de comportamientos inseguros y PDA ante falta de uso de EPP. - Incorporar máscara facial y mangas anticorte para la manipulación de litro.', 56)
+  ('84ffa193-59f9-4d04-835e-11868115af0a', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.4', 'Gestión de elementos de protección personal', false, '3', 'Se evidencia correcta gestión documental Res. 299. Matriz de EPP completa. Cuentan con guantes anticorte en depósito. Oportunidad: - Reforzar análisis de tendencias en cuanto a la falta de uso de EPP por sector (cruzar con gráfico de torta de comportamientos inseguros). - Seguir reforzando reporte de comportamientos inseguros y PDA ante falta de uso de EPP. - Incorporar máscara facial y mangas anticorte para la manipulación de litro.', 56)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd38008dd-5a15-4f63-abec-6dc712018e0c', id, 'Reforzar análisis de tendencias en cuanto a la falta de uso de EPP por sector (cruzar con gráfico de torta de comportamientos inseguros)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
+  SELECT 'af234635-6f1d-4010-9119-31d813f8547e', id, 'Reforzar análisis de tendencias en cuanto a la falta de uso de EPP por sector (cruzar con gráfico de torta de comportamientos inseguros)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '094a8bd4-3043-4bc6-97cb-6d52c22815a0', id, 'Seguir reforzando reporte de comportamientos inseguros y PDA ante falta de uso de EPP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
+  SELECT 'eb91c34a-0f8c-416d-99f4-0cffaa019cb6', id, 'Seguir reforzando reporte de comportamientos inseguros y PDA ante falta de uso de EPP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1fcbf467-0da3-4de3-b7ff-fb7aba57133a', id, 'Incorporar máscara facial y mangas anticorte para la manipulación de litro', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
+  SELECT '581bc58e-913f-479e-a686-053ce08c8b26', id, 'Incorporar máscara facial y mangas anticorte para la manipulación de litro', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e99ec265-10b6-4f92-9842-1e6b44f87087', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.5', 'Rutina de seguridad MCRS', false, '0', 'Implementar rutina semanal de seguridad con mandos medios. Abordar temáticas referidas en requerimiento 1. Llevar PDA mediante App DPO con trazabilidad de cumplimiento de dichas acciones con responsable, fecha de cumplimiento, status, etc.', 57)
+  ('93574eaa-2222-4271-b976-31efab10d088', 'H1 2026', 'Seguridad', 'GESTIÓN DE LA SEGURIDAD OPERACIONAL', '14.5', 'Rutina de seguridad MCRS', false, '0', 'Implementar rutina semanal de seguridad con mandos medios. Abordar temáticas referidas en requerimiento 1. Llevar PDA mediante App DPO con trazabilidad de cumplimiento de dichas acciones con responsable, fecha de cumplimiento, status, etc.', 57)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '148872ae-c2ac-4121-896f-2ad9916aa6bc', id, 'Implementar rutina semanal de seguridad con mandos medios (MCRS), abordando las temáticas del requerimiento 1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.5'
+  SELECT '765d5949-eb83-4c74-ba2f-571517fe3745', id, 'Implementar rutina semanal de seguridad con mandos medios (MCRS), abordando las temáticas del requerimiento 1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.5'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '914e0c1a-4c11-41db-9e9c-1db1cc5857f6', id, 'Llevar PDA mediante App DPO con trazabilidad de cumplimiento (responsable, fecha, status)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.5'
+  SELECT '46f3b069-a6da-4b41-bea7-2146069d3d82', id, 'Llevar PDA mediante App DPO con trazabilidad de cumplimiento (responsable, fecha, status)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='14.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('d505e0c6-77aa-4dc2-acb2-a52e7d975dea', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.1', 'Gestión de inducción de visitantes', true, '5', 'Implementan proceso de inducción a visitas y registro de las mismas. Cuentan con test de conocimiento a fin de validar la efectividad de la inducción.', 58)
+  ('6be04ee2-87c4-4cc0-b112-430780f91e15', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.1', 'Gestión de inducción de visitantes', true, '5', 'Implementan proceso de inducción a visitas y registro de las mismas. Cuentan con test de conocimiento a fin de validar la efectividad de la inducción.', 58)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e79b6f93-360a-43c8-8844-a10b94d8ea51', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.2', 'Gestión de inducción de contratistas', false, '5', 'Implementan proceso de inducción de contratistas y registro documental. Implementan test de conocimiento a fin de validar la efectividad de la inducción. Solicitan clásula de no repetición contra Distribuidora Mercosur Región Pampeana en Seguros de vida obligatorios y ART (en caso de personal bajo relación de dependencia) y en Seguros de accidentes personales (en caso de personal monotributista).', 59)
+  ('f939c9cd-c43a-487a-9f3a-5b6ff228875d', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.2', 'Gestión de inducción de contratistas', false, '5', 'Implementan proceso de inducción de contratistas y registro documental. Implementan test de conocimiento a fin de validar la efectividad de la inducción. Solicitan clásula de no repetición contra Distribuidora Mercosur Región Pampeana en Seguros de vida obligatorios y ART (en caso de personal bajo relación de dependencia) y en Seguros de accidentes personales (en caso de personal monotributista).', 59)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('f949ca43-9791-4068-a187-7a51eebef4c6', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.3', 'Gestión de grandes obras', false, '1', 'No han tenido trabajos que requieran la aprobación de un PS. Oportunidad: - Afianzar la comunicación entre gerencia y referente de Seguridad en lo relacionado a obras o tareas proyectadas a realizarse, a fin de gestionar la documentación con anterioridad a la realización de los trabajos. - Desarrollar SOP con la gestión de aprobación de Programas de Seguridad y para qué casos aplica (resoluciones 35, 51, 61, 503, 550, 319).', 60)
+  ('fc16f92b-3f00-48dd-bb9f-51aa4f1070cc', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.3', 'Gestión de grandes obras', false, '1', 'No han tenido trabajos que requieran la aprobación de un PS. Oportunidad: - Afianzar la comunicación entre gerencia y referente de Seguridad en lo relacionado a obras o tareas proyectadas a realizarse, a fin de gestionar la documentación con anterioridad a la realización de los trabajos. - Desarrollar SOP con la gestión de aprobación de Programas de Seguridad y para qué casos aplica (resoluciones 35, 51, 61, 503, 550, 319).', 60)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd4e6b566-f3b5-41c0-a8d7-fe921f40a647', id, 'Afianzar la comunicación entre gerencia y referente de Seguridad en lo relacionado a obras o tareas proyectadas a realizarse, a fin de gestionar la documentación con anterioridad a la realización de los trabajos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='15.3'
+  SELECT '7167c549-67b2-4854-b423-fff81a8368a1', id, 'Afianzar la comunicación entre gerencia y referente de Seguridad en lo relacionado a obras o tareas proyectadas a realizarse, a fin de gestionar la documentación con anterioridad a la realización de los trabajos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='15.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b19b21af-5188-405c-9ff1-e9c1aa564034', id, 'Desarrollar SOP con la gestión de aprobación de Programas de Seguridad y para qué casos aplica (resoluciones 35, 51, 61, 503, 550, 319)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='15.3'
+  SELECT '5ebadb2d-027a-441a-bc5c-60a16ae654d1', id, 'Desarrollar SOP con la gestión de aprobación de Programas de Seguridad y para qué casos aplica (resoluciones 35, 51, 61, 503, 550, 319)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='15.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('74e2ec62-7e4d-42e7-aaeb-063c61cdca27', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.4', 'Gestión de permisos de trabajo', true, '5', 'Se evidencian permisos de trabajo firmados.', 61)
+  ('efdcaf5b-cb05-4ee9-ac6a-5599f6b157c7', 'H1 2026', 'Seguridad', 'GESTIÓN DEL TRABAJO NO ESTÁNDAR', '15.4', 'Gestión de permisos de trabajo', true, '5', 'Se evidencian permisos de trabajo firmados.', 61)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4ecc600c-6112-4e47-9497-253a18124ddf', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.1', 'Preguntas en la encuesta de Cultura de Seguridad', false, '3', 'Se evidencia participación en la encuesta de Cultura de Seguridad. Seguir traccionando PDA a fin de evidenciar mejoras en la presente dimensión.', 62)
+  ('9723c8fd-007c-4602-ad13-8e692faa2dfb', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.1', 'Preguntas en la encuesta de Cultura de Seguridad', false, '3', 'Se evidencia participación en la encuesta de Cultura de Seguridad. Seguir traccionando PDA a fin de evidenciar mejoras en la presente dimensión.', 62)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '78537d46-1431-433e-8bd5-8e4a19a07c33', id, 'Seguir traccionando PDA a fin de evidenciar mejoras en la presente dimensión', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.1'
+  SELECT '2c6f2b6d-15bb-4f2b-b42d-77e19eb623cc', id, 'Seguir traccionando PDA a fin de evidenciar mejoras en la presente dimensión', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('798b9340-cb65-41a9-bb6d-0e3c2a581443', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.2', 'Liderazgo en seguridad conductual', false, '3', 'Participaron de taller OLT y safe together. Oportunidad: cascadear material visto en taller al personal de Gerencia y mandos medios a fin de afianzar la implementación de la Seguridad como valor en todos los niveles de la distribuidora.', 63)
+  ('2bec9246-aa83-46c8-8d30-5132b1d9f2cc', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.2', 'Liderazgo en seguridad conductual', false, '3', 'Participaron de taller OLT y safe together. Oportunidad: cascadear material visto en taller al personal de Gerencia y mandos medios a fin de afianzar la implementación de la Seguridad como valor en todos los niveles de la distribuidora.', 63)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f070fe7c-22a1-4b08-a294-b2baee056caf', id, 'cascadear material visto en taller al personal de Gerencia y mandos medios a fin de afianzar la implementación de la Seguridad como valor en todos los niveles de la distribuidora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.2'
+  SELECT 'c4b440bd-5ebb-4a14-8e37-9cb7d7a4729b', id, 'cascadear material visto en taller al personal de Gerencia y mandos medios a fin de afianzar la implementación de la Seguridad como valor en todos los niveles de la distribuidora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e715d0bd-b24b-4a9b-b0df-9c3c87790674', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.3', 'Campeones de seguridad', false, '3', 'Campeón de Seguridad designado para almacén. Oportunidad: - Seguir reforzando participación y colaboración de la operación en lo relativo a la seguridad (asistencia a capacitaciones, asistencia a comité de seguridad, revisión de checks, reporte de condiciones y comportamientos, monitoreos de seguridad, etc.). - Gestionar selección de campeón de Seguridad en el área de distribución.', 64)
+  ('82382c10-2852-42c5-a9c7-16e6116aa6d2', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.3', 'Campeones de seguridad', false, '3', 'Campeón de Seguridad designado para almacén. Oportunidad: - Seguir reforzando participación y colaboración de la operación en lo relativo a la seguridad (asistencia a capacitaciones, asistencia a comité de seguridad, revisión de checks, reporte de condiciones y comportamientos, monitoreos de seguridad, etc.). - Gestionar selección de campeón de Seguridad en el área de distribución.', 64)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f4e150c2-8325-48c1-859b-99ce09dcf33f', id, 'Seguir reforzando participación y colaboración de la operación en lo relativo a la seguridad (asistencia a capacitaciones, asistencia a comité de seguridad, revisión de checks, reporte de condiciones y comportamientos, monitoreos de seguridad, etc.)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.3'
+  SELECT '973ccf0e-04f7-48ce-ba3b-896c0cd25d76', id, 'Seguir reforzando participación y colaboración de la operación en lo relativo a la seguridad (asistencia a capacitaciones, asistencia a comité de seguridad, revisión de checks, reporte de condiciones y comportamientos, monitoreos de seguridad, etc.)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd3b90a96-7d97-4dd9-ae8c-ee9282b95848', id, 'Gestionar selección de campeón de Seguridad en el área de distribución', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.3'
+  SELECT '21b42fee-361b-457e-acca-d7f238a9f358', id, 'Gestionar selección de campeón de Seguridad en el área de distribución', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('5cf6a539-b92d-4e70-a89e-d6a3acc74561', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.4', 'Comité de Seguridad', false, '3', 'Se ejecuta la dinámica del comité de Seguridad de forma trimestral. Se registran los PDA en herramienta digital (App DPO). Incluyen personal operativo a la instancia. Oportunidad: reforzar cumplimiento de PDA, darle continuidad.', 65)
+  ('41e7c5e3-0283-4c3d-9b32-fe96f552c64d', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.4', 'Comité de Seguridad', false, '3', 'Se ejecuta la dinámica del comité de Seguridad de forma trimestral. Se registran los PDA en herramienta digital (App DPO). Incluyen personal operativo a la instancia. Oportunidad: reforzar cumplimiento de PDA, darle continuidad.', 65)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'aac5f060-45eb-4110-bcf4-6e24ff102e58', id, 'reforzar cumplimiento de PDA, darle continuidad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.4'
+  SELECT '8e65a0d6-e62b-42c6-800e-c47cf9143474', id, 'reforzar cumplimiento de PDA, darle continuidad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Seguridad' AND numero='16.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('bd739a6d-a41c-4232-b4b1-390d247d51b8', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.5', 'Semana Mundial de la Seguridad', false, '5', 'Se evidencia adherencia a campañas HSMA.', 66)
+  ('b63ce9cf-c9ce-4999-861a-cd2b76cc13bd', 'H1 2026', 'Seguridad', 'GESTIÓN DEL COMPORTAMIENTO', '16.5', 'Semana Mundial de la Seguridad', false, '5', 'Se evidencia adherencia a campañas HSMA.', 66)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e39921c5-37bc-436d-b68a-66488d701bfe', 'H1 2026', 'Gente', 'CULTURA', '1.1', 'El distribuidor cuenta con Principios desarrollados? ¿Los Principios de Cultura del DISTRIBUIDOR son incorporados y comprendidos?', false, '3', 'Desarrollaron principios de cultura y cascadearon al personal mediante capacitación. Comenzaron a vincular los PIs/KPIs o tareas diarias con los distintos principios. Implementaron cartelera con espacio en blanco para bajar a tierra los conceptos a la operación. Oportunidades: - Seguir reforzando el conocimiento de la operación sobre principios de cultura. - Seguir potenciando el rol de embajador de cultura.', 1)
+  ('b18d7065-800b-4848-8f06-470a77da492d', 'H1 2026', 'Gente', 'CULTURA', '1.1', 'El distribuidor cuenta con Principios desarrollados? ¿Los Principios de Cultura del DISTRIBUIDOR son incorporados y comprendidos?', false, '3', 'Desarrollaron principios de cultura y cascadearon al personal mediante capacitación. Comenzaron a vincular los PIs/KPIs o tareas diarias con los distintos principios. Implementaron cartelera con espacio en blanco para bajar a tierra los conceptos a la operación. Oportunidades: - Seguir reforzando el conocimiento de la operación sobre principios de cultura. - Seguir potenciando el rol de embajador de cultura.', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd4c92cc7-ce8b-4d75-9f1b-cf23e0096a6d', id, 'Seguir reforzando el conocimiento de la operación sobre principios de cultura', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='1.1'
+  SELECT '273fec55-5e82-4673-b9c6-87502d436756', id, 'Seguir reforzando el conocimiento de la operación sobre principios de cultura', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '93f7a859-3a44-43c9-ab3b-6a74c7bca3da', id, 'Seguir potenciando el rol de embajador de cultura', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='1.1'
+  SELECT '03b418f4-20a6-46b9-b251-56be6abb9afb', id, 'Seguir potenciando el rol de embajador de cultura', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('434edd66-4640-4696-bb55-50a14bdd2012', 'H1 2026', 'Gente', 'RECLUTAMIENTO Y SELECCIÓN', '2.1', '¿Qué tan efectivo es el DISTRIBUIDOR para atraer talento?', false, '5', 'SOP de reclutamiento y selección desarrollado. Completaron capacitación de sesgos inconscientes. Perfiles de puestos desarrollados (incluyen EPPs por puesto y detalle de KPIs/PIs). Documentan seguimiento de las contrataciones, incluyendo detalle sobre: puesto a cubrir, fecha de apertura de vacante, fuente de búsqueda, fecha de cierre de vacante, días transcurridos, etc. Implementan seguimiento documental de CVs. Plan de demanda/presupuesto de dotación desarrollado y cruzado con simulador de dimensionamiento. Actividades de marca empleadora ok.', 2)
+  ('59274868-69a7-49b0-9002-6495c8ab8b52', 'H1 2026', 'Gente', 'RECLUTAMIENTO Y SELECCIÓN', '2.1', '¿Qué tan efectivo es el DISTRIBUIDOR para atraer talento?', false, '5', 'SOP de reclutamiento y selección desarrollado. Completaron capacitación de sesgos inconscientes. Perfiles de puestos desarrollados (incluyen EPPs por puesto y detalle de KPIs/PIs). Documentan seguimiento de las contrataciones, incluyendo detalle sobre: puesto a cubrir, fecha de apertura de vacante, fuente de búsqueda, fecha de cierre de vacante, días transcurridos, etc. Implementan seguimiento documental de CVs. Plan de demanda/presupuesto de dotación desarrollado y cruzado con simulador de dimensionamiento. Actividades de marca empleadora ok.', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('cfe09095-23d0-48b7-8b68-ce7a2b746bef', 'H1 2026', 'Gente', 'RECOMPENSAS Y RECONOCIMIENTO', '3.1', '¿Qué tan efectiva es la Estrategia de Recompensas y Reconocimientos del DISTRIBUIDOR ?', false, '3', 'Esquema de reconocimientos por cumplimiento de objetivos implementado mensualmente. Cuentan con un pack de beneficios disponible. Política salarial establecida. Objetivos/targets definidos para mandos medios, con seguimiento del avance mensual y PDA ante desvíos del target. Entrevistas ok. Oportunidad: - Documentar seguimiento mensual de la evolución de los indicadores en función a la implementación de 3R, a fin de evidenciar el repago obtenido a partir de su mejora. - Rotar indicadores seleccionados para la dinámica a fin de ir puntualizando sobre aquellos que se deban potenciar (indicadores críticos).', 3)
+  ('45648544-b95c-449a-85bb-b9c1d9355348', 'H1 2026', 'Gente', 'RECOMPENSAS Y RECONOCIMIENTO', '3.1', '¿Qué tan efectiva es la Estrategia de Recompensas y Reconocimientos del DISTRIBUIDOR ?', false, '3', 'Esquema de reconocimientos por cumplimiento de objetivos implementado mensualmente. Cuentan con un pack de beneficios disponible. Política salarial establecida. Objetivos/targets definidos para mandos medios, con seguimiento del avance mensual y PDA ante desvíos del target. Entrevistas ok. Oportunidad: - Documentar seguimiento mensual de la evolución de los indicadores en función a la implementación de 3R, a fin de evidenciar el repago obtenido a partir de su mejora. - Rotar indicadores seleccionados para la dinámica a fin de ir puntualizando sobre aquellos que se deban potenciar (indicadores críticos).', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '02f1e724-731f-4798-8007-d36c4c892681', id, 'Documentar seguimiento mensual de la evolución de los indicadores en función a la implementación de 3R, a fin de evidenciar el repago obtenido a partir de su mejora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='3.1'
+  SELECT 'bcdc0fc4-324d-4c0c-8317-893cc4708bdb', id, 'Documentar seguimiento mensual de la evolución de los indicadores en función a la implementación de 3R, a fin de evidenciar el repago obtenido a partir de su mejora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '97e7f5a3-0e0d-47e4-a8f0-1df4b502545b', id, 'Rotar indicadores seleccionados para la dinámica a fin de ir puntualizando sobre aquellos que se deban potenciar (indicadores críticos)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='3.1'
+  SELECT '8ba9a3e6-09b0-47fe-ac5e-115533858bfa', id, 'Rotar indicadores seleccionados para la dinámica a fin de ir puntualizando sobre aquellos que se deban potenciar (indicadores críticos)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('46a0b46d-6d3e-42c5-8392-5ffc71a54c47', 'H1 2026', 'Gente', 'ESTRATEGIA DEL PAC', '4.1', '¿La Estrategia de Aprendizaje está conectada con la Estrategia de Negocio y activa una Cultura Activa de Aprendizaje?', true, '1', 'El PAC 2026 se encuentra calendarizado. Listado de capacitaciones disponible. Oportunidad: - Reforzar seguimiento del avance del calendarizado de capacitaciones (adherencia al gantt), aspirar a alcanzar el 90% de cumplimiento a final del año. - Incluir relevamiento del porcentaje de avance del calendarizado YTD al seguimiento del PAC. - Disponibilizar recursos y tecnología para el dictado de capacitaciones y acceso del personal al material de dichas capacitaciones.', 4)
+  ('f4c40d13-f988-43ee-9819-4f6b2514252f', 'H1 2026', 'Gente', 'ESTRATEGIA DEL PAC', '4.1', '¿La Estrategia de Aprendizaje está conectada con la Estrategia de Negocio y activa una Cultura Activa de Aprendizaje?', true, '1', 'El PAC 2026 se encuentra calendarizado. Listado de capacitaciones disponible. Oportunidad: - Reforzar seguimiento del avance del calendarizado de capacitaciones (adherencia al gantt), aspirar a alcanzar el 90% de cumplimiento a final del año. - Incluir relevamiento del porcentaje de avance del calendarizado YTD al seguimiento del PAC. - Disponibilizar recursos y tecnología para el dictado de capacitaciones y acceso del personal al material de dichas capacitaciones.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd12d27a5-17fc-4752-9f26-ff323e7ac09f', id, 'Reforzar seguimiento del avance del calendarizado de capacitaciones (adherencia al gantt), aspirar a alcanzar el 90% de cumplimiento a final del año', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
+  SELECT '35b2ad33-80d6-4b0e-b559-5c80b2315ace', id, 'Reforzar seguimiento del avance del calendarizado de capacitaciones (adherencia al gantt), aspirar a alcanzar el 90% de cumplimiento a final del año', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4ad2fb97-62b4-4eee-85d3-21a885e50fa3', id, 'Incluir relevamiento del porcentaje de avance del calendarizado YTD al seguimiento del PAC', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
+  SELECT '36cfb373-1ac0-4e5f-966d-0a88b3b02ed5', id, 'Incluir relevamiento del porcentaje de avance del calendarizado YTD al seguimiento del PAC', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8d854378-6336-44d4-a72a-2c793947fb71', id, 'Disponibilizar recursos y tecnología para el dictado de capacitaciones y acceso del personal al material de dichas capacitaciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
+  SELECT '82bd1835-c252-4db7-8810-588e3ae31f22', id, 'Disponibilizar recursos y tecnología para el dictado de capacitaciones y acceso del personal al material de dichas capacitaciones', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('a2de6138-3758-43f0-8832-b37b54db9744', 'H1 2026', 'Gente', 'SEGUIMIENTO DE LA ASISTENCIA A LAS CAPACITACIONES', '4.2', '¿Existe un seguimiento de asistencia efectivo y acciones antes desvios para asegurar la mejora contínua en la competencia de los colaboradores?', true, '1', 'Se evidencia seguimiento consolidado de la asistencia a capacitaciones. Implementan test de conocimiento. Oportunidad: - Documentar todos los test de validación conceptual e individualizar los resultados, a fin de recapacitar al personal que desapruebe los mismos. - Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador. - Estandarizar gestión de capacitaciones, a fin de consolidar la información del dictado de cada capacitación y garantizar un seguimiento por pilar de su desarrollo.', 5)
+  ('4e61eacf-93a9-4942-a120-44525bdd105b', 'H1 2026', 'Gente', 'SEGUIMIENTO DE LA ASISTENCIA A LAS CAPACITACIONES', '4.2', '¿Existe un seguimiento de asistencia efectivo y acciones antes desvios para asegurar la mejora contínua en la competencia de los colaboradores?', true, '1', 'Se evidencia seguimiento consolidado de la asistencia a capacitaciones. Implementan test de conocimiento. Oportunidad: - Documentar todos los test de validación conceptual e individualizar los resultados, a fin de recapacitar al personal que desapruebe los mismos. - Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador. - Estandarizar gestión de capacitaciones, a fin de consolidar la información del dictado de cada capacitación y garantizar un seguimiento por pilar de su desarrollo.', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'db0ef835-3b5a-4e32-b009-f52372fa62fa', id, 'Documentar todos los test de validación conceptual e individualizar los resultados, a fin de recapacitar al personal que desapruebe los mismos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
+  SELECT '67a88b6c-9540-4f59-8fb0-df076aacca37', id, 'Documentar todos los test de validación conceptual e individualizar los resultados, a fin de recapacitar al personal que desapruebe los mismos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c35181dc-cc02-436e-833e-2c65183ca0bd', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
+  SELECT '11f232b6-cec3-4830-8191-6f7511aef1a5', id, 'Medir porcentaje de asistencia de manera individualizada por capacitación y aspirar a alcanzar el 90% en dicho indicador', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd9c29cee-c437-4d23-b4e4-cbb5c49618d5', id, 'Estandarizar gestión de capacitaciones, a fin de consolidar la información del dictado de cada capacitación y garantizar un seguimiento por pilar de su desarrollo', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
+  SELECT '743267fe-9587-41bb-b1c5-cc4684019ac3', id, 'Estandarizar gestión de capacitaciones, a fin de consolidar la información del dictado de cada capacitación y garantizar un seguimiento por pilar de su desarrollo', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('dec1b3c2-4138-4198-b943-d51d7c2aefc8', 'H1 2026', 'Gente', 'INDUCCIONES', '4.3', '¿Se completó el proceso de inducción tanto para los nuevos miembros como para los que cambiaron de PUESTO DE trabajo para que se integren en la cultura de ABI y entreguen resultados rápidamente?', true, '3', 'SOP de inducciones desarrollado. No tuvieron ingresos en el presente período. Incluyen principios de cultura dentro del onboarding. Dentro de la inducción funcional se repasa la DP y se mapean los indicadores relacionados a su puesto. Oportunidades: - Implementar dinámica de padrinos/buddies en potenciales próximos ingresos. - Implementar feedback entre padrino y ahijado (durante la primera semana y al finalizar el proceso). - Apuntar a alcanzar el nivel 4 de SKAP en potenciales padrinos.', 6)
+  ('7f825986-348d-45fc-b59c-2cc7a18400e8', 'H1 2026', 'Gente', 'INDUCCIONES', '4.3', '¿Se completó el proceso de inducción tanto para los nuevos miembros como para los que cambiaron de PUESTO DE trabajo para que se integren en la cultura de ABI y entreguen resultados rápidamente?', true, '3', 'SOP de inducciones desarrollado. No tuvieron ingresos en el presente período. Incluyen principios de cultura dentro del onboarding. Dentro de la inducción funcional se repasa la DP y se mapean los indicadores relacionados a su puesto. Oportunidades: - Implementar dinámica de padrinos/buddies en potenciales próximos ingresos. - Implementar feedback entre padrino y ahijado (durante la primera semana y al finalizar el proceso). - Apuntar a alcanzar el nivel 4 de SKAP en potenciales padrinos.', 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '86fe5e5f-7e08-45ed-9f17-e4460fde23cc', id, 'Implementar dinámica de padrinos/buddies en potenciales próximos ingresos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
+  SELECT 'b08b4b94-2039-4595-af11-b7396ac47782', id, 'Implementar dinámica de padrinos/buddies en potenciales próximos ingresos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'cb8214ac-8e84-4bac-ba65-7505ea61008f', id, 'Implementar feedback entre padrino y ahijado (durante la primera semana y al finalizar el proceso)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
+  SELECT '41c61668-76d9-4310-91f0-8eaf6c65e0cc', id, 'Implementar feedback entre padrino y ahijado (durante la primera semana y al finalizar el proceso)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd6972bed-f134-4757-b990-2a935890a232', id, 'Apuntar a alcanzar el nivel 4 de SKAP en potenciales padrinos', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
+  SELECT '3a20ca0e-097a-4839-bb71-39fff3419185', id, 'Apuntar a alcanzar el nivel 4 de SKAP en potenciales padrinos', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0a939b97-b6ab-4fd6-a066-53e6d2a39c5b', 'H1 2026', 'Gente', 'SKAP', '4.4', '¿Qué tan bien se utiliza el Proceso de adquisición de habilidades (SKAP) para mejorar a nuestros equipos e impulsar la autonomía y los resultados?', true, '3', 'Implementaron matríz de habilidades para la totalidad de la operación. Se registran PDA ante oportunidades de mejora detectadas en SKAP, incluyendo: detalle, responsable, fecha de cumplimiento y status. Entrevistas ok. Oportunidades: - Se sugiere hacer uso de herramientas digitales a fin de que cada operario pueda acceder a visualizar su status de avance en SKAP (mediante herramienta Linktree, chatbot o similar). - Evidenciar cruce de información con resultados obtenidos en matriz SKAP. - Evidenciar avance en el cumplimiento de los PDA.', 7)
+  ('250e2fe7-02a3-4ad5-807b-df9ac7c558ca', 'H1 2026', 'Gente', 'SKAP', '4.4', '¿Qué tan bien se utiliza el Proceso de adquisición de habilidades (SKAP) para mejorar a nuestros equipos e impulsar la autonomía y los resultados?', true, '3', 'Implementaron matríz de habilidades para la totalidad de la operación. Se registran PDA ante oportunidades de mejora detectadas en SKAP, incluyendo: detalle, responsable, fecha de cumplimiento y status. Entrevistas ok. Oportunidades: - Se sugiere hacer uso de herramientas digitales a fin de que cada operario pueda acceder a visualizar su status de avance en SKAP (mediante herramienta Linktree, chatbot o similar). - Evidenciar cruce de información con resultados obtenidos en matriz SKAP. - Evidenciar avance en el cumplimiento de los PDA.', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '51b14150-10c2-4b03-9db7-7d8ec1e03f07', id, 'Se sugiere hacer uso de herramientas digitales a fin de que cada operario pueda acceder a visualizar su status de avance en SKAP (mediante herramienta Linktree, chatbot o similar)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
+  SELECT '265e6e44-1bf9-4c14-918d-398f95fae56f', id, 'Se sugiere hacer uso de herramientas digitales a fin de que cada operario pueda acceder a visualizar su status de avance en SKAP (mediante herramienta Linktree, chatbot o similar)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '25eeaa37-f311-4706-8aad-00415c207a64', id, 'Evidenciar cruce de información con resultados obtenidos en matriz SKAP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
+  SELECT 'ca6bb554-ee26-41eb-b1ee-122125aba57a', id, 'Evidenciar cruce de información con resultados obtenidos en matriz SKAP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4908c720-1ed3-4c0f-9be7-af007d4f908c', id, 'Evidenciar avance en el cumplimiento de los PDA', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
+  SELECT 'ae1bf9b6-26aa-4ed3-b92c-32dd268a6616', id, 'Evidenciar avance en el cumplimiento de los PDA', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('d861f6ad-b8e2-4b76-aa0a-7a28290646e3', 'H1 2026', 'Gente', 'KPI AUSENTISMO', '5.1', '¿El Distribuidor tiene una gestión del ausentismo?', true, '3', 'Se excluyen las licencias prolongadas o planificadas. Se evidencia comparativa vs AA. No contemplan en ausentismo las licencias por ART que ya se estén mapeando dentro del indicador TRI. Oportunidad: - Corregir discrepancias detectadas entre el seguimiento interno y el reporte en planilla de GKPIs del drive (mes de abril). - Reforzar relevamiento de jornada del personal de T1.', 8)
+  ('28b67f90-d2a8-4dff-acbc-ec902904370b', 'H1 2026', 'Gente', 'KPI AUSENTISMO', '5.1', '¿El Distribuidor tiene una gestión del ausentismo?', true, '3', 'Se excluyen las licencias prolongadas o planificadas. Se evidencia comparativa vs AA. No contemplan en ausentismo las licencias por ART que ya se estén mapeando dentro del indicador TRI. Oportunidad: - Corregir discrepancias detectadas entre el seguimiento interno y el reporte en planilla de GKPIs del drive (mes de abril). - Reforzar relevamiento de jornada del personal de T1.', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8600d226-4bd9-4b74-9a7f-0d1c35667c4d', id, 'Corregir discrepancias detectadas entre el seguimiento interno y el reporte en planilla de GKPIs del drive (mes de abril)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.1'
+  SELECT '12751873-0b51-49c4-8047-d533c789fdac', id, 'Corregir discrepancias detectadas entre el seguimiento interno y el reporte en planilla de GKPIs del drive (mes de abril)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '9fd4c01e-e209-4285-94bd-e7b1694aa68d', id, 'Reforzar relevamiento de jornada del personal de T1', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.1'
+  SELECT '30f1ac29-4511-49a3-a93d-c5e416ca91b0', id, 'Reforzar relevamiento de jornada del personal de T1', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('ec5bfc91-8250-4087-a5e9-9962bdc9856a', 'H1 2026', 'Gente', 'ENGAGEMENT', '5.2', '¿Es el Ambiente de Trabajo Seguro e Inclusivo?', true, '3', 'Adheridos a instancias People. 100% logística y 98% total empresa obtenido en última encuesta. Entrevistas ok. Oportunidad: - Reforzar abordaje sobre Seguridad Psicológica (avanzar en cuanto a cursos incluidos en app Humand, capacitaciones internas y reforzar comunicación de los equipos y el rol de los líderes). - Avanzar en el cumplimiento de los PDA derivados de la última encuesta.', 9)
+  ('d6e48635-c35e-418a-aae2-72759706c5d7', 'H1 2026', 'Gente', 'ENGAGEMENT', '5.2', '¿Es el Ambiente de Trabajo Seguro e Inclusivo?', true, '3', 'Adheridos a instancias People. 100% logística y 98% total empresa obtenido en última encuesta. Entrevistas ok. Oportunidad: - Reforzar abordaje sobre Seguridad Psicológica (avanzar en cuanto a cursos incluidos en app Humand, capacitaciones internas y reforzar comunicación de los equipos y el rol de los líderes). - Avanzar en el cumplimiento de los PDA derivados de la última encuesta.', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '162e9220-0acb-47c0-b324-b3ec9d18df04', id, 'Reforzar abordaje sobre Seguridad Psicológica (avanzar en cuanto a cursos incluidos en app Humand, capacitaciones internas y reforzar comunicación de los equipos y el rol de los líderes)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.2'
+  SELECT 'b2352b1d-1002-4c3d-b27a-456f33144549', id, 'Reforzar abordaje sobre Seguridad Psicológica (avanzar en cuanto a cursos incluidos en app Humand, capacitaciones internas y reforzar comunicación de los equipos y el rol de los líderes)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1659ffb7-46f9-4164-897e-993736f54dd0', id, 'Avanzar en el cumplimiento de los PDA derivados de la última encuesta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.2'
+  SELECT 'e41a6f0a-a368-444d-992c-1ad99ae72ffd', id, 'Avanzar en el cumplimiento de los PDA derivados de la última encuesta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0691111e-5eeb-4ae9-91e9-a9740c7e67c1', 'H1 2026', 'Gente', 'PLAN DE COMUNICACIÓN', '5.3', '¿Qué tan efectivo es el Plan de Comunicación del distribuidor?', false, '3', 'Cuentan con cronograma de comunicaciones documentado. Oportunidad: - Seguir reforzando gestión visual. - Reforzar la participación del personal en cuanto a actualizaciones del plan de comunicación generando instancias de feedback. Potenciar el "Por qué" de cada evento. - Potenciar uso de la herramienta Humand.', 10)
+  ('06afcccb-f81e-43a1-b3d2-5f0e907c6a6f', 'H1 2026', 'Gente', 'PLAN DE COMUNICACIÓN', '5.3', '¿Qué tan efectivo es el Plan de Comunicación del distribuidor?', false, '3', 'Cuentan con cronograma de comunicaciones documentado. Oportunidad: - Seguir reforzando gestión visual. - Reforzar la participación del personal en cuanto a actualizaciones del plan de comunicación generando instancias de feedback. Potenciar el "Por qué" de cada evento. - Potenciar uso de la herramienta Humand.', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6c2b7193-f063-4695-9a73-9733b8c194f0', id, 'Seguir reforzando gestión visual', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
+  SELECT '4863bc0f-0ed7-4aa4-9dda-bcaa19d964a1', id, 'Seguir reforzando gestión visual', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ed46c5d6-c0c5-4a71-81c1-a2bf69362b1e', id, 'Reforzar la participación del personal en cuanto a actualizaciones del plan de comunicación generando instancias de feedback. Potenciar el "Por qué" de cada evento', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
+  SELECT '4a0e41a9-a14d-4a89-82c8-1d6cd4cf0f47', id, 'Reforzar la participación del personal en cuanto a actualizaciones del plan de comunicación generando instancias de feedback. Potenciar el "Por qué" de cada evento', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd74c505a-c53c-40df-a087-90d47b440e83', id, 'Potenciar uso de la herramienta Humand', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
+  SELECT 'e798b04b-53b5-4a1c-b2f8-5bf1202fb270', id, 'Potenciar uso de la herramienta Humand', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('486586fa-3fb7-44c2-b1e0-cae5ccf446c3', 'H1 2026', 'Gente', 'ENTORNO LABORAL', '5.4', '¿Qué tan bien está empoderando el DISTRIBUIDOR a sus equipos para garantizar que tengan las condiciones adecuadas para hacer su trabajo?', false, '1', 'Se observan condiciones adecuadas en las instalaciones. Cuentan con herramienta de relevamiento y reporte de cuestiones relacionadas a servicios generales a fin de monitorear el avance periódicamente y realizar ajustes previos a las instancias de encuestas (escucha activa). Oportunidad: - Potenciar uso de herramienta de reporte de SSGG. - Lograr consolidar una operación capacitada para abordar los problemas de SSGG de forma autónoma (arreglo de cuestiones simples referidas a SSGG).', 11)
+  ('753bba4b-5e50-4758-9f68-30a0cb53dcf9', 'H1 2026', 'Gente', 'ENTORNO LABORAL', '5.4', '¿Qué tan bien está empoderando el DISTRIBUIDOR a sus equipos para garantizar que tengan las condiciones adecuadas para hacer su trabajo?', false, '1', 'Se observan condiciones adecuadas en las instalaciones. Cuentan con herramienta de relevamiento y reporte de cuestiones relacionadas a servicios generales a fin de monitorear el avance periódicamente y realizar ajustes previos a las instancias de encuestas (escucha activa). Oportunidad: - Potenciar uso de herramienta de reporte de SSGG. - Lograr consolidar una operación capacitada para abordar los problemas de SSGG de forma autónoma (arreglo de cuestiones simples referidas a SSGG).', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '98e803e2-4ade-4aac-b9d2-a3c17005d4cd', id, 'Potenciar uso de herramienta de reporte de SSGG', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.4'
+  SELECT '4d71e190-d4e7-4a6a-86d7-908dfd46d074', id, 'Potenciar uso de herramienta de reporte de SSGG', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b51bf62e-6927-47fb-a3d3-1e544165cd0a', id, 'Lograr consolidar una operación capacitada para abordar los problemas de SSGG de forma autónoma (arreglo de cuestiones simples referidas a SSGG)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.4'
+  SELECT 'f85d7890-de83-4a69-a6ee-1965c13ad28a', id, 'Lograr consolidar una operación capacitada para abordar los problemas de SSGG de forma autónoma (arreglo de cuestiones simples referidas a SSGG)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='5.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('381f2e3b-1b4a-4fd2-a9f9-8942852504f9', 'H1 2026', 'Gente', 'NEGOCIACION SINDICAL', '5.5', '¿Qué tan efectivo es el DISTRIBUIDOR al asociarse con Relaciones Laborales (sindicatos) para impulsar la autonomía?', false, '5', 'SOP documentado. Documentan PDA derivados de negociaciones sindicales. Seguir trabajando en forjar relaciones positivas con sindicatos a fin de apalancar los procesos.', 12)
+  ('d84ee17e-dbb5-45a2-8233-41332bb2a149', 'H1 2026', 'Gente', 'NEGOCIACION SINDICAL', '5.5', '¿Qué tan efectivo es el DISTRIBUIDOR al asociarse con Relaciones Laborales (sindicatos) para impulsar la autonomía?', false, '5', 'SOP documentado. Documentan PDA derivados de negociaciones sindicales. Seguir trabajando en forjar relaciones positivas con sindicatos a fin de apalancar los procesos.', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('33a5c4f2-58c7-4c29-8557-1078b8ace119', 'H1 2026', 'Gente', 'TALENTO Y CRECIMIENTO', '6.1', '¿Están mejorando los procesos y se ve reflejado en el ambiente laboral?', false, '3', 'Adheridos a instancias People en cuanto a evaluaciones de desempeño. Proceso de OPR desarrollado, dar curso al feedback. Oportunidades: - Realizar seguimiento de trayectoria del personal con posibilidades de ascenso. - Formalizar plan de carrera/mapeo de reemplazos. - Registrar seguimiento y monitoreo mensual o bimestral de los PDA derivados de las evaluaciones de desempeño. - Garantizar que los PDA desarrollados sean medibles. - Reforzar avance de PDA cargados en Humand. - Evidenciar cruce de información con resultados obtenidos en matriz SKAP.', 13)
+  ('9a9948b5-ccba-4784-bf20-32f483ce03e9', 'H1 2026', 'Gente', 'TALENTO Y CRECIMIENTO', '6.1', '¿Están mejorando los procesos y se ve reflejado en el ambiente laboral?', false, '3', 'Adheridos a instancias People en cuanto a evaluaciones de desempeño. Proceso de OPR desarrollado, dar curso al feedback. Oportunidades: - Realizar seguimiento de trayectoria del personal con posibilidades de ascenso. - Formalizar plan de carrera/mapeo de reemplazos. - Registrar seguimiento y monitoreo mensual o bimestral de los PDA derivados de las evaluaciones de desempeño. - Garantizar que los PDA desarrollados sean medibles. - Reforzar avance de PDA cargados en Humand. - Evidenciar cruce de información con resultados obtenidos en matriz SKAP.', 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '81ccc0d7-6495-4b3a-b4b1-d9075398c65a', id, 'Realizar seguimiento de trayectoria del personal con posibilidades de ascenso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT 'bc036dcf-5931-4f92-9ce3-411acd519162', id, 'Realizar seguimiento de trayectoria del personal con posibilidades de ascenso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '138a1462-4c62-4f70-938a-b33ce346a0f4', id, 'Formalizar plan de carrera/mapeo de reemplazos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT 'ffd4fa4c-1379-4f48-a739-cee4b6f4e38a', id, 'Formalizar plan de carrera/mapeo de reemplazos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f70c36e5-975c-4541-851a-298ffe49fb29', id, 'Registrar seguimiento y monitoreo mensual o bimestral de los PDA derivados de las evaluaciones de desempeño', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT '61613aa1-fbba-47e8-8b05-30e18d08df71', id, 'Registrar seguimiento y monitoreo mensual o bimestral de los PDA derivados de las evaluaciones de desempeño', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '18731f08-12b6-414b-a314-c8548b6e8cee', id, 'Garantizar que los PDA desarrollados sean medibles', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT 'efbca8de-a868-4b1d-8b7d-c5c9f8d00688', id, 'Garantizar que los PDA desarrollados sean medibles', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5dc45647-0ebf-4767-8d3e-be4c74130a80', id, 'Reforzar avance de PDA cargados en Humand', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT '313a44d6-0057-425b-9ff4-227683e9da54', id, 'Reforzar avance de PDA cargados en Humand', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '45ca08bf-f914-40af-aa57-84d525193941', id, 'Evidenciar cruce de información con resultados obtenidos en matriz SKAP', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
+  SELECT '5a2febe1-06cc-4393-951c-223d25b93202', id, 'Evidenciar cruce de información con resultados obtenidos en matriz SKAP', 6 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('6af0d91e-fa6b-4c34-8ccf-7899d39341fb', 'H1 2026', 'Gente', 'KPI TURNOVER', '6.2', '¿El Distribuidor tiene una gestión del Turnover?', false, '3', 'Realizan seguimiento del indicador. No consideran re-estructuración ni finalización de contrato dentro de la medición del indicador. Implementan entrevistas de salida por medio de Humand y registran PDA. Oportunidades: - Documentar entrevistas de permanencia e implementar PDA ante potenciales causales de salida detectadas en dicha instancia. - Avanzar en el cumplimiento de los PDA derivados de las entrevistas de salida. - Ajustar Headcount que figura en reporte de SKPIs (36 GKPIs vs 35 seguimiento interno).', 14)
+  ('dc479f9e-9fae-4853-9273-03a22336bd58', 'H1 2026', 'Gente', 'KPI TURNOVER', '6.2', '¿El Distribuidor tiene una gestión del Turnover?', false, '3', 'Realizan seguimiento del indicador. No consideran re-estructuración ni finalización de contrato dentro de la medición del indicador. Implementan entrevistas de salida por medio de Humand y registran PDA. Oportunidades: - Documentar entrevistas de permanencia e implementar PDA ante potenciales causales de salida detectadas en dicha instancia. - Avanzar en el cumplimiento de los PDA derivados de las entrevistas de salida. - Ajustar Headcount que figura en reporte de SKPIs (36 GKPIs vs 35 seguimiento interno).', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3d1768ec-a8c0-46be-a4e8-11ea71e6c541', id, 'Documentar entrevistas de permanencia e implementar PDA ante potenciales causales de salida detectadas en dicha instancia', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
+  SELECT 'e47122a0-8cfd-4361-9590-6ec66a04ec07', id, 'Documentar entrevistas de permanencia e implementar PDA ante potenciales causales de salida detectadas en dicha instancia', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a13b3fe1-830d-417e-9106-3fa1e817c1d1', id, 'Avanzar en el cumplimiento de los PDA derivados de las entrevistas de salida', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
+  SELECT 'dae72147-ff3b-48aa-a18b-d81d5acb8f97', id, 'Avanzar en el cumplimiento de los PDA derivados de las entrevistas de salida', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3d146b46-2398-4a1e-88f5-0496a12ab2da', id, 'Ajustar Headcount que figura en reporte de SKPIs (36 GKPIs vs 35 seguimiento interno)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
+  SELECT '574a6188-8097-408f-8d66-2a849cf46a39', id, 'Ajustar Headcount que figura en reporte de SKPIs (36 GKPIs vs 35 seguimiento interno)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='6.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('458acaec-cbe4-481e-bb34-03d8b4901478', 'H1 2026', 'Gente', 'EQUIPOS AUTÓNOMOS', '7.1', '¿Qué tan efectivo es el distribuidor para empoderar a los equipos autónomos?', false, '1', 'Se evidencia buena participación de la operación en las rutinas. Se encuentran en fase 3. Entrevistas ok. Oportunidad: - Concluir PDA y fases del cuadro de autonomía segregado por área. - Seguir potenciando autonomía de equipos. - Potenciar la implementación de herramientas como 3R y SKAP a fin de seguir afianzando el perfil del personal. - Reforzar cultura de Seguridad, aumentando el reporte de CS/CS desde la operación.', 15)
+  ('f817c603-27df-4be3-bf5f-b4dafa64a1e5', 'H1 2026', 'Gente', 'EQUIPOS AUTÓNOMOS', '7.1', '¿Qué tan efectivo es el distribuidor para empoderar a los equipos autónomos?', false, '1', 'Se evidencia buena participación de la operación en las rutinas. Se encuentran en fase 3. Entrevistas ok. Oportunidad: - Concluir PDA y fases del cuadro de autonomía segregado por área. - Seguir potenciando autonomía de equipos. - Potenciar la implementación de herramientas como 3R y SKAP a fin de seguir afianzando el perfil del personal. - Reforzar cultura de Seguridad, aumentando el reporte de CS/CS desde la operación.', 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '57a7ba83-ca33-42fb-af3d-e7e4cdee8c3d', id, 'Concluir PDA y fases del cuadro de autonomía segregado por área', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
+  SELECT '0d0cac8e-e536-4a93-bf5d-7dd24e55ffe1', id, 'Concluir PDA y fases del cuadro de autonomía segregado por área', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1fb192ef-c6dc-4b2b-938d-ed5b375bd045', id, 'Seguir potenciando autonomía de equipos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
+  SELECT '0fc1cb8a-27e9-4a5d-a759-17a372797573', id, 'Seguir potenciando autonomía de equipos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7fc59cbb-5a09-40be-94d6-7e194b85524b', id, 'Potenciar la implementación de herramientas como 3R y SKAP a fin de seguir afianzando el perfil del personal', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
+  SELECT '05a5b638-cf7d-4473-9c1d-2b84d8170fad', id, 'Potenciar la implementación de herramientas como 3R y SKAP a fin de seguir afianzando el perfil del personal', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0b56cfbc-6f6d-4b5e-96d5-8bc558eb842f', id, 'Reforzar cultura de Seguridad, aumentando el reporte de CS/CS desde la operación', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
+  SELECT '0e53a80b-b378-4f69-b7ab-a25e841d3079', id, 'Reforzar cultura de Seguridad, aumentando el reporte de CS/CS desde la operación', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e4ebc086-cf4e-4762-a889-e75dce5ed6a7', 'H1 2026', 'Gente', 'COMITÉ DE GENTE LOGISTICO', '7.2', '¿El Comité de Gente Logistico se asegura de que las personas trabajen juntas para permitir y capacitar a los equipos para impulsar los resultados?', true, '3', 'Desde junio-26 implementan rutina de Comité de Gente Logístico según formato estándar cargado en CAMPUS y llevan PDA mediante herramienta digital. Oportunidades: - Dar continuidad a la dinámica. - Profundizar seguimiento del farol de indicadores de los distintos pilares. - Tratar avances sobre evaluaciones de desempeño en dicha instancia. - Llevar PDA mediante herramienta digital (App DPO) e incluir fecha límite de cumplimiento de dichas acciones, visibilizando el semáforo con el status de cumplimiento.', 16)
+  ('9a7059ab-ac0e-4d64-9437-7335b1e52057', 'H1 2026', 'Gente', 'COMITÉ DE GENTE LOGISTICO', '7.2', '¿El Comité de Gente Logistico se asegura de que las personas trabajen juntas para permitir y capacitar a los equipos para impulsar los resultados?', true, '3', 'Desde junio-26 implementan rutina de Comité de Gente Logístico según formato estándar cargado en CAMPUS y llevan PDA mediante herramienta digital. Oportunidades: - Dar continuidad a la dinámica. - Profundizar seguimiento del farol de indicadores de los distintos pilares. - Tratar avances sobre evaluaciones de desempeño en dicha instancia. - Llevar PDA mediante herramienta digital (App DPO) e incluir fecha límite de cumplimiento de dichas acciones, visibilizando el semáforo con el status de cumplimiento.', 16)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e9f4745d-b299-4dec-a053-1461786d9849', id, 'Dar continuidad a la dinámica', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
+  SELECT '6af92666-21c1-46cf-993c-3873a63d7f8f', id, 'Dar continuidad a la dinámica', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7ad731ee-14b7-4eaf-9718-0c9c7b5c488f', id, 'Profundizar seguimiento del farol de indicadores de los distintos pilares', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
+  SELECT '522e4e82-ca93-4f98-92ce-ac0102ec531d', id, 'Profundizar seguimiento del farol de indicadores de los distintos pilares', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0c14aac6-7551-4d17-86ec-11365b8901cf', id, 'Tratar avances sobre evaluaciones de desempeño en dicha instancia', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
+  SELECT '1eedb262-8189-40af-bbf1-cf2c3901af9b', id, 'Tratar avances sobre evaluaciones de desempeño en dicha instancia', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '71b43f6a-1d70-4b61-aebe-8a76e6c9c9f6', id, 'Llevar PDA mediante herramienta digital (App DPO) e incluir fecha límite de cumplimiento de dichas acciones, visibilizando el semáforo con el status de cumplimiento', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
+  SELECT '2273dbcf-dff4-4d87-a220-fc94ca325e95', id, 'Llevar PDA mediante herramienta digital (App DPO) e incluir fecha límite de cumplimiento de dichas acciones, visibilizando el semáforo con el status de cumplimiento', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gente' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9bad10fb-80be-4a32-8df9-5992b923719d', 'H1 2026', 'Gestión', 'STRATEGY', '1.1', 'Compliance', true, '5', 'Ok, cuentan con línea ética vigente y los empleados están al tanto de ella.', 1)
+  ('94b58b90-1944-422b-aac6-b7b873d5a71c', 'H1 2026', 'Gestión', 'STRATEGY', '1.1', 'Compliance', true, '5', 'Ok, cuentan con línea ética vigente y los empleados están al tanto de ella.', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('623aa6bd-fadc-4b5e-8cf5-c2e323806c61', 'H1 2026', 'Gestión', 'STRATEGY', '1.2', 'Definición del sueño', false, '3', 'Tener como Pis críticos aquellos que los operarios pueden cambiar para mejorar el KPI central. Oportunidad: aperturar KPI de seguridad tanto como almacén como para distribución. Entrega: revisar cascadeo hasta ultimo nivel de operación. Reforzar conocimiento de la operación sobre KPIs criticos y como sus actividades diarias influyen en los objetivos del distribuidor a nivel estrategico.', 2)
+  ('a90c1138-7f37-4a45-bc2e-acbf116e0cbc', 'H1 2026', 'Gestión', 'STRATEGY', '1.2', 'Definición del sueño', false, '3', 'Tener como Pis críticos aquellos que los operarios pueden cambiar para mejorar el KPI central. Oportunidad: aperturar KPI de seguridad tanto como almacén como para distribución. Entrega: revisar cascadeo hasta ultimo nivel de operación. Reforzar conocimiento de la operación sobre KPIs criticos y como sus actividades diarias influyen en los objetivos del distribuidor a nivel estrategico.', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd834c78a-a896-4fdd-9294-02d7ea6b0c1d', id, 'aperturar KPI de seguridad tanto como almacén como para distribución', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
+  SELECT '4484853a-468b-4394-8e2a-8da3eaae6043', id, 'aperturar KPI de seguridad tanto como almacén como para distribución', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd625766e-b1c6-4f66-9615-170aa5a8a2a3', id, 'Entrega: revisar cascadeo hasta ultimo nivel de operación', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
+  SELECT 'f4e75357-2e4e-470f-8bb3-dc1d0447287d', id, 'Entrega: revisar cascadeo hasta ultimo nivel de operación', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8dcb1ff7-815d-41b0-9cb8-6edf40ec76b6', id, 'Reforzar conocimiento de la operación sobre KPIs criticos y como sus actividades diarias influyen en los objetivos del distribuidor a nivel estrategico', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
+  SELECT '9a10aac1-dade-4588-a1b1-daceece89def', id, 'Reforzar conocimiento de la operación sobre KPIs criticos y como sus actividades diarias influyen en los objetivos del distribuidor a nivel estrategico', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e4fa2213-1883-458f-a016-5677061a25ba', 'H1 2026', 'Gestión', 'STRATEGY', '1.3', 'Definición de objetivos estratégicos', false, '3', NULL, 3)
+  ('4b7eeebd-ec4a-4360-8ed1-ca1a0dc60a95', 'H1 2026', 'Gestión', 'STRATEGY', '1.3', 'Definición de objetivos estratégicos', false, '3', NULL, 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('f510ebeb-736e-479c-aa4f-e2589a2d04e4', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.1', 'Descripción de negocio', false, '5', 'Ok, bien desarrollado la descripción de negocio obteniendo KPIs críticos en base a la matriz de criticidad.', 4)
+  ('f23bf41d-f194-462e-b9fe-33719e0faf30', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.1', 'Descripción de negocio', false, '5', 'Ok, bien desarrollado la descripción de negocio obteniendo KPIs críticos en base a la matriz de criticidad.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('101b88fe-f2a2-424b-9a17-9700e4682f53', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.2', 'Mapeo de procesos', false, '3', 'Continuar trabajando en el mapa de procesos, desarrollando todas las tareas de las actividad crítica e identificar la tarea crítica.', 5)
+  ('e489a395-0f3e-457a-9e54-e4d2247d9d0b', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.2', 'Mapeo de procesos', false, '3', 'Continuar trabajando en el mapa de procesos, desarrollando todas las tareas de las actividad crítica e identificar la tarea crítica.', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '55294657-c0aa-4ae1-a6a1-ebf9323b8ee8', id, 'Continuar trabajando en el mapa de procesos, desarrollando todas las tareas de las actividad crítica e identificar la tarea crítica', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='2.2'
+  SELECT '061e5539-4835-4bf9-b0ca-a51c5a933aa5', id, 'Continuar trabajando en el mapa de procesos, desarrollando todas las tareas de las actividad crítica e identificar la tarea crítica', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('71f23ab4-6a16-4964-b92d-77fd390dbd2b', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.3', 'Indicadores de productos y procesos', true, '0', 'Desarrollar arból de KPIs', 6)
+  ('6017208d-d8bc-412d-afe6-7ec8c3fe24e5', 'H1 2026', 'Gestión', 'BUSINESS AND PROCESSES MAPPING', '2.3', 'Indicadores de productos y procesos', true, '0', 'Desarrollar arból de KPIs', 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f0b6a20c-61ca-4e9c-bb9b-891f6c8ed9bf', id, 'Desarrollar arból de KPIs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='2.3'
+  SELECT '787c40fb-b7f3-48f0-985c-8345975c499f', id, 'Desarrollar arból de KPIs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4afdf4da-3a7d-4b3b-bea9-954303a14dc6', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.1', '5S (Standarize)', true, '3', 'Continuar trabajando con la implementación de 5S en las distintas áreas del almacén.', 7)
+  ('c71a1d16-9cdb-400a-ba3c-aed0ed0d6d83', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.1', '5S (Standarize)', true, '3', 'Continuar trabajando con la implementación de 5S en las distintas áreas del almacén.', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'cbfa82e9-f87a-437d-acae-6994ba21506e', id, 'Continuar trabajando con la implementación de 5S en las distintas áreas del almacén', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.1'
+  SELECT 'eee149e6-d168-44ab-a0b0-c90ea14b9a61', id, 'Continuar trabajando con la implementación de 5S en las distintas áreas del almacén', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('6ff4ffff-aeac-4459-9910-a4718dc45221', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.2', 'Estandarización & Entrenamientos (Standarize)', false, '3', 'Seguir con el proceso de estandarización y entrenamientos. Bien desarrollados los SOPs.', 8)
+  ('3d8ef9ff-d5d1-4fb4-a7fa-d7ee6f196026', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.2', 'Estandarización & Entrenamientos (Standarize)', false, '3', 'Seguir con el proceso de estandarización y entrenamientos. Bien desarrollados los SOPs.', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3ab3fe3c-735f-4b3d-84d8-602f7a0d00ab', id, 'Seguir con el proceso de estandarización y entrenamientos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.2'
+  SELECT 'e75fea41-3336-4650-a482-92169a69d54a', id, 'Seguir con el proceso de estandarización y entrenamientos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('6ad9771c-27db-4663-b2f8-5026b8b3971c', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.3', 'Diagnóstico de Trabajo Operativo (OWD/DTO) (DO)', false, '3', 'Continuar implementando OWDs para los distintos procesos y los distintos operarios. Definir acciones correctivas en caso de incumplimiento.', 9)
+  ('6c48e147-f324-47fa-89fc-cffa52d46a8a', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.3', 'Diagnóstico de Trabajo Operativo (OWD/DTO) (DO)', false, '3', 'Continuar implementando OWDs para los distintos procesos y los distintos operarios. Definir acciones correctivas en caso de incumplimiento.', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7058c5e3-33b8-4662-a197-6789e6b3e340', id, 'Continuar implementando OWDs para los distintos procesos y los distintos operarios', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.3'
+  SELECT 'd61338cc-9d0d-4c0b-bb0e-3c147c7e1afa', id, 'Continuar implementando OWDs para los distintos procesos y los distintos operarios', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e9ae2e29-59ed-488c-a9a6-3bfd7c0f53eb', id, 'Definir acciones correctivas en caso de incumplimiento', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.3'
+  SELECT '15fa1275-8e48-4f7e-b156-438171f7ddfc', id, 'Definir acciones correctivas en caso de incumplimiento', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('45a28a1e-560e-4cda-8a09-788e3a220e82', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.4', 'Sistema de Gestión de Control y Reporte (MCRS) (Check)', true, '3', NULL, 10)
+  ('48d1b639-2a8f-47ee-9b14-a028883bdc9b', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.4', 'Sistema de Gestión de Control y Reporte (MCRS) (Check)', true, '3', NULL, 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('5676def3-796b-4c25-9fa1-15406c9a09da', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.5', 'Workstations / Estación de trabajo (Check)', true, '1', 'Hacer foco en las estaciones de reempaque y PRI. Oportunidad: añadir una bacha en caso de ser posible en el área de reempaque Entrega: sumar SOPs a la workstation', 11)
+  ('d1eed70e-ff89-41bd-acd0-e6a8adec128f', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.5', 'Workstations / Estación de trabajo (Check)', true, '1', 'Hacer foco en las estaciones de reempaque y PRI. Oportunidad: añadir una bacha en caso de ser posible en el área de reempaque Entrega: sumar SOPs a la workstation', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1e45682c-6a9e-4f07-9a07-3a3ff5554d38', id, 'Añadir una bacha, en caso de ser posible, en el área de reempaque', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.5'
+  SELECT '7cb3d6f6-b1d9-4d14-84d1-b3f34508f248', id, 'Añadir una bacha, en caso de ser posible, en el área de reempaque', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.5'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4cdf2ba7-c916-45be-94fb-48509a222cdb', id, 'Sumar SOPs a la workstation', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.5'
+  SELECT '5b0f0727-7740-478d-86a5-54da723417b7', id, 'Sumar SOPs a la workstation', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9b8e5cf0-b683-4226-a4da-30acf8ea8d3a', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.6', 'Team Room (Check)', true, '3', 'Hacer foco en como impactan las tareas de los operarios en los PIs.', 12)
+  ('38e9281a-2516-47d8-b0c7-13af38c29ca5', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.6', 'Team Room (Check)', true, '3', 'Hacer foco en como impactan las tareas de los operarios en los PIs.', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a7f1c5f9-a886-42b7-aba3-5754a7889ea8', id, 'Hacer foco en como impactan las tareas de los operarios en los PIs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.6'
+  SELECT '84560675-cec1-4aab-8a85-0c2a5d341bc9', id, 'Hacer foco en como impactan las tareas de los operarios en los PIs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.6'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('78f49b78-10df-4ac6-8a5a-c54186840b37', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.7', 'Tratamiento de Anomalía', false, '1', 'Sumar valores gatillo para indicadores criticos. Oportunidad de que miembros del equipo ejecuten resoluciones de forma autonoma', 13)
+  ('4bf5d9c2-6642-4baf-937e-cc999b525b02', 'H1 2026', 'Gestión', 'ROUTINE MANAGEMENT (SDCA)', '3.7', 'Tratamiento de Anomalía', false, '1', 'Sumar valores gatillo para indicadores criticos. Oportunidad de que miembros del equipo ejecuten resoluciones de forma autonoma', 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '87b9afad-5970-41a4-831f-ec1f5ab6775b', id, 'Sumar valores gatillo para indicadores criticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.7'
+  SELECT '8cfeca02-7304-4d1e-8bbc-98e9291a7cb0', id, 'Sumar valores gatillo para indicadores criticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.7'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1e26afce-1f49-4a89-bc49-4aa705d190db', id, 'Oportunidad de que miembros del equipo ejecuten resoluciones de forma autonoma', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.7'
+  SELECT 'c1f183c0-c86d-45d0-b89d-32a8bab7f612', id, 'Oportunidad de que miembros del equipo ejecuten resoluciones de forma autonoma', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='3.7'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('8a2e5749-bb3e-4f3c-b233-d3b47fde57bd', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.1', 'Monitoreo de Targets (Do)', false, '1', 'Planificar performance targets', 14)
+  ('49414f54-79d1-44a8-aca3-345b386b74b4', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.1', 'Monitoreo de Targets (Do)', false, '1', 'Planificar performance targets', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '9c188cab-f66f-466c-96fc-92ea2fa1bfde', id, 'Planificar performance targets', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.1'
+  SELECT '71ac4d7b-62ec-4b06-abd4-973b962041a2', id, 'Planificar performance targets', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('a3c19af6-6a70-4c9a-8745-bf51493ae03f', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.2', 'Gestión de Proyectos (Do)', false, '3', 'Seguir relacionando os objetivos estratégicos a sus proyectos. Oportunidad: participación de miembros del equipo en proyectos.', 15)
+  ('25707719-d7d4-4604-ab24-728a792ae1aa', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.2', 'Gestión de Proyectos (Do)', false, '3', 'Seguir relacionando os objetivos estratégicos a sus proyectos. Oportunidad: participación de miembros del equipo en proyectos.', 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '78cb9a88-50f9-4190-8710-1f5c18410b48', id, 'participación de miembros del equipo en proyectos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.2'
+  SELECT '75e8f34d-48c1-44e0-b095-5f27488725da', id, 'participación de miembros del equipo en proyectos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('16f551d4-1179-4fdc-8f76-c3004c905361', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.3', 'PDCA (Do)', false, '0', NULL, 16)
+  ('e33a72b1-0035-49df-b714-bcefed28cd5d', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.3', 'PDCA (Do)', false, '0', NULL, 16)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '7266c09e-8fcf-4ac0-92a9-56c0d5e15082', id, 'Implementar metodología PDCA (nota 0 en auditoría, sin comentario del auditor)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.3'
+  SELECT 'fa9496e7-b454-43c0-b8ec-94c7e63f0f4e', id, 'Implementar metodología PDCA (nota 0 en auditoría, sin comentario del auditor)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('56456f62-dba2-4987-a15e-a9c39c9228e0', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.4', 'Buenas Prácticas (Act)', false, '3', 'Continuar con el programa de buenas prácticas, con enfoque en mejora de KPI o PI relacionado.', 17)
+  ('a98bd87c-fc1d-4ca6-a8a1-2d4ed4a26a73', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.4', 'Buenas Prácticas (Act)', false, '3', 'Continuar con el programa de buenas prácticas, con enfoque en mejora de KPI o PI relacionado.', 17)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '62fc0518-9248-42a6-ba8d-1843f96119cb', id, 'Continuar con el programa de buenas prácticas, con enfoque en mejora de KPI o PI relacionado', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.4'
+  SELECT 'f8aba477-61fd-4ecb-b5c2-2952736f4f66', id, 'Continuar con el programa de buenas prácticas, con enfoque en mejora de KPI o PI relacionado', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('80ce7e10-852c-4e6c-bc7e-1e8758a870f9', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.5', 'GOPs (Act)', false, '3', 'Trabajar adherencia al GOP.', 18)
+  ('54d4eef5-18c2-41e4-94e6-5db385b2d931', 'H1 2026', 'Gestión', 'MANAGEMENT BY OBJECTIVES (MBO)', '4.5', 'GOPs (Act)', false, '3', 'Trabajar adherencia al GOP.', 18)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3ca750dd-590f-4946-84d2-3c116e3dfc44', id, 'Trabajar adherencia al GOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.5'
+  SELECT 'beb1db0e-923b-4f2b-8449-18738f385fc8', id, 'Trabajar adherencia al GOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Gestión' AND numero='4.5'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('a57817f5-4e89-4fca-9e9f-cfbfb561f7ba', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.1', 'PRE RUTA', false, 'N/A', 'SOP: realizar correcciones sobre RACI. Corregir desarrollo para explicar bien el proceso. Sumar diagrama de flujo. Hay matinal todos los dias. OWDs ok. Actualizar cambio de cloudfleet a herramienta propia. TML estan dentro de la meta. Hay registro por chofer x dia en herramienta. Objetivo del estandar es 30min. Ver la posibilidad de comenzar a tomar inicio de TML con registro de asistencia a la matinal.', 1)
+  ('a11f6dd7-c4a7-4e81-b90e-dccea23dea73', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.1', 'PRE RUTA', false, '3', 'SOP: realizar correcciones sobre RACI. Corregir desarrollo para explicar bien el proceso. Sumar diagrama de flujo. Hay matinal todos los dias. OWDs ok. Actualizar cambio de cloudfleet a herramienta propia. TML estan dentro de la meta. Hay registro por chofer x dia en herramienta. Objetivo del estandar es 30min. Ver la posibilidad de comenzar a tomar inicio de TML con registro de asistencia a la matinal.', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4f8e96e7-057c-4810-8866-e65f3d5856fd', id, 'SOP: realizar correcciones sobre RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
+  SELECT '8edfe766-3431-447f-a263-906d1c555a5b', id, 'SOP: realizar correcciones sobre RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '17dbb844-4eff-4884-8d14-a793c54542d0', id, 'Corregir desarrollo para explicar bien el proceso', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
+  SELECT 'd573f248-df37-487b-8e7f-60cbc55f718c', id, 'Corregir desarrollo para explicar bien el proceso', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '80f1afdc-7f8b-4928-8c72-4ba13f93c865', id, 'Sumar diagrama de flujo', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
+  SELECT 'ea33192d-8600-44ab-aa25-a6f70dec16bc', id, 'Sumar diagrama de flujo', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'db4d7093-6f0d-4de5-a19c-9cea4841e6f2', id, 'Actualizar cambio de cloudfleet a herramienta propia', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
+  SELECT '160ff4a2-6208-44cd-be76-063e09283293', id, 'Actualizar cambio de cloudfleet a herramienta propia', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ae3f206e-52a0-488f-b8e3-9e5ab4c54adc', id, 'Ver la posibilidad de comenzar a tomar inicio de TML con registro de asistencia a la matinal', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
+  SELECT '3f043bd8-7299-4483-acf1-a01b80ea1755', id, 'Ver la posibilidad de comenzar a tomar inicio de TML con registro de asistencia a la matinal', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0f521a84-e97a-4ac8-98a1-d51fd0ba078f', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.2', 'EN RUTA', false, 'N/A', 'SOP: Corregir RACI. Sumar diagrama de flujo. OWDs ok. Poseen seguimiento de las rutas con herramienta propia. Siguen adherencia a la secuencia y clickeo en las matinales. Hoy en dia hay objetivo 8 hs. Oportunidad de comenzar a medir desvio sobre tiempo planificado para la ruta asignada y generar PDAs sobre eso. Excelente analisis por PDV.', 2)
+  ('cac6d341-3634-4534-99b5-243640b4a940', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.2', 'EN RUTA', false, '3', 'SOP: Corregir RACI. Sumar diagrama de flujo. OWDs ok. Poseen seguimiento de las rutas con herramienta propia. Siguen adherencia a la secuencia y clickeo en las matinales. Hoy en dia hay objetivo 8 hs. Oportunidad de comenzar a medir desvio sobre tiempo planificado para la ruta asignada y generar PDAs sobre eso. Excelente analisis por PDV.', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c7fe96a7-8dda-4530-ac0a-272dffc19960', id, 'Corregir RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
+  SELECT 'd0b62e43-b4a1-42a2-a282-a5076ff178e3', id, 'Corregir RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c26b6b5b-4859-49c9-bfc5-7cd3a52950c1', id, 'Sumar diagrama de flujo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
+  SELECT '36c4bfef-b83c-4b72-aa2c-4b8db9a4acd0', id, 'Sumar diagrama de flujo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '87c2c029-7ce5-45a4-8d0d-8a67fe775f40', id, 'Oportunidad de comenzar a medir desvio sobre tiempo planificado para la ruta asignada y generar PDAs sobre eso', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
+  SELECT '16bc1402-f3f1-4938-acfd-89586d23c13a', id, 'Oportunidad de comenzar a medir desvio sobre tiempo planificado para la ruta asignada y generar PDAs sobre eso', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c1c4eb13-ef9d-44f8-9a51-d0ed43aa99ca', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.3', 'POST RUTA', false, 'N/A', 'SOP: Corregir RACI. Sumar diagrama de flujo. Dejar solamente tareas del estandar diario del post ruta.Oportunidad de comenzar el TI con geolocalizacion. Mejorar desvios sobre TI.', 3)
+  ('cb90ae93-4161-4e8c-a3e3-3ec1e81b553e', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.3', 'POST RUTA', false, '3', 'SOP: Corregir RACI. Sumar diagrama de flujo. Dejar solamente tareas del estandar diario del post ruta.Oportunidad de comenzar el TI con geolocalizacion. Mejorar desvios sobre TI.', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '83f8162e-3baf-4abf-8042-4cde9715b602', id, 'SOP: corregir RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
+  SELECT 'e1ccea9c-b017-4fed-a187-cefca2fe80f9', id, 'SOP: corregir RACI', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '242a937a-b95a-45a7-8bc6-77080c62d6bb', id, 'SOP: sumar diagrama de flujo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
+  SELECT '5d673f1e-ccc1-4f5e-9192-269f3c7acf8f', id, 'SOP: sumar diagrama de flujo', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5adfe7e6-6355-4cad-8fd8-a387f6aca7f3', id, 'SOP: dejar solamente tareas del estándar diario del post ruta', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
+  SELECT '9500cdc1-886a-493f-bca9-16a1ea6e4c45', id, 'SOP: dejar solamente tareas del estándar diario del post ruta', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '202f5c65-d890-4e2f-b16e-cc9e90b1ea0a', id, 'Comenzar el TI con geolocalización', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
+  SELECT '6475fb1c-d6a0-4384-b7d2-105a5e74b7e8', id, 'Comenzar el TI con geolocalización', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5a20bc76-ba9b-48ce-9b4d-03e533bb6b03', id, 'Mejorar desvíos sobre TI', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
+  SELECT 'cb6180ef-7d4e-4b16-9826-4d68e59527ad', id, 'Mejorar desvíos sobre TI', 5 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('aa1e14b2-869e-417c-864e-f1eecdd7ee72', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.4', 'CALIDAD DE ENTREGA DE LOS PRODUCTOS', false, 'N/A', 'Tienen para reportar las roturas en la workstation.Seguimiento de rotura por SKU, por camion. DQI mal medido. No toman reempaque.', 4)
+  ('d8efbb9c-1322-444c-aaaa-913b1e39c2a5', 'H1 2026', 'Entrega', 'PROCESOS DE EJECUCIÓN DE ENTREGA', '1.4', 'CALIDAD DE ENTREGA DE LOS PRODUCTOS', false, '3', 'Tienen para reportar las roturas en la workstation.Seguimiento de rotura por SKU, por camion. DQI mal medido. No toman reempaque.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '34f21b58-d59f-4e25-8308-7591e0583631', id, 'Corregir medición de DQI: hoy está mal medido, no toman el reempaque', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.4'
+  SELECT '05314b3c-de5b-4689-a163-001ebe38a3ed', id, 'Corregir medición de DQI: hoy está mal medido, no toman el reempaque', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='1.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e9fc334c-770d-4665-bcf3-6d47309be06a', 'H1 2026', 'Entrega', 'EQUIPOS EMPORDERADOS', '2.1', 'VISIBILIDAD DE RESULTADOS', false, 'N/A', 'Poseen visibilidad de resultados en la herramienta. Objetivos y valores reales de los indcadores (Rechazo,, roturas y demas indicadores), compensacion variable (hs extra y bultos entregados). Es individual.', 5)
+  ('bdf2cb9e-f2c1-4d0b-98ea-ceee5cab1ea7', 'H1 2026', 'Entrega', 'EQUIPOS EMPORDERADOS', '2.1', 'VISIBILIDAD DE RESULTADOS', false, '5', 'Poseen visibilidad de resultados en la herramienta. Objetivos y valores reales de los indcadores (Rechazo,, roturas y demas indicadores), compensacion variable (hs extra y bultos entregados). Es individual.', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('d31336cf-c3ec-4844-a187-58bad5c807b1', 'H1 2026', 'Entrega', 'EQUIPOS EMPORDERADOS', '2.2', 'PROCESO DE FEEDBACK', false, 'N/A', NULL, 6)
+  ('b9608253-587f-4fe7-8149-21415efca95a', 'H1 2026', 'Entrega', 'EQUIPOS EMPORDERADOS', '2.2', 'PROCESO DE FEEDBACK', false, '5', NULL, 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c42e11d5-3f87-4327-b4b5-bb5334f812ea', 'H1 2026', 'Entrega', 'EFICIENCIA DE PROCESOS', '3.1', 'IMPACTOS FINANCIEROS Y DE PRODUCTIVIDAD', false, 'N/A', 'Realizan presupuesto, el mismo debe ser aprobado por gerencia. Luego se va midiendo el desvio de los gastos por sobre lo presupuestado. Hay seguimiento dde los motivos de los desvios.Seguir trabajando en seguimiento de costos para reducir los desvios. TLP: 31.07 OB: 73', 7)
+  ('db827919-1bb3-4212-8533-56318d868714', 'H1 2026', 'Entrega', 'EFICIENCIA DE PROCESOS', '3.1', 'IMPACTOS FINANCIEROS Y DE PRODUCTIVIDAD', false, '3', 'Realizan presupuesto, el mismo debe ser aprobado por gerencia. Luego se va midiendo el desvio de los gastos por sobre lo presupuestado. Hay seguimiento dde los motivos de los desvios.Seguir trabajando en seguimiento de costos para reducir los desvios. TLP: 31.07 OB: 73', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3f7c1866-6be0-4fb2-adb0-7dfa4ba86989', id, 'Seguir trabajando en seguimiento de costos para reducir los desvíos (TLP 31.07, objetivo 73)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='3.1'
+  SELECT 'ed7a7056-13c2-4b67-8833-f89863ea6807', id, 'Seguir trabajando en seguimiento de costos para reducir los desvíos (TLP 31.07, objetivo 73)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('bf0b3eb6-583f-4f44-a186-69899cd02a86', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.1', 'CALIDAD DEL SERVICIO AL CLIENTE', false, 'N/A', 'RMD: 4.99. Buen seguimiento del indicador. Seguimiento de detractores, con PDAs. Hay seguimiento de clientes ¨recuperados¨. Sumar tasa de respuesta. Definir SLA para cierre de casos detractores. Realizar SOP.', 8)
+  ('6d5c3c86-bc74-4f85-8127-a62716b23bb5', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.1', 'CALIDAD DEL SERVICIO AL CLIENTE', false, '1', 'RMD: 4.99. Buen seguimiento del indicador. Seguimiento de detractores, con PDAs. Hay seguimiento de clientes ¨recuperados¨. Sumar tasa de respuesta. Definir SLA para cierre de casos detractores. Realizar SOP.', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ff9ab7b7-67a4-445c-83d4-f3197b732a2f', id, 'Sumar tasa de respuesta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
+  SELECT 'ef4a9a13-8a3b-46e8-894f-839b23e7f6f8', id, 'Sumar tasa de respuesta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '50f09f16-328b-40cb-b582-dc7a72b37c0a', id, 'Definir SLA para cierre de casos detractores', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
+  SELECT 'a33f6bea-c065-408e-bd75-23711a3a2249', id, 'Definir SLA para cierre de casos detractores', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bc33177c-c1e4-4ba1-886a-2f9cb06f3dfa', id, 'Realizar SOP', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
+  SELECT 'a95ee08e-9ea0-4290-addb-6a29b64d8b3c', id, 'Realizar SOP', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('465e1f79-4bc9-400f-a6a6-42e3e84e4fec', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.2', 'COMUNICACIÓN AL CLIENTE', false, 'N/A', NULL, 9)
+  ('4b66c637-2844-478d-96e7-69eefcfa8def', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.2', 'COMUNICACIÓN AL CLIENTE', false, '1', NULL, 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('ce8ea090-ff35-4475-bdb6-4f8b492866a6', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.3', 'ENTREGAS INFULL', false, 'N/A', 'SOP rechazo y modulaciones ok. OWDs ok. Ofrecen distintos metodos de pago. Excelente seguimiento del rechazo. Por chofer, motivo, SKU, top clientes. Excelente gestion.', 10)
+  ('c109edce-adaf-4491-b35c-1c041c6aa3cc', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.3', 'ENTREGAS INFULL', false, '5', 'SOP rechazo y modulaciones ok. OWDs ok. Ofrecen distintos metodos de pago. Excelente seguimiento del rechazo. Por chofer, motivo, SKU, top clientes. Excelente gestion.', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('26e5a6c2-6f7a-418f-aaa4-d42d37d09ec8', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.4', 'ENTREGAS ON TIME', false, 'N/A', 'No hay ruteo centralizado. Tienen reunion semanal con su ruteador.Hay rutina para relevamiento de VH (91,2%). Hay detalle de avances por promotor. Oportunidad de comenzar a medir adherencia a VH. On time fuera de la meta (98,64 % obj 99%).', 11)
+  ('2a922d45-62c3-4f34-8b85-704f984d0db9', 'H1 2026', 'Entrega', 'SATISFACCIÓN DEL CLIENTE', '4.4', 'ENTREGAS ON TIME', false, '1', 'No hay ruteo centralizado. Tienen reunion semanal con su ruteador.Hay rutina para relevamiento de VH (91,2%). Hay detalle de avances por promotor. Oportunidad de comenzar a medir adherencia a VH. On time fuera de la meta (98,64 % obj 99%).', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4d89f554-cac9-4c95-8503-207e6a99f3f5', id, 'Comenzar a medir adherencia a ventanas horarias (VH)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.4'
+  SELECT '77a7393d-8108-423e-bec7-397c835c8b6e', id, 'Comenzar a medir adherencia a ventanas horarias (VH)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e26ec82f-c325-4a6d-80b9-9dca164f457f', id, 'Mejorar On Time: 98,64% actual vs objetivo 99%', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.4'
+  SELECT '59829790-87c8-43b5-af7c-52768e2ea166', id, 'Mejorar On Time: 98,64% actual vs objetivo 99%', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9b33c8ec-2db5-4dc4-bfd3-5bad953f35cf', 'H1 2026', 'Entrega', 'MEJORAS DE ENTREGA', '5.1', 'NPS DE ENTREGA', false, 'N/A', 'NPS: 83,2. 11 detractores de entrega. Buen analisis de detractores. Reforzar seguimiento y planes de accion para con los mismos.', 12)
+  ('8efff4f3-b45f-4a88-99d8-ae4339336414', 'H1 2026', 'Entrega', 'MEJORAS DE ENTREGA', '5.1', 'NPS DE ENTREGA', false, '3', 'NPS: 83,2. 11 detractores de entrega. Buen analisis de detractores. Reforzar seguimiento y planes de accion para con los mismos.', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6ba08c3d-1535-423f-ac00-0123326506cd', id, 'Reforzar seguimiento y planes de acción sobre los detractores (NPS 83,2 — 11 detractores de entrega)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.1'
+  SELECT '61943203-702f-4afa-a1ee-7164c40348b3', id, 'Reforzar seguimiento y planes de acción sobre los detractores (NPS 83,2 — 11 detractores de entrega)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('9011f783-433c-4e64-ba00-676eec1449a4', 'H1 2026', 'Entrega', 'MEJORAS DE ENTREGA', '5.2', 'BENCHMARK', false, 'N/A', 'Realizaron Bench con Palco un dia antes de la auditoria.. Vieron: TLP, rechazos, RMD. Para H2 mostrar proceso documentado y resultados. Oportunidad de realizar bench interno.', 13)
+  ('2876178b-9f4b-4a25-ace5-2374f0aecd4b', 'H1 2026', 'Entrega', 'MEJORAS DE ENTREGA', '5.2', 'BENCHMARK', false, '1', 'Realizaron Bench con Palco un dia antes de la auditoria.. Vieron: TLP, rechazos, RMD. Para H2 mostrar proceso documentado y resultados. Oportunidad de realizar bench interno.', 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '97dc4087-009a-440d-90dc-60b73412a6be', id, 'Para H2 mostrar proceso de benchmark documentado y resultados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.2'
+  SELECT 'f4effac0-5d42-496d-b3b2-819a27098ee6', id, 'Para H2 mostrar proceso de benchmark documentado y resultados', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '31393294-966e-421d-8423-9eb664060bad', id, 'Realizar bench interno', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.2'
+  SELECT 'c574e8a4-8ba0-4545-b8d5-cbb2679cc342', id, 'Realizar bench interno', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Entrega' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c1e94fd3-db90-4e75-adb9-6ff102dd708c', 'H1 2026', 'Flota', 'COMPLIANCE', '1.1', 'Documentos / Habilitaciones', true, '3', '11 camiones T2. 2 AE. Oportunidad de generar tablero como maestro de flota con todos los camiones y los requisitos. Se sigue toda la documentacion en el apartado de requisitos legales, hay avisos de proximos a vencer y existe proceso para bloqueo de los vehiculos en caso de que no cumpla.', 1)
+  ('c6fb0689-052c-4d7d-a51c-197fb37945a6', 'H1 2026', 'Flota', 'COMPLIANCE', '1.1', 'Documentos / Habilitaciones', true, '3', '11 camiones T2. 2 AE. Oportunidad de generar tablero como maestro de flota con todos los camiones y los requisitos. Se sigue toda la documentacion en el apartado de requisitos legales, hay avisos de proximos a vencer y existe proceso para bloqueo de los vehiculos en caso de que no cumpla.', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b6b544c2-2d4f-4d88-932a-7a1098d76152', id, 'Oportunidad de generar tablero como maestro de flota con todos los camiones y los requisitos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.1'
+  SELECT 'c96cb6d5-39ae-4088-93f9-9b2eba089358', id, 'Oportunidad de generar tablero como maestro de flota con todos los camiones y los requisitos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('042809c6-4a4d-416d-bef5-f3d931cc5a9b', 'H1 2026', 'Flota', 'COMPLIANCE', '1.2', 'Estándares de Flota', true, '3', 'Estandar de camiones ok. Tablero de estandar ok. Se sigue % de cumplimiento por camion. Diferenciar entre mandatorias y excelencia. Sumar OPLs de camiones y AE.', 2)
+  ('c8de2f86-6ac3-4e29-8532-0367fa377e4d', 'H1 2026', 'Flota', 'COMPLIANCE', '1.2', 'Estándares de Flota', true, '3', 'Estandar de camiones ok. Tablero de estandar ok. Se sigue % de cumplimiento por camion. Diferenciar entre mandatorias y excelencia. Sumar OPLs de camiones y AE.', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1d4416f0-add4-499f-aede-5df7f60575d2', id, 'Diferenciar entre mandatorias y excelencia', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.2'
+  SELECT '32b9e896-7079-4444-b157-081ae97b9bf3', id, 'Diferenciar entre mandatorias y excelencia', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c98e571a-0861-46d5-ae7b-aa6d316ba93d', id, 'Sumar OPLs de camiones y AE', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.2'
+  SELECT 'e0f9a769-cc58-4132-b272-b9dc4127d234', id, 'Sumar OPLs de camiones y AE', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('17015db2-856e-4265-9346-dd7cceefce1a', 'H1 2026', 'Flota', 'COMPLIANCE', '1.3', 'Checklist de Flota', true, '3', 'Check digital.Ok para camiones y AE. Se divide por secotres (carroceria, motor, frenos, luces, neumaticos, seguridad. etc). Define cuales son criticos y cuales no. Buen seguimiento de items que dan nook. Oportunidad de realizar analisis aperturado de las fallas y generar PDAs. Adherencia al check se sigue en la reunion de logisitca, oportunidad de sumarlo a esta solapa. Se sigue KPI de tiempo: trabajar en los desvios. Oportunidad de comenzar a seguir KPI de calidad.', 3)
+  ('b2deed26-04a8-4c17-b8a0-ca70b57cb653', 'H1 2026', 'Flota', 'COMPLIANCE', '1.3', 'Checklist de Flota', true, '3', 'Check digital.Ok para camiones y AE. Se divide por secotres (carroceria, motor, frenos, luces, neumaticos, seguridad. etc). Define cuales son criticos y cuales no. Buen seguimiento de items que dan nook. Oportunidad de realizar analisis aperturado de las fallas y generar PDAs. Adherencia al check se sigue en la reunion de logisitca, oportunidad de sumarlo a esta solapa. Se sigue KPI de tiempo: trabajar en los desvios. Oportunidad de comenzar a seguir KPI de calidad.', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ac2395d9-ecdc-4d0a-b8b4-0f5576fcaa2d', id, 'Oportunidad de realizar analisis aperturado de las fallas y generar PDAs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.3'
+  SELECT 'ec3b8b0a-dddf-4987-820a-87656c4f7097', id, 'Oportunidad de realizar analisis aperturado de las fallas y generar PDAs', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a752de8b-8c2d-426d-a898-e4eed50374ec', id, 'Oportunidad de comenzar a seguir KPI de calidad', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.3'
+  SELECT 'eebd515d-5015-43bf-8aeb-1373b6482d69', id, 'Oportunidad de comenzar a seguir KPI de calidad', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('601627b6-1e3f-4876-b8c0-79d0df49d179', 'H1 2026', 'Flota', 'COMPLIANCE', '1.4', 'Disposición de residuos de Mantenimiento', false, '0', 'Generar SOP.de disposicion de residuos. Cerrar con empresa para disposicion de neumaticos para el futuro y sumar certificados al SOP, mismo para aceite. Generar seguimiento historico para cuando comiencen.', 4)
+  ('3cd07afe-d412-4368-95b7-92b6c7c792fc', 'H1 2026', 'Flota', 'COMPLIANCE', '1.4', 'Disposición de residuos de Mantenimiento', false, '0', 'Generar SOP.de disposicion de residuos. Cerrar con empresa para disposicion de neumaticos para el futuro y sumar certificados al SOP, mismo para aceite. Generar seguimiento historico para cuando comiencen.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '87240cd1-eeb9-4495-b592-88ace5df93e2', id, 'Generar SOP de disposición de residuos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
+  SELECT 'be88a37f-cb51-49d2-ab5b-29ef5c514f63', id, 'Generar SOP de disposición de residuos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ad944bb3-3476-4955-be2a-cb6589439989', id, 'Cerrar con empresa la disposición de neumáticos a futuro y sumar certificados al SOP (ídem aceite)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
+  SELECT '4ca93552-6288-4def-8747-b26cd93d7701', id, 'Cerrar con empresa la disposición de neumáticos a futuro y sumar certificados al SOP (ídem aceite)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1086e096-0540-44b2-8582-cffd418ecdef', id, 'Generar seguimiento histórico para cuando comiencen', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
+  SELECT '67dc2465-dd95-4f4a-9f20-935c70313a2e', id, 'Generar seguimiento histórico para cuando comiencen', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='1.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('04254661-32ba-4870-9569-becf07ce6576', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.1', 'Clientes de Flota', false, '5', 'Se sigue disponibilidad de flota x mes x dia. Todo gestionado por la herramienta propia. Poseen reunion semanal con el ruteador donde ven disponibilidad de flota, consumo de combustible, motivos por los cuales los camiones estan parados.', 5)
+  ('93d13167-a10f-4e82-b1ce-1c2e63578af1', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.1', 'Clientes de Flota', false, '5', 'Se sigue disponibilidad de flota x mes x dia. Todo gestionado por la herramienta propia. Poseen reunion semanal con el ruteador donde ven disponibilidad de flota, consumo de combustible, motivos por los cuales los camiones estan parados.', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('92547327-8985-4d23-adbe-722b2e19f437', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.2', 'Mantenimiento Preventivo', false, '3', 'Cada camion y AE tiene su plan de mantenimiento cargado y este se gestiona desde el tablero principal ( hay avisos de services pendientes de menos de 30 dias). Hay seguimiento de los mantenimientos que se realizaron. Luego se sigue por cada mantenimiento los trabajos realizados con sus respectivos valores. Oportunidad de comenzar a seguir KPI de % de cumplimiento de plan de mantenimientos preventivos. Mant proactivos ok.', 6)
+  ('aa33c432-1317-4845-b57c-3a0446afdd5a', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.2', 'Mantenimiento Preventivo', false, '3', 'Cada camion y AE tiene su plan de mantenimiento cargado y este se gestiona desde el tablero principal ( hay avisos de services pendientes de menos de 30 dias). Hay seguimiento de los mantenimientos que se realizaron. Luego se sigue por cada mantenimiento los trabajos realizados con sus respectivos valores. Oportunidad de comenzar a seguir KPI de % de cumplimiento de plan de mantenimientos preventivos. Mant proactivos ok.', 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '70224e70-ad59-4b85-9e07-a158bfde486f', id, 'Oportunidad de comenzar a seguir KPI de % de cumplimiento de plan de mantenimientos preventivos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.2'
+  SELECT '949b1583-b49c-4bac-acc0-24603a3260da', id, 'Oportunidad de comenzar a seguir KPI de % de cumplimiento de plan de mantenimientos preventivos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('fd468e2c-2878-4cb5-8b76-3f09863a24e2', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.3', 'Políticas y Gestión de Piezas de Inventario', false, '1', 'Generar SOP. Poseen inventario, recien mes de julio es el primer conteo de stock que realizan. Generar rutina de conteo de stock, comenzar a seguir un KPI y generar PDAs.', 7)
+  ('21b5189b-73ee-4902-b9df-84e352827245', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.3', 'Políticas y Gestión de Piezas de Inventario', false, '1', 'Generar SOP. Poseen inventario, recien mes de julio es el primer conteo de stock que realizan. Generar rutina de conteo de stock, comenzar a seguir un KPI y generar PDAs.', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a022d0a5-620e-4942-8723-4cbd38021fa6', id, 'Generar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.3'
+  SELECT 'd0e1cb6b-01e9-42d2-b397-8510a4c36873', id, 'Generar SOP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '01b16dff-6e0a-442b-b57b-aaf004a33243', id, 'Generar rutina de conteo de stock, comenzar a seguir un KPI y generar PDAs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.3'
+  SELECT '5873bad2-e0e6-45be-942a-f21911e14b8f', id, 'Generar rutina de conteo de stock, comenzar a seguir un KPI y generar PDAs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('263eed70-b347-4f5a-9827-adea2e908a18', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.4', 'Mantenimiento Correctivo', false, '1', 'Hay seguimiento de correctivos externos, falta realizar seguimiento de los internos (no estaban mapeados los cambios de foco por ej.) Oportunidad de comenzar a mapearlos cuando un check sale nook, sumar la OT para cerrar el circulo con el descuento en el stock. Oportunidad de generar analisis de incidencias aperturado y tomar acciones. Comenzar a seguir KPI y generar PDA', 8)
+  ('16860f43-7c24-4456-bfb5-e0e7c0ca28b0', 'H1 2026', 'Flota', 'CONFIABILIDAD DE LA FLOTA', '2.4', 'Mantenimiento Correctivo', false, '1', 'Hay seguimiento de correctivos externos, falta realizar seguimiento de los internos (no estaban mapeados los cambios de foco por ej.) Oportunidad de comenzar a mapearlos cuando un check sale nook, sumar la OT para cerrar el circulo con el descuento en el stock. Oportunidad de generar analisis de incidencias aperturado y tomar acciones. Comenzar a seguir KPI y generar PDA', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a76a025c-2476-45a8-bf8a-74ed2783a7fd', id, 'Oportunidad de generar analisis de incidencias aperturado y tomar acciones', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.4'
+  SELECT '18c0af66-88a7-44ca-ade6-1043e38c747e', id, 'Oportunidad de generar analisis de incidencias aperturado y tomar acciones', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '775def9b-4179-4e10-9f96-c5eca9e52681', id, 'Comenzar a seguir KPI y generar PDA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.4'
+  SELECT 'ba3d5ce1-82f5-4777-9f84-cf003311caea', id, 'Comenzar a seguir KPI y generar PDA', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('fdc43cb2-70cb-4316-867d-4ef2c0993d74', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.1', 'Reuniones semanales', false, '1', 'Hay reunion semanal de flota. Realizar ciclo de gestion de flota (desc del negocio y mapeo de procesos). Oportunidad de generar seguimiento de SLAs, KPI y generar PDAs.', 9)
+  ('a0c60371-99b4-40c7-a177-759c421f6b59', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.1', 'Reuniones semanales', false, '1', 'Hay reunion semanal de flota. Realizar ciclo de gestion de flota (desc del negocio y mapeo de procesos). Oportunidad de generar seguimiento de SLAs, KPI y generar PDAs.', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '859bb975-e114-4053-92b9-e0cc91511be0', id, 'Realizar ciclo de gestion de flota (desc del negocio y mapeo de procesos)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.1'
+  SELECT '2239eed9-c5b2-4efd-9f0e-01b6e433cb8b', id, 'Realizar ciclo de gestion de flota (desc del negocio y mapeo de procesos)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f02b0b2c-9f73-4c98-8c34-b389f9bd6bfd', id, 'Oportunidad de generar seguimiento de SLAs, KPI y generar PDAs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.1'
+  SELECT '3d4382c3-199f-4c60-898f-a4a4c479d872', id, 'Oportunidad de generar seguimiento de SLAs, KPI y generar PDAs', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('537cbfdb-3c46-4cff-bef3-defaa455db02', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.2', 'Presupuesto de Gastos de Flota', false, '3', 'Seguimiento de gastos vs presupuestado. Motivos ante desvios. Oportunidad de segregar en motivos (correctivos, preventivos).', 10)
+  ('a7e00cb6-34d6-4734-848c-970c1090b71e', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.2', 'Presupuesto de Gastos de Flota', false, '3', 'Seguimiento de gastos vs presupuestado. Motivos ante desvios. Oportunidad de segregar en motivos (correctivos, preventivos).', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bb3f18f2-7f6f-4145-875c-ffeb348f10ed', id, 'Oportunidad de segregar en motivos (correctivos, preventivos)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.2'
+  SELECT 'e0a44007-a55a-47ca-95b5-c860c4298579', id, 'Oportunidad de segregar en motivos (correctivos, preventivos)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('31c5d743-b60a-423a-9f3e-757e7b60b220', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.3', 'Consumo de Combustible', false, '3', 'Beun seguimiento. Se sigue rendimiento km/l de cada camion y generan PDAs. Colocaron limitador de velocidad (julio) por lo que se esta viendo tendencia positiva en los consumos (revisar en H2). Realizar SOP.', 11)
+  ('d95a1d59-7acf-4503-842d-139c65a31284', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.3', 'Consumo de Combustible', false, '3', 'Beun seguimiento. Se sigue rendimiento km/l de cada camion y generan PDAs. Colocaron limitador de velocidad (julio) por lo que se esta viendo tendencia positiva en los consumos (revisar en H2). Realizar SOP.', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '251a70d0-d9ce-4b6e-85ee-1bf9855a1a20', id, 'Realizar SOP de consumo de combustible', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.3'
+  SELECT 'fe10dcce-8775-47cb-ad44-2ff4de89c02c', id, 'Realizar SOP de consumo de combustible', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c05ee854-ce49-4429-afed-a177bb47e3a0', id, 'Revisar en H2 la tendencia de consumos tras el limitador de velocidad (colocado en julio)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.3'
+  SELECT '9428a6df-8d94-4296-9fa4-014d23ba7260', id, 'Revisar en H2 la tendencia de consumos tras el limitador de velocidad (colocado en julio)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('2f9236c4-1dc9-4e05-9a82-a0fdd6fe9f69', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.4', 'Políticas y Gestión de Neumáticos', false, '1', 'Buen seguimiento por la herramienta. Poseen marca de fuego. Medicion de mm y calibracion mensual. Comenzar a seguir KPI de consumo de neumaticos. Realizar SOP.', 12)
+  ('c56dbf2d-bfc2-4a4b-9a76-d9f4833885d3', 'H1 2026', 'Flota', 'GESTIÓN DE FLOTA', '3.4', 'Políticas y Gestión de Neumáticos', false, '1', 'Buen seguimiento por la herramienta. Poseen marca de fuego. Medicion de mm y calibracion mensual. Comenzar a seguir KPI de consumo de neumaticos. Realizar SOP.', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '769cc6cb-ab77-4b59-89b1-359b0bff4da4', id, 'Comenzar a seguir KPI de consumo de neumaticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.4'
+  SELECT '3387b906-def0-477e-b236-2a410e2bee35', id, 'Comenzar a seguir KPI de consumo de neumaticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '23b5823f-d8de-4638-912f-6cb9fd29b80f', id, 'Realizar SOP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.4'
+  SELECT '26dfc4aa-ddd5-4419-8a33-fc2ad8257984', id, 'Realizar SOP', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('bb3af8b3-92c9-4d1d-87b8-a5c7ef659196', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.1', 'ATO Formal Program & Cleaning Area Autonomous team operation', false, '0', NULL, 13)
+  ('52242887-0eca-433b-b943-5a3554206670', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.1', 'ATO Formal Program & Cleaning Area Autonomous team operation', false, '0', NULL, 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('354716d4-4fd1-4816-9672-82f0ba2ca76e', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.2', 'Maintenance improvements & results', false, '1', 'Generar analisi aperturado de datos historicos. Generar piramide de mantenimientos.', 14)
+  ('17f9156e-1c5d-4d50-a776-43b606815279', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.2', 'Maintenance improvements & results', false, '1', 'Generar analisi aperturado de datos historicos. Generar piramide de mantenimientos.', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4393736f-f0fb-4922-b98b-8162f6a9bc57', id, 'Generar analisi aperturado de datos historicos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='4.2'
+  SELECT 'c150b7a5-3417-4c6a-994c-005fb176b461', id, 'Generar analisi aperturado de datos historicos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '40ebf2de-b24a-4f08-9bbf-7c5cea3d91d7', id, 'Generar piramide de mantenimientos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='4.2'
+  SELECT 'b0a0f4b8-7ee7-48a4-a880-d739405a909c', id, 'Generar piramide de mantenimientos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Flota' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('619feb6c-bfbe-4f8b-92d9-7d5eac738ccc', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.3', 'Sustainability Goals', false, '0', NULL, 15)
+  ('441442aa-61f6-4af6-b4b6-56db96cc9e49', 'H1 2026', 'Flota', 'AUTONOMÍA Y MEJORAS DE LA FLOTA', '4.3', 'Sustainability Goals', false, '0', NULL, 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c162b013-3827-4599-b909-12ea000d4820', 'H1 2026', 'Almacén', 'LAYOUT & CAPACIDAD', '1.1', 'Optimización de Layout', true, '3', 'Oportunidad: continuar trabajando en layout, carteleria, responsables por area, sendas, zona segura de chofer. Foco en 5s en distintas zonas del almacen (ejemplo parque de envases, carga y descarga). Seguridad en clasificacion de envases Continuar trabajando en medicion de adherencia al ABC', 1)
+  ('a6c6b203-3e28-4758-90ff-fe585490827c', 'H1 2026', 'Almacén', 'LAYOUT & CAPACIDAD', '1.1', 'Optimización de Layout', true, '3', 'Oportunidad: continuar trabajando en layout, carteleria, responsables por area, sendas, zona segura de chofer. Foco en 5s en distintas zonas del almacen (ejemplo parque de envases, carga y descarga). Seguridad en clasificacion de envases Continuar trabajando en medicion de adherencia al ABC', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'eb16e9e9-fb86-4061-9fed-d207db04f14e', id, 'Continuar trabajando en layout: cartelería, responsables por área, sendas, zona segura de chofer', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
+  SELECT '23e8c161-c043-4376-a219-25527fb761a7', id, 'Continuar trabajando en layout: cartelería, responsables por área, sendas, zona segura de chofer', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '97d20b30-a6ec-447f-9e35-4975474b9e25', id, 'Foco en 5S en distintas zonas del almacén (ej: parque de envases, carga y descarga)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
+  SELECT 'de3d57f5-e630-489e-a830-2e86e1c83a4d', id, 'Foco en 5S en distintas zonas del almacén (ej: parque de envases, carga y descarga)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b5cd0ba9-b054-47a2-aa48-ea8cc8a8e560', id, 'Seguridad en clasificación de envases', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
+  SELECT 'ab85ab62-3803-43a6-8fea-62c50c63241c', id, 'Seguridad en clasificación de envases', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b4c9d6aa-156b-4f0d-8f9b-60c76c528d3c', id, 'Continuar trabajando en medición de adherencia al ABC', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
+  SELECT 'ba4f7353-a5f1-4630-b82c-09c640cacaa2', id, 'Continuar trabajando en medición de adherencia al ABC', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('3052ba17-9363-49c4-a146-d0f0ca71491f', 'H1 2026', 'Almacén', 'LAYOUT & CAPACIDAD', '1.2', 'Gestión de la Capacidad', false, '3', 'Revisar calculo de densidad', 2)
+  ('1a7c7399-6269-4fb2-9df8-1b15de8e7b2a', 'H1 2026', 'Almacén', 'LAYOUT & CAPACIDAD', '1.2', 'Gestión de la Capacidad', false, '3', 'Revisar calculo de densidad', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '2d7ae7d5-9494-4056-b6a1-947107869594', id, 'Revisar calculo de densidad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.2'
+  SELECT '5b94ef93-8c29-424b-bdd4-82ab6e3e2a48', id, 'Revisar calculo de densidad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('3c320169-f1ef-43ea-9ce6-cee6f7165aad', 'H1 2026', 'Almacén', 'CALIDAD', '2.1', 'Fundamentos de la Calidad', true, '1', 'Oportunidad: Foco en analisis de gestion de plagas, mitigacion de las ocurrencias y solidas rutinas de limpieza Continuar trabajando en estaciones de limpieza dentro del almacen y en la disposicion finalo de residuos', 3)
+  ('5a280286-ed44-403f-9830-49409b6f8a29', 'H1 2026', 'Almacén', 'CALIDAD', '2.1', 'Fundamentos de la Calidad', true, '1', 'Oportunidad: Foco en analisis de gestion de plagas, mitigacion de las ocurrencias y solidas rutinas de limpieza Continuar trabajando en estaciones de limpieza dentro del almacen y en la disposicion finalo de residuos', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8b677b19-ee47-474e-b956-7e1f2e9aa1d5', id, 'Foco en análisis de gestión de plagas, mitigación de las ocurrencias y sólidas rutinas de limpieza', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.1'
+  SELECT 'b147640d-4a1e-49ed-a399-481759ed2d8a', id, 'Foco en análisis de gestión de plagas, mitigación de las ocurrencias y sólidas rutinas de limpieza', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bcbe7457-0a76-4ac7-82c9-4df11027f1b5', id, 'Continuar trabajando en estaciones de limpieza dentro del almacén y en la disposición final de residuos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.1'
+  SELECT 'f0b5902b-b665-4f5a-9328-fc0d582b3b4d', id, 'Continuar trabajando en estaciones de limpieza dentro del almacén y en la disposición final de residuos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('935e37c4-2180-4028-ac26-6ff6089ecfdf', 'H1 2026', 'Almacén', 'CALIDAD', '2.2', 'Políticas de Calidad', false, '1', 'Oportunidad: continuar trabajando en PRI y reempaque (teniendo en cuenta entandarizacion de las zonas) Foco en ambas estaciones de trabajo, asi como tambien considerar zona de derrame (con responsables, QR del SOP, zona cerrada, carteleria, etc)', 4)
+  ('1f1a20ea-128a-401f-bc42-a0071bedd25f', 'H1 2026', 'Almacén', 'CALIDAD', '2.2', 'Políticas de Calidad', false, '1', 'Oportunidad: continuar trabajando en PRI y reempaque (teniendo en cuenta entandarizacion de las zonas) Foco en ambas estaciones de trabajo, asi como tambien considerar zona de derrame (con responsables, QR del SOP, zona cerrada, carteleria, etc)', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1b0a5230-f7c8-4e2d-8e0e-4f8ae263000f', id, 'Continuar trabajando en PRI y reempaque (estandarización de las zonas)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.2'
+  SELECT 'c3101073-43be-4bee-a703-611bad9f292c', id, 'Continuar trabajando en PRI y reempaque (estandarización de las zonas)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a583cefc-4113-4372-ba6f-ea921c94601f', id, 'Foco en ambas estaciones de trabajo y considerar zona de derrame (responsables, QR del SOP, zona cerrada, cartelería, etc.)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.2'
+  SELECT '86335114-3aa1-4df4-b984-25205926664f', id, 'Foco en ambas estaciones de trabajo y considerar zona de derrame (responsables, QR del SOP, zona cerrada, cartelería, etc.)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('39dd0437-db75-4304-a507-5c9764a88b72', 'H1 2026', 'Almacén', 'CALIDAD', '2.3', 'Gestión de Frescura', false, '3', 'Buen analisis de frescura, continuar trabajando en acciones por frescura', 5)
+  ('5f9f2a23-12f8-4ea6-b899-8ac62db1f9e5', 'H1 2026', 'Almacén', 'CALIDAD', '2.3', 'Gestión de Frescura', false, '3', 'Buen analisis de frescura, continuar trabajando en acciones por frescura', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ed626f60-510b-4f04-b2c9-07bd39f67441', id, 'Continuar trabajando en acciones por frescura', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.3'
+  SELECT '9b9508e0-1540-421c-975e-142560e985ac', id, 'Continuar trabajando en acciones por frescura', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('152d4f76-7023-4567-bccd-e95c7946f697', 'H1 2026', 'Almacén', 'CALIDAD', '2.4', 'Rutinas de Calidad de Packaging', false, '1', 'Oportunidad: Foco en seguimiento de tickets de mercosur pampeana', 6)
+  ('8016ad29-822e-43c3-abcf-2a5c9e06bf39', 'H1 2026', 'Almacén', 'CALIDAD', '2.4', 'Rutinas de Calidad de Packaging', false, '1', 'Oportunidad: Foco en seguimiento de tickets de mercosur pampeana', 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '04b11c82-4c81-42c2-b15f-be26946da91d', id, 'Foco en seguimiento de tickets de mercosur pampeana', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.4'
+  SELECT 'f8c3a236-7936-4ce8-8f1d-0e63fd942b6d', id, 'Foco en seguimiento de tickets de mercosur pampeana', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('1c3b79c0-6a90-4551-975f-132e674b3253', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.1', 'Proceso de Conteo y Resultados de Inventario', true, '3', 'Realizan conteos diarios Foco en correccion del indicador diferencia de inventario (contemplar faltantes de planta) Continuar trabajando en PDA ante desvios de diferencias Revisar ajustes', 7)
+  ('a5059dfe-ce59-4d0b-9fda-191c728c3fbc', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.1', 'Proceso de Conteo y Resultados de Inventario', true, '3', 'Realizan conteos diarios Foco en correccion del indicador diferencia de inventario (contemplar faltantes de planta) Continuar trabajando en PDA ante desvios de diferencias Revisar ajustes', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'c21e731b-0439-4e87-9228-d60409265ad1', id, 'Corregir el indicador de diferencia de inventario (contemplar faltantes de planta)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
+  SELECT 'd2467e42-12de-444d-88c7-f5fb1b44f56c', id, 'Corregir el indicador de diferencia de inventario (contemplar faltantes de planta)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b93d0c2a-b558-441d-aab6-698092938b49', id, 'Continuar trabajando en PDA ante desvíos de diferencias', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
+  SELECT 'eb0b73fb-c8b2-4988-aad2-f79f26435795', id, 'Continuar trabajando en PDA ante desvíos de diferencias', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '3cf67c8b-f405-4ebd-88fc-12f361a9c913', id, 'Revisar ajustes', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
+  SELECT '2ce58966-de72-42db-b7a0-3337ac342c00', id, 'Revisar ajustes', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('10c58ddd-b4f8-46f0-9678-5afbb5423d03', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.2', 'Trazabilidad del Producto', false, '5', 'Ok, cuentan con WMS y SOPs detallados y actualizados', 8)
+  ('f8a7b956-365c-4138-bfec-35f5e7fcf8a2', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.2', 'Trazabilidad del Producto', false, '5', 'Ok, cuentan con WMS y SOPs detallados y actualizados', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('1d46aa1c-53fc-43ee-a4a9-2b9550bc5e60', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.3', 'Gestión de Activos', false, '3', 'Oportunidad: continuar trabajando en el seguimiento del DS de envases Continuar trabajando en la recaudacion de informacion para el proceso de clasificacion de envases y % de descarte del mismo Foco en acciones y revision del valor objetivo para dicha productividad', 9)
+  ('a19c43cf-af3a-4484-a210-f5ec4fc687d1', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.3', 'Gestión de Activos', false, '3', 'Oportunidad: continuar trabajando en el seguimiento del DS de envases Continuar trabajando en la recaudacion de informacion para el proceso de clasificacion de envases y % de descarte del mismo Foco en acciones y revision del valor objetivo para dicha productividad', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '97276b79-3b8d-4503-8be6-e487d8427b41', id, 'Continuar el seguimiento del DS de envases', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
+  SELECT 'ecdb754e-49e4-43c2-b50a-ee2f9bb7aa2d', id, 'Continuar el seguimiento del DS de envases', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0811127b-d184-4e64-93d9-6a13f30680d0', id, 'Continuar la recolección de información para clasificación de envases y % de descarte', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
+  SELECT 'ecab19cc-d19b-4660-a3b6-c257004fc62e', id, 'Continuar la recolección de información para clasificación de envases y % de descarte', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '2472fab9-651d-44a2-8bf9-0e9828be6234', id, 'Foco en acciones y revisión del valor objetivo para dicha productividad', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
+  SELECT 'a2529ef4-bb80-42de-8d5e-541ddf83719d', id, 'Foco en acciones y revisión del valor objetivo para dicha productividad', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('4af30e0d-dd5b-49e9-8fb4-d1d72082e962', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.4', 'Registro y Prevención de Pérdidas', true, '1', 'Oportunidad: continuar trabajando en el analisis de indicadores (WQI: CORREGIR INDICADOR teniendo en cuenta volumen reempacado) Foco en seguimiento de SCL y FGLI. Definir acciones en PDA', 10)
+  ('129d3293-c85d-49c7-9ba4-31dc433ddaf6', 'H1 2026', 'Almacén', 'GESTIÓN DE INVENTARIO', '3.4', 'Registro y Prevención de Pérdidas', true, '1', 'Oportunidad: continuar trabajando en el analisis de indicadores (WQI: CORREGIR INDICADOR teniendo en cuenta volumen reempacado) Foco en seguimiento de SCL y FGLI. Definir acciones en PDA', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '80ba8ce0-12af-4b6a-b727-88a2f64a429b', id, 'Corregir indicador WQI teniendo en cuenta el volumen reempacado', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
+  SELECT 'feeb4289-28f7-4f5d-bf97-340f7454dac3', id, 'Corregir indicador WQI teniendo en cuenta el volumen reempacado', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6fa51f54-8672-463f-a547-9c2b5da8df4c', id, 'Foco en seguimiento de SCL y FGLI', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
+  SELECT '5d23821b-5fcd-4d0b-90ad-7cb48464fd04', id, 'Foco en seguimiento de SCL y FGLI', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b5da54c9-42fd-4b5b-8794-618fa720dd70', id, 'Definir acciones en PDA', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
+  SELECT '1a9ea11e-11b1-45ee-869c-68778760045f', id, 'Definir acciones en PDA', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('289d12bd-7a83-4a38-8b22-ecd779caa868', 'H1 2026', 'Almacén', 'PICKING', '4.1', 'Proceso de Picking', false, '5', 'Ok, cuentan con SOP definido y se realizan OWDs. Controlan la carga y ven como afectan los errores al rechazo.', 11)
+  ('d8536de6-e198-468e-ad8c-12aaa44836b7', 'H1 2026', 'Almacén', 'PICKING', '4.1', 'Proceso de Picking', false, '5', 'Ok, cuentan con SOP definido y se realizan OWDs. Controlan la carga y ven como afectan los errores al rechazo.', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('8573399c-72f5-4cc6-a1bf-1e012f8e807e', 'H1 2026', 'Almacén', 'PICKING', '4.2', 'Reposición del Área de Picking', false, '3', 'Oportunidad: continuar trabajando en el analisis del PI teniendo en cuenta el exceso de reabastecimientos. Revisar si tenemos la cantidad de pallets necesarios para el volumen de picking diario', 12)
+  ('8eca7f9d-e3dc-4321-a3bf-2533be198fce', 'H1 2026', 'Almacén', 'PICKING', '4.2', 'Reposición del Área de Picking', false, '3', 'Oportunidad: continuar trabajando en el analisis del PI teniendo en cuenta el exceso de reabastecimientos. Revisar si tenemos la cantidad de pallets necesarios para el volumen de picking diario', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1c2ce05c-b622-4f1f-bd12-036899184f15', id, 'continuar trabajando en el analisis del PI teniendo en cuenta el exceso de reabastecimientos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.2'
+  SELECT '810c00f3-be80-43bf-a07b-304b8a1e0a75', id, 'continuar trabajando en el analisis del PI teniendo en cuenta el exceso de reabastecimientos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bde588a5-7ce0-4a57-a7f6-766f897ebff2', id, 'Revisar si tenemos la cantidad de pallets necesarios para el volumen de picking diario', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.2'
+  SELECT '62dd8c9d-ab1f-480d-ba58-ca166b3d5a4d', id, 'Revisar si tenemos la cantidad de pallets necesarios para el volumen de picking diario', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0a7f007a-f73f-49d9-a0a2-5e8087909cc6', 'H1 2026', 'Almacén', 'PICKING', '4.3', 'Precisión de Picking', false, '3', 'Oportunidad: continuar trajando en analisis de eficiencia de picking, teniendo comparar con volumen movido por el operario', 13)
+  ('73a2b66a-f4ea-477e-b5f5-d489bb564ee1', 'H1 2026', 'Almacén', 'PICKING', '4.3', 'Precisión de Picking', false, '3', 'Oportunidad: continuar trajando en analisis de eficiencia de picking, teniendo comparar con volumen movido por el operario', 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'b06b0f5e-0264-4e56-b248-5a9e31437afa', id, 'continuar trajando en analisis de eficiencia de picking, teniendo comparar con volumen movido por el operario', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.3'
+  SELECT '51208d41-b49b-4789-935d-fa9ea75c0f37', id, 'continuar trajando en analisis de eficiencia de picking, teniendo comparar con volumen movido por el operario', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='4.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('98e06850-1423-4768-b1cb-be66755f06a7', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.1', 'Proceso de Carga y Descarga T2', false, '5', 'Ok, bien ejecutado el proceso de carga y descarga. Continuar trabajando en layout el area designada para carga y descarga, definir en caso de ser posible zona externa al almacen', 14)
+  ('6065ad74-694a-4760-ba71-252931e28ddc', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.1', 'Proceso de Carga y Descarga T2', false, '5', 'Ok, bien ejecutado el proceso de carga y descarga. Continuar trabajando en layout el area designada para carga y descarga, definir en caso de ser posible zona externa al almacen', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('7fcf5ccd-4250-473c-9288-74d2f74d305b', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.2', 'Programación de Cargas Salientes T2', false, '3', 'Cuentan con SLA, continuar trabajando en el seguimiento de la misma y reforzar PDA ante cada NOOK', 15)
+  ('164a1db5-0435-4874-b92e-edf36cac1128', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.2', 'Programación de Cargas Salientes T2', false, '3', 'Cuentan con SLA, continuar trabajando en el seguimiento de la misma y reforzar PDA ante cada NOOK', 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e8e7be48-0750-4922-931a-dd0c43e20610', id, 'Continuar el seguimiento de la SLA y reforzar PDA ante cada NOOK', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.2'
+  SELECT 'cb596898-f2c0-4adb-b744-28c4d931dc35', id, 'Continuar el seguimiento de la SLA y reforzar PDA ante cada NOOK', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('67fa2ab9-c251-48d4-a2ee-32eb2ecaea47', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.3', 'Eficiencia de Carga y Descarga', false, '1', 'Analizar histograma de carga y descarga de camiones y definir PDA en base a eso. Continuar con la controlación de % de camiones decargados y cargados para los SLAs definidos.', 16)
+  ('fac03efd-9879-4e3f-a007-85609714060f', 'H1 2026', 'Almacén', 'CARGA Y DESCARGA DE VEHÍCULOS DE DISTRIBUCIÓN', '5.3', 'Eficiencia de Carga y Descarga', false, '1', 'Analizar histograma de carga y descarga de camiones y definir PDA en base a eso. Continuar con la controlación de % de camiones decargados y cargados para los SLAs definidos.', 16)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6e756ac5-9988-4e52-b63f-5b97baa9e3fd', id, 'Analizar histograma de carga y descarga de camiones y definir PDA en base a eso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.3'
+  SELECT 'c52eeb45-dfd6-46c4-b62f-e7a4a73ed874', id, 'Analizar histograma de carga y descarga de camiones y definir PDA en base a eso', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '08f1b8f2-991a-45a4-bed6-9e63e89abf19', id, 'Continuar con la controlación de % de camiones decargados y cargados para los SLAs definidos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.3'
+  SELECT '2b68f7a9-3d91-4cad-b16c-cb6667d725c2', id, 'Continuar con la controlación de % de camiones decargados y cargados para los SLAs definidos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('43f602ec-2049-4e9b-8cf6-3408c61f92b1', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.1', 'Proceso de Recepción T1', false, '5', 'Ok, bien definido y ejecutado el proceso de recepción de carga, seguir trabajando en base a los valores objetivos.', 17)
+  ('2073ea08-fc33-4ab9-adff-1cfab12b73d4', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.1', 'Proceso de Recepción T1', false, '5', 'Ok, bien definido y ejecutado el proceso de recepción de carga, seguir trabajando en base a los valores objetivos.', 17)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('bcc30979-a1ec-4c97-bc10-2e15db34f424', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.2', 'Programación de Carga Entrante T1', false, '3', 'Cuentan con SLA definida, continuar trabajando en el seguimiento de la misma.', 18)
+  ('5725f8ff-94c6-4fad-8c50-944eab626541', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.2', 'Programación de Carga Entrante T1', false, '3', 'Cuentan con SLA definida, continuar trabajando en el seguimiento de la misma.', 18)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'f6b7c616-90c1-45e1-b66c-f07f3ce525af', id, 'Continuar trabajando en el seguimiento de la SLA definida', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='6.2'
+  SELECT '04db4b1a-73ba-4d7a-9629-bfa995dc0073', id, 'Continuar trabajando en el seguimiento de la SLA definida', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='6.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('d781ffa0-42f0-4a19-9951-6a99982eab4e', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.3', 'Tiempo de Ciclo del Camión T1', false, '1', 'Controlar tiempo de ciclo de camión, calcular el WPS y definir acciones de mejora.', 19)
+  ('20b38f88-005c-4ffc-be90-fa52f5ed16c5', 'H1 2026', 'Almacén', 'REAPROVISIONAMIENTO', '6.3', 'Tiempo de Ciclo del Camión T1', false, '1', 'Controlar tiempo de ciclo de camión, calcular el WPS y definir acciones de mejora.', 19)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'bf38d9ed-d36b-48cc-baef-c5ea01968122', id, 'Controlar tiempo de ciclo de camión, calcular el WPS y definir acciones de mejora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='6.3'
+  SELECT '389d944e-bd2c-4e17-97c0-cd0d7e342c36', id, 'Controlar tiempo de ciclo de camión, calcular el WPS y definir acciones de mejora', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='6.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('939585f9-4071-4ec0-8b80-d76e8129906d', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.1', 'Gestión de Productividad de Almacén', false, '3', 'Continuar con seguimiento del WNP en todas las áreas del almacén a nivel individual . Oportunidad: simulador dimensionamiento para mejorar productividad.', 20)
+  ('7b9e87e7-4e8f-468d-8209-a57e033e9c32', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.1', 'Gestión de Productividad de Almacén', false, '3', 'Continuar con seguimiento del WNP en todas las áreas del almacén a nivel individual . Oportunidad: simulador dimensionamiento para mejorar productividad.', 20)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '42a32e1a-2613-40de-a9ed-73962b1fe459', id, 'simulador dimensionamiento para mejorar productividad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.1'
+  SELECT '3245e6ae-0872-4d22-bf5f-b960c4735215', id, 'simulador dimensionamiento para mejorar productividad', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e2240dc6-d4a0-4270-8c0d-8afd0cf581af', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.2', 'Herramienta de Telemetría', false, '1', 'Controlar FNP.', 21)
+  ('63432c56-9d0a-437d-acea-c481f42f7bcf', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.2', 'Herramienta de Telemetría', false, '1', 'Controlar FNP.', 21)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'fa664a44-33c3-45ed-affb-8f47864bf94b', id, 'Controlar FNP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.2'
+  SELECT 'd3ef650c-46d7-45ee-b51a-805a3793568f', id, 'Controlar FNP', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('04b1582d-ce00-4ac0-ad53-44f37fa0062c', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.3', 'Iniciativas de Productividad', false, '1', 'Continuar trabajando en la herramienta. Avanzar en los PDA y gestionar acceso a los resultados.', 22)
+  ('41a23dd9-7764-49a3-a3c8-6261eb2c7124', 'H1 2026', 'Almacén', 'MEJORAS DE PRODUCTIVIDAD', '7.3', 'Iniciativas de Productividad', false, '1', 'Continuar trabajando en la herramienta. Avanzar en los PDA y gestionar acceso a los resultados.', 22)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a761ea11-7b37-4e24-8252-986e8958f71d', id, 'Continuar trabajando en la herramienta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.3'
+  SELECT '777e37a3-871f-4bec-8879-1979ddf9aadd', id, 'Continuar trabajando en la herramienta', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e3a2f75a-a6d8-4c55-bba2-7e9b77d43353', id, 'Avanzar en los PDA y gestionar acceso a los resultados', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.3'
+  SELECT '7af0a883-afa2-4655-b80e-8e9b9db449fb', id, 'Avanzar en los PDA y gestionar acceso a los resultados', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Almacén' AND numero='7.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('27e9bd87-f9ff-458a-bf75-1e439e8ef16e', 'H1 2026', 'Planeamiento', 'GESTIÓN DE PRESUPUESTO', '1.1', 'Proceso y creación de presupuesto', true, '3', 'Revisar y corregir RACI (No deberia aparecer mas de un responsable por fila) Mejorar analisis y cruce entre presupuesto con iniciativas de ahorro Entender impacto de mas SKPIs con el presupuesto (OB - rechazo )', 1)
+  ('ce5c22aa-8f8b-492f-9091-74b56f94dc83', 'H1 2026', 'Planeamiento', 'GESTIÓN DE PRESUPUESTO', '1.1', 'Proceso y creación de presupuesto', true, '3', 'Revisar y corregir RACI (No deberia aparecer mas de un responsable por fila) Mejorar analisis y cruce entre presupuesto con iniciativas de ahorro Entender impacto de mas SKPIs con el presupuesto (OB - rechazo )', 1)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '2a1b739d-8115-4686-a93f-9464549a5fe8', id, 'Revisar y corregir RACI (no debería aparecer más de un responsable por fila)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
+  SELECT 'fae538e8-5561-40cb-955a-7d6374770e8a', id, 'Revisar y corregir RACI (no debería aparecer más de un responsable por fila)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ee0a07b8-8aa0-43b5-9360-96e11ccfa69a', id, 'Mejorar análisis y cruce entre presupuesto e iniciativas de ahorro', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
+  SELECT '4e01e387-65e0-4f65-a553-831d3c13e37f', id, 'Mejorar análisis y cruce entre presupuesto e iniciativas de ahorro', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '99c0368b-05c2-4e76-b110-4c4b86815161', id, 'Entender impacto de más SKPIs con el presupuesto (OB, rechazo)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
+  SELECT '8c0e43d5-18fc-4020-9ed2-af0d0177695b', id, 'Entender impacto de más SKPIs con el presupuesto (OB, rechazo)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('db255993-821e-4deb-95d4-09cc6c513584', 'H1 2026', 'Planeamiento', 'GESTIÓN DE PRESUPUESTO', '1.2', 'Monitoreo de costos', false, '3', 'Tienen rutina de dueños de paquetes (Continuar trabajando en evidencia) Analizar acciones Mucho foco en las acciones ante desvios y seguimiento de las mismas Segregar mas cada desvio por paquete (que no se trabaje de manera aislada cada paquete con el presupuesto) Realizaron bench con Palco Continuar trabajando en analisis de costo por PDV', 2)
+  ('874bc7e3-ca45-4133-82ff-ab1b4577974e', 'H1 2026', 'Planeamiento', 'GESTIÓN DE PRESUPUESTO', '1.2', 'Monitoreo de costos', false, '3', 'Tienen rutina de dueños de paquetes (Continuar trabajando en evidencia) Analizar acciones Mucho foco en las acciones ante desvios y seguimiento de las mismas Segregar mas cada desvio por paquete (que no se trabaje de manera aislada cada paquete con el presupuesto) Realizaron bench con Palco Continuar trabajando en analisis de costo por PDV', 2)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5e0c2c1e-3544-40c0-bac4-e20632eb0a66', id, 'Continuar trabajando en evidencia de la rutina de dueños de paquetes', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
+  SELECT 'e173e92e-3df9-4f6e-a446-5c3a85201b28', id, 'Continuar trabajando en evidencia de la rutina de dueños de paquetes', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '16d7b27e-76f3-4def-b28b-1eab6e1f5c49', id, 'Foco en acciones ante desvíos y seguimiento de las mismas', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
+  SELECT 'c632e70b-71dc-4359-bad4-9363aa4625df', id, 'Foco en acciones ante desvíos y seguimiento de las mismas', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5a88d84d-36fc-41b1-860c-54ada61c78fb', id, 'Segregar más cada desvío por paquete (no trabajar cada paquete aislado del presupuesto)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
+  SELECT 'e9c4ee4d-8c42-4228-bae3-b9accd242833', id, 'Segregar más cada desvío por paquete (no trabajar cada paquete aislado del presupuesto)', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a0824e4f-e3bd-4c4d-81bb-e172cc1e4f4d', id, 'Continuar trabajando en análisis de costo por PDV', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
+  SELECT '97d63bc0-d2c6-499f-8cbe-813205649e8d', id, 'Continuar trabajando en análisis de costo por PDV', 4 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='1.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('e71f24d7-a16d-4658-a1d9-a81f087ba838', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.1', 'Permisos y licencias para el derecho a operar', true, '5', 'Completo. Foco en seguimiento de proximos vencimientos', 3)
+  ('adc2f4df-b6a8-46fb-8769-606d577d9946', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.1', 'Permisos y licencias para el derecho a operar', true, '5', 'Completo. Foco en seguimiento de proximos vencimientos', 3)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('20d4aebf-8f43-4935-a0eb-3d8721e2a2ee', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.2', 'Evaluación de riesgos, respuesta y reanudación del negocio', true, '3', 'Reforzar carteleria Reforzar plan de respuesta incluir una matriz de escalamiento con contactos responsables , mano de obra y procedimientos de ajuste de pronóstico para mitigar el riesgo, como mínimo.', 4)
+  ('49719b2f-0fc4-4f96-b672-b29f61397fa6', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.2', 'Evaluación de riesgos, respuesta y reanudación del negocio', true, '3', 'Reforzar carteleria Reforzar plan de respuesta incluir una matriz de escalamiento con contactos responsables , mano de obra y procedimientos de ajuste de pronóstico para mitigar el riesgo, como mínimo.', 4)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ef1efb34-ac31-4fa7-a70d-491cb5cd81a9', id, 'Reforzar cartelería', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.2'
+  SELECT '438089b7-03af-4c67-99f9-1a4a02164489', id, 'Reforzar cartelería', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5e3c87c8-40e4-4894-9e2d-62de59fc507e', id, 'Reforzar plan de respuesta: incluir matriz de escalamiento con contactos responsables, mano de obra y procedimientos de ajuste de pronóstico', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.2'
+  SELECT 'c481c1e5-d904-4824-9777-c61368326c84', id, 'Reforzar plan de respuesta: incluir matriz de escalamiento con contactos responsables, mano de obra y procedimientos de ajuste de pronóstico', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0aec12bc-f308-4546-ba5c-c269517bfebc', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.3', 'Recurso del dimensionamiento', false, '1', 'Oportunidad: continuar trabajando en analisis del simulador. Actualmente comparar con volumen real y revisar la ociosidad de flota (cruzado con pilar flota) Utilizar la herramienta de forma dinamica que nos permita tomar decisiones', 5)
+  ('cdd2069b-7c52-4f16-ae2b-0e6e1130d8a1', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.3', 'Recurso del dimensionamiento', false, '1', 'Oportunidad: continuar trabajando en analisis del simulador. Actualmente comparar con volumen real y revisar la ociosidad de flota (cruzado con pilar flota) Utilizar la herramienta de forma dinamica que nos permita tomar decisiones', 5)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e31a9d3a-3ec9-48c1-9e04-4d9bb95cf254', id, 'Continuar el análisis del simulador: comparar con volumen real y revisar ociosidad de flota (cruzado con pilar Flota)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.3'
+  SELECT '9792f001-f2fc-4d0b-a1a0-65b199aa936a', id, 'Continuar el análisis del simulador: comparar con volumen real y revisar ociosidad de flota (cruzado con pilar Flota)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '0ec2a8a0-d767-4a76-8f1f-0589fda0e800', id, 'Utilizar la herramienta de forma dinámica para tomar decisiones', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.3'
+  SELECT 'a1800a58-b132-47b3-806e-601972e0ac64', id, 'Utilizar la herramienta de forma dinámica para tomar decisiones', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('649801e2-2ca9-4319-813c-9799f2e253e8', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.4', 'Mantenimiento de instalaciones', false, '3', 'Continuar trabajando en acciones y vinculo con bloque 5', 6)
+  ('1c36fc4c-b535-4037-a15b-4646ab113fb7', 'H1 2026', 'Planeamiento', 'GESTIÓN DE RIESGOS', '2.4', 'Mantenimiento de instalaciones', false, '3', 'Continuar trabajando en acciones y vinculo con bloque 5', 6)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '748858d5-d134-44ab-81ed-06d9bf185cae', id, 'Continuar trabajando en acciones y vinculo con bloque 5', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.4'
+  SELECT 'caa14eb5-e013-4f11-851d-97afab481a7f', id, 'Continuar trabajando en acciones y vinculo con bloque 5', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='2.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('ad76b805-af34-49c8-bef4-c692f137d326', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.1', 'Conectando ventas y operaciones', true, '3', 'Rutina semanal (Todos los martes) Oportunidad Foco en seguimiento de SLA con acciones asociadas Foco en acciones concretas (formato de las acciones en herramienta)', 7)
+  ('abcd7976-406e-4259-97e9-78d41fa0155a', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.1', 'Conectando ventas y operaciones', true, '3', 'Rutina semanal (Todos los martes) Oportunidad Foco en seguimiento de SLA con acciones asociadas Foco en acciones concretas (formato de las acciones en herramienta)', 7)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'd59988a5-f70b-4cbc-bca4-0e71611dc448', id, 'Foco en seguimiento de SLA con acciones asociadas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.1'
+  SELECT '167a7590-68da-4526-b337-28777c4229e0', id, 'Foco en seguimiento de SLA con acciones asociadas', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '65c5dbed-5774-4548-a2ee-bedd99ce07ba', id, 'Foco en acciones concretas (formato de las acciones en la herramienta)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.1'
+  SELECT 'f7dbecd8-4608-40d6-941e-37585bac7eeb', id, 'Foco en acciones concretas (formato de las acciones en la herramienta)', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('8137713f-25d4-4572-bb98-e6dffdd1352f', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.2', 'Rutina de pronóstico: mitigación del nivel de servicio y los impactos de los costos', true, '5', 'Buen analisis y seguimiento', 8)
+  ('9e71911f-f752-4fb9-95df-03132db0c8ae', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.2', 'Rutina de pronóstico: mitigación del nivel de servicio y los impactos de los costos', true, '5', 'Buen analisis y seguimiento', 8)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('ac8a7bfc-c8d4-45ae-95cf-9fa3ef02fa42', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.3', 'SOP de enrutamiento y matriz de habilidades', false, 'N/A', 'Foco en OWD para ruteador suplente', 9)
+  ('2d4f6fe8-84db-44ff-b854-520036f1dff3', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.3', 'SOP de enrutamiento y matriz de habilidades', false, 'N/A', 'Foco en OWD para ruteador suplente', 9)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'a3d8fbc9-4ffd-41c1-acbd-b2b3e93f617e', id, 'Foco en OWD para ruteador suplente', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.3'
+  SELECT 'acea610b-97e9-4f42-b80b-1f233bf5ef38', id, 'Foco en OWD para ruteador suplente', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.3'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('04ef38ba-c175-4ad2-8d3a-289dac824035', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.4', 'Periodo Crítico', false, '1', 'Oportunidad: continuar trabajando en analisis de periodos criticos Cascadear y definir incentivo de temporada alta', 10)
+  ('8965a8dc-2456-4a82-8885-8dfda11fe16c', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A CORTO PLAZO', '3.4', 'Periodo Crítico', false, '1', 'Oportunidad: continuar trabajando en analisis de periodos criticos Cascadear y definir incentivo de temporada alta', 10)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'e514d90e-533e-418d-955a-3c4804355f44', id, 'Continuar trabajando en análisis de períodos críticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.4'
+  SELECT 'b172a48a-0b91-4704-aa59-10cccf6248bb', id, 'Continuar trabajando en análisis de períodos críticos', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '1ef669f0-bd66-476d-ba0c-f67af4a8f858', id, 'Cascadear y definir incentivo de temporada alta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.4'
+  SELECT '5e51d99d-b16e-4285-baf9-caca1393c93d', id, 'Cascadear y definir incentivo de temporada alta', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='3.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('654a59ac-72e8-4451-ad8a-a3e7f13e438e', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.1', 'Análisis y plan centrado en el cliente', true, '3', 'Oportunidad: Continuar trabajando en analisis de NPS. Definir acciones concretas y dar seguimiento a pasivos Buenos valores de NPS', 11)
+  ('3a370187-369c-47a7-8726-28113be5eae2', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.1', 'Análisis y plan centrado en el cliente', true, '3', 'Oportunidad: Continuar trabajando en analisis de NPS. Definir acciones concretas y dar seguimiento a pasivos Buenos valores de NPS', 11)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '25a546a4-c297-4591-a69f-c54f1711ed09', id, 'Continuar trabajando en análisis de NPS', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.1'
+  SELECT '5230aca9-a0f7-4904-bde3-9d220f5b9174', id, 'Continuar trabajando en análisis de NPS', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '6dbe2c1b-afd7-4e36-836a-50d375aee148', id, 'Definir acciones concretas y dar seguimiento a pasivos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.1'
+  SELECT 'f6a2fa8e-3bf0-4f81-bcf8-152d5b8a5071', id, 'Definir acciones concretas y dar seguimiento a pasivos', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('759a1fd0-b6a8-4176-ac20-f5d0306babe2', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.2', 'Plan de agrupación de clientes', false, '3', 'Oportunidad: Continuar trabajando en clusterizacion de clientes. Foco en variables definidas. Tener en cuenta variables pasa/no pasa', 12)
+  ('33fcfcbe-3bf7-4f76-bd6f-410ae9fd6778', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.2', 'Plan de agrupación de clientes', false, '3', 'Oportunidad: Continuar trabajando en clusterizacion de clientes. Foco en variables definidas. Tener en cuenta variables pasa/no pasa', 12)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '8865cdd7-ab17-475e-ab48-7f038e68c10f', id, 'Continuar trabajando en clusterizacion de clientes', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
+  SELECT '1fbc2f91-a0dd-4194-8f42-1470c94085fe', id, 'Continuar trabajando en clusterizacion de clientes', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5c6db14b-bd42-44b7-bef3-cee8df9947fa', id, 'Foco en variables definidas', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
+  SELECT 'ddb2e682-b10a-46b1-97bd-d8b8d69bd7bd', id, 'Foco en variables definidas', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '5de2d310-c1a4-49d3-8410-f53ad055d6dc', id, 'Tener en cuenta variables pasa/no pasa', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
+  SELECT 'a77f632e-867c-4715-9cad-00bd89ee5798', id, 'Tener en cuenta variables pasa/no pasa', 3 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.2'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('c3a0b674-8060-494e-bb88-ae6145815bdf', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.3', 'Servicio de Entrega Expreso y Flexible', false, '0', NULL, 13)
+  ('6932a4fc-b3fc-4024-bf06-69c1fcf7c0db', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.3', 'Servicio de Entrega Expreso y Flexible', false, '0', NULL, 13)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('5f3eb058-7cce-4b1e-82e4-916f391eb647', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.4', 'Gestión proactiva del nivel de servicio', false, '3', 'Oportunidad: continuar trabajando en impacto de la herramienta en rechazos, TLP, etc. Y reforzar evidencia que los cambios y cancelaciones de pedidos se incluyen en el cálculo OTIF con un código de motivo asignado.', 14)
+  ('2e914de4-1c88-4a2e-8646-4ac72c7dce92', 'H1 2026', 'Planeamiento', 'CLIENTE EN EL CENTRO', '4.4', 'Gestión proactiva del nivel de servicio', false, '3', 'Oportunidad: continuar trabajando en impacto de la herramienta en rechazos, TLP, etc. Y reforzar evidencia que los cambios y cancelaciones de pedidos se incluyen en el cálculo OTIF con un código de motivo asignado.', 14)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '64f36503-a43a-49df-a6d7-7787abb3c94c', id, 'continuar trabajando en impacto de la herramienta en rechazos, TLP, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.4'
+  SELECT '875b8f69-3484-4dc8-a95e-f9d730bd866d', id, 'continuar trabajando en impacto de la herramienta en rechazos, TLP, etc', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '2912290c-cc69-4684-ba78-070a315a0b1a', id, 'Y reforzar evidencia que los cambios y cancelaciones de pedidos se incluyen en el cálculo OTIF con un código de motivo asignado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.4'
+  SELECT 'bd6977d9-9d10-4c6a-8ffa-e2594dd53e61', id, 'Y reforzar evidencia que los cambios y cancelaciones de pedidos se incluyen en el cálculo OTIF con un código de motivo asignado', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='4.4'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('b082fa78-628b-4108-8541-5e1057160625', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.1', 'Plan Territorial e Implementación', false, '0', 'Oportunidad. Realizar analisis de reestructuracion de rutas en post de la mejora en el costo/HL Teniendo en cuenta nalisis de(relevamiento de ventas horarias, frecuencia de entrega, rechazo, etc)', 15)
+  ('b3df21af-06d8-48bc-9a6a-aae6d219a38b', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.1', 'Plan Territorial e Implementación', false, '0', 'Oportunidad. Realizar analisis de reestructuracion de rutas en post de la mejora en el costo/HL Teniendo en cuenta nalisis de(relevamiento de ventas horarias, frecuencia de entrega, rechazo, etc)', 15)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '4ad42de1-d4cc-4294-84ca-d264064f4ff0', id, 'Realizar análisis de reestructuración de rutas para mejorar el costo/HL (ventas horarias, frecuencia de entrega, rechazo, etc.)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.1'
+  SELECT 'a752d057-bfa3-48d0-9cc5-603a6547d834', id, 'Realizar análisis de reestructuración de rutas para mejorar el costo/HL (ventas horarias, frecuencia de entrega, rechazo, etc.)', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.1'
   ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('0275ad61-c1d5-476c-ba6f-18734a5b929d', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.2', 'Rutina de campeones', false, '3', NULL, 16)
+  ('c0fba222-7329-4f71-b02e-679e3e31b058', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.2', 'Rutina de campeones', false, '3', NULL, 16)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 
 INSERT INTO devolucion_preguntas (id, periodo, pilar, bloque, numero, pregunta, mandatoria, nota, comentario, orden) VALUES
-  ('3a486252-0fd2-450d-b8ee-a013b363848d', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.3', '3YP & CAPEX', false, '1', 'Cuentan con evidencia. Continuar trabajando con impacto en bloque 1 Foco en año que viene y 2028', 17)
+  ('e7ed6ca4-ed79-4d11-be6c-f17d7223eac2', 'H1 2026', 'Planeamiento', 'PLANEAMIENTO A MEDIANO PLAZO', '5.3', '3YP & CAPEX', false, '1', 'Cuentan con evidencia. Continuar trabajando con impacto en bloque 1 Foco en año que viene y 2028', 17)
   ON CONFLICT (periodo, pilar, numero) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT '65b29813-25c3-4ffa-8bc0-eff9da1751ac', id, 'Continuar trabajando el 3YP con impacto en bloque 1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.3'
+  SELECT '1c686578-fa04-459a-a2d1-a991b6ef4794', id, 'Continuar trabajando el 3YP con impacto en bloque 1', 1 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO devolucion_tareas (id, pregunta_id, descripcion, orden)
-  SELECT 'ad1c5498-33a5-4f66-9d03-97276245f559', id, 'Foco en 2027 y 2028', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.3'
+  SELECT 'f6c36182-b25a-4aae-8ee2-95ad2a921617', id, 'Foco en 2027 y 2028', 2 FROM devolucion_preguntas WHERE periodo='H1 2026' AND pilar='Planeamiento' AND numero='5.3'
   ON CONFLICT (id) DO NOTHING;
