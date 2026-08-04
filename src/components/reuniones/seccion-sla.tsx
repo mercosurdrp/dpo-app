@@ -28,8 +28,9 @@ import type {
 
 export const SECCION_SLA = "sla"
 
-// SLA que se revisan en la reunión de Logística: los 5 acordados + el peso
+// SLA que se revisan en la reunión de Logística: los acordados + el peso
 // límite de camiones. Queda afuera capacidad del camión y demás.
+// El orden replica el de la matriz que arma getCumplimientoMes.
 export const SLA_CODIGOS_REUNION_OPERATIVA = [
   "plan_syop",
   "plan_ruteo_tiempo",
@@ -37,6 +38,9 @@ export const SLA_CODIGOS_REUNION_OPERATIVA = [
   "alm_recepcion",
   "plan_ruteo_pushed",
   "plan_ruteo_peso",
+  // Equipos de frío es un acuerdo Ventas↔Logística, pero la ventana de lunes a
+  // miércoles la ejecuta la carga del camión: Logística también lo revisa.
+  "plan_equipos_frio",
 ]
 
 interface ResponsableOpt {
