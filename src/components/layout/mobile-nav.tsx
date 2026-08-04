@@ -11,7 +11,7 @@ import { IS_MISIONES } from "@/lib/empresa"
 import { puedeOperarAcarreo } from "@/lib/acarreo-operadores"
 import { NotificacionesBell } from "@/components/layout/notificaciones-bell"
 import type { UserRole } from "@/types/database"
-import { navItems, adminItems, portalSections, rrhhSections, type PilarNav } from "./sidebar"
+import { navSections, adminItems, portalSections, rrhhSections, type PilarNav } from "./sidebar"
 
 interface MobileNavProps {
   role: UserRole
@@ -72,13 +72,13 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
               height={20}
               className="h-5 w-auto"
             />
-            <p className="mt-1 text-[10px] text-slate-400">
+            <p className="mt-1 text-[10px] text-blue-200/60">
               DPO
             </p>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="text-slate-400 hover:text-white"
+            className="text-blue-100/70 hover:text-white"
           >
             <X className="size-5" />
           </button>
@@ -86,52 +86,62 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
 
         {/* Nav */}
         <nav className="px-2 py-4">
-          {/* Main nav items */}
-          <div className="space-y-1">
-            {navItems
-              .filter((item) => {
-                if (item.pampeanaOnly && IS_MISIONES) return false
-                if (item.misionesOnly && !IS_MISIONES) return false
-                if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
-                return (
-                  !(item.hideForEmpleado && role === "empleado") &&
-                  (!item.roles || item.roles.includes(role))
-                )
-              })
-              .map((item) => {
-              const isActive =
-                item.external
-                  ? false
-                  : item.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(item.href)
-
+          {/* Menú agrupado por dominio (mismos grupos que el sidebar desktop) */}
+          {navSections.map((sec, idx) => {
+            const visibles = sec.items.filter((item) => {
+              if (item.pampeanaOnly && IS_MISIONES) return false
+              if (item.misionesOnly && !IS_MISIONES) return false
+              if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  target={item.external ? "_blank" : undefined}
-                  rel={item.external ? "noopener noreferrer" : undefined}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-white/10 text-white"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white"
-                  )}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </Link>
+                !(item.hideForEmpleado && role === "empleado") &&
+                (!item.roles || item.roles.includes(role))
               )
-            })}
-          </div>
+            })
+            if (!visibles.length) return null
+            return (
+              <div key={sec.title ?? `top-${idx}`} className={cn(idx > 0 && "mt-5")}>
+                {sec.title && (
+                  <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
+                    {sec.title}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {visibles.map((item) => {
+                    const isActive = item.external
+                      ? false
+                      : item.href === "/"
+                        ? pathname === "/"
+                        : pathname.startsWith(item.href)
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        target={item.external ? "_blank" : undefined}
+                        rel={item.external ? "noopener noreferrer" : undefined}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          isActive
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "text-blue-100/70 hover:bg-white/5 hover:text-white"
+                        )}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
 
           {/* Pilares section */}
           {pilares.length > 0 && (
             <div className="mt-5">
               <div className="px-3 pb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                   Pilares
                 </p>
               </div>
@@ -148,8 +158,8 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
                         isActive
-                          ? "bg-white/10 text-white"
-                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                       )}
                     >
                       <span
@@ -170,7 +180,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
             .map((sec) => (
               <div key={sec.title} className="mt-5">
                 <div className="px-3 pb-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                     {sec.title}
                   </p>
                 </div>
@@ -191,8 +201,8 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                         className={cn(
                           "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                           isActive
-                            ? "bg-white/10 text-white"
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                         )}
                       >
                         {item.icon}
@@ -208,7 +218,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
           {role === "admin" && (
             <div className="mt-5">
               <div className="px-3 pb-2">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                   <Settings className="size-3" />
                   Admin
                 </p>
@@ -225,8 +235,8 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                         isActive
-                          ? "bg-white/10 text-white"
-                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                       )}
                     >
                       {item.icon}
@@ -247,7 +257,7 @@ export function MobileNav({ role, email = null, pilares = [] }: MobileNavProps) 
                 await supabase.auth.signOut()
                 window.location.href = "/login"
               }}
-              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-blue-100/70 hover:bg-white/5 hover:text-white transition-colors"
             >
               <LogOut className="size-5" />
               <span>Cerrar sesion</span>

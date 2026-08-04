@@ -88,7 +88,7 @@ export interface NavSection {
   visibleFor?: UserRole[]
 }
 
-export const navItems: NavItem[] = [
+const navItemsFlat: NavItem[] = [
   {
     label: "Inicio",
     href: "/",
@@ -103,6 +103,13 @@ export const navItems: NavItem[] = [
     label: "Acciones",
     href: "/acciones",
     icon: <ListTodo className="size-5" />,
+  },
+  {
+    label: "Devolución H1",
+    href: "/devolucion",
+    icon: <ClipboardCheck className="size-5" />,
+    pampeanaOnly: true,
+    hideForEmpleado: true,
   },
   {
     label: "Planes",
@@ -320,6 +327,79 @@ export const navItems: NavItem[] = [
   },
 ]
 
+// ===== Menú agrupado por dominio (rediseño 2026-08) =====
+// El orden de los grupos y de los hrefs adentro es el orden visible del menú.
+// Los flags (roles, tenant, empleado) viven en cada item de navItemsFlat.
+export interface NavGroup {
+  title: string | null
+  items: NavItem[]
+}
+
+const porHref = new Map(navItemsFlat.map((i) => [i.href, i]))
+const grupo = (title: string | null, hrefs: string[]): NavGroup => ({
+  title,
+  items: hrefs.map((h) => porHref.get(h)).filter(Boolean) as NavItem[],
+})
+
+export const navSections: NavGroup[] = [
+  grupo(null, ["/"]),
+  grupo("DPO", [
+    "/auditorias",
+    "/acciones",
+    "/devolucion",
+    "/planes",
+    "/indicadores",
+    "/buenas-practicas",
+  ]),
+  grupo("Operación", [
+    "/mis-tareas",
+    "/registro-tareas",
+    "/owd",
+    "/reuniones",
+    "/agenda",
+    "/orden-salida",
+    "/asistencia",
+    "/recepcion",
+  ]),
+  grupo("Entrega", [
+    "/nps",
+    "/rmd",
+    "/ruteo",
+    "https://acarreo-rdf.vercel.app/historico",
+    "/visibilidad-resultados",
+    "/feedback-empleados",
+    "/heladeras",
+    "/clasificacion-envases",
+  ]),
+  grupo("Flota", ["/vehiculos", "/vehiculos/mantenimiento"]),
+  grupo("Seguridad y Calidad", [
+    "/reportes-seguridad",
+    "/5s",
+    "/compliance/linea-etica",
+    "/requisitos-legales",
+    "/riesgos-externos",
+  ]),
+  grupo("Gente", [
+    "/capacitaciones",
+    "/gente/matriz-skap",
+    "/mis-capacitaciones",
+    "/trivia/ranking",
+    "/sugerencias",
+  ]),
+  grupo("Gestión", ["/herramientas-gestion", "/presupuesto", "/sla"]),
+]
+
+// Red de seguridad: un item nuevo agregado a navItemsFlat pero olvidado en los
+// grupos aparece al final en "Otros" en vez de desaparecer del menú.
+{
+  const agrupados = new Set(navSections.flatMap((s) => s.items))
+  const sueltos = navItemsFlat.filter((i) => !agrupados.has(i))
+  if (sueltos.length) navSections.push({ title: "Otros", items: sueltos })
+}
+
+// Export plano para mobile-nav y búsquedas: mismo contenido, en el orden agrupado.
+export const navItems: NavItem[] = navSections.flatMap((s) => s.items)
+
 export const adminItems: NavItem[] = [
   {
     label: "Usuarios",
@@ -487,7 +567,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
               className="h-6 w-auto"
               priority
             />
-            <p className="mt-1 truncate text-[11px] text-slate-400">
+            <p className="mt-1 truncate text-[11px] text-blue-100/70">
               DPO
             </p>
           </div>
@@ -497,7 +577,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             onClick={() => setHidden(true)}
             aria-label="Ocultar menú"
             title="Ocultar menú"
-            className="ml-auto rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="ml-auto rounded-md p-1.5 text-blue-100/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -508,13 +588,13 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
       {!collapsed && (
         <div className="border-b border-white/10 px-3 py-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-blue-200/60" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar pestaña…"
-              className="w-full rounded-lg bg-white/5 py-2 pl-8 pr-2 text-sm text-white placeholder:text-slate-500 outline-none focus:bg-white/10 focus:ring-1 focus:ring-white/20"
+              className="w-full rounded-lg bg-white/5 py-2 pl-8 pr-2 text-sm text-white placeholder:text-blue-200/50 outline-none focus:bg-white/10 focus:ring-1 focus:ring-white/20"
             />
           </div>
         </div>
@@ -522,53 +602,67 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {/* Main nav items */}
-        <div className="space-y-1">
-          {navItems
-            .filter((item) => {
-              if (!matchQ(item.label)) return false
-              if (item.pampeanaOnly && IS_MISIONES) return false
-              if (item.misionesOnly && !IS_MISIONES) return false
-              if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
-              return (
-                !(item.hideForEmpleado && role === "empleado") &&
-                (!item.roles || item.roles.includes(role))
-              )
-            })
-            .map((item) => {
-            const isActive =
-              item.external
-                ? false
-                : item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href)
-
+        {/* Menú agrupado por dominio */}
+        {navSections.map((sec, idx) => {
+          const visibles = sec.items.filter((item) => {
+            if (!matchQ(item.label)) return false
+            if (item.pampeanaOnly && IS_MISIONES) return false
+            if (item.misionesOnly && !IS_MISIONES) return false
+            if (item.operadorAcarreo) return puedeOperarAcarreo(role, email)
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                target={item.external ? "_blank" : undefined}
-                rel={item.external ? "noopener noreferrer" : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-white/10 text-white"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                <span className="shrink-0">{item.icon}</span>
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
+              !(item.hideForEmpleado && role === "empleado") &&
+              (!item.roles || item.roles.includes(role))
             )
-          })}
-        </div>
+          })
+          if (!visibles.length) return null
+          return (
+            <div key={sec.title ?? `top-${idx}`} className={cn(idx > 0 && "mt-5")}>
+              {sec.title && !collapsed && (
+                <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
+                  {sec.title}
+                </p>
+              )}
+              {sec.title && collapsed && idx > 0 && (
+                <div className="mx-3 mb-2 border-t border-white/10" />
+              )}
+              <div className="space-y-0.5">
+                {visibles.map((item) => {
+                  const isActive = item.external
+                    ? false
+                    : item.href === "/"
+                      ? pathname === "/"
+                      : pathname.startsWith(item.href)
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      target={item.external ? "_blank" : undefined}
+                      rel={item.external ? "noopener noreferrer" : undefined}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-blue-100/70 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      <span className="shrink-0">{item.icon}</span>
+                      {!collapsed && <span>{item.label}</span>}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
 
         {/* Pilares section */}
         {pilares.some((p) => matchQ(p.nombre)) && (
           <div className="mt-5">
             {!collapsed && (
               <div className="px-3 pb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                   Pilares
                 </p>
               </div>
@@ -585,8 +679,8 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
                       isActive
-                        ? "bg-white/10 text-white"
-                        : "text-slate-400 hover:bg-white/5 hover:text-white"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                     )}
                   >
                     <span
@@ -615,7 +709,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             <div key={sec.title} className="mt-5">
               {!collapsed && (
                 <div className="px-3 pb-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                     {sec.title}
                   </p>
                 </div>
@@ -637,8 +731,8 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                         isActive
-                          ? "bg-white/10 text-white"
-                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                       )}
                     >
                       <span className="shrink-0">{item.icon}</span>
@@ -655,7 +749,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
           <div className="mt-5">
             {!collapsed && (
               <div className="px-3 pb-2">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-200/50">
                   <Settings className="size-3" />
                   Admin
                 </p>
@@ -672,8 +766,8 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-white/10 text-white"
-                        : "text-slate-400 hover:bg-white/5 hover:text-white"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-blue-100/70 hover:bg-white/5 hover:text-white"
                     )}
                   >
                     <span className="shrink-0">{item.icon}</span>
@@ -691,7 +785,7 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
           !pilares.some((p) => matchQ(p.nombre)) &&
           !rrhhSections.some((s) => s.items.some((i) => matchQ(i.label))) &&
           !adminItems.some((i) => matchQ(i.label)) && (
-            <p className="px-3 py-6 text-center text-xs text-slate-500">
+            <p className="px-3 py-6 text-center text-xs text-blue-200/60">
               Sin resultados para “{query.trim()}”
             </p>
           )}
@@ -706,14 +800,14 @@ export function Sidebar({ role, email = null, pilares = [] }: SidebarProps) {
             await supabase.auth.signOut()
             window.location.href = "/login"
           }}
-          className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+          className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-sm text-blue-100/70 hover:bg-white/5 hover:text-white transition-colors"
         >
           <LogOut className="size-4 shrink-0" />
           {!collapsed && <span>Cerrar sesion</span>}
         </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex w-full items-center justify-center border-t border-white/10 py-3 text-slate-400 hover:text-white transition-colors"
+          className="flex w-full items-center justify-center border-t border-white/10 py-3 text-blue-100/70 hover:text-white transition-colors"
         >
           {collapsed ? (
             <ChevronRight className="size-4" />
