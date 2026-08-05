@@ -131,8 +131,11 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
   const [tareaSel, setTareaSel] = useState<string>("")
   const [subiendo, startSubir] = useTransition()
   const [verFoto, setVerFoto] = useState<string | null>(null)
-  // Alta y edición de las tareas propias del operario.
+  // Alta y edición de las tareas propias del operario. Dos campos separados
+  // (el del desplegable y el de la lista de abajo): con un state compartido,
+  // escribir en uno llenaba el otro.
   const [nuevaTarea, setNuevaTarea] = useState("")
+  const [nuevaTareaSelect, setNuevaTareaSelect] = useState("")
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [textoEdit, setTextoEdit] = useState("")
   const [guardandoTarea, startTarea] = useTransition()
@@ -245,8 +248,8 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
   }
 
   /** Crea la tarea y la deja seleccionada para cargarle la foto enseguida. */
-  function handleCrearTarea() {
-    const titulo = nuevaTarea.trim()
+  function handleCrearTarea(texto: string, limpiar: () => void) {
+    const titulo = texto.trim()
     if (!titulo) {
       toast.error("Escribí qué tarea hacés")
       return
@@ -258,7 +261,7 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
         return
       }
       toast.success("Tarea agregada a tu sector")
-      setNuevaTarea("")
+      limpiar()
       setTareaSel(res.data.id)
       // refresh y no reload: si ya eligió las fotos, no las pierde.
       router.refresh()
@@ -427,12 +430,12 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
                 </p>
                 <div className="flex gap-2">
                   <input
-                    value={nuevaTarea}
-                    onChange={(e) => setNuevaTarea(e.target.value)}
+                    value={nuevaTareaSelect}
+                    onChange={(e) => setNuevaTareaSelect(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault()
-                        handleCrearTarea()
+                        handleCrearTarea(nuevaTareaSelect, () => setNuevaTareaSelect(""))
                       }
                     }}
                     placeholder="Ej: Limpieza de la zona de carga"
@@ -441,7 +444,9 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
                   />
                   <Button
                     type="button"
-                    onClick={handleCrearTarea}
+                    onClick={() =>
+                      handleCrearTarea(nuevaTareaSelect, () => setNuevaTareaSelect(""))
+                    }
                     disabled={guardandoTarea}
                     className="bg-emerald-600 hover:bg-emerald-700"
                   >
@@ -602,7 +607,7 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault()
-                  handleCrearTarea()
+                  handleCrearTarea(nuevaTarea, () => setNuevaTarea(""))
                 }
               }}
               placeholder="Agregar otra tarea que hacés en tu sector…"
@@ -611,7 +616,7 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
             />
             <Button
               type="button"
-              onClick={handleCrearTarea}
+              onClick={() => handleCrearTarea(nuevaTarea, () => setNuevaTarea(""))}
               disabled={guardandoTarea}
               variant="outline"
             >
