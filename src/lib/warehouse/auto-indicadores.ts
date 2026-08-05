@@ -18,6 +18,8 @@
  * que computa on-the-fly (mantiene compatibilidad).
  */
 
+import { diaAnterior, esFeriado } from "@/lib/feriados-ar"
+
 // ────────────────────────────────────────────────────────────────────
 // Configuración
 // ────────────────────────────────────────────────────────────────────
@@ -698,8 +700,26 @@ async function fetchErroresCountDelSheet(
 }
 
 /**
+ * Día en que se PICKEÓ lo que se entrega en `isoEntrega`: el día hábil
+ * inmediatamente anterior, salteando domingos y feriados nacionales.
+ *
+ * 🚨 La planilla de bultos está fechada por "Fecha SALIDA" (entrega) y los
+ * errores por fecha de PICKEO, así que sin este mapeo la precisión de un día
+ * divide los errores de ese día por los bultos de otro. Mismo criterio que
+ * `diaPickeoDeEntrega` en deposito-esteban (`src/lib/pickingPrecision.js`).
+ */
+function diaPickeoDeEntrega(isoEntrega: string): string {
+  let d = diaAnterior(isoEntrega)
+  // Domingo: el 1° de enero de 1970 fue jueves; más simple, se pregunta al Date.
+  while (new Date(`${d}T00:00:00Z`).getUTCDay() === 0 || esFeriado(d)) {
+    d = diaAnterior(d)
+  }
+  return d
+}
+
+/**
  * Precisión de picking del mes, calculada acá con las planillas FRESCAS:
- * `(bultos despachados − bultos errados) / bultos despachados × 100`.
+ * `(bultos pickeados − bultos errados) / bultos pickeados × 100`.
  *
  * 🚨 Por qué no se toma de `serie-diaria`: ese endpoint cachea su resultado en
  * blob y sólo lo invalida cuando cambian los MOVIMIENTOS del mes. Las dos
@@ -712,9 +732,8 @@ async function fetchErroresCountDelSheet(
  * misma lectura o vuelven a contradecirse.
  *
  * Mismo criterio que `_picking_precision_diaria` de deposito-esteban: excluye
- * los errores de SISTEMA y no emite nada antes del primer error cargado. Los
- * bultos siguen tomándose por "Fecha SALIDA" (sin remapear al día de pickeo),
- * igual que allá, para no cambiar el número que la reunión viene mirando.
+ * los errores de SISTEMA, no emite nada antes del primer error cargado y
+ * re-fecha los bultos al día en que se pickearon (ver `diaPickeoDeEntrega`).
  *
  * Devuelve null si alguna de las dos planillas no se pudo leer.
  */
@@ -730,15 +749,25 @@ function computePrecisionDelSheet(
   if (lines.length < 2) return null
 
   const prefijo = `${year}-${String(month).padStart(2, "0")}`
-  const precision: Record<string, number> = {}
+  // Bultos del mes agrupados por DÍA DE PICKEO. Se recorre toda la planilla (no
+  // sólo el mes) porque la entrega del 1° la pickeó el último día hábil del mes
+  // anterior, y viceversa.
+  const bultosPorPickeo: Record<string, number> = {}
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvRow(lines[i])
     if (cells.length < 2) continue
-    const fecha = parseFechaSheet(cells[0] ?? "")
-    if (!fecha || !fecha.startsWith(prefijo)) continue
-    if (fecha < erroresSheet.inicioMedicion) continue
+    const entrega = parseFechaSheet(cells[0] ?? "")
+    if (!entrega) continue
     const bultos = parseDecimalEs(cells[1] ?? "0")
     if (!(bultos > 0)) continue
+    const pickeo = diaPickeoDeEntrega(entrega)
+    if (!pickeo.startsWith(prefijo)) continue
+    bultosPorPickeo[pickeo] = (bultosPorPickeo[pickeo] ?? 0) + bultos
+  }
+
+  const precision: Record<string, number> = {}
+  for (const [fecha, bultos] of Object.entries(bultosPorPickeo)) {
+    if (fecha < erroresSheet.inicioMedicion) continue
     const errados = erroresSheet.bultosErradosPorDia[fecha] ?? 0
     precision[fecha] = Math.round(((bultos - errados) / bultos) * 10000) / 100
   }
