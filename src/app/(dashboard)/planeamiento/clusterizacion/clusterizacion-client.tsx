@@ -46,6 +46,8 @@ import {
   CLUSTER_LABELS,
   CUADRANTE_LABELS,
   CUBO_META,
+  MOTIVO_BAJA_LABELS,
+  NPS_CATEGORIA_LABELS,
   type ClusterId,
   type CuadranteId,
   type CuboId,
@@ -232,6 +234,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
   const [fSupervisor, setFSupervisor] = useState("todos")
   const [fEstado, setFEstado] = useState<"todos" | "pasa" | "no_pasa">("todos")
   const [fSalud, setFSalud] = useState<"todos" | "sano" | "atencion">("todos")
+  const [fBaja, setFBaja] = useState<"todos" | "bajaron" | "sin_baja">("todos")
   const [incluirMostrador, setIncluirMostrador] = useState(false)
   const [planes, setPlanes] = useState<ClusterPlan[]>(planesIniciales)
   const [planCliente, setPlanCliente] = useState<ClienteClusterizado | null>(null)
@@ -265,6 +268,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
       .filter((c) => fSupervisor === "todos" || c.supervisor === fSupervisor)
       .filter((c) => fEstado === "todos" || c.estado === fEstado)
       .filter((c) => fSalud === "todos" || c.salud === fSalud)
+      .filter((c) => fBaja === "todos" || (fBaja === "bajaron" ? c.degradado : !c.degradado))
       .filter(
         (c) =>
           incluirMostrador ||
@@ -280,7 +284,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
           (c.promotor ?? "").toLowerCase().includes(q),
       )
       .sort((a, b) => b.ingresos_actual - a.ingresos_actual)
-  }, [clientes, filtroCluster, busqueda, fLocalidad, fPromotor, fSupervisor, fEstado, fSalud, incluirMostrador])
+  }, [clientes, filtroCluster, busqueda, fLocalidad, fPromotor, fSupervisor, fEstado, fSalud, fBaja, incluirMostrador])
 
   const visibles = filtrados.slice(0, MAX_FILAS)
   const resumenById = (cl: ClusterId) => resumen.find((r) => r.cluster === cl)
@@ -339,6 +343,16 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   <span className="text-amber-600">{fmtNum(r?.en_atencion ?? 0)}</span>
                 </span>
               </div>
+              {(r?.degradados_perdidos ?? 0) > 0 || (r?.degradados_recibidos ?? 0) > 0 ? (
+                <div className="flex justify-between">
+                  <span>Bajaron / recibidos</span>
+                  <span className="font-medium">
+                    <span className="text-red-600">↓{fmtNum(r?.degradados_perdidos ?? 0)}</span>
+                    {" / "}
+                    <span className="text-slate-500">+{fmtNum(r?.degradados_recibidos ?? 0)}</span>
+                  </span>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -430,7 +444,19 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                   por <strong>semestre calendario fijo</strong>: <strong>{periodo.sem_desde} → {periodo.sem_hasta}</strong>{" "}
                   vs. el mismo {periodo.en_curso ? "tramo" : "semestre"} del año anterior (<strong>{periodo.sem_prev_desde} → {periodo.sem_prev_hasta}</strong>).
                   {periodo.en_curso ? " Semestre EN CURSO: la foto avanza con cada día de ventas hasta cerrarlo." : " Semestre cerrado: el análisis queda congelado (corrida DPO)."}
-                  Umbral de facturación alta/baja = mediana = <strong>{fmtMoneda(umbral_ingresos)}</strong>.
+                  Umbral de facturación alta/baja = <strong>{fmtMoneda(umbral_ingresos)}</strong>,
+                  el corte que deja el clúster Ganador en su tope de <strong>{data.max_ganadores} PDV</strong>:
+                  es la facturación del cliente Nº {data.max_ganadores} entre los que crecen, así los
+                  Ganadores son siempre los que más facturan.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <strong>Baja de clúster</strong> (variables pasa / no pasa): el cliente que en el
+                  semestre rechazó <strong>≥ {data.min_rechazos_baja} entregas</strong> por su culpa,
+                  promedia <strong>RMD &lt; {fmtNum(data.rmd_minimo_baja, 2)}</strong> o fue{" "}
+                  <strong>detractor de NPS</strong> baja un escalón de prioridad de servicio
+                  (Ganador → Productor, y Productor o Básico → Ventas Bajas) y queda marcado con
+                  el motivo. Ojo al leerlo: un degradado puede seguir facturando alto o creciendo
+                  — bajó por servicio, no por plata.{" "}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   <strong>Estado</strong> (responsabilidad del cliente):{" "}
@@ -496,6 +522,18 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                     <option value="atencion">Atención</option>
                   </select>
                 </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Baja de clúster</label>
+                  <select
+                    value={fBaja}
+                    onChange={(e) => setFBaja(e.target.value as "todos" | "bajaron" | "sin_baja")}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="bajaron">Solo los que bajaron</option>
+                    <option value="sin_baja">Sin baja</option>
+                  </select>
+                </div>
                 <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
@@ -547,6 +585,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                       <TableHead className="text-right">Crec.</TableHead>
                       <TableHead className="text-right">Drop size</TableHead>
                       <TableHead className="text-right">RMD</TableHead>
+                      <TableHead className="text-right">NPS</TableHead>
                       <TableHead className="text-right">Costo/PDV<br />($/HL año)</TableHead>
                       <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
@@ -575,6 +614,17 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                             >
                               {CLUSTER_LABELS[c.cluster]}
                             </Badge>
+                            {c.degradado ? (
+                              <div
+                                className="mt-0.5 text-[10px] font-medium text-red-600"
+                                title={`Bajó desde ${CLUSTER_LABELS[c.cluster_base]} por ${c.motivos_baja
+                                  .map((m) => MOTIVO_BAJA_LABELS[m])
+                                  .join(" · ")}`}
+                              >
+                                ↓ desde {CLUSTER_LABELS[c.cluster_base]} ·{" "}
+                                {c.motivos_baja.map((m) => MOTIVO_BAJA_LABELS[m]).join(" · ")}
+                              </div>
+                            ) : null}
                           </TableCell>
                           {/* Estado */}
                           <TableCell>
@@ -592,7 +642,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                                 />
                                 <TooltipContent className="w-60 items-stretch">
                                   <div className="flex w-full flex-col text-left">
-                                    <p className="mb-1 font-semibold">Rechazos del cliente (últimos 45 días)</p>
+                                    <p className="mb-1 font-semibold">Rechazos del cliente (todo el semestre)</p>
                                     {c.rechazos_detalle.slice(0, 12).map((d, i) => (
                                       <div key={i} className="flex justify-between gap-3 py-0.5">
                                         <span className="opacity-80">{fmtFechaCorta(d.fecha)} · {d.motivo}</span>
@@ -602,9 +652,9 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                                     {c.rechazos_detalle.length > 12 && (
                                       <p className="text-[10px] opacity-60">+ {c.rechazos_detalle.length - 12} más…</p>
                                     )}
-                                    {c.rechazos_total > c.rechazos_culpa && (
+                                    {c.rechazos_total_periodo > c.rechazos_culpa_periodo && (
                                       <p className="mt-1 border-t border-white/20 pt-1 text-[10px] opacity-70">
-                                        + {fmtNum(c.rechazos_total - c.rechazos_culpa)} rechazo(s) por otros motivos (no cuentan para “no pasa”)
+                                        + {fmtNum(c.rechazos_total_periodo - c.rechazos_culpa_periodo)} rechazo(s) por otros motivos (no cuentan para “no pasa”)
                                       </p>
                                     )}
                                   </div>
@@ -642,6 +692,27 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                               "—"
                             )}
                           </TableCell>
+                          {/* NPS: la mayoría de los PDV no está encuestada, por eso el "—" es lo normal */}
+                          <TableCell className="text-right text-sm">
+                            {c.nps_categoria ? (
+                              <span
+                                className={
+                                  c.nps_categoria === "Detractor"
+                                    ? "font-medium text-red-600"
+                                    : c.nps_categoria === "Passive"
+                                      ? "text-amber-600"
+                                      : "text-emerald-600"
+                                }
+                                title={`${NPS_CATEGORIA_LABELS[c.nps_categoria]} · ${c.nps_n} encuesta(s)${
+                                  c.nps_detractores > 0 ? ` · ${c.nps_detractores} como detractor` : ""
+                                }`}
+                              >
+                                {c.nps_score}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right text-sm tabular-nums">
                             {c.costo_x_hl_ytd != null ? fmtMoneda(c.costo_x_hl_ytd) : "—"}
                           </TableCell>
@@ -655,7 +726,7 @@ export function ClusterizacionClient({ data: dataInicial, planesIniciales, plane
                     })}
                     {visibles.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                           Sin clientes para los filtros aplicados.
                         </TableCell>
                       </TableRow>
@@ -1419,7 +1490,8 @@ function SolapaAnalisis({ data }: { data: ClusterizacionData }) {
           <div className="space-y-1">
             <p>
               Matriz <strong>Valor × Costo</strong>: cruza la <strong>facturación del semestre</strong>{" "}
-              (alta/baja, corte = mediana <strong>{fmtMoneda(umbral_ingresos)}</strong>) con el{" "}
+              (alta/baja, corte <strong>{fmtMoneda(umbral_ingresos)}</strong>: el que deja el clúster
+              Ganador en su tope de {data.max_ganadores} PDV) con el{" "}
               <strong>costo logístico $/HL del año</strong> (alto/bajo, corte = mediana{" "}
               <strong>{fmtMoneda(umbral_costo)}</strong>). Cada cuadrante tiene una acción recomendada.
             </p>

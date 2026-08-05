@@ -15,6 +15,28 @@ export const CLUSTER_LABELS: Record<ClusterId, string> = {
   ventas_bajas: "Ventas Bajas",
 }
 
+// ── Baja de clúster por servicio ─────────────────────────────────────────────
+// La auditoría DPO de H1 2026 pidió que las variables "pasa / no pasa" entren en
+// la clusterización: el cliente que rechaza entregas por su culpa, califica mal
+// la entrega (RMD) o es detractor de NPS baja al cuadrante de abajo de su misma
+// columna. Se guarda el motivo para que el descenso sea auditable.
+export type MotivoBaja = "rechazos" | "rmd" | "nps"
+
+export const MOTIVO_BAJA_LABELS: Record<MotivoBaja, string> = {
+  rechazos: "Rechazos",
+  rmd: "RMD bajo",
+  nps: "Detractor NPS",
+}
+
+/** Categorías de la encuesta NPS tal como vienen del Power BI de Quilmes. */
+export type NpsCategoria = "Promoter" | "Passive" | "Detractor"
+
+export const NPS_CATEGORIA_LABELS: Record<NpsCategoria, string> = {
+  Promoter: "Promotor",
+  Passive: "Pasivo",
+  Detractor: "Detractor",
+}
+
 // Matriz Valor × Costo: cruce de facturación (alta/baja, mediana) con el costo
 // logístico $/HL del año (alto/bajo, mediana). Cada cuadrante tiene una jugada.
 export type CuadranteId = "proteger" | "optimizar" | "mantener" | "revisar"
@@ -66,7 +88,14 @@ export interface ClienteClusterizado {
   /** Supervisor de venta (derivado del promotor). */
   supervisor: string | null
   segmento: string | null
+  /** Clúster final: el que le toca por facturación y crecimiento, ya con la baja aplicada. */
   cluster: ClusterId
+  /** Clúster que le correspondía por facturación × crecimiento, ANTES de la baja por servicio. */
+  cluster_base: ClusterId
+  /** true si bajó de clúster por rechazos, RMD o NPS (cluster !== cluster_base). */
+  degradado: boolean
+  /** Por qué bajó. Vacío si no bajó. */
+  motivos_baja: MotivoBaja[]
   ingresos_actual: number
   ingresos_anterior: number
   /** Crecimiento relativo período/período. null = cliente nuevo (sin venta previa). */
@@ -93,11 +122,30 @@ export interface ClienteClusterizado {
   /** RMD promedio del cliente en la ventana (1-5). null = sin calificaciones. */
   rmd_prom: number | null
   rmd_n: number
+  /** Encuestas NPS del cliente en la ventana. 0 = nunca lo encuestaron. */
+  nps_n: number
+  /** Score de la ÚLTIMA encuesta NPS (0-10). null = sin encuestas. */
+  nps_score: number | null
+  /** Categoría de la última encuesta NPS. null = sin encuestas. */
+  nps_categoria: NpsCategoria | null
+  /** Encuestas en las que respondió como Detractor dentro de la ventana. */
+  nps_detractores: number
   /** Entregas rechazadas por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases), últimos 45 días. */
   rechazos_culpa: number
+  /**
+   * Entregas rechazadas por CAUSA DEL CLIENTE en TODO el período analizado (el
+   * semestre, no los 45 días). Es el número que decide la baja de clúster: en una
+   * ventana de 6 meses un rechazo aislado le pasa a cualquiera, dos ya es patrón.
+   */
+  rechazos_culpa_periodo: number
   /** Entregas rechazadas por cualquier motivo, últimos 45 días. */
   rechazos_total: number
-  /** Detalle de los rechazos por culpa del cliente (cada entrega: fecha, motivo, bultos), 45 días. */
+  /** Entregas rechazadas por cualquier motivo en TODO el período analizado. */
+  rechazos_total_periodo: number
+  /**
+   * Detalle de los rechazos por culpa del cliente (cada entrega: fecha, motivo,
+   * bultos) en TODO el período: es la evidencia de la baja de clúster.
+   */
   rechazos_detalle: { fecha: string; motivo: string; bultos: number }[]
   /**
    * ESTADO (responsabilidad del cliente): "no_pasa" si rechazó ≥ 1 entrega por su
@@ -141,12 +189,26 @@ export interface ClusterResumen {
   no_pasan: number
   en_atencion: number
   sanos: number
+  /** Clientes que ENTRARON a este clúster bajando desde el de arriba. */
+  degradados_recibidos: number
+  /** Clientes que SALIERON de este clúster por la baja de servicio. */
+  degradados_perdidos: number
 }
 
 export interface ClusterizacionData {
   periodo: ClusterPeriodo
-  /** Umbral de facturación del semestre (mediana) que separa "alto" de "bajo". */
+  /**
+   * Umbral de facturación del semestre que separa "alto" de "bajo": la facturación
+   * del cliente Nº `max_ganadores` entre los que crecen, para que el clúster Ganador
+   * no pase de ese tope y lo integren los que más facturan.
+   */
   umbral_ingresos: number
+  /** Tope de clientes del clúster Ganador (regla de la auditoría DPO). */
+  max_ganadores: number
+  /** Rechazos por culpa del cliente en el período que disparan la baja de clúster. */
+  min_rechazos_baja: number
+  /** RMD promedio por debajo del cual el cliente baja de clúster. */
+  rmd_minimo_baja: number
   /** Umbral de costo $/HL (mediana del año) que separa "caro" de "barato". 0 si no hay datos. */
   umbral_costo: number
   resumen: ClusterResumen[]

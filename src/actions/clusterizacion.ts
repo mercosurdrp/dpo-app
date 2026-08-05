@@ -4,6 +4,7 @@ import {
   consultarClusterClientes,
   consultarEquiposFrioPorCliente,
   consultarCensoThomasPorPdv,
+  type ClusterClienteRow,
   type EquipoFrioCliente,
   type CensoThomasResultado,
 } from "@/lib/mercosur-dashboard"
@@ -17,6 +18,8 @@ import type {
   CuboId,
   DominioId,
   FrenteId,
+  MotivoBaja,
+  NpsCategoria,
   ClienteClusterizado,
   ClusterResumen,
   ClusterizacionData,
@@ -35,6 +38,23 @@ const MOTIVOS_CULPA_CLIENTE = new Set(["SIN DINERO", "CERRADO", "SIN ENVASES"])
 // SALUD (sano/atención): caro o flojo de servir.
 const DROP_BAJO = 3 // bultos por visita por debajo de esto = caro de servir
 const RMD_BAJO = 4.5 // RMD promedio por debajo de esto = mal servicio
+
+// ── Reglas del clúster Ganador (devolución de la auditoría DPO, H1 2026) ─────
+// La auditoría marcó dos cosas sobre el punto 4.2: que había demasiados Ganadores
+// (con la mediana como umbral daban 772 sobre 1.813 PDV) y que las variables
+// "pasa / no pasa" tenían que entrar en la clusterización.
+//
+// Tope del clúster Ganador. El umbral de "facturación alta" ya no es la mediana:
+// es la facturación del cliente Nº MAX_GANADORES entre los que crecen, así el
+// clúster queda acotado y lo integran los que más facturan. Puede quedar apenas
+// por encima del tope si hay empates justo en el corte.
+const MAX_GANADORES = 200
+// Rechazos por culpa del cliente EN TODO EL PERÍODO que hacen bajar de clúster.
+// En una ventana de 6 meses un rechazo aislado le pasa a cualquier cliente que
+// recibe entregas todas las semanas; dos ya es un patrón.
+const MIN_RECHAZOS_BAJA = 2
+// RMD promedio por debajo del cual el cliente baja de clúster (vota mal).
+const RMD_MINIMO_BAJA = 4.99
 
 function mediana(valores: number[]): number {
   if (valores.length === 0) return 0
@@ -76,6 +96,33 @@ function dominioDe(som: number): DominioId {
   return som >= SOM_DOMINADO ? "dominado" : som >= SOM_INVADIDO ? "compartido" : "invadido"
 }
 
+/**
+ * Crecimiento vs el semestre espejo. Sin venta el año anterior = cliente nuevo,
+ * que cuenta como creciendo (no tenemos contra qué compararlo).
+ */
+function crecePositivoDe(r: ClusterClienteRow): boolean {
+  return r.facturacion_sem_prev > 0
+    ? (r.facturacion_sem - r.facturacion_sem_prev) / r.facturacion_sem_prev >= 0
+    : true
+}
+
+/**
+ * Baja un escalón de prioridad de servicio. Ganador y Básico caen al cuadrante de
+ * abajo de su misma columna (pierden la facturación alta, conservan el
+ * crecimiento); Productor cae a Ventas Bajas, que es el piso y donde el SOP hace
+ * empezar el recorte de pedidos y la menor frecuencia.
+ *
+ * Toda baja "miente" en un eje: el Ganador degradado sigue facturando alto y el
+ * Productor degradado sigue creciendo. Por eso el cliente queda marcado con
+ * `degradado` y el motivo, para que el descenso se lea como lo que es —una
+ * penalización por servicio— y no como un dato de facturación o crecimiento.
+ */
+function bajarEscalon(cluster: ClusterId): ClusterId {
+  if (cluster === "ganador") return "en_crecimiento"
+  if (cluster === "basico" || cluster === "en_crecimiento") return "ventas_bajas"
+  return cluster
+}
+
 function clasificar(ingresoAlto: boolean, crecePositivo: boolean): ClusterId {
   if (ingresoAlto) return crecePositivo ? "ganador" : "basico"
   return crecePositivo ? "en_crecimiento" : "ventas_bajas"
@@ -111,12 +158,73 @@ async function getRmdPorCliente(
   return acc
 }
 
+interface NpsAcum {
+  n: number
+  detractores: number
+  /** Score y categoría de la encuesta más reciente de la ventana. */
+  ultimo_score: number
+  ultima_categoria: NpsCategoria
+  ultima_fecha: string
+}
+
+/**
+ * Encuestas NPS por cliente en la ventana (tabla `nps_encuestas`, base del Power
+ * BI de Quilmes). Ojo con la cobertura: hoy se encuesta a una fracción chica de
+ * la cartera, así que la mayoría de los clientes no tiene NPS y para ellos la
+ * regla de baja por detractor simplemente no aplica.
+ */
+async function getNpsPorCliente(
+  desde: string,
+  hasta: string,
+): Promise<Map<number, NpsAcum>> {
+  const supabase = await createClient()
+  const acc = new Map<number, NpsAcum>()
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from("nps_encuestas")
+      .select("cod_cliente, score, categoria, fecha_enc")
+      .gte("fecha_enc", desde)
+      .lte("fecha_enc", `${hasta}T23:59:59`)
+      .range(from, from + PAGE - 1)
+    if (error) break // NPS es opcional: si falla, seguimos sin él
+    if (!data || data.length === 0) break
+    for (const r of data as {
+      cod_cliente: number; score: number; categoria: NpsCategoria; fecha_enc: string
+    }[]) {
+      const prev = acc.get(r.cod_cliente)
+      if (!prev) {
+        acc.set(r.cod_cliente, {
+          n: 1,
+          detractores: r.categoria === "Detractor" ? 1 : 0,
+          ultimo_score: r.score,
+          ultima_categoria: r.categoria,
+          ultima_fecha: r.fecha_enc,
+        })
+        continue
+      }
+      prev.n += 1
+      if (r.categoria === "Detractor") prev.detractores += 1
+      if (r.fecha_enc > prev.ultima_fecha) {
+        prev.ultima_fecha = r.fecha_enc
+        prev.ultimo_score = r.score
+        prev.ultima_categoria = r.categoria
+      }
+    }
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return acc
+}
+
 /**
  * Entregas rechazadas por cliente en la ventana [desde, hasta], separando las
  * que son por CAUSA DEL CLIENTE (sin dinero/cerrado/sin envases) del total.
  */
 interface RechazoAcum {
-  total: number
+  /** Fechas de TODAS las entregas rechazadas, cualquiera sea el motivo. */
+  fechas_total: string[]
   /** Entregas (comprobantes) rechazadas POR CULPA DEL CLIENTE, una por entrega. */
   eventos: { fecha: string; motivo: string; bultos: number }[]
 }
@@ -159,8 +267,8 @@ async function getRechazoPorCliente(
   // Cada entrega = 1 evento; su motivo es el predominante de sus líneas.
   const acc = new Map<number, RechazoAcum>()
   for (const e of entregas.values()) {
-    const prev = acc.get(e.id_cliente) ?? { total: 0, eventos: [] }
-    prev.total += 1
+    const prev = acc.get(e.id_cliente) ?? { fechas_total: [], eventos: [] }
+    prev.fechas_total.push(e.fecha)
     let motivo = "", max = 0
     for (const [m, c] of e.motivos) if (c > max) { max = c; motivo = m }
     if (MOTIVOS_CULPA_CLIENTE.has(motivo)) {
@@ -227,6 +335,9 @@ export async function getClusterizacion(
       data: {
         periodo,
         umbral_ingresos: 0,
+        max_ganadores: MAX_GANADORES,
+        min_rechazos_baja: MIN_RECHAZOS_BAJA,
+        rmd_minimo_baja: RMD_MINIMO_BAJA,
         umbral_costo: 0,
         resumen: [],
         clientes: [],
@@ -241,11 +352,20 @@ export async function getClusterizacion(
   const rmdDesde = periodo.sem_hasta ? restarMeses(periodo.sem_hasta, 6) : ""
   const rmdMap = rmdDesde ? await getRmdPorCliente(rmdDesde) : new Map()
 
-  // Rechazos de los últimos 45 días [drop_desde, sem_hasta] (foto reciente):
-  // un rechazo de enero no debe condenar al cliente en junio.
+  // NPS de la misma ventana que el RMD, para que las dos señales de voz del
+  // cliente se lean sobre el mismo tramo de tiempo.
+  const npsMap =
+    rmdDesde && periodo.sem_hasta
+      ? await getNpsPorCliente(rmdDesde, periodo.sem_hasta)
+      : new Map<number, NpsAcum>()
+
+  // Rechazos de TODO el período analizado. De acá salen dos lecturas distintas:
+  // el estado pasa/no-pasa mira solo los últimos 45 días (foto reciente del
+  // servicio) y la baja de clúster mira el período completo, donde un rechazo
+  // suelto no alcanza pero dos marcan un patrón.
   const rechazoMap =
-    periodo.drop_desde && periodo.sem_hasta
-      ? await getRechazoPorCliente(periodo.drop_desde, periodo.sem_hasta)
+    periodo.sem_desde && periodo.sem_hasta
+      ? await getRechazoPorCliente(periodo.sem_desde, periodo.sem_hasta)
       : new Map<number, RechazoAcum>()
 
   // Supervisor por promotor (para el filtro del explorador).
@@ -307,15 +427,25 @@ export async function getClusterizacion(
   // Umbral de costo = mediana del $/HL del año (separa "caro" de "barato").
   const umbralCosto = mediana([...costoHlMap.values()])
 
-  // Umbral de facturación = mediana de la facturación del semestre.
-  const umbral = mediana(conDrop.map((r) => r.facturacion_sem))
+  // Umbral de facturación alta = la facturación del cliente Nº MAX_GANADORES en
+  // el ranking de los que crecen (antes era la mediana, que partía la cartera al
+  // medio). Con esto el clúster Ganador queda acotado al tope y lo integran los
+  // que más facturan, que es lo que pidió la auditoría.
+  const facturacionQueCrecen = conDrop
+    .filter(crecePositivoDe)
+    .map((r) => r.facturacion_sem)
+    .sort((a, b) => b - a)
+  const umbral =
+    facturacionQueCrecen.length >= MAX_GANADORES
+      ? facturacionQueCrecen[MAX_GANADORES - 1]
+      : (facturacionQueCrecen.at(-1) ?? 0)
 
   const clientes: ClienteClusterizado[] = conDrop.map((r) => {
     const crecimiento_pct =
       r.facturacion_sem_prev > 0
         ? (r.facturacion_sem - r.facturacion_sem_prev) / r.facturacion_sem_prev
         : null // sin venta el año anterior → cliente nuevo
-    const crecePositivo = crecimiento_pct === null || crecimiento_pct >= 0
+    const crecePositivo = crecePositivoDe(r)
     const ingresoAlto = r.facturacion_sem >= umbral
     const drop_size = r.dias_45d > 0 ? r.bultos_45d / r.dias_45d : 0
     // Costo $/HL del año y cuadrante Valor×Costo (sin dato de costo → null).
@@ -375,18 +505,38 @@ export async function getClusterizacion(
         : null
     const rmd = rmdMap.get(r.id_cliente)
     const rmd_prom = rmd ? rmd.suma / rmd.n : null
+    const nps = npsMap.get(r.id_cliente)
     const rech = rechazoMap.get(r.id_cliente)
-    const rechazos_culpa = rech?.eventos.length ?? 0
-    const rechazos_total = rech?.total ?? 0
+    // El detalle y el conteo del período cubren todo el semestre; el estado
+    // pasa/no-pasa se queda con la ventana corta de los últimos 45 días.
     const rechazos_detalle = rech
       ? [...rech.eventos].sort((a, b) => b.fecha.localeCompare(a.fecha))
       : []
-    // ESTADO: rechazó al menos una vez por su culpa.
+    const rechazos_culpa_periodo = rechazos_detalle.length
+    const desde45 = periodo.drop_desde
+    const rechazos_culpa = desde45
+      ? rechazos_detalle.filter((e) => e.fecha >= desde45).length
+      : rechazos_culpa_periodo
+    const rechazos_total_periodo = rech ? rech.fechas_total.length : 0
+    const rechazos_total = rech
+      ? desde45
+        ? rech.fechas_total.filter((f) => f >= desde45).length
+        : rechazos_total_periodo
+      : 0
+    // ESTADO: rechazó al menos una vez por su culpa en los últimos 45 días.
     const estado: "pasa" | "no_pasa" = rechazos_culpa >= 1 ? "no_pasa" : "pasa"
     // SALUD: drop bajo o RMD bajo.
     const drop_bajo = drop_size < DROP_BAJO
     const rmd_bajo = rmd_prom != null && rmd_prom < RMD_BAJO
     const salud: "sano" | "atencion" = drop_bajo || rmd_bajo ? "atencion" : "sano"
+    // BAJA DE CLÚSTER: el cliente que falla en servicio pierde el escalón de
+    // facturación alta. Cada motivo queda registrado para poder justificarlo.
+    const cluster_base = clasificar(ingresoAlto, crecePositivo)
+    const motivos_baja: MotivoBaja[] = []
+    if (rechazos_culpa_periodo >= MIN_RECHAZOS_BAJA) motivos_baja.push("rechazos")
+    if (rmd_prom != null && rmd_prom < RMD_MINIMO_BAJA) motivos_baja.push("rmd")
+    if (nps && nps.detractores > 0) motivos_baja.push("nps")
+    const cluster = motivos_baja.length > 0 ? bajarEscalon(cluster_base) : cluster_base
     return {
       id_cliente: r.id_cliente,
       nombre: r.nombre,
@@ -394,7 +544,10 @@ export async function getClusterizacion(
       promotor: r.promotor,
       supervisor: r.promotor ? supMap.get(r.promotor.trim().toUpperCase()) ?? null : null,
       segmento: r.segmento,
-      cluster: clasificar(ingresoAlto, crecePositivo),
+      cluster,
+      cluster_base,
+      degradado: cluster !== cluster_base,
+      motivos_baja,
       ingresos_actual: r.facturacion_sem,
       ingresos_anterior: r.facturacion_sem_prev,
       crecimiento_pct,
@@ -409,8 +562,14 @@ export async function getClusterizacion(
       equipos_frio_tipos: frioMap.get(r.id_cliente)?.tipos ?? null,
       rmd_prom,
       rmd_n: rmd ? rmd.n : 0,
+      nps_n: nps ? nps.n : 0,
+      nps_score: nps ? nps.ultimo_score : null,
+      nps_categoria: nps ? nps.ultima_categoria : null,
+      nps_detractores: nps ? nps.detractores : 0,
       rechazos_culpa,
+      rechazos_culpa_periodo,
       rechazos_total,
+      rechazos_total_periodo,
       rechazos_detalle,
       estado,
       drop_bajo,
@@ -477,6 +636,12 @@ export async function getClusterizacion(
       no_pasan: grupo.filter((c) => c.estado === "no_pasa").length,
       en_atencion: grupo.filter((c) => c.salud === "atencion").length,
       sanos: grupo.filter((c) => c.salud === "sano").length,
+      // Movimiento por la baja de servicio: los que llegaron desde el clúster de
+      // arriba y los que se fueron al de abajo.
+      degradados_recibidos: grupo.filter((c) => c.degradado).length,
+      degradados_perdidos: clientes.filter(
+        (c) => c.degradado && c.cluster_base === cl,
+      ).length,
     }
   })
 
@@ -484,6 +649,9 @@ export async function getClusterizacion(
     data: {
       periodo,
       umbral_ingresos: umbral,
+      max_ganadores: MAX_GANADORES,
+      min_rechazos_baja: MIN_RECHAZOS_BAJA,
+      rmd_minimo_baja: RMD_MINIMO_BAJA,
       umbral_costo: umbralCosto,
       resumen,
       clientes,
