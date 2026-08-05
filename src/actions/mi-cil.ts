@@ -141,10 +141,16 @@ export async function createMiTareaCil(
     const dominio = String(formData.get("dominio") || "").trim().toUpperCase()
     const tareaId = String(formData.get("tarea") || "").trim()
     const descripcion = String(formData.get("descripcion") || "").trim()
+    // 🚨 El nombre se ESCRIBE, no se elige de una lista: la tarea la puede haber
+    // hecho un ayudante o alguien sin usuario en la app, y con una lista cerrada
+    // esa persona no tendría cómo quedar registrada. Viene precargado con el
+    // nombre de quien está logueado, que es el caso normal.
+    const operario = String(formData.get("operario") || "").trim()
     const tarea = TAREAS_CIL.find((t) => t.id === tareaId)
 
     if (!dominio) return { error: "Elegí la unidad." }
     if (!tarea) return { error: "Elegí qué tarea hiciste." }
+    if (!operario) return { error: "Escribí el nombre de quien hizo la tarea." }
 
     const foto = formData.get("foto")
     if (!(foto instanceof File) || foto.size === 0) {
@@ -177,7 +183,7 @@ export async function createMiTareaCil(
       fecha: hoyArgentina(),
       dominio,
       tarea: tarea.label,
-      operario: profile.nombre ?? "",
+      operario,
       descripcion: descripcion || null,
       foto_url: pub.publicUrl,
       foto_path: path,

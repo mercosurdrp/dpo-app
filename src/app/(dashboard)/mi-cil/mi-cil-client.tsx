@@ -19,6 +19,7 @@ export function MiCilClient({ data }: { data: MiCilData }) {
   const [pendiente, iniciar] = useTransition()
   const [dominio, setDominio] = useState("")
   const [tarea, setTarea] = useState("")
+  const [operario, setOperario] = useState(data.nombre)
   const [descripcion, setDescripcion] = useState("")
   const [foto, setFoto] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +31,7 @@ export function MiCilClient({ data }: { data: MiCilData }) {
     const fd = new FormData()
     fd.set("dominio", dominio)
     fd.set("tarea", tarea)
+    fd.set("operario", operario)
     fd.set("descripcion", descripcion)
     if (foto) fd.set("foto", foto)
 
@@ -50,7 +52,7 @@ export function MiCilClient({ data }: { data: MiCilData }) {
     })
   }
 
-  const listo = dominio && tarea && foto
+  const listo = dominio && tarea && operario.trim() && foto
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-24">
@@ -139,7 +141,21 @@ export function MiCilClient({ data }: { data: MiCilData }) {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-foreground">3 · Foto de la unidad</label>
+          <label className="text-sm font-medium text-foreground">3 · ¿Quién la hizo?</label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Viene con tu nombre. Si la hizo otra persona, escribí el nombre de quien la hizo.
+          </p>
+          <input
+            type="text"
+            value={operario}
+            onChange={(e) => setOperario(e.target.value)}
+            placeholder="Nombre y apellido"
+            className="mt-2 w-full rounded-lg border bg-background p-3 text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-foreground">4 · Foto de la unidad</label>
           <p className="mt-1 text-xs text-muted-foreground">
             Es obligatoria: es la prueba de que la tarea se hizo.
           </p>
@@ -167,7 +183,7 @@ export function MiCilClient({ data }: { data: MiCilData }) {
 
         <div>
           <label className="text-sm font-medium text-foreground">
-            4 · ¿Encontraste algo? <span className="text-muted-foreground">(opcional)</span>
+            5 · ¿Encontraste algo? <span className="text-muted-foreground">(opcional)</span>
           </label>
           <textarea
             value={descripcion}
