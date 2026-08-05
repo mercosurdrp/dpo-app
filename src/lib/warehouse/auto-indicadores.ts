@@ -28,6 +28,19 @@ const DEPOSITO_API_BASE = "https://deposito-esteban.vercel.app"
 const CHESS_DASHBOARD_BASE = "https://chess-dashboard-mercosurdrps-projects.vercel.app"
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&sheet=Errores%20picking"
+/**
+ * Bultos despachados por día — el DENOMINADOR de la precisión de picking.
+ *
+ * Misma planilla que lee `_picking_precision_diaria` de deposito-esteban
+ * (gid 716749838, col A = "Fecha SALIDA", col H = "Bultos"), pero agregada por
+ * gviz: `select A, sum(H) group by A` devuelve ~700 filas (15 KB) en vez de las
+ * 7.300 del CSV crudo (546 KB). Se necesita acá porque el numerador (errores)
+ * ya se lee fresco del Sheet y el denominador no puede llegar cacheado — ver
+ * `fetchPrecisionDelSheet`.
+ */
+const SHEET_BULTOS_URL =
+  "https://docs.google.com/spreadsheets/d/1K7zWrhFFx7SBoTxZ6Dk93ZrgO05kULlGvxL6ahmUYTA/gviz/tq?tqx=out:csv&gid=716749838&tq=" +
+  encodeURIComponent("select A, sum(H) group by A")
 
 export const OPERADORES_APERTURA = [
   "Troli",
@@ -575,10 +588,29 @@ function parseCsvRow(line: string): string[] {
   return cells
 }
 
+/**
+ * Fecha de una celda tipeada a mano. Acepta los dos formatos con los que sale
+ * la planilla: `D/M/AAAA` (CSV crudo) y `AAAA-M-D` (agregado por gviz).
+ *
+ * 🚨 Valida el año: la planilla tiene filas tipeadas "30/05/0206" (por 2026) y
+ * ese año fantasma, al ser menor que cualquier fecha real, se volvía el inicio
+ * de la medición y hacía que meses SIN errores cargados mostraran 100% de
+ * precisión en vez de "—" (mismo filtro que `_dmy` en deposito-esteban).
+ */
 function parseFechaSheet(raw: string): string | null {
-  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (!m) return null
-  return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`
+  const s = raw.trim()
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  const [y, mes, dia] = dmy
+    ? [+dmy[3], +dmy[2], +dmy[1]]
+    : ymd
+      ? [+ymd[1], +ymd[2], +ymd[3]]
+      : [0, 0, 0]
+  if (!y) return null
+  const anioMax = new Date().getFullYear() + 1
+  if (y < 2000 || y > anioMax) return null
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
+  return `${y}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
 }
 
 function parseDecimalEs(s: string): number {
@@ -610,6 +642,12 @@ async function fetchErroresCountDelSheet(
 ): Promise<{
   porDia: Record<string, number>
   porOperador: Record<string, Record<string, number>>
+  /** Bultos involucrados en errores por día (col "CANTIDAD DE BULTOS").
+   *  Numerador de la precisión; el conteo de filas es otra cosa. */
+  bultosErradosPorDia: Record<string, number>
+  /** Primer error cargado en la planilla, de cualquier tipo y cualquier mes:
+   *  antes de esa fecha nadie anotaba errores y un 100% sería inventado. */
+  inicioMedicion: string | null
 } | null> {
   const csv = await fetchTextSafe(SHEET_URL)
   if (!csv) return null
@@ -620,14 +658,23 @@ async function fetchErroresCountDelSheet(
   const prefijo = `${year}-${String(month).padStart(2, "0")}`
   const porDia: Record<string, number> = {}
   const porOperador: Record<string, Record<string, number>> = {}
+  const bultosErradosPorDia: Record<string, number> = {}
+  let inicioMedicion: string | null = null
 
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvRow(lines[i])
     if (cells.length < 2 || !cells[0]?.trim()) continue
+    const fecha = parseFechaSheet(cells[0])
+    if (!fecha) continue
+    // El inicio de la medición lo marca CUALQUIER error cargado (incluidos los
+    // de SISTEMA y los de otros meses): dice desde cuándo existe la planilla.
+    if (inicioMedicion === null || fecha < inicioMedicion) inicioMedicion = fecha
     // TIPO DE ERROR (col 4) = SISTEMA no es error de operario.
     if (cells.length > 4 && cells[4]?.trim().toUpperCase() === "SISTEMA") continue
-    const fecha = parseFechaSheet(cells[0])
-    if (!fecha || !fecha.startsWith(prefijo)) continue
+    if (!fecha.startsWith(prefijo)) continue
+
+    bultosErradosPorDia[fecha] =
+      (bultosErradosPorDia[fecha] ?? 0) + parseDecimalEs(cells[2] ?? "0")
 
     // El total cuenta la fila aunque el operario no matchee ningún alias
     // (igual que deposito-esteban): un error mal tipeado sigue siendo un error.
@@ -647,7 +694,55 @@ async function fetchErroresCountDelSheet(
     fila[alias] += 1
   }
 
-  return { porDia, porOperador }
+  return { porDia, porOperador, bultosErradosPorDia, inicioMedicion }
+}
+
+/**
+ * Precisión de picking del mes, calculada acá con las planillas FRESCAS:
+ * `(bultos despachados − bultos errados) / bultos despachados × 100`.
+ *
+ * 🚨 Por qué no se toma de `serie-diaria`: ese endpoint cachea su resultado en
+ * blob y sólo lo invalida cuando cambian los MOVIMIENTOS del mes. Las dos
+ * planillas de picking no participan de esa firma, así que un error cargado
+ * después del último recálculo no se veía hasta que alguien subiera pérdidas o
+ * corriera el cron del día siguiente. El conteo de errores ya se leía del Sheet
+ * directo (ver `fetchErroresCountDelSheet`) y la precisión no: la grilla de la
+ * reunión terminaba mostrando "3 errores" y "100% de precisión" el mismo día
+ * (2026-08-04 en producción). Numerador y denominador tienen que salir de la
+ * misma lectura o vuelven a contradecirse.
+ *
+ * Mismo criterio que `_picking_precision_diaria` de deposito-esteban: excluye
+ * los errores de SISTEMA y no emite nada antes del primer error cargado. Los
+ * bultos siguen tomándose por "Fecha SALIDA" (sin remapear al día de pickeo),
+ * igual que allá, para no cambiar el número que la reunión viene mirando.
+ *
+ * Devuelve null si alguna de las dos planillas no se pudo leer.
+ */
+function computePrecisionDelSheet(
+  year: number,
+  month: number,
+  erroresSheet: Awaited<ReturnType<typeof fetchErroresCountDelSheet>>,
+  csv: string | null,
+): Record<string, number> | null {
+  if (!erroresSheet?.inicioMedicion || !csv) return null
+
+  const lines = csv.split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) return null
+
+  const prefijo = `${year}-${String(month).padStart(2, "0")}`
+  const precision: Record<string, number> = {}
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvRow(lines[i])
+    if (cells.length < 2) continue
+    const fecha = parseFechaSheet(cells[0] ?? "")
+    if (!fecha || !fecha.startsWith(prefijo)) continue
+    if (fecha < erroresSheet.inicioMedicion) continue
+    const bultos = parseDecimalEs(cells[1] ?? "0")
+    if (!(bultos > 0)) continue
+    const errados = erroresSheet.bultosErradosPorDia[fecha] ?? 0
+    precision[fecha] = Math.round(((bultos - errados) / bultos) * 10000) / 100
+  }
+  return Object.keys(precision).length > 0 ? precision : null
 }
 
 async function fetchErroresPickingPorFecha(): Promise<
@@ -972,7 +1067,7 @@ async function fetchSerieExtra(
   // El objetivo de venta va acá aunque sólo se use al final (target de WQI):
   // no depende de `res`, y esperarlo después agregaba un round-trip entero a
   // chess-dashboard a la ruta crítica del render (hasta 5s si está frío).
-  const [res, erroresSheet, objetivoVentaHl] = await Promise.all([
+  const [res, erroresSheet, objetivoVentaHl, csvBultos] = await Promise.all([
     fetchJsonSafe<DepositoIndicadoresSerieDiaria>(
       `${DEPOSITO_API_BASE}/api/indicadores/serie-diaria?year=${year}&month=${month}`,
       undefined,
@@ -980,7 +1075,18 @@ async function fetchSerieExtra(
     ),
     fetchErroresCountDelSheet(year, month),
     fetchObjetivoVentaHl(year, month),
+    // Denominador de la precisión. Va en el mismo Promise.all para no sumar un
+    // round-trip en serie a la ruta crítica del render.
+    fetchTextSafe(SHEET_BULTOS_URL),
   ])
+  // La precisión se recalcula acá con las planillas frescas; la de
+  // `serie-diaria` queda de respaldo para cuando la planilla no responde.
+  const precisionSheet = computePrecisionDelSheet(
+    year,
+    month,
+    erroresSheet,
+    csvBultos,
+  )
 
   const roturas: Record<string, number | null> = {}
   const faltantes: Record<string, number | null> = {}
@@ -1023,10 +1129,19 @@ async function fetchSerieExtra(
     wnp_dia[f] = cerrado ? (res?.wnp_dia?.[f] ?? null) : null
     // Precisión y errores: ocultar día actual y futuros (todavía no se pickeó);
     // el día de la reunión se revela una vez cerrado (misma máscara `cerrado`).
-    precision[f] = cerrado ? (res?.precision?.[f] ?? null) : null
+    // La precisión sale de la planilla fresca; sólo si esa lectura falló se cae
+    // al valor de serie-diaria, que puede venir de un cache anterior a la carga
+    // de los errores del día.
+    precision[f] = cerrado
+      ? (precisionSheet?.[f] ?? res?.precision?.[f] ?? null)
+      : null
     if (cerrado) {
       const cnt = contarErroresDelDia(f, erroresSheet, res)
       errores_dia[f] = cnt
+      // 🚨 Guardián: un día con errores NO puede dar 100% de precisión. Si el
+      // único valor disponible es el de respaldo y contradice al conteo, se
+      // deja la celda vacía: mejor un "—" que una precisión perfecta falsa.
+      if (cnt !== null && cnt > 0 && precision[f] === 100) precision[f] = null
       const porOp = erroresSheet
         ? cnt === null
           ? undefined
