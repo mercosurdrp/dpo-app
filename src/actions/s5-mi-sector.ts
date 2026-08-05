@@ -36,6 +36,8 @@ export interface TareaSector {
   fecha_compromiso: string | null
   /** Es el contenedor de las fotos sueltas del mes, no una tarea real. */
   es_libre: boolean
+  /** La cargó el propio operario (no el auditor): puede editarla y borrarla. */
+  es_mia: boolean
   /** Cuántas evidencias tiene cargadas este mes. */
   evidencias: number
   /** Cuántas de esas tienen antes Y después. */
@@ -262,7 +264,7 @@ export async function getMiSector5S(): Promise<
         .order("orden", { ascending: true }),
       supabase
         .from("s5_acciones")
-        .select("id, descripcion, estado, fecha_compromiso, cerrada_at")
+        .select("id, descripcion, estado, fecha_compromiso, cerrada_at, creado_por")
         .eq("tipo", "almacen")
         .eq("sector_numero", sector)
         .order("fecha_compromiso", { ascending: true, nullsFirst: false }),
@@ -304,6 +306,7 @@ export async function getMiSector5S(): Promise<
           estado: a.estado,
           fecha_compromiso: a.fecha_compromiso,
           es_libre: a.descripcion === libre,
+          es_mia: a.creado_por === profile.id,
           evidencias: evs.length,
           completas: evs.filter((e) => esCompleta(e.fotos)).length,
         }
@@ -415,6 +418,159 @@ export async function prepararCarga5S(
     return { data: { accionId } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error preparando la carga" }
+  }
+}
+
+// ===================================================
+// Tareas propias del operario
+// ===================================================
+
+/**
+ * El operario define QUÉ tareas hace en su sector: el auditor le carga algunas
+ * en /5s/sectores, pero el trabajo real del mes casi nunca entra en esa lista
+ * (Troli, 2026-08-05: "solo me salen limpieza de stay y movimiento de pallets").
+ * Puede agregar las suyas y editarlas o borrarlas; las que le puso el auditor
+ * quedan fijas — no le puede sacar lo que le mandaron hacer.
+ *
+ * Va con el cliente admin por el mismo motivo que `accionLibre`: la política
+ * `s5_acciones_insert` solo deja crear a admin/auditor. La autorización la hace
+ * esta función — solo toca el sector que le tocó por sorteo a quien la llama.
+ */
+async function miSectorDelMes(
+  profileId: string,
+): Promise<{ sector: number; periodo: string } | { error: string }> {
+  const periodo = periodoActual()
+  const empleado = await empleadoDelUsuario(profileId)
+  if (!empleado) return { error: "Tu usuario no está vinculado a un legajo" }
+  const sector = await sectorDelEmpleado(empleado.id, periodo)
+  if (sector === null) return { error: "Este mes no sos responsable de ningún sector" }
+  return { sector, periodo }
+}
+
+/**
+ * Tarea del operario, ya validada como suya y editable. Deja afuera la acción
+ * contenedora de las fotos sueltas y las tareas que cargó el auditor.
+ */
+async function miTareaEditable(
+  id: string,
+  profileId: string,
+  sector: number,
+  periodo: string,
+): Promise<{ ok: true } | { error: string }> {
+  const { data: acc } = await createAdminClient()
+    .from("s5_acciones")
+    .select("id, tipo, sector_numero, descripcion, creado_por")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (!acc || acc.tipo !== "almacen" || acc.sector_numero !== sector) {
+    return { error: "Esa tarea no es de tu sector" }
+  }
+  if (acc.descripcion === descripcionLibre(periodo, sector)) {
+    return { error: "Esa no es una tarea: es donde se guardan las fotos sueltas del mes" }
+  }
+  if (acc.creado_por !== profileId) {
+    return { error: "Esta tarea te la cargó el auditor, no la podés cambiar" }
+  }
+  return { ok: true }
+}
+
+export async function crearMiTarea(
+  titulo: string,
+): Promise<{ data: { id: string } } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const desc = titulo.trim()
+    if (!desc) return { error: "Escribí qué tarea hacés" }
+    if (desc.length > 200) return { error: "La tarea es muy larga (máximo 200 caracteres)" }
+
+    const mio = await miSectorDelMes(profile.id)
+    if ("error" in mio) return mio
+
+    const { data, error } = await createAdminClient()
+      .from("s5_acciones")
+      .insert({
+        tipo: "almacen",
+        sector_numero: mio.sector,
+        descripcion: desc,
+        responsable_id: profile.id,
+        fecha_compromiso: finDeMes(mio.periodo),
+        estado: "en_curso",
+        creado_por: profile.id,
+      })
+      .select("id")
+      .single()
+
+    if (error) return { error: error.message }
+
+    revalidatePath(MI_PATH)
+    revalidatePath(DASHBOARD_PATH)
+    return { data: { id: data.id } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error creando la tarea" }
+  }
+}
+
+export async function editarMiTarea(
+  id: string,
+  titulo: string,
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+    const desc = titulo.trim()
+    if (!desc) return { error: "Escribí qué tarea hacés" }
+    if (desc.length > 200) return { error: "La tarea es muy larga (máximo 200 caracteres)" }
+
+    const mio = await miSectorDelMes(profile.id)
+    if ("error" in mio) return mio
+
+    const permiso = await miTareaEditable(id, profile.id, mio.sector, mio.periodo)
+    if ("error" in permiso) return permiso
+
+    const { error } = await createAdminClient()
+      .from("s5_acciones")
+      .update({ descripcion: desc })
+      .eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath(MI_PATH)
+    revalidatePath(DASHBOARD_PATH)
+    return { ok: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error editando la tarea" }
+  }
+}
+
+export async function borrarMiTarea(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+
+    const mio = await miSectorDelMes(profile.id)
+    if ("error" in mio) return mio
+
+    const permiso = await miTareaEditable(id, profile.id, mio.sector, mio.periodo)
+    if ("error" in permiso) return permiso
+
+    const admin = createAdminClient()
+
+    // Con fotos colgadas no se borra: se perdería la evidencia (y el bonus que
+    // ya sumó). Que la deje ahí o pida al auditor.
+    const { count } = await admin
+      .from("s5_acciones_evidencias")
+      .select("id", { count: "exact", head: true })
+      .eq("accion_id", id)
+    if ((count ?? 0) > 0) {
+      return { error: "Esta tarea ya tiene fotos cargadas: no se puede borrar" }
+    }
+
+    const { error } = await admin.from("s5_acciones").delete().eq("id", id)
+    if (error) return { error: error.message }
+
+    revalidatePath(MI_PATH)
+    revalidatePath(DASHBOARD_PATH)
+    return { ok: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error borrando la tarea" }
   }
 }
 
@@ -540,7 +696,7 @@ export async function getPanelSectores5S(
         .eq("periodo", periodo),
       supabase
         .from("s5_acciones")
-        .select("id, sector_numero, descripcion, estado, fecha_compromiso, cerrada_at")
+        .select("id, sector_numero, descripcion, estado, fecha_compromiso, cerrada_at, creado_por")
         .eq("tipo", "almacen")
         .order("fecha_compromiso", { ascending: true, nullsFirst: false }),
     ])
@@ -583,6 +739,7 @@ export async function getPanelSectores5S(
             estado: a.estado,
             fecha_compromiso: a.fecha_compromiso,
             es_libre: a.descripcion === libre,
+            es_mia: a.creado_por === profile.id,
             evidencias: evs.length,
             completas: evs.filter((e) => esCompleta(e.fotos)).length,
           }

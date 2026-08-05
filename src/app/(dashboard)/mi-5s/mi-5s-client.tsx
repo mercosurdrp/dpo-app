@@ -2,14 +2,18 @@
 
 import { useMemo, useState, useTransition } from "react"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   Camera,
+  Check,
   CheckCircle2,
   ClipboardList,
   ImageIcon,
   Loader2,
   MapPin,
+  Pencil,
+  Plus,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -23,7 +27,10 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client"
 import type { ArchivoAvance } from "@/lib/adjuntos-avance"
 import {
   borrarEvidencia5S,
+  borrarMiTarea,
   cargarEvidencia5S,
+  crearMiTarea,
+  editarMiTarea,
   getEvidenciaSectorUrl,
   prepararCarga5S,
   type MiSector5S,
@@ -61,7 +68,11 @@ function nombreDelMes(periodo: string) {
   return `${MESES[Number(m) - 1]} ${y}`
 }
 
-/** Botón de cámara para una de las dos fotos. */
+/**
+ * Botón de foto. SIN `capture`: así el celular ofrece cámara Y galería, que es
+ * lo que hacía falta — antes solo dejaba sacarla en el momento y no se podía
+ * subir una que ya tenías guardada (pedido de 2026-08-05).
+ */
 function BotonFoto({
   label,
   file,
@@ -86,12 +97,11 @@ function BotonFoto({
         <Camera className="size-6" />
         {label}
         <span className="text-[11px] font-normal opacity-80">
-          {file ? "Foto lista ✓" : "tocá para sacar la foto"}
+          {file ? "Foto lista ✓" : "tocá para sacar o elegir la foto"}
         </span>
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           className="hidden"
           onChange={(e) => onChange(e.target.files?.[0] ?? null)}
         />
@@ -110,15 +120,25 @@ function BotonFoto({
   )
 }
 
+/** Opción del desplegable que abre el campo para escribir una tarea nueva. */
+const OPCION_NUEVA = "__nueva__"
+
 export function Mi5SClient({ data }: { data: MiSector5S }) {
+  const router = useRouter()
   const [comentario, setComentario] = useState("")
   const [antes, setAntes] = useState<File | null>(null)
   const [despues, setDespues] = useState<File | null>(null)
   const [tareaSel, setTareaSel] = useState<string>("")
   const [subiendo, startSubir] = useTransition()
   const [verFoto, setVerFoto] = useState<string | null>(null)
+  // Alta y edición de las tareas propias del operario.
+  const [nuevaTarea, setNuevaTarea] = useState("")
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [textoEdit, setTextoEdit] = useState("")
+  const [guardandoTarea, startTarea] = useTransition()
 
   const esResponsable = data.sector_numero !== null
+  const tareasReales = useMemo(() => data.tareas.filter((t) => !t.es_libre), [data.tareas])
 
   const checklistPorS = useMemo(() => {
     const grupos = new Map<S5Categoria, typeof data.checklist>()
@@ -221,6 +241,60 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
       setDespues(null)
       setTareaSel("")
       window.location.reload()
+    })
+  }
+
+  /** Crea la tarea y la deja seleccionada para cargarle la foto enseguida. */
+  function handleCrearTarea() {
+    const titulo = nuevaTarea.trim()
+    if (!titulo) {
+      toast.error("Escribí qué tarea hacés")
+      return
+    }
+    startTarea(async () => {
+      const res = await crearMiTarea(titulo)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Tarea agregada a tu sector")
+      setNuevaTarea("")
+      setTareaSel(res.data.id)
+      // refresh y no reload: si ya eligió las fotos, no las pierde.
+      router.refresh()
+    })
+  }
+
+  function handleEditarTarea(id: string) {
+    const titulo = textoEdit.trim()
+    if (!titulo) {
+      toast.error("Escribí qué tarea hacés")
+      return
+    }
+    startTarea(async () => {
+      const res = await editarMiTarea(id, titulo)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Tarea actualizada")
+      setEditandoId(null)
+      setTextoEdit("")
+      router.refresh()
+    })
+  }
+
+  function handleBorrarTarea(id: string, descripcion: string) {
+    if (!confirm(`¿Borrar la tarea "${descripcion}"?`)) return
+    startTarea(async () => {
+      const res = await borrarMiTarea(id)
+      if ("error" in res) {
+        toast.error(res.error)
+        return
+      }
+      toast.success("Tarea borrada")
+      if (tareaSel === id) setTareaSel("")
+      router.refresh()
     })
   }
 
@@ -328,27 +402,60 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {data.tareas.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                ¿A qué tarea corresponde? <span className="text-slate-400">(opcional)</span>
-              </label>
-              <select
-                value={tareaSel}
-                onChange={(e) => setTareaSel(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">— Tarea suelta del mes —</option>
-                {data.tareas
-                  .filter((t) => !t.es_libre)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.descripcion}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              ¿A qué tarea corresponde? <span className="text-slate-400">(opcional)</span>
+            </label>
+            <select
+              value={tareaSel}
+              onChange={(e) => setTareaSel(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">— Otra tarea (la cuento abajo) —</option>
+              {tareasReales.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.descripcion}
+                </option>
+              ))}
+              <option value={OPCION_NUEVA}>➕ Agregar una tarea nueva…</option>
+            </select>
+
+            {tareaSel === OPCION_NUEVA && (
+              <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <p className="mb-2 text-xs text-emerald-900">
+                  Escribí la tarea que hacés y queda sumada a tu sector para todo el mes.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={nuevaTarea}
+                    onChange={(e) => setNuevaTarea(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleCrearTarea()
+                      }
+                    }}
+                    placeholder="Ej: Limpieza de la zona de carga"
+                    maxLength={200}
+                    className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleCrearTarea}
+                    disabled={guardandoTarea}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    {guardandoTarea ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Plus className="size-4" />
+                    )}
+                    Agregar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="flex gap-3">
             <BotonFoto label="ANTES" file={antes} onChange={setAntes} color="amber" />
@@ -377,46 +484,147 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
       </Card>
 
       {/* ── Tareas del sector ── */}
-      {data.tareas.filter((t) => !t.es_libre).length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="size-5 text-blue-600" />
-              Tareas de tu sector
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {data.tareas
-              .filter((t) => !t.es_libre)
-              .map((t) => (
-                <div
-                  key={t.id}
-                  className={`flex items-start gap-3 rounded-lg border p-3 ${
-                    t.evidencias > 0 ? "border-emerald-200 bg-emerald-50" : "border-slate-200"
-                  }`}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardList className="size-5 text-blue-600" />
+            Tareas de tu sector
+          </CardTitle>
+          <p className="text-xs text-slate-500">
+            Las que agregues vos las podés editar o borrar. Las que te cargó el auditor
+            quedan como están.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {tareasReales.length === 0 && (
+            <p className="py-3 text-center text-sm text-slate-500">
+              Todavía no hay tareas cargadas. Agregá las que hacés en tu sector 👇
+            </p>
+          )}
+
+          {tareasReales.map((t) =>
+            editandoId === t.id ? (
+              <div
+                key={t.id}
+                className="flex gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3"
+              >
+                <input
+                  value={textoEdit}
+                  onChange={(e) => setTextoEdit(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleEditarTarea(t.id)
+                    }
+                    if (e.key === "Escape") setEditandoId(null)
+                  }}
+                  maxLength={200}
+                  autoFocus
+                  className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => handleEditarTarea(t.id)}
+                  disabled={guardandoTarea}
+                  className="bg-emerald-600 hover:bg-emerald-700"
                 >
-                  <CheckCircle2
-                    className={`mt-0.5 size-5 shrink-0 ${
-                      t.evidencias > 0 ? "text-emerald-600" : "text-slate-300"
-                    }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900">{t.descripcion}</p>
-                    {t.fecha_compromiso && (
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Para el {t.fecha_compromiso.split("-").reverse().slice(0, 2).join("/")}
-                      </p>
-                    )}
-                  </div>
-                  {t.completas > 0 && (
-                    <Badge className="bg-amber-600">{t.completas} antes/después</Badge>
+                  {guardandoTarea ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Check className="size-4" />
                   )}
-                  {t.evidencias > 0 && <Badge className="bg-emerald-600">{t.evidencias} 📸</Badge>}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditandoId(null)}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+            ) : (
+              <div
+                key={t.id}
+                className={`flex items-start gap-3 rounded-lg border p-3 ${
+                  t.evidencias > 0 ? "border-emerald-200 bg-emerald-50" : "border-slate-200"
+                }`}
+              >
+                <CheckCircle2
+                  className={`mt-0.5 size-5 shrink-0 ${
+                    t.evidencias > 0 ? "text-emerald-600" : "text-slate-300"
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-900">{t.descripcion}</p>
+                  {t.fecha_compromiso && (
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Para el {t.fecha_compromiso.split("-").reverse().slice(0, 2).join("/")}
+                    </p>
+                  )}
                 </div>
-              ))}
-          </CardContent>
-        </Card>
-      )}
+                {t.completas > 0 && (
+                  <Badge className="bg-amber-600">{t.completas} antes/después</Badge>
+                )}
+                {t.evidencias > 0 && <Badge className="bg-emerald-600">{t.evidencias} 📸</Badge>}
+                {t.es_mia && (
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditandoId(t.id)
+                        setTextoEdit(t.descripcion)
+                      }}
+                      className="text-slate-400 hover:text-blue-600"
+                      aria-label="Editar tarea"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBorrarTarea(t.id, t.descripcion)}
+                      className="text-slate-400 hover:text-red-600"
+                      aria-label="Borrar tarea"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ),
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <input
+              value={nuevaTarea}
+              onChange={(e) => setNuevaTarea(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  handleCrearTarea()
+                }
+              }}
+              placeholder="Agregar otra tarea que hacés en tu sector…"
+              maxLength={200}
+              className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <Button
+              type="button"
+              onClick={handleCrearTarea}
+              disabled={guardandoTarea}
+              variant="outline"
+            >
+              {guardandoTarea ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Agregar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Checklist ── */}
       <Card>
