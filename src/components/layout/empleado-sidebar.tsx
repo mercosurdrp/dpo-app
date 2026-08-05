@@ -20,6 +20,7 @@ import {
   Wrench,
   PackageX,
   Refrigerator,
+  Droplets,
   Sparkles,
   Brain,
   ChevronLeft,
@@ -63,6 +64,11 @@ function empleadoItems(puedeRecepcion: boolean, puedeCombustible: boolean): EmpI
     ...(IS_MISIONES
       ? []
       : [{ label: "Mi sector 5S", href: "/mi-5s", icon: <Sparkles className="size-5" /> }]),
+    // Mi CIL: el chofer registra su propia limpieza, control de fluidos o
+    // lubricación (DPO Flota 4.1). Solo Pampeana, que es donde corre el programa.
+    ...(IS_MISIONES
+      ? []
+      : [{ label: "Mi CIL", href: "/mi-cil", icon: <Droplets className="size-5" /> }]),
     // Rechazos: solo Pampeana (fuente de datos).
     ...(IS_MISIONES ? [] : [{ label: "Rechazos", href: "/rechazos", icon: <PackageX className="size-5" /> }]),
     // Roturas en la calle: solo Pampeana (fuente de datos / DQI).
