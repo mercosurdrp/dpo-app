@@ -35,6 +35,21 @@ interface Props {
   ultimasLecturas: Record<string, LecturaPrevia>
 }
 
+/**
+ * El nombre escrito a mano se guarda en el mismo formato que el catálogo
+ * (MAYÚSCULAS, un espacio entre palabras). Si coincide con alguien que ya está
+ * cargado, se usa el nombre del catálogo tal cual: los reportes por chofer
+ * cruzan `registro_combustible.chofer` con `catalogo_choferes.nombre` por TEXTO,
+ * y dos grafías del mismo nombre aparecerían como dos personas distintas.
+ */
+function normalizarChofer(valor: string, catalogo: CatalogoChofer[]): string {
+  const limpio = valor.trim().replace(/\s+/g, " ").toUpperCase()
+  const enCatalogo = catalogo.find(
+    (c) => c.nombre.trim().replace(/\s+/g, " ").toUpperCase() === limpio
+  )
+  return enCatalogo ? enCatalogo.nombre : limpio
+}
+
 export function CombustibleFormClient({
   vehiculos,
   choferes,
@@ -50,6 +65,10 @@ export function CombustibleFormClient({
     sectorFiltro === "todos" ? true : v.sector === sectorFiltro
   )
   const [chofer, setChofer] = useState("")
+  // El catálogo de choferes es el de reparto: quien maneja una camioneta o
+  // reemplaza por un día no está ahí y antes no tenía cómo registrarse. Con esto
+  // el nombre se puede escribir a mano, igual que el conductor en el checklist.
+  const [choferManual, setChoferManual] = useState(false)
   const [odometro, setOdometro] = useState("")
   const [litros, setLitros] = useState("")
   const [saving, setSaving] = useState(false)
@@ -58,6 +77,7 @@ export function CombustibleFormClient({
   // Mismo control que en el checklist: un odómetro con un dígito de más queda
   // pegado como km actual de la unidad y descoloca rendimiento, plan y cubiertas.
   const vehiculoSel = vehiculos.find((v) => v.dominio === dominio)
+  const esCamioneta = vehiculoSel?.tipo === "camioneta"
   const lecturaPrevia = dominio ? (ultimasLecturas[dominio] ?? null) : null
   const errorOdometro = odometro
     ? validarLectura({
@@ -68,9 +88,15 @@ export function CombustibleFormClient({
       })
     : null
 
+  const choferFinal = choferManual ? normalizarChofer(chofer, choferes) : chofer
+
   async function handleSubmit() {
-    if (!dominio || !chofer) {
+    if (!dominio || !choferFinal) {
       toast.error("Seleccioná vehículo y chofer")
+      return
+    }
+    if (choferManual && choferFinal.length < 5) {
+      toast.error("Escribí el apellido y el nombre del chofer")
       return
     }
     if (!odometro || !litros) {
@@ -93,7 +119,7 @@ export function CombustibleFormClient({
     const result = await createRegistroCombustible({
       fecha: hoy,
       dominio,
-      chofer,
+      chofer: choferFinal,
       odometro: parseInt(odometro),
       litros: parseFloat(litros),
     })
@@ -139,7 +165,22 @@ export function CombustibleFormClient({
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-base font-semibold text-slate-800">Vehículo</Label>
-              <Select value={dominio} onValueChange={(v: string | null) => setDominio(v ?? "")}>
+              <Select
+                value={dominio}
+                onValueChange={(v: string | null) => {
+                  const dom = v ?? ""
+                  setDominio(dom)
+                  // Las camionetas las puede manejar cualquiera y no están en el
+                  // catálogo de reparto: arrancan con el nombre escrito a mano,
+                  // igual que el conductor en el checklist de camioneta.
+                  const esCamionetaNueva =
+                    vehiculos.find((x) => x.dominio === dom)?.tipo === "camioneta"
+                  if (esCamionetaNueva && !choferManual) {
+                    setChoferManual(true)
+                    setChofer("")
+                  }
+                }}
+              >
                 <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
                   <SelectValue placeholder="Seleccionar vehículo..." />
                 </SelectTrigger>
@@ -155,19 +196,49 @@ export function CombustibleFormClient({
             </div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label className="text-base font-semibold text-slate-800">Chofer</Label>
-              <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
-                <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
-                  <SelectValue placeholder="Seleccionar chofer..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {choferes.map((c) => (
-                    <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
-                      {c.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <Label className="text-base font-semibold text-slate-800">
+                  {esCamioneta ? "Conductor" : "Chofer"}
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChoferManual((m) => !m)
+                    setChofer("")
+                  }}
+                  className="text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                >
+                  {choferManual ? "Elegir de la lista" : "No está en la lista"}
+                </button>
+              </div>
+              {choferManual ? (
+                <>
+                  <Input
+                    placeholder="Ej: PEREZ JUAN"
+                    value={chofer}
+                    onChange={(e) => setChofer(e.target.value)}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    className="h-14 text-lg font-semibold text-slate-900 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-200"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Escribí apellido y nombre completos. Se guarda en mayúsculas.
+                  </p>
+                </>
+              ) : (
+                <Select value={chofer} onValueChange={(v: string | null) => setChofer(v ?? "")}>
+                  <SelectTrigger className="h-14 text-lg font-semibold text-slate-900 data-[state=open]:border-blue-400 data-[state=open]:ring-2 data-[state=open]:ring-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200">
+                    <SelectValue placeholder="Seleccionar chofer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {choferes.map((c) => (
+                      <SelectItem key={c.id} value={c.nombre} className="text-base py-2.5">
+                        {c.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-2 sm:col-span-2">
@@ -238,7 +309,7 @@ export function CombustibleFormClient({
       <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
         <Button
           onClick={handleSubmit}
-          disabled={saving || !dominio || !chofer || !odometro || !litros || !!errorOdometro}
+          disabled={saving || !dominio || !choferFinal || !odometro || !litros || !!errorOdometro}
           className="h-14 w-full bg-blue-600 text-base font-semibold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto sm:min-w-[260px] sm:text-lg sm:ml-auto sm:flex disabled:opacity-60"
         >
           {saving ? (
