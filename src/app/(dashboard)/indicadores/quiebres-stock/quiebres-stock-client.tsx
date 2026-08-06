@@ -12,9 +12,17 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { AlertTriangle, Camera, Info, Loader2, MessageSquare, PackageX, TrendingDown } from "lucide-react"
+import {
+  AlertTriangle,
+  Camera,
+  Info,
+  Loader2,
+  MessageSquare,
+  PackageX,
+  ShieldCheck,
+  TrendingDown,
+} from "lucide-react"
 import {
   getQuiebresMes,
   guardarComentarioQuiebre,
@@ -33,6 +41,21 @@ interface Props {
 }
 
 const nf = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 })
+
+/**
+ * Códigos de SKU del producto, los que movieron primero. Una familia agrupa
+ * varios códigos —es el punto del indicador— así que se muestran todos los que
+ * tuvieron volumen: son los que uno busca en Chess.
+ */
+function codigosDe(f: { skus: { id_articulo: number; bultos_mes: number; bultos_previo: number }[] }) {
+  const orden = [...f.skus].sort(
+    (a, b) => b.bultos_mes + b.bultos_previo - (a.bultos_mes + a.bultos_previo),
+  )
+  const conMovimiento = orden.filter((s) => s.bultos_mes > 0 || s.bultos_previo > 0)
+  const lista = (conMovimiento.length ? conMovimiento : orden).slice(0, 4)
+  const resto = (conMovimiento.length ? conMovimiento : orden).length - lista.length
+  return lista.map((s) => s.id_articulo).join(" · ") + (resto > 0 ? ` +${resto}` : "")
+}
 
 export function QuiebresStockClient({ inicial, meses }: Props) {
   const [datos, setDatos] = useState(inicial)
@@ -196,11 +219,14 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                 {datos.familias.map((f) => (
                   <tr key={f.familia} className="hover:bg-slate-50">
                     <td
-                      className="sticky left-0 z-10 max-w-[220px] cursor-pointer truncate bg-white px-2 py-1 hover:bg-slate-50"
-                      title={f.familia}
+                      className="sticky left-0 z-10 max-w-[260px] cursor-pointer bg-white px-2 py-1 hover:bg-slate-50"
+                      title={`${f.familia} — SKU ${codigosDe(f)}`}
                       onClick={() => setAbierta(abierta === f.familia ? null : f.familia)}
                     >
-                      {f.familia}
+                      <div className="truncate">{f.familia}</div>
+                      <div className="truncate font-mono text-[10px] text-slate-400">
+                        {codigosDe(f)}
+                      </div>
                     </td>
                     {datos.dias_operativos.map((d) => {
                       const bultos = f.por_dia[d] ?? 0
@@ -274,7 +300,12 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                   onClick={() => setAbierta(abierta === f.familia ? null : f.familia)}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{f.familia}</p>
+                    <p className="truncate text-sm font-medium text-slate-900">
+                      {f.familia}{" "}
+                      <span className="font-mono text-xs font-normal text-slate-400">
+                        {codigosDe(f)}
+                      </span>
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {f.ventanas
                         .map((v) => `${v.desde.slice(5)} → ${v.hasta.slice(5)} (${v.dias}d)`)
@@ -284,16 +315,18 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                   <div className="flex shrink-0 items-center gap-2">
                     {(() => {
                       const c = datos.comentarios.find((x) => x.familia === f.familia)
-                      if (!c) return (
-                        <Badge variant="outline" className="text-amber-600">
-                          <MessageSquare className="mr-1 h-3 w-3" /> sin causa
-                        </Badge>
-                      )
-                      return c.no_imputable ? (
-                        <Badge variant="secondary">no imputable</Badge>
-                      ) : (
-                        <Badge variant="outline">
-                          <MessageSquare className="mr-1 h-3 w-3" /> con causa
+                      if (c?.no_imputable) {
+                        return (
+                          <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                            <ShieldCheck className="mr-1 h-3 w-3" /> no descuenta
+                          </Badge>
+                        )
+                      }
+                      return (
+                        <Badge variant="outline" className={c ? "" : "text-amber-600"}>
+                          <MessageSquare className="mr-1 h-3 w-3" />
+                          −{datos.kpis.descuento_por_quiebre} pts
+                          {c ? "" : " · sin justificar"}
                         </Badge>
                       )
                     })()}
@@ -319,6 +352,7 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                       anio={datos.anio}
                       mes={datos.mes}
                       inicial={datos.comentarios.find((c) => c.familia === f.familia)}
+                      descuento={datos.kpis.descuento_por_quiebre}
                       onGuardado={(c) =>
                         setDatos((d) => ({
                           ...d,
@@ -380,25 +414,26 @@ function ComentarioEditor({
   anio,
   mes,
   inicial,
+  descuento: DESCUENTO,
   onGuardado,
 }: {
   familia: string
   anio: number
   mes: number
   inicial?: ComentarioQuiebre
+  descuento: number
   onGuardado: (c: ComentarioQuiebre) => void
 }) {
   const [texto, setTexto] = useState(inicial?.comentario ?? "")
-  const [noImputable, setNoImputable] = useState(inicial?.no_imputable ?? false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
-  const sucio =
-    texto !== (inicial?.comentario ?? "") ||
-    noImputable !== (inicial?.no_imputable ?? false)
+  const noDescuenta = inicial?.no_imputable ?? false
+  const textoSucio = texto !== (inicial?.comentario ?? "")
+  const hayJustificacion = texto.trim().length > 0
 
-  async function guardar() {
+  async function guardar(noImputable: boolean) {
     setGuardando(true)
     setError(null)
     setOk(false)
@@ -418,8 +453,17 @@ function ComentarioEditor({
   }
 
   return (
-    <div className="mb-3 rounded-md bg-slate-50 p-3">
-      <Label className="text-xs font-medium text-slate-700">¿Por qué quebró?</Label>
+    <div
+      className={`mb-3 rounded-md p-3 ${noDescuenta ? "bg-emerald-50" : "bg-slate-50"}`}
+    >
+      <Label className="text-xs font-medium text-slate-700">
+        ¿Por qué quebró?{" "}
+        <span className="font-normal text-muted-foreground">
+          {noDescuenta
+            ? "— justificado, este quiebre no descuenta"
+            : `— hoy descuenta ${DESCUENTO} puntos`}
+        </span>
+      </Label>
       <Textarea
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
@@ -427,28 +471,50 @@ function ComentarioEditor({
         className="mt-1 min-h-[60px] bg-white text-sm"
       />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`ni-${familia}`}
-            checked={noImputable}
-            onCheckedChange={(v) => setNoImputable(v === true)}
-          />
-          <Label htmlFor={`ni-${familia}`} className="text-xs text-slate-600">
-            No imputable al comprador (no dependía de él)
-          </Label>
+        <div className="text-xs text-muted-foreground">
+          {error && <span className="text-red-600">{error}</span>}
+          {!error && ok && !textoSucio && <span className="text-emerald-600">Guardado</span>}
+          {!error && !ok && inicial?.updated_at && !textoSucio && (
+            <span>últ. edición {inicial.updated_at.slice(0, 10)}</span>
+          )}
+          {!hayJustificacion && !noDescuenta && (
+            <span>Escribí el motivo para poder no descontarlo.</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {error && <span className="text-xs text-red-600">{error}</span>}
-          {ok && !sucio && <span className="text-xs text-emerald-600">Guardado</span>}
-          {inicial?.updated_at && !sucio && !ok && (
-            <span className="text-xs text-muted-foreground">
-              últ. edición {inicial.updated_at.slice(0, 10)}
-            </span>
-          )}
-          <Button size="sm" onClick={guardar} disabled={guardando || !sucio}>
-            {guardando && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-            Guardar
+          {guardando && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          {/* Guardar el motivo sin sacarle el descuento: el quiebre fue
+              evitable, pero queda escrito qué pasó. */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => guardar(noDescuenta)}
+            disabled={guardando || !textoSucio}
+          >
+            Guardar motivo
           </Button>
+          {noDescuenta ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => guardar(false)}
+              disabled={guardando}
+            >
+              Volver a descontar
+            </Button>
+          ) : (
+            // Exige justificación escrita: sacar el descuento sin decir por qué
+            // es exactamente lo que después no se puede defender en una
+            // discusión con el empleado.
+            <Button
+              size="sm"
+              onClick={() => guardar(true)}
+              disabled={guardando || !hayJustificacion}
+            >
+              <ShieldCheck className="mr-1 h-3 w-3" />
+              No descontar
+            </Button>
+          )}
         </div>
       </div>
     </div>
