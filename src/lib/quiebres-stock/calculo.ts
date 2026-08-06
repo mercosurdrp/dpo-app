@@ -276,13 +276,31 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   }
 
   // ── Fotos de stock, agregadas por familia y día
+  //
+  // 🚨 EL STOCK NEGATIVO NO ES QUIEBRE. Chess devuelve saldos negativos cuando
+  // el kardex quedó desfasado —típico en retornables, donde el despacho se
+  // imputa antes que la recepción—. En julio 2026 la Brahma litro retornable,
+  // el producto #1, cerró el mes en −17.733 bultos habiendo despachado los 26
+  // días: contarlo como quiebre sería facturarle al comprador un problema de
+  // imputación. Un negativo se trata como SIN DATO: ese día cae al proxy de
+  // venta, no cuenta ni a favor ni en contra.
   const diasConFoto = [...new Set(e.fotos.map((f) => f.fecha))].sort()
-  const stockPorFamiliaDia = new Map<string, Map<string, number>>()
+  interface StockDia {
+    /** Suma de los artículos con saldo válido (>= 0). */
+    positivo: number
+    /** Artículos con saldo negativo, o sea kardex desfasado. */
+    negativos: number
+  }
+  const stockPorFamiliaDia = new Map<string, Map<string, StockDia>>()
   for (const f of e.fotos) {
     const clave = familiaDeSku.get(f.id_articulo)
     if (!clave) continue
-    const porDia = stockPorFamiliaDia.get(clave) ?? new Map<string, number>()
-    porDia.set(f.fecha, (porDia.get(f.fecha) ?? 0) + (Number(f.bultos) || 0))
+    const porDia = stockPorFamiliaDia.get(clave) ?? new Map<string, StockDia>()
+    const acc = porDia.get(f.fecha) ?? { positivo: 0, negativos: 0 }
+    const bultos = Number(f.bultos) || 0
+    if (bultos < 0) acc.negativos++
+    else acc.positivo += bultos
+    porDia.set(f.fecha, acc)
     stockPorFamiliaDia.set(clave, porDia)
   }
 
@@ -295,18 +313,31 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   const salida: FamiliaQuiebre[] = top.map((f) => {
     const stockDias = stockPorFamiliaDia.get(f.familia)
     const diasStockCero = stockDias
-      ? [...stockDias.entries()].filter(([, b]) => b <= 0).map(([d]) => d).sort()
+      ? [...stockDias.entries()]
+          .filter(([, s]) => s.positivo === 0 && s.negativos === 0)
+          .map(([d]) => d)
+          .sort()
       : []
 
-    // Un día con foto manda sobre el proxy: si había stock, no fue quiebre
-    // aunque no se haya vendido (puede no haber habido pedido ese día).
-    const diasQueCuentanComoVenta = new Set(f.diasConVenta)
+    // Un día con foto se decide SÓLO por stock, en los dos sentidos:
+    //  · había stock ⇒ no fue quiebre, aunque no se haya vendido nada (puede
+    //    no haber habido pedido ese día, y castigar eso sería castigar la
+    //    demanda en vez del abastecimiento).
+    //  · no había stock a la mañana ⇒ fue quiebre, aunque después se haya
+    //    vendido algo. Ése es el punto de sacar la foto temprano: lo que
+    //    importa es con qué se abrió el día. Si entró un camión a las 11, el
+    //    PDV que pidió a las 8 igual se quedó sin.
+    // Los días sin foto caen al proxy: hubo venta ⇒ había stock.
+    const diasSanos = new Set(f.diasConVenta)
     for (const dia of diasConFoto) {
       const stock = stockDias?.get(dia)
-      if (stock !== undefined && stock > 0) diasQueCuentanComoVenta.add(dia)
+      if (stock === undefined) continue // la familia no figura en esa foto
+      if (stock.positivo > 0) diasSanos.add(dia)
+      else if (stock.negativos === 0) diasSanos.delete(dia)
+      // positivo 0 con negativos ⇒ kardex desfasado: se deja lo que diga la venta
     }
 
-    const ventanas = ventanasDeQuiebre(diasQueCuentanComoVenta, cal.dias, e.minDias)
+    const ventanas = ventanasDeQuiebre(diasSanos, cal.dias, e.minDias)
     return {
       familia: f.familia,
       marca: f.marca,
