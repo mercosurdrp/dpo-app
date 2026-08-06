@@ -10,8 +10,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { AlertTriangle, Camera, Info, PackageX, TrendingDown } from "lucide-react"
-import { getQuiebresMes, type QuiebresMes } from "@/actions/quiebres-stock"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { AlertTriangle, Camera, Info, Loader2, MessageSquare, PackageX, TrendingDown } from "lucide-react"
+import {
+  getQuiebresMes,
+  guardarComentarioQuiebre,
+  type ComentarioQuiebre,
+  type QuiebresMes,
+} from "@/actions/quiebres-stock"
 
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -233,6 +242,21 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {(() => {
+                      const c = datos.comentarios.find((x) => x.familia === f.familia)
+                      if (!c) return (
+                        <Badge variant="outline" className="text-amber-600">
+                          <MessageSquare className="mr-1 h-3 w-3" /> sin causa
+                        </Badge>
+                      )
+                      return c.no_imputable ? (
+                        <Badge variant="secondary">no imputable</Badge>
+                      ) : (
+                        <Badge variant="outline">
+                          <MessageSquare className="mr-1 h-3 w-3" /> con causa
+                        </Badge>
+                      )
+                    })()}
                     {f.rechazos_sin_stock > 0 && (
                       <Badge variant="destructive">
                         {f.rechazos_sin_stock} rechazo{f.rechazos_sin_stock === 1 ? "" : "s"} SIN STOCK
@@ -250,6 +274,21 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                 </button>
                 {abierta === f.familia && (
                   <div className="border-t border-slate-100 px-3 py-2">
+                    <ComentarioEditor
+                      familia={f.familia}
+                      anio={datos.anio}
+                      mes={datos.mes}
+                      inicial={datos.comentarios.find((c) => c.familia === f.familia)}
+                      onGuardado={(c) =>
+                        setDatos((d) => ({
+                          ...d,
+                          comentarios: [
+                            ...d.comentarios.filter((x) => x.familia !== c.familia),
+                            c,
+                          ],
+                        }))
+                      }
+                    />
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-slate-500">
@@ -288,6 +327,90 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+/**
+ * Por qué quebró. No sale de ningún sistema: lo sabe quien compra, y es lo que
+ * separa el quiebre evitable del que no lo era. Se guarda por producto y mes.
+ */
+function ComentarioEditor({
+  familia,
+  anio,
+  mes,
+  inicial,
+  onGuardado,
+}: {
+  familia: string
+  anio: number
+  mes: number
+  inicial?: ComentarioQuiebre
+  onGuardado: (c: ComentarioQuiebre) => void
+}) {
+  const [texto, setTexto] = useState(inicial?.comentario ?? "")
+  const [noImputable, setNoImputable] = useState(inicial?.no_imputable ?? false)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [ok, setOk] = useState(false)
+
+  const sucio =
+    texto !== (inicial?.comentario ?? "") ||
+    noImputable !== (inicial?.no_imputable ?? false)
+
+  async function guardar() {
+    setGuardando(true)
+    setError(null)
+    setOk(false)
+    const res = await guardarComentarioQuiebre({
+      familia,
+      anio,
+      mes,
+      comentario: texto,
+      noImputable,
+    })
+    setGuardando(false)
+    if ("error" in res) setError(res.error)
+    else {
+      onGuardado(res.data)
+      setOk(true)
+    }
+  }
+
+  return (
+    <div className="mb-3 rounded-md bg-slate-50 p-3">
+      <Label className="text-xs font-medium text-slate-700">¿Por qué quebró?</Label>
+      <Textarea
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder="Ej: no había en fábrica · no se vende, hay que sacarlo del universo · pedido tardío"
+        className="mt-1 min-h-[60px] bg-white text-sm"
+      />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={`ni-${familia}`}
+            checked={noImputable}
+            onCheckedChange={(v) => setNoImputable(v === true)}
+          />
+          <Label htmlFor={`ni-${familia}`} className="text-xs text-slate-600">
+            No imputable al comprador (no dependía de él)
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          {error && <span className="text-xs text-red-600">{error}</span>}
+          {ok && !sucio && <span className="text-xs text-emerald-600">Guardado</span>}
+          {inicial?.updated_at && !sucio && !ok && (
+            <span className="text-xs text-muted-foreground">
+              últ. edición {inicial.updated_at.slice(0, 10)}
+            </span>
+          )}
+          <Button size="sm" onClick={guardar} disabled={guardando || !sucio}>
+            {guardando && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+            Guardar
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

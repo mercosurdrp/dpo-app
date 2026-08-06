@@ -21,8 +21,9 @@
  * Este archivo sólo trae datos. El cálculo está en `@/lib/quiebres-stock/calculo`
  * para poder correrlo fuera de la app y auditarlo.
  */
+import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { requireAuth } from "@/lib/session"
+import { requireAuth, requireRole } from "@/lib/session"
 import { getPool } from "@/lib/mercosur-dashboard"
 import {
   agregarQuiebres,
@@ -45,10 +46,27 @@ const MIN_DIAS_DEFAULT = 2
 /** Motivo de rechazo "SIN STOCK" en `catalogo_rechazos`. */
 const MOTIVO_SIN_STOCK = 13
 
+/** Por qué quebró — lo carga a mano quien compra; no sale de ningún sistema. */
+export interface ComentarioQuiebre {
+  familia: string
+  comentario: string
+  /** true = no fue responsabilidad del comprador (ej: sin asignación de fábrica). */
+  no_imputable: boolean
+  updated_at: string | null
+}
+
 export interface QuiebresMes extends ResultadoQuiebres {
   anio: number
   mes: number
+  comentarios: ComentarioQuiebre[]
 }
+
+const PATH_INDICADOR = "/indicadores/quiebres-stock"
+const ROLES_EDICION: ("admin" | "admin_rrhh" | "supervisor")[] = [
+  "admin",
+  "admin_rrhh",
+  "supervisor",
+]
 
 /** Una página de PostgREST: lo que devuelve `select(...).range(...)`. */
 type Pagina = PromiseLike<{
@@ -134,7 +152,7 @@ export async function getQuiebresMes(params: {
     // Mes anterior, para mostrar el contraste en el detalle por SKU.
     const desdePrevio = ymd(new Date(Date.UTC(anio, mes - 2, 1)))
 
-    const [maestro, dist, most, rech, fotos] = await Promise.all([
+    const [maestro, dist, most, rech, fotos, comentarios] = await Promise.all([
       traerMaestro(),
       traerTodo<FilaVentaCruda>("ventas_diarias_sku", (d, h) =>
         supabase
@@ -173,6 +191,14 @@ export async function getQuiebresMes(params: {
           .lte("fecha", hastaMes)
           .range(d, h),
       ).catch(() => [] as FilaFotoCruda[]),
+      traerTodo<ComentarioQuiebre>("quiebres_stock_comentarios", (d, h) =>
+        supabase
+          .from("quiebres_stock_comentarios")
+          .select("familia,comentario,no_imputable,updated_at")
+          .eq("anio", anio)
+          .eq("mes", mes)
+          .range(d, h),
+      ).catch(() => [] as ComentarioQuiebre[]),
     ])
 
     const ventas = [...dist, ...most]
@@ -191,7 +217,44 @@ export async function getQuiebresMes(params: {
       minDias,
     })
 
-    return { data: { anio, mes, ...resultado } }
+    return { data: { anio, mes, ...resultado, comentarios } }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Error inesperado" }
+  }
+}
+
+/**
+ * Guarda (o pisa) el comentario de por qué quebró un producto en un mes.
+ * Una fila por (familia, año, mes): el upsert actualiza en vez de duplicar.
+ */
+export async function guardarComentarioQuiebre(params: {
+  familia: string
+  anio: number
+  mes: number
+  comentario: string
+  noImputable: boolean
+}): Promise<{ data: ComentarioQuiebre } | { error: string }> {
+  const profile = await requireRole(ROLES_EDICION)
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("quiebres_stock_comentarios")
+      .upsert(
+        {
+          familia: params.familia,
+          anio: params.anio,
+          mes: params.mes,
+          comentario: params.comentario.trim(),
+          no_imputable: params.noImputable,
+          autor: profile.id,
+        },
+        { onConflict: "familia,anio,mes" },
+      )
+      .select("familia,comentario,no_imputable,updated_at")
+      .single()
+    if (error) return { error: error.message }
+    revalidatePath(PATH_INDICADOR)
+    return { data: data as ComentarioQuiebre }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Error inesperado" }
   }
