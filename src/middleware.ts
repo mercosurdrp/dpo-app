@@ -89,7 +89,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/radar-rechazos/feed" ||
     pathname === "/api/wa-bot/sync-clientes" ||
     pathname === "/api/wa-bot/webhook" ||
-    pathname === "/api/indicadores/sync-familias"
+    pathname === "/api/indicadores/sync-familias" ||
+    pathname === "/api/indicadores/quiebres-stock/cron-foto"
   ) {
     return NextResponse.next()
   }

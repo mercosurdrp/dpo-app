@@ -434,6 +434,32 @@ export function IndicadoresLandingClient({ pilares }: Props) {
         </div>
       </div>
 
+      {/* Almacén */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          Almacén
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link href="/indicadores/quiebres-stock">
+            <Card className="group cursor-pointer transition-all hover:shadow-md hover:border-red-300">
+              <CardContent className="flex items-center gap-4 pt-6">
+                <div className="rounded-xl p-3 bg-red-100 text-red-600 group-hover:bg-red-200 transition-colors">
+                  <PackageX className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Quiebres de Stock
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Día a día, qué producto quedó sin stock — Pilar Almacén
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
+
       {/* Pilares */}
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
