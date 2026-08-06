@@ -87,6 +87,19 @@ async function subirFotos(
   return { paths }
 }
 
+/** ¿La fila ya tiene evidencia cargada? Se usa para no volver a exigir foto al corregir. */
+async function tieneFotos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("participaciones_cruzadas")
+    .select("fotos")
+    .eq("id", id)
+    .maybeSingle()
+  return ((data as { fotos: string[] } | null)?.fotos?.length ?? 0) > 0
+}
+
 export async function listParticipacionesCruzadas(
   anio?: number,
 ): Promise<Result<ParticipacionCruzada[]>> {
@@ -168,8 +181,21 @@ export async function marcarReunionComoCruzada(
     }
     if (!fecha_real) return { error: "Falta la fecha de la reunión" }
 
+    // Si la reunión ya estaba marcada, esto es una corrección: se actualiza esa
+    // misma fila (si no, el índice único de `reunion_id` lo rechazaría) y no se
+    // vuelve a exigir la foto, que ya está cargada.
+    const { data: previa } = await supabase
+      .from("participaciones_cruzadas")
+      .select("id")
+      .eq("reunion_id", reunion_id)
+      .maybeSingle()
+    const idExistente = plan_id ?? (previa as { id: string } | null)?.id ?? null
+
     const fotos = fotosDelForm(formData)
-    if (contarFotos(fotos) === 0) {
+    if (
+      contarFotos(fotos) === 0 &&
+      !(idExistente && (await tieneFotos(supabase, idExistente)))
+    ) {
       return { error: "Subí al menos una foto: es la evidencia" }
     }
 
@@ -178,7 +204,7 @@ export async function marcarReunionComoCruzada(
       .from("participaciones_cruzadas")
       .upsert(
         {
-          ...(plan_id ? { id: plan_id } : {}),
+          ...(idExistente ? { id: idExistente } : {}),
           reunion_id,
           sentido: sentido as ParticipacionCruzadaSentido,
           destino,
@@ -187,6 +213,7 @@ export async function marcarReunionComoCruzada(
           fecha_real,
           participantes,
           minuta,
+          motivo: null,
           created_by: profile.id,
         },
         { onConflict: "id" },
@@ -204,7 +231,8 @@ export async function marcarReunionComoCruzada(
     const fila = creado as ParticipacionCruzada
     const subida = await subirFotos(supabase, fila.id, fotos)
     if ("error" in subida) {
-      if (!plan_id) {
+      // Sólo se descarta la fila si la acabamos de crear.
+      if (!idExistente) {
         await supabase.from("participaciones_cruzadas").delete().eq("id", fila.id)
       }
       return { error: subida.error }
@@ -463,8 +491,13 @@ export async function registrarCruceExterno(
     if (!fecha_real) return { error: "Falta la fecha en que se hizo" }
     if (!participantes) return { error: "Anotá quién participó" }
 
+    // Si la fila ya está registrada, esto es una corrección (típico: se cargaron
+    // las fotos y la minuta se escribe después). La foto ya está: no se vuelve a
+    // pedir.
+    const yaTieneEvidencia = id ? await tieneFotos(supabase, id) : false
+
     const fotos = fotosDelForm(formData)
-    if (contarFotos(fotos) === 0) {
+    if (contarFotos(fotos) === 0 && !yaTieneEvidencia) {
       return { error: "Subí al menos una foto: es la evidencia" }
     }
 
@@ -480,6 +513,8 @@ export async function registrarCruceExterno(
           fecha_real,
           participantes,
           minuta,
+          // Si venía marcada como no realizada, el motivo deja de aplicar.
+          motivo: null,
           created_by: profile.id,
         },
         { onConflict: "id" },

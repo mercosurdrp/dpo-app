@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { Camera, Handshake, Loader2, Trash2 } from "lucide-react"
+import { Camera, Handshake, Loader2, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -183,20 +183,34 @@ export function SeccionParticipacionCruzada({
                 {cruce.minuta}
               </p>
             )}
-            {cruce.fotos.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {cruce.fotos.map((f) => (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {cruce.fotos.map((f) => (
+                <Button
+                  key={f}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => verFoto(f)}
+                >
+                  <Camera className="mr-2 size-4" />
+                  {labelDeFoto(f)}
+                </Button>
+              ))}
+              {puedeEditar && (
+                <>
+                  {/* La minuta se suele escribir después de subir la foto: se
+                      puede volver a entrar sin perder lo cargado. */}
                   <Button
-                    key={f}
                     size="sm"
                     variant="outline"
-                    onClick={() => verFoto(f)}
+                    disabled={pending}
+                    onClick={() => {
+                      setSentido(cruce.sentido)
+                      setAbrir(true)
+                    }}
                   >
-                    <Camera className="mr-2 size-4" />
-                    {labelDeFoto(f)}
+                    <Pencil className="mr-2 size-4" />
+                    Editar
                   </Button>
-                ))}
-                {puedeEditar && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -206,9 +220,9 @@ export function SeccionParticipacionCruzada({
                     <Trash2 className="mr-2 size-4 text-red-600" />
                     Deshacer
                   </Button>
-                )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -224,7 +238,9 @@ export function SeccionParticipacionCruzada({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Handshake className="size-5 text-emerald-600" />
-              Registrar participación cruzada
+              {marcada
+                ? "Editar la participación cruzada"
+                : "Registrar participación cruzada"}
             </DialogTitle>
           </DialogHeader>
 
@@ -259,6 +275,7 @@ export function SeccionParticipacionCruzada({
                 id="cruce_tema"
                 name="tema"
                 rows={2}
+                defaultValue={cruce?.tema ?? ""}
                 placeholder="Qué tema se trajo a esta reunión…"
               />
             </div>
@@ -268,6 +285,7 @@ export function SeccionParticipacionCruzada({
               <Input
                 id="cruce_participantes"
                 name="participantes"
+                defaultValue={cruce?.participantes ?? ""}
                 placeholder="Nombre y apellido, separados por coma"
                 required
               />
@@ -279,6 +297,7 @@ export function SeccionParticipacionCruzada({
                 id="cruce_minuta"
                 name="minuta"
                 rows={3}
+                defaultValue={cruce?.minuta ?? ""}
                 placeholder="Qué se habló y a qué se comprometieron…"
               />
             </div>
@@ -305,8 +324,9 @@ export function SeccionParticipacionCruzada({
                 multiple
               />
               <p className="text-xs text-muted-foreground">
-                Es la evidencia de la auditoría · podés subir varias de cada
-                tipo, pero al menos una es obligatoria.
+                {marcada && cruce && cruce.fotos.length > 0
+                  ? `Ya hay ${cruce.fotos.length} foto${cruce.fotos.length > 1 ? "s" : ""} cargada${cruce.fotos.length > 1 ? "s" : ""}: subí otra sólo si querés sumar evidencia.`
+                  : "Es la evidencia de la auditoría · podés subir varias de cada tipo, pero al menos una es obligatoria."}
               </p>
             </div>
 

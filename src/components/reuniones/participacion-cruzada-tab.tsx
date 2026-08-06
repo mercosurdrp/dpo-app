@@ -449,6 +449,25 @@ export function ParticipacionCruzadaTab() {
                         </Button>
                       </>
                     )}
+                    {/* Ya registrada: se corrige lo cargado (la minuta suele
+                        escribirse después de subir las fotos). */}
+                    {puedeEditar && c.estado === "realizada" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setRegistrando(c)}
+                        aria-label="Editar lo registrado"
+                      >
+                        <Pencil className="mr-2 size-4" />
+                        Editar
+                      </Button>
+                    )}
+                    {puedeEditar && c.estado === "no_realizada" && (
+                      <Button size="sm" onClick={() => setRegistrando(c)}>
+                        <Camera className="mr-2 size-4" />
+                        Marcar hecha
+                      </Button>
+                    )}
                     {puedeEditar && (
                       <Button
                         size="sm"
@@ -502,6 +521,8 @@ export function ParticipacionCruzadaTab() {
         onVerReunion={(id) => router.push(`/reuniones/${id}`)}
       />
       <RegistrarDialog
+        /* remonta el form al cambiar de fila: refresca los defaultValue */
+        key={registrando?.id ?? "nuevo"}
         cruce={registrando}
         nuevo={registrandoNuevo}
         onClose={() => {
@@ -775,15 +796,16 @@ function RegistrarDialog({
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  // El padre remonta el diálogo con `key` al cambiar de fila: el estado inicial
+  // alcanza y los `defaultValue` se refrescan solos.
   const [sentido, setSentido] = useState<ParticipacionCruzadaSentido>(
-    "ventas_a_operaciones",
+    cruce?.sentido ?? "ventas_a_operaciones",
   )
 
   const open = nuevo || cruce !== null
-
-  useEffect(() => {
-    if (cruce) setSentido(cruce.sentido)
-  }, [cruce])
+  /** Ya registrada: se está corrigiendo lo cargado, no registrando de cero. */
+  const corrigiendo = cruce?.estado === "realizada"
+  const fotosCargadas = cruce?.fotos.length ?? 0
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -812,7 +834,11 @@ function RegistrarDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Registrar la participación</DialogTitle>
+          <DialogTitle>
+            {corrigiendo
+              ? "Editar la participación registrada"
+              : "Registrar la participación"}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
@@ -843,7 +869,9 @@ function RegistrarDialog({
                 id="reg_fecha"
                 name="fecha_real"
                 type="date"
-                defaultValue={cruce?.fecha_plan ?? iso(new Date())}
+                defaultValue={
+                  cruce?.fecha_real ?? cruce?.fecha_plan ?? iso(new Date())
+                }
                 required
               />
             </div>
@@ -877,11 +905,13 @@ function RegistrarDialog({
             <Input
               id="reg_part"
               name="participantes"
-              defaultValue={cruce?.participantes_previstos ?? ""}
+              defaultValue={
+                cruce?.participantes ?? cruce?.participantes_previstos ?? ""
+              }
               placeholder="Nombre y apellido, separados por coma"
               required
             />
-            {cruce?.participantes_previstos && (
+            {!corrigiendo && cruce?.participantes_previstos && (
               <p className="text-xs text-muted-foreground">
                 Previstos: {cruce.participantes_previstos}. Dejá sólo los que
                 fueron de verdad.
@@ -894,6 +924,7 @@ function RegistrarDialog({
               id="reg_minuta"
               name="minuta"
               rows={3}
+              defaultValue={cruce?.minuta ?? ""}
               placeholder="Qué se habló…"
             />
           </div>
@@ -918,8 +949,9 @@ function RegistrarDialog({
               multiple
             />
             <p className="text-xs text-muted-foreground">
-              Podés subir varias de cada tipo. Al menos una foto es obligatoria:
-              es la evidencia.
+              {fotosCargadas > 0
+                ? `Ya hay ${fotosCargadas} foto${fotosCargadas > 1 ? "s" : ""} cargada${fotosCargadas > 1 ? "s" : ""}. Subí otra sólo si querés sumar evidencia: no se pisan las que están.`
+                : "Podés subir varias de cada tipo. Al menos una foto es obligatoria: es la evidencia."}
             </p>
           </div>
           {error && (

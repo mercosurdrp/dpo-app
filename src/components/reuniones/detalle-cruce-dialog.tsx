@@ -232,6 +232,20 @@ export function DetalleCruceDialog({
               </Button>
             </>
           )}
+          {/* Ya registrada: se corrige lo cargado (agregar la minuta, sumar
+              fotos) sin tener que borrar y volver a empezar. */}
+          {puedeEditar && realizada && (
+            <Button variant="outline" onClick={() => onRegistrar(cruce)}>
+              <Pencil className="mr-2 size-4" />
+              Editar lo registrado
+            </Button>
+          )}
+          {puedeEditar && cruce.estado === "no_realizada" && (
+            <Button onClick={() => onRegistrar(cruce)}>
+              <Camera className="mr-2 size-4" />
+              Marcar hecha
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose}>
             Cerrar
           </Button>
