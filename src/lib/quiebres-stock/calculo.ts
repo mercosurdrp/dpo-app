@@ -161,9 +161,9 @@ export interface FamiliaQuiebre {
   /** true = entra al top N que define el puntaje del variable. */
   en_universo: boolean
   /**
-   * false = en todo el mes no tuvo NI una unidad de stock NI una venta. No se
-   * puede quebrar algo que no se tiene ni se vende: son POP del Mundial,
-   * barriles, artículos discontinuados. Se listan al final, sin quiebre.
+   * true = el producto estaba en el surtido AL EMPEZAR el mes: vendió el mes
+   * anterior, o tenía stock el día previo al 1°. Los que no, se listan al
+   * final sin quiebre (POP del Mundial, barriles, discontinuados).
    */
   en_surtido: boolean
   /** Bultos del trimestre móvil — define el ranking de rotación. */
@@ -223,6 +223,12 @@ export interface EntradaQuiebres {
   ventas: FilaVentaCruda[]
   /** Fotos de stock del mes analizado. */
   fotos: FilaFotoCruda[]
+  /**
+   * Foto del día ANTERIOR al 1° del mes. Define, junto con la venta del mes
+   * anterior, qué productos estaban en el surtido al arrancar. Puede venir
+   * vacía en meses viejos, sin fotos: ahí manda sólo la venta.
+   */
+  stockInicial?: FilaFotoCruda[]
   /** SKUs rechazados con motivo SIN STOCK en el mes. */
   rechazosSinStock: number[]
   maestro: Map<number, ArticuloMaestro>
@@ -342,6 +348,17 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
     stockPorFamiliaDia.set(clave, porDia)
   }
 
+  // ── Stock con el que arrancó el mes (foto del día anterior al 1°)
+  const stockInicialPorFamilia = new Map<string, number>()
+  for (const f of e.stockInicial ?? []) {
+    const clave = familiaDeSku.get(f.id_articulo)
+    if (!clave) continue
+    const bultos = Number(f.bultos) || 0
+    if (bultos > 0) {
+      stockInicialPorFamilia.set(clave, (stockInicialPorFamilia.get(clave) ?? 0) + bultos)
+    }
+  }
+
   // ── Se analizan TODOS los productos, pero el puntaje sale sólo de los N de
   // mayor rotación. Un quiebre en un producto de cola es información útil
   // —conviene verlo— sin ser lo que define el variable.
@@ -376,13 +393,16 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
       // positivo 0 con negativos ⇒ kardex desfasado: se deja lo que diga la venta
     }
 
-    // Un producto que en todo el mes no tuvo stock ni venta no quebró: no
-    // formaba parte del surtido. Sin esto, el POP del Mundial y los barriles
-    // aparecen con el mes entero "en quiebre" y tapan lo que importa.
-    const tuvoStock = stockDias
-      ? [...stockDias.values()].some((s) => s.positivo > 0)
-      : false
-    const enSurtido = f.bultosMes > 0 || tuvoStock
+    // 🚨 El surtido se define ANTES de que empiece el mes: vendió el mes
+    // anterior, o tenía stock el día previo al 1°. Mirar lo que pasó DENTRO
+    // del mes sería el vicio clásico del denominador auto-reportado —el
+    // producto que estuvo los 31 días en cero se caería del análisis
+    // justamente por haber quebrado todo el mes, que es el peor caso—.
+    // Sin esta regla igual hay que dejar afuera el POP del Mundial, los
+    // barriles y los discontinuados: no se puede quebrar lo que no se tenía.
+    const bultosPrevios = [...f.skus.values()].reduce((a, s) => a + s.bultos_previo, 0)
+    const enSurtido =
+      bultosPrevios > 0 || (stockInicialPorFamilia.get(f.familia) ?? 0) > 0
 
     const ventanas = enSurtido
       ? ventanasDeQuiebre(diasSanos, cal.dias, e.minDias)

@@ -149,10 +149,13 @@ export async function getQuiebresMes(params: {
     // entran al universo. Rankear por el mes propio sería un vicio — el que
     // quiebra vende menos y se cae del ranking justo el mes que hay que mirarlo.
     const desdeTri = ymd(new Date(Date.UTC(anio, mes - 3, 1)))
-    // Mes anterior, para mostrar el contraste en el detalle por SKU.
+    // Mes anterior: define el surtido (junto con el stock inicial) y da el
+    // contraste en el detalle por SKU.
     const desdePrevio = ymd(new Date(Date.UTC(anio, mes - 2, 1)))
+    // Último día del mes anterior: el stock con el que se arrancó.
+    const diaPrevio = ymd(new Date(Date.UTC(anio, mes - 1, 0)))
 
-    const [maestro, dist, most, rech, fotos, comentarios] = await Promise.all([
+    const [maestro, dist, most, rech, fotos, stockInicial, comentarios] = await Promise.all([
       traerMaestro(),
       traerTodo<FilaVentaCruda>("ventas_diarias_sku", (d, h) =>
         supabase
@@ -191,6 +194,14 @@ export async function getQuiebresMes(params: {
           .lte("fecha", hastaMes)
           .range(d, h),
       ).catch(() => [] as FilaFotoCruda[]),
+      // Foto del cierre del mes anterior: con qué se arrancó.
+      traerTodo<FilaFotoCruda>("quiebres_stock_fotos", (d, h) =>
+        supabase
+          .from("quiebres_stock_fotos")
+          .select("fecha,id_articulo,bultos")
+          .eq("fecha", diaPrevio)
+          .range(d, h),
+      ).catch(() => [] as FilaFotoCruda[]),
       traerTodo<ComentarioQuiebre>("quiebres_stock_comentarios", (d, h) =>
         supabase
           .from("quiebres_stock_comentarios")
@@ -209,6 +220,7 @@ export async function getQuiebresMes(params: {
     const resultado = agregarQuiebres({
       ventas,
       fotos,
+      stockInicial,
       rechazosSinStock: rech.map((r) => r.id_articulo),
       maestro,
       desdeMes,
