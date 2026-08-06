@@ -10,6 +10,7 @@ import type { S5ItemCatalogo } from "@/types/database"
 
 const MI_PATH = "/mi-5s"
 const DASHBOARD_PATH = "/5s"
+const BUCKET = "s5-auditorias"
 
 /**
  * Este módulo NO tiene tablas propias a propósito: se apoya en `s5_acciones` y
@@ -373,9 +374,8 @@ async function accionLibre(periodo: string, sector: number, profileId: string): 
 
 /**
  * Deja lista la acción a la que se van a colgar las fotos y devuelve su id.
- * Hay que llamarla ANTES de subir: la política de storage solo deja escribir
- * bajo `acciones/{id}/` de una acción donde el usuario es responsable o
- * creador, así que la carpeta tiene que existir como acción real.
+ * Hay que llamarla ANTES de subir: las fotos van a `acciones/{id}/`, así que
+ * la carpeta tiene que existir como acción real.
  */
 export async function prepararCarga5S(
   accionId?: string | null
@@ -406,8 +406,8 @@ export async function prepararCarga5S(
       return { error: "Esa tarea no es de tu sector" }
     }
 
-    // Tarea creada antes del sorteo: sin responsable, el bucket le rechazaría
-    // la foto. Se la asignamos al responsable del mes, que es quien la ejecuta.
+    // Tarea que quedó sin dueño: se la asignamos al responsable del mes, que
+    // es quien la está ejecutando. Si ya tiene otro responsable no se toca.
     if (!acc.responsable_id) {
       await createAdminClient()
         .from("s5_acciones")
@@ -418,6 +418,70 @@ export async function prepararCarga5S(
     return { data: { accionId } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error preparando la carga" }
+  }
+}
+
+/** Nombre de archivo seguro para el path del bucket. */
+function nombreSeguro(name: string): string {
+  return (
+    name
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .slice(0, 120) || "foto.jpg"
+  )
+}
+
+/**
+ * Permiso para subir una foto a la carpeta de una acción.
+ *
+ * 🚨 El bucket NO alcanza para autorizar esto. Su política de INSERT
+ * (`s5_auditorias_insert`) exige ser responsable o creador de la acción, y las
+ * tareas que carga el auditor quedan con el responsable del mes en que las
+ * creó: en agosto Cerbin (sector 3) eligió "MOvimiento de pallet con vacios y
+ * heladeras" —responsable el sorteado de otro mes, creador el auditor— y el
+ * upload volvió con "new row violates row-level security policy". Reasignar el
+ * responsable para destrabarlo sería peor: le sacaría la tarea a quien se la
+ * asignaron.
+ *
+ * Por eso la autorización la hace ESTA función —quien pide firmar tiene que ser
+ * el responsable sorteado del sector de la acción, este mes— y la escritura va
+ * con una URL firmada por el cliente admin. La foto igual viaja del celular al
+ * bucket directo: no la mandamos por una server action, que en Vercel se corta
+ * a los 4,5 MB de request.
+ */
+export async function firmarSubida5S(
+  accionId: string,
+  nombreArchivo: string,
+): Promise<{ data: { path: string; token: string } } | { error: string }> {
+  try {
+    const profile = await requireAuth()
+
+    const mio = await miSectorDelMes(profile.id)
+    if ("error" in mio) return mio
+
+    const admin = createAdminClient()
+
+    const { data: acc } = await admin
+      .from("s5_acciones")
+      .select("id, tipo, sector_numero")
+      .eq("id", accionId)
+      .maybeSingle()
+    if (!acc || acc.tipo !== "almacen" || acc.sector_numero !== mio.sector) {
+      return { error: "Esa tarea no es de tu sector" }
+    }
+
+    const path = `acciones/${accionId}/${crypto.randomUUID()}-${nombreSeguro(nombreArchivo)}`
+    const { data, error } = await admin.storage
+      .from(BUCKET)
+      .createSignedUploadUrl(path)
+    if (error || !data) {
+      return { error: error?.message ?? "No se pudo preparar la subida de la foto" }
+    }
+
+    return { data: { path: data.path, token: data.token } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Error preparando la subida" }
   }
 }
 
@@ -619,7 +683,11 @@ export async function cargarEvidencia5S(input: {
     if (input.antes) fotos.push({ ...input.antes, momento: "antes" })
     if (input.despues) fotos.push({ ...input.despues, momento: "despues" })
 
-    const { error } = await supabase.from("s5_acciones_evidencias").insert({
+    // Con el cliente admin por el mismo motivo que `firmarSubida5S`: la
+    // política `s5_acciones_evid_insert` pide ser responsable o creador de la
+    // acción, y en una tarea que cargó el auditor el operario no es ninguna de
+    // las dos. Autoriza esta función: la acción es del sector que le tocó.
+    const { error } = await createAdminClient().from("s5_acciones_evidencias").insert({
       accion_id: accionId,
       comentario,
       autor_id: profile.id,
@@ -637,9 +705,27 @@ export async function cargarEvidencia5S(input: {
 
 export async function borrarEvidencia5S(id: string): Promise<{ ok: true } | { error: string }> {
   try {
-    await requireAuth()
-    const supabase = await createClient()
-    const { error } = await supabase.from("s5_acciones_evidencias").delete().eq("id", id)
+    const profile = await requireAuth()
+    const admin = createAdminClient()
+
+    // Se valida acá y se borra con admin: con el cliente normal, una carga que
+    // el operario no podía borrar se iba en silencio (DELETE de cero filas no
+    // devuelve error) y la pantalla decía que sí.
+    const { data: ev } = await admin
+      .from("s5_acciones_evidencias")
+      .select("id, autor_id")
+      .eq("id", id)
+      .maybeSingle()
+    if (!ev) return { error: "Esa carga ya no está" }
+    if (
+      ev.autor_id !== profile.id &&
+      profile.role !== "admin" &&
+      profile.role !== "auditor"
+    ) {
+      return { error: "Esta carga no es tuya" }
+    }
+
+    const { error } = await admin.from("s5_acciones_evidencias").delete().eq("id", id)
     if (error) return { error: error.message }
 
     revalidatePath(MI_PATH)
@@ -650,16 +736,35 @@ export async function borrarEvidencia5S(id: string): Promise<{ ok: true } | { er
   }
 }
 
+/**
+ * URL temporal para ver una foto de evidencia. Firma con el cliente admin —la
+ * política de lectura del bucket es tan estrecha como la de escritura y el
+ * operario no llegaba a ver su propia foto—, pero sólo para un path que esté
+ * cargado como evidencia 5S: así no se puede firmar cualquier objeto del
+ * bucket (auditorías de otros sectores, por ejemplo).
+ */
 export async function getEvidenciaSectorUrl(
   path: string
 ): Promise<{ data: { url: string } } | { error: string }> {
   try {
     await requireAuth()
     const supabase = await createClient()
-    const { data, error } = await supabase.storage
-      .from("s5-auditorias")
+
+    const [porColumna, porJsonb] = await Promise.all([
+      supabase.from("s5_acciones_evidencias").select("id").eq("archivo_path", path).limit(1),
+      supabase
+        .from("s5_acciones_evidencias")
+        .select("id")
+        .contains("archivos", [{ path }])
+        .limit(1),
+    ])
+    const existe = (porColumna.data?.length ?? 0) > 0 || (porJsonb.data?.length ?? 0) > 0
+    if (!existe) return { error: "Esa foto no es de una carga 5S" }
+
+    const { data, error } = await createAdminClient()
+      .storage.from(BUCKET)
       .createSignedUrl(path, 60 * 10)
-    if (error) return { error: error.message }
+    if (error || !data) return { error: error?.message ?? "No se pudo abrir la foto" }
     return { data: { url: data.signedUrl } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Error generando URL" }

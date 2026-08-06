@@ -31,6 +31,7 @@ import {
   cargarEvidencia5S,
   crearMiTarea,
   editarMiTarea,
+  firmarSubida5S,
   getEvidenciaSectorUrl,
   prepararCarga5S,
   type MiSector5S,
@@ -45,12 +46,26 @@ import {
 const BUCKET = "s5-auditorias"
 const MAX_BYTES = 15 * 1024 * 1024
 
-function sanitizeFileName(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "_")
-    .slice(0, 120)
+/**
+ * El bucket sólo acepta estos cuatro formatos. Cualquier otra cosa —un archivo
+ * de la galería sin tipo, un HEIF de iPhone— volvía como "mime type ... is not
+ * supported", que al operario no le dice nada. Cuando el celular no informa el
+ * tipo, se deduce de la extensión.
+ */
+const MIMES_OK = new Set(["image/jpeg", "image/png", "image/webp", "image/heic"])
+const MIME_POR_EXT: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heic",
+}
+
+function mimeDeFoto(file: File): string | null {
+  if (MIMES_OK.has(file.type)) return file.type
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase()
+  return MIME_POR_EXT[ext] ?? null
 }
 
 function formatFechaHora(iso: string) {
@@ -162,19 +177,32 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
     setVerFoto(res.data.url)
   }
 
+  /**
+   * La foto va del celular al bucket directo, pero con un permiso que firma el
+   * server: subiendo con la sesión del operario, el bucket rechazaba las fotos
+   * de las tareas que había cargado el auditor ("new row violates row-level
+   * security policy"). El server chequea que la tarea sea de su sector.
+   */
   async function subirUna(
     file: File,
     accionRef: string,
   ): Promise<ArchivoAvance | { error: string }> {
+    const permiso = await firmarSubida5S(accionRef, file.name || "foto.jpg")
+    if ("error" in permiso) return { error: permiso.error }
+
     const supabase = createBrowserSupabase()
-    const safe = sanitizeFileName(file.name || "foto.jpg")
-    const path = `acciones/${accionRef}/${crypto.randomUUID()}-${safe}`
-    const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-      contentType: file.type || "image/jpeg",
-      upsert: false,
-    })
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .uploadToSignedUrl(permiso.data.path, permiso.data.token, file, {
+        contentType: mimeDeFoto(file) ?? "image/jpeg",
+      })
     if (error) return { error: error.message }
-    return { path, nombre: file.name, mime: file.type || null, bytes: file.size }
+    return {
+      path: permiso.data.path,
+      nombre: file.name,
+      mime: file.type || null,
+      bytes: file.size,
+    }
   }
 
   function handleGuardar() {
@@ -189,6 +217,11 @@ export function Mi5SClient({ data }: { data: MiSector5S }) {
     const pesada = [antes, despues].find((f) => f && f.size > MAX_BYTES)
     if (pesada) {
       toast.error("La foto supera los 15 MB")
+      return
+    }
+    const rara = [antes, despues].find((f) => f && !mimeDeFoto(f))
+    if (rara) {
+      toast.error("Ese archivo no es una foto que la app pueda guardar: subí una JPG o PNG")
       return
     }
 
