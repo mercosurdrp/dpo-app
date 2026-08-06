@@ -156,6 +156,16 @@ export interface FamiliaQuiebre {
   familia: string
   marca: string | null
   calibre: string | null
+  /** Posición por rotación en el trimestre móvil, 1 = el que más movió. */
+  rank: number
+  /** true = entra al top N que define el puntaje del variable. */
+  en_universo: boolean
+  /**
+   * false = en todo el mes no tuvo NI una unidad de stock NI una venta. No se
+   * puede quebrar algo que no se tiene ni se vende: son POP del Mundial,
+   * barriles, artículos discontinuados. Se listan al final, sin quiebre.
+   */
+  en_surtido: boolean
   /** Bultos del trimestre móvil — define el ranking de rotación. */
   rotacion: number
   bultos_mes: number
@@ -190,6 +200,10 @@ export interface QuiebresKpis {
   familias_no_imputables: number
   /** Productos quebrados todavía sin causa cargada. */
   familias_sin_causa: number
+  /** Productos analizados en total (el universo es un subconjunto). */
+  familias_totales: number
+  /** Quebraron, pero fuera del top N: no descuentan, sirven de alerta. */
+  familias_con_quiebre_fuera: number
 }
 
 export interface ResultadoQuiebres {
@@ -328,13 +342,14 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
     stockPorFamiliaDia.set(clave, porDia)
   }
 
-  // ── Universo: las N familias de mayor rotación en el trimestre
-  const top = [...familias.entries()]
+  // ── Se analizan TODOS los productos, pero el puntaje sale sólo de los N de
+  // mayor rotación. Un quiebre en un producto de cola es información útil
+  // —conviene verlo— sin ser lo que define el variable.
+  const porRotacion = [...familias.entries()]
     .map(([familia, f]) => ({ familia, ...f }))
     .sort((a, b) => b.rotacion - a.rotacion)
-    .slice(0, e.universo)
 
-  const salida: FamiliaQuiebre[] = top.map((f) => {
+  const analizadas: FamiliaQuiebre[] = porRotacion.map((f, i) => {
     const stockDias = stockPorFamiliaDia.get(f.familia)
     const diasStockCero = stockDias
       ? [...stockDias.entries()]
@@ -361,11 +376,24 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
       // positivo 0 con negativos ⇒ kardex desfasado: se deja lo que diga la venta
     }
 
-    const ventanas = ventanasDeQuiebre(diasSanos, cal.dias, e.minDias)
+    // Un producto que en todo el mes no tuvo stock ni venta no quebró: no
+    // formaba parte del surtido. Sin esto, el POP del Mundial y los barriles
+    // aparecen con el mes entero "en quiebre" y tapan lo que importa.
+    const tuvoStock = stockDias
+      ? [...stockDias.values()].some((s) => s.positivo > 0)
+      : false
+    const enSurtido = f.bultosMes > 0 || tuvoStock
+
+    const ventanas = enSurtido
+      ? ventanasDeQuiebre(diasSanos, cal.dias, e.minDias)
+      : []
     return {
       familia: f.familia,
       marca: f.marca,
       calibre: f.calibre,
+      rank: i + 1,
+      en_universo: i < e.universo,
+      en_surtido: enSurtido,
       rotacion: f.rotacion,
       bultos_mes: f.bultosMes,
       dias_con_venta: f.diasConVenta.size,
@@ -378,8 +406,18 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
     }
   })
 
-  const diasFamiliaQuiebre = salida.reduce((a, f) => a + f.dias_quiebre, 0)
-  const posibles = salida.length * cal.dias.length
+  // Se muestran los quiebres primero —es lo que uno va a buscar al abrir la
+  // pantalla— y dentro de cada grupo por rotación.
+  const salida = [...analizadas].sort(
+    (a, b) =>
+      Number(b.en_surtido) - Number(a.en_surtido) ||
+      b.dias_quiebre - a.dias_quiebre ||
+      a.rank - b.rank,
+  )
+  const delUniverso = analizadas.filter((f) => f.en_universo)
+
+  const diasFamiliaQuiebre = delUniverso.reduce((a, f) => a + f.dias_quiebre, 0)
+  const posibles = delUniverso.length * cal.dias.length
   const diasOperativosConFoto = cal.dias.filter((d) => diasConFoto.includes(d))
 
   // ── Puntaje: 100 menos 3 puntos por producto quebrado, con piso en 0.
@@ -388,7 +426,7 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   // comprador (falta de asignación de fábrica, producto que ya no se vende).
   // Mientras un quiebre no tenga causa cargada pesa en los dos, para que no
   // alcance con no clasificarlo para que desaparezca del número.
-  const conQuiebre = salida.filter((f) => f.dias_quiebre > 0)
+  const conQuiebre = delUniverso.filter((f) => f.dias_quiebre > 0)
   const noImputables = conQuiebre.filter((f) => e.noImputables?.has(f.familia))
   const imputables = conQuiebre.length - noImputables.length
   const puntaje = (cantidad: number) =>
@@ -409,7 +447,7 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
     familias: salida,
     kpis: {
       familias_con_quiebre: conQuiebre.length,
-      universo: salida.length,
+      universo: delUniverso.length,
       dias_familia_quiebre: diasFamiliaQuiebre,
       dias_familia_posibles: posibles,
       pct_quiebre: posibles > 0 ? (diasFamiliaQuiebre / posibles) * 100 : 0,
@@ -419,6 +457,10 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
       puntaje_neto: puntaje(imputables),
       familias_no_imputables: noImputables.length,
       familias_sin_causa: conQuiebre.filter((f) => !e.conCausa?.has(f.familia)).length,
+      familias_totales: analizadas.length,
+      familias_con_quiebre_fuera: analizadas.filter(
+        (f) => !f.en_universo && f.dias_quiebre > 0,
+      ).length,
     },
   }
 }

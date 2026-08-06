@@ -188,11 +188,13 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            Calendario de quiebres — top {datos.kpis.universo} por rotación
+            Calendario de quiebres — los {datos.kpis.familias_totales} productos
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Una fila por producto físico (marca + calibre), no por SKU: los códigos
-            migran y una migración de código imita un quiebre perfecto.
+            Los que quebraron van primero. Una fila por producto físico (marca +
+            calibre), no por SKU: los códigos migran y una migración imita un quiebre
+            perfecto. El número gris de la izquierda es la posición por rotación; sólo
+            los primeros {datos.kpis.universo} cuentan para el puntaje.
           </p>
         </CardHeader>
         <CardContent>
@@ -219,12 +221,19 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                 {datos.familias.map((f) => (
                   <tr key={f.familia} className="hover:bg-slate-50">
                     <td
-                      className="sticky left-0 z-10 max-w-[260px] cursor-pointer bg-white px-2 py-1 hover:bg-slate-50"
-                      title={`${f.familia} — SKU ${codigosDe(f)}`}
+                      className={`sticky left-0 z-10 max-w-[280px] cursor-pointer px-2 py-1 hover:bg-slate-50 ${
+                        f.en_universo ? "bg-white" : "bg-white text-slate-400"
+                      }`}
+                      title={`#${f.rank} por rotación${f.en_universo ? "" : " — fuera del top " + datos.kpis.universo + ", no cuenta para el puntaje"} · ${f.familia} — SKU ${codigosDe(f)}`}
                       onClick={() => setAbierta(abierta === f.familia ? null : f.familia)}
                     >
-                      <div className="truncate">{f.familia}</div>
-                      <div className="truncate font-mono text-[10px] text-slate-400">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="w-6 shrink-0 text-right text-[10px] text-slate-300">
+                          {f.rank}
+                        </span>
+                        <span className="truncate">{f.familia}</span>
+                      </div>
+                      <div className="truncate pl-7 font-mono text-[10px] text-slate-400">
                         {codigosDe(f)}
                       </div>
                     </td>
@@ -285,11 +294,19 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
               Detalle — {conQuiebre.length} producto{conQuiebre.length === 1 ? "" : "s"} con quiebre
+              {datos.kpis.familias_con_quiebre_fuera > 0 && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  ({datos.kpis.familias_con_quiebre} del top {datos.kpis.universo} +{" "}
+                  {datos.kpis.familias_con_quiebre_fuera} de cola)
+                </span>
+              )}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               Abrí cada uno para ver los SKUs que lo componen. Si un código cae a
               cero y otro de la misma familia arranca, fue cambio de envase y no
-              quiebre — el indicador ya lo trata como un solo producto.
+              quiebre — el indicador ya lo trata como un solo producto. Los de cola
+              se muestran como alerta: no descuentan puntos.
             </p>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -315,6 +332,13 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
                   <div className="flex shrink-0 items-center gap-2">
                     {(() => {
                       const c = datos.comentarios.find((x) => x.familia === f.familia)
+                      if (!f.en_universo) {
+                        return (
+                          <Badge variant="secondary">
+                            #{f.rank} · fuera del top {datos.kpis.universo}
+                          </Badge>
+                        )
+                      }
                       if (c?.no_imputable) {
                         return (
                           <Badge className="bg-emerald-600 hover:bg-emerald-600">
