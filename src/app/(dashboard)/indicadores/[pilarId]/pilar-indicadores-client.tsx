@@ -337,6 +337,38 @@ export function PilarIndicadoresClient({ pilar, bloques }: Props) {
         </Card>
       )}
 
+      {/* Acceso a GOPs y Toolkits (Gestión 4.5), se trabaja desde Planeamiento */}
+      {pilar.nombre === "Planeamiento" && (
+        <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="rounded-xl p-3"
+                  style={{ backgroundColor: `${pilar.color}18`, color: pilar.color }}
+                >
+                  <ClipboardCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">GOPs y Toolkits (4.5)</p>
+                  <p className="text-sm text-muted-foreground">
+                    Consolidado mensual · puntaje por GOP vs target · plan de acción para
+                    los puntos en No
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/planeamiento/gops"
+                className={buttonVariants({ size: "lg" })}
+                style={{ backgroundColor: pilar.color, color: "#fff" }}
+              >
+                Abrir <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Acceso a Dimensionamiento de Distribución/Flota (R3.1), pilar Planeamiento — solo Pampeana */}
       {pilar.nombre === "Planeamiento" && !IS_MISIONES && (
         <Card className="border-l-4" style={{ borderLeftColor: pilar.color }}>
