@@ -48,6 +48,7 @@ import { createCapacitacion, deleteCapacitacion, toggleCapacitacionVisible } fro
 import type { CapacitacionConResumen, EstadoCapacitacion } from "@/types/database"
 import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
 import { CapacitacionesCalendario } from "./capacitaciones-calendario"
+import { CapacitacionesAdherencia } from "./capacitaciones-adherencia"
 
 interface Props {
   capacitaciones: CapacitacionConResumen[]
@@ -114,10 +115,17 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     pilar: "",
   })
 
-  const withDerived = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
-    return capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c, today) }))
-  }, [capacitaciones])
+  // Fecha local (no UTC): a la noche argentina toISOString() ya devuelve el día siguiente
+  const hoy = useMemo(() => {
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }, [])
+
+  const withDerived = useMemo(
+    () => capacitaciones.map((c) => ({ ...c, estadoReal: estadoDerivado(c, hoy) })),
+    [capacitaciones, hoy]
+  )
 
   const filtered = useMemo(() => {
     let list = withDerived
@@ -143,7 +151,8 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
     const programadas = withDerived.filter((c) => c.estadoReal === "programada").length
     const enCurso = withDerived.filter((c) => c.estadoReal === "en_curso").length
     const completadas = withDerived.filter((c) => c.estadoReal === "completada").length
-    const total = withDerived.length
+    // Calendarizado = todo lo planificado sin cancelar (mismo denominador que la adherencia)
+    const total = withDerived.filter((c) => c.estadoReal !== "cancelada").length
     const pctRealizadas = total > 0 ? Math.round((completadas / total) * 100) : 0
     return { total, programadas, enCurso, completadas, pctRealizadas }
   }, [withDerived])
@@ -396,7 +405,7 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Programadas" value={stats.total} color="#6366F1" />
+        <StatCard label="Calendarizadas" value={stats.total} color="#6366F1" />
         <StatCard label="Pendientes" value={stats.programadas} color={ESTADO_CAPACITACION_COLORS.programada} />
         <StatCard label="En Curso" value={stats.enCurso} color={ESTADO_CAPACITACION_COLORS.en_curso} />
         <StatCard label="Completadas" value={stats.completadas} color={ESTADO_CAPACITACION_COLORS.completada} />
@@ -415,13 +424,16 @@ export function CapacitacionesClient({ capacitaciones: initial, canEdit }: Props
                 {stats.pctRealizadas}%
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-medium text-slate-600">Realizadas</span>
-                <span className="text-xs text-slate-400">Ver listado</span>
+                <span className="text-sm font-medium text-slate-600">Cumplimiento anual</span>
+                <span className="text-xs text-slate-400">Ver realizadas</span>
               </div>
             </CardContent>
           </Card>
         </button>
       </div>
+
+      {/* Adherencia al cronograma (Gantt) — meta 90 % a fin de año */}
+      <CapacitacionesAdherencia capacitaciones={withDerived} hoy={hoy} />
 
       {/* Avance de completadas por pilar */}
       {avancePorPilar.length > 0 && (

@@ -5,6 +5,8 @@ import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/server"
 import { ESTADO_CAPACITACION_LABELS } from "@/lib/constants"
 import { estadoDerivado, formatDuracion } from "@/lib/capacitacion-estado"
+import { calcularAdherencia, type ItemAdherencia } from "@/lib/capacitacion-adherencia"
+import { HAY_PAC, META_CUMPLIMIENTO, PAC_2026_ORIGEN, PAC_2026_TOTAL } from "@/lib/pac-2026"
 import type {
   Capacitacion,
   AsistenciaConEmpleado,
@@ -146,6 +148,7 @@ export async function GET(_req: NextRequest) {
 
     type Row = Record<string, string | number | null>
     const rows: Row[] = []
+    const itemsAdherencia: ItemAdherencia[] = []
 
     const today = new Date().toISOString().slice(0, 10)
     for (const c of caps) {
@@ -166,6 +169,13 @@ export async function GET(_req: NextRequest) {
       )
       const estadoLabel =
         ESTADO_CAPACITACION_LABELS[estadoReal] ?? estadoReal
+      itemsAdherencia.push({
+        id: c.id,
+        titulo: c.titulo,
+        fecha: c.fecha,
+        pilar: c.pilar,
+        estadoReal,
+      })
       const base = {
         Capacitación: c.titulo,
         Pilar: c.pilar ?? "",
@@ -264,6 +274,7 @@ export async function GET(_req: NextRequest) {
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Capacitaciones")
+    XLSX.utils.book_append_sheet(wb, hojaAdherencia(itemsAdherencia, today), "Adherencia Cronograma")
 
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
 
@@ -287,4 +298,102 @@ export async function GET(_req: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+const MESES_CORTOS = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
+
+/**
+ * Hoja de adherencia al cronograma: mismos números y mismas definiciones que el
+ * panel de /capacitaciones (`calcularAdherencia`), para que la pantalla, este
+ * Excel y el seguimiento del PAC no se contradigan.
+ */
+/** El PAC es de Pampeana: en Misiones la columna del plan no aplica y se saca. */
+function sinPac<T>(fila: T[]): T[] {
+  return HAY_PAC ? fila : fila.filter((_, i) => i !== 1)
+}
+
+function hojaAdherencia(items: ItemAdherencia[], today: string) {
+  const a = calcularAdherencia(items, today)
+  const metaPct = Math.round(META_CUMPLIMIENTO * 100)
+  const filas: (string | number | null)[][] = [
+    [`ADHERENCIA AL CRONOGRAMA DE CAPACITACIONES ${a.anio}`],
+    [`Corte al ${today}. Meta: ${metaPct} % de cumplimiento a fin de año.`],
+    [],
+    ["INDICADOR", "VALOR", "DETALLE"],
+    [
+      "Adherencia YTD (%)",
+      a.adherenciaYtd,
+      `${a.cumplidasVencidas} cumplidas de ${a.vencidas} ya vencidas`,
+    ],
+    ["Atrasadas", a.atrasadas.length, "Vencidas sin cerrar"],
+    [
+      "Cumplimiento anual (%)",
+      a.cumplimientoAnual,
+      `${a.cumplidasAnual} cumplidas de ${a.totalAnual} calendarizadas`,
+    ],
+    [`Necesarias para el ${metaPct} %`, a.metaCantidad, `Faltan ${a.faltanParaMeta}`],
+    [
+      "Ritmo requerido (por mes)",
+      a.ritmoRequerido,
+      `${a.mesesHastaFinCronograma} ${a.mesesHastaFinCronograma === 1 ? "mes" : "meses"} hasta ${MESES_CORTOS[a.ultimoMesCalendarizado]} (fin del cronograma cargado)`,
+    ],
+    [
+      "Margen",
+      a.margen,
+      a.margen >= 0
+        ? `Se pueden caer ${a.margen} de las ${a.totalAnual - a.cumplidasAnual} pendientes`
+        : `Meta inalcanzable: faltan ${-a.margen} fechas por calendarizar`,
+    ],
+    ...(HAY_PAC ? [["PAC aprobado (plan)", PAC_2026_TOTAL, PAC_2026_ORIGEN]] : []),
+    [],
+    ["AVANCE MES A MES"],
+    sinPac(["Mes", "PAC (plan)", "Calendarizadas", "Vencidas", "Cumplidas", "Adelantadas", "Atrasadas", "Adherencia %"]),
+    ...a.porMes.map((m) => sinPac([
+      MESES_CORTOS[m.mes],
+      m.pac,
+      m.calendarizadas,
+      m.vencidas,
+      m.cumplidas,
+      m.adelantadas,
+      m.atrasadas,
+      m.adherencia,
+    ])),
+    [],
+    ["AVANCE POR PILAR"],
+    sinPac(["Pilar", "PAC (plan)", "Calendarizadas", "Vencidas", "Cumplidas", "Adelantadas", "Atrasadas", "Adherencia %"]),
+    ...a.porPilar.map((p) => sinPac([
+      p.pilar,
+      p.pac,
+      p.calendarizadas,
+      p.vencidas,
+      p.cumplidas,
+      p.adelantadas,
+      p.atrasadas,
+      p.adherencia,
+    ])),
+    [],
+    ["ATRASADAS — VENCIDAS SIN CERRAR"],
+    ["Capacitación", "Pilar", "Fecha", "Días de atraso"],
+    ...a.atrasadas.map((c) => [
+      c.titulo,
+      c.pilar ?? "",
+      c.fecha,
+      Math.max(
+        0,
+        Math.round(
+          (Date.parse(today + "T12:00:00") - Date.parse(c.fecha + "T12:00:00")) / 86400000
+        )
+      ),
+    ]),
+    [],
+    ["Definiciones: Calendarizada = cargada en el año sin cancelar · Vencida = fecha ≤ hoy ·"],
+    ["Cumplida = estado Completada (todos los asistentes rindieron) · Atrasada = vencida y no cumplida ·"],
+    ["Adelantada = cumplida antes de su fecha: suma al cumplimiento anual, todavía no a la adherencia."],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(filas)
+  ws["!cols"] = [{ wch: 42 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }]
+  return ws
 }
