@@ -156,13 +156,22 @@ export function CoberturaCil({ mesActual }: { mesActual: string }) {
             {optativas.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Camionetas — se muestran pero no cuentan para el porcentaje: la
-                  inspección de fluidos y la lubricación se hacen acá, pero el lavado a
-                  veces se hace en un lavadero externo y no deja registro propio.
+                  Fuera del porcentaje —{" "}
+                  {optativas
+                    .map((u) => `${u.dominio}: ${u.motivoExclusion}`)
+                    .join(" · ")}
+                  . Se muestran igual: que no cuenten no significa esconderlas.
                 </p>
                 <TablaCobertura unidades={optativas} ciclo={ciclo} />
               </div>
             )}
+
+            <p className="text-xs text-muted-foreground">
+              No entran en el seguimiento las <strong>camionetas</strong> —la inspección
+              y la lubricación se hacen en la base, pero el lavado a veces va a un
+              lavadero externo y no deja registro— ni el <strong>acoplado</strong>, que
+              no tiene motor.
+            </p>
           </>
         )}
       </CardContent>

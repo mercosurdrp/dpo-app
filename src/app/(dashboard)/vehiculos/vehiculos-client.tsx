@@ -47,6 +47,7 @@ import {
   Loader2,
   Clock,
   Fuel,
+  Droplets,
   Gauge,
   Bell,
   Info,
@@ -341,6 +342,13 @@ export function VehiculosClient({ estadoVehiculos, checklists, combustible, vehi
           </p>
         </div>
         <div className="flex gap-2">
+          {/* CIL / ATO (DPO 4.1): estaba sólo en el menú del empleado y desde acá
+              no había forma de llegar. */}
+          <Link href="/mi-cil">
+            <Button variant="outline">
+              <Droplets className="mr-2 h-4 w-4" /> Registrar CIL
+            </Button>
+          </Link>
           <Link href="/vehiculos/combustible">
             <Button variant="outline">
               <Fuel className="mr-2 h-4 w-4" /> Cargar Combustible
