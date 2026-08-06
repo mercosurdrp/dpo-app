@@ -3012,6 +3012,16 @@ async function getIndicadoresMesCore(
         .from("catalogo_vehiculos")
         .select("dominio, tipo")
         .then((r) => r)
+    // Días en que cada camión REPARTIÓ de verdad (sale de las entregas). Es el
+    // denominador de la adherencia: contra los checklists cargados, el camión
+    // que salió sin cargar nada desaparecería de la cuenta.
+    const qDiasRuteo = () =>
+      supabase
+        .from("vista_dias_ruteo")
+        .select("dominio, fecha")
+        .gte("fecha", fechaDesde)
+        .lte("fecha", fechaHasta)
+        .then((r) => r)
 
     const pReportesSeguridad = qReportesSeguridad()
     const pTml = quiereNoWarehouse ? qTml() : null
@@ -3019,6 +3029,7 @@ async function getIndicadoresMesCore(
     const pChecklist = quiereChecklist ? qChecklist() : null
     const pEgresosAyudantes = quiereChecklist ? qEgresosAyudantes() : null
     const pCatalogoVehiculos = quiereChecklist ? qCatalogoVehiculos() : null
+    const pDiasRuteo = quiereChecklist ? qDiasRuteo() : null
 
     // 3. Reuniones del mismo tipo cuya fecha cae en ese rango
     const { data: reunionesRaw, error: errRe } = await supabase
@@ -3876,6 +3887,67 @@ async function getIndicadoresMesCore(
             totalAePorFecha,
           ),
         )
+
+        // Fila "Adherencia checklist" (DPO 1.3 — R1.3.1a): de los camiones que
+        // REPARTIERON ese día, cuántos hicieron salida Y retorno.
+        //
+        // 🚨 No confundir con "Checklist camiones", que es aprobados sobre
+        // checklists HECHOS: ése da 7/7 aunque dos camiones hayan salido sin
+        // cargar nada. Éste los cuenta, porque el denominador son las entregas
+        // reales. Con los datos del 07/07 al 06/08/2026 la diferencia era
+        // 90,2 % contra 71,0 %.
+        //
+        // El requisito exige 100 % y pide además medidas de gestión rápidas
+        // cuando baja: que se trate en la matinal ES esa evidencia.
+        if (tipo === "matinal-distribucion") {
+          const { data: ruteoRaw } = await (pDiasRuteo ?? qDiasRuteo())
+          const esCamion = (dom: string) => tipoPorDominio.get(dom) === "camion"
+
+          const libPorFechaDom = new Set<string>()
+          const retPorFechaDom = new Set<string>()
+          for (const r of (chkRaw ?? []) as Array<{
+            fecha: string
+            dominio: string | null
+            tipo: string
+          }>) {
+            const dom = (r.dominio ?? "").trim().toUpperCase()
+            if (!dom || !esCamion(dom)) continue
+            if (r.tipo === "liberacion") libPorFechaDom.add(`${r.fecha}|${dom}`)
+            else if (r.tipo === "retorno") retPorFechaDom.add(`${r.fecha}|${dom}`)
+          }
+
+          const ruteadosPorFecha: Record<string, Set<string>> = {}
+          for (const r of (ruteoRaw ?? []) as Array<{
+            dominio: string | null
+            fecha: string
+          }>) {
+            const dom = (r.dominio ?? "").trim().toUpperCase()
+            if (!dom || !esCamion(dom)) continue
+            if (!ruteadosPorFecha[r.fecha]) ruteadosPorFecha[r.fecha] = new Set()
+            ruteadosPorFecha[r.fecha].add(dom)
+          }
+
+          const completosPorFecha: Record<string, number> = {}
+          const totalRuteadoPorFecha: Record<string, number> = {}
+          for (const f of Object.keys(ruteadosPorFecha)) {
+            let ok = 0
+            for (const dom of ruteadosPorFecha[f]) {
+              const k = `${f}|${dom}`
+              if (libPorFechaDom.has(k) && retPorFechaDom.has(k)) ok += 1
+            }
+            completosPorFecha[f] = ok
+            totalRuteadoPorFecha[f] = ruteadosPorFecha[f].size
+          }
+
+          indicadoresAuto.push(
+            filaChecklist(
+              "auto_adherencia_checklist",
+              "Adherencia checklist (salida + retorno)",
+              completosPorFecha,
+              totalRuteadoPorFecha,
+            ),
+          )
+        }
 
         // Fila "Km recorridos": Σ (odómetro de retorno − odómetro de
         // liberación) de cada unidad. Se descartan lecturas inválidas

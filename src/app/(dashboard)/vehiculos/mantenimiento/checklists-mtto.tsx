@@ -45,6 +45,7 @@ import {
 import { cn } from "@/lib/utils"
 import { DpoPuntoBadge, DpoSeccionCinta } from "./_components/dpo-badge"
 import { CoberturaCil } from "./cobertura-cil"
+import { AdherenciaChecklistCard } from "./adherencia-checklist"
 import { KpiCard } from "./_components/kpi-card"
 import {
   createTareaCil,
@@ -506,6 +507,9 @@ export function ChecklistsMtto({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Adherencia al checklist: la evidencia del R1.3.1a (DPO 1.3) ===== */}
+      <AdherenciaChecklistCard />
 
       {/* ===== Cobertura del CIL: qué unidad está al día y cuál falta (DPO 4.1) ===== */}
       <CoberturaCil mesActual={mesActualArgentina()} />
