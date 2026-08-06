@@ -215,6 +215,14 @@ export async function getQuiebresMes(params: {
       desdePrevio,
       universo,
       minDias,
+      noImputables: new Set(
+        comentarios.filter((c) => c.no_imputable).map((c) => c.familia),
+      ),
+      // Una causa cargada es un comentario con texto: tildar el check sin
+      // explicar nada no alcanza para dejar de figurar como "sin causa".
+      conCausa: new Set(
+        comentarios.filter((c) => c.comentario.trim().length > 0).map((c) => c.familia),
+      ),
     })
 
     return { data: { anio, mes, ...resultado, comentarios } }

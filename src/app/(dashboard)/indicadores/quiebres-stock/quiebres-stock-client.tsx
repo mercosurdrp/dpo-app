@@ -92,6 +92,46 @@ export function QuiebresStockClient({ inicial, meses }: Props) {
           saberlo antes de mirar la grilla. */}
       <FuenteAviso datos={datos} />
 
+      {/* Puntaje del variable — el número que se paga */}
+      <Card className="border-l-4 border-l-slate-900">
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Puntaje del mes
+              </p>
+              <div className="mt-1 flex items-baseline gap-3">
+                <span
+                  className={`text-4xl font-bold ${
+                    datos.kpis.puntaje_neto === 100 ? "text-emerald-600" : "text-slate-900"
+                  }`}
+                >
+                  {datos.kpis.puntaje_neto}%
+                </span>
+                {datos.kpis.puntaje_bruto !== datos.kpis.puntaje_neto && (
+                  <span className="text-sm text-muted-foreground">
+                    bruto {datos.kpis.puntaje_bruto}% · {datos.kpis.familias_no_imputables} no
+                    imputable{datos.kpis.familias_no_imputables === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                100% menos {datos.kpis.descuento_por_quiebre} puntos por cada producto que
+                quebró {datos.min_dias}+ días. Se descuenta una vez por producto, aunque
+                haya quebrado dos veces en el mes.
+              </p>
+            </div>
+            {datos.kpis.familias_sin_causa > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <strong>{datos.kpis.familias_sin_causa}</strong> quiebre
+                {datos.kpis.familias_sin_causa === 1 ? "" : "s"} sin causa cargada. Hasta que
+                se clasifiquen, descuentan en los dos números.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           titulo="Productos con quiebre"

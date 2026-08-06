@@ -178,6 +178,18 @@ export interface QuiebresKpis {
   dias_familia_posibles: number
   pct_quiebre: number
   rechazos_sin_stock: number
+
+  // ── Puntaje del variable
+  /** Puntos que descuenta cada producto quebrado. */
+  descuento_por_quiebre: number
+  /** 100 − descuento × (productos quebrados). Todos, sin excepciones. */
+  puntaje_bruto: number
+  /** Igual, pero sin contar los quiebres marcados "no imputable al comprador". */
+  puntaje_neto: number
+  /** Productos quebrados que alguien marcó como no imputables. */
+  familias_no_imputables: number
+  /** Productos quebrados todavía sin causa cargada. */
+  familias_sin_causa: number
 }
 
 export interface ResultadoQuiebres {
@@ -206,7 +218,19 @@ export interface EntradaQuiebres {
   desdePrevio: string
   universo: number
   minDias: number
+  /** Familias con quiebre marcadas "no imputable al comprador". */
+  noImputables?: Set<string>
+  /** Familias con quiebre que ya tienen una causa cargada. */
+  conCausa?: Set<string>
 }
+
+/**
+ * Puntos que descuenta del variable cada producto quebrado.
+ * Definido por Sebastián Roselli el 06/08/2026: el mes arranca en 100 y cada
+ * producto del universo que quebró resta 3 puntos. Es POR PRODUCTO, no por
+ * ventana: un producto que quebró dos veces en el mes descuenta una sola vez.
+ */
+export const DESCUENTO_POR_QUIEBRE = 3
 
 export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   // ── Calendario operativo del mes
@@ -358,6 +382,18 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
   const posibles = salida.length * cal.dias.length
   const diasOperativosConFoto = cal.dias.filter((d) => diasConFoto.includes(d))
 
+  // ── Puntaje: 100 menos 3 puntos por producto quebrado, con piso en 0.
+  // Se publican los dos números en vez de elegir uno: el BRUTO cuenta todos
+  // los quiebres, el NETO saca los que alguien marcó como no imputables al
+  // comprador (falta de asignación de fábrica, producto que ya no se vende).
+  // Mientras un quiebre no tenga causa cargada pesa en los dos, para que no
+  // alcance con no clasificarlo para que desaparezca del número.
+  const conQuiebre = salida.filter((f) => f.dias_quiebre > 0)
+  const noImputables = conQuiebre.filter((f) => e.noImputables?.has(f.familia))
+  const imputables = conQuiebre.length - noImputables.length
+  const puntaje = (cantidad: number) =>
+    Math.max(0, 100 - DESCUENTO_POR_QUIEBRE * cantidad)
+
   return {
     min_dias: e.minDias,
     dias_operativos: cal.dias,
@@ -372,12 +408,17 @@ export function agregarQuiebres(e: EntradaQuiebres): ResultadoQuiebres {
           : "mixta",
     familias: salida,
     kpis: {
-      familias_con_quiebre: salida.filter((f) => f.dias_quiebre > 0).length,
+      familias_con_quiebre: conQuiebre.length,
       universo: salida.length,
       dias_familia_quiebre: diasFamiliaQuiebre,
       dias_familia_posibles: posibles,
       pct_quiebre: posibles > 0 ? (diasFamiliaQuiebre / posibles) * 100 : 0,
       rechazos_sin_stock: e.rechazosSinStock.length,
+      descuento_por_quiebre: DESCUENTO_POR_QUIEBRE,
+      puntaje_bruto: puntaje(conQuiebre.length),
+      puntaje_neto: puntaje(imputables),
+      familias_no_imputables: noImputables.length,
+      familias_sin_causa: conQuiebre.filter((f) => !e.conCausa?.has(f.familia)).length,
     },
   }
 }
